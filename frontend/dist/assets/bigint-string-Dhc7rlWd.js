@@ -1,2 +1,0 @@
-const o=-(1n<<63n),c=(1n<<63n)-1n,e=/^(?:0|-?[1-9]\d*)$/u;function g(n){if(typeof n!="string"||!e.test(n))return!1;const t=BigInt(n);return t>=o&&t<=c}function s(n){if(!g(n))throw new RangeError("Expected a canonical signed int64 decimal string");return n}function I(n){return s(n.toString())}function a(n){return BigInt(n)}function f(n,t){const i=BigInt(n),r=BigInt(t);return i<r?-1:i>r?1:0}export{a,I as b,f as c,s as i};
-//# sourceMappingURL=bigint-string-Dhc7rlWd.js.map
