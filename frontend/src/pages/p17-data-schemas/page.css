@@ -1,0 +1,84 @@
+.management-page {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.management-page button,
+.management-page input,
+.management-page select { font: inherit; }
+.management-page button,
+.file-button {
+  min-height: 2.5rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: .55rem;
+  background: var(--color-surface, #fff);
+  color: inherit;
+  padding: .55rem .85rem;
+  cursor: pointer;
+}
+.management-page button:disabled,
+.file-button[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
+.link-button { border: 0 !important; background: transparent !important; color: #075985 !important; padding: 0 !important; text-align: start; text-decoration: underline; }
+.local-tabs { display: flex; flex-wrap: wrap; gap: .5rem; border-bottom: 1px solid var(--color-border, #dbe3ec); padding-bottom: .65rem; }
+.local-tabs [aria-current="page"] { border-color: #0369a1; background: #e0f2fe; color: #075985; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.workspace-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr); gap: 1rem; min-width: 0; }
+.three-pane { display: grid; grid-template-columns: minmax(19rem, 1.25fr) minmax(15rem, .8fr) minmax(20rem, 1fr); gap: 1rem; min-width: 0; }
+.detail-panel,
+.tree-panel,
+.safety-banner,
+.feature-unavailable {
+  min-width: 0;
+  border: 1px solid var(--color-border, #dbe3ec);
+  border-radius: .75rem;
+  background: var(--color-surface, #fff);
+  padding: 1rem;
+}
+.safety-banner,
+.feature-unavailable { border-inline-start: .3rem solid #d97706; background: #fffbeb; }
+.safe-note { color: #475569; }
+.action-stack { display: flex; flex-wrap: wrap; gap: .75rem; }
+.file-button { display: inline-flex; align-items: center; }
+.file-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.scene-frame { min-height: 18rem; border: 1px dashed #94a3b8; border-radius: .75rem; overflow: hidden; }
+.frame-graph { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .65rem; min-height: 12rem; }
+.frame-graph span:nth-child(odd) { border: 1px solid #7dd3fc; border-radius: 999px; background: #f0f9ff; padding: .5rem .75rem; }
+.precision-editor fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin-block: .75rem; }
+.precision-editor label { display: grid; gap: .25rem; }
+.precision-editor input,
+.detail-panel input,
+.detail-panel select { min-width: 0; border: 1px solid #cbd5e1; border-radius: .4rem; padding: .45rem; }
+.matrix-view,
+.schema-code { max-width: 100%; overflow: auto; border-radius: .5rem; background: #0f172a; color: #e2e8f0; padding: .8rem; line-height: 1.55; }
+.schema-code { max-height: 28rem; white-space: pre; }
+.capability-matrix label { display: grid; gap: .35rem; max-width: 28rem; }
+.matrix-scroll { overflow: auto; max-height: 60vh; margin-top: 1rem; }
+.matrix-scroll table { border-collapse: collapse; width: 100%; }
+.matrix-scroll th,
+.matrix-scroll td { border: 1px solid #dbe3ec; padding: .55rem; text-align: start; }
+.matrix-scroll thead { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+.matrix-scroll small { display: block; font-weight: normal; }
+[role="tree"] button { width: 100%; border: 0; border-radius: .25rem; background: transparent; text-align: start; }
+[role="treeitem"][aria-selected="true"] > button { background: #e0f2fe; }
+@media (max-width: 1100px) {
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .three-pane { grid-template-columns: minmax(16rem, 1fr) minmax(18rem, 1fr); }
+  .three-pane > :last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 800px) {
+  .workspace-grid,
+  .three-pane { grid-template-columns: minmax(0, 1fr); }
+  .three-pane > :last-child { grid-column: auto; }
+  .metric-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 430px) {
+  .management-page { gap: .85rem; }
+  .detail-panel,
+  .tree-panel { padding: .75rem; }
+  .precision-editor fieldset { grid-template-columns: minmax(0, 1fr); }
+  .local-tabs { overflow-x: auto; flex-wrap: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .management-page * { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}
+

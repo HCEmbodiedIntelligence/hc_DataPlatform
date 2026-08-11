@@ -1,0 +1,5 @@
+import type { RawObject } from '../../../entities/raw-object';
+
+export function UploadObjectsTable(props: { readonly objects: readonly RawObject[] }) {
+  return <div className="ingest-table-scroll"><table><caption>上传对象清单（服务端游标窗口）</caption><thead><tr><th scope="col">对象</th><th scope="col">大小</th><th scope="col">Multipart</th><th scope="col">Multipart ETag</th><th scope="col">内容 SHA-256</th><th scope="col">校验</th></tr></thead><tbody>{props.objects.map((object) => <tr key={object.id}><th scope="row"><span>{object.relativePath}</span><code>{object.id}</code></th><td>{object.sizeBytes} B</td><td>{typeof object.multipartStatus === 'string' ? object.multipartStatus : 'UNKNOWN'}<br />{object.completedParts}/{object.totalParts ?? '?'}</td><td><code>{object.multipartEtag ?? '—'}</code><small>仅为 Multipart 标识，不等价于内容摘要</small></td><td><code>{object.verifiedSha256 ?? object.declaredSha256 ?? '—'}</code><small>内容完整性 SHA-256</small></td><td>{typeof object.verificationStatus === 'string' ? object.verificationStatus : 'UNKNOWN'}</td></tr>)}</tbody></table></div>;
+}

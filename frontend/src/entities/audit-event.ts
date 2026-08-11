@@ -1,0 +1,188 @@
+import type { Scope } from './scope';
+
+export const CANONICAL_AUDIT_EVENTS = [
+  "access.change.rejected",
+  "access.invitation.accepted",
+  "access.invitation.created",
+  "access.invitation.resent",
+  "access.invitation.revoked",
+  "access.membership.disabled",
+  "access.membership.enabled",
+  "access.membership.role_changed",
+  "access.scope_grant.added",
+  "access.scope_grant.revoked",
+  "annotation.draft.saved",
+  "annotation.set.submitted",
+  "annotation.set.superseded",
+  "annotation.submit.preflighted",
+  "annotation.task.assigned",
+  "annotation.task.claimed",
+  "annotation.task.created",
+  "annotation.task.rebased",
+  "annotation.task.started",
+  "audit.event.correction_recorded",
+  "audit.export.completed",
+  "audit.export.downloaded",
+  "audit.export.requested",
+  "audit.retention.purge_completed",
+  "calibration.availability.changed",
+  "calibration.draft.created",
+  "calibration.draft.updated",
+  "calibration.import.completed",
+  "calibration.import.requested",
+  "calibration.report_download.completed",
+  "calibration.report_download.requested",
+  "calibration.set.updated",
+  "calibration.source_download.completed",
+  "calibration.source_download.requested",
+  "calibration.validation.cancelled",
+  "calibration.validation.completed",
+  "calibration.validation.requested",
+  "calibration.version.publish_preflighted",
+  "calibration.version.published",
+  "calibration.warning.confirmed",
+  "cleaning.draft.archived",
+  "cleaning.draft.created",
+  "cleaning.draft.successor_created",
+  "cleaning.draft.updated",
+  "cleaning.preview.completed",
+  "cleaning.preview.requested",
+  "cleaning.submit.completed",
+  "cleaning.submit.requested",
+  "data_schema.compatibility.checked",
+  "data_schema.compatibility.requested",
+  "data_schema.draft.created",
+  "data_schema.draft.updated",
+  "data_schema.import.committed",
+  "data_schema.import.validated",
+  "data_schema.validation.completed",
+  "data_schema.validation.requested",
+  "data_schema.version.publish_preflighted",
+  "data_schema.version.published",
+  "dataset.created",
+  "dataset.deletion.completed",
+  "dataset.deletion.requested",
+  "dataset.updated",
+  "dataset_version.deletion.completed",
+  "dataset_version.deletion.requested",
+  "dataset_version.manifest.viewed",
+  "dataset_version.manifest_download.completed",
+  "dataset_version.manifest_download.requested",
+  "dataset_version.published",
+  "dataset_version.raw.registered",
+  "dataset_version.raw_download.completed",
+  "dataset_version.raw_download.requested",
+  "dataset_version.review.approved",
+  "dataset_version.review.returned",
+  "episode.viewed",
+  "export.job.cancelled",
+  "export.job.completed",
+  "export.job.created",
+  "export.result.downloaded",
+  "ingest.source.created",
+  "ingest.source.credential_rotated",
+  "ingest.source.disabled",
+  "ingest.source.enabled",
+  "ingest.source.updated",
+  "ingest.source_connection_test.completed",
+  "ingest.source_connection_test.requested",
+  "manual_issue.assigned",
+  "manual_issue.created",
+  "manual_issue.dismissed",
+  "manual_issue.export.created",
+  "manual_issue.reopened",
+  "manual_issue.resolved",
+  "manual_issue.triaged",
+  "robot.created",
+  "robot.disabled",
+  "robot.updated",
+  "robot_component.created",
+  "robot_component.disabled",
+  "robot_component.mount.changed",
+  "robot_component.mount.preflighted",
+  "robot_component.updated",
+  "robot_model.asset_manifest_download.completed",
+  "robot_model.asset_manifest_download.requested",
+  "robot_model.asset_upload.authorized",
+  "robot_model.asset_upload.cancelled",
+  "robot_model.asset_upload.completed",
+  "robot_model.asset_upload.created",
+  "robot_model.binding.changed",
+  "robot_model.binding.preflighted",
+  "robot_model.draft.created",
+  "robot_model.draft.updated",
+  "robot_model.mapping.updated",
+  "robot_model.validation.completed",
+  "robot_model.validation.requested",
+  "robot_model.validation_report_download.completed",
+  "robot_model.validation_report_download.requested",
+  "robot_model.version.disabled",
+  "robot_model.version.publish_preflighted",
+  "robot_model.version.published",
+  "storage.inventory_refresh.completed",
+  "storage.inventory_refresh.requested",
+  "storage.lifecycle_execution.completed",
+  "storage.lifecycle_policy.created",
+  "storage.lifecycle_policy.enabled",
+  "storage.lifecycle_policy.paused",
+  "storage.lifecycle_policy.updated",
+  "storage.lifecycle_simulation.created",
+  "storage.multipart_abort.requested",
+  "storage.object.viewed",
+  "storage.object_delete.requested",
+  "storage.restore.requested",
+  "upload.manifest.submitted",
+  "upload.session.available",
+  "upload.session.cancel_requested",
+  "upload.session.cancelled",
+  "upload.session.created",
+  "upload.session.paused",
+  "upload.session.quarantined",
+  "upload.session.replacement_created",
+  "upload.session.resumed",
+  "upload.transfer.retry_requested",
+  "upload.verification.completed",
+  "upload.verification.retry_requested"
+] as const;
+
+export type AuditEventName = (typeof CANONICAL_AUDIT_EVENTS)[number];
+
+const eventSet: ReadonlySet<string> = new Set(CANONICAL_AUDIT_EVENTS);
+
+export function isAuditEventName(value: unknown): value is AuditEventName {
+  return typeof value === 'string' && eventSet.has(value);
+}
+
+export interface AuditActor {
+  actorId: string;
+  displayName: string;
+  actorType: 'USER' | 'SERVICE' | 'SYSTEM';
+}
+
+export interface AuditOutcome {
+  status: 'SUCCEEDED' | 'FAILED' | 'REJECTED' | 'PARTIAL' | 'REQUESTED';
+  code?: string;
+}
+
+export interface AuditResourceRef {
+  type: string;
+  id: string;
+}
+
+export interface AuditEvent {
+  eventId: string;
+  eventName: AuditEventName;
+  actor: AuditActor;
+  scope: Scope;
+  resource: AuditResourceRef;
+  outcome: AuditOutcome;
+  requestId: string;
+  occurredAt: string;
+  catalogVersion: string;
+  schemaVersion: string;
+  policyVersion: string;
+  retainUntil: string;
+  parentEventId?: string;
+  jobId?: string;
+}
+

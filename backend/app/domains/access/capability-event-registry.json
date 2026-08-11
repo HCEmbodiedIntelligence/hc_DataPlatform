@@ -1,0 +1,2232 @@
+{
+ "artifact": "capability-event-registry.json",
+ "generated_at": "2026-08-10",
+ "generated_by": "backend/99-integration/normalize-merged-openapi.py",
+ "status": "conditional; T6-decision-required",
+ "authority": {
+  "capability_catalog": "backend/06-access-audit/access-audit-schemas.json#/$defs/CapabilityKey",
+  "reserved_denylist": "#/$defs/ReservedCapabilityKey",
+  "audit_catalog": "#/$defs/CanonicalAuditEventName"
+ },
+ "capability_totals": {
+  "canonical": 76,
+  "reserved_denylist": 18,
+  "developer": 34,
+  "data_processor": 19,
+  "distinct_capabilities_used_by_operations": 64,
+  "reserved_used_by_operations": 0,
+  "uncatalogued_used_by_operations": 0
+ },
+ "audit_totals": {
+  "canonical_events": 142,
+  "distinct_canonical": 142,
+  "events_declared_on_operations": 108,
+  "declared_not_in_canonical": 0
+ },
+ "capabilities": [
+  {
+   "capability": "access.download_approval.manage",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "access.manage",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 6,
+   "operations": [
+    "commitAccessChange",
+    "createInvitation",
+    "preflightAccessChange",
+    "preflightInvitation",
+    "resendInvitation",
+    "revokeInvitation"
+   ]
+  },
+  {
+   "capability": "access.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 10,
+   "operations": [
+    "getAccessBootstrap",
+    "getCapabilityCatalog",
+    "getInvitation",
+    "getMemberEffectiveAccess",
+    "getProjectMember",
+    "listAccessGrants",
+    "listInvitations",
+    "listProjectMembers",
+    "listProjectRoles",
+    "listRoleAssignments"
+   ]
+  },
+  {
+   "capability": "access.role.customize",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "annotation.edit",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "annotation.read",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "annotation.review",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "annotation.save",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "annotation.submit",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 2,
+   "operations": [
+    "preflightAnnotationSubmit",
+    "submitAnnotationTask"
+   ]
+  },
+  {
+   "capability": "annotation_draft.edit",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "saveAnnotationDraft"
+   ]
+  },
+  {
+   "capability": "annotation_set.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 2,
+   "operations": [
+    "getAnnotationSet",
+    "listRevisionAnnotationSets"
+   ]
+  },
+  {
+   "capability": "annotation_task.assign",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "assignAnnotationTask"
+   ]
+  },
+  {
+   "capability": "annotation_task.claim",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "claimAnnotationTask"
+   ]
+  },
+  {
+   "capability": "annotation_task.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createAnnotationTask"
+   ]
+  },
+  {
+   "capability": "annotation_task.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 3,
+   "operations": [
+    "getAnnotationTask",
+    "listAnnotationTaskManualIssues",
+    "listAnnotationTasks"
+   ]
+  },
+  {
+   "capability": "annotation_task.rebase",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "rebaseAnnotationTask"
+   ]
+  },
+  {
+   "capability": "audit.export",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 4,
+   "operations": [
+    "authorizeAuditExportDownload",
+    "createAuditExport",
+    "getAuditExport",
+    "preflightAuditExport"
+   ]
+  },
+  {
+   "capability": "audit.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 6,
+   "operations": [
+    "getAuditBootstrap",
+    "getAuditEvent",
+    "getAuditFacets",
+    "getAuditRetentionPolicy",
+    "listAuditEvents",
+    "listRelatedAuditEvents"
+   ]
+  },
+  {
+   "capability": "calibration.availability.manage",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "calibration.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 5,
+   "operations": [
+    "calibrationCreateSet",
+    "calibrationCreateVersion",
+    "calibrationStartImport",
+    "calibrationUpdateSet",
+    "calibrationUpdateVersion"
+   ]
+  },
+  {
+   "capability": "calibration.publish",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "calibrationPreflightPublish",
+    "calibrationPublishVersion"
+   ]
+  },
+  {
+   "capability": "calibration.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 13,
+   "operations": [
+    "calibrationGetAvailability",
+    "calibrationGetJob",
+    "calibrationGetPreviewContext",
+    "calibrationGetReport",
+    "calibrationGetSet",
+    "calibrationGetVersion",
+    "calibrationListJobs",
+    "calibrationListReports",
+    "calibrationListSets",
+    "calibrationListSourceArtifacts",
+    "calibrationListVersions",
+    "listComponentFrames",
+    "resolveP15CalibrationRoute"
+   ]
+  },
+  {
+   "capability": "calibration.report.download",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "calibration.source.download",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "calibration.validate",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "calibrationValidateVersion"
+   ]
+  },
+  {
+   "capability": "cleaning.archive",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "cleaning.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "createCleaningDraftFromManualIssue"
+   ]
+  },
+  {
+   "capability": "cleaning.edit",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 4,
+   "operations": [
+    "acquireCleaningEditLease",
+    "releaseCleaningEditLease",
+    "renewCleaningEditLease",
+    "saveCleaningEdl"
+   ]
+  },
+  {
+   "capability": "cleaning.preview",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "createCleaningPreview"
+   ]
+  },
+  {
+   "capability": "cleaning.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 8,
+   "operations": [
+    "getCleaningCommit",
+    "getCleaningDraftBootstrap",
+    "getCleaningDraftSummary",
+    "getCleaningDraftSummaryById",
+    "getCleaningPreview",
+    "listCleaningDraftEvents",
+    "listCleaningDrafts",
+    "listJobsByResources"
+   ]
+  },
+  {
+   "capability": "cleaning.submit",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "commitCleaningDraft"
+   ]
+  },
+  {
+   "capability": "dashboard.read",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "data_schema.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 3,
+   "operations": [
+    "dataSchemaCreateNextVersion",
+    "dataSchemaCreateSchema",
+    "dataSchemaUpdateVersion"
+   ]
+  },
+  {
+   "capability": "data_schema.deprecate",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "data_schema.import",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "dataSchemaCommitImport",
+    "dataSchemaValidateImport"
+   ]
+  },
+  {
+   "capability": "data_schema.publish",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "dataSchemaPreflightPublish",
+    "dataSchemaPublishVersion"
+   ]
+  },
+  {
+   "capability": "data_schema.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 9,
+   "operations": [
+    "dataSchemaGetCompatibilityCheck",
+    "dataSchemaGetSchema",
+    "dataSchemaGetVersion",
+    "dataSchemaListReferences",
+    "dataSchemaListSchemas",
+    "dataSchemaListVersions",
+    "getDatasetVersionSchemaSummary",
+    "listComponentChannels",
+    "resolveP15DataSchemaRoute"
+   ]
+  },
+  {
+   "capability": "data_schema.validate",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "dataSchemaCreateCompatibilityCheck",
+    "dataSchemaValidateVersion"
+   ]
+  },
+  {
+   "capability": "dataset.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createDataset"
+   ]
+  },
+  {
+   "capability": "dataset.delete",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "dataset.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 7,
+   "operations": [
+    "createDatasetManifestListExport",
+    "getDatasetBootstrap",
+    "getDatasetFacets",
+    "getDatasetsPageCapabilities",
+    "listDatasets",
+    "preflightDatasetDeletion",
+    "summarizeDatasets"
+   ]
+  },
+  {
+   "capability": "dataset.update",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "dataset_version.delete",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "dataset_version.download_manifest",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "authorizeManifestDownload"
+   ]
+  },
+  {
+   "capability": "dataset_version.download_raw",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "dataset_version.publish",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createManifestJob"
+   ]
+  },
+  {
+   "capability": "dataset_version.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 13,
+   "operations": [
+    "createVersionDiffJob",
+    "getCleaningReviewFindings",
+    "getVersionBootstrap",
+    "getVersionDiff",
+    "getVersionManifest",
+    "getVersionReviewDecision",
+    "getVersionRevision",
+    "getVersionSchema",
+    "listDatasetVersionSourceProvenance",
+    "listDatasetVersions",
+    "listOperationalInventory",
+    "listRequiredStorage",
+    "preflightVersionDeletion"
+   ]
+  },
+  {
+   "capability": "dataset_version.review",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 3,
+   "operations": [
+    "approveVersionReview",
+    "returnVersionReview",
+    "runVersionReviewChecks"
+   ]
+  },
+  {
+   "capability": "episode.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 7,
+   "operations": [
+    "authorizeManualIssuePreview",
+    "authorizeMediaDescriptor",
+    "calibrationListBindingUsages",
+    "getStreamWindow",
+    "getViewerBootstrap",
+    "listVersionEpisodes",
+    "listViewerEpisodes"
+   ]
+  },
+  {
+   "capability": "export.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "export.download",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "export.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "ingest.import",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "ingest_source.manage",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 6,
+   "operations": [
+    "createDataSource",
+    "disableDataSource",
+    "enableDataSource",
+    "rotateDataSourceCredential",
+    "testDataSourceConnection",
+    "updateDataSource"
+   ]
+  },
+  {
+   "capability": "ingest_source.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 3,
+   "operations": [
+    "getDataSource",
+    "getDataSourcesPage",
+    "listDataSources"
+   ]
+  },
+  {
+   "capability": "manual_issue.assign",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "manual_issue.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "createManualIssue"
+   ]
+  },
+  {
+   "capability": "manual_issue.dismiss",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "manual_issue.export",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "manual_issue.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 4,
+   "operations": [
+    "authorizeManualIssuePreview",
+    "getManualIssue",
+    "getManualIssuesPage",
+    "listManualIssues"
+   ]
+  },
+  {
+   "capability": "manual_issue.reopen",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "manual_issue.resolve",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 1,
+   "operations": [
+    "resolveManualIssue"
+   ]
+  },
+  {
+   "capability": "manual_issue.triage",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": true,
+   "operation_count": 2,
+   "operations": [
+    "createCleaningDraftFromManualIssue",
+    "triageManualIssue"
+   ]
+  },
+  {
+   "capability": "robot.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createRobot"
+   ]
+  },
+  {
+   "capability": "robot.disable",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "robot.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 6,
+   "operations": [
+    "calibrationGetPreviewContext",
+    "getComponent",
+    "getRobotBootstrap",
+    "listComponentBindings",
+    "listRobotComponents",
+    "listRobots"
+   ]
+  },
+  {
+   "capability": "robot.update",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "updateRobot"
+   ]
+  },
+  {
+   "capability": "robot_component.change_mount",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "createComponentMountChange",
+    "preflightComponentMountChange"
+   ]
+  },
+  {
+   "capability": "robot_component.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "createComponent",
+    "preflightCreateComponent"
+   ]
+  },
+  {
+   "capability": "robot_component.disable",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "robot_component.update",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "updateComponent"
+   ]
+  },
+  {
+   "capability": "robot_model.asset.download",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "robot_model.create",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 9,
+   "operations": [
+    "authorizeRobotAssetUploadSession",
+    "cancelRobotAssetUpload",
+    "completeRobotAssetUpload",
+    "createRobotAssetUploadSession",
+    "createRobotModel",
+    "createRobotModelVersion",
+    "getRobotAssetUploadSession",
+    "updateRobotJointMappings",
+    "updateRobotModelConfiguration"
+   ]
+  },
+  {
+   "capability": "robot_model.disable",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "disableRobotModelVersion",
+    "preflightRobotModelDisable"
+   ]
+  },
+  {
+   "capability": "robot_model.publish",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "preflightRobotModelPublish",
+    "publishRobotModelVersion"
+   ]
+  },
+  {
+   "capability": "robot_model.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 10,
+   "operations": [
+    "getRobotAssetManifest",
+    "getRobotJointMappings",
+    "getRobotModel",
+    "getRobotModelConfiguration",
+    "getRobotModelValidation",
+    "getRobotModelVersion",
+    "getRobotModelViewerManifest",
+    "listRobotModelValidations",
+    "listRobotModelVersions",
+    "listRobotModels"
+   ]
+  },
+  {
+   "capability": "robot_model.validate",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createRobotModelValidation"
+   ]
+  },
+  {
+   "capability": "robot_model.validation_report.download",
+   "classification": "reserved-denylist",
+   "in_admin_full_set": false,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "robot_model_binding.manage",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "createRobotModelBindings",
+    "preflightRobotModelBindings"
+   ]
+  },
+  {
+   "capability": "robot_model_binding.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "listRobotModelBindings"
+   ]
+  },
+  {
+   "capability": "storage.cost.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "getStorageCostBreakdown"
+   ]
+  },
+  {
+   "capability": "storage.inventory.refresh",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createStorageInventoryJob"
+   ]
+  },
+  {
+   "capability": "storage.lifecycle.execute",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "storage.lifecycle.manage",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 4,
+   "operations": [
+    "createLifecyclePolicy",
+    "enableLifecyclePolicy",
+    "pauseLifecyclePolicy",
+    "updateLifecyclePolicy"
+   ]
+  },
+  {
+   "capability": "storage.lifecycle.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 6,
+   "operations": [
+    "getLifecycleExecution",
+    "getLifecyclePage",
+    "getLifecyclePolicy",
+    "getLifecycleSimulation",
+    "listLifecycleExecutions",
+    "listLifecyclePolicies"
+   ]
+  },
+  {
+   "capability": "storage.lifecycle.simulate",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "createLifecycleSimulation"
+   ]
+  },
+  {
+   "capability": "storage.multipart.abort",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "abortMultipart",
+    "planMultipartAbort"
+   ]
+  },
+  {
+   "capability": "storage.multipart.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "listMultipartLifecycle"
+   ]
+  },
+  {
+   "capability": "storage.object.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 3,
+   "operations": [
+    "getStorageObject",
+    "listStorageMultipart",
+    "listStorageObjects"
+   ]
+  },
+  {
+   "capability": "storage.overview.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 2,
+   "operations": [
+    "getDatasetVersionCapacityFacts",
+    "getStorageOverview"
+   ]
+  },
+  {
+   "capability": "storage.restore.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 1,
+   "operations": [
+    "listRestoreTasks"
+   ]
+  },
+  {
+   "capability": "storage.restore.request",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": false,
+   "in_data_processor_19": false,
+   "operation_count": 0,
+   "operations": []
+  },
+  {
+   "capability": "upload.manage",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 10,
+   "operations": [
+    "cancelUploadSession",
+    "createReplacementUpload",
+    "createUploadSession",
+    "getUploadCreationOptions",
+    "pauseUploadSession",
+    "renewUploadAuthorization",
+    "resumeUploadSession",
+    "retryUploadParts",
+    "retryUploadVerification",
+    "submitUploadManifest"
+   ]
+  },
+  {
+   "capability": "upload.read",
+   "classification": "canonical",
+   "in_admin_full_set": true,
+   "in_developer_34": true,
+   "in_data_processor_19": false,
+   "operation_count": 10,
+   "operations": [
+    "getSourceUploadManifest",
+    "getUploadSessionBootstrap",
+    "listSourceManifestNodes",
+    "listUploadEvents",
+    "listUploadObjects",
+    "listUploadParts",
+    "listUploadSessions",
+    "listVerificationFindings",
+    "listVerificationRuns",
+    "summarizeUploadSessions"
+   ]
+  }
+ ],
+ "audit_events": [
+  {
+   "event": "access.change.rejected",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.invitation.accepted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "access.invitation.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.invitation.resent",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.invitation.revoked",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.membership.disabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.membership.enabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.membership.role_changed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.scope_grant.added",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "access.scope_grant.revoked",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "annotation.draft.saved",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.set.submitted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.set.superseded",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.submit.preflighted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.task.assigned",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.task.claimed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.task.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.task.rebased",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "annotation.task.started",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "09-data-annotation"
+   ]
+  },
+  {
+   "event": "audit.event.correction_recorded",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "audit.export.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "audit.export.downloaded",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "audit.export.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "06-access-audit"
+   ]
+  },
+  {
+   "event": "audit.retention.purge_completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.availability.changed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.draft.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.draft.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.import.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.import.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.report_download.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.report_download.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.set.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.source_download.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.source_download.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.validation.cancelled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "calibration.validation.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.validation.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.version.publish_preflighted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.version.published",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "calibration.warning.confirmed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "cleaning.draft.archived",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "cleaning.draft.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "cleaning.draft.successor_created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "cleaning.draft.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "cleaning.preview.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "cleaning.preview.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "cleaning.submit.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "cleaning.submit.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "data_schema.compatibility.checked",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.compatibility.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.draft.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.draft.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.import.committed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.import.validated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.validation.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.validation.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.version.publish_preflighted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "data_schema.version.published",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "dataset.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset.deletion.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset.deletion.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.deletion.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.deletion.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.manifest.viewed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.manifest_download.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.manifest_download.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.published",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.raw.registered",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.raw_download.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.raw_download.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.review.approved",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "dataset_version.review.returned",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "episode.viewed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "export.job.cancelled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "export.job.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "export.job.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "export.result.downloaded",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "02-dataset-version-review"
+   ]
+  },
+  {
+   "event": "ingest.source.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "ingest.source.credential_rotated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "ingest.source.disabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "ingest.source.enabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "ingest.source.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "ingest.source_connection_test.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "ingest.source_connection_test.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "manual_issue.assigned",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "manual_issue.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "manual_issue.dismissed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "manual_issue.export.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "manual_issue.reopened",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "manual_issue.resolved",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "manual_issue.triaged",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "03-manual-cleaning"
+   ]
+  },
+  {
+   "event": "robot.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot.disabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "robot.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_component.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_component.disabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "robot_component.mount.changed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_component.mount.preflighted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_component.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.asset_manifest_download.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "robot_model.asset_manifest_download.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "robot_model.asset_upload.authorized",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.asset_upload.cancelled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.asset_upload.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.asset_upload.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.binding.changed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.binding.preflighted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.draft.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.draft.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.mapping.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.validation.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.validation.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.validation_report_download.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "robot_model.validation_report_download.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "robot_model.version.disabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.version.publish_preflighted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "robot_model.version.published",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "05-robotics-calibration-schema"
+   ]
+  },
+  {
+   "event": "storage.inventory_refresh.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.inventory_refresh.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.lifecycle_execution.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.lifecycle_policy.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.lifecycle_policy.enabled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.lifecycle_policy.paused",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.lifecycle_policy.updated",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.lifecycle_simulation.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.multipart_abort.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.object.viewed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.object_delete.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "storage.restore.requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": []
+  },
+  {
+   "event": "upload.manifest.submitted",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.available",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.cancel_requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.cancelled",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.paused",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.quarantined",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.replacement_created",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.session.resumed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.transfer.retry_requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.verification.completed",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  },
+  {
+   "event": "upload.verification.retry_requested",
+   "classification": "canonical",
+   "in_canonical_142": true,
+   "declared_by_domains": [
+    "01-ingest"
+   ]
+  }
+ ]
+}
