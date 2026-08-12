@@ -99,7 +99,7 @@ export function useDataSchemas(filters: Readonly<Record<string, string>> = {}) {
     queryKey: makeQueryKey('data-schemas', 'list', filters), enabled: Boolean(organizationId), staleTime: 30_000,
     queryFn: async ({ signal }) => {
       const raw = await request<unknown>({ method: 'GET', path: `/organizations/${encodeURIComponent(organizationId ?? '')}/stream-schemas`, query: filters, signal });
-      const page = parseWire(dataSchemasPageWireSchema, raw, { endpoint: 'dataSchemaListSchemas' });
+      const page = parseWire(dataSchemasPageWireSchema, raw, { endpoint: 'dataSchemaListStreamSchemas' });
       return { items: page.items.map(adaptDataSchemaVersion), pageInfo: page.page_info, snapshotAt: page.snapshot_at };
     },
   });

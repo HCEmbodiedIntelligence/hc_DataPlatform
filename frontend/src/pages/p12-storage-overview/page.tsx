@@ -71,15 +71,6 @@ export function StorageOverviewPage() {
     }
   }, [parsedSearch, scopeKey, setParams]);
 
-  useEffect(() => {
-    if (!search.objectId) return undefined;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setQuery(setParams, search, { objectId: undefined });
-    };
-    globalThis.addEventListener('keydown', closeOnEscape);
-    return () => globalThis.removeEventListener('keydown', closeOnEscape);
-  }, [search, setParams]);
-
   if (capabilities.loading) return <StorageRegionState status="first-loading" label="存储权限加载" />;
   if (!canRead) return <StorageRegionState status="forbidden" label="存储页面权限" />;
   if (!scope) return <StorageRegionState status="feature-unavailable" label="存储作用域" />;
@@ -142,8 +133,8 @@ export function StorageOverviewPage() {
       ) : null}
 
       {search.tab === 'objects' && search.objectId ? (
-        <aside role="dialog" aria-modal="true" aria-labelledby="storage-object-title" style={{ position: 'fixed', inset: '0 0 0 auto', width: 'min(420px,100vw)', overflow: 'auto', padding: 20, background: '#fff', borderLeft: '1px solid #d7e2e0', zIndex: 10 }}>
-          <button type="button" aria-label="关闭对象详情" onClick={() => setQuery(setParams, search, { objectId: undefined })}>关闭</button>
+        <aside role="dialog" aria-modal="true" aria-labelledby="storage-object-title" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setQuery(setParams, search, { objectId: undefined }); } }} style={{ position: 'fixed', inset: '0 0 0 auto', width: 'min(420px,100vw)', overflow: 'auto', padding: 20, background: '#fff', borderLeft: '1px solid #d7e2e0', zIndex: 10 }}>
+          <button type="button" aria-label="关闭对象详情" autoFocus onClick={() => setQuery(setParams, search, { objectId: undefined })}>关闭</button>
           <h2 id="storage-object-title">对象详情</h2>
           <StorageRegionState status={objectDetail.error ? statusFromError(objectDetail.error) : objectDetail.isPending ? 'first-loading' : 'ready'} label="对象详情状态" requestId={isDomainError(objectDetail.error) ? objectDetail.error.requestId : null} onRetry={() => void objectDetail.refetch()}>
             {objectDetail.data ? <dl><dt>对象</dt><dd>{objectDetail.data.displayKey}</dd><dt>快照</dt><dd>{objectDetail.data.snapshotId}</dd><dt>角色</dt><dd>{objectDetail.data.objectRole}</dd><dt>物理量</dt><dd>{formatByteString(objectDetail.data.physicalBytes)}</dd><dt>保护原因</dt><dd>{objectDetail.data.protectionReasons.join('、') || '无'}</dd></dl> : null}

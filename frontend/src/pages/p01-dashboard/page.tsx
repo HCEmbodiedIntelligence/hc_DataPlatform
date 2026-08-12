@@ -71,13 +71,14 @@ export function DashboardPage() {
   const scopeChanged = previousScopeKey.current !== scopeKey;
   const mockDashboardReadEnabled = import.meta.env.VITE_MOCK_MODE === 'browser';
   const routeAllowed = !capabilities.loading && !capabilities.failed && (capabilities.has('dashboard.read') || mockDashboardReadEnabled);
+  const dashboardReadEnabled = mockDashboardReadEnabled && routeAllowed;
   const window = useMemo(() => rangeWindow(search.range, search.from, search.to, anchor), [search.range, search.from, search.to, anchor]);
-  const activity = useDashboardActivity(scope, window, routeAllowed);
-  const snapshot = useDashboardSnapshot(scope, routeAllowed);
-  const pending = useDashboardPending(scope, routeAllowed);
-  const coverage = useDashboardCoverage(scope, routeAllowed);
+  const activity = useDashboardActivity(scope, window, dashboardReadEnabled);
+  const snapshot = useDashboardSnapshot(scope, dashboardReadEnabled);
+  const pending = useDashboardPending(scope, dashboardReadEnabled);
+  const coverage = useDashboardCoverage(scope, dashboardReadEnabled);
   const pendingPageInput = useMemo(() => ({ limit: 50 as const, ...pendingCursor }), [pendingCursor]);
-  const pendingPage = useDashboardPendingPage(scope, pendingPageInput, routeAllowed && pendingOpen && !scopeChanged);
+  const pendingPage = useDashboardPendingPage(scope, pendingPageInput, dashboardReadEnabled && pendingOpen && !scopeChanged);
 
   useEffect(() => {
     if (previousScopeKey.current === scopeKey) return;
@@ -94,6 +95,27 @@ export function DashboardPage() {
     globalThis.addEventListener('keydown', closeOnEscape);
     return () => globalThis.removeEventListener('keydown', closeOnEscape);
   }, [pendingOpen]);
+
+  if (!mockDashboardReadEnabled) {
+    return (
+      <main style={{ padding: 24, background: '#f5f8f8', minHeight: '100%', color: '#18302d' }}>
+        <header>
+          <h1>数据工作台</h1>
+          <p>项目数据、质量、存储与待办的只读聚合视图</p>
+        </header>
+        <section
+          role="status"
+          aria-labelledby="dashboard-contract-unavailable-title"
+          data-dashboard-read-state="product-contract-undefined"
+          style={{ maxWidth: 760, border: '1px solid #d9e2e1', borderRadius: 8, padding: 20, background: '#fff' }}
+        >
+          <h2 id="dashboard-contract-unavailable-title">工作台聚合能力尚未开放</h2>
+          <p>活动、指标快照、覆盖率与待办聚合的产品合同尚未定义。</p>
+          <p>真实 API 模式下本页面不会请求这些接口，也不会展示模拟数据或占位指标。</p>
+        </section>
+      </main>
+    );
+  }
 
   if (capabilities.loading) return <DashboardRegionState status="first-loading" label="工作台权限加载" />;
   if (capabilities.failed || !routeAllowed) return <DashboardRegionState status="forbidden" label="工作台权限" />;

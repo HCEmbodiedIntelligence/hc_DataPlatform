@@ -117,3 +117,88 @@
 
 - 未修改 `/home/czy/plan` 下任何文件。
 - 未执行 `git add`、`git commit` 或 `git push`。
+
+---
+
+## 专家修复终端复验增补（2026-08-11 11:07:26 +0800）
+
+本节保留上方既有集成记录，并以当前工作区实跑结果更新最终证据。
+
+- 后端全仓现为 `61 passed`，Ruff 全仓通过；新增 Annotation、Cleaning、
+  Dataset 三域 68 个公开 operation 的完整 happy path、失败矩阵和 frozen set
+  测试，以及 SQLite migration、ID prefix、role ceiling 与 tag 分布回归。
+- 空 SQLite 数据库已经真实完成 `upgrade heads -> merge_0001 -> downgrade base`；
+  Access、Robotics、Storage 均明确依赖 `foundation_0001`，Annotation/Cleaning 的
+  命名 schema 在 SQLite 映射为默认 schema。
+- 运行时 OpenAPI 仍为 256 / 256 unique，0 untagged；Dataset、Cleaning、
+  Annotation 分别为 29 / 27 / 12。
+- 补齐了三个运行时集成缺口：Dataset Review Return 注入 successor Draft 适配器；
+  Cleaning 注入 scope-safe DatasetVersion 适配器；所有 `new_id` 字面量 prefix 已登记。
+- 前端 TypeScript、114 个 Vitest、ESLint、Vite build 和 Chromium 38 个 E2E 均通过。
+- Playwright Mobile/WebKit 仍为环境阻塞：宿主缺少 WebKitGTK/GTK4/GStreamer 等
+  动态库，38 个 Mobile case 均在浏览器启动前失败，不属于业务断言失败，也未记录为通过。
+- Annotation Submit 的 ManualIssue 权威 gate 仍是上游条件依赖；生产实现按规格
+  fail-closed，不在本地根据 severity 猜测 policy。
+
+完整逐项状态、改动文件、命令和阻塞原因见 `docs/INTEGRATION-ISSUES.md` 的
+“专家修复终端处理记录”。未修改 `/home/czy/plan`，未执行提交或推送。
+
+### 监听增量修正（2026-08-11 11:17:19 +0800）
+
+台账复检新增的 fail-closed 测试进一步暴露了 HTTP 状态偏差：冻结 Annotation
+OpenAPI 为 `ISSUE_GATE_UNAVAILABLE` 声明 503，但代码与测试使用 500；Preflight
+也把权威门禁不可用包装成 200。现已增加共享 `ServiceUnavailableError`，Preflight
+和最终 Submit 均返回 retryable 503，且不可用 Preflight 不落 advisory 记录。全仓
+Ruff 通过，后端当前为 `62 passed`。
+
+### 幂等恢复增量修正（2026-08-11 11:28:13 +0800）
+
+NEW-8 的 503 复检发现共享幂等 claim 在 SQLite SAVEPOINT 下可能越过外层回滚。
+现已为 aiosqlite 配置显式外层事务，并在 `with_idempotency` 中实现 request hash
+校验、`FAILED_RETRYABLE`/过期 lease 接管和带 `Retry-After` 的真实并发 409。
+Annotation 回归证明同 key 的 503→依赖恢复可成功重试、并发请求收到 409 +
+`Retry-After`、最终 Submit 再次失去 gate 时仍为 503 且零业务写入。Ruff 全仓通过，
+后端当前为 `64 passed`。
+
+### 跨资源幂等身份增量修正（2026-08-11 11:40:59 +0800）
+
+NEW-8-R2 证明仅使用 actor/scope/operation/body 会让相同 key/body 在不同资源路径间
+错误重放。Annotation、Cleaning 与 Dataset 的集中写包装器现均把稳定路径资源身份
+加入幂等 scope；create operation 仍只使用客户端已知的请求身份，不把服务端新生成
+ID 错误加入首次身份。跨 Task、Draft、Version 三条 HTTP 回归通过，全仓 Ruff 通过，
+后端当前为 `67 passed`。
+
+### Router 直调幂等身份增量修正（2026-08-11 11:49:13 +0800）
+
+NEW-8-R3 发现 Cleaning/Dataset router 绕过集中 service method、直接调用 `_write()`
+的路径仍缺资源身份。现已补齐 Issue resolve、Draft lease、Export download、Version
+diff/manifest/download、Dataset/Version deletion 的稳定 path 身份，并增加 AST 门禁，
+锁定 23 个资源型集中写调用必须显式声明 `idempotency_resource_id`。Cleaning 跨
+Draft lease HTTP 回归通过，全仓 Ruff 通过，后端当前为 `68 passed`。
+
+### Mobile/WebKit 环境恢复与前端回归收口（2026-08-11 12:48:22 +0800）
+
+- 另一终端补齐 WebKitGTK/GTK4/libsoup 等宿主依赖后，原 ENV-1 已关闭；本终端使用
+  `/tmp` 独立输出目录复验，最终 Chromium + Mobile 全量为 `76 passed (1.1m)`。
+- 收紧 Dataset/Ingest 的共享 Job Mock 资源归属，P02 在稳定 polling 状态截图；修复
+  Dataset handler 误接管 Ingest Job 和四档截图跨越 SSE 重连计时器的问题。
+- P12 对象详情关闭按钮打开时立即聚焦，Escape 由 dialog 同步处理，消除 WebKit 下
+  effect listener 安装竞态；双浏览器并发重复三轮 `12 passed`。
+- P12/P19 合同失败提示在 12 workers 压力下允许 15 秒应用启动边界，仍保留严格
+  fail-closed 与敏感字段不泄漏断言；两页双浏览器重复三轮 `30 passed`。
+- WebKit 依赖带来的 CJK 字体修复使旧 Chromium P02/P03/P04 缺字基线失效。逐图确认
+  只有字体度量/换行差异后重建相关 Chromium 基线；新增 Mobile 基线均由最终全量
+  回归验证。
+- 前端类型检查与定向 ESLint 均通过。后端证据保持 Ruff 全仓通过、`68 passed`。
+  当前只剩 Annotation ManualIssue 权威 gate 的外部合同/policy/watermark 阻塞。
+
+### 独立复检命令勘误（2026-08-11 12:57:31 +0800）
+
+独立复检记录已确认 ENV-1 与 NEW-9～NEW-11 关闭，但其中三条定向命令把当前
+Playwright project `mobile` 写成了不存在的 `webkit`。字面命令已验证会 exit=1，
+`--project=mobile --list` 可正确列出测试；台账已追加勘误。此前使用现行 `mobile`
+project 实跑得到的 4/12/30 passed 及全量 76 passed 证据不变。
+
+独立复检随后已用勘误后的 `--project=chromium --project=mobile` 逐字重跑：P02
+`4 passed`、P12 重复三轮 `12 passed`、P12/P19 高并发重复三轮 `30 passed`；
+NEW-12 保持关闭，未发现新回归。

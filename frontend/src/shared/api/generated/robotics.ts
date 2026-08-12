@@ -247,6 +247,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organizations/{organizationId}/robot-model-versions/{versionId}/sample-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        /** List authorized fixed-revision sample candidates */
+        get: operations["listRobotModelSampleCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/robot-model-versions/{versionId}/sample-candidates/{candidateId}/joint-window": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                versionId: components["parameters"]["VersionId"];
+                candidateId: components["parameters"]["CandidateId"];
+            };
+            cookie?: never;
+        };
+        /** Get a bounded joint window for one authorized sample candidate */
+        get: operations["getRobotModelSampleWindow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/robot-model-versions/{versionId}/sample-validations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start validation for a fixed sample candidate and joint window */
+        post: operations["createRobotModelSampleValidation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/organizations/{organizationId}/robot-model-validation-reports/{reportId}": {
         parameters: {
             query?: never;
@@ -510,6 +571,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/regions/{regionCode}/robots/{robotId}/binding-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        /** List append-only robot model and component binding history */
+        get: operations["listRobotBindingHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/robots/{robotId}/model-version-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        /** List compatible published model versions for one robot */
+        get: operations["listRobotModelVersionCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/robots/{robotId}:preflight-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preflight robot disable impact without changing lifecycle */
+        post: operations["preflightDisableRobot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/robots/{robotId}:disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a robot after a matching preflight */
+        post: operations["disableRobot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/regions/{regionCode}/robots/{robotId}/components:preflight": {
         parameters: {
             query?: never;
@@ -551,6 +696,69 @@ export interface paths {
         head?: never;
         /** Update mutable component facts under topology revision and ETag */
         patch: operations["updateComponent"];
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/components/{componentId}/maintenance-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                componentId: components["parameters"]["ComponentId"];
+            };
+            cookie?: never;
+        };
+        /** List authorized maintenance records for one component */
+        get: operations["listComponentMaintenance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/components/{componentId}:preflight-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                componentId: components["parameters"]["ComponentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preflight component disable impact without changing lifecycle */
+        post: operations["preflightDisableComponent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/components/{componentId}:disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                componentId: components["parameters"]["ComponentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a component after a matching preflight */
+        post: operations["disableComponent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/projects/{projectId}/regions/{regionCode}/components/{componentId}/mount-changes:preflight": {
@@ -705,6 +913,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+            };
+            cookie?: never;
+        };
+        /** Get calibration filter facets and page actions */
+        get: operations["calibrationGetFacets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/regions/{regionCode}/calibration-sets": {
         parameters: {
             query?: never;
@@ -787,6 +1015,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/regions/{regionCode}/calibration-jobs/{jobId}:cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a cancellable calibration job under its ETag */
+        post: operations["calibrationCancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-jobs/{jobId}:retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a terminal calibration job as a new related job */
+        post: operations["calibrationRetryJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}": {
         parameters: {
             query?: never;
@@ -807,6 +1077,138 @@ export interface paths {
         head?: never;
         /** Update mutable set metadata; Ready versions remain immutable */
         patch: operations["calibrationUpdateSet"];
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}/{section}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+            };
+            cookie?: never;
+        };
+        /** List records in one fixed calibration section */
+        get: operations["calibrationListRecords"];
+        put?: never;
+        /** Create a Draft calibration record in one fixed section */
+        post: operations["calibrationCreateRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}/{section}/{recordId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+                recordId: components["parameters"]["RecordId"];
+            };
+            cookie?: never;
+        };
+        /** Get one discriminated calibration record */
+        get: operations["calibrationGetRecord"];
+        put?: never;
+        post?: never;
+        /** Delete one Draft calibration record under the set ETag */
+        delete: operations["calibrationDeleteRecord"];
+        options?: never;
+        head?: never;
+        /** Update one Draft calibration record under the set ETag */
+        patch: operations["calibrationUpdateRecord"];
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}/validation-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        /** List validation runs for an exact calibration set */
+        get: operations["calibrationListValidationRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}/validations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate the current Draft calibration set revision */
+        post: operations["calibrationValidateSet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}:publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish a validated Draft calibration set as immutable Ready content */
+        post: operations["calibrationPublishSet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}:clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone an exact calibration set into a new Draft */
+        post: operations["calibrationCloneSet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/projects/{projectId}/regions/{regionCode}/calibration-sets/{setId}/versions": {
@@ -915,6 +1317,27 @@ export interface paths {
         };
         /** List safe report projections with exact input/context hashes */
         get: operations["calibrationListReports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/regions/{regionCode}/calibration-validation-runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Get an exact calibration validation run and its issues */
+        get: operations["calibrationGetValidationRun"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1058,6 +1481,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organizations/{organizationId}/stream-schemas/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        /** Get StreamSchema filter facets, dictionaries and page actions */
+        get: operations["dataSchemaGetFacets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/organizations/{organizationId}/stream-schemas": {
         parameters: {
             query?: never;
@@ -1068,10 +1510,10 @@ export interface paths {
             cookie?: never;
         };
         /** List DataSchema logical roots and exact published version summaries */
-        get: operations["dataSchemaListSchemas"];
+        get: operations["dataSchemaListStreamSchemas"];
         put?: never;
         /** Create a server-versioned Draft DataSchema */
-        post: operations["dataSchemaCreateSchema"];
+        post: operations["dataSchemaCreateStreamSchema"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1089,7 +1531,28 @@ export interface paths {
             cookie?: never;
         };
         /** Get one DataSchema root without selecting a latest version */
-        get: operations["dataSchemaGetSchema"];
+        get: operations["dataSchemaGetStreamSchema"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update a Draft StreamSchema definition under its ETag */
+        patch: operations["dataSchemaUpdateStreamSchema"];
+        trace?: never;
+    };
+    "/organizations/{organizationId}/stream-schema-families/{familyId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        /** List immutable versions in one StreamSchema family */
+        get: operations["dataSchemaListFamilyVersions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1139,6 +1602,46 @@ export interface paths {
         head?: never;
         /** Update a Draft definition; Published versions are immutable */
         patch: operations["dataSchemaUpdateVersion"];
+        trace?: never;
+    };
+    "/organizations/{organizationId}/stream-schemas/{schemaId}:validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                schemaId: components["parameters"]["SchemaId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate the current Draft StreamSchema hash and ETag */
+        post: operations["dataSchemaValidateStreamSchema"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/stream-schemas/{schemaId}:publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                schemaId: components["parameters"]["SchemaId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish the validated Draft StreamSchema as immutable content */
+        post: operations["dataSchemaPublishStreamSchema"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/organizations/{organizationId}/stream-schemas/{schemaId}/versions/{schemaVersion}/validate": {
@@ -1217,6 +1720,85 @@ export interface paths {
         };
         /** List separately authorized component/channel/snapshot references */
         get: operations["dataSchemaListReferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/dataset-schema-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        /** List immutable DatasetSchemaSnapshot summaries */
+        get: operations["dataSchemaListSnapshots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/dataset-schema-snapshots/{snapshotId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                snapshotId: components["parameters"]["SnapshotId"];
+            };
+            cookie?: never;
+        };
+        /** Get one immutable DatasetSchemaSnapshot header and reference summary */
+        get: operations["dataSchemaGetSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/dataset-schema-snapshots/{snapshotId}/channel-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                snapshotId: components["parameters"]["SnapshotId"];
+            };
+            cookie?: never;
+        };
+        /** List ChannelDefinitions fixed by one DatasetSchemaSnapshot */
+        get: operations["dataSchemaListSnapshotChannels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{organizationId}/dataset-schema-snapshots/{snapshotId}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                snapshotId: components["parameters"]["SnapshotId"];
+            };
+            cookie?: never;
+        };
+        /** Get the authoritative paged diff for one DatasetSchemaSnapshot */
+        get: operations["dataSchemaGetSnapshotDiff"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1724,6 +2306,197 @@ export interface components {
             target_schema_id: string | null;
             change_summary: string;
         };
+        CreateRobotModelSampleValidationRequest: {
+            candidate_id: string;
+            start_ns: string;
+            end_ns: string;
+            max_points: number;
+            validation_input_hash: string;
+        };
+        CalibrationRecordWriteRequest: {
+            record: {
+                [key: string]: unknown;
+            };
+        };
+        CalibrationRecordPatchRequest: {
+            patch: {
+                [key: string]: unknown;
+            };
+        };
+        CalibrationSetValidationRequest: {
+            expected_revision: string;
+        };
+        CloneCalibrationSetRequest: {
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_to?: string | null;
+            robot_model_version_id?: string | null;
+            component_snapshot_id?: string | null;
+            reason: string;
+        };
+        CreateStreamSchemaRequest: {
+            family_id: string;
+            schema_name: string;
+            logical_type: string;
+            description?: string | null;
+            /** @enum {string} */
+            compatibility_mode: "STRICT" | "BACKWARD" | "FORWARD" | "FULL" | "MANUAL";
+            schema_definition: components["schemas"]["SchemaDefinition"];
+        };
+        UpdateStreamSchemaRequest: {
+            description?: string | null;
+            /** @enum {string} */
+            compatibility_mode?: "STRICT" | "BACKWARD" | "FORWARD" | "FULL" | "MANUAL";
+            schema_definition: components["schemas"]["SchemaDefinition"];
+            change_summary: string;
+        };
+        ValidateStreamSchemaRequest: {
+            expected_etag: components["schemas"]["ETag"];
+            target_hash: string;
+            rule_set_version?: string | null;
+        };
+        ActionList: components["schemas"]["V1AllowedAction"][];
+        RobotModelSampleCandidate: {
+            candidate_id: string;
+            /** @enum {string} */
+            source_type: "DATASET_VERSION" | "EPISODE" | "CAPTURE_SAMPLE";
+            revision_id: string;
+            start_ns: string;
+            end_ns: string;
+            joint_names?: string[];
+            control: components["schemas"]["ResourceControl"];
+        };
+        RobotModelSampleWindow: {
+            candidate_id: string;
+            start_ns: string;
+            end_ns: string;
+            timestamps_ns: string[];
+            joint_names: string[];
+            positions: number[][];
+            control: components["schemas"]["ResourceControl"];
+        };
+        RobotModelSampleValidationRun: {
+            run_id: string;
+            candidate_id: string;
+            /** @enum {string} */
+            status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+            validation_input_hash: string;
+            control: components["schemas"]["ResourceControl"];
+        };
+        ComponentMaintenanceRecord: {
+            record_id: string;
+            component_id: string;
+            maintenance_type: string;
+            /** Format: date-time */
+            occurred_at: string;
+            summary: string;
+            control: components["schemas"]["ResourceControl"];
+        };
+        RobotBindingHistoryRecord: {
+            binding_id: string;
+            /** @enum {string} */
+            binding_type: "ROBOT_MODEL" | "COMPONENT_RELATION";
+            target_id: string;
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_to: string | null;
+            control: components["schemas"]["ResourceControl"];
+        };
+        RobotModelVersionCandidate: {
+            robot_model_version_id: string;
+            /** @enum {string} */
+            compatibility: "COMPATIBLE" | "WARNING" | "INCOMPATIBLE" | "UNKNOWN";
+            /** @enum {string} */
+            status: "PUBLISHED" | "DISABLED";
+            reason_codes?: string[];
+            control: components["schemas"]["ResourceControl"];
+        };
+        CalibrationFacets: {
+            section_codes: ("intrinsics" | "transforms" | "time-calibrations" | "joint-calibrations")[];
+            snapshot_statuses: ("DRAFT" | "READY")[];
+            availability_states: string[];
+            allowed_actions: components["schemas"]["ActionList"];
+        };
+        CalibrationRecord: {
+            record_id: string;
+            set_id: string;
+            /** @enum {string} */
+            section: "intrinsics" | "transforms" | "time-calibrations" | "joint-calibrations";
+            revision: string;
+            record: {
+                [key: string]: unknown;
+            };
+            control: components["schemas"]["ResourceControl"];
+        };
+        CalibrationValidationRun: {
+            run_id: string;
+            set_id: string;
+            /** @enum {string} */
+            status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+            content_hash: string;
+            validation_context_hash: string;
+            issues: {
+                [key: string]: unknown;
+            }[];
+            control: components["schemas"]["ResourceControl"];
+        };
+        DataSchemaFacets: {
+            logical_types: string[];
+            compatibility_modes: ("STRICT" | "BACKWARD" | "FORWARD" | "FULL" | "MANUAL")[];
+            statuses: ("DRAFT" | "VALIDATING" | "PUBLISHED")[];
+            allowed_actions: components["schemas"]["ActionList"];
+        };
+        StreamSchema: {
+            id: string;
+            family_id: string;
+            parent_schema_id?: string | null;
+            schema_name: string;
+            schema_version: string;
+            logical_type: string;
+            /** @enum {string} */
+            status: "DRAFT" | "VALIDATING" | "PUBLISHED";
+            description?: string | null;
+            /** @enum {string} */
+            compatibility_mode?: "STRICT" | "BACKWARD" | "FORWARD" | "FULL" | "MANUAL";
+            schema_definition: components["schemas"]["SchemaDefinition"];
+            schema_hash?: string | null;
+            control: components["schemas"]["ResourceControl"];
+        };
+        DatasetSchemaSnapshot: {
+            snapshot_id: string;
+            dataset_id: string;
+            dataset_version_id?: string | null;
+            content_hash: string;
+            channel_count: string;
+            /** Format: date-time */
+            created_at: string;
+            control: components["schemas"]["ResourceControl"];
+        };
+        ChannelDefinition: {
+            channel_id: string;
+            canonical_path: string;
+            modality: string;
+            semantic_role?: string | null;
+            unit?: string | null;
+            schema_id: string;
+            schema_version: string;
+            control: components["schemas"]["ResourceControl"];
+        };
+        DatasetSchemaSnapshotDiff: {
+            change_id: string;
+            /** @enum {string} */
+            change_type: "ADDED" | "REMOVED" | "SCHEMA_CHANGED" | "PATH_CHANGED" | "UNIT_CHANGED" | "SEMANTIC_CHANGED";
+            path: string;
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+            control: components["schemas"]["ResourceControl"];
+        };
         EnvelopeBase: {
             scope: components["schemas"]["Scope"];
             request_id: string;
@@ -1744,6 +2517,36 @@ export interface components {
             /** Format: date-time */
             snapshot_at: string;
         };
+        RobotModelSampleCandidateCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["RobotModelSampleCandidate"][];
+        };
+        ComponentMaintenanceCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["ComponentMaintenanceRecord"][];
+        };
+        RobotBindingHistoryCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["RobotBindingHistoryRecord"][];
+        };
+        RobotModelVersionCandidateCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["RobotModelVersionCandidate"][];
+        };
+        CalibrationRecordCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["CalibrationRecord"][];
+        };
+        CalibrationValidationRunCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["CalibrationValidationRun"][];
+        };
+        StreamSchemaCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["StreamSchema"][];
+        };
+        DatasetSchemaSnapshotCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["DatasetSchemaSnapshot"][];
+        };
+        ChannelDefinitionCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["ChannelDefinition"][];
+        };
+        DatasetSchemaSnapshotDiffCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
+            items?: components["schemas"]["DatasetSchemaSnapshotDiff"][];
+        };
         SourceArtifactCursorEnvelope: components["schemas"]["CursorEnvelope"] & {
             items?: components["schemas"]["SourceArtifact"][];
         };
@@ -1753,8 +2556,46 @@ export interface components {
         AcceptedEnvelope: components["schemas"]["EnvelopeBase"] & {
             job: components["schemas"]["AsyncJob"];
         };
+        ActionableAcceptedEnvelope: components["schemas"]["EnvelopeBase"] & {
+            job: components["schemas"]["AsyncJob"];
+            allowed_actions: components["schemas"]["ActionList"];
+        };
+        RobotModelSampleValidationAcceptedEnvelope: components["schemas"]["EnvelopeBase"] & {
+            run: components["schemas"]["RobotModelSampleValidationRun"];
+            job: components["schemas"]["AsyncJob"];
+            allowed_actions: components["schemas"]["ActionList"];
+        };
         PreflightEnvelope: components["schemas"]["EnvelopeBase"] & {
             data: components["schemas"]["Preflight"];
+        };
+        ActionablePreflightEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["Preflight"];
+            allowed_actions: components["schemas"]["ActionList"];
+        };
+        RobotModelSampleWindowEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["RobotModelSampleWindow"];
+        };
+        CalibrationFacetsEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["CalibrationFacets"];
+        };
+        CalibrationRecordEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["CalibrationRecord"];
+        };
+        CalibrationValidationRunEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["CalibrationValidationRun"];
+        };
+        DataSchemaFacetsEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["DataSchemaFacets"];
+        };
+        StreamSchemaEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["StreamSchema"];
+        };
+        DatasetSchemaSnapshotEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["DatasetSchemaSnapshot"];
+        };
+        AsyncJobEnvelope: components["schemas"]["EnvelopeBase"] & {
+            data: components["schemas"]["AsyncJob"];
+            allowed_actions: components["schemas"]["ActionList"];
         };
         RobotModelEnvelope: components["schemas"]["EnvelopeBase"] & {
             data: components["schemas"]["RobotModel"];
@@ -2007,6 +2848,106 @@ export interface components {
                 "application/json": components["schemas"]["CursorEnvelope"];
             };
         };
+        /** @description Stable cursor page of authorized sample candidates */
+        RobotModelSampleCandidatePage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["RobotModelSampleCandidateCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of component maintenance history */
+        ComponentMaintenancePage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ComponentMaintenanceCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of robot relationship history */
+        RobotBindingHistoryPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["RobotBindingHistoryCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of compatible model version candidates */
+        RobotModelVersionCandidatePage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["RobotModelVersionCandidateCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of records in one calibration section */
+        CalibrationRecordPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationRecordCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of calibration validation runs */
+        CalibrationValidationRunPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationValidationRunCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of StreamSchema projections */
+        StreamSchemaPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["StreamSchemaCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of DatasetSchemaSnapshot projections */
+        DatasetSchemaSnapshotPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DatasetSchemaSnapshotCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of ChannelDefinition projections */
+        ChannelDefinitionPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ChannelDefinitionCursorEnvelope"];
+            };
+        };
+        /** @description Stable cursor page of authoritative snapshot differences */
+        DatasetSchemaSnapshotDiffPage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DatasetSchemaSnapshotDiffCursorEnvelope"];
+            };
+        };
         /** @description Stable cursor page of classified calibration source metadata */
         SourceArtifactPage: {
             headers: {
@@ -2036,6 +2977,159 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["PreflightEnvelope"];
+            };
+        };
+        /** @description Preflight impact, short-lived token and current allowed actions */
+        ActionablePreflightOK: {
+            headers: {
+                "Cache-Control": components["headers"]["NoStore"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ActionablePreflightEnvelope"];
+            };
+        };
+        /** @description Accepted asynchronous work with current allowed actions */
+        ActionableAccepted: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ActionableAcceptedEnvelope"];
+            };
+        };
+        /** @description Accepted sample validation run and pollable job */
+        RobotModelSampleValidationAccepted: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["RobotModelSampleValidationAcceptedEnvelope"];
+            };
+        };
+        /** @description Bounded sample joint window */
+        RobotModelSampleWindowOK: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["RobotModelSampleWindowEnvelope"];
+            };
+        };
+        /** @description Calibration facets and page actions */
+        CalibrationFacetsOK: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationFacetsEnvelope"];
+            };
+        };
+        /** @description Calibration record projection */
+        CalibrationRecordOK: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationRecordEnvelope"];
+            };
+        };
+        /** @description Created Draft calibration record */
+        CalibrationRecordCreated: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationRecordEnvelope"];
+            };
+        };
+        /** @description Exact calibration validation run projection */
+        CalibrationValidationRunOK: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationValidationRunEnvelope"];
+            };
+        };
+        /** @description Created Draft CalibrationSet */
+        CalibrationSetCreated: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["CalibrationSetEnvelope"];
+            };
+        };
+        /** @description Exact asynchronous job projection and current allowed actions */
+        AsyncJobOK: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AsyncJobEnvelope"];
+            };
+        };
+        /** @description StreamSchema facets, dictionaries and page actions */
+        DataSchemaFacetsOK: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DataSchemaFacetsEnvelope"];
+            };
+        };
+        /** @description Exact StreamSchema projection */
+        StreamSchemaOK: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["StreamSchemaEnvelope"];
+            };
+        };
+        /** @description Created Draft StreamSchema */
+        StreamSchemaCreated: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["StreamSchemaEnvelope"];
+            };
+        };
+        /** @description Exact immutable DatasetSchemaSnapshot projection */
+        DatasetSchemaSnapshotOK: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DatasetSchemaSnapshotEnvelope"];
             };
         };
         /** @description RobotModel projection */
@@ -2360,6 +3454,12 @@ export interface components {
         SchemaVersionPath: string;
         CheckId: string;
         JobId: string;
+        CandidateId: string;
+        CalibrationSection: "intrinsics" | "transforms" | "time-calibrations" | "joint-calibrations";
+        RecordId: string;
+        RunId: string;
+        FamilyId: string;
+        SnapshotId: string;
         OrganizationHeader: string;
         ProjectHeader: string;
         RegionHeader: string;
@@ -2372,6 +3472,10 @@ export interface components {
         AfterCursor: string;
         BeforeCursor: string;
         PageLimit: 20 | 50 | 100;
+        StartNsQuery: string;
+        EndNsQuery: string;
+        MaxPointsQuery: number;
+        BaseSnapshotIdQuery: string;
         ComponentIdQuery: string;
         SetIdQuery: string;
         SchemaIdQuery: string;
@@ -2802,6 +3906,91 @@ export interface operations {
         responses: {
             202: components["responses"]["Accepted"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listRobotModelSampleCandidates: {
+        parameters: {
+            query?: {
+                q?: components["parameters"]["SearchQuery"];
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["RobotModelSampleCandidatePage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getRobotModelSampleWindow: {
+        parameters: {
+            query: {
+                start_ns: components["parameters"]["StartNsQuery"];
+                end_ns: components["parameters"]["EndNsQuery"];
+                max_points: components["parameters"]["MaxPointsQuery"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                versionId: components["parameters"]["VersionId"];
+                candidateId: components["parameters"]["CandidateId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["RobotModelSampleWindowOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    createRobotModelSampleValidation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRobotModelSampleValidationRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["RobotModelSampleValidationAccepted"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
@@ -3249,6 +4438,124 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    listRobotBindingHistory: {
+        parameters: {
+            query?: {
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["RobotBindingHistoryPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    listRobotModelVersionCandidates: {
+        parameters: {
+            query?: {
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["RobotModelVersionCandidatePage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    preflightDisableRobot: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["ReasonPreflight"];
+        responses: {
+            200: components["responses"]["ActionablePreflightOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    disableRobot: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+                "X-Preflight-Token": components["parameters"]["PreflightTokenHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                robotId: components["parameters"]["RobotId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["TokenCommand"];
+        responses: {
+            200: components["responses"]["RobotOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
     preflightCreateComponent: {
         parameters: {
             query?: never;
@@ -3321,6 +4628,95 @@ export interface operations {
             200: components["responses"]["ComponentOK"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    listComponentMaintenance: {
+        parameters: {
+            query?: {
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                componentId: components["parameters"]["ComponentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ComponentMaintenancePage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    preflightDisableComponent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                componentId: components["parameters"]["ComponentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["ReasonPreflight"];
+        responses: {
+            200: components["responses"]["ActionablePreflightOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    disableComponent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+                "X-Preflight-Token": components["parameters"]["PreflightTokenHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                componentId: components["parameters"]["ComponentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["TokenCommand"];
+        responses: {
+            200: components["responses"]["ComponentOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
             412: components["responses"]["PreconditionFailed"];
             428: components["responses"]["PreconditionRequired"];
         };
@@ -3510,6 +4906,28 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    calibrationGetFacets: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["CalibrationFacetsOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     calibrationListSets: {
         parameters: {
             query?: {
@@ -3653,6 +5071,64 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    calibrationCancelJob: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["EmptyCommand"];
+        responses: {
+            200: components["responses"]["AsyncJobOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    calibrationRetryJob: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["EmptyCommand"];
+        responses: {
+            202: components["responses"]["ActionableAccepted"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
     calibrationGetSet: {
         parameters: {
             query?: never;
@@ -3700,6 +5176,298 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    calibrationListRecords: {
+        parameters: {
+            query?: {
+                q?: components["parameters"]["SearchQuery"];
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["CalibrationRecordPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    calibrationCreateRecord: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationRecordWriteRequest"];
+            };
+        };
+        responses: {
+            201: components["responses"]["CalibrationRecordCreated"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    calibrationGetRecord: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+                recordId: components["parameters"]["RecordId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["CalibrationRecordOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    calibrationDeleteRecord: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+                recordId: components["parameters"]["RecordId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["EmptyCommand"];
+        responses: {
+            /** @description Record deleted; the ETag header is the new calibration-set revision */
+            204: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    calibrationUpdateRecord: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+                section: components["parameters"]["CalibrationSection"];
+                recordId: components["parameters"]["RecordId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationRecordPatchRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["CalibrationRecordOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    calibrationListValidationRuns: {
+        parameters: {
+            query?: {
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["CalibrationValidationRunPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    calibrationValidateSet: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationSetValidationRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["ActionableAccepted"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    calibrationPublishSet: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+                "X-Preflight-Token": components["parameters"]["PreflightTokenHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["EmptyCommand"];
+        responses: {
+            200: components["responses"]["CalibrationSetOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    calibrationCloneSet: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                setId: components["parameters"]["SetId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneCalibrationSetRequest"];
+            };
+        };
+        responses: {
+            201: components["responses"]["CalibrationSetCreated"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
             428: components["responses"]["PreconditionRequired"];
         };
     };
@@ -3896,6 +5664,30 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    calibrationGetValidationRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                regionCode: components["parameters"]["RegionCode"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["CalibrationValidationRunOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     calibrationGetReport: {
         parameters: {
             query?: never;
@@ -4050,7 +5842,27 @@ export interface operations {
             410: components["responses"]["Gone"];
         };
     };
-    dataSchemaListSchemas: {
+    dataSchemaGetFacets: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["DataSchemaFacetsOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    dataSchemaListStreamSchemas: {
         parameters: {
             query?: {
                 q?: components["parameters"]["SearchQuery"];
@@ -4070,11 +5882,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["CursorPage"];
+            200: components["responses"]["StreamSchemaPage"];
+            400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
         };
     };
-    dataSchemaCreateSchema: {
+    dataSchemaCreateStreamSchema: {
         parameters: {
             query?: never;
             header: {
@@ -4090,17 +5904,18 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateDataSchemaRequest"];
+                "application/json": components["schemas"]["CreateStreamSchemaRequest"];
             };
         };
         responses: {
-            201: components["responses"]["DataSchemaCreated"];
+            201: components["responses"]["StreamSchemaCreated"];
+            400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };
-    dataSchemaGetSchema: {
+    dataSchemaGetStreamSchema: {
         parameters: {
             query?: never;
             header: {
@@ -4116,9 +5931,69 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["DataSchemaOK"];
+            200: components["responses"]["StreamSchemaOK"];
+            400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    dataSchemaUpdateStreamSchema: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                schemaId: components["parameters"]["SchemaId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStreamSchemaRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["StreamSchemaOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    dataSchemaListFamilyVersions: {
+        parameters: {
+            query?: {
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                familyId: components["parameters"]["FamilyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["StreamSchemaPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     dataSchemaListVersions: {
@@ -4227,6 +6102,68 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
         };
     };
+    dataSchemaValidateStreamSchema: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                schemaId: components["parameters"]["SchemaId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidateStreamSchemaRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["ActionableAccepted"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    dataSchemaPublishStreamSchema: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                "If-Match": components["parameters"]["IfMatchHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyHeader"];
+                "X-Preflight-Token": components["parameters"]["PreflightTokenHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                schemaId: components["parameters"]["SchemaId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["EmptyCommand"];
+        responses: {
+            200: components["responses"]["StreamSchemaOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
     dataSchemaValidateVersion: {
         parameters: {
             query?: never;
@@ -4329,6 +6266,110 @@ export interface operations {
             200: components["responses"]["CursorPage"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    dataSchemaListSnapshots: {
+        parameters: {
+            query?: {
+                q?: components["parameters"]["SearchQuery"];
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["DatasetSchemaSnapshotPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    dataSchemaGetSnapshot: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                snapshotId: components["parameters"]["SnapshotId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["DatasetSchemaSnapshotOK"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    dataSchemaListSnapshotChannels: {
+        parameters: {
+            query?: {
+                q?: components["parameters"]["SearchQuery"];
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                snapshotId: components["parameters"]["SnapshotId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ChannelDefinitionPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    dataSchemaGetSnapshotDiff: {
+        parameters: {
+            query?: {
+                base_snapshot_id?: components["parameters"]["BaseSnapshotIdQuery"];
+                after?: components["parameters"]["AfterCursor"];
+                before?: components["parameters"]["BeforeCursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
+            header: {
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+            };
+            path: {
+                organizationId: components["parameters"]["OrganizationId"];
+                snapshotId: components["parameters"]["SnapshotId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["DatasetSchemaSnapshotDiffPage"];
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     dataSchemaCreateCompatibilityCheck: {

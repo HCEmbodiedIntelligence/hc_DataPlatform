@@ -39,6 +39,7 @@ const approveReviewPath =
 const idempotency = new Map<string, string>();
 let jobPoll = 0;
 let reviewOutcome: 'APPROVED' | 'RETURNED' | null = null;
+const datasetJobIds = new Set(['job_fx_manifest_materialization', 'job_fx_version_diff']);
 const error = (
   status: number,
   code: string,
@@ -643,6 +644,8 @@ export const datasetHandlers = [
     return HttpResponse.json(asyncJobAcceptedFixture, { status: 202 });
   }),
   http.get('*/api/v1/jobs/:jobId', ({ request, params }) => {
+    const jobId = String(params.jobId);
+    if (!datasetJobIds.has(jobId)) return undefined;
     if (!request.headers.get('X-Client-Version'))
       return error(400, 'MISSING_HEADER', '缺少 X-Client-Version');
     jobPoll += 1;
@@ -656,7 +659,7 @@ export const datasetHandlers = [
             : 'SUCCEEDED';
     return HttpResponse.json({
       ...sharedJobFixture,
-      job_id: String(params.jobId),
+      job_id: jobId,
       status,
       resource_version: String(Math.min(jobPoll, 3)),
     });

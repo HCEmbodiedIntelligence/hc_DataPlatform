@@ -19,6 +19,7 @@ import {
 
 const api = '*/api/v1/projects/:projectId/regions/:regionCode';
 let rateLimitAttempts = 0;
+const ingestJobIds = new Set(['job_connection_fx_01', 'job_verify_retry']);
 
 function error(status: number, code: string, message: string, blockedReasons: readonly { code: string; message: string }[] = []) {
   return HttpResponse.json({ error: { code, message, field_errors: [], operation_errors: [], blocked_reasons: blockedReasons, request_id: `req_fx_${code.toLowerCase()}`, retryable: status >= 500 } }, { status });
@@ -162,8 +163,10 @@ export const ingestHandlers = [
     return HttpResponse.json({ data: { verification_run: run }, job: asyncJobFixture, scope: ingestFixtureScope, request_id: 'req_fx_retry', contract_version: 'ingest.v1alpha1' }, { status: 202 });
   }),
   http.get('*/api/v1/jobs/:jobId', ({ request, params }) => {
+    const jobId = String(params.jobId);
+    if (!ingestJobIds.has(jobId) && !jobId.startsWith('job_cancel_')) return undefined;
     if (!request.headers.get('X-Client-Version')) return error(400, 'MISSING_HEADER', '缺少 X-Client-Version');
-    return HttpResponse.json({ ...asyncJobFixture, job_id: String(params.jobId) });
+    return HttpResponse.json({ ...asyncJobFixture, job_id: jobId });
   }),
 ];
 

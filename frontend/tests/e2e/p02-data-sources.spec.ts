@@ -9,7 +9,7 @@ test.describe('P02 数据源', () => {
     await expect(page.getByRole('complementary', { name: '数据源详情' })).toContainText('已配置');
     await expect(page.getByRole('button', { name: '编辑' })).toBeEnabled();
     await page.getByRole('button', { name: '测试连接' }).click();
-    await expect(page.getByRole('status')).toContainText(/连接测试/u);
+    await expect(page.getByRole('status')).toHaveText('连接测试：QUEUED（polling）', { timeout: 15_000 });
     for (const width of widths) { await page.setViewportSize({ width, height: 900 }); await expect(page).toHaveScreenshot(`p02-happy-${width}.png`, { fullPage: true }); }
   });
 

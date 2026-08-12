@@ -1,13 +1,31 @@
 import { z } from 'zod';
 import { createElement } from 'react';
 
+const DEVELOPMENT_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function isLoopbackHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && DEVELOPMENT_LOOPBACK_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 const publicUrlSchema = z
   .string()
   .trim()
   .min(1)
-  .refine((value) => value.startsWith('/') || /^https:\/\//u.test(value), {
-    message: 'must be an absolute HTTPS URL or an application-root relative path',
-  });
+  .refine(
+    (value) => (
+      value.startsWith('/')
+      || /^https:\/\//u.test(value)
+      || (import.meta.env.DEV && isLoopbackHttpUrl(value))
+    ),
+    {
+      message: 'must be an absolute HTTPS URL, an application-root relative path, or a development loopback HTTP URL',
+    },
+  );
 
 const environmentSchema = z
   .object({

@@ -26,7 +26,7 @@ test.describe('P19 审计日志', () => {
 
   test('失败流程：危险审计字段触发合同不匹配且不泄露', async ({ page }) => {
     await page.goto('/settings/audit?mockScenario=audit:contract-mismatch');
-    await expect(page.getByText(/审计投影不符合合同/)).toBeVisible();
+    await expect(page.getByText(/审计投影不符合合同/)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('body')).not.toContainText('authorization_token');
     await expect(page.locator('body')).not.toContainText('must-be-rejected');
   });

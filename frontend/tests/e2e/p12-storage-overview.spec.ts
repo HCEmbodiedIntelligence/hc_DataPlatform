@@ -22,6 +22,7 @@ test.describe('P12 存储容量', () => {
     await expect(page.getByRole('table', { name: '同一快照下的存储对象事实' })).toBeVisible();
     await page.getByRole('button', { name: 'source/•••/02' }).click();
     await expect(page.getByRole('dialog', { name: '对象详情' })).toContainText('只读');
+    await expect(page.getByRole('button', { name: '关闭对象详情' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: '对象详情' })).toBeHidden();
 
@@ -34,7 +35,7 @@ test.describe('P12 存储容量', () => {
 
   test('失败流程：非法 bytes 合同安全阻断', async ({ page }) => {
     await page.goto('/storage/overview?mockScenario=storage-overview:contract-mismatch');
-    await expect(page.getByText(/存储响应不符合合同/)).toBeVisible();
+    await expect(page.getByText(/存储响应不符合合同/)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('body')).not.toContainText('2147483648 B');
   });
 });

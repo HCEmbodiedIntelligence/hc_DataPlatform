@@ -123,8 +123,38 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Starts the Dataset Manifest-list export lifecycle. Until the missing P07 authorizeExportDownload operation is resolved by section 12.7, export.result.downloaded is provisionally attributed to this initiating operation. */
+        /** @description Starts the Dataset Manifest-list export lifecycle; download authorization is a separate current-policy decision. */
         post: operations["createDatasetManifestListExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/export-jobs/{jobId}/download-authorizations": {
+        parameters: {
+            query?: never;
+            header: {
+                Authorization: components["parameters"]["AuthorizationHeader"];
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                Accept: components["parameters"]["AcceptHeader"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-authorize an export result and issue an ephemeral download grant
+         * @description Rechecks dataset.read, project scope, DOWNLOAD action, export terminal state and current policy. The no-store response contains no persistent credential.
+         */
+        post: operations["authorizeExportDownload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -880,6 +910,21 @@ export interface components {
                 /** Format: uri-reference */
                 url?: string;
             };
+        };
+        ExportDownloadAuthorizationEnvelope: components["schemas"]["SuccessEnvelope"] & {
+            data: components["schemas"]["ExportDownloadGrant"];
+        };
+        ExportDownloadGrant: {
+            grant_id: string;
+            export_job_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** @enum {string} */
+            transport: "STREAM";
+            allowed_actions: "DOWNLOAD"[];
+            blocked_reasons: {
+                [key: string]: unknown;
+            }[];
         };
         VersionDiffEnvelope: components["schemas"]["SuccessEnvelope"] & {
             data?: {
@@ -1803,6 +1848,45 @@ export interface operations {
         responses: {
             202: components["responses"]["AcceptedAsyncJob"];
             default: components["responses"]["Problem"];
+        };
+    };
+    authorizeExportDownload: {
+        parameters: {
+            query?: never;
+            header: {
+                Authorization: components["parameters"]["AuthorizationHeader"];
+                "X-Organization-Id": components["parameters"]["OrganizationHeader"];
+                "X-Project-Id": components["parameters"]["ProjectHeader"];
+                "X-Region-Code": components["parameters"]["RegionHeader"];
+                "X-Client-Version": components["parameters"]["ClientVersionHeader"];
+                Accept: components["parameters"]["AcceptHeader"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ephemeral no-store export download grant */
+            200: {
+                headers: {
+                    "Cache-Control"?: "private, no-store";
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportDownloadAuthorizationEnvelope"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            410: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
         };
     };
     getDatasetBootstrap: {

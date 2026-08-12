@@ -33,7 +33,14 @@ CI 可使用 `pnpm install --frozen-lockfile`。首次运行 E2E 前执行 `pnpm
 - 无
 <!-- generated-api-status:end -->
 
-八个域级输入合计覆盖 223 个 operation；生成器不会读取会触发解析失败的合并文件。
+八个域级输入合计覆盖 256 个 operation；生成器不会读取会触发解析失败的合并文件。
+
+### 2026-08-11 生成核对
+
+- 使用 Node.js `22.23.2`、pnpm `10.14.0` 和锁定的 `openapi-typescript 7.9.1` 重新生成，8 个域成功、0 个域失败。
+- `ingest`、`cleaning`、`storage`、`access`、`platform`、`annotation` 与生成前产物字节一致。
+- `datasets` 新增 `authorizeExportDownload`；`robotics` 从当前源合同生成 110 个 operation，新增样本验证、禁用预检、校准记录/发布及 Schema 快照等合同，并将旧 Schema operationId 收敛为显式的 `StreamSchema` 命名。这些差异来自计划仓库已提交的域级 OpenAPI，不是生成器版本差异或生成物手改。
+- 数据 Schema 列表 adapter 的解析诊断标签已从旧 `dataSchemaListSchemas` 收敛到 `dataSchemaListStreamSchemas`；其余 adapter 和业务消费代码未直接引用上述变更的生成模块或被替换的 operationId。TypeScript、114 项 Vitest、ESLint 和 Vite build 均通过。
 
 ## 公共模块
 

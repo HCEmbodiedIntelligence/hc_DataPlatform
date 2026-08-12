@@ -21,3 +21,13 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+# Local build output, dependencies, environments, and Python caches
+frontend/dist/
+frontend/node_modules/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.venv/
+backend/.env
+__pycache__/
+*.pyc
