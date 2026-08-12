@@ -5,7 +5,8 @@ import path from 'node:path';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
-const backendRoot = process.env.OPENAPI_ROOT ?? '/home/czy/plan/backend';
+// Historical directory name; its files are frontend API requirement drafts, not backend implementation contracts.
+const contractRoot = process.env.OPENAPI_ROOT ?? '/home/czy/plan/backend';
 const outputDir = path.join(frontendRoot, 'src/shared/api/generated');
 const notesPath = path.join(frontendRoot, 'docs/frontend-scaffold-notes.md');
 const generatedHeader = '// AUTO-GENERATED — DO NOT EDIT\n';
@@ -44,7 +45,7 @@ function runGenerator(input, output) {
 }
 
 function safeReason(reason) {
-  return reason.replaceAll(frontendRoot, '<frontend>').replaceAll(backendRoot, '<backend>');
+  return reason.replaceAll(frontendRoot, '<frontend>').replaceAll(contractRoot, '<api-drafts>');
 }
 
 async function updateNotes(successes, failures) {
@@ -72,7 +73,7 @@ const successes = [];
 const failures = [];
 
 for (const [domain, relativeInput] of Object.entries(domains)) {
-  const input = path.join(backendRoot, relativeInput);
+  const input = path.join(contractRoot, relativeInput);
   const output = path.join(outputDir, `${domain}.ts`);
   const temporary = path.join(outputDir, `.${domain}.tmp.ts`);
   const result = await runGenerator(input, temporary);

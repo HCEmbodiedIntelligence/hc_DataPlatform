@@ -1,0 +1,80 @@
+.page {
+  width: 100%;
+  max-width: 1680px;
+  padding: var(--hc-space-6, 24px);
+  margin: 0 auto;
+}
+
+.stack,
+.section,
+.identity,
+.drawerBody {
+  display: grid;
+  min-width: 0;
+}
+
+.stack { gap: var(--hc-space-4, 16px); }
+.section { gap: var(--hc-space-3, 12px); }
+.identity { gap: var(--hc-space-1, 4px); text-align: start; }
+.drawerBody { gap: var(--hc-space-4, 16px); }
+
+.section {
+  padding: var(--hc-space-4, 16px);
+  border: 1px solid var(--hc-color-border, #dce5e3);
+  border-radius: var(--hc-radius-lg, 10px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.sectionHeader,
+.metricGrid,
+.drawerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hc-space-3, 12px);
+}
+
+.sectionHeader { align-items: flex-start; justify-content: space-between; }
+.sectionHeader h2, .sectionHeader p { margin: 0; }
+.sectionHeader p { color: var(--hc-color-text-muted, #64736f); }
+.metricGrid > * { flex: 1 1 180px; }
+
+.filterField {
+  display: grid;
+  min-width: min(100%, 160px);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.filterField input,
+.filterField select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--hc-color-border, #dce5e3);
+  border-radius: var(--hc-radius-sm, 6px);
+  padding: 4px 8px;
+  background: var(--hc-color-surface, #fff);
+  color: inherit;
+}
+
+.identityButton { height: auto; padding: 0; white-space: normal; }
+.identity code, .drawerBody code { overflow-wrap: anywhere; }
+
+.drawerBody dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+.drawerBody dd { margin: 0; }
+.drawerBody dt { color: var(--hc-color-text-muted, #64736f); }
+
+@media (max-width: 768px) {
+  .page { padding: var(--hc-space-4, 16px); }
+}
+
+@media (max-width: 390px) {
+  .page { padding: var(--hc-space-3, 12px); }
+  .filterField { width: 100%; min-width: 0; }
+}

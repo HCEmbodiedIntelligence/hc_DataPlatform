@@ -1,0 +1,202 @@
+.shell {
+  min-height: 100vh;
+  background: var(--hc-color-page);
+}
+
+.header {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  display: flex;
+  min-height: 60px;
+  height: auto;
+  align-items: center;
+  gap: var(--hc-space-3);
+  padding: var(--hc-space-2) var(--hc-space-4);
+  border-bottom: 1px solid var(--hc-color-border);
+  background: var(--hc-color-surface);
+  box-shadow: var(--hc-shadow-sm);
+  line-height: 1.5;
+}
+
+.brand {
+  flex: 0 0 auto;
+  height: 36px;
+  padding-inline: 4px;
+  color: var(--hc-color-text) !important;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.brandShort {
+  display: none;
+}
+
+.headerScope {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.scopePanel {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  gap: var(--hc-space-2);
+}
+
+.scopeField {
+  display: grid;
+  min-width: 112px;
+  flex: 1 1 140px;
+  gap: 2px;
+}
+
+.scopeField :global(.ant-select) {
+  width: 100%;
+}
+
+.scopeTrigger {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileScopeLabel {
+  min-width: 0;
+  max-width: 150px;
+  flex: 1 1 auto;
+}
+
+.headerActions {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.headerActions :global(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accountButton {
+  gap: var(--hc-space-1);
+}
+
+.body {
+  min-height: calc(100vh - 60px);
+  background: var(--hc-color-page);
+}
+
+.sider {
+  position: sticky !important;
+  top: 60px;
+  height: calc(100vh - 60px);
+  overflow: hidden auto;
+  border-right: 1px solid var(--hc-color-border);
+  background: var(--hc-color-surface) !important;
+}
+
+.navigation {
+  height: 100%;
+  padding-block: var(--hc-space-2);
+}
+
+.navigation :global(.ant-menu) {
+  border-inline-end: 0 !important;
+  background: transparent;
+}
+
+.navigation :global(.ant-menu-submenu-title),
+.navigation :global(.ant-menu-item) {
+  min-height: 36px;
+  margin-block: 2px;
+}
+
+.content {
+  min-width: 0;
+  padding: var(--hc-space-6);
+  background: var(--hc-color-page);
+}
+
+.authorizationWarning {
+  margin-bottom: var(--hc-space-4);
+}
+
+.jobsPanel,
+.notificationPanel {
+  width: min(360px, calc(100vw - 32px));
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.notificationPanel {
+  display: grid;
+  gap: var(--hc-space-2);
+}
+
+.mobileDrawerRoot :global(.ant-drawer-content) {
+  background: var(--hc-color-surface);
+}
+
+.mobileDrawer :global(.ant-drawer-body) {
+  padding: var(--hc-space-3);
+}
+
+.mobileClose {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+}
+
+.mobileScope {
+  margin-block: var(--hc-space-2) var(--hc-space-4);
+  padding-bottom: var(--hc-space-4);
+  border-bottom: 1px solid var(--hc-color-border);
+}
+
+.mobileScope .scopePanel {
+  display: grid;
+}
+
+@media (max-width: 1199px) {
+  .header {
+    gap: var(--hc-space-2);
+  }
+
+  .brandFull {
+    display: none;
+  }
+
+  .brandShort {
+    display: inline;
+  }
+
+  .content {
+    padding: var(--hc-space-4);
+  }
+}
+
+@media (max-width: 767px) {
+  .header {
+    min-height: 56px;
+    padding-inline: var(--hc-space-2);
+  }
+
+  .body {
+    min-height: calc(100vh - 56px);
+  }
+
+  .brand {
+    font-size: 14px;
+  }
+
+  .accountButton > span:first-child {
+    display: none;
+  }
+
+  .content {
+    padding: var(--hc-space-3);
+  }
+}

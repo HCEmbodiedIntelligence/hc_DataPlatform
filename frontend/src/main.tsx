@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AppProviders } from './app/providers';
 import { readAppEnvironment, StartupErrorPage } from './app/env';
 import { configureRuntime } from './shared/config/runtime';
-import './shared/ui/styles.css';
+import './app/theme/global.css';
 
 async function bootstrap(): Promise<void> {
   const rootElement = document.getElementById('root');

@@ -1,5 +1,5 @@
-// Generated from backend/99-integration/capability-event-registry.json (2026-08-10).
-// Keep this projection read-only; producer eligibility is a separate backend concern.
+// Frontend placeholder vocabulary used by the P19 mock prototype.
+// It is not an approved backend audit catalog and must be replaced after user confirmation.
 export const AUDIT_EVENT_CATALOG_VERSION = 'p19-v1-142' as const;
 
 export const canonicalAuditEventNames = [

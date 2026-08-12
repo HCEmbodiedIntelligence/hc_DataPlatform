@@ -1,26 +1,95 @@
+import { Alert, Button, Input, Segmented, Select, Space, Typography } from 'antd';
+import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { ConfirmDialog } from '../../shared/ui/ConfirmDialog';
-import { useUploadBatchMutation, useUploadCreationOptions, useUploadSessions, useUploadSessionMutation } from '../../features/ingest/api';
-import { IngestRegion, type IngestRegionState } from '../../features/ingest/region-state';
+import {
+  useUploadBatchMutation,
+  useUploadCreationOptions,
+  useUploadSessions,
+  useUploadSessionMutation,
+} from '../../features/ingest/api';
+import { createMutationIntentKey } from '../../features/ingest/mutation-machine';
 import { routes } from '../../features/ingest/routing';
 import { ingestUploadAuthorizationVault } from '../../features/ingest/upload/authorization-vault';
-import { useIngestScope } from '../../features/ingest/use-ingest-scope';
-import { createMutationIntentKey } from '../../features/ingest/mutation-machine';
-import { formText } from '../../features/ingest/form-data';
 import { useUploadProgressStream } from '../../features/ingest/upload/use-upload-progress-stream';
-import { updateUploadJobsSearch, uploadJobsQueryCodec } from './query-codec';
-import { UploadSessionTable } from './components/UploadSessionTable';
-import { CreateUploadDialog, type CreateUploadDraft } from './components/CreateUploadDialog';
+import { useIngestScope } from '../../features/ingest/use-ingest-scope';
+import { isDomainError } from '../../shared/api/domain-error';
+import { useCapabilities } from '../../shared/auth/use-capabilities';
+import {
+  DangerConfirmModal,
+  DataCursorPager,
+  FilterToolbar,
+  PageState,
+  StandardPageScaffold,
+  UiMetricCard,
+  type DangerPreflightEvidence,
+  type PageStateKind,
+} from '../../shared/ui';
 import { BatchOperationBar } from './components/BatchOperationBar';
-import '../../features/ingest/styles.css';
+import { CreateUploadDialog, type CreateUploadDraft } from './components/CreateUploadDialog';
+import { UploadSessionTable } from './components/UploadSessionTable';
+import {
+  updateUploadJobsSearch,
+  uploadJobsQueryCodec,
+  type UploadJobsSearch,
+} from './query-codec';
+import styles from './styles.module.css';
 
-function stateOf(query: { isPending: boolean; isError: boolean; isFetching: boolean; data?: { items: readonly unknown[] } }, filtered: boolean): IngestRegionState {
-  if (query.isPending) return 'first-loading';
-  if (query.isError) return 'fatal-error';
+interface FilterDraft {
+  readonly q: string;
+  readonly sort: UploadJobsSearch['sort'];
+  readonly limit: UploadJobsSearch['limit'];
+}
+
+function filterDraft(search: UploadJobsSearch): FilterDraft {
+  return { q: search.q ?? '', sort: search.sort, limit: search.limit };
+}
+
+function stateFromError(error: unknown): PageStateKind {
+  if (!isDomainError(error)) return 'contract-mismatch';
+  switch (error.code) {
+    case 'FORBIDDEN':
+    case 'UNAUTHENTICATED': return 'forbidden';
+    case 'NOT_FOUND': return 'not-found';
+    case 'GONE': return 'gone';
+    case 'VERSION_CONFLICT':
+    case 'PRECONDITION_FAILED': return 'conflict';
+    case 'RATE_LIMITED': return 'rate-limited';
+    case 'NETWORK_ERROR': return 'offline';
+    case 'CONTRACT_MISMATCH': return 'contract-mismatch';
+    default: return 'error';
+  }
+}
+
+function listState(
+  query: {
+    readonly isPending: boolean;
+    readonly isError: boolean;
+    readonly isFetching: boolean;
+    readonly error: unknown;
+    readonly data?: { readonly items: readonly unknown[] };
+  },
+  filtered: boolean,
+): PageStateKind | 'ready' {
+  if (query.isPending) return 'loading';
+  if (query.isError) return stateFromError(query.error);
   if (query.data?.items.length === 0) return filtered ? 'filtered-empty' : 'empty';
   return query.isFetching ? 'refreshing' : 'ready';
+}
+
+function requestId(error: unknown): string | null {
+  return isDomainError(error) ? error.requestId : null;
+}
+
+function safeOperationError(error: unknown): string | null {
+  if (!error) return null;
+  if (!isDomainError(error)) return '操作未完成；服务端事实没有被乐观推进。';
+  const message = error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED'
+    ? '当前授权不允许执行此操作。'
+    : error.code === 'VALIDATION_ERROR'
+      ? '输入未通过服务端校验，请核对后重试。'
+      : '操作未完成；服务端事实没有被乐观推进。';
+  return error.requestId ? `${message} 请求 ID：${error.requestId}` : message;
 }
 
 export default function UploadJobsPage() {
@@ -29,16 +98,42 @@ export default function UploadJobsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const search = useMemo(() => uploadJobsQueryCodec.parse(params), [params]);
+  const [draft, setDraft] = useState<FilterDraft>(() => filterDraft(search));
+  useEffect(() => setDraft(filterDraft(search)), [search]);
+
   const listFilters = useMemo(() => {
-    const tabStates = search.tab === 'uploading' ? ['CREATED', 'AUTHORIZING', 'UPLOADING', 'PAUSED', 'FINALIZING']
-      : search.tab === 'verifying' ? ['PENDING_VERIFY', 'VERIFYING']
-        : search.tab === 'available' ? ['AVAILABLE']
-          : search.tab === 'failed' ? ['FAILED', 'QUARANTINED', 'EXPIRED'] : [];
-    return { q: search.q, dataSourceId: search.dataSourceId, datasetId: search.datasetId, lifecycleStatus: search.lifecycleStatus.length ? search.lifecycleStatus : tabStates, verificationStatus: search.verificationStatus, sort: search.sort, after: search.after, before: search.before, limit: search.limit };
+    const tabStates = search.tab === 'uploading'
+      ? ['CREATED', 'AUTHORIZING', 'UPLOADING', 'PAUSED', 'FINALIZING']
+      : search.tab === 'verifying'
+        ? ['PENDING_VERIFY', 'VERIFYING']
+        : search.tab === 'available'
+          ? ['AVAILABLE']
+          : search.tab === 'failed'
+            ? ['FAILED', 'QUARANTINED', 'EXPIRED']
+            : [];
+    return {
+      q: search.q,
+      dataSourceId: search.dataSourceId,
+      datasetId: search.datasetId,
+      lifecycleStatus: search.lifecycleStatus.length ? search.lifecycleStatus : tabStates,
+      verificationStatus: search.verificationStatus,
+      sort: search.sort,
+      after: search.after,
+      before: search.before,
+      limit: search.limit,
+    };
   }, [search]);
+
   const list = useUploadSessions(scope, listFilters, capabilities.has('upload.read'));
-  const creationOptions = useUploadCreationOptions(scope, { targetDataSourceId: search.targetDataSourceId, targetDatasetId: search.targetDatasetId }, capabilities.has('upload.manage') && search.intent === 'create');
-  const progressConnection = useUploadProgressStream(list.data?.items ?? [], capabilities.has('upload.read') && scope !== null);
+  const creationOptions = useUploadCreationOptions(
+    scope,
+    { targetDataSourceId: search.targetDataSourceId, targetDatasetId: search.targetDatasetId },
+    capabilities.has('upload.manage') && search.intent === 'create',
+  );
+  const progressConnection = useUploadProgressStream(
+    list.data?.items ?? [],
+    capabilities.has('upload.read') && scope !== null,
+  );
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const vault = ingestUploadAuthorizationVault;
   const create = useUploadSessionMutation('create', vault);
@@ -47,56 +142,242 @@ export default function UploadJobsPage() {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const scopeKey = scope ? `${scope.organizationId}/${scope.projectId}/${scope.regionCode}` : null;
   const previousScopeKey = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     vault.bindScope(scopeKey);
     if (previousScopeKey.current !== undefined && previousScopeKey.current !== scopeKey) {
-      setParams(uploadJobsQueryCodec.build(updateUploadJobsSearch(search, { intent: undefined, targetDataSourceId: undefined, targetDatasetId: undefined }, true)), { replace: true });
+      setParams(
+        uploadJobsQueryCodec.build(
+          updateUploadJobsSearch(
+            search,
+            { intent: undefined, targetDataSourceId: undefined, targetDatasetId: undefined },
+            true,
+          ),
+        ),
+        { replace: true },
+      );
       setSelected(new Set());
+      setConfirmCancel(false);
     }
     previousScopeKey.current = scopeKey;
   }, [scopeKey, search, setParams, vault]);
 
-  if (!scope) return <IngestRegion label="上传任务" state="feature-unavailable" />;
-  if (!capabilities.has('upload.read') && !capabilities.loading) return <IngestRegion label="上传任务" state="forbidden" />;
-  const apply = (next: Partial<typeof search>) => {
+  const selectedSessions = list.data?.items.filter((session) => selected.has(session.uploadId)) ?? [];
+  const cancelPreflight = useMemo<DangerPreflightEvidence | null>(() => {
+    if (!scopeKey || list.dataUpdatedAt <= 0 || selectedSessions.length === 0) return null;
+    const preparedAt = new Date(list.dataUpdatedAt);
+    return {
+      preparedAt: preparedAt.toISOString(),
+      expiresAt: new Date(preparedAt.getTime() + 60_000).toISOString(),
+      resourceVersion: selectedSessions.map((session) => `${session.uploadId}:${session.etag}`).join('|'),
+      scopeKey,
+    };
+  }, [list.dataUpdatedAt, scopeKey, selectedSessions]);
+
+  if (!scope) return <main className={styles.page}><PageState state="feature-unavailable" label="上传任务" /></main>;
+  if (!capabilities.has('upload.read') && !capabilities.loading) {
+    return <main className={styles.page}><PageState state="forbidden" label="上传任务" /></main>;
+  }
+
+  const apply = (next: Partial<UploadJobsSearch>) => {
     setSelected(new Set());
     setParams(uploadJobsQueryCodec.build({ ...search, ...next }, search));
   };
-  const submitCreate = (draft: CreateUploadDraft) => {
-    const source = creationOptions.data?.dataSources.find((candidate) => candidate.id === draft.dataSourceId && candidate.allowed);
+  const submitCreate = (uploadDraft: CreateUploadDraft) => {
+    const source = creationOptions.data?.dataSources.find(
+      (candidate) => candidate.id === uploadDraft.dataSourceId && candidate.allowed,
+    );
     if (!source) return;
-    create.mutate({
-    scope,
-    idempotencyKey: createMutationIntentKey(),
-    localFiles: draft.files,
-    body: {
-      data_source_id: draft.dataSourceId,
-      target_dataset_id: draft.targetDatasetId,
-      source_format: source.sourceFormat,
-      source_format_version: creationOptions.data?.formats.find((format) => format.code === source.sourceFormat)?.version ?? null,
-      expected_source_versions: {
-        configuration_version: source.configurationVersion,
-        credential_version: source.credentialVersion,
-        upload_policy_version: source.uploadPolicyVersion,
+    create.mutate(
+      {
+        scope,
+        idempotencyKey: createMutationIntentKey(),
+        localFiles: uploadDraft.files,
+        body: {
+          data_source_id: uploadDraft.dataSourceId,
+          target_dataset_id: uploadDraft.targetDatasetId,
+          source_format: source.sourceFormat,
+          source_format_version: creationOptions.data?.formats.find((format) => format.code === source.sourceFormat)?.version ?? null,
+          expected_source_versions: {
+            configuration_version: source.configurationVersion,
+            credential_version: source.credentialVersion,
+            upload_policy_version: source.uploadPolicyVersion,
+          },
+          objects: uploadDraft.files.map((file, index) => ({
+            client_object_id: `local-${index + 1}`,
+            relative_path: file.webkitRelativePath || file.name,
+            size_bytes: String(file.size),
+            media_type: file.type || 'application/octet-stream',
+            last_modified_at: new Date(file.lastModified).toISOString(),
+            declared_sha256: null,
+          })),
+          client_capabilities: {
+            supports_web_worker_hash: true,
+            supports_crc64: true,
+            supports_background_continuation: false,
+          },
+        },
       },
-      objects: draft.files.map((file, index) => ({
-        client_object_id: `local-${index + 1}`,
-        relative_path: file.webkitRelativePath || file.name,
-        size_bytes: String(file.size),
-        media_type: file.type || 'application/octet-stream',
-        last_modified_at: new Date(file.lastModified).toISOString(),
-        declared_sha256: null,
-      })),
-      client_capabilities: { supports_web_worker_hash: true, supports_crc64: true, supports_background_continuation: false },
-    },
-  }, { onSuccess: (session) => { apply({ intent: undefined, targetDataSourceId: undefined, targetDatasetId: undefined }); void navigate(routes.uploads.build({ uploadId: session.uploadId })); } });
+      {
+        onSuccess: (session) => {
+          apply({ intent: undefined, targetDataSourceId: undefined, targetDatasetId: undefined });
+          void navigate(routes.uploads.build({ uploadId: session.uploadId }));
+        },
+      },
+    );
   };
-  const selectedSessions = list.data?.items.filter((session) => selected.has(session.uploadId)) ?? [];
-  const clearAfterFullSuccess = (result: { readonly failed: number }) => { if (result.failed === 0) setSelected(new Set()); };
+  const clearAfterFullSuccess = (result: { readonly failed: number }) => {
+    if (result.failed === 0) setSelected(new Set());
+  };
   const creationBlockedReasons = creationOptions.data && !creationOptions.data.allowedActions.includes('CREATE')
     ? [...creationOptions.data.blockedReasons, { code: 'ACTION_NOT_ALLOWED', message: '当前作用域未授予创建上传动作。' }]
     : creationOptions.data?.blockedReasons ?? [];
-  const hasActiveFilters = search.tab !== 'all' || Boolean(search.q || search.dataSourceId || search.datasetId || search.lifecycleStatus.length || search.verificationStatus.length);
+  const hasActiveFilters = search.tab !== 'all' || Boolean(
+    search.q || search.dataSourceId || search.datasetId || search.lifecycleStatus.length || search.verificationStatus.length,
+  );
+  const resolvedListState = listState(list, hasActiveFilters);
+  const table = (
+    <UploadSessionTable
+      items={list.data?.items ?? []}
+      selected={selected}
+      onSelectedChange={(uploadIds) => setSelected(new Set(uploadIds))}
+      onOpen={(uploadId) => { void navigate(routes.uploads.build({ uploadId })); }}
+    />
+  );
+  const pager = list.data ? (
+    <DataCursorPager
+      pageInfo={list.data.pageInfo}
+      busy={list.isFetching}
+      windowLabel={`当前窗口 ${list.data.items.length} 条 · 快照 ${list.data.snapshotAt}`}
+      onChange={(cursor) => apply(cursor)}
+    />
+  ) : null;
+  const listContent = resolvedListState === 'ready' ? table : resolvedListState === 'refreshing' ? (
+    <PageState state="refreshing" label="上传任务列表">{table}</PageState>
+  ) : (
+    <PageState
+      state={resolvedListState}
+      label="上传任务列表"
+      requestId={requestId(list.error)}
+      onRetry={resolvedListState === 'error' || resolvedListState === 'offline' || resolvedListState === 'rate-limited' ? () => void list.refetch() : undefined}
+      action={resolvedListState === 'filtered-empty' ? <Button onClick={() => apply({ tab: 'all', q: undefined, lifecycleStatus: [], verificationStatus: [], dataSourceId: undefined, datasetId: undefined })}>清除筛选</Button> : undefined}
+    />
+  );
+  const operationError = safeOperationError(create.error ?? pauseBatch.error ?? cancelBatch.error);
 
-  return <main className="ingest-page p03-page"><header className="page-header"><div><p className="eyebrow">数据接入</p><h1>上传任务</h1><p>服务端筛选、稳定排序与游标分页；进度由 SSE 加速并以查询快照为准（{progressConnection === 'connected' ? '实时' : '轮询兜底'}）。</p></div><div className="header-actions"><Link to={routes.sources.build()}>数据源</Link>{capabilities.has('upload.manage') ? <button type="button" onClick={() => apply({ intent: 'create' })}>新建上传</button> : null}</div></header><section className="metric-grid" aria-label="上传摘要"><article><span>当前窗口</span><strong>{list.data?.items.length ?? '—'}</strong></article><article><span>上传中</span><strong>{list.data?.items.filter((item) => item.lifecycleStatus === 'UPLOADING').length ?? '—'}</strong></article><article><span>校验中</span><strong>{list.data?.items.filter((item) => item.lifecycleStatus === 'VERIFYING').length ?? '—'}</strong></article><article><span>隔离</span><strong>{list.data?.items.filter((item) => item.lifecycleStatus === 'QUARANTINED').length ?? '—'}</strong></article></section><nav className="upload-tabs" aria-label="上传状态">{(['all','uploading','verifying','available','failed'] as const).map((tab) => <button type="button" key={tab} aria-current={search.tab === tab ? 'page' : undefined} onClick={() => apply({ tab, lifecycleStatus: [], verificationStatus: [] })}>{tab}</button>)}</nav><form className="filter-bar" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); apply({ q: formText(data, 'q') || undefined, sort: formText(data, 'sort') as typeof search.sort, limit: Number(formText(data, 'limit')) as typeof search.limit }); }}><label>搜索<input name="q" defaultValue={search.q} /></label><label>排序<select name="sort" defaultValue={search.sort}><option value="createdAt:desc">最近创建</option><option value="updatedAt:desc">最近更新</option></select></label><label>每页<select name="limit" defaultValue={search.limit}><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button type="submit">筛选</button></form><BatchOperationBar count={selected.size} pauseDisabled={!capabilities.has('upload.manage') || selectedSessions.some((session) => !session.allowedActions.includes('PAUSE'))} cancelDisabled={!capabilities.has('upload.manage') || selectedSessions.some((session) => !session.allowedActions.includes('CANCEL'))} pending={pauseBatch.isPending || cancelBatch.isPending} result={pauseBatch.data ?? cancelBatch.data} onClear={() => setSelected(new Set())} onPause={() => pauseBatch.mutate({ scope, sessions: selectedSessions, reason: '用户批量暂停' })} onCancel={() => setConfirmCancel(true)} /><IngestRegion label="上传任务列表" state={stateOf(list, hasActiveFilters)} onRetry={() => void list.refetch()} onClearFilters={() => apply({ tab: 'all', q: undefined, lifecycleStatus: [], verificationStatus: [], dataSourceId: undefined, datasetId: undefined })}><UploadSessionTable items={list.data?.items ?? []} selected={selected} onToggle={(id) => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={(uploadId) => { void navigate(routes.uploads.build({ uploadId })); }} /></IngestRegion><div className="cursor-bar"><button type="button" disabled={!list.data?.pageInfo.hasPreviousPage} onClick={() => apply({ before: list.data?.pageInfo.startCursor ?? undefined, after: undefined })}>上一组</button><button type="button" disabled={!list.data?.pageInfo.hasNextPage} onClick={() => apply({ after: list.data?.pageInfo.endCursor ?? undefined, before: undefined })}>下一组</button></div><CreateUploadDialog open={search.intent === 'create' && capabilities.has('upload.manage')} pending={create.isPending} optionsPending={creationOptions.isPending} dataSources={creationOptions.data?.dataSources ?? []} datasets={creationOptions.data?.datasets ?? []} blockedReasons={creationBlockedReasons} initialDataSourceId={search.targetDataSourceId} initialDatasetId={search.targetDatasetId} onClose={() => apply({ intent: undefined, targetDataSourceId: undefined, targetDatasetId: undefined })} onSubmit={submitCreate} /><ConfirmDialog open={confirmCancel} title="确认批量取消上传" impact="逐项清除内存上传授权，并携带各自 If-Match 与 Idempotency-Key 请求取消；服务端完成前任务保持 CANCELLING，不会从列表乐观移除。" resourceId={selectedSessions.map((session) => session.uploadId).join(', ')} confirmLabel="确认取消" pending={cancelBatch.isPending} onCancel={() => setConfirmCancel(false)} onConfirm={() => { cancelBatch.mutate({ scope, sessions: selectedSessions, reason: '用户确认批量取消' }, { onSuccess: (result) => { setConfirmCancel(false); clearAfterFullSuccess(result); } }); }} /></main>;
+  return (
+    <main className={styles.page}>
+      <StandardPageScaffold
+        header={{
+          title: '上传任务',
+          breadcrumbs: [{ key: 'ingest', label: '数据接入' }, { key: 'uploads', label: '上传任务' }],
+          description: `服务端筛选、稳定排序与游标分页；进度由 SSE 加速并以查询快照为准（${progressConnection === 'connected' ? '实时' : '轮询兜底'}）。`,
+          actions: (
+            <>
+              <Button><Link to={routes.sources.build()}>数据源</Link></Button>
+              {capabilities.has('upload.manage') ? (
+                <Button type="primary" icon={<Plus aria-hidden="true" size={16} />} onClick={() => apply({ intent: 'create' })}>
+                  新建上传
+                </Button>
+              ) : null}
+            </>
+          ),
+        }}
+        summary={(
+          <div className={styles.metricGrid}>
+            <UiMetricCard label="当前窗口" value={list.data?.items.length} state={list.isPending ? 'loading' : list.isError ? 'error' : undefined} />
+            <UiMetricCard label="上传中" value={list.data?.items.filter((item) => item.lifecycleStatus === 'UPLOADING').length} state={list.isPending ? 'loading' : list.isError ? 'error' : undefined} />
+            <UiMetricCard label="校验中" value={list.data?.items.filter((item) => item.lifecycleStatus === 'VERIFYING').length} state={list.isPending ? 'loading' : list.isError ? 'error' : undefined} />
+            <UiMetricCard label="隔离" value={list.data?.items.filter((item) => item.lifecycleStatus === 'QUARANTINED').length} state={list.isPending ? 'loading' : list.isError ? 'error' : undefined} />
+          </div>
+        )}
+        filters={(
+          <div className={styles.filterStack}>
+            <Segmented
+              aria-label="上传状态"
+              value={search.tab}
+              options={[
+                { value: 'all', label: '全部' },
+                { value: 'uploading', label: '上传中' },
+                { value: 'verifying', label: '校验中' },
+                { value: 'available', label: '可用' },
+                { value: 'failed', label: '失败与隔离' },
+              ]}
+              onChange={(tab) => apply({ tab: tab as UploadJobsSearch['tab'], lifecycleStatus: [], verificationStatus: [] })}
+            />
+            <FilterToolbar
+              onApply={() => apply({ q: draft.q.trim() || undefined, sort: draft.sort, limit: draft.limit })}
+              onReset={() => {
+                const next = { q: '', sort: 'createdAt:desc' as const, limit: 20 as const };
+                setDraft(next);
+                apply({ tab: 'all', q: undefined, sort: next.sort, limit: next.limit, lifecycleStatus: [], verificationStatus: [], dataSourceId: undefined, datasetId: undefined });
+              }}
+            >
+              <label className={styles.filterField}>搜索
+                <Input allowClear value={draft.q} onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))} />
+              </label>
+              <label className={styles.filterField}>排序
+                <Select value={draft.sort} onChange={(sort) => setDraft((current) => ({ ...current, sort }))} options={[{ value: 'createdAt:desc', label: '最近创建' }, { value: 'updatedAt:desc', label: '最近更新' }]} />
+              </label>
+              <label className={styles.filterField}>每页
+                <Select value={draft.limit} onChange={(limit) => setDraft((current) => ({ ...current, limit }))} options={[10, 20, 50].map((value) => ({ value, label: String(value) }))} />
+              </label>
+            </FilterToolbar>
+          </div>
+        )}
+        state={(
+          <Space className={styles.contentStack} orientation="vertical" size="middle">
+            {operationError ? <Alert type="error" showIcon title={operationError} /> : null}
+            <BatchOperationBar
+              count={selected.size}
+              pauseDisabled={!capabilities.has('upload.manage') || selectedSessions.some((session) => !session.allowedActions.includes('PAUSE'))}
+              cancelDisabled={!capabilities.has('upload.manage') || selectedSessions.some((session) => !session.allowedActions.includes('CANCEL'))}
+              pending={pauseBatch.isPending || cancelBatch.isPending}
+              result={pauseBatch.data ?? cancelBatch.data}
+              onClear={() => setSelected(new Set())}
+              onPause={() => pauseBatch.mutate({ scope, sessions: selectedSessions, reason: '用户批量暂停' })}
+              onCancel={() => setConfirmCancel(true)}
+            />
+            {listContent}
+          </Space>
+        )}
+        pagination={pager}
+      />
+      <CreateUploadDialog
+        open={search.intent === 'create' && capabilities.has('upload.manage')}
+        pending={create.isPending}
+        optionsPending={creationOptions.isPending}
+        dataSources={creationOptions.data?.dataSources ?? []}
+        datasets={creationOptions.data?.datasets ?? []}
+        blockedReasons={creationBlockedReasons}
+        initialDataSourceId={search.targetDataSourceId}
+        initialDatasetId={search.targetDatasetId}
+        onClose={() => apply({ intent: undefined, targetDataSourceId: undefined, targetDatasetId: undefined })}
+        onSubmit={submitCreate}
+      />
+      <DangerConfirmModal
+        open={confirmCancel}
+        title="确认批量取消上传"
+        actionLabel="确认取消"
+        resourceId={selectedSessions.map((session) => session.uploadId).join(', ')}
+        impact="逐项清除内存上传授权，并携带各自 If-Match 与 Idempotency-Key 请求取消；服务端完成前任务保持 CANCELLING，不会从列表乐观移除。"
+        blockers={selectedSessions.length !== selected.size ? [{ code: 'SELECTION_STALE', message: '选择中包含已离开当前权威窗口的任务，请清除后重新选择。' }] : []}
+        preflight={cancelPreflight}
+        currentScopeKey={scopeKey ?? ''}
+        pending={cancelBatch.isPending}
+        onCancel={() => setConfirmCancel(false)}
+        onConfirm={() => {
+          cancelBatch.mutate(
+            { scope, sessions: selectedSessions, reason: '用户确认批量取消' },
+            {
+              onSuccess: (result) => {
+                setConfirmCancel(false);
+                clearAfterFullSuccess(result);
+              },
+            },
+          );
+        }}
+      />
+    </main>
+  );
 }

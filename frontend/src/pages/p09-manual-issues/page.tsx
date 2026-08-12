@@ -1,5 +1,7 @@
+import { Alert, Button, Descriptions, Form, Input, Modal, Select, Space, Typography } from 'antd';
+import type { ColumnDef } from '@tanstack/react-table';
 import { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { isDatasetId } from '../../entities/dataset';
 import { isDatasetVersionId } from '../../entities/dataset-version';
 import { isEpisodeId } from '../../entities/episode';
@@ -12,13 +14,22 @@ import {
   useResolveManualIssue,
   useTriageManualIssue,
 } from '../../features/cleaning/api';
-import '../../features/cleaning/cleaning.css';
-import { CleaningStatePanel, cleaningStateFromError } from '../../features/cleaning/page-state';
 import { manualIssuesQueryCodec, routes as cleaningRoutes } from '../../features/cleaning/routing';
 import { routes as datasetRoutes } from '../../features/datasets/routing';
 import { isDomainError } from '../../shared/api/domain-error';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { EmptyState, PageHeader, StatusBadge } from '../../shared/ui';
+import {
+  DataCursorPager,
+  DataTable,
+  EntityDrawer,
+  FilterToolbar,
+  PageState,
+  StandardPageScaffold,
+  StatusTag,
+  UiMetricCard,
+  type PageStateKind,
+} from '../../shared/ui';
+import styles from './styles.module.css';
 
 type DialogState =
   | { readonly kind: 'triage'; readonly issue: ManualIssueListItem }
@@ -26,9 +37,35 @@ type DialogState =
   | null;
 
 function mutationKey(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `manual-issue-${Date.now().toString(36)}`;
+  return globalThis.crypto?.randomUUID?.() ?? `manual-issue-${Date.now().toString(36)}`;
+}
+
+function stateFromError(error: unknown): PageStateKind {
+  if (!isDomainError(error)) return 'contract-mismatch';
+  switch (error.code) {
+    case 'FORBIDDEN':
+    case 'UNAUTHENTICATED':
+      return 'forbidden';
+    case 'NOT_FOUND':
+      return 'not-found';
+    case 'GONE':
+      return 'gone';
+    case 'VERSION_CONFLICT':
+    case 'PRECONDITION_FAILED':
+      return 'conflict';
+    case 'RATE_LIMITED':
+      return 'rate-limited';
+    case 'NETWORK_ERROR':
+      return 'offline';
+    case 'CONTRACT_MISMATCH':
+      return 'contract-mismatch';
+    default:
+      return 'error';
+  }
+}
+
+function requestId(error: unknown): string | null {
+  return isDomainError(error) ? error.requestId : null;
 }
 
 function issueStatus(issue: ManualIssueListItem): string {
@@ -47,8 +84,6 @@ function viewerHref(issue: ManualIssueListItem, returnTo: string): string | null
   if (!isDatasetId(source.datasetId) || !isDatasetVersionId(source.versionId) || !isEpisodeId(source.episodeId)) {
     return null;
   }
-  // The P06 owner currently exposes only stable Episode identity. The missing typed
-  // time-range input is tracked in docs/dep-requests/T6.md; never splice it here.
   return datasetRoutes.episodeViewer.build({
     datasetId: source.datasetId,
     versionId: source.versionId,
@@ -57,24 +92,34 @@ function viewerHref(issue: ManualIssueListItem, returnTo: string): string | null
   });
 }
 
-function IssueDetail({ issue, onClose }: Readonly<{ issue: ManualIssue; onClose(): void }>) {
+function IssueDetail({
+  issue,
+}: Readonly<{ issue: ManualIssue }>) {
   return (
-    <aside className="cleaning-state-panel" role="dialog" aria-modal="false" aria-labelledby="manual-issue-detail-title">
-      <button type="button" onClick={onClose}>关闭详情</button>
-      <h2 id="manual-issue-detail-title">问题详情</h2>
-      <dl>
-        <dt>稳定 Issue ID</dt><dd><code>{issue.id}</code></dd>
-        <dt>说明</dt><dd>{issue.note || '未填写'}</dd>
-        <dt>固定 Version / Revision / Stream</dt>
-        <dd><code>{issue.source.versionId}</code> / <code>{issue.source.revisionId}</code> / <code>{issue.source.streamId}</code></dd>
-        <dt>半开范围</dt><dd>[{issue.source.startNs}, {issue.source.endNs}) ns</dd>
-        <dt>派生 Draft</dt>
-        <dd>{issue.relatedDrafts.length
-          ? issue.relatedDrafts.map((draft) => <a key={draft.draftId} href={cleaningRoutes.cleaningWorkbench.build({ draftId: draft.draftId })}>{draft.draftId}（{draft.status}）</a>)
-          : '尚未派生 Draft'}</dd>
-      </dl>
-      {issue.blockedReasons.map((reason) => <p className="cleaning-warning" key={reason.code}>{reason.message}</p>)}
-    </aside>
+    <Space orientation="vertical" size="middle" className={styles.drawerContent}>
+      <Descriptions bordered column={1} size="small">
+        <Descriptions.Item label="稳定 Issue ID"><Typography.Text code>{issue.id}</Typography.Text></Descriptions.Item>
+        <Descriptions.Item label="说明">{issue.note || '未填写'}</Descriptions.Item>
+        <Descriptions.Item label="固定 Version / Revision / Stream">
+          <Typography.Text code>{issue.source.versionId}</Typography.Text> /{' '}
+          <Typography.Text code>{issue.source.revisionId}</Typography.Text> /{' '}
+          <Typography.Text code>{issue.source.streamId}</Typography.Text>
+        </Descriptions.Item>
+        <Descriptions.Item label="半开范围">[{issue.source.startNs}, {issue.source.endNs}) ns</Descriptions.Item>
+        <Descriptions.Item label="派生 Draft">
+          {issue.relatedDrafts.length
+            ? issue.relatedDrafts.map((draft) => (
+                <Link key={draft.draftId} to={cleaningRoutes.cleaningWorkbench.build({ draftId: draft.draftId })}>
+                  {draft.draftId}（{draft.status}）
+                </Link>
+              ))
+            : '尚未派生 Draft'}
+        </Descriptions.Item>
+      </Descriptions>
+      {issue.blockedReasons.map((reason) => (
+        <Alert key={reason.code} type="warning" showIcon title={reason.code} description={reason.message} />
+      ))}
+    </Space>
   );
 }
 
@@ -102,9 +147,14 @@ export function ManualIssuesPage() {
     search.status?.length || search.issueType?.length || search.severity?.length || search.assigneeId);
   const currentReturn = cleaningRoutes.manualIssues.build(search);
   const changing = triage.isPending || resolve.isPending || createDraft.isPending;
+  const rows = useMemo(() => list.data?.items ?? [], [list.data]);
 
   const update = (changes: Parameters<typeof manualIssuesQueryCodec.withChanges>[1]) => {
     setParams(manualIssuesQueryCodec.build(manualIssuesQueryCodec.withChanges(search, changes)));
+  };
+
+  const resetFilters = () => {
+    setParams(manualIssuesQueryCodec.build({ returnTo: search.returnTo }));
   };
 
   const performCreateDraft = (issue: ManualIssueListItem) => {
@@ -124,117 +174,201 @@ export function ManualIssuesPage() {
     });
   };
 
-  const rows = useMemo(() => list.data?.items ?? [], [list.data]);
+  const columns = useMemo<ColumnDef<ManualIssueListItem, unknown>[]>(() => [
+    {
+      id: 'issue',
+      header: '问题',
+      cell: ({ row }) => (
+        <Button type="link" size="small" onClick={() => update({ issueId: row.original.id })}>
+          <Typography.Text code>{row.original.id}</Typography.Text>
+          <small>{row.original.issueType}</small>
+        </Button>
+      ),
+    },
+    {
+      id: 'severity',
+      header: '严重度',
+      cell: ({ row }) => <StatusTag status={row.original.severity} tone={row.original.severity === 'CRITICAL' ? 'danger' : row.original.severity === 'HIGH' ? 'warning' : 'neutral'} />,
+    },
+    {
+      id: 'status',
+      header: '状态',
+      cell: ({ row }) => <StatusTag status={issueStatus(row.original)} tone={statusTone(row.original)} known={row.original.status.kind === 'known'} />,
+    },
+    { id: 'assignee', header: '负责人', cell: ({ row }) => row.original.assignee?.displayName ?? '未分配' },
+    {
+      id: 'source',
+      header: '固定来源',
+      cell: ({ row }) => <><Typography.Text code>{row.original.source.episodeId}</Typography.Text><br /><small>{row.original.source.versionId}</small></>,
+    },
+    { id: 'range', header: '范围', cell: ({ row }) => `[${row.original.source.startNs}, ${row.original.source.endNs}) ns` },
+    { id: 'drafts', header: '派生 Draft', cell: ({ row }) => row.original.relatedDraftCount === '0' ? '无' : `${row.original.relatedDraftCount} 个` },
+    {
+      id: 'actions',
+      header: '操作',
+      cell: ({ row }) => {
+        const issue = row.original;
+        const known = issue.status.kind === 'known';
+        const href = viewerHref(issue, currentReturn);
+        const canTriage = known && capabilities.has('manual_issue.triage') && issue.allowedActions.includes('TRIAGE') && !list.isFetching;
+        const canResolve = known && capabilities.has('manual_issue.resolve') && issue.allowedActions.includes('RESOLVE') && !list.isFetching;
+        const canDraft = known && capabilities.has('cleaning.create') && (issue.allowedActions.includes('CREATE_DRAFT') || issue.allowedActions.includes('CONTINUE_DRAFT')) && !list.isFetching;
+        return (
+          <Space wrap size="small" className={styles.rowActions}>
+            {href ? <a href={href}>回到 Viewer</a> : <Typography.Text type="warning">来源绑定损坏</Typography.Text>}
+            <Button size="small" disabled={!canTriage || changing} onClick={() => {
+              setDialog({ kind: 'triage', issue });
+              setSeverity(issue.severity);
+              setAssigneeId(issue.assignee?.id ?? '');
+              setReason('');
+            }}>分诊</Button>
+            <Button size="small" type="primary" disabled={!canDraft || changing} onClick={() => performCreateDraft(issue)}>
+              {issue.allowedActions.includes('CONTINUE_DRAFT') ? '继续清洗' : '创建草稿'}
+            </Button>
+            <Button size="small" danger disabled={!canResolve || changing} onClick={() => {
+              setDialog({ kind: 'resolve', issue });
+              setResolutionVersionId('');
+              setResolutionNote('');
+            }}>解决</Button>
+          </Space>
+        );
+      },
+    },
+  ], [capabilities, changing, currentReturn, list.isFetching, search]);
 
-  if (capabilities.loading) {
-    return <main className="cleaning-page"><PageHeader title="人工问题" /><CleaningStatePanel state="first-loading" label="权限" /></main>;
-  }
-  if (!canRead) {
-    return <main className="cleaning-page"><PageHeader title="人工问题" /><CleaningStatePanel state="forbidden" label="人工问题权限" /></main>;
-  }
-  if (list.isPending) {
-    return <main className="cleaning-page"><PageHeader title="人工问题" description="清洗前或独立发现问题的唯一分诊清单" /><CleaningStatePanel state="first-loading" label="人工问题列表" /></main>;
-  }
-  if (list.error) {
-    return <main className="cleaning-page"><PageHeader title="人工问题" /><CleaningStatePanel state={cleaningStateFromError(list.error, true)} label="人工问题列表" error={list.error} onRetry={() => void list.refetch()} /></main>;
-  }
+  const listState: PageStateKind | 'ready' = capabilities.loading
+    ? 'loading'
+    : !canRead
+      ? 'forbidden'
+      : list.isPending
+        ? 'loading'
+        : list.error
+          ? stateFromError(list.error)
+          : rows.length === 0
+            ? filtered ? 'filtered-empty' : 'empty'
+            : list.isFetching ? 'refreshing' : 'ready';
+
+  const table = (
+    <DataTable
+      data={rows}
+      columns={columns}
+      getRowId={(issue) => issue.id}
+      caption="按服务端稳定排序的人工问题"
+    />
+  );
+  const content = listState === 'ready'
+    ? table
+    : listState === 'refreshing'
+      ? <PageState state="refreshing" label="人工问题列表">{table}</PageState>
+      : <PageState
+          state={listState}
+          label="人工问题列表"
+          title={listState === 'empty' ? '当前作用域没有人工问题' : listState === 'filtered-empty' ? '当前筛选没有问题' : undefined}
+          requestId={requestId(list.error)}
+          onRetry={list.error ? () => void list.refetch() : undefined}
+          action={listState === 'filtered-empty' ? <Button onClick={resetFilters}>清除筛选</Button> : undefined}
+        />;
 
   return (
-    <main className="cleaning-page">
-      <PageHeader
-        title="人工问题"
-        description="ManualIssue 是可分诊事实；ReviewFinding 不进入此列表，也不共享任何写操作。"
-        breadcrumbs={[{ label: '手动清洗' }, { label: '人工问题' }]}
-        actions={<a href={cleaningRoutes.cleaningDrafts.build({})}>查看清洗草稿</a>}
-      />
+    <main className={styles.page} data-page-id="P09">
+      <StandardPageScaffold
+        header={{
+          title: '人工问题',
+          description: 'ManualIssue 是可分诊事实；ReviewFinding 不进入此列表，也不共享任何写操作。',
+          breadcrumbs: [{ key: 'cleaning', label: '手动清洗' }, { key: 'issues', label: '人工问题' }],
+          actions: <Link to={cleaningRoutes.cleaningDrafts.build({})}>查看清洗草稿</Link>,
+        }}
+        summary={summary.error
+          ? <PageState state={stateFromError(summary.error)} label="问题统计" requestId={requestId(summary.error)} onRetry={() => void summary.refetch()} />
+          : <>
+              <UiMetricCard label="全部" value={summary.data?.counts.total} state={summary.isPending ? 'loading' : undefined} asOf={summary.data?.snapshotAt} />
+              <UiMetricCard label="待处理" value={summary.data?.counts.open} state={summary.isPending ? 'loading' : undefined} />
+              <UiMetricCard label="处理中" value={summary.data?.counts.inProgress} state={summary.isPending ? 'loading' : undefined} />
+              <UiMetricCard label="已解决" value={summary.data?.counts.resolved} state={summary.isPending ? 'loading' : undefined} />
+            </>}
+        filters={canRead ? (
+          <FilterToolbar label="人工问题筛选" onReset={filtered ? resetFilters : undefined} disabled={list.isFetching}>
+            <label className={styles.filterField}>搜索<Input value={search.q ?? ''} onChange={(event) => update({ q: event.target.value || undefined })} placeholder="Issue / Episode / 说明" allowClear /></label>
+            <label className={styles.filterField}>状态<Select value={search.status?.[0] ?? ''} onChange={(value) => update({ status: value ? [value as 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'] : undefined })} options={[{ value: '', label: '全部' }, { value: 'OPEN', label: '待处理' }, { value: 'IN_PROGRESS', label: '处理中' }, { value: 'RESOLVED', label: '已解决' }]} /></label>
+            <label className={styles.filterField}>严重度<Select value={search.severity?.[0] ?? ''} onChange={(value) => update({ severity: value ? [value as ManualIssueSeverity] : undefined })} options={[{ value: '', label: '全部' }, ...(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map((value) => ({ value, label: value }))]} /></label>
+            <label className={styles.filterField}>排序<Select value={search.sort} onChange={(value) => update({ sort: value })} options={[{ value: 'updatedAtDesc', label: '最近更新' }, { value: 'updatedAtAsc', label: '最早更新' }, { value: 'severityDesc', label: '严重度' }, { value: 'createdAtDesc', label: '最近创建' }]} /></label>
+            <label className={styles.filterField}>每页<Select value={search.limit} onChange={(value) => update({ limit: value })} options={([20, 50, 100] as const).map((value) => ({ value, label: String(value) }))} /></label>
+          </FilterToolbar>
+        ) : undefined}
+        pagination={list.data ? (
+          <DataCursorPager
+            pageInfo={{
+              startCursor: list.data.pageInfo.before,
+              endCursor: list.data.pageInfo.after,
+              hasPreviousPage: list.data.pageInfo.hasPrevious,
+              hasNextPage: list.data.pageInfo.hasNext,
+            }}
+            busy={list.isFetching}
+            windowLabel={`快照 ${list.data.snapshotAt}`}
+            onChange={(request) => update('before' in request
+              ? { before: request.before, after: undefined }
+              : { after: request.after, before: undefined })}
+          />
+        ) : undefined}
+      >
+        {content}
+      </StandardPageScaffold>
 
-      {summary.error ? <CleaningStatePanel state={cleaningStateFromError(summary.error)} label="问题统计" error={summary.error} onRetry={() => void summary.refetch()} /> : (
-        <section className="cleaning-summary-grid" aria-label="问题统计" aria-busy={summary.isFetching}>
-          {([['全部', summary.data?.counts.total], ['待处理', summary.data?.counts.open], ['处理中', summary.data?.counts.inProgress], ['已解决', summary.data?.counts.resolved]] as const)
-            .map(([label, value]) => <article className="cleaning-summary-card" key={label}><span>{label}</span><strong>{value ?? '—'}</strong></article>)}
-        </section>
-      )}
+      <EntityDrawer
+        open={Boolean(search.issueId)}
+        title="问题详情"
+        loading={detail.isPending}
+        onClose={() => update({ issueId: undefined })}
+      >
+        {detail.error
+          ? <PageState state={stateFromError(detail.error)} label="问题详情" requestId={requestId(detail.error)} onRetry={() => void detail.refetch()} />
+          : detail.data ? <IssueDetail issue={detail.data} /> : null}
+      </EntityDrawer>
 
-      <form className="cleaning-toolbar" aria-label="人工问题筛选" onSubmit={(event) => event.preventDefault()}>
-        <label>搜索<input value={search.q ?? ''} onChange={(event) => update({ q: event.target.value || undefined })} placeholder="Issue / Episode / 说明" /></label>
-        <label>状态<select value={search.status?.[0] ?? ''} onChange={(event) => update({ status: event.target.value ? [event.target.value as 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'] : undefined })}><option value="">全部</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option></select></label>
-        <label>严重度<select value={search.severity?.[0] ?? ''} onChange={(event) => update({ severity: event.target.value ? [event.target.value as ManualIssueSeverity] : undefined })}><option value="">全部</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select></label>
-        <label>排序<select value={search.sort} onChange={(event) => update({ sort: event.target.value as typeof search.sort })}><option value="updatedAtDesc">最近更新</option><option value="updatedAtAsc">最早更新</option><option value="severityDesc">严重度</option><option value="createdAtDesc">最近创建</option></select></label>
-        <label>每页<select value={search.limit} onChange={(event) => update({ limit: Number.parseInt(event.target.value, 10) as 20 | 50 | 100 })}><option>20</option><option>50</option><option>100</option></select></label>
-        {filtered ? <button type="button" onClick={() => setParams(manualIssuesQueryCodec.build({ returnTo: search.returnTo }))}>清除筛选</button> : null}
-      </form>
+      <Modal open={dialog?.kind === 'triage'} title="分诊人工问题" footer={null} destroyOnHidden onCancel={() => { if (!triage.isPending) setDialog(null); }}>
+        {dialog?.kind === 'triage' ? (
+          <Form layout="vertical" onFinish={() => {
+            triage.mutate({
+              manualIssueId: dialog.issue.id,
+              expectedVersion: dialog.issue.etag,
+              idempotencyKey: mutationKey(),
+              targetStatus: dialog.issue.status.kind === 'known' && dialog.issue.status.value === 'IN_PROGRESS' ? 'OPEN' : 'IN_PROGRESS',
+              severity,
+              assigneeId: assigneeId || null,
+              reason,
+            }, { onSuccess: () => setDialog(null) });
+          }}>
+            <Typography.Paragraph>稳定 Issue ID：<Typography.Text code>{dialog.issue.id}</Typography.Text></Typography.Paragraph>
+            <Form.Item label="严重度"><Select value={severity} onChange={setSeverity} options={(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const).map((value) => ({ value, label: value }))} /></Form.Item>
+            <Form.Item label="负责人 ID"><Input value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} /></Form.Item>
+            <Form.Item label={dialog.issue.status.kind === 'known' && dialog.issue.status.value === 'IN_PROGRESS' ? '退回待处理队列原因' : '分诊原因'} required>
+              <Input.TextArea rows={4} value={reason} onChange={(event) => setReason(event.target.value)} />
+            </Form.Item>
+            {triage.error ? <Alert type="error" showIcon title={isDomainError(triage.error) ? triage.error.message : '分诊失败；输入已保留。'} /> : null}
+            <Space className={styles.modalActions}><Button disabled={triage.isPending} onClick={() => setDialog(null)}>取消</Button><Button type="primary" htmlType="submit" loading={triage.isPending} disabled={!reason.trim()}>确认分诊</Button></Space>
+          </Form>
+        ) : null}
+      </Modal>
 
-      {list.isFetching ? <p className="cleaning-refreshing" role="status">正在刷新；刷新完成前写操作不可用。</p> : null}
-      <section className="cleaning-table-shell" aria-label="人工问题表格">
-        {rows.length === 0 ? <EmptyState kind={filtered ? 'filtered-empty' : 'no-data'} title={filtered ? '当前筛选没有问题' : '当前作用域没有人工问题'} /> : (
-          <table className="standard-table">
-            <caption className="sr-only">按服务端稳定排序的人工问题</caption>
-            <thead><tr><th>问题</th><th>严重度</th><th>状态</th><th>负责人</th><th>固定来源</th><th>范围</th><th>派生 Draft</th><th>操作</th></tr></thead>
-            <tbody>{rows.map((issue) => {
-              const known = issue.status.kind === 'known';
-              const href = viewerHref(issue, currentReturn);
-              const canTriage = known && capabilities.has('manual_issue.triage') && issue.allowedActions.includes('TRIAGE') && !list.isFetching;
-              const canResolve = known && capabilities.has('manual_issue.resolve') && issue.allowedActions.includes('RESOLVE') && !list.isFetching;
-              const canDraft = known && capabilities.has('cleaning.create') && (issue.allowedActions.includes('CREATE_DRAFT') || issue.allowedActions.includes('CONTINUE_DRAFT')) && !list.isFetching;
-              return <tr key={issue.id}>
-                <th scope="row"><button className="cleaning-link-button" type="button" onClick={() => update({ issueId: issue.id })}><code>{issue.id}</code></button><br /><small>{issue.issueType}</small></th>
-                <td><StatusBadge status={issue.severity} tone={issue.severity === 'CRITICAL' ? 'danger' : issue.severity === 'HIGH' ? 'warning' : 'neutral'} /></td>
-                <td><StatusBadge status={issueStatus(issue)} tone={statusTone(issue)} label={known ? issueStatus(issue) : 'UNKNOWN（只读）'} /></td>
-                <td>{issue.assignee?.displayName ?? '未分配'}</td>
-                <td><code>{issue.source.episodeId}</code><br /><small>{issue.source.versionId}</small></td>
-                <td>[{issue.source.startNs}, {issue.source.endNs}) ns</td>
-                <td>{issue.relatedDraftCount === '0' ? '无' : `${issue.relatedDraftCount} 个`}</td>
-                <td><div className="cleaning-action-row">
-                  {href ? <a href={href}>回到 Viewer</a> : <span className="cleaning-warning">来源绑定损坏</span>}
-                  <button type="button" disabled={!canTriage || changing} onClick={() => { setDialog({ kind: 'triage', issue }); setSeverity(issue.severity); setAssigneeId(issue.assignee?.id ?? ''); setReason(''); }}>分诊</button>
-                  <button type="button" disabled={!canDraft || changing} onClick={() => performCreateDraft(issue)}>{issue.allowedActions.includes('CONTINUE_DRAFT') ? '继续清洗' : '创建草稿'}</button>
-                  <button type="button" disabled={!canResolve || changing} onClick={() => { setDialog({ kind: 'resolve', issue }); setResolutionVersionId(''); setResolutionNote(''); }}>解决</button>
-                </div></td>
-              </tr>;
-            })}</tbody>
-          </table>
-        )}
-      </section>
-      <nav className="cursor-pager" aria-label="人工问题游标分页">
-        <button type="button" disabled={!list.data?.pageInfo.hasPrevious || !list.data.pageInfo.before} onClick={() => update({ before: list.data?.pageInfo.before ?? undefined, after: undefined })}>上一组</button>
-        <span>快照 {list.data?.snapshotAt ?? '—'}</span>
-        <button type="button" disabled={!list.data?.pageInfo.hasNext || !list.data.pageInfo.after} onClick={() => update({ after: list.data?.pageInfo.after ?? undefined, before: undefined })}>下一组</button>
-      </nav>
+      <Modal open={dialog?.kind === 'resolve'} title="解决人工问题" footer={null} destroyOnHidden onCancel={() => { if (!resolve.isPending) setDialog(null); }}>
+        {dialog?.kind === 'resolve' ? (
+          <Form layout="vertical" onFinish={() => {
+            resolve.mutate({ manualIssueId: dialog.issue.id, expectedVersion: dialog.issue.etag, idempotencyKey: mutationKey(), resolutionVersionId, resolutionNote }, { onSuccess: () => setDialog(null) });
+          }}>
+            <Typography.Paragraph>稳定 Issue ID：<Typography.Text code>{dialog.issue.id}</Typography.Text></Typography.Paragraph>
+            <Form.Item label="解决 Version ID" required><Input value={resolutionVersionId} onChange={(event) => setResolutionVersionId(event.target.value)} /></Form.Item>
+            <Form.Item label="解决说明" required><Input.TextArea rows={4} value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} /></Form.Item>
+            {resolve.error ? <Alert type="error" showIcon title={isDomainError(resolve.error) ? resolve.error.message : '解决命令失败；输入已保留。'} /> : null}
+            <Space className={styles.modalActions}><Button disabled={resolve.isPending} onClick={() => setDialog(null)}>取消</Button><Button danger type="primary" htmlType="submit" loading={resolve.isPending} disabled={!resolutionVersionId.trim() || !resolutionNote.trim()}>确认解决</Button></Space>
+          </Form>
+        ) : null}
+      </Modal>
 
-      {search.issueId ? detail.isPending ? <CleaningStatePanel state="first-loading" label="问题详情" />
-        : detail.error ? <CleaningStatePanel state={cleaningStateFromError(detail.error)} label="问题详情" error={detail.error} onRetry={() => void detail.refetch()} />
-          : detail.data ? <IssueDetail issue={detail.data} onClose={() => update({ issueId: undefined })} /> : null : null}
-
-      {dialog ? <div className="dialog-backdrop"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="issue-command-title">
-        <h2 id="issue-command-title">{dialog.kind === 'triage' ? '分诊人工问题' : '解决人工问题'}</h2>
-        <p>稳定 Issue ID：<code>{dialog.issue.id}</code></p>
-        {dialog.kind === 'triage' ? <form className="cleaning-dialog-form" onSubmit={(event) => {
-          event.preventDefault();
-          triage.mutate({ manualIssueId: dialog.issue.id, expectedVersion: dialog.issue.etag, idempotencyKey: mutationKey(), targetStatus: dialog.issue.status.kind === 'known' && dialog.issue.status.value === 'IN_PROGRESS' ? 'OPEN' : 'IN_PROGRESS', severity, assigneeId: assigneeId || null, reason }, { onSuccess: () => setDialog(null) });
-        }}>
-          <label>严重度<select value={severity} onChange={(event) => setSeverity(event.target.value as ManualIssueSeverity)}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label>
-          <label>负责人 ID<input value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} /></label>
-          <label>{dialog.issue.status.kind === 'known' && dialog.issue.status.value === 'IN_PROGRESS' ? '退回待处理队列原因' : '分诊原因'}<textarea required value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-          {triage.error ? <p className="cleaning-error" role="alert">{isDomainError(triage.error) ? triage.error.message : '分诊失败；输入已保留。'}</p> : null}
-          <div className="dialog-actions"><button type="button" disabled={triage.isPending} onClick={() => setDialog(null)}>取消</button><button type="submit" disabled={!reason.trim() || triage.isPending}>{triage.isPending ? '提交中…' : '确认分诊'}</button></div>
-        </form> : <form className="cleaning-dialog-form" onSubmit={(event) => {
-          event.preventDefault();
-          resolve.mutate({ manualIssueId: dialog.issue.id, expectedVersion: dialog.issue.etag, idempotencyKey: mutationKey(), resolutionVersionId, resolutionNote }, { onSuccess: () => setDialog(null) });
-        }}>
-          <label>解决 Version ID<input required value={resolutionVersionId} onChange={(event) => setResolutionVersionId(event.target.value)} /></label>
-          <label>解决说明<textarea required value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} /></label>
-          {resolve.error ? <p className="cleaning-error" role="alert">{isDomainError(resolve.error) ? resolve.error.message : '解决命令失败；输入已保留。'}</p> : null}
-          <div className="dialog-actions"><button type="button" disabled={resolve.isPending} onClick={() => setDialog(null)}>取消</button><button type="submit" disabled={!resolutionVersionId.trim() || !resolutionNote.trim() || resolve.isPending}>{resolve.isPending ? '提交中…' : '确认解决'}</button></div>
-        </form>}
-      </section></div> : null}
-
-      {selection?.disposition === 'SELECTION_REQUIRED' ? <section className="cleaning-state-panel" role="dialog" aria-modal="true">
-        <h2>选择服务端候选草稿</h2><p>服务端发现多个权威候选；前端不会自行合并上下文。</p>
-        <p className="cleaning-warning">当前安全命令只提交 ManualIssue ID、幂等键和 expectedVersion，不会把候选 Draft 或固定上下文回传给服务端。</p>
-        {selection.candidates.map((candidate) => <p key={candidate.draftId}><code>{candidate.draftId}</code> · {candidate.updatedAt}</p>)}
-        <button type="button" onClick={() => setSelection(null)}>取消</button>
-      </section> : null}
-      {createDraft.error ? <p className="cleaning-error" role="alert">{isDomainError(createDraft.error) ? createDraft.error.message : 'Issue → Draft 命令失败。'}</p> : null}
+      <Modal open={selection?.disposition === 'SELECTION_REQUIRED'} title="选择服务端候选草稿" footer={<Button onClick={() => setSelection(null)}>取消</Button>} onCancel={() => setSelection(null)}>
+        <Alert type="warning" showIcon title="服务端发现多个权威候选；前端不会自行合并上下文。" description="当前安全命令只提交 ManualIssue ID、幂等键和 expectedVersion。" />
+        {selection?.disposition === 'SELECTION_REQUIRED' ? selection.candidates.map((candidate) => <Typography.Paragraph key={candidate.draftId}><Typography.Text code>{candidate.draftId}</Typography.Text> · {candidate.updatedAt}</Typography.Paragraph>) : null}
+      </Modal>
+      {createDraft.error ? <Alert className={styles.operationAlert} type="error" showIcon title={isDomainError(createDraft.error) ? createDraft.error.message : 'Issue → Draft 命令失败。'} /> : null}
     </main>
   );
 }

@@ -1,0 +1,89 @@
+.page {
+  width: 100%;
+  max-width: 1680px;
+  padding: var(--hc-space-6, 24px);
+  margin: 0 auto;
+  color: var(--hc-color-text, #17211f);
+}
+
+.contentStack,
+.identity,
+.changeField {
+  display: grid;
+  min-width: 0;
+  gap: var(--hc-space-3, 12px);
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  grid-column: 1 / -1;
+  gap: var(--hc-space-3, 12px);
+  min-width: 0;
+}
+
+.filterForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hc-space-3, 12px);
+  padding: var(--hc-space-3, 12px);
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 8px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.filterField {
+  display: grid;
+  flex: 1 1 190px;
+  min-width: min(100%, 180px);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.filterField :global(.ant-select),
+.filterField :global(.ant-input) {
+  width: 100%;
+  min-width: 0;
+}
+
+.identityButton {
+  height: auto;
+  padding: 0;
+  text-align: start;
+  white-space: normal;
+}
+
+.identity {
+  gap: var(--hc-space-1, 4px);
+  min-width: 240px;
+}
+
+.identity strong,
+.identity code,
+.changeField {
+  overflow-wrap: anywhere;
+}
+
+.changeField {
+  width: 100%;
+  gap: var(--hc-space-1, 4px);
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: var(--hc-space-4, 16px);
+  }
+}
+
+@media (max-width: 390px) {
+  .page {
+    padding: var(--hc-space-3, 12px);
+  }
+
+  .filterField {
+    width: 100%;
+    min-width: 0;
+  }
+}

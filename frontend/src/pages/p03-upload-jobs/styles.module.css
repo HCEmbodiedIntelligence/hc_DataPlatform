@@ -1,0 +1,75 @@
+.page {
+  width: 100%;
+  max-width: 1600px;
+  padding: var(--hc-space-6, 24px);
+  margin: 0 auto;
+  color: var(--hc-color-text, #17211f);
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--hc-space-3, 12px);
+}
+
+.filterStack,
+.contentStack,
+.uploadForm,
+.uploadPicker {
+  display: grid;
+  gap: var(--hc-space-4, 16px);
+  width: 100%;
+  min-width: 0;
+}
+
+.filterField {
+  display: grid;
+  min-width: min(100%, 150px);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.filterField:first-child {
+  flex: 1 1 240px;
+}
+
+.filterField :global(.ant-select),
+.filterField :global(.ant-input-affix-wrapper) {
+  width: 100%;
+  min-width: 0;
+}
+
+.uploadPicker :global(.ant-upload-wrapper),
+.uploadForm :global(.ant-form-item) {
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: var(--hc-space-4, 16px);
+  }
+}
+
+@media (max-width: 390px) {
+  .page {
+    padding: var(--hc-space-3, 12px);
+  }
+
+  .metricGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filterField,
+  .filterField:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+}

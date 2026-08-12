@@ -1,0 +1,86 @@
+.page {
+  width: 100%;
+  max-width: 1680px;
+  padding: var(--hc-space-6, 24px);
+  margin: 0 auto;
+  color: var(--hc-color-text, #17211f);
+}
+
+.contentStack,
+.createForm,
+.identity,
+.versionCell {
+  display: grid;
+  gap: var(--hc-space-3, 12px);
+  min-width: 0;
+}
+
+.filterField {
+  display: grid;
+  min-width: min(100%, 168px);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.filterField:first-child,
+.filterField:nth-child(8) {
+  flex: 1 1 240px;
+}
+
+.filterField :global(.ant-select),
+.filterField :global(.ant-input),
+.filterField :global(.ant-input-affix-wrapper) {
+  width: 100%;
+  min-width: 0;
+}
+
+.identityButton {
+  height: auto;
+  padding: 0;
+  text-align: start;
+  white-space: normal;
+}
+
+.identity,
+.versionCell {
+  gap: var(--hc-space-1, 4px);
+  min-width: 180px;
+}
+
+.identity strong,
+.identity code,
+.versionCell code {
+  overflow-wrap: anywhere;
+}
+
+.identity code,
+.versionCell code {
+  color: var(--hc-color-text-muted, #64736f);
+  font-weight: 400;
+}
+
+.createForm :global(.ant-form-item) {
+  min-width: 0;
+  margin-bottom: var(--hc-space-2, 8px);
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: var(--hc-space-4, 16px);
+  }
+}
+
+@media (max-width: 390px) {
+  .page {
+    padding: var(--hc-space-3, 12px);
+  }
+
+  .filterField,
+  .filterField:first-child,
+  .filterField:nth-child(8) {
+    width: 100%;
+    min-width: 0;
+  }
+}

@@ -1,6 +1,12 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 const widths = [1440, 1024, 768, 390] as const;
 
+async function chooseSelectOption(page: Page, label: string, option: string | RegExp) {
+  await page.getByLabel(label).click();
+  const dropdown = page.locator('.ant-select-dropdown:visible');
+  await dropdown.locator('.ant-select-item-option').filter({ hasText: option }).click();
+}
+
 async function attachResponsiveScreenshots(page: Page, testInfo: TestInfo) {
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
@@ -20,7 +26,7 @@ test.describe('P05 数据集列表', () => {
   });
   test('主流程：稳定列表、筛选、游标分页、详情跳转与四档截图', async ({ page }, testInfo) => {
     await page.goto('/datasets?mockScenario=datasets:cursor-pagination');
-    await expect(page.getByRole('heading', { name: '数据集' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: '数据集' })).toBeVisible();
     await expect(page.getByText('dataset_fx_01')).toBeVisible();
     await attachResponsiveScreenshots(page, testInfo);
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -31,13 +37,13 @@ test.describe('P05 数据集列表', () => {
         new URL(request.url()).searchParams.get('q') === 'assembly',
     );
     await page.getByLabel('搜索').fill('assembly');
-    await page.getByLabel('机器人型号').selectOption('robot_model_fx_01');
+    await chooseSelectOption(page, '机器人型号', /robot_model_fx_01/);
     await page.getByLabel('Channels（逗号分隔）').fill('/camera/front, /joint');
-    await page.getByLabel('Channel 匹配').selectOption('any');
+    await chooseSelectOption(page, 'Channel 匹配', '任一包含');
     await page.getByLabel('创建起始日').fill('2026-08-01');
     await page.getByLabel('创建结束日').fill('2026-08-11');
-    await page.getByLabel('稳定排序').selectOption('nameAsc');
-    await page.getByLabel('每页').selectOption('50');
+    await chooseSelectOption(page, '稳定排序', '名称（ID 升序兜底）');
+    await chooseSelectOption(page, '每页', '50');
     await page.getByRole('button', { name: '应用筛选' }).click();
     const listRequest = await requestPromise;
     expect(new URL(listRequest.url()).searchParams.get('sort')).toBe('name:asc,dataset_id:asc');

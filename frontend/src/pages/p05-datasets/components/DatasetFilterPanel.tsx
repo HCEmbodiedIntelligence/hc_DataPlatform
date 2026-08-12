@@ -1,6 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { Input, Select } from 'antd';
+import { useEffect, useState } from 'react';
 import type { DatasetFacetsVm } from '../../../features/datasets/api';
+import { FilterToolbar } from '../../../shared/ui';
 import type { DatasetsSearch } from '../query-codec';
+import styles from '../styles.module.css';
 
 type FilterDraft = Readonly<{
   q: string;
@@ -36,22 +39,30 @@ function draftFromSearch(search: DatasetsSearch): FilterDraft {
   };
 }
 
+function facetOptions(items: readonly { readonly value: string; readonly count: string }[] | undefined) {
+  return [
+    { label: '全部', value: '' },
+    ...(items ?? []).map((item) => ({ label: `${item.value} (${item.count})`, value: item.value })),
+  ];
+}
+
 export function DatasetFilterPanel({
   search,
   facets,
+  disabled = false,
   onApply,
   onReset,
 }: Readonly<{
   search: DatasetsSearch;
   facets?: DatasetFacetsVm;
+  disabled?: boolean;
   onApply: (changes: Partial<DatasetsSearch>) => void;
   onReset: () => void;
 }>) {
   const [draft, setDraft] = useState(() => draftFromSearch(search));
   useEffect(() => setDraft(draftFromSearch(search)), [search]);
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const apply = () => {
     onApply({
       q: draft.q.trim() || undefined,
       robotModelId: draft.robotModelId || undefined,
@@ -77,194 +88,134 @@ export function DatasetFilterPanel({
   };
 
   return (
-    <form className="dataset-filter-bar" aria-label="数据集筛选" onSubmit={submit}>
-      <label>
-        搜索
-        <input
+    <FilterToolbar
+      label="数据集筛选"
+      applyLabel="应用筛选"
+      disabled={disabled}
+      onApply={apply}
+      onReset={() => {
+        setDraft(draftFromSearch(datasetsDefaults));
+        onReset();
+      }}
+    >
+      <label className={styles.filterField}>
+        <span>搜索</span>
+        <Input
           value={draft.q}
           placeholder="数据集名称"
+          allowClear
           onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))}
         />
       </label>
-      <label>
-        机器人型号
-        <select
+      <label className={styles.filterField}>
+        <span>机器人型号</span>
+        <Select
           value={draft.robotModelId}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, robotModelId: event.target.value }))
-          }
-        >
-          <option value="">全部</option>
-          {facets?.robotModels.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.value} ({item.count})
-            </option>
-          ))}
-        </select>
+          options={facetOptions(facets?.robotModels)}
+          onChange={(robotModelId) => setDraft((current) => ({ ...current, robotModelId }))}
+        />
       </label>
-      <label>
-        机器人
-        <select
+      <label className={styles.filterField}>
+        <span>机器人</span>
+        <Select
           value={draft.robotId}
-          onChange={(event) => setDraft((current) => ({ ...current, robotId: event.target.value }))}
-        >
-          <option value="">全部</option>
-          {facets?.robots.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.value} ({item.count})
-            </option>
-          ))}
-        </select>
+          options={facetOptions(facets?.robots)}
+          onChange={(robotId) => setDraft((current) => ({ ...current, robotId }))}
+        />
       </label>
-      <label>
-        任务
-        <select
+      <label className={styles.filterField}>
+        <span>任务</span>
+        <Select
           value={draft.task}
-          onChange={(event) => setDraft((current) => ({ ...current, task: event.target.value }))}
-        >
-          <option value="">全部</option>
-          {facets?.tasks.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.value} ({item.count})
-            </option>
-          ))}
-        </select>
+          options={facetOptions(facets?.tasks)}
+          onChange={(task) => setDraft((current) => ({ ...current, task }))}
+        />
       </label>
-      <label>
-        场景
-        <select
+      <label className={styles.filterField}>
+        <span>场景</span>
+        <Select
           value={draft.scene}
-          onChange={(event) => setDraft((current) => ({ ...current, scene: event.target.value }))}
-        >
-          <option value="">全部</option>
-          {facets?.scenes.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.value} ({item.count})
-            </option>
-          ))}
-        </select>
+          options={facetOptions(facets?.scenes)}
+          onChange={(scene) => setDraft((current) => ({ ...current, scene }))}
+        />
       </label>
-      <label>
-        资产状态
-        <select
+      <label className={styles.filterField}>
+        <span>资产状态</span>
+        <Select
           value={draft.assetState}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, assetState: event.target.value }))
-          }
-        >
-          <option value="">全部</option>
-          {facets?.assetStates.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.value} ({item.count})
-            </option>
-          ))}
-        </select>
+          options={facetOptions(facets?.assetStates)}
+          onChange={(assetState) => setDraft((current) => ({ ...current, assetState }))}
+        />
       </label>
-      <label>
-        存储层级
-        <select
+      <label className={styles.filterField}>
+        <span>存储层级</span>
+        <Select
           value={draft.storageClass}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, storageClass: event.target.value }))
-          }
-        >
-          <option value="">全部</option>
-          {facets?.storageClasses.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.value} ({item.count})
-            </option>
-          ))}
-        </select>
+          options={facetOptions(facets?.storageClasses)}
+          onChange={(storageClass) => setDraft((current) => ({ ...current, storageClass }))}
+        />
       </label>
-      <label>
-        Channels（逗号分隔）
-        <input
+      <label className={styles.filterField}>
+        <span>Channels（逗号分隔）</span>
+        <Input
           value={draft.channels}
           placeholder="/camera/front, /joint"
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, channels: event.target.value }))
-          }
+          onChange={(event) => setDraft((current) => ({ ...current, channels: event.target.value }))}
         />
       </label>
-      <label>
-        Channel 匹配
-        <select
+      <label className={styles.filterField}>
+        <span>Channel 匹配</span>
+        <Select
           value={draft.channelMatch}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              channelMatch: event.target.value as DatasetsSearch['channelMatch'],
-            }))
-          }
-        >
-          <option value="all">全部包含</option>
-          <option value="any">任一包含</option>
-        </select>
+          options={[
+            { label: '全部包含', value: 'all' },
+            { label: '任一包含', value: 'any' },
+          ]}
+          onChange={(channelMatch) => setDraft((current) => ({ ...current, channelMatch }))}
+        />
       </label>
-      <label>
-        创建起始日
-        <input
+      <label className={styles.filterField}>
+        <span>创建起始日</span>
+        <Input
           type="date"
           value={draft.datasetCreatedFrom}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, datasetCreatedFrom: event.target.value }))
-          }
+          onChange={(event) => setDraft((current) => ({ ...current, datasetCreatedFrom: event.target.value }))}
         />
       </label>
-      <label>
-        创建结束日
-        <input
+      <label className={styles.filterField}>
+        <span>创建结束日</span>
+        <Input
           type="date"
           value={draft.datasetCreatedTo}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, datasetCreatedTo: event.target.value }))
-          }
+          onChange={(event) => setDraft((current) => ({ ...current, datasetCreatedTo: event.target.value }))}
         />
       </label>
-      <label>
-        稳定排序
-        <select
+      <label className={styles.filterField}>
+        <span>稳定排序</span>
+        <Select
           value={draft.sort}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              sort: event.target.value as DatasetsSearch['sort'],
-            }))
-          }
-        >
-          <option value="activityDesc">最近活动（ID 降序兜底）</option>
-          <option value="createdDesc">最近创建（ID 降序兜底）</option>
-          <option value="nameAsc">名称（ID 升序兜底）</option>
-        </select>
+          options={[
+            { label: '最近活动（ID 降序兜底）', value: 'activityDesc' },
+            { label: '最近创建（ID 降序兜底）', value: 'createdDesc' },
+            { label: '名称（ID 升序兜底）', value: 'nameAsc' },
+          ]}
+          onChange={(sort) => setDraft((current) => ({ ...current, sort }))}
+        />
       </label>
-      <label>
-        每页
-        <select
+      <label className={styles.filterField}>
+        <span>每页</span>
+        <Select
           value={draft.limit}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              limit: Number(event.target.value) as DatasetsSearch['limit'],
-            }))
-          }
-        >
-          <option value="20">20</option>
-          <option value="50">50</option>
-          <option value="100">100</option>
-        </select>
+          options={[20, 50, 100].map((limit) => ({ label: String(limit), value: limit }))}
+          onChange={(limit) => setDraft((current) => ({ ...current, limit }))}
+        />
       </label>
-      <div className="dataset-filter-actions">
-        <button type="submit" className="dataset-button">
-          应用筛选
-        </button>
-        <button
-          type="button"
-          className="dataset-button dataset-button--secondary"
-          onClick={onReset}
-        >
-          清除
-        </button>
-      </div>
-    </form>
+    </FilterToolbar>
   );
 }
+
+const datasetsDefaults: DatasetsSearch = {
+  channelMatch: 'all',
+  sort: 'activityDesc',
+  limit: 20,
+};

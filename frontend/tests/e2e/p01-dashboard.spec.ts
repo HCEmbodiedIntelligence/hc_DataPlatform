@@ -14,6 +14,14 @@ function observeDashboardRequests(page: Page) {
   return requested;
 }
 
+async function chooseRange(page: Page, option: string) {
+  await page.getByLabel('时间范围').click();
+  await page
+    .locator('.ant-select-dropdown:visible .ant-select-item-option')
+    .filter({ hasText: option })
+    .click();
+}
+
 test.describe('P01 数据工作台', () => {
   test.beforeEach(async ({ page }) => {
     await page.route(/\/src\/mocks\/handlers\/(?!dashboard\.handlers\.ts)[^/]+\.handlers\.ts/u, (route) => route.fulfill({ contentType: 'application/javascript', body: 'export default [];' }));
@@ -27,10 +35,10 @@ test.describe('P01 数据工作台', () => {
     await expect(page.getByRole('heading', { name: '待办与最近活动' })).toBeVisible();
 
     await page.getByRole('button', { name: '按需加载覆盖率矩阵' }).click();
-    await expect(page.getByRole('table', { name: '机器人组与任务覆盖率' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '机器人组与任务覆盖率' })).toBeVisible();
     expect([...dashboardRequests].sort()).toEqual([...dashboardAggregateEndpoints].sort());
 
-    await page.getByLabel('时间范围').selectOption('7d');
+    await chooseRange(page, '最近 7 天');
     await expect(page).toHaveURL(/range=7d/u);
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });

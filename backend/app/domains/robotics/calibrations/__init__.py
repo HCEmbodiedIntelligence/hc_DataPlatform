@@ -1,1 +1,0 @@
-"""Calibration API group."""

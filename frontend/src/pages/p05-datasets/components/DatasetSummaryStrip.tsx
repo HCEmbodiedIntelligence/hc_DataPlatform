@@ -1,22 +1,17 @@
 import type { DatasetSummaryVm } from '../../../features/datasets/api';
+import { UiMetricCard, type MetricState } from '../../../shared/ui';
 
-export function DatasetSummaryStrip({ summary }: Readonly<{ summary?: DatasetSummaryVm }>) {
-  const metrics = [
-    ['数据集', summary?.datasetCount ?? '—'],
-    ['Episodes', summary?.episodeCount ?? '—'],
-    ['待复核版本', summary?.pendingReviewVersionCount ?? '—'],
-    ['已退回版本', summary?.returnedVersionCount ?? '—'],
-    ['可处理草稿', summary?.actionableDraftCount ?? '—'],
-  ] as const;
+export function DatasetSummaryStrip({
+  summary,
+  state,
+}: Readonly<{ summary?: DatasetSummaryVm; state: MetricState }>) {
   return (
-    <dl className="dataset-metrics" aria-label="授权筛选摘要">
-      {metrics.map(([label, value]) => (
-        <div className="dataset-metric" key={label}>
-          <dt>{label}</dt>
-          <dd>{value}</dd>
-          <small>服务端授权聚合</small>
-        </div>
-      ))}
-    </dl>
+    <>
+      <UiMetricCard label="数据集" value={summary?.datasetCount} state={state} description="服务端授权聚合" />
+      <UiMetricCard label="Episodes" value={summary?.episodeCount} state={state} description="服务端授权聚合" />
+      <UiMetricCard label="待复核版本" value={summary?.pendingReviewVersionCount} state={state} description="服务端授权聚合" />
+      <UiMetricCard label="已退回版本" value={summary?.returnedVersionCount} state={state} description="服务端授权聚合" />
+      <UiMetricCard label="可处理草稿" value={summary?.actionableDraftCount} state={state} description="服务端授权聚合" />
+    </>
   );
 }

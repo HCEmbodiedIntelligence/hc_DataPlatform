@@ -25,6 +25,7 @@
   "dependencies": {
     "@tanstack/react-query": "5.85.5",
     "@tanstack/react-table": "8.21.3",
+    "antd": "6.6.0",
     "echarts": "6.0.0",
     "lucide-react": "0.542.0",
     "react": "19.1.1",

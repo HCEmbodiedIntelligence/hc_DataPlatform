@@ -1,0 +1,138 @@
+.pageState,
+.refreshingState,
+.metricCard {
+  min-width: 0;
+}
+
+.pageState {
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 8px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.pageState :global(.ant-result) {
+  padding: clamp(24px, 6vw, 48px) var(--hc-space-4, 16px);
+}
+
+.pageState :global(.ant-result-icon) > svg {
+  width: 48px;
+  height: 48px;
+  color: var(--hc-color-warning, #b26b00);
+  stroke-width: 1.5;
+}
+
+.pageState[data-page-state='forbidden'] :global(.ant-result-icon) > svg,
+.pageState[data-page-state='contract-mismatch'] :global(.ant-result-icon) > svg,
+.pageState[data-page-state='error'] :global(.ant-result-icon) > svg {
+  color: var(--hc-color-error, #c43f3f);
+}
+
+.pageState[data-page-state='offline'] :global(.ant-result-icon) > svg,
+.pageState[data-page-state='rate-limited'] :global(.ant-result-icon) > svg {
+  color: var(--hc-color-info, #1677a6);
+}
+
+.refreshingState {
+  display: grid;
+  gap: var(--hc-space-3, 12px);
+}
+
+.stateDescription {
+  display: block;
+  max-width: 54ch;
+  margin-top: var(--hc-space-2, 8px);
+  color: var(--hc-color-text-muted, #64736f);
+}
+
+.statusTag {
+  display: inline-flex;
+  gap: var(--hc-space-1, 4px);
+  align-items: center;
+  max-width: 100%;
+  margin-inline-end: 0;
+  font-weight: 600;
+  white-space: normal;
+}
+
+.metricCard {
+  height: 100%;
+}
+
+.metricCard :global(.ant-card) {
+  height: 100%;
+}
+
+.metricLabel {
+  margin: 0;
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.metricValue {
+  display: flex;
+  gap: var(--hc-space-2, 8px);
+  align-items: baseline;
+  min-height: 2.25rem;
+  margin-top: var(--hc-space-2, 8px);
+  overflow-wrap: anywhere;
+}
+
+.metricValue strong {
+  color: var(--hc-color-text, #17211f);
+  font-size: clamp(1.35rem, 1.2rem + 0.5vw, 1.75rem);
+  line-height: 1.2;
+}
+
+.metricUnit,
+.metricDescription,
+.metricMetadata {
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.75rem;
+}
+
+.metricDescription {
+  margin-top: var(--hc-space-2, 8px);
+}
+
+.metricMetadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--hc-space-1, 4px) var(--hc-space-2, 8px);
+  margin: var(--hc-space-2, 8px) 0 0;
+}
+
+.metricMetadata dt,
+.metricMetadata dd {
+  margin: 0;
+}
+
+.metricMetadata dd {
+  overflow-wrap: anywhere;
+  color: var(--hc-color-text, #17211f);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 768px) {
+  .pageState :global(.ant-result) {
+    padding: var(--hc-space-6, 24px) var(--hc-space-3, 12px);
+  }
+}
+
+@media (max-width: 390px) {
+  .metricValue {
+    flex-wrap: wrap;
+  }
+}

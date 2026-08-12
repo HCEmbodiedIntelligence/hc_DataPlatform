@@ -1,5 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { formText } from '../../../features/ingest/form-data';
+import { Alert, Button, Flex, Modal, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import {
+  createZodResolver,
+  RHFSelect,
+  SecureUploadPicker,
+} from '../../../shared/ui';
+import styles from '../styles.module.css';
 
 export interface CreateUploadDraft {
   readonly dataSourceId: string;
@@ -14,6 +22,20 @@ export interface UploadCreationChoice {
   readonly blockedReasons: readonly { readonly code: string; readonly message: string }[];
 }
 
+const uploadSchema = z.object({
+  dataSourceId: z.string().trim().min(1, '请选择数据源'),
+  targetDatasetId: z.string().trim().min(1, '请选择目标 Dataset'),
+});
+
+type UploadFormValues = z.infer<typeof uploadSchema>;
+
+function defaults(props: { readonly initialDataSourceId?: string; readonly initialDatasetId?: string }): UploadFormValues {
+  return {
+    dataSourceId: props.initialDataSourceId ?? '',
+    targetDatasetId: props.initialDatasetId ?? '',
+  };
+}
+
 export function CreateUploadDialog(props: {
   readonly open: boolean;
   readonly pending: boolean;
@@ -26,15 +48,127 @@ export function CreateUploadDialog(props: {
   readonly onClose: () => void;
   readonly onSubmit: (draft: CreateUploadDraft) => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
+  const form = useForm<UploadFormValues>({
+    defaultValues: defaults(props),
+    mode: 'onChange',
+    resolver: createZodResolver(uploadSchema),
+  });
+  const [files, setFiles] = useState<readonly File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+
   useEffect(() => {
-    if (props.open && !ref.current?.open) ref.current?.showModal();
-    if (!props.open && ref.current?.open) ref.current.close();
-  }, [props.open]);
-  return <dialog ref={ref} onClose={props.onClose} aria-labelledby="create-upload-title"><form onSubmit={(event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const files = data.getAll('files').filter((item): item is File => item instanceof File && item.size > 0);
-    props.onSubmit({ dataSourceId: formText(data, 'dataSourceId'), targetDatasetId: formText(data, 'targetDatasetId') || null, files });
-  }}><h2 id="create-upload-title">新建上传</h2><label>数据源<select name="dataSourceId" required defaultValue={props.initialDataSourceId ?? ''}><option value="" disabled>选择数据源</option>{props.dataSources.map((source) => <option key={source.id} value={source.id} disabled={!source.allowed}>{source.name} · {source.id}{source.allowed ? '' : '（不可用）'}</option>)}</select></label><label>目标 Dataset<select name="targetDatasetId" required defaultValue={props.initialDatasetId ?? ''}><option value="" disabled>选择 Dataset</option>{props.datasets.map((dataset) => <option key={dataset.id} value={dataset.id} disabled={!dataset.allowed}>{dataset.name} · {dataset.id}{dataset.allowed ? '' : '（不可用）'}</option>)}</select></label><label>文件<input name="files" type="file" multiple required /></label>{props.blockedReasons.length ? <ul>{props.blockedReasons.map((reason) => <li key={reason.code}>{reason.code}：{reason.message}</li>)}</ul> : null}<p>浏览器将通过短时 no-store 授权直传 OSS Multipart；文件内容不会经过业务 API。对象 SHA-256 在 Manifest 提交前补齐，与 Multipart ETag 不等价。</p><div className="dialog-actions"><button type="button" onClick={props.onClose}>取消</button><button type="submit" disabled={props.pending || props.optionsPending || props.blockedReasons.length > 0}>{props.optionsPending ? '正在加载选项…' : props.pending ? '正在创建会话…' : '创建并上传'}</button></div></form></dialog>;
+    if (!props.open) return;
+    form.reset(defaults(props));
+    setFiles([]);
+    setFileError(null);
+  }, [form, props.initialDataSourceId, props.initialDatasetId, props.open]);
+
+  const close = () => {
+    if (props.pending) return;
+    form.reset(defaults(props));
+    setFiles([]);
+    setFileError(null);
+    props.onClose();
+  };
+
+  return (
+    <Modal
+      open={props.open}
+      title="新建上传"
+      footer={null}
+      closable={!props.pending}
+      keyboard={!props.pending}
+      mask={{ closable: false }}
+      destroyOnHidden
+      width={720}
+      onCancel={close}
+      afterOpenChange={(open) => {
+        if (open) form.setFocus('dataSourceId');
+      }}
+    >
+      <form
+        className={styles.uploadForm}
+        onSubmit={form.handleSubmit((value) => {
+          if (files.length === 0) {
+            setFileError('请至少选择一个文件');
+            return;
+          }
+          setFileError(null);
+          props.onSubmit({
+            dataSourceId: value.dataSourceId,
+            targetDatasetId: value.targetDatasetId || null,
+            files,
+          });
+        })}
+      >
+        <RHFSelect
+          control={form.control}
+          name="dataSourceId"
+          label="数据源"
+          placeholder="选择数据源"
+          disabled={props.pending || props.optionsPending}
+          options={props.dataSources.map((source) => ({
+            value: source.id,
+            label: `${source.name} · ${source.id}${source.allowed ? '' : '（不可用）'}`,
+            disabled: !source.allowed,
+          }))}
+        />
+        <RHFSelect
+          control={form.control}
+          name="targetDatasetId"
+          label="目标 Dataset"
+          placeholder="选择 Dataset"
+          disabled={props.pending || props.optionsPending}
+          options={props.datasets.map((dataset) => ({
+            value: dataset.id,
+            label: `${dataset.name} · ${dataset.id}${dataset.allowed ? '' : '（不可用）'}`,
+            disabled: !dataset.allowed,
+          }))}
+        />
+        <section className={styles.uploadPicker} aria-label="上传文件">
+          <Typography.Text strong>文件</Typography.Text>
+          <SecureUploadPicker
+            files={files}
+            onFilesChange={(nextFiles) => {
+              setFiles(nextFiles);
+              if (nextFiles.length > 0) setFileError(null);
+            }}
+            onRejected={(rejection) => {
+              setFileError(rejection.code === 'TOO_MANY_FILES' ? '一次最多选择 100 个文件' : `${rejection.fileName} 超出大小限制`);
+            }}
+            disabled={props.pending}
+            maxCount={100}
+            multiple
+            label="选择待上传文件"
+          />
+          {fileError ? <Typography.Text type="danger" role="alert">{fileError}</Typography.Text> : null}
+        </section>
+        {props.blockedReasons.length > 0 ? (
+          <Alert
+            type="error"
+            showIcon
+            title="当前条件不允许创建上传"
+            description={<ul>{props.blockedReasons.map((reason) => <li key={reason.code}>{reason.code}：{reason.message}</li>)}</ul>}
+          />
+        ) : null}
+        <Alert
+          type="info"
+          showIcon
+          title="受控直传"
+          description="浏览器将通过短时 no-store 授权直传 OSS Multipart；文件内容不会经过业务 API。对象 SHA-256 会在 Manifest 提交前补齐，且不等同于 Multipart ETag。"
+        />
+        <Flex justify="end" gap="small" wrap="wrap">
+          <Button disabled={props.pending} onClick={close}>取消</Button>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={props.pending}
+            disabled={props.optionsPending || props.blockedReasons.length > 0}
+          >
+            {props.optionsPending ? '正在加载选项…' : props.pending ? '正在创建会话…' : '创建并上传'}
+          </Button>
+        </Flex>
+      </form>
+    </Modal>
+  );
 }

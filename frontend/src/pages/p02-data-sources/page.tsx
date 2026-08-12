@@ -1,38 +1,148 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { useAsyncJob } from '../../shared/jobs/use-async-job';
-import { useIngestScope } from '../../features/ingest/use-ingest-scope';
-import { routes } from '../../features/ingest/routing';
-import { IngestRegion, type IngestRegionState } from '../../features/ingest/region-state';
-import { useDataSource, useDataSourceMutation, useDataSourcesPage, useTestDataSourceConnection } from '../../features/ingest/api';
-import { createMutationIntentKey } from '../../features/ingest/mutation-machine';
-import { formText } from '../../features/ingest/form-data';
+import { Alert, Button, Descriptions, Flex, Input, Select, Space, Typography } from 'antd';
+import { Plus, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { canMutateDataSource, isUnknownEnum } from '../../entities/data-source';
+import {
+  useDataSource,
+  useDataSourceMutation,
+  useDataSourcesPage,
+  useTestDataSourceConnection,
+} from '../../features/ingest/api';
 import {
   isConnectorEditable,
   toWritableBindingWire,
   toWritableConnectorWire,
   type WritableConnectorBinding,
 } from '../../features/ingest/connectors/registry';
-import { dataSourcesQueryCodec, updateDataSourcesSearch } from './query-codec';
+import { createMutationIntentKey } from '../../features/ingest/mutation-machine';
+import { routes } from '../../features/ingest/routing';
+import { useIngestScope } from '../../features/ingest/use-ingest-scope';
+import { isDomainError } from '../../shared/api/domain-error';
+import { useCapabilities } from '../../shared/auth/use-capabilities';
+import { useAsyncJob } from '../../shared/jobs/use-async-job';
+import {
+  DataCursorPager,
+  EntityDrawer,
+  FilterToolbar,
+  PageState,
+  StandardPageScaffold,
+  StatusTag,
+  UiMetricCard,
+  type DangerConflict,
+  type DangerPreflightEvidence,
+  type PageStateKind,
+} from '../../shared/ui';
 import { DataSourceTable } from './components/DataSourceTable';
+import {
+  ConfirmSourceStateDialog,
+  ConnectorDeleteConfirmDialog,
+  CredentialRotationDialog,
+} from './components/SourceActionDialogs';
 import { SourceEditorDialog, type SourceDraft } from './components/SourceEditorDialog';
-import { ConfirmSourceStateDialog, ConnectorDeleteConfirmDialog, CredentialRotationDialog } from './components/SourceActionDialogs';
-import '../../features/ingest/styles.css';
-import './styles.css';
+import {
+  dataSourcesQueryCodec,
+  updateDataSourcesSearch,
+  type DataSourcesSearch,
+} from './query-codec';
+import styles from './styles.module.css';
 
-function queryState(query: { isPending: boolean; isError: boolean; isFetching: boolean; data?: unknown }, filtered: boolean): IngestRegionState {
-  if (query.isPending) return 'first-loading';
-  if (query.isError) return 'fatal-error';
-  if (Array.isArray((query.data as { items?: unknown[] } | undefined)?.items) && (query.data as { items: unknown[] }).items.length === 0) return filtered ? 'filtered-empty' : 'empty';
+interface FilterDraft {
+  readonly q: string;
+  readonly sourceType: string;
+  readonly administrativeState: string;
+  readonly connectivity: string;
+  readonly credentialState: string;
+  readonly sort: DataSourcesSearch['sort'];
+  readonly limit: DataSourcesSearch['limit'];
+}
+
+function filterDraft(search: DataSourcesSearch): FilterDraft {
+  return {
+    q: search.q ?? '',
+    sourceType: search.sourceType[0] ?? '',
+    administrativeState: search.administrativeState[0] ?? '',
+    connectivity: search.connectivity[0] ?? '',
+    credentialState: search.credentialState[0] ?? '',
+    sort: search.sort,
+    limit: search.limit,
+  };
+}
+
+function stateFromError(error: unknown): PageStateKind {
+  if (!isDomainError(error)) return 'contract-mismatch';
+  switch (error.code) {
+    case 'FORBIDDEN':
+    case 'UNAUTHENTICATED':
+      return 'forbidden';
+    case 'NOT_FOUND':
+      return 'not-found';
+    case 'GONE':
+      return 'gone';
+    case 'VERSION_CONFLICT':
+    case 'PRECONDITION_FAILED':
+      return 'conflict';
+    case 'RATE_LIMITED':
+      return 'rate-limited';
+    case 'NETWORK_ERROR':
+      return 'offline';
+    case 'CONTRACT_MISMATCH':
+      return 'contract-mismatch';
+    default:
+      return 'error';
+  }
+}
+
+function listState(
+  query: { readonly isPending: boolean; readonly isError: boolean; readonly isFetching: boolean; readonly error: unknown; readonly data?: { readonly items: readonly unknown[] } },
+  filtered: boolean,
+): PageStateKind | 'ready' {
+  if (query.isPending) return 'loading';
+  if (query.isError) return stateFromError(query.error);
+  if (query.data?.items.length === 0) return filtered ? 'filtered-empty' : 'empty';
   return query.isFetching ? 'refreshing' : 'ready';
 }
 
-function ConnectionJob({ jobId }: { readonly jobId: string }) {
+function requestId(error: unknown): string | null {
+  return isDomainError(error) ? error.requestId : null;
+}
+
+function safeOperationError(error: unknown): string | null {
+  if (!error) return null;
+  if (!isDomainError(error)) return '操作未完成；服务端事实没有被乐观推进。';
+  const message =
+    error.code === 'VERSION_CONFLICT' || error.code === 'PRECONDITION_FAILED'
+      ? '资源版本已变化，请重新加载后再提交。'
+      : error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED'
+        ? '当前授权不允许执行此操作。'
+        : error.code === 'VALIDATION_ERROR'
+          ? '输入未通过服务端校验，请核对后重试。'
+          : '操作未完成；服务端事实没有被乐观推进。';
+  return error.requestId ? `${message} 请求 ID：${error.requestId}` : message;
+}
+
+function conflictFrom(error: unknown): DangerConflict | null {
+  if (!isDomainError(error)) return null;
+  if (error.httpStatus === 409 || error.code === 'VERSION_CONFLICT') {
+    return { status: 409, code: error.code };
+  }
+  if (error.httpStatus === 412 || error.code === 'PRECONDITION_FAILED') {
+    return { status: 412, code: error.code };
+  }
+  return null;
+}
+
+function ConnectionJob({ jobId, error }: { readonly jobId: string; readonly error: unknown }) {
   const job = useAsyncJob(jobId);
+  if (error) return <Alert type="error" showIcon title={safeOperationError(error)} />;
   if (!jobId) return null;
-  return <p role="status">连接测试：{job.data?.status ?? 'QUEUED'}{job.connectionStatus !== 'connected' ? `（${job.connectionStatus}）` : ''}</p>;
+  return (
+    <Alert
+      type="info"
+      showIcon
+      title={<span role="status">连接测试：{job.data?.status ?? 'QUEUED'}{job.connectionStatus !== 'connected' ? `（${job.connectionStatus}）` : ''}</span>}
+    />
+  );
 }
 
 export default function DataSourcesPage() {
@@ -40,23 +150,53 @@ export default function DataSourcesPage() {
   const capabilities = useCapabilities();
   const [params, setParams] = useSearchParams();
   const search = useMemo(() => dataSourcesQueryCodec.parse(params), [params]);
-  const scopeKey = scope ? `${scope.organizationId}/${scope.projectId}/${scope.regionCode}` : null;
+  const [draft, setDraft] = useState<FilterDraft>(() => filterDraft(search));
+  const scopeKey = scope
+    ? `${scope.organizationId}/${scope.projectId}/${scope.regionCode}`
+    : null;
   const previousScopeKey = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => setDraft(filterDraft(search)), [search]);
   useEffect(() => {
     if (previousScopeKey.current !== undefined && previousScopeKey.current !== scopeKey) {
-      setParams(dataSourcesQueryCodec.build(updateDataSourcesSearch(search, { sourceId: undefined, intent: undefined }, true)), { replace: true });
+      setParams(
+        dataSourcesQueryCodec.build(
+          updateDataSourcesSearch(
+            search,
+            { sourceId: undefined, intent: undefined },
+            true,
+          ),
+        ),
+        { replace: true },
+      );
     }
     previousScopeKey.current = scopeKey;
   }, [scopeKey, search, setParams]);
+
   const canRead = capabilities.has('ingest_source.read');
   const canManage = capabilities.has('ingest_source.manage');
-  const listFilters = useMemo(() => ({ q: search.q, sourceType: search.sourceType, administrativeState: search.administrativeState, connectivity: search.connectivity, credentialState: search.credentialState, sort: search.sort, after: search.after, before: search.before, limit: search.limit }), [search]);
+  const listFilters = useMemo(
+    () => ({
+      q: search.q,
+      sourceType: search.sourceType,
+      administrativeState: search.administrativeState,
+      connectivity: search.connectivity,
+      credentialState: search.credentialState,
+      sort: search.sort,
+      after: search.after,
+      before: search.before,
+      limit: search.limit,
+    }),
+    [search],
+  );
   const page = useDataSourcesPage(scope, listFilters, canRead);
   const detail = useDataSource(scope, search.sourceId ?? null, canRead);
   const createMutation = useDataSourceMutation('create');
   const updateMutation = useDataSourceMutation('update');
   const rotateMutation = useDataSourceMutation('rotate-credential');
-  const stateMutation = useDataSourceMutation(detail.data?.administrativeState === 'ENABLED' ? 'disable' : 'enable');
+  const stateMutation = useDataSourceMutation(
+    detail.data?.administrativeState === 'ENABLED' ? 'disable' : 'enable',
+  );
   const testMutation = useTestDataSourceConnection();
   const [stateDialog, setStateDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
@@ -64,44 +204,80 @@ export default function DataSourcesPage() {
   const [rotateDialog, setRotateDialog] = useState(false);
   const [connectionJobId, setConnectionJobId] = useState('');
 
-  if (!scope) return <IngestRegion label="数据源" state="feature-unavailable" />;
-  if (!canRead && !capabilities.loading) return <IngestRegion label="数据源" state="forbidden" />;
+  const applySearch = useCallback(
+    (patch: Partial<DataSourcesSearch>) => {
+      const next = updateDataSourcesSearch(search, patch);
+      setParams(dataSourcesQueryCodec.build(next));
+    },
+    [search, setParams],
+  );
 
-  const applySearch = (next: Partial<typeof search>) => setParams(dataSourcesQueryCodec.build({ ...search, ...next }, search));
-  const createSource = (draft: SourceDraft) => {
-    createMutation.mutate({
-      scope,
-      idempotencyKey: createMutationIntentKey(),
-      body: {
-        name: draft.name,
-        source_type: draft.configuration.kind,
-        source_format: draft.sourceFormat,
-        source_format_version: draft.sourceFormatVersion,
-        binding: toWritableBindingWire(draft.binding),
-        configuration: toWritableConnectorWire(draft.configuration),
-        upload_policy_code: draft.uploadPolicyCode,
-        ...(draft.credentialToken ? { credential_input: { kind: 'TOKEN', token: draft.credentialToken } } : {}),
+  const resetFilters = useCallback(() => {
+    const next = filterDraft({
+      ...search,
+      q: undefined,
+      sourceType: [],
+      administrativeState: [],
+      connectivity: [],
+      credentialState: [],
+      sort: 'updatedAt:desc',
+      limit: 20,
+    });
+    setDraft(next);
+    applySearch({
+      q: undefined,
+      sourceType: [],
+      administrativeState: [],
+      connectivity: [],
+      credentialState: [],
+      sort: 'updatedAt:desc',
+      limit: 20,
+    });
+  }, [applySearch, search]);
+
+  const createSource = (sourceDraft: SourceDraft) => {
+    if (!scope) return;
+    createMutation.mutate(
+      {
+        scope,
+        idempotencyKey: createMutationIntentKey(),
+        body: {
+          name: sourceDraft.name,
+          source_type: sourceDraft.configuration.kind,
+          source_format: sourceDraft.sourceFormat,
+          source_format_version: sourceDraft.sourceFormatVersion,
+          binding: toWritableBindingWire(sourceDraft.binding),
+          configuration: toWritableConnectorWire(sourceDraft.configuration),
+          upload_policy_code: sourceDraft.uploadPolicyCode,
+          ...(sourceDraft.credentialToken
+            ? { credential_input: { kind: 'TOKEN', token: sourceDraft.credentialToken } }
+            : {}),
+        },
       },
-    }, { onSuccess: (source) => applySearch({ intent: undefined, sourceId: source.id }) });
+      { onSuccess: (source) => applySearch({ intent: undefined, sourceId: source.id }) },
+    );
   };
 
-  const updateSource = (draft: SourceDraft) => {
-    if (!detail.data || !draft.changeReason) return;
-    updateMutation.mutate({
-      scope,
-      sourceId: detail.data.id,
-      etag: detail.data.etag,
-      idempotencyKey: createMutationIntentKey(),
-      body: {
-        name: draft.name,
-        source_format: draft.sourceFormat,
-        source_format_version: draft.sourceFormatVersion,
-        binding: toWritableBindingWire(draft.binding),
-        configuration: toWritableConnectorWire(draft.configuration),
-        upload_policy_code: draft.uploadPolicyCode,
-        change_reason: draft.changeReason,
+  const updateSource = (sourceDraft: SourceDraft) => {
+    if (!scope || !detail.data || !sourceDraft.changeReason) return;
+    updateMutation.mutate(
+      {
+        scope,
+        sourceId: detail.data.id,
+        etag: detail.data.etag,
+        idempotencyKey: createMutationIntentKey(),
+        body: {
+          name: sourceDraft.name,
+          source_format: sourceDraft.sourceFormat,
+          source_format_version: sourceDraft.sourceFormatVersion,
+          binding: toWritableBindingWire(sourceDraft.binding),
+          configuration: toWritableConnectorWire(sourceDraft.configuration),
+          upload_policy_code: sourceDraft.uploadPolicyCode,
+          change_reason: sourceDraft.changeReason,
+        },
       },
-    }, { onSuccess: () => setEditDialog(false) });
+      { onSuccess: () => setEditDialog(false) },
+    );
   };
 
   const editorInitial = detail.data && isConnectorEditable(detail.data.configuration)
@@ -121,29 +297,431 @@ export default function DataSourcesPage() {
       }
     : null;
 
+  const statePreflight = useMemo<DangerPreflightEvidence | null>(() => {
+    if (!detail.data || detail.dataUpdatedAt <= 0 || !scopeKey) return null;
+    const preparedAt = new Date(detail.dataUpdatedAt);
+    return {
+      preparedAt: preparedAt.toISOString(),
+      expiresAt: new Date(preparedAt.getTime() + 60_000).toISOString(),
+      resourceVersion: detail.data.etag,
+      scopeKey,
+    };
+  }, [detail.data, detail.dataUpdatedAt, scopeKey]);
+
+  if (!scope) {
+    return <PageState state="feature-unavailable" label="数据源" />;
+  }
+  if (!canRead && !capabilities.loading) {
+    return <PageState state="forbidden" label="数据源" />;
+  }
+
+  const hasActiveFilters = Boolean(
+    search.q ||
+      search.sourceType.length ||
+      search.administrativeState.length ||
+      search.connectivity.length ||
+      search.credentialState.length,
+  );
+  const resolvedListState = listState(page, hasActiveFilters);
+  const summaryError = page.data?.componentErrors.find((error) => error.component === 'summary');
+  const summaryState = summaryError
+    ? 'error'
+    : page.isPending
+      ? 'loading'
+      : page.isError
+        ? 'error'
+        : page.data
+          ? 'ready'
+          : 'unknown';
+  const table = (
+    <DataSourceTable
+      items={page.data?.items ?? []}
+      selectedId={search.sourceId}
+      onSelect={(sourceId) => applySearch({ sourceId })}
+    />
+  );
+  const pager = page.data ? (
+    <DataCursorPager
+      pageInfo={page.data.pageInfo}
+      busy={page.isFetching}
+      windowLabel={`当前窗口 ${page.data.items.length} 条 · 快照 ${page.data.snapshotAt}`}
+      onChange={(cursor) => applySearch(cursor)}
+    />
+  ) : null;
+  const listContent =
+    resolvedListState === 'ready' ? (
+      <div className={styles.listStack}>{table}{pager}</div>
+    ) : resolvedListState === 'refreshing' ? (
+      <PageState state="refreshing" label="数据源列表">
+        <div className={styles.listStack}>{table}{pager}</div>
+      </PageState>
+    ) : (
+      <PageState
+        state={resolvedListState}
+        label="数据源列表"
+        requestId={requestId(page.error)}
+        onRetry={page.isError ? () => void page.refetch() : undefined}
+        action={resolvedListState === 'filtered-empty' ? <Button onClick={resetFilters}>清除筛选</Button> : undefined}
+      />
+    );
+
+  const detailState = detail.error ? stateFromError(detail.error) : null;
+  const currentScopeKey = scopeKey ?? '';
+  const stateConflict = conflictFrom(stateMutation.error);
+
   return (
-    <main className="ingest-page p02-page">
-      <header className="page-header"><div><p className="eyebrow">数据接入</p><h1>数据源</h1><p>管理机器人、边缘代理与 OSS 导入连接器。</p></div><div className="header-actions"><Link to={routes.uploadJobs.build()}>上传任务</Link>{canManage && page.data?.allowedActions.includes('CREATE') ? <button type="button" onClick={() => applySearch({ intent: 'create' })}>新建数据源</button> : null}</div></header>
-      <section className="metric-grid" aria-label="数据源摘要">
-        <article><span>数据源总数</span><strong>{page.data?.summary.totalCount ?? '—'}</strong></article>
-        <article><span>在线</span><strong>{page.data?.summary.onlineCount ?? '—'}</strong></article>
-        <article><span>今日验证字节</span><strong>{page.data?.summary.verifiedBytesToday ?? '—'}</strong></article>
-        <article><span>异常</span><strong>{page.data?.summary.abnormalCount ?? '—'}</strong></article>
-      </section>
-      {page.data?.componentErrors.map((error) => <p role="alert" key={`${error.component}-${error.requestId}`}>{error.component} 区域暂不可用：{error.message}（请求 ID：<code>{error.requestId}</code>）</p>)}
-      <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const sourceType = formText(data, 'sourceType'); const administrativeState = formText(data, 'administrativeState'); const connectivity = formText(data, 'connectivity'); applySearch({ q: formText(data, 'q') || undefined, sourceType: sourceType ? [sourceType] : [], administrativeState: administrativeState ? [administrativeState] : [], connectivity: connectivity ? [connectivity] : [], sort: formText(data, 'sort') as typeof search.sort, limit: Number(formText(data, 'limit')) as typeof search.limit }); }}>
-        <label>搜索<input name="q" defaultValue={search.q} placeholder="名称或稳定 ID" /></label><label>连接器<select name="sourceType" defaultValue={search.sourceType[0] ?? ''}><option value="">全部</option><option value="ROBOT">机器人</option><option value="EDGE_AGENT">边缘代理</option><option value="OSS_IMPORT">OSS 导入</option></select></label><label>启用状态<select name="administrativeState" defaultValue={search.administrativeState[0] ?? ''}><option value="">全部</option><option value="ENABLED">已启用</option><option value="DISABLED">已停用</option></select></label><label>连通状态<select name="connectivity" defaultValue={search.connectivity[0] ?? ''}><option value="">全部</option><option value="ONLINE">在线</option><option value="DEGRADED">降级</option><option value="OFFLINE">离线</option></select></label><label>排序<select name="sort" defaultValue={search.sort}><option value="updatedAt:desc">最近更新</option><option value="name:asc">名称</option><option value="lastTestAt:desc">最近测试</option></select></label><label>每页<select name="limit" defaultValue={search.limit}><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button type="submit">筛选</button>
-      </form>
-      <IngestRegion label="数据源列表" state={queryState(page, Boolean(search.q || search.sourceType.length || search.administrativeState.length || search.connectivity.length || search.credentialState.length))} onRetry={() => void page.refetch()} onClearFilters={() => applySearch({ q: undefined, sourceType: [], administrativeState: [], connectivity: [], credentialState: [] })}>
-        <DataSourceTable items={page.data?.items ?? []} selectedId={search.sourceId} onSelect={(sourceId) => applySearch({ sourceId })} />
-      </IngestRegion>
-      <div className="cursor-bar"><button type="button" disabled={!page.data?.pageInfo.hasPreviousPage} onClick={() => applySearch({ before: page.data?.pageInfo.startCursor ?? undefined, after: undefined })}>上一组</button><button type="button" disabled={!page.data?.pageInfo.hasNextPage} onClick={() => applySearch({ after: page.data?.pageInfo.endCursor ?? undefined, before: undefined })}>下一组</button></div>
-      {detail.data ? <aside className="inspector" aria-label="数据源详情"><button type="button" onClick={() => applySearch({ sourceId: undefined })}>关闭</button><h2>{detail.data.name}</h2><code>{detail.data.id}</code><dl><dt>连接状态</dt><dd>{typeof detail.data.connectivity.state === 'string' ? detail.data.connectivity.state : 'UNKNOWN'}</dd><dt>配置版本</dt><dd>{detail.data.configVersion}</dd><dt>凭据</dt><dd>{detail.data.credential.configured ? '已配置' : '未配置'} {detail.data.credential.maskedHint}</dd></dl>{isUnknownEnum(detail.data.sourceType) ? <p role="alert">未知连接器类型，仅支持只读查看且编辑、测试与启停全部禁用。</p> : null}<div className="action-row"><button type="button" disabled={!canManage || !editorInitial?.binding || !detail.data.allowedActions.includes('EDIT_CONFIGURATION')} onClick={() => setEditDialog(true)}>编辑</button><button type="button" disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes('ROTATE_CREDENTIAL')} onClick={() => setRotateDialog(true)}>轮换凭据</button><button type="button" disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes('TEST_CONNECTION')} onClick={() => { const key = createMutationIntentKey(); testMutation.mutate({ scope, sourceId: detail.data.id, etag: detail.data.etag, idempotencyKey: key, body: { observed_config_version: detail.data.configVersion, observed_credential_version: detail.data.credentialVersion } }, { onSuccess: (wire) => setConnectionJobId(wire.job.job_id) }); }}>测试连接</button><button type="button" disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes(detail.data.administrativeState === 'ENABLED' ? 'DISABLE' : 'ENABLE')} onClick={() => setStateDialog(true)}>{detail.data.administrativeState === 'ENABLED' ? '停用' : '启用'}</button>{detail.data.allowedActions.includes('DELETE') ? <button type="button" onClick={() => setDeleteDialog(true)}>删除</button> : null}</div><ConnectionJob jobId={connectionJobId} /></aside> : null}
-      <SourceEditorDialog open={search.intent === 'create' && canManage && Boolean(page.data?.allowedActions.includes('CREATE'))} mode="create" pending={createMutation.isPending} onClose={() => applySearch({ intent: undefined })} onSubmit={createSource} />
-      {editorInitial?.binding ? <SourceEditorDialog open={editDialog} mode="update" pending={updateMutation.isPending} initial={{ ...editorInitial, binding: editorInitial.binding }} onClose={() => setEditDialog(false)} onSubmit={updateSource} /> : null}
-      {detail.data ? <CredentialRotationDialog open={rotateDialog} sourceId={detail.data.id} pending={rotateMutation.isPending} onClose={() => setRotateDialog(false)} onConfirm={(token, reason) => rotateMutation.mutate({ scope, sourceId: detail.data.id, etag: detail.data.etag, idempotencyKey: createMutationIntentKey(), body: { credential_input: { kind: 'TOKEN', token }, reason } }, { onSuccess: () => setRotateDialog(false) })} /> : null}
-      {detail.data ? <ConfirmSourceStateDialog open={stateDialog} sourceId={detail.data.id} action={detail.data.administrativeState === 'ENABLED' ? 'disable' : 'enable'} pending={stateMutation.isPending} blockedReasons={detail.data.blockedReasons} onClose={() => setStateDialog(false)} onConfirm={() => stateMutation.mutate({ scope, sourceId: detail.data.id, etag: detail.data.etag, idempotencyKey: createMutationIntentKey(), body: { reason: '用户确认', expected_administrative_state: detail.data.administrativeState } }, { onSuccess: () => setStateDialog(false) })} /> : null}
-      {detail.data ? <ConnectorDeleteConfirmDialog open={deleteDialog} sourceId={detail.data.id} blockedReasons={detail.data.blockedReasons} onClose={() => setDeleteDialog(false)} /> : null}
+    <main className={styles.page}>
+      <StandardPageScaffold
+        header={{
+          title: '数据源',
+          description: '管理机器人、边缘代理与 OSS 导入连接器。',
+          breadcrumbs: [
+            { key: 'ingest', label: '数据接入' },
+            { key: 'sources', label: '数据源' },
+          ],
+          actions: (
+            <>
+              <Button href={routes.uploadJobs.build()} icon={<Upload aria-hidden="true" size={16} />}>
+                上传任务
+              </Button>
+              {canManage && page.data?.allowedActions.includes('CREATE') ? (
+                <Button
+                  type="primary"
+                  icon={<Plus aria-hidden="true" size={16} />}
+                  onClick={() => {
+                    createMutation.reset();
+                    applySearch({ intent: 'create' });
+                  }}
+                >
+                  新建数据源
+                </Button>
+              ) : null}
+            </>
+          ),
+        }}
+        summary={(
+          <>
+            <UiMetricCard label="数据源总数" value={page.data?.summary.totalCount} state={summaryState} asOf={page.data?.summary.asOf} />
+            <UiMetricCard label="在线" value={page.data?.summary.onlineCount} state={summaryState} asOf={page.data?.summary.asOf} />
+            <UiMetricCard label="今日验证字节" value={page.data?.summary.verifiedBytesToday} unit="B" state={summaryState} asOf={page.data?.summary.asOf} />
+            <UiMetricCard label="异常" value={page.data?.summary.abnormalCount} state={summaryState} asOf={page.data?.summary.asOf} />
+          </>
+        )}
+        filters={(
+          <FilterToolbar
+            label="数据源筛选"
+            onApply={() =>
+              applySearch({
+                q: draft.q || undefined,
+                sourceType: draft.sourceType ? [draft.sourceType] : [],
+                administrativeState: draft.administrativeState ? [draft.administrativeState] : [],
+                connectivity: draft.connectivity ? [draft.connectivity] : [],
+                credentialState: draft.credentialState ? [draft.credentialState] : [],
+                sort: draft.sort,
+                limit: draft.limit,
+              })
+            }
+            onReset={resetFilters}
+            disabled={page.isPending}
+          >
+            <label className={styles.filterField}>
+              <span>搜索</span>
+              <Input
+                value={draft.q}
+                placeholder="名称或稳定 ID"
+                allowClear
+                onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>连接器</span>
+              <Select
+                value={draft.sourceType}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: '机器人', value: 'ROBOT' },
+                  { label: '边缘代理', value: 'EDGE_AGENT' },
+                  { label: 'OSS 导入', value: 'OSS_IMPORT' },
+                ]}
+                onChange={(sourceType) => setDraft((current) => ({ ...current, sourceType }))}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>启用状态</span>
+              <Select
+                value={draft.administrativeState}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: '已启用', value: 'ENABLED' },
+                  { label: '已停用', value: 'DISABLED' },
+                ]}
+                onChange={(administrativeState) => setDraft((current) => ({ ...current, administrativeState }))}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>连通状态</span>
+              <Select
+                value={draft.connectivity}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: '在线', value: 'ONLINE' },
+                  { label: '降级', value: 'DEGRADED' },
+                  { label: '离线', value: 'OFFLINE' },
+                  { label: '认证失败', value: 'AUTH_FAILED' },
+                  { label: '配置错误', value: 'CONFIG_ERROR' },
+                ]}
+                onChange={(connectivity) => setDraft((current) => ({ ...current, connectivity }))}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>凭据状态</span>
+              <Select
+                value={draft.credentialState}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: '已配置', value: 'CONFIGURED' },
+                  { label: '缺失', value: 'MISSING' },
+                  { label: '待轮换', value: 'ROTATION_DUE' },
+                  { label: '已过期', value: 'EXPIRED' },
+                  { label: '已撤销', value: 'REVOKED' },
+                  { label: '无效', value: 'INVALID' },
+                ]}
+                onChange={(credentialState) => setDraft((current) => ({ ...current, credentialState }))}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>排序</span>
+              <Select
+                value={draft.sort}
+                options={[
+                  { label: '最近更新', value: 'updatedAt:desc' },
+                  { label: '名称', value: 'name:asc' },
+                  { label: '最近测试', value: 'lastTestAt:desc' },
+                ]}
+                onChange={(sort) => setDraft((current) => ({ ...current, sort }))}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>每页</span>
+              <Select
+                value={draft.limit}
+                options={[10, 20, 50].map((limit) => ({ label: String(limit), value: limit }))}
+                onChange={(limit) => setDraft((current) => ({ ...current, limit }))}
+              />
+            </label>
+          </FilterToolbar>
+        )}
+        state={(
+          <div className={styles.contentStack}>
+            {page.data?.componentErrors.map((error) => (
+              <Alert
+                type="error"
+                showIcon
+                key={`${error.component}-${error.requestId}`}
+                title={`${error.component} 区域暂不可用`}
+                description={<span>{error.message}（请求 ID：<code>{error.requestId}</code>）</span>}
+              />
+            ))}
+            {listContent}
+          </div>
+        )}
+      />
+
+      <EntityDrawer
+        open={Boolean(search.sourceId)}
+        title={detail.data?.name ?? '数据源详情'}
+        loading={detail.isPending && Boolean(search.sourceId)}
+        onClose={() => {
+          setStateDialog(false);
+          setDeleteDialog(false);
+          setEditDialog(false);
+          setRotateDialog(false);
+          applySearch({ sourceId: undefined });
+        }}
+      >
+        <aside className={styles.inspector} aria-label="数据源详情">
+          {detailState ? (
+            <PageState
+              state={detailState}
+              label="数据源详情"
+              requestId={requestId(detail.error)}
+              onRetry={() => void detail.refetch()}
+            />
+          ) : detail.data ? (
+            <Space orientation="vertical" size="middle" className={styles.inspectorStack}>
+              <Typography.Text code>{detail.data.id}</Typography.Text>
+              <Descriptions bordered column={1} size="small">
+                <Descriptions.Item label="连接状态">
+                  <StatusTag
+                    status={typeof detail.data.connectivity.state === 'string' ? detail.data.connectivity.state : detail.data.connectivity.state.raw}
+                    known={typeof detail.data.connectivity.state === 'string' && detail.data.connectivity.state !== 'UNKNOWN'}
+                    tone={detail.data.connectivity.state === 'ONLINE' ? 'success' : 'warning'}
+                  />
+                </Descriptions.Item>
+                <Descriptions.Item label="配置版本">{detail.data.configVersion}</Descriptions.Item>
+                <Descriptions.Item label="凭据">
+                  {detail.data.credential.configured ? '已配置' : '未配置'} {detail.data.credential.maskedHint}
+                </Descriptions.Item>
+                <Descriptions.Item label="更新时间">
+                  <time dateTime={detail.data.updatedAt}>{detail.data.updatedAt}</time>
+                </Descriptions.Item>
+              </Descriptions>
+              {isUnknownEnum(detail.data.sourceType) ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title="未知连接器类型"
+                  description="当前仅支持只读查看；编辑、凭据轮换、测试与启停全部禁用。"
+                />
+              ) : null}
+              <Flex gap="small" wrap="wrap">
+                <Button
+                  disabled={!canManage || !editorInitial?.binding || !detail.data.allowedActions.includes('EDIT_CONFIGURATION')}
+                  onClick={() => {
+                    updateMutation.reset();
+                    setEditDialog(true);
+                  }}
+                >
+                  编辑
+                </Button>
+                <Button
+                  disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes('ROTATE_CREDENTIAL')}
+                  onClick={() => {
+                    rotateMutation.reset();
+                    setRotateDialog(true);
+                  }}
+                >
+                  轮换凭据
+                </Button>
+                <Button
+                  disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes('TEST_CONNECTION') || testMutation.isPending}
+                  loading={testMutation.isPending}
+                  onClick={() => {
+                    testMutation.reset();
+                    setConnectionJobId('');
+                    testMutation.mutate(
+                      {
+                        scope,
+                        sourceId: detail.data.id,
+                        etag: detail.data.etag,
+                        idempotencyKey: createMutationIntentKey(),
+                        body: {
+                          observed_config_version: detail.data.configVersion,
+                          observed_credential_version: detail.data.credentialVersion,
+                        },
+                      },
+                      { onSuccess: (wire) => setConnectionJobId(wire.job.job_id) },
+                    );
+                  }}
+                >
+                  测试连接
+                </Button>
+                <Button
+                  disabled={
+                    !canManage ||
+                    !canMutateDataSource(detail.data) ||
+                    !detail.data.allowedActions.includes(
+                      detail.data.administrativeState === 'ENABLED' ? 'DISABLE' : 'ENABLE',
+                    )
+                  }
+                  onClick={() => {
+                    stateMutation.reset();
+                    setStateDialog(true);
+                  }}
+                >
+                  {detail.data.administrativeState === 'ENABLED' ? '停用' : '启用'}
+                </Button>
+                {detail.data.allowedActions.includes('DELETE') ? (
+                  <Button danger onClick={() => setDeleteDialog(true)}>删除</Button>
+                ) : null}
+              </Flex>
+              <ConnectionJob jobId={connectionJobId} error={testMutation.error} />
+            </Space>
+          ) : null}
+        </aside>
+      </EntityDrawer>
+
+      <SourceEditorDialog
+        open={search.intent === 'create' && canManage && Boolean(page.data?.allowedActions.includes('CREATE'))}
+        mode="create"
+        pending={createMutation.isPending}
+        errorMessage={safeOperationError(createMutation.error)}
+        onClose={() => applySearch({ intent: undefined })}
+        onSubmit={createSource}
+      />
+      {editorInitial?.binding ? (
+        <SourceEditorDialog
+          open={editDialog}
+          mode="update"
+          pending={updateMutation.isPending}
+          errorMessage={safeOperationError(updateMutation.error)}
+          initial={{ ...editorInitial, binding: editorInitial.binding }}
+          onClose={() => setEditDialog(false)}
+          onSubmit={updateSource}
+        />
+      ) : null}
+      {detail.data ? (
+        <CredentialRotationDialog
+          open={rotateDialog}
+          sourceId={detail.data.id}
+          pending={rotateMutation.isPending}
+          errorMessage={safeOperationError(rotateMutation.error)}
+          onClose={() => setRotateDialog(false)}
+          onConfirm={(token, reason) =>
+            rotateMutation.mutate(
+              {
+                scope,
+                sourceId: detail.data.id,
+                etag: detail.data.etag,
+                idempotencyKey: createMutationIntentKey(),
+                body: { credential_input: { kind: 'TOKEN', token }, reason },
+              },
+              { onSuccess: () => setRotateDialog(false) },
+            )
+          }
+        />
+      ) : null}
+      {detail.data ? (
+        <ConfirmSourceStateDialog
+          open={stateDialog}
+          sourceId={detail.data.id}
+          action={detail.data.administrativeState === 'ENABLED' ? 'disable' : 'enable'}
+          pending={stateMutation.isPending}
+          blockedReasons={detail.data.blockedReasons}
+          preflight={statePreflight}
+          currentScopeKey={currentScopeKey}
+          conflict={stateConflict}
+          onClose={() => setStateDialog(false)}
+          onResolveConflict={() => {
+            stateMutation.reset();
+            void detail.refetch();
+          }}
+          onConfirm={() =>
+            stateMutation.mutate(
+              {
+                scope,
+                sourceId: detail.data.id,
+                etag: detail.data.etag,
+                idempotencyKey: createMutationIntentKey(),
+                body: {
+                  reason: '用户确认',
+                  expected_administrative_state: detail.data.administrativeState,
+                },
+              },
+              { onSuccess: () => setStateDialog(false) },
+            )
+          }
+        />
+      ) : null}
+      {detail.data ? (
+        <ConnectorDeleteConfirmDialog
+          open={deleteDialog}
+          sourceId={detail.data.id}
+          blockedReasons={detail.data.blockedReasons}
+          currentScopeKey={currentScopeKey}
+          onClose={() => setDeleteDialog(false)}
+        />
+      ) : null}
     </main>
   );
 }

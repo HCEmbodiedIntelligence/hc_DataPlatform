@@ -18,17 +18,17 @@ test.describe('P12 存储容量', () => {
       expect(screenshot.byteLength).toBeGreaterThan(1_000);
     }
 
-    await page.getByRole('button', { name: 'Inventory 对象' }).click();
-    await expect(page.getByRole('table', { name: '同一快照下的存储对象事实' })).toBeVisible();
-    await page.getByRole('button', { name: 'source/•••/02' }).click();
+    await page.getByRole('tab', { name: 'Inventory 对象' }).click();
+    await expect(page.getByRole('region', { name: '同一快照下的存储对象事实' })).toBeVisible();
+    await page.getByRole('button', { name: /source\/•••\/02/ }).click();
     await expect(page.getByRole('dialog', { name: '对象详情' })).toContainText('只读');
     await expect(page.getByRole('button', { name: '关闭对象详情' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: '对象详情' })).toBeHidden();
 
-    await page.getByRole('button', { name: 'Multipart 诊断' }).click();
-    await expect(page.getByRole('table', { name: '只读 Multipart 上传诊断' })).toContainText('multipart_fx_01');
-    await page.getByRole('button', { name: '费用' }).click();
+    await page.getByRole('tab', { name: 'Multipart 诊断' }).click();
+    await expect(page.getByRole('region', { name: '只读 Multipart 上传诊断' })).toContainText('multipart_fx_01');
+    await page.getByRole('tab', { name: '费用' }).click();
     await expect(page.getByRole('heading', { name: '2026-08 费用构成' })).toBeVisible();
     await expect(page.getByRole('main').first()).not.toContainText(/执行|删除|Restore|Abort/u);
   });

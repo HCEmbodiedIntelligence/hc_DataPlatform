@@ -1,5 +1,7 @@
+import { Card } from 'antd';
 import { useEffect, useRef } from 'react';
 import type { StorageOverview } from './types';
+import styles from './storage-charts.module.css';
 
 export function StorageCharts({ overview }: Readonly<{ overview: StorageOverview }>) {
   const tierRef = useRef<HTMLDivElement>(null);
@@ -52,15 +54,21 @@ export function StorageCharts({ overview }: Readonly<{ overview: StorageOverview
   }, [overview]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 16 }}>
-      <section style={{ background: '#fff', border: '1px solid #d7e2e0', borderRadius: 8, padding: 16 }}>
-        <h2>存储层级分布</h2><div ref={tierRef} role="img" aria-label="存储层级物理容量分布图" style={{ height: 280 }} />
-        <details><summary>查看分布数据</summary><ul>{overview.storageClasses.map((item) => <li key={item.storageClass}>{item.storageClass}：{item.physicalBytes ?? '无数据'}</li>)}</ul></details>
-      </section>
-      <section style={{ background: '#fff', border: '1px solid #d7e2e0', borderRadius: 8, padding: 16 }}>
-        <h2>容量趋势</h2><div ref={trendRef} role="img" aria-label="按对象角色划分的月度物理容量趋势图" style={{ height: 280 }} />
-        <details><summary>查看趋势数据</summary><ul>{overview.growth.map((item) => <li key={`${item.month}-${item.role}`}>{item.month} / {item.role}：{item.physicalBytes ?? item.completeness}</li>)}</ul></details>
-      </section>
+    <div className={styles.grid}>
+      <Card size="small" title={<h2>存储层级分布</h2>}>
+        <div ref={tierRef} role="img" aria-label="存储层级物理容量分布图" className={styles.chart} />
+        <details className={styles.dataDisclosure}>
+          <summary>查看分布数据</summary>
+          <ul>{overview.storageClasses.map((item) => <li key={item.storageClass}>{item.storageClass}：{item.physicalBytes ?? '无数据'}</li>)}</ul>
+        </details>
+      </Card>
+      <Card size="small" title={<h2>容量趋势</h2>}>
+        <div ref={trendRef} role="img" aria-label="按对象角色划分的月度物理容量趋势图" className={styles.chart} />
+        <details className={styles.dataDisclosure}>
+          <summary>查看趋势数据</summary>
+          <ul>{overview.growth.map((item) => <li key={`${item.month}-${item.role}`}>{item.month} / {item.role}：{item.physicalBytes ?? item.completeness}</li>)}</ul>
+        </details>
+      </Card>
     </div>
   );
 }

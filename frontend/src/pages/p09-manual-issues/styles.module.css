@@ -1,0 +1,45 @@
+.page {
+  min-width: 0;
+}
+
+.filterField {
+  display: grid;
+  min-width: min(100%, 10rem);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+}
+
+.filterField:first-child {
+  min-width: min(100%, 16rem);
+}
+
+.rowActions {
+  min-width: 19rem;
+}
+
+.drawerContent {
+  width: 100%;
+}
+
+.drawerContent a {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.operationAlert {
+  margin-top: var(--hc-space-3, 12px);
+}
+
+@media (max-width: 768px) {
+  .filterField,
+  .filterField:first-child {
+    width: 100%;
+  }
+}

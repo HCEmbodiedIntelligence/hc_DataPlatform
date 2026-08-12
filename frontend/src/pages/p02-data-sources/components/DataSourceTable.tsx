@@ -1,8 +1,23 @@
-import type { DataSourceSummary } from '../../../entities/data-source';
+import type { ColumnDef } from '@tanstack/react-table';
+import { Button } from 'antd';
+import { useMemo } from 'react';
+import type { DataSourceSummary, UnknownEnum } from '../../../entities/data-source';
 import { credentialDisplay } from '../../../features/ingest/connectors/credential-boundary';
+import { DataTable, StatusTag } from '../../../shared/ui';
+import styles from '../styles.module.css';
 
-function label(value: string | { readonly kind: 'UNKNOWN'; readonly raw: string }): string {
+function label(value: string | UnknownEnum): string {
   return typeof value === 'string' ? value : `未知（${value.raw}）`;
+}
+
+function connectivityTone(value: string | UnknownEnum) {
+  if (typeof value !== 'string') return 'warning' as const;
+  if (value === 'ONLINE') return 'success' as const;
+  if (value === 'DEGRADED') return 'warning' as const;
+  if (value === 'OFFLINE' || value === 'AUTH_FAILED' || value === 'CONFIG_ERROR') {
+    return 'danger' as const;
+  }
+  return 'neutral' as const;
 }
 
 export function DataSourceTable(props: {
@@ -10,24 +25,80 @@ export function DataSourceTable(props: {
   readonly selectedId?: string;
   readonly onSelect: (id: string) => void;
 }) {
+  const columns = useMemo<readonly ColumnDef<DataSourceSummary, unknown>[]>(
+    () => [
+      {
+        id: 'identity',
+        header: '数据源',
+        cell: ({ row }) => (
+          <span className={styles.identity}>
+            <strong>{row.original.name}</strong>
+            <code>{row.original.id}</code>
+          </span>
+        ),
+      },
+      {
+        id: 'sourceType',
+        header: '连接器',
+        cell: ({ row }) => label(row.original.sourceType),
+      },
+      {
+        id: 'connectivity',
+        header: '连接状态',
+        cell: ({ row }) => {
+          const value = row.original.connectivity.state;
+          return (
+            <StatusTag
+              status={typeof value === 'string' ? value : value.raw}
+              label={label(value)}
+              tone={connectivityTone(value)}
+              known={typeof value === 'string' && value !== 'UNKNOWN'}
+            />
+          );
+        },
+      },
+      {
+        id: 'credential',
+        header: '凭据',
+        cell: ({ row }) =>
+          credentialDisplay(row.original.credential.maskedHint, row.original.credential.configured),
+      },
+      {
+        id: 'lastUpload',
+        header: '最近上传',
+        cell: ({ row }) =>
+          row.original.lastUpload ? (
+            <time dateTime={row.original.lastUpload.completedAt}>
+              {row.original.lastUpload.completedAt}
+            </time>
+          ) : (
+            '暂无上传'
+          ),
+      },
+      {
+        id: 'actions',
+        header: '操作',
+        cell: ({ row }) => (
+          <Button
+            type="link"
+            aria-label={`查看 ${row.original.name}`}
+            aria-pressed={row.original.id === props.selectedId}
+            onClick={() => props.onSelect(row.original.id)}
+          >
+            查看
+          </Button>
+        ),
+      },
+    ],
+    [props],
+  );
+
   return (
-    <div className="ingest-table-scroll">
-      <table>
-        <caption>数据源连接器列表</caption>
-        <thead><tr><th scope="col">数据源</th><th scope="col">连接器</th><th scope="col">连接状态</th><th scope="col">凭据</th><th scope="col">最近上传</th><th scope="col">操作</th></tr></thead>
-        <tbody>
-          {props.items.map((source) => (
-            <tr key={source.id} data-selected={source.id === props.selectedId}>
-              <th scope="row"><span>{source.name}</span><code>{source.id}</code></th>
-              <td>{label(source.sourceType)}</td>
-              <td><span className={`status status-${label(source.connectivity.state).toLowerCase()}`}>{label(source.connectivity.state)}</span></td>
-              <td>{credentialDisplay(source.credential.maskedHint, source.credential.configured)}</td>
-              <td>{source.lastUpload ? <time dateTime={source.lastUpload.completedAt}>{source.lastUpload.completedAt}</time> : '暂无上传'}</td>
-              <td><button type="button" onClick={() => props.onSelect(source.id)} aria-label={`查看 ${source.name}`}>查看</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      data={props.items}
+      columns={columns}
+      getRowId={(source) => source.id}
+      caption="数据源连接器列表"
+    />
   );
 }
