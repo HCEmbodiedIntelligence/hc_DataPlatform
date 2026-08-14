@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { Alert, Button, Card, Modal, Typography } from 'antd';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isDatasetId, type DatasetId } from '../../entities/dataset';
 import { isDatasetVersionId, type DatasetVersionId } from '../../entities/dataset-version';
@@ -15,14 +16,14 @@ import {
   routes as cleaningRoutes,
 } from '../../features/cleaning/routing';
 import { useViewerEpisodeQuery } from '../../features/datasets/api';
-import { ConfirmDialog } from '../../features/datasets/components/ConfirmDialog';
 import { RegionState } from '../../features/datasets/components/RegionState';
 import { datasetRegionStateForError } from '../../features/datasets/components/error-state';
 import { routes } from '../../features/datasets/routing';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
 import { useShellStore } from '../../shared/scope/shell-store';
+import { PageState, WorkbenchScaffold } from '../../shared/ui';
 import { assetEpisodeViewerQueryCodec } from './query-codec';
-import '../../features/datasets/components/datasets.css';
+import styles from './styles.module.css';
 
 const invalidDataset = 'dataset_invalid' as DatasetId;
 const invalidVersion = 'version_invalid' as DatasetVersionId;
@@ -194,34 +195,31 @@ export function EpisodeViewerShell() {
 
   if (!valid)
     return (
-      <main className="dataset-page" data-page-id="P06">
-        <RegionState
-          state="not-found"
-          message="URL 中的 Dataset、Version 或 Episode 稳定 ID 无效。"
-        />
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="not-found" description="URL 中的 Dataset、Version 或 Episode 稳定 ID 无效。" />
       </main>
     );
   if (capabilities.loading)
     return (
-      <main className="dataset-page">
-        <RegionState state="first-loading" />
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="loading" label="只读 Episode Viewer" />
       </main>
     );
   if (capabilities.failed || !capabilities.has('episode.read'))
     return (
-      <main className="dataset-page">
-        <RegionState state="forbidden" message="只读 Viewer 需要 episode.read。" />
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="forbidden" description="只读 Viewer 需要 episode.read。" />
       </main>
     );
   if (query.isPending)
     return (
-      <main className="dataset-page">
-        <RegionState state="first-loading" />
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="loading" label="只读 Episode Viewer" />
       </main>
     );
   if (query.isError)
     return (
-      <main className="dataset-page">
+      <main className={styles.page} data-page-id="P06">
         <RegionState
           state={datasetRegionStateForError(query.error)}
           message={query.error instanceof Error ? query.error.message : undefined}
@@ -251,43 +249,35 @@ export function EpisodeViewerShell() {
   ];
   return (
     <main
-      className="dataset-page"
+      className={styles.page}
       data-page-id="P06"
       data-page-kind="episode-viewer"
       data-navigation-owner-page-id="P06"
     >
-      <header className="dataset-resource-header">
-        <div>
-          <p className="dataset-eyebrow">Readonly episode viewer</p>
-          <h1>Episode {episodeId}</h1>
-          <p>
-            <code>{datasetId}</code> · <code>{versionId}</code> · Revision{' '}
-            <code>{revision!.revision_id}</code>
-          </p>
-        </div>
-        <div className="dataset-actions">
-          <button
-            type="button"
-            className="dataset-button dataset-button--secondary"
-            onClick={() => {
-              void navigate(returnTo);
-            }}
-          >
-            返回
-          </button>
-        </div>
-      </header>
-      <section className="dataset-workbench-shell">
-        <aside className="dataset-workbench-rail">
-          <h2>Streams</h2>
-          {streams.map((stream) => (
-            <div key={stream.id}>
-              <strong>{stream.displayName}</strong>
-              <small>{stream.id}</small>
-            </div>
-          ))}
-        </aside>
-        <div className="dataset-workbench-core">
+      <WorkbenchScaffold
+        header={{
+          title: `Episode ${episodeId}`,
+          description: 'Readonly episode viewer；时间范围采用半开区间 [start, end)。',
+          breadcrumbs: [
+            { key: datasetId, label: <code>{datasetId}</code> },
+            { key: versionId, label: <code>{versionId}</code> },
+            { key: episodeId, label: <code>{episodeId}</code> },
+          ],
+          metadata: <>Revision <code>{revision!.revision_id}</code></>,
+          actions: <Button onClick={() => void navigate(returnTo)}>返回</Button>,
+        }}
+        navigation={(
+          <div className={styles.streamList}>
+            <Typography.Title level={2}>Streams</Typography.Title>
+            {streams.map((stream) => (
+              <Card key={stream.id} size="small" className={styles.streamItem}>
+                <strong>{stream.displayName}</strong>
+                <code>{stream.id}</code>
+              </Card>
+            ))}
+          </div>
+        )}
+        media={(
           <EpisodeWorkbenchCore
             episodeId={episodeId}
             datasetId={datasetId}
@@ -297,106 +287,37 @@ export function EpisodeViewerShell() {
             mode="readonly"
             onTimeRangeSelect={(start, end) => setSelection({ start, end })}
           />
-        </div>
-        <aside className="dataset-workbench-inspector">
-          <h2>交接</h2>
-          <p>Viewer 保持只读，时间范围采用 [start, end)。</p>
-          {selection ? (
-            <p>
-              <code>{selection.start}</code>
-              <br />—<br />
-              <code>{selection.end}</code>
-            </p>
-          ) : (
-            <p>在时间轴拖动选择范围。</p>
-          )}
-          {revision!.streams.length > 1 ? (
-            <label>
-              Stream
-              <select
-                value={selectedStreamId}
-                onChange={(event) => setSelectedStreamId(event.target.value)}
-              >
-                <option value="">请选择</option>
-                {revision!.streams.map((stream) => (
-                  <option key={stream.episode_stream_id} value={stream.episode_stream_id}>
-                    {stream.channel_path}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {canCreateIssue ? (
-            <button
-              type="button"
-              className="dataset-button"
-              onClick={() => {
-                setIssueIntentKey(newIntentKey('viewer-manual-issue'));
-                setIssueOpen(true);
-              }}
-            >
-              添加人工问题
-            </button>
-          ) : null}
-          {capabilities.has('manual_issue.read') ? (
-            <button
-              type="button"
-              className="dataset-button dataset-button--secondary"
-              onClick={() => {
-                void navigate(
-                  cleaningRoutes.manualIssues.build({
-                    datasetId,
-                    versionId,
-                    episodeId,
-                    ...(createdIssueId ? { issueId: createdIssueId } : {}),
-                    returnTo: viewerReturn,
-                  }),
-                );
-              }}
-            >
-              查看问题清单
-            </button>
-          ) : null}
-          {createdIssueId ? (
-            <p role="status">
-              问题已添加：<code>{createdIssueId}</code>
-            </p>
-          ) : null}
-          {!canCreateIssue ? (
-            <RegionState
-              state="feature-unavailable"
-              message="ManualIssue 创建需要 capability 与资源 CREATE_ISSUE 同时允许；不会创建 CleaningDraft，也不会直达 P11。"
-            />
-          ) : null}
-        </aside>
-      </section>
-      <ConfirmDialog
+        )}
+        editor={(
+          <Card title="只读约束" size="small">
+            <Typography.Paragraph>媒体、时间轴与通道数据只读；问题记录由 P09 Owner 创建。</Typography.Paragraph>
+          </Card>
+        )}
+        inspector={(
+          <div className={styles.viewerInspector}>
+            <Typography.Title level={2}>交接</Typography.Title>
+            {selection ? <Typography.Paragraph><code>{selection.start}</code><br />—<br /><code>{selection.end}</code></Typography.Paragraph> : <Typography.Paragraph>在时间轴拖动选择范围。</Typography.Paragraph>}
+            {revision!.streams.length > 1 ? <label className={styles.filterField}>Stream<select value={selectedStreamId} onChange={(event) => setSelectedStreamId(event.target.value)}><option value="">请选择</option>{revision!.streams.map((stream) => <option key={stream.episode_stream_id} value={stream.episode_stream_id}>{stream.channel_path}</option>)}</select></label> : null}
+            {canCreateIssue ? <Button type="primary" onClick={() => { setIssueIntentKey(newIntentKey('viewer-manual-issue')); setIssueOpen(true); }}>添加人工问题</Button> : null}
+            {capabilities.has('manual_issue.read') ? <Button onClick={() => void navigate(cleaningRoutes.manualIssues.build({ datasetId, versionId, episodeId, ...(createdIssueId ? { issueId: createdIssueId } : {}), returnTo: viewerReturn }))}>查看问题清单</Button> : null}
+            {createdIssueId ? <Alert type="success" showIcon title="问题已添加" description={<code>{createdIssueId}</code>} /> : null}
+            {!canCreateIssue ? <PageState state="feature-unavailable" description="ManualIssue 创建需要 capability 与资源 CREATE_ISSUE 同时允许；不会创建 CleaningDraft，也不会直达 P11。" /> : null}
+          </div>
+        )}
+      />
+      <Modal
         open={issueOpen}
         title="添加人工问题"
-        resourceId={`${revision!.revision_id}:${selectedStreamId || 'stream-unselected'}`}
-        description="只创建 P09 Owner 的 ManualIssue，并保留当前 Viewer 时间点；不会创建 CleaningDraft。"
-        impact={[
-          `固定 Version ${versionId}`,
-          `固定 Episode / Revision ${episodeId} / ${revision!.revision_id}`,
-          selection ? `范围 [${selection.start}, ${selection.end})` : '尚未选择时间范围',
+        closable={!issueMutation.isPending}
+        mask={{ closable: false }}
+        onCancel={() => { if (!issueMutation.isPending) setIssueOpen(false); }}
+        footer={[
+          <Button key="cancel" disabled={issueMutation.isPending} onClick={() => setIssueOpen(false)}>取消</Button>,
+          <Button key="confirm" type="primary" loading={issueMutation.isPending} disabled={issueBlockedReasons.length > 0 || !issueNote.trim()} onClick={() => issueMutation.mutate(undefined, { onSuccess: (issue) => { setCreatedIssueId(issue.id); setIssueOpen(false); setIssueNote(''); } })}>确认添加问题</Button>,
         ]}
-        blockedReasons={issueBlockedReasons}
-        confirmLabel="确认添加问题"
-        confirmDisabled={
-          issueBlockedReasons.length > 0 || !issueNote.trim() || issueMutation.isPending
-        }
-        submitting={issueMutation.isPending}
-        onConfirm={() =>
-          issueMutation.mutate(undefined, {
-            onSuccess: (issue) => {
-              setCreatedIssueId(issue.id);
-              setIssueOpen(false);
-              setIssueNote('');
-            },
-          })
-        }
-        onCancel={() => setIssueOpen(false)}
       >
+        <Typography.Paragraph>只创建 P09 Owner 的 ManualIssue，并保留当前 Viewer 时间点；不会创建 CleaningDraft。</Typography.Paragraph>
+        <div className={styles.reviewForm}>
         <label>
           问题类型
           <select
@@ -438,7 +359,9 @@ export function EpisodeViewerShell() {
             {issueMutation.error instanceof Error ? issueMutation.error.message : '问题添加失败'}
           </p>
         ) : null}
-      </ConfirmDialog>
+        {issueBlockedReasons.length ? <Alert type="warning" showIcon title="当前不可提交" description={<ul>{issueBlockedReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>} /> : null}
+        </div>
+      </Modal>
     </main>
   );
 }

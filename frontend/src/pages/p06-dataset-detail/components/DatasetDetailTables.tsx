@@ -105,25 +105,32 @@ export function EpisodeTable({
       },
       {
         id: 'revision',
-        header: 'Revision',
-        cell: ({ row }) => <code>{row.original.selectedRevisionId}</code>,
+        header: 'Revision / Included',
+        cell: ({ row }) => <span className={styles.tableCellStack}><code>{row.original.selectedRevisionId}</code><StatusTag status={row.original.included ? 'INCLUDED' : 'EXCLUDED'} tone={row.original.included ? 'info' : 'neutral'} /></span>,
       },
-      { id: 'task', header: '任务', cell: ({ row }) => row.original.task ?? '—' },
       {
-        id: 'success',
-        header: '成功状态',
+        id: 'context',
+        header: '任务 / 机器人',
+        cell: ({ row }) => <span className={styles.tableCellStack}><strong>{row.original.task ?? '—'}</strong><code>{row.original.robotId ?? '—'}</code></span>,
+      },
+      {
+        id: 'quality',
+        header: '质量状态',
         cell: ({ row }) => (
-          <StatusTag
-            status={row.original.successState}
-            tone={row.original.successState === 'SUCCEEDED' ? 'success' : row.original.successState === 'FAILED' ? 'danger' : 'warning'}
-            known={row.original.successState !== 'UNKNOWN'}
-          />
+          <span className={styles.tableCellStack}>
+            <StatusTag
+              status={row.original.successState}
+              tone={row.original.successState === 'SUCCEEDED' ? 'success' : row.original.successState === 'FAILED' ? 'danger' : 'warning'}
+              known={row.original.successState !== 'UNKNOWN'}
+            />
+            <StatusTag
+              status={row.original.reviewStatus}
+              label={`${row.original.reviewStatus} · ${row.original.reviewFindingCount}`}
+              tone={row.original.reviewStatus === 'HAS_FINDING' ? 'warning' : row.original.reviewStatus === 'ACCEPTED' ? 'success' : 'neutral'}
+              known={row.original.reviewStatus !== 'UNKNOWN'}
+            />
+          </span>
         ),
-      },
-      {
-        id: 'review',
-        header: '复核投影',
-        cell: ({ row }) => `${row.original.reviewStatus} · ${row.original.reviewFindingCount}`,
       },
       {
         id: 'actions',

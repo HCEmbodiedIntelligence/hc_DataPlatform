@@ -1,5 +1,8 @@
 import { Input, Select } from 'antd';
-import { canonicalAuditEventNames } from '../../../features/audit/event-catalog';
+import {
+  canonicalAuditEventNames,
+  type CanonicalAuditEventName,
+} from '../../../features/audit/event-catalog';
 import type { AuditSearch } from '../../../features/audit/routing';
 import styles from '../styles.module.css';
 
@@ -46,7 +49,9 @@ export function AuditFilterPanel({
             { label: '全部事件', value: '' },
             ...canonicalAuditEventNames.map((name) => ({ label: name, value: name })),
           ]}
-          onChange={(eventName) => onChange({ eventName: eventName ? [eventName] : [] })}
+          onChange={(eventName) => onChange({
+            eventName: eventName ? [eventName as CanonicalAuditEventName] : [],
+          })}
         />
       </label>
       <label className={styles.filterField}>

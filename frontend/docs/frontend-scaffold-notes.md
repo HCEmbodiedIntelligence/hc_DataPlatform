@@ -10,9 +10,9 @@ corepack enable
 pnpm install
 ```
 
-CI 可使用 `pnpm install --frozen-lockfile`。首次运行 E2E 前执行 `pnpm exec playwright install chromium`。
+CI 可使用 `pnpm install --frozen-lockfile`。
 
-常用命令：`pnpm dev`、`pnpm typecheck`、`pnpm test`、`pnpm e2e`、`pnpm gen:api`。
+常用命令：`pnpm dev`、`pnpm typecheck`、`pnpm build`、`pnpm gen:api`。
 
 <!-- generated-api-status:start -->
 ### OpenAPI 生成状态
@@ -96,6 +96,6 @@ src/pages/pXX-<page-name>/index.tsx
 
 `routes.tsx` 默认导出或命名导出 `RouteObject[]` 均会被 `src/app/router/index.tsx` 自动发现；缺页会跳过。P08/P11/P14/P16 的路由记录必须使用 `lazy` 并在页面文件内动态 import，确保各自成为独立 chunk。新增页面不要修改公共 Router、NavigationManifest、Mock handler index 或场景 registry。
 
-## 验证
+## 历史验证记录
 
-共享层合同测试位于 `tests/contracts/shared-*.spec.ts(x)`，覆盖 scope Query Key、筛选规范化、错误映射、wire 校验、分页、returnTo、Query Codec、AsyncJob 版本去重、HTTP Header/casing、权限 fail-closed 与遥测脱敏。
+精简前的共享层合同测试曾位于 `tests/contracts/shared-*.spec.ts(x)`，覆盖 scope Query Key、筛选规范化、错误映射、wire 校验、分页、returnTo、Query Codec、AsyncJob 版本去重、HTTP Header/casing、权限 fail-closed 与遥测脱敏；当前源码归档不再包含测试文件。

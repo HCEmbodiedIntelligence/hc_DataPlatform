@@ -1,0 +1,217 @@
+.page {
+  min-width: 0;
+}
+
+.contentStack {
+  display: grid;
+  gap: var(--hc-space-4, 16px);
+  width: 100%;
+}
+
+.membersInspectorLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 21rem);
+  gap: var(--hc-space-3, 12px);
+}
+
+.membersRegion {
+  min-width: 0;
+}
+
+.membersMainColumn {
+  display: grid;
+  min-width: 0;
+  gap: var(--hc-space-4, 16px);
+  align-content: start;
+}
+
+.desktopInspector {
+  position: sticky;
+  top: calc(56px + var(--hc-space-4, 16px));
+  min-width: 0;
+  max-height: calc(100vh - 88px);
+  padding: var(--hc-space-4, 16px);
+  overflow: auto;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 8px);
+  background: var(--hc-color-surface, #fff);
+  box-shadow: var(--hc-shadow-sm, 0 1px 2px rgb(23 33 31 / 8%));
+}
+
+.desktopInspector > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--hc-space-3, 12px);
+  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+}
+
+.desktopInspector > header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.memberButton {
+  display: inline-flex;
+  min-width: 11rem;
+  height: auto;
+  justify-content: flex-start;
+  padding: 0 !important;
+  text-align: left;
+}
+
+.memberButton :global(.ant-avatar),
+.memberIdentity :global(.ant-avatar) {
+  background: var(--hc-color-primary, #0f766e);
+}
+
+.memberButton span:last-child,
+.memberButton small,
+.memberIdentity span,
+.memberIdentity small {
+  display: block;
+}
+
+.memberButton small,
+.memberIdentity small {
+  color: var(--hc-color-text-muted, #64736f);
+  font-weight: 400;
+}
+
+.memberIdentity {
+  display: flex;
+  gap: var(--hc-space-3, 12px);
+  align-items: center;
+}
+
+.keyCapabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hc-space-2, 8px);
+  align-items: center;
+}
+
+.keyCapabilities strong {
+  flex-basis: 100%;
+}
+
+.roleSummary {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--hc-space-3, 12px);
+}
+
+.roleSummary button {
+  display: flex;
+  gap: var(--hc-space-3, 12px);
+  align-items: center;
+  min-width: 0;
+  min-height: 4.5rem;
+  padding: var(--hc-space-3, 12px);
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 8px);
+  background: var(--hc-color-surface, #fff);
+  color: inherit;
+  text-align: left;
+}
+
+.roleSummary button:hover,
+.roleSummary button:focus-visible {
+  border-color: var(--hc-color-primary, #0f766e);
+}
+
+.roleSummary button span:last-child,
+.roleSummary small {
+  display: block;
+  min-width: 0;
+}
+
+.roleSummary small {
+  margin-top: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+}
+
+.roleCount {
+  display: grid;
+  flex: 0 0 2.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid var(--hc-color-primary, #0f766e);
+  border-radius: 50%;
+  color: var(--hc-color-primary, #0f766e);
+  font-weight: 700;
+}
+
+.roleBoundaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.roleBoundaryGrid section {
+  display: grid;
+  gap: var(--hc-space-1, 4px);
+  padding: var(--hc-space-2, 8px) var(--hc-space-3, 12px);
+}
+
+.roleBoundaryGrid p {
+  margin: 0;
+}
+
+.roleBoundaryGrid section + section {
+  border-left: 1px solid var(--hc-color-border, #d7e2df);
+}
+
+.filterStack {
+  display: grid;
+  gap: var(--hc-space-3, 12px);
+}
+
+.filterField,
+.matrixFilter,
+.policyForm label {
+  display: grid;
+  min-width: min(100%, 12rem);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+}
+
+.filterField:first-child,
+.matrixFilter {
+  width: min(100%, 28rem);
+}
+
+.matrixFilter {
+  margin-bottom: var(--hc-space-3, 12px);
+}
+
+.policyForm,
+.drawerContent {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .roleSummary,
+  .roleBoundaryGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .roleBoundaryGrid section + section {
+    border-top: 1px solid var(--hc-color-border, #d7e2df);
+    border-left: 0;
+  }
+
+  .filterField,
+  .filterField:first-child {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1199px) {
+  .desktopInspector {
+    position: static;
+    max-height: none;
+  }
+}

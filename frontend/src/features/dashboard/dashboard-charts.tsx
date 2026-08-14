@@ -1,9 +1,23 @@
-import { useEffect, useRef } from 'react';
+import { Card } from 'antd';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { DashboardActivity, DashboardSnapshot } from './types';
+import styles from './dashboard-charts.module.css';
+
+function compactBytes(value: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const;
+  let amount = value;
+  let unitIndex = 0;
+  while (Math.abs(amount) >= 1_024 && unitIndex < units.length - 1) {
+    amount /= 1_024;
+    unitIndex += 1;
+  }
+  return `${amount.toLocaleString('zh-CN', { maximumFractionDigits: amount >= 10 ? 0 : 1 })} ${units[unitIndex]}`;
+}
 
 export function DashboardCharts(props: Readonly<{
   activity: DashboardActivity;
   snapshot: DashboardSnapshot;
+  coverage: ReactNode;
 }>) {
   const uploadRef = useRef<HTMLDivElement>(null);
   const storageRef = useRef<HTMLDivElement>(null);
@@ -15,6 +29,10 @@ export function DashboardCharts(props: Readonly<{
     let storageChart: { dispose(): void; resize(): void } | undefined;
     let historyChart: { dispose(): void; resize(): void } | undefined;
     const observers: ResizeObserver[] = [];
+    const uploadValues = props.activity.buckets.map((bucket) => Number(bucket.acceptedUniqueBytes));
+    const uploadMaximum = Math.max(...uploadValues, 1);
+    const failureValues = props.activity.buckets.map((bucket) => Number(bucket.failedCount));
+    const failureMaximum = Math.max(...failureValues, 1);
 
     void (async () => {
       const core = await import('echarts/core');
@@ -40,28 +58,96 @@ export function DashboardCharts(props: Readonly<{
       historyChart = history;
       upload.setOption({
         tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: props.activity.buckets.map((bucket) => bucket.start.slice(11, 16)) },
-        yAxis: { type: 'value', name: 'bytes' },
-        series: [{ type: 'bar', name: '上传量', data: props.activity.buckets.map((bucket) => bucket.acceptedUniqueBytes.toString()) }],
+        grid: { left: 72, right: 44, top: 18, bottom: 28, containLabel: false },
+        xAxis: {
+          type: 'category',
+          boundaryGap: props.activity.buckets.length === 1,
+          data: props.activity.buckets.map((bucket) => bucket.start.slice(11, 16)),
+          axisTick: { show: false },
+          axisLabel: { color: '#64736f', fontSize: 10, hideOverlap: true },
+        },
+        yAxis: [
+          {
+            type: 'value',
+            min: 0,
+            max: Math.ceil(uploadMaximum * 1.15),
+            splitNumber: 3,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: {
+              color: '#64736f',
+              fontSize: 10,
+              formatter: (value: number) => compactBytes(value),
+              hideOverlap: true,
+            },
+            splitLine: { lineStyle: { color: '#e3ebe9', type: 'dashed' } },
+          },
+          {
+            type: 'value',
+            name: '失败',
+            min: 0,
+            max: failureMaximum,
+            splitNumber: Math.min(2, failureMaximum),
+            minInterval: 1,
+            nameTextStyle: { color: '#64736f', fontSize: 10, align: 'right' },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: '#64736f', fontSize: 10, hideOverlap: true },
+            splitLine: { show: false },
+          },
+        ],
+        color: ['#078d7d', '#ef4444'],
+        series: [
+          {
+            type: 'line',
+            name: '上传吞吐量',
+            smooth: true,
+            showSymbol: true,
+            symbolSize: props.activity.buckets.length === 1 ? 10 : 6,
+            lineStyle: { width: 2 },
+            areaStyle: { opacity: 0.09 },
+            data: uploadValues,
+          },
+          {
+            type: 'line',
+            name: '失败',
+            yAxisIndex: 1,
+            symbol: 'cross',
+            symbolSize: 9,
+            lineStyle: { opacity: 0 },
+            data: failureValues,
+          },
+        ],
       });
       storage.setOption({
-        tooltip: { trigger: 'item' },
-        legend: { bottom: 0 },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: 72, right: 20, top: 6, bottom: 22 },
+        xAxis: { type: 'value', axisLabel: { formatter: (value: number) => compactBytes(value) } },
+        yAxis: {
+          type: 'category',
+          inverse: true,
+          data: props.snapshot.roles.map((role) => role.role === 'UNKNOWN' ? '未知' : role.role),
+        },
+        color: ['#078d7d'],
         series: [{
-          type: 'pie',
-          radius: ['42%', '70%'],
-          data: props.snapshot.roles.map((role) => ({ name: role.role === 'UNKNOWN' ? '未知' : role.role, value: role.bytes.toString() })),
+          type: 'bar',
+          name: '物理容量',
+          barMaxWidth: 18,
+          data: props.snapshot.roles.map((role) => Number(role.bytes)),
         }],
       });
       history.setOption({
         tooltip: { trigger: 'axis' },
         legend: { bottom: 0 },
+        grid: { left: 54, right: 24, top: 12, bottom: 42 },
         xAxis: { type: 'category', data: props.snapshot.history.map((item) => item.month) },
-        yAxis: { type: 'value', name: 'bytes' },
+        yAxis: { type: 'value', axisLabel: { formatter: (value: number) => compactBytes(value) } },
+        color: ['#078d7d', '#f59e0b', '#3b82f6', '#0e7490'],
         series: [
-          { type: 'line', name: 'STANDARD', data: props.snapshot.history.map((item) => item.standardBytes.toString()) },
-          { type: 'line', name: 'IA', data: props.snapshot.history.map((item) => item.iaBytes.toString()) },
-          { type: 'line', name: 'ARCHIVE', data: props.snapshot.history.map((item) => item.archiveBytes.toString()) },
+          { type: 'bar', stack: 'storage', name: 'STANDARD', data: props.snapshot.history.map((item) => Number(item.standardBytes)) },
+          { type: 'bar', stack: 'storage', name: 'IA', data: props.snapshot.history.map((item) => Number(item.iaBytes)) },
+          { type: 'bar', stack: 'storage', name: 'ARCHIVE', data: props.snapshot.history.map((item) => Number(item.archiveBytes)) },
+          { type: 'line', name: '总量', data: props.snapshot.history.map((item) => Number(item.dataPhysicalBytes)) },
         ],
       });
       for (const [element, chart] of [[uploadRef.current, upload], [storageRef.current, storage], [historyRef.current, history]] as const) {
@@ -81,30 +167,29 @@ export function DashboardCharts(props: Readonly<{
   }, [props.activity, props.snapshot]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16 }}>
-      <section aria-labelledby="upload-trend-title" style={{ background: '#fff', border: '1px solid #d9e2e1', borderRadius: 8, padding: 16 }}>
-        <h2 id="upload-trend-title">上传趋势</h2>
-        <div ref={uploadRef} style={{ height: 260 }} role="img" aria-label="按时间分桶的上传字节趋势图" />
-        <details><summary>查看上传趋势数据表</summary><ul>{props.activity.buckets.map((bucket) => <li key={bucket.start}>{bucket.start}：{bucket.acceptedUniqueBytes.toString()} bytes</li>)}</ul></details>
-      </section>
-      <section aria-labelledby="storage-composition-title" style={{ background: '#fff', border: '1px solid #d9e2e1', borderRadius: 8, padding: 16 }}>
-        <h2 id="storage-composition-title">存储构成</h2>
-        <div ref={storageRef} style={{ height: 260 }} role="img" aria-label="按对象角色划分的物理容量环图" />
-        <details><summary>查看存储构成数据表</summary><ul>{props.snapshot.roles.map((role) => <li key={role.wireRole}>{role.role}：{role.bytes.toString()} bytes</li>)}</ul></details>
-      </section>
-      <section aria-labelledby="episode-availability-title" style={{ background: '#fff', border: '1px solid #d9e2e1', borderRadius: 8, padding: 16 }}>
-        <h2 id="episode-availability-title">Episode 可用性</h2>
-        <ol aria-label="Episode 可用性漏斗">
-          <li>已上传：{props.snapshot.episodes.uploadedCount.toLocaleString('zh-CN')}</li>
-          <li>已校验：{props.snapshot.episodes.validatedCount.toLocaleString('zh-CN')}</li>
-          <li>可查看：{props.snapshot.episodes.viewableCount.toLocaleString('zh-CN')}</li>
+    <div className={styles.grid}>
+      <Card className={styles.uploadCard} size="small" title={<h2>24 小时上传吞吐量与失败情况</h2>}>
+        <div ref={uploadRef} className={styles.chart} role="img" aria-label="按时间分桶的上传字节趋势图" />
+        <details className={styles.dataDisclosure}><summary>查看上传趋势数据表</summary><ul>{props.activity.buckets.map((bucket) => <li key={bucket.start}>{bucket.start}：{bucket.acceptedUniqueBytes.toString()} bytes</li>)}</ul></details>
+      </Card>
+      <Card className={styles.storageCard} size="small" title={<h2>存储构成</h2>}>
+        <div ref={storageRef} className={styles.chart} role="img" aria-label="按对象角色划分的物理容量横向条形图" />
+        <details className={styles.dataDisclosure}><summary>查看存储构成数据表</summary><ul>{props.snapshot.roles.map((role) => <li key={role.wireRole}>{role.role}：{role.bytes.toString()} bytes</li>)}</ul></details>
+      </Card>
+      <Card className={styles.episodeCard} size="small" title={<h2>Episode 可用性</h2>}>
+        <ol className={styles.funnel} aria-label="Episode 可用性漏斗">
+          <li><span>已上传</span><strong>{props.snapshot.episodes.uploadedCount.toLocaleString('zh-CN')}</strong></li>
+          <li><span>已校验</span><strong>{props.snapshot.episodes.validatedCount.toLocaleString('zh-CN')}</strong></li>
+          <li><span>可查看</span><strong>{props.snapshot.episodes.viewableCount.toLocaleString('zh-CN')}</strong></li>
         </ol>
-      </section>
-      <section aria-labelledby="storage-trend-title" style={{ background: '#fff', border: '1px solid #d9e2e1', borderRadius: 8, padding: 16 }}>
-        <h2 id="storage-trend-title">月度存储趋势</h2>
-        <div ref={historyRef} style={{ height: 260 }} role="img" aria-label="按存储层级划分的月度物理容量趋势图" />
-        <details><summary>查看月度存储数据表</summary><ul>{props.snapshot.history.map((item) => <li key={item.month}>{item.month}：{item.dataPhysicalBytes.toString()} bytes</li>)}</ul></details>
-      </section>
+      </Card>
+      <Card className={styles.coverageCard} size="small" title={<h2>机器人与任务覆盖矩阵</h2>}>
+        {props.coverage}
+      </Card>
+      <Card className={styles.historyCard} size="small" title={<h2>月度存储增长与分层构成</h2>}>
+        <div ref={historyRef} className={styles.chart} role="img" aria-label="按存储层级划分的月度物理容量趋势图" />
+        <details className={styles.dataDisclosure}><summary>查看月度存储数据表</summary><ul>{props.snapshot.history.map((item) => <li key={item.month}>{item.month}：{item.dataPhysicalBytes.toString()} bytes</li>)}</ul></details>
+      </Card>
     </div>
   );
 }

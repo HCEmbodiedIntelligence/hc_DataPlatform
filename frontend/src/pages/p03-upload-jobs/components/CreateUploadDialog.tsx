@@ -29,10 +29,10 @@ const uploadSchema = z.object({
 
 type UploadFormValues = z.infer<typeof uploadSchema>;
 
-function defaults(props: { readonly initialDataSourceId?: string; readonly initialDatasetId?: string }): UploadFormValues {
+function defaults(initialDataSourceId?: string, initialDatasetId?: string): UploadFormValues {
   return {
-    dataSourceId: props.initialDataSourceId ?? '',
-    targetDatasetId: props.initialDatasetId ?? '',
+    dataSourceId: initialDataSourceId ?? '',
+    targetDatasetId: initialDatasetId ?? '',
   };
 }
 
@@ -49,7 +49,7 @@ export function CreateUploadDialog(props: {
   readonly onSubmit: (draft: CreateUploadDraft) => void;
 }) {
   const form = useForm<UploadFormValues>({
-    defaultValues: defaults(props),
+    defaultValues: defaults(props.initialDataSourceId, props.initialDatasetId),
     mode: 'onChange',
     resolver: createZodResolver(uploadSchema),
   });
@@ -58,14 +58,14 @@ export function CreateUploadDialog(props: {
 
   useEffect(() => {
     if (!props.open) return;
-    form.reset(defaults(props));
+    form.reset(defaults(props.initialDataSourceId, props.initialDatasetId));
     setFiles([]);
     setFileError(null);
   }, [form, props.initialDataSourceId, props.initialDatasetId, props.open]);
 
   const close = () => {
     if (props.pending) return;
-    form.reset(defaults(props));
+    form.reset(defaults(props.initialDataSourceId, props.initialDatasetId));
     setFiles([]);
     setFileError(null);
     props.onClose();
@@ -88,18 +88,20 @@ export function CreateUploadDialog(props: {
     >
       <form
         className={styles.uploadForm}
-        onSubmit={form.handleSubmit((value) => {
-          if (files.length === 0) {
-            setFileError('请至少选择一个文件');
-            return;
-          }
-          setFileError(null);
-          props.onSubmit({
-            dataSourceId: value.dataSourceId,
-            targetDatasetId: value.targetDatasetId || null,
-            files,
-          });
-        })}
+        onSubmit={(event) => {
+          void form.handleSubmit((value) => {
+            if (files.length === 0) {
+              setFileError('请至少选择一个文件');
+              return;
+            }
+            setFileError(null);
+            props.onSubmit({
+              dataSourceId: value.dataSourceId,
+              targetDatasetId: value.targetDatasetId || null,
+              files,
+            });
+          })(event);
+        }}
       >
         <RHFSelect
           control={form.control}

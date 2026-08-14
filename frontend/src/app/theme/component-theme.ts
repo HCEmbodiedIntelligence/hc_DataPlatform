@@ -79,6 +79,7 @@ export const uiTheme: ThemeConfig = {
       paddingInline: tokens.spacing.md,
       primaryShadow: 'none',
       defaultShadow: 'none',
+      fontWeight: 560,
     },
     Input: {
       borderRadius: tokens.radius.md,
@@ -106,9 +107,9 @@ export const uiTheme: ThemeConfig = {
       headerBg: tokens.color.surfaceMuted,
       headerColor: tokens.color.text,
       headerBorderRadius: tokens.radius.lg,
-      rowHoverBg: '#f3faf8',
-      rowSelectedBg: '#e2f5f0',
-      rowSelectedHoverBg: '#d8f0ea',
+      rowHoverBg: '#f3f9f8',
+      rowSelectedBg: '#e6f5f2',
+      rowSelectedHoverBg: '#dcf0ec',
       cellPaddingBlock: tokens.spacing.sm,
       cellPaddingInline: tokens.spacing.md,
       cellPaddingBlockMD: 6,
@@ -118,6 +119,7 @@ export const uiTheme: ThemeConfig = {
       cellFontSize: tokens.typography.fontSize,
       cellFontSizeMD: tokens.typography.fontSize,
       cellFontSizeSM: tokens.typography.fontSizeSm,
+      headerSplitColor: tokens.color.border,
     },
     Modal: {
       borderRadiusLG: tokens.radius.lg,
@@ -128,6 +130,16 @@ export const uiTheme: ThemeConfig = {
     Drawer: {
       colorBgElevated: tokens.color.surface,
       zIndexPopup: tokens.zIndex.modal,
+      paddingLG: 18,
+    },
+    Menu: {
+      itemBorderRadius: tokens.radius.md,
+      subMenuItemBorderRadius: tokens.radius.md,
+      itemSelectedBg: '#e8f5f3',
+      itemSelectedColor: tokens.color.primaryActive,
+      itemHoverBg: '#f3f8f7',
+      itemHoverColor: tokens.color.primaryActive,
+      activeBarBorderWidth: 0,
     },
     Notification: {
       zIndexPopup: tokens.zIndex.toast,

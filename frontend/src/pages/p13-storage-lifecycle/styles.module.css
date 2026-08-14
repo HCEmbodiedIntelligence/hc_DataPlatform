@@ -1,0 +1,113 @@
+.page {
+  min-width: 0;
+}
+
+.content {
+  width: 100%;
+}
+
+.content > :global(.ant-space-item):first-child {
+  min-height: 18rem;
+}
+
+.safetyBanner {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.lifecycleTabs :global(.ant-tabs-nav) {
+  margin-bottom: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr);
+  gap: var(--hc-space-4, 16px);
+  min-width: 0;
+  align-items: start;
+}
+
+.workspace > :first-child {
+  min-height: 18rem;
+}
+
+.simulationPanel {
+  position: sticky;
+  top: calc(56px + var(--hc-space-4, 16px));
+}
+
+.simulationPanel :global(.ant-card-body) {
+  padding: var(--hc-space-3, 12px);
+}
+
+.simulationPanel :global(.ant-descriptions-item) {
+  padding-bottom: var(--hc-space-1, 4px);
+}
+
+.simulationPanel :global(.ant-alert) {
+  margin-bottom: var(--hc-space-3, 12px);
+}
+
+.impactMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hc-space-2, 8px);
+  margin-bottom: var(--hc-space-3, 12px);
+}
+
+.guidanceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 8px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.guidanceGrid > div {
+  min-width: 0;
+  padding: var(--hc-space-3, 12px) var(--hc-space-4, 16px);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.guidanceGrid > div + div {
+  border-left: 1px solid var(--hc-color-border, #d7e2df);
+}
+
+.guidanceGrid ul {
+  padding-left: 1.25rem;
+  margin: var(--hc-space-2, 8px) 0 0;
+}
+
+.guidanceGrid p {
+  margin: var(--hc-space-2, 8px) 0 0;
+}
+
+.operationAlert {
+  margin-top: var(--hc-space-3, 12px);
+}
+
+@media (max-width: 1024px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .simulationPanel {
+    position: static;
+  }
+
+  .guidanceGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guidanceGrid > div + div {
+    border-top: 1px solid var(--hc-color-border, #d7e2df);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 390px) {
+  .impactMetrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

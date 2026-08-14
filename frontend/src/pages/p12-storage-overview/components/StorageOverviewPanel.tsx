@@ -1,22 +1,16 @@
 import { Card, Descriptions, Typography } from 'antd';
-import { lazy, Suspense } from 'react';
-import {
-  displayByteMetric,
-} from '../../../features/storage-overview/metrics-contract';
+import { displayByteMetric } from '../../../features/storage-overview/metrics-contract';
 import type { StorageOverview } from '../../../features/storage-overview/types';
-import { PageState, StatusTag } from '../../../shared/ui';
+import { StatusTag } from '../../../shared/ui';
 import styles from '../styles.module.css';
-
-const StorageCharts = lazy(() => import('../../../features/storage-overview/storage-charts'));
+import { StorageVisualCharts } from './StorageVisualCharts';
 
 export function StorageOverviewPanel({ overview }: Readonly<{ overview: StorageOverview }>) {
   const reconciliationKnown = overview.reconciliation.status !== 'UNKNOWN';
 
   return (
-    <div className={styles.contentStack}>
-      <Suspense fallback={<PageState state="loading" label="存储图表" />}>
-        <StorageCharts overview={overview} />
-      </Suspense>
+    <div className={`${styles.contentStack} ${styles.overviewPanel}`}>
+      <StorageVisualCharts overview={overview} />
       <Card title={<h2>Inventory 对账</h2>} size="small">
         <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
           <Descriptions.Item label="状态">

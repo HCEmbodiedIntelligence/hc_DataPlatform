@@ -21,13 +21,11 @@ import {
   type MetricState,
   type PageStateKind,
 } from '../../shared/ui';
-import {
-  CreateDatasetDialog,
-  type CreateDatasetDraft,
-} from './components/CreateDatasetDialog';
+import { CreateDatasetDialog, type CreateDatasetDraft } from './components/CreateDatasetDialog';
 import { DatasetFilterPanel } from './components/DatasetFilterPanel';
 import { DatasetSummaryStrip } from './components/DatasetSummaryStrip';
 import { DatasetTable } from './components/DatasetTable';
+import { SelectedDatasetSummary } from './components/SelectedDatasetSummary';
 import datasetsQueryCodec, { type DatasetsSearch } from './query-codec';
 import styles from './styles.module.css';
 
@@ -125,6 +123,7 @@ export function DatasetsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createIntentKey, setCreateIntentKey] = useState<string | null>(null);
   const [createdDatasetId, setCreatedDatasetId] = useState<DatasetId | null>(null);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<DatasetId | null>(null);
 
   const change = useCallback(
     (changes: Partial<DatasetsSearch>) => {
@@ -213,19 +212,41 @@ export function DatasetsPage() {
     : capabilities.failed || !canRead
       ? 'forbidden'
       : listState(query, hasFilters(search));
-  const table = query.data ? (
-    <DatasetTable
-      page={query.data}
-      canReadEpisodes={capabilities.has('episode.read')}
-      onOpen={openDataset}
-      onOpenEpisodes={openEpisodes}
-    />
-  ) : null;
+  const selectedDataset =
+    query.data?.items.find((item) => item.datasetId === selectedDatasetId) ??
+    query.data?.items[0] ??
+    null;
+  const selectedDatasetPosition = selectedDataset
+    ? (query.data?.items.findIndex((item) => item.datasetId === selectedDataset.datasetId) ?? 0) + 1
+    : 0;
+  const table =
+    query.data && selectedDataset ? (
+      <div className={styles.datasetWorkspace}>
+        <DatasetTable
+          page={query.data}
+          selectedDatasetId={selectedDataset.datasetId}
+          canReadEpisodes={capabilities.has('episode.read')}
+          onSelect={setSelectedDatasetId}
+          onOpen={openDataset}
+          onOpenEpisodes={openEpisodes}
+        />
+        <SelectedDatasetSummary
+          item={selectedDataset}
+          position={selectedDatasetPosition}
+          total={query.data.items.length}
+          canReadEpisodes={capabilities.has('episode.read')}
+          onOpen={openDataset}
+          onOpenEpisodes={openEpisodes}
+        />
+      </div>
+    ) : null;
   const listContent =
     resolvedListState === 'ready' ? (
       table
     ) : resolvedListState === 'refreshing' ? (
-      <PageState state="refreshing" label="数据集列表">{table}</PageState>
+      <PageState state="refreshing" label="数据集列表">
+        {table}
+      </PageState>
     ) : (
       <PageState
         state={resolvedListState}
@@ -263,17 +284,22 @@ export function DatasetsPage() {
             </Button>
           ),
         }}
-        summary={<DatasetSummaryStrip summary={summary.data} state={summaryState} />}
-        filters={(
-          <DatasetFilterPanel
-            search={search}
-            facets={facets.data}
-            disabled={capabilities.loading || capabilities.failed || !canRead}
-            onApply={change}
-            onReset={() => void navigate(routes.datasets.build({}), { replace: true })}
-          />
-        )}
-        state={(
+        summary={undefined}
+        filters={
+          <div className={styles.toolbarStack}>
+            <DatasetFilterPanel
+              search={search}
+              facets={facets.data}
+              disabled={capabilities.loading || capabilities.failed || !canRead}
+              onApply={change}
+              onReset={() => void navigate(routes.datasets.build({}), { replace: true })}
+            />
+            <section className={styles.visualSummary} aria-label="页面摘要">
+              <DatasetSummaryStrip summary={summary.data} state={summaryState} />
+            </section>
+          </div>
+        }
+        state={
           <div className={styles.contentStack}>
             {pageCapabilities.isError ? (
               <Alert
@@ -307,13 +333,17 @@ export function DatasetsPage() {
                 type="success"
                 showIcon
                 title="数据集已创建"
-                description={<span><code>{createdDatasetId}</code> 是空 Dataset；没有隐式创建 Version。</span>}
+                description={
+                  <span>
+                    <code>{createdDatasetId}</code> 是空 Dataset；没有隐式创建 Version。
+                  </span>
+                }
                 action={<Button onClick={() => openDataset(createdDatasetId)}>查看数据集</Button>}
               />
             ) : null}
             {listContent}
           </div>
-        )}
+        }
         pagination={
           query.data && query.data.items.length > 0 ? (
             <DataCursorPager

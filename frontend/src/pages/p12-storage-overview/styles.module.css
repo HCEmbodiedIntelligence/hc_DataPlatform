@@ -1,9 +1,31 @@
 .page {
   width: 100%;
-  max-width: 1680px;
-  padding: var(--hc-space-6, 24px);
-  margin: 0 auto;
+  max-width: none;
+  min-height: calc(100vh - 56px);
+  padding: 10px 8px 28px;
+  width: calc(100% + 40px);
+  margin: -20px;
+  background: var(--hc-color-surface, #fff);
   color: var(--hc-color-text, #17211f);
+}
+
+.page :global([data-layout='standard-page']) {
+  gap: 14px;
+}
+
+.page :global([class*='pageTitle']) {
+  margin-top: 3px;
+  font-size: 24px;
+  line-height: 1.28;
+}
+
+.page :global([class*='pageDescription']) {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.page :global([class*='summaryRegion']) {
+  display: block;
 }
 
 .contentStack,
@@ -15,10 +37,322 @@
 
 .summaryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-column: 1 / -1;
-  gap: var(--hc-space-3, 12px);
+  gap: 10px;
   min-width: 0;
+}
+
+.storageMetric {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  min-width: 0;
+  min-height: 82px;
+  padding: 12px 14px;
+  border: 1px solid #dfe8e6;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #fff 0%, #fbfdfc 100%);
+}
+
+.storageMetricIcon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 31px;
+  height: 31px;
+  color: #147c72;
+  place-items: center;
+}
+
+.storageMetricSuccess .storageMetricIcon {
+  color: #159957;
+}
+
+.storageMetricWarning .storageMetricIcon {
+  color: #d97706;
+}
+
+.storageMetricCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.storageMetricCopy > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.storageMetricCopy h2,
+.storageMetricCopy strong,
+.storageMetricCopy span {
+  margin: 0;
+}
+
+.storageMetricCopy h2,
+.storageMetricCopy span {
+  overflow: hidden;
+  color: #697a77;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storageMetricCopy strong {
+  overflow: hidden;
+  color: #17211f;
+  font-size: 20px;
+  line-height: 1.16;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page :global(.detail-tabs) {
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.page :global(.detail-tabs [role='tab']) {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.page :global([class*='contentRegion']) {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.page :global(.ant-card) {
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.storageVisualCharts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(410px, 1fr);
+  gap: 12px;
+}
+
+.storageChartCard {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe8e6;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.storageChartHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 55px;
+  padding: 12px 15px 10px;
+  border-bottom: 1px solid #e6ecea;
+}
+
+.storageChartHeader h2,
+.storageChartHeader p {
+  margin: 0;
+}
+
+.storageChartHeader h2 {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.storageChartHeader p,
+.storageChartHeader > span {
+  color: #71817e;
+  font-size: 12px;
+}
+
+.trendVisual {
+  position: relative;
+  height: 205px;
+  padding: 19px 24px 30px 41px;
+}
+
+.trendGrid {
+  position: absolute;
+  inset: 20px 24px 39px 41px;
+  display: grid;
+  grid-template-rows: repeat(4, 1fr);
+  pointer-events: none;
+}
+
+.trendGrid i {
+  border-top: 1px dashed #e7edeb;
+}
+
+.trendColumns {
+  position: relative;
+  display: flex;
+  gap: 18%;
+  align-items: end;
+  height: 100%;
+  padding: 0 17%;
+  border-bottom: 1px solid #b9c9c5;
+}
+
+.trendColumn {
+  position: relative;
+  display: grid;
+  flex: 1 1 0;
+  gap: 6px;
+  align-items: end;
+  height: 100%;
+  min-width: 42px;
+}
+
+.trendColumn strong {
+  align-self: end;
+  color: #50605d;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.trendBar {
+  width: 100%;
+  min-height: 12px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, #18a995 0%, #078d7d 100%);
+  box-shadow: inset 0 -7px 0 rgb(5 102 94 / 28%);
+}
+
+.trendColumn time {
+  position: absolute;
+  bottom: -23px;
+  width: 100%;
+  color: #71817e;
+  font-size: 11px;
+  text-align: center;
+}
+
+.chartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 15px;
+  padding: 0 15px 13px;
+  color: #596966;
+  font-size: 11px;
+}
+
+.chartLegend span,
+.distributionLegend dt {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.chartLegend i,
+.distributionLegend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+
+.distributionVisual {
+  display: grid;
+  grid-template-columns: 165px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 205px;
+  padding: 14px 18px 6px;
+}
+
+.storageDonut {
+  display: grid;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: conic-gradient(var(--storage-donut));
+  place-items: center;
+}
+
+.storageDonut::before {
+  grid-area: 1 / 1;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: #fff;
+  content: '';
+}
+
+.storageDonut span {
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  color: #71817e;
+  font-size: 11px;
+  text-align: center;
+}
+
+.storageDonut strong {
+  color: #17211f;
+  font-size: 17px;
+}
+
+.distributionLegend,
+.storageFacts {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+}
+
+.distributionLegend > div,
+.storageFacts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.distributionLegend dt,
+.distributionLegend dd,
+.storageFacts dt,
+.storageFacts dd {
+  margin: 0;
+}
+
+.distributionLegend dt,
+.storageFacts dt {
+  color: #566663;
+  font-size: 12px;
+}
+
+.distributionLegend dd {
+  color: #30413e;
+  font-size: 11px;
+  text-align: end;
+}
+
+.storageFacts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  padding: 10px 15px 12px;
+  border-top: 1px solid #e6ecea;
+}
+
+.storageFacts > div + div {
+  padding-left: 13px;
+  border-left: 1px solid #e6ecea;
+}
+
+.storageFacts > div {
+  grid-template-columns: 1fr;
+  gap: 3px;
+}
+
+.storageFacts dd {
+  color: #17211f;
+  font-size: 15px;
+  font-weight: 650;
 }
 
 .snapshotMeta {
@@ -57,9 +391,26 @@
   margin: var(--hc-space-3, 12px) 0 0;
 }
 
+@media (max-width: 1220px) {
+  .page {
+    width: 100%;
+    margin: 0;
+  }
+}
+
 @media (max-width: 768px) {
   .page {
+    width: 100%;
+    margin: 0;
     padding: var(--hc-space-4, 16px);
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .storageVisualCharts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

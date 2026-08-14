@@ -232,19 +232,34 @@ export function DashboardPage() {
   const pendingState = queryState(pending, pending.data?.items.length === 0);
   const pendingPageState = queryState(pendingPage, pendingPage.data?.items.length === 0);
 
+  const coverageContent = !coverageOpen ? (
+    <Button onClick={() => setCoverageOpen(true)}>按需加载覆盖率矩阵</Button>
+  ) : renderRegion(
+    coverageState,
+    '覆盖率矩阵',
+    coverage.error,
+    coverage.data ? <DashboardCoverageTable coverage={coverage.data} /> : null,
+    () => void coverage.refetch(),
+  );
   const charts = activity.data && snapshot.data ? (
     <Suspense fallback={<PageState state="loading" label="图表模块" />}>
-      <DashboardCharts activity={activity.data} snapshot={snapshot.data} />
+      <DashboardCharts
+        activity={activity.data}
+        snapshot={snapshot.data}
+        coverage={coverageContent}
+      />
     </Suspense>
   ) : null;
   const pendingContent = pending.data ? (
-    <section className={styles.panel} aria-labelledby="dashboard-pending-title">
-      <h2 id="dashboard-pending-title">待办与最近活动</h2>
+    <section className={`${styles.panel} ${styles.pendingPanel}`} aria-labelledby="dashboard-pending-title">
+      <div className={styles.panelHeading}>
+        <h2 id="dashboard-pending-title">待办与最近活动</h2>
+        {pending.data.totalCount > 5n ? (
+          <Button type="link" onClick={() => setPendingOpen(true)}>查看全部待办</Button>
+        ) : null}
+      </div>
       {pending.data.hasUnknownEnum ? <PageState state="unknown" label="待办未知状态" /> : null}
       <DashboardPendingList items={pending.data.items} />
-      {pending.data.totalCount > 5n ? (
-        <Button onClick={() => setPendingOpen(true)}>查看全部待办</Button>
-      ) : null}
     </section>
   ) : null;
 
@@ -258,27 +273,13 @@ export function DashboardPage() {
         charts,
         () => void Promise.all([activity.refetch(), snapshot.refetch()]),
       )}
-      <div className={styles.dashboardGrid}>
-        <section className={styles.panel} aria-labelledby="dashboard-coverage-title">
-          <h2 id="dashboard-coverage-title">覆盖率矩阵</h2>
-          {!coverageOpen ? (
-            <Button onClick={() => setCoverageOpen(true)}>按需加载覆盖率矩阵</Button>
-          ) : renderRegion(
-            coverageState,
-            '覆盖率矩阵',
-            coverage.error,
-            coverage.data ? <DashboardCoverageTable coverage={coverage.data} /> : null,
-            () => void coverage.refetch(),
-          )}
-        </section>
-        {renderRegion(
-          pendingState,
-          '待办与最近活动',
-          pending.error,
-          pendingContent,
-          () => void pending.refetch(),
-        )}
-      </div>
+      {renderRegion(
+        pendingState,
+        '待办与最近活动',
+        pending.error,
+        pendingContent,
+        () => void pending.refetch(),
+      )}
     </div>
   );
 

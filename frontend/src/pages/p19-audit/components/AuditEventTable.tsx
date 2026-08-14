@@ -19,9 +19,11 @@ function riskTone(risk: AuditEventView['risk']['level']) {
 
 export function AuditEventTable({
   events,
+  selectedEventId,
   onOpen,
 }: Readonly<{
   events: readonly AuditEventView[];
+  selectedEventId?: string;
   onOpen: (eventId: string) => void;
 }>) {
   const columns = useMemo<readonly ColumnDef<AuditEventView, unknown>[]>(
@@ -33,8 +35,10 @@ export function AuditEventTable({
         size: 280,
         cell: ({ row }) => (
           <Button
+            id={`audit-event-trigger-${row.original.eventId}`}
             type="link"
             className={styles.identityButton}
+            aria-current={selectedEventId === row.original.eventId ? 'true' : undefined}
             onClick={() => onOpen(row.original.eventId)}
           >
             <span className={styles.identity}>
@@ -72,7 +76,7 @@ export function AuditEventTable({
       },
       { id: 'requestId', header: '请求', cell: ({ row }) => <code>{row.original.request.requestId}</code> },
     ],
-    [onOpen],
+    [onOpen, selectedEventId],
   );
 
   return (

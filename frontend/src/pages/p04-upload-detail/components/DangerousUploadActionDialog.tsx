@@ -1,6 +1,9 @@
-import { useEffect, useRef } from 'react';
 import type { BlockedReason } from '../../../entities/data-source';
-import { formText } from '../../../features/ingest/form-data';
+import {
+  DangerConfirmModal,
+  type DangerConflict,
+  type DangerPreflightEvidence,
+} from '../../../shared/ui';
 
 export function DangerousUploadActionDialog(props: {
   readonly open: boolean;
@@ -8,11 +11,30 @@ export function DangerousUploadActionDialog(props: {
   readonly uploadId: string;
   readonly impact: string;
   readonly blockedReasons: readonly BlockedReason[];
+  readonly preflight: DangerPreflightEvidence | null;
+  readonly currentScopeKey: string;
+  readonly conflict?: DangerConflict | null;
   readonly pending: boolean;
   readonly onClose: () => void;
+  readonly onResolveConflict?: (status: 409 | 412) => void;
   readonly onConfirm: (reason: string) => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { if (props.open && !ref.current?.open) ref.current?.showModal(); if (!props.open && ref.current?.open) ref.current.close(); }, [props.open]);
-  return <dialog ref={ref} onClose={props.onClose} aria-labelledby="danger-action-title"><form onSubmit={(event) => { event.preventDefault(); props.onConfirm(formText(new FormData(event.currentTarget), 'reason')); }}><h2 id="danger-action-title">{props.title}</h2><div data-component="ConfirmDialog"><p>稳定 Upload ID：<code>{props.uploadId}</code></p><p>影响摘要：{props.impact}</p>{props.blockedReasons.length ? <ul>{props.blockedReasons.map((item) => <li key={item.code}>{item.code}：{item.message}</li>)}</ul> : null}<label>确认原因<textarea name="reason" required minLength={3} /></label><div className="dialog-actions"><button type="button" onClick={props.onClose}>取消</button><button type="submit" disabled={props.pending || props.blockedReasons.length > 0}>{props.pending ? '提交中…' : '确认执行'}</button></div></div></form></dialog>;
+  return (
+    <DangerConfirmModal
+      open={props.open}
+      title={props.title}
+      actionLabel="确认执行"
+      resourceId={props.uploadId}
+      impact={props.impact}
+      blockers={props.blockedReasons}
+      preflight={props.preflight}
+      currentScopeKey={props.currentScopeKey}
+      confirmation={{ expectedText: props.uploadId }}
+      conflict={props.conflict}
+      pending={props.pending}
+      onCancel={props.onClose}
+      onResolveConflict={props.onResolveConflict}
+      onConfirm={() => props.onConfirm('用户确认复验并申请释放隔离')}
+    />
+  );
 }

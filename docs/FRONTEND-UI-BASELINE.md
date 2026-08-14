@@ -1,201 +1,57 @@
-# 前端 UI 阶段 0 基线
+# 前端 UI 最终视觉基线
 
-> 调查任务：TASK-028
->
-> 调查时间：2026-08-11 20:01–20:10 CST
->
-> 执行终端：`worker-wakeup-ui-01`
->
-> 依据：`docs/FRONTEND-UI-REFACTOR-PLAN.md` §2、§7、§8 阶段 0、§10–§14
->
-> 边界：本文件只记录现状；没有修改前端实现、依赖、lockfile 或截图，也不表示阶段 1–6 已完成。
+> 更新时间：2026-08-13 00:12 CST
+> 实施仓库：`/home/czy/hc_DataPlatform/frontend`
+> 总体计划：[`plan/FINAL-IMPLEMENTATION-PLAN.md`](../plan/FINAL-IMPLEMENTATION-PLAN.md)
 
-## 1. 结论
+## 1. 当前结论
 
-- P01–P19 的页面 ID 集合精确为 19 项；路由注册表实际有 21 条活动路由，额外两条来自 P06 的 Episode Viewer 和 P08 的任务工作台。
-- 当前 UI 是可运行的功能原型，不是已完成人工 UI 验收的产品界面。最高风险为 P01：真实 API 模式下聚合合同尚未定义，页面按既有安全边界显式不可用；UI 重构不得用模拟指标掩盖此 P0。
-- 页面层直接包含 149 个原生 `button`、54 个 `input`、55 个 `select`、4 个原生 `dialog`、22 个 `table` 和 9 个 `textarea`。`shared/ui` 已有 15 个组件文件，但其中 5 个没有真实消费者，Shell、Scaffold、筛选、表格、Drawer 和危险确认尚未收敛成唯一实现。
-- `src` 下共有 13 个 CSS 文件、1,383 行、68,512 bytes，且没有 CSS Module。P13–P18 的六份 `page.css` 内容与 SHA-256 完全相同，重复 504 行/25,662 bytes；全局 `.page-header`、`.filter-bar`、`.metric-grid`、`.detail-panel` 等命名存在跨路由覆盖风险。
-- 39 个逻辑 E2E 用例在两个 Playwright project 下收集为 78 项。只有 P02/P03/P04 使用 `toHaveScreenshot` 做真实像素比较；P05/P06/P07/P08 只产附件，P01/P08/P12/P19 只检查截图字节数，P09/P10/P11/P13–P18 没有截图路径。所有截图路径都只覆盖 happy/main 状态，没有 negative-state 视觉基线。
-- 当前构建通过，但生成 `analytics` 1,085.39 kB（gzip 358.69 kB）并触发大 chunk 警告，同时生成空 `viewer` chunk。P02/P03/P04 页面还是 route eager，其他页面使用 route lazy；ADR 需要明确 bundle 预算和回退方式。
+- P01–P19 已逐页形成正式参考与 1672×941 运行证据的一一索引；页面证据均来自实际 MSW/Fixture 或明确的安全缺省态，没有用设计图数值、假行、假曲线或假媒体填充。
+- 最终页面共同采用 218px 桌面侧栏、64px 顶栏、青绿/中性色、线性图标、低圆角、细边界、紧凑表格与常驻事实检视；Shell 的三张跨页证据历史路径为 `frontend/test-results/ui-012s/`，当前源码归档不再捆绑运行输出。
+- 页面任务已覆盖 1440/1024/768/390、键盘、焦点、Escape、200% zoom 与基础 a11y；UI-012B3 的 16 组精确 a11y 发现已由 B4/B5/B6 转绿，UI-012B 最终跨页巡检 22/22 通过。
+- 下表结论均未独立复检；UI-012A3A 九页已由主调度关闭，九张主证据逐页目视通过，专属视觉/四断点/键盘/200% zoom 为 11/11，后续全量 200+、lint/typecheck/build 通过。用户已明确不再安排复检；这不代表真实后端联调、生产验收或未确认产品能力已经可用。
+- 真实 API 模式下没有确认合同的能力继续 `feature-unavailable` 或 fail closed。尤其 P01 四个聚合接口、媒体 descriptor、导出、策略写入、权限写入和部分 3D 资源不得从 Mock 截图推断为可用。
 
-风险级别取每页发现的最高级：P0 为主流程不可用/权限或合同安全问题，P1 为主要布局、响应式、可发现性或视觉体系问题，P2 为局部文案、间距和图标问题。当前矩阵未把单纯样式瑕疵升级为 P0，也没有把测试全绿解释为 UI 已验收。
+## 2. P01–P19 最终证据索引
 
-## 2. 截图状态图例
+原始视觉参考已从精简后的计划目录移出；其历史文件名和运行证据路径仍记录在下表，但当前源码归档不再捆绑 `frontend/test-results/`。
 
-- `V(C+M)`：四档均由 `toHaveScreenshot` 做像素比较，当前工作区同时有 chromium/mobile 基线文件。
-- `A`：四档截图只作为 Playwright 附件输出，没有像素比较。
-- `B`：四档截图只检查 `byteLength > 1000`，没有持久化比较基线。
-- `A+B`：既产附件又只检查字节数。
-- `—`：该断点没有截图路径。
+| 页面               | 正式参考 PNG                                                        | 最终 1672×941 运行证据                         | 目视结论（均未独立复检）                                                               | 因真实数据/能力边界保留的差异                                                      |
+| ------------------ | ------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| P01 Dashboard      | `01-dashboard.png`                                                  | `ui-012a1/01-dashboard-1672x941.png`           | 指标、上传/存储/可用性图表、覆盖矩阵和待办形成完整首屏；坐标、图例与成功率百分比已收敛 | Fixture 只有单时点/单月和较少待办，不伪造 24 小时曲线；真实 API 聚合仍 unavailable |
+| P02 数据源         | `02-data-sources.png`                                               | `ui-012a3a/02-data-sources-1672x941.png`       | 指标、双行筛选、列表与右侧常驻检视保持正式图三段结构                                   | 仅 1 个真实数据源而非设计图 6 行，列表下方留白如实保留                             |
+| P03 上传任务       | `03-upload-jobs.png`                                                | `ui-012a1/03-upload-jobs-1672x941.png`         | 状态页签、指标、筛选、高密表格和聚焦会话事实区层级完整                                 | 仅 2 个上传会话而非 10 行；使用现有字段补充事实区，不增加假任务                    |
+| P04 上传详情       | `04-upload-detail.png`                                              | `ui-012a1/04-upload-detail-1672x941.png`       | 概要、对象表、校验流水线、隔离与审计摘要形成稳定主/侧栏                                | 当前代表态为 1 个隔离对象，而非设计图 9 个上传对象；状态与操作以真实 Fixture 为准  |
+| P05 数据集         | `05-datasets.png`                                                   | `ui-012a3a/05-datasets-1672x941.png`           | 双行筛选、汇总、紧凑列表和常驻选中摘要平衡单条数据                                     | 当前窗口仅 1 个数据集；摘要只消费 Ready/Episode/复核/退回/草稿等现有事实           |
+| P06 数据集详情     | `06-dataset-detail.png`；revision `06b-episode-viewer-readonly.png` | `ui-012a3a/06-dataset-detail-1672x941.png`     | 数据集指标、Episode 筛选/列表、窗口事实和常驻选中检视已稳定；只读 Viewer 路径保留      | 仅 1 个 Episode，未伪造设计图的 10 行；Viewer 媒体取决于已授权 descriptor          |
+| P07 版本详情       | `07-version-detail.png`                                             | `ui-012a3a/07-version-detail-1672x941.png`     | 固定版本概要、Episode/Revision 表和右侧不可变事实检视清晰                              | 仅 1 条 Episode/Revision；Manifest、Schema 与导出仍按能力和固定快照加载            |
+| P08 数据标注       | revision `08-data-annotation.png`                                   | `ui-012a3b/08-data-annotation-1672x941.png`    | 任务、双模态 Viewer、标签 Inspector、关节事实与多轨时间带组成成熟三栏工作台            | Bootstrap 未返回授权媒体 descriptor，媒体格明确 unavailable；不伪造机器人图像/视频 |
+| P09 人工问题       | `09-manual-issues.png`                                              | `ui-012a2/09-manual-issues-1672x941.png`       | 状态页签、筛选、3 行问题表与无遮挡详情检视结构稳定                                     | 详情没有安全媒体预览，只显示固定范围与 Viewer 路径；不伪造缩略图                   |
+| P10 清洗草稿       | `10-cleaning-drafts.png`                                            | `ui-012a2/10-cleaning-drafts-1672x941.png`     | 五轴状态汇总、筛选、2 行列表和来源/状态常驻详情完成                                    | 当前只有 2 条活跃草稿；Preview/Commit 队列为 0 时按真实状态显示                    |
+| P11 手动清洗       | `11-manual-cleaning.png`                                            | `ui-012a3b/11-manual-cleaning-1672x941.png`    | 操作列表、Source/Cleaned A/B、安全检视、事实侧栏与 EDL 时间带比例完整                  | Source/Preview 未携带授权媒体资源，保留安全缺省；不伪造图像或写入完成态            |
+| P12 存储总览       | `12-storage-overview.png`                                           | `ui-012a3a/12-storage-overview-1672x941.png`   | 六指标、容量趋势、层级环图和 Inventory 对账占满首屏核心区域                            | 只有 2 个月趋势而非 6 个月；费用与 Inventory 继续为服务端只读事实                  |
+| P13 生命周期       | `13-storage-lifecycle.png`                                          | `ui-012a2/13-storage-lifecycle-1672x941.png`   | 风险提示、策略表、影响概览和执行/恢复说明形成正式图信息层级                            | 仅 1 条策略且尚未运行 Simulation，不伪造 12 月预测或执行成功                       |
+| P14 机器人模型资产 | `14-robot-model-assets.png`                                         | `ui-012a3a/14-robot-model-assets-1672x941.png` | 指标、资产表与右侧模型事实/资源状态常驻检视完成                                        | 仅 1 个模型；无固定版本资源 URL 时显示结构化 3D unavailable，不伪造模型预览        |
+| P15 机器人与组件   | `15-robots-components.png`                                          | `ui-012a3a/15-robots-components-1672x941.png`  | 机器人列表、拓扑面板和详情面板保持三栏比例与键盘边界                                   | 只有 1 台机器人且组件未加载；拓扑以授权 Bootstrap 状态为准，不伪造组件树           |
+| P16 标定管理       | `16-calibrations.png`                                               | `ui-012a3a/16-calibrations-1672x941.png`       | 标定集、固定 Frame Graph、版本摘要和变换详情形成三栏管理页                             | 只有 1 个标定集；3D 预览与报告缺少已确认资源时禁用，不伪造矩阵行                   |
+| P17 数据 Schema    | `17-data-schemas.png`                                               | `ui-012a3a/17-data-schemas-1672x941.png`       | 类别、Registry 表和固定 Schema 详情/字段定义保持正式图信息架构                         | 仅 1 个 Schema；未选固定版本时兼容性/引用动作保持安全提示或禁用                    |
+| P18 用户权限       | `18-access-control.png`                                             | `ui-012a2/18-access-control-1672x941.png`      | 三角色能力上限、成员表、角色边界和成员事实常驻检视清晰                                 | 当前仅 1 个成员；权限写入 API 未确认，邀请/角色/ScopeGrant 写入口明确 unavailable  |
+| P19 审计日志       | `19-audit-log.png`                                                  | `ui-012a1/19-audit-log-1672x941.png`           | 指标、密集筛选、审计表、窗口事实与无遮挡常驻 Inspector 已完成                          | 当前窗口 2 条事件；`precise_ip` 等字段按策略省略，导出能力缺失时保持禁用           |
 
-P05/P06/P07 虽各有 4 张历史 chromium PNG，但当前测试调用的是 `testInfo.attach`，不会读取或比较这些 PNG，因此矩阵仍标为 `A`。
+## 3. 跨页视觉与交互结论
 
-## 3. P01–P19 页面问题矩阵
+- Shell：`ui-012s/{p01-dashboard-shell,p08-annotation-shell,p17-schema-shell}-1672x941.png` 覆盖标准页、工作台和管理页；项目/Region、任务、通知、用户与权限导航使用真实快照，搜索/通知无接口时不伪造结果。
+- 稀疏态：标准页优先使用常驻事实检视、窗口摘要、结构化 unavailable 和只读影响概览；没有机械拉高单卡，也没有用设计图行数填满表格。
+- 响应式：各页任务已经验证 1440/1024/768/390 和 200% zoom；宽表在区域内滚动，桌面 Inspector 不遮挡主体，窄屏切换为可关闭抽屉或纵向流。
+- 可访问性：页面保持唯一主标题、语义区域、可见焦点、键盘打开/关闭、Escape 和焦点归还；状态不只依赖颜色。
+- 数据边界：所有 ID、状态、数量、时间、bytes、hash、媒体可用性和 `allowed_actions` 均来自 Schema/Adapter/Fixture；UNKNOWN 与合同不匹配继续 fail closed。
 
-| ID | Route 与入口 | 模式与主要布局区 | 已有关键交互 | 明显问题与最高风险 | 现有定向测试 | 1440 | 1024 | 768 | 390 |
-|---|---|---|---|---|---|---|---|---|---|
-| P01 | `/dashboard`；`src/pages/p01-dashboard/page.tsx` | 分析/工作台；标题与时间范围、指标网格、图表/覆盖率、待办活动、右侧待办面板 | 时间筛选、按需加载覆盖率、打开/关闭待办、局部重试 | **P0**：真实 API 聚合合同未定义时主内容明确不可用，这是合同前置而非可由 UI 伪造的数据；另有大量 inline style、原生面板且视觉仅验字节 | `p01-dashboard.spec.ts` 3 项：happy、真实 API fail-closed、合同不匹配 | B | B | B | B |
-| P02 | `/ingest/sources`；`src/pages/p02-data-sources/page.tsx` | 列表/管理；页头、指标、筛选、表格、详情 Inspector、多类编辑/危险 Dialog | 新建、查看、编辑、轮换凭据、连接测试、启停、删除 | **P1**：页面私有表格和 4 个公开 Dialog 组件，19 个输入/选择控件集中在编辑器；独立全局 CSS；当前截图基线处于他人未提交变化中 | `p02-data-sources.spec.ts` 2 项：happy + 合同泄漏阻断 | V(C+M) | V(C+M) | V(C+M) | V(C+M) |
-| P03 | `/ingest/uploads`；`src/pages/p03-upload-jobs/page.tsx` | 列表/管理；页头、摘要、状态 Tabs、筛选、批量栏、上传表、游标分页、创建/取消 Dialog | 新建、批量选择/暂停/取消、详情跳转、SSE/轮询状态 | **P1**：私有表格与创建 Dialog，仅取消复用共享确认；依赖 ingest 全局 CSS；route eager；截图基线处于他人未提交变化中 | `p03-upload-jobs.spec.ts` 2 项：happy + unknown enum | V(C+M) | V(C+M) | V(C+M) | V(C+M) |
-| P04 | `/ingest/uploads/:uploadId`；`src/pages/p04-upload-detail/page.tsx` | 详情；面包屑/资源头、概要、对象表、校验流水线、隔离、重试历史、审计摘要 | 对象分页、资源级重试、隔离复验与危险确认 | **P1**：页面私有对象表与原生危险 Dialog，页面主体压缩成超长 JSX；两层全局 CSS；route eager；截图基线处于他人未提交变化中 | `p04-upload-detail.spec.ts` 3 项：happy、合同泄漏、拒绝 latest/current | V(C+M) | V(C+M) | V(C+M) | V(C+M) |
-| P05 | `/datasets`；`src/pages/p05-datasets/page.tsx` | 列表；页头、组合筛选、摘要条、数据表/游标、创建反馈与创建 Dialog | 创建、筛选、排序、游标翻页、详情/Episode 跳转 | **P1**：筛选、表格、创建 Dialog 都是页面私有组件；四档测试仅产附件，仓库存量 PNG 不参与断言 | `p05-datasets.spec.ts` 2 项：happy + contract mismatch | A | A | A | A |
-| P06 | `/datasets/:datasetId` 与 `/datasets/:datasetId/versions/:versionId/episodes/:episodeId/view`；`page.tsx`/`ViewerShell.tsx` | 详情/只读 Viewer；资源头、Tabs、概要、Ready 版本、Versions、Episodes+Inspector、Schema、来源证据、容量 | 多区域筛选/分页、Episode Inspector、固定版本 Viewer 跳转 | **P1**：主页面 834 行、3 张直接表格与多套筛选/分页；使用 datasets 私有 `CursorPager`/`ConfirmDialog` 而非 shared；四档仅附件 | `p06-dataset-detail.spec.ts` 2 项：happy + gone/not-found | A | A | A | A |
-| P07 | `/datasets/:datasetId/versions/:versionId`；`src/pages/p07-version-detail/page.tsx` | 详情/复核；版本头与 Tabs、概要、Episodes/Revisions+Inspector、Review/Findings、Manifest、Diff、Schema | Revision 选择、结构化 Finding、Approve/Return 预检确认、冲突恢复、返工跳转 | **P1**：单文件 1,295 行，直接含 6 张表与大量原生控件，使用 datasets 私有确认组件；四档仅附件 | `p07-version-detail.spec.ts` 4 项：happy、412、Return、blocker | A | A | A | A |
-| P08 | `/annotations` 与 `/annotations/tasks/:taskId`；`AnnotationQueuePage.tsx`/`AnnotationTaskPage.tsx` | 列表+工作台；队列筛选/表格/分页；任务头、工具栏、Viewer、Schema 表单、Inspector、多危险确认 | 领取、保存、提交/复核、STALE rebase、时间轴键盘、报告问题 | **P1**：一个页面 ID 承载两种复杂模式；私有 CSS/Badge/状态/危险 Dialog，工作台响应式依赖页面规则；截图只附件+字节 | `p08-data-annotation.spec.ts` 4 项：两条 happy、STALE、权限撤销 | A+B | A+B | A+B | A+B |
-| P09 | `/manual/issues`；`src/pages/p09-manual-issues/page.tsx` | 列表/管理；公共页头、摘要、筛选、直接表格、详情 Inspector、命令 Dialog | 分诊、解决、Issue→Draft、候选草稿选择、回 Viewer | **P1**：表格、Inspector、两个确认表单和候选 Dialog 均页面自建；无四档响应式/视觉证据 | `p09-manual-issues.spec.ts` 2 项：交接 + empty/forbidden | — | — | — | — |
-| P10 | `/manual/drafts`；`src/pages/p10-cleaning-drafts/page.tsx` | 列表/详情；页头、范围 Tabs、摘要、筛选、表格/分页、右侧 Inspector | 状态筛选、游标、打开 Inspector、进入后继草稿/P11 | **P1**：自建筛选、表格、分页与非模态 role=dialog Inspector；无截图，RETURNED 之外的 negative 视觉状态未覆盖 | `p10-cleaning-drafts.spec.ts` 2 项：交接 + RETURNED successor | — | — | — | — |
-| P11 | `/manual/drafts/:draftId`；`src/pages/p11-manual-cleaning/page.tsx` | 工作台；页头/来源条/操作栏、Viewer 对照、EDL 编辑器、只读复核反馈、提交确认 | 播放对照、保存、Preview、Commit、Finding 定位、危险确认 | **P1**：工作台布局完全依赖 cleaning 全局 CSS，确认组件来自 datasets 私有实现；没有任何断点截图 | `p11-manual-cleaning.spec.ts` 2 项：提交 + 只读 Finding | — | — | — | — |
-| P12 | `/storage/overview`；`src/pages/p12-storage-overview/page.tsx` | 分析/详情；页头与 Tabs、容量指标/图表、Inventory 表、对象右侧面板、Multipart 表、费用 | Tab 切换、对象选择/关闭、只读诊断与费用查看 | **P1**：大量 inline style、两张直接表格和自建 role=dialog；四档只查字节，不会发现布局像素回归 | `p12-storage-overview.spec.ts` 2 项：happy + 非法 bytes | B | B | B | B |
-| P13 | `/storage/lifecycle`；`src/pages/p13-storage-lifecycle/page.tsx` | 管理/分析；页头、局部 Tabs、指标、策略表、Simulation 影响面板、确认 | 策略选择、模拟、预检/执行确认、分页状态 | **P1**：与 P14–P18 复制同一 4,277-byte CSS；仅一条浅 happy E2E，无响应式或 negative 证据 | `p13-storage-lifecycle.spec.ts` 1 项 happy | — | — | — | — |
-| P14 | `/settings/robot-models`；`src/pages/p14-robot-models/page.tsx` | 管理；页头+文件入口、模型表/版本、详情、3D/Joint Mapping、发布确认 | 文件选择、直传、固定版本选择、预览、发布 | **P1**：复制管理页 CSS；页面仍有原生 file input 与页面确认流程；仅一条浅 happy E2E，无视觉/上传 negative 证据 | `p14-robot-models.spec.ts` 1 项 happy | — | — | — | — |
-| P15 | `/settings/robots`；`src/pages/p15-robots/page.tsx` | 管理；三栏机器人表、组件树、详情/时间化关系 | 选择机器人/组件、树键盘导航、查看绑定关系 | **P1**：三栏布局使用复制 CSS，在 768/390 完全无证据；仅一条浅 happy E2E | `p15-robots.spec.ts` 1 项 happy | — | — | — | — |
-| P16 | `/settings/calibrations`；`src/pages/p16-calibrations/page.tsx` | 管理；三栏标定表、Frame Graph、详情 Tabs、发布确认 | 固定关系解析、详情 Tab、预检/发布 | **P1**：三栏和 Frame Graph 使用复制 CSS；高精度输入仍为原生控件；仅一条浅 happy E2E，无关系错误/响应式视觉证据 | `p16-calibrations.spec.ts` 1 项 happy | — | — | — | — |
-| P17 | `/settings/data-schemas`；`src/pages/p17-data-schemas/page.tsx` | 管理；页头、区域 Tabs、Registry 表、固定版本详情 Tabs、发布确认 | 搜索/选择版本、只读定义、兼容性/引用、预检发布 | **P1**：复制管理页 CSS，Registry/详情在窄屏无证据；仅一条浅 happy E2E，无合同/unknown 视觉基线 | `p17-data-schemas.spec.ts` 1 项 happy | — | — | — | — |
-| P18 | `/settings/access`；`src/pages/p18-access/page.tsx` | 管理；不可用提示、指标、成员/角色/策略 Tabs、成员表+详情、Capability 矩阵 | 成员选择、角色矩阵筛选、ScopeGrant 本地预校验（只读） | **P1**：复制管理页 CSS；大矩阵和两栏布局无窄屏证据；写入能力仍按产品边界关闭，UI 不得伪装；仅一条浅 happy E2E | `p18-access.spec.ts` 1 项 happy | — | — | — | — |
-| P19 | `/settings/audit`；`src/pages/p19-audit/page.tsx` | 列表/管理；页头、指标、密集筛选、审计表/游标、事件右侧面板、导出不可用区 | 时间/事件/Actor/风险筛选、键盘打开详情、关闭、能力投影 | **P1**：大量 inline style、直接表格和自建 role=dialog；四档只查字节；筛选器在窄屏无结构断言 | `p19-audit.spec.ts` 3 项：happy、敏感字段阻断、三种能力投影 | B | B | B | B |
+## 4. 最终工程收口
 
-集合校验：`P01 … P19` 共 19 个唯一 ID，无遗漏、无重复。P01 的 P0 和其余页面的 P1 均为当前最高风险；文案、间距、英文/中文混用、局部图标等 P2 项被更高风险覆盖，后续不应先于 P0/P1 边界处理。
+- UI-012B1 已直接关闭：仓库 lint、typecheck、全量 200/200、build 与定向 E2E 5/5 通过；高置信零引用候选及两项仅合同消费候选已交 UI-012B 逐项验证，不因“看似孤儿”提前删除。
+- UI-012B2 已直接关闭：P02/P03/P04 改为动态页面 import，生产入口约从 955.3 kB 降至 632.44 kB（约 34%）；DataTable、Mock browser 和按需 analytics 大 chunk 如实保留。
+- UI-012B3 初始巡检定位的 P06/P07/P10 Tabs more、P14/P15/P17 Search 和 P17 重复 ID 已由 B4/B5/B6 精确修复；最终 19 页 × 五档加代表性 200% zoom、键盘与 Escape 巡检为 22/22 通过，全部 16 组红灯转绿。
+- UI-012B7 已删除 6 个生产零引用旧文件（833 行），保留仍被全局主题导入的 `shared/ui/styles.css` 与有合同消费者的二级 region-state；未改业务、API/Mock 或后端。
+- UI-012B 已完成全量收口：串行 Vitest 42 files / 207 tests、仓库 ESLint、typecheck、生产 build（4532 modules）及 diff-check 全通过；入口维持 632.44 kB，P02/P03/P04 继续为独立 lazy route chunk。门禁摘要原位于 `frontend/test-results/ui-012b/final-gate-summary.md`，当前源码归档不再捆绑该运行输出。
 
-## 4. 公共实现与真实消费者
-
-### 4.1 Shell 与 Scaffold
-
-- `src/app/shell/PlatformShell.tsx` 是唯一 Shell，负责顶栏、作用域三级 `select`、桌面/折叠/移动导航、任务、通知、账户菜单和页面 Outlet；它本身仍直接使用 6 个 `button`、3 个 `select`，移动导航用 `div role="dialog"` 自建焦点圈。
-- `src/app/shell/navigation-manifest.ts` 是唯一导航清单，P01–P19 都从这里获得导航 Owner；该边界必须保留。
-- 当前没有 `StandardPageScaffold`、`DetailPageScaffold` 或 `WorkbenchScaffold` 实现。`PageHeader` 只被 P09/P10/P11/P13–P18 共 9 页消费，P01–P08/P12/P19 各自实现页头。
-
-### 4.2 `shared/ui` 盘点
-
-`src/shared/ui` 有 15 个 TSX 组件：
-
-| 组件 | 真实消费者/结论 |
-|---|---|
-| `PageHeader` | P09、P10、P11、P13–P18（9 页） |
-| `StandardTable` | P13–P18（6 页）；其余页面继续使用直接 table 或页面私有表格 |
-| `StatusBadge` | P09、P10、P11、P13–P18（9 页） |
-| `EmptyState` | cleaning 状态层及 P09/P10/P13–P18 |
-| `ErrorPanel` | cleaning 状态层及 P13–P18 |
-| `SkeletonBlock` | Route Guard、cleaning 状态层、P13–P18 |
-| `ForbiddenPanel` | Route Guard、cleaning 状态层 |
-| `MetricCard` | P13、P18 |
-| `DetailTabs` | P16、P17 |
-| `ConfirmDialog` | P03、P13、P14、P16、P17 |
-| `CopyableId`、`CursorPager`、`FilterBar`、`RelativeTime`、`SideDrawer` | **零真实消费者**；同名行为由页面/feature 私有实现承担 |
-
-重复实现的直接证据：
-
-- 表格：页面层 22 个直接 `table`，另有 P02/P03/P05 的页面私有 Table 组件；`StandardTable` 只覆盖 P13–P18。
-- 筛选：共享 `FilterBar` 零消费者；P02、P03、P05、P06、P07、P08、P09、P10、P12、P19 均自建筛选表单/区域。
-- 分页：共享 `CursorPager` 零消费者；datasets feature 另有同名 `CursorPager`，P03/P04/P08/P09/P10/P19 再各自写上一组/下一组。
-- 确认/Modal：共享 `ConfirmDialog` 与 `features/datasets/components/ConfirmDialog.tsx` 并存；P02 的 `SourceActionDialogs`/`SourceEditorDialog`、P03 的 `CreateUploadDialog`、P04 的 `DangerousUploadActionDialog`、P09 的命令 Dialog 又各自实现。
-- Drawer/Inspector：共享 `SideDrawer` 零消费者；P01/P02/P09/P10/P12/P19 及 Shell 用 `aside`、`section` 或 `div role="dialog"` 自建。
-- 页面私有组件：`src/pages/*/components` 共 15 个 TSX 文件，全部集中于 P02–P05。
-
-### 4.3 原生控件与 className 数量
-
-| 区域 | button | input | select | dialog | table | textarea | className |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `src/pages` | 149 | 54 | 55 | 4 | 22 | 9 | 384 |
-| `src/shared/ui` | 9 | 0 | 0 | 0 | 1 | 0 | 31 |
-| `src/app` | 7 | 0 | 3 | 0 | 0 | 0 | 22 |
-
-计数命令只匹配 TSX 中的直接 JSX 标签；通过组件间接产生的 DOM 不重复计数，因此可复核但属于保守下限。
-
-### 4.4 CSS 集中点
-
-- 13 个 CSS 文件全部是全局 CSS；`*.module.css` 数量为 0。
-- 最大文件为 `src/features/datasets/components/datasets.css`（610 行/12,473 bytes），其次是 `src/shared/ui/styles.css`（119 行/9,560 bytes）、`p08.css`（85 行/6,937 bytes）、`cleaning.css`（61 行/6,817 bytes）。
-- `src/pages/p13-storage-lifecycle/page.css` 至 `p18-access/page.css` 六份均为 84 行/4,277 bytes，SHA-256 均为 `2a8c03b33171a08d03886342a7645f6083a377c588e2f9ee1fa8fe2d1eb380bc`。
-- 重复/全局选择器的主要集中点包括 `.management-page`、`.metric-grid`、`.workspace-grid`、`.three-pane`、`.detail-panel`、`.tree-panel`、`.local-tabs`、`.page-header`、`.filter-bar`、`.dialog-actions`。共享 CSS 从 `src/main.tsx` 全局导入，feature CSS 又由多个 route 页面导入；后加载样式可影响先前路由。
-
-## 5. 依赖、路由与构建事实
-
-`frontend/package.json` 当前精确版本：
-
-- React/React DOM `19.1.1`，React Router DOM `7.8.2`，Vite `7.1.3`，TypeScript `5.9.2`。
-- TanStack Query `5.85.5`、TanStack Table `8.21.3`。
-- React Hook Form `7.62.0`、Zod `4.1.5`。
-- ECharts `6.0.0`；Three `0.180.0`、URDFLoader `0.12.6`；Lucide React `0.542.0`；Zustand `5.0.8`。
-- 没有 Ant Design 或其他成熟通用 UI 组件库；本任务未安装依赖、未修改 `package.json`/`pnpm-lock.yaml`。
-
-代码使用事实：TanStack Query 被 28 个源文件直接导入，Zod 被 27 个源文件直接导入，TanStack Table 被 7 个源文件直接导入；RHF 当前集中在 `SchemaDrivenAnnotationForm.tsx`；ECharts 集中于 dashboard/storage 两个 chart 模块；Three/URDFLoader 位于 Viewer runtime/lazy loader。
-
-路由事实：P02/P03/P04 的 route module 静态导入页面并提供 `element`，属于 route eager；其余页面使用 `lazy`。`vite.config.ts` 把 ECharts 固定到 `analytics`、Three/URDFLoader 固定到 `viewer`。本次 build 变换 2,886 modules，最大产物如下：
-
-- `analytics-*.js`：1,085.39 kB，gzip 358.69 kB，触发 Vite 500 kB warning。
-- `browser-*.js`：383.73 kB，gzip 117.88 kB。
-- 主 `index-*.js`：355.47 kB，gzip 110.94 kB；另一入口 149.22 kB，gzip 42.74 kB。
-- `StandardTable-*.js`：50.55 kB，gzip 13.75 kB。
-- `AnnotationTaskPage-*.js`：45.04 kB，gzip 17.02 kB。
-- `viewer-*.js`：0.05 kB，构建明确提示 empty chunk。
-
-## 6. 自动化与视觉断言审计
-
-### 6.1 真实像素比较
-
-- P02/P03/P04：各 4 个宽度，`toHaveScreenshot`；当前工作区有 chromium/mobile 各 4 张，共 24 张基线文件（其中 mobile 文件尚未被 Git 跟踪）。
-- 这 24 张图在本任务领取前已经处于 Git 变化状态：12 张已跟踪图为 `M`、12 张 mobile 图为 `A`；文件 mtime 为 11:34–12:43 CST，早于本任务 20:01 CST 开始时间。本任务未生成、删除、覆盖或重录它们，不能把变化归因 TASK-028。
-
-### 6.2 伪视觉或仅附件
-
-- P05/P06/P07：四档通过 `page.screenshot` 后 `testInfo.attach`，不执行像素断言。仓库各有 4 张历史 chromium PNG，但当前测试不引用。
-- P08：四档与额外 200% zoom 只检查字节数并附加到报告。
-- P01/P12/P19：四档只检查 `byteLength > 1000`，既不比较也不保留仓库基线。
-- P09/P10/P11/P13/P14/P15/P16/P17/P18：无 screenshot 调用。
-- 所有截图循环只运行 happy/main 场景；合同不匹配、forbidden、empty、STALE、412、unknown enum、offline 等 negative state 没有视觉快照。
-
-### 6.3 本次真实验证
-
-| 命令 | 结果 |
-|---|---|
-| `pnpm typecheck` | 通过，`tsc -b --pretty false`，exit 0 |
-| `pnpm test` | 通过，23 files、122 tests passed |
-| `pnpm lint` | 通过，exit 0 |
-| `pnpm build` | 通过；2,886 modules；保留 analytics 大 chunk warning 与 empty viewer chunk 事实 |
-| `pnpm e2e -- --list` | **失败**，exit 1；额外 `--` 被 Playwright 当成文件过滤条件，报 `No tests found` |
-| `pnpm e2e --list` | 通过；19 files、39 logical tests × 2 projects = 78 tests |
-| `pnpm e2e tests/e2e/p02-data-sources.spec.ts tests/e2e/p05-datasets.spec.ts tests/e2e/p12-storage-overview.spec.ts --project=chromium --project=mobile --workers=1` | 通过，12 passed（1.3m）；没有使用 `--update-snapshots` |
-| `rg` 提取矩阵 ID 后与 `seq -w 1 19` 比较 | 通过，19 rows、19 unique IDs、exact set |
-| `git diff --check -- docs/FRONTEND-UI-BASELINE.md` 与对未跟踪文件有效的 `git diff --no-index --check /dev/null docs/FRONTEND-UI-BASELINE.md` | 通过 |
-| `find frontend/src frontend/tests frontend/package.json frontend/pnpm-lock.yaml -type f -newermt '2026-08-11 20:01:00'` 及截图子集检查 | 输出为空；任务开始后没有前端实现、测试或截图文件被写入 |
-
-格式验证失败历史：第一次对未跟踪文档执行 `git diff --no-index --check` 时，文档头 4 行的 Markdown 硬换行被报告为 trailing whitespace；移除这 4 处尾空格后，以上两种 diff check 均通过。该失败只影响新建文档格式，不涉及业务代码或截图。
-
-## 7. 下一批最小任务输入
-
-### 7.1 UI 基础设施 ADR 必须裁定
-
-1. Ant Design 与 React 19 的精确版本、按需引入策略、卸载/回退条件；不得顺带改变 React Router、Query、RHF/Zod、权限或上传合同。
-2. 标准表格最终保留还是替换 TanStack Table；无论选择哪种，必须保持服务端排序、游标、稳定 row ID、空/加载/错误态，不允许数字 offset 分页。
-3. `ConfirmDialog` 与 datasets/page 私有 Dialog 的收敛路径；危险确认必须保留 stable resource ID、影响、blocked reasons、preflight、pending、焦点恢复和冲突恢复。
-4. CSS 迁移策略：全局层允许的 selector 白名单、CSS Modules/页面前缀规则、P13–P18 六份重复 CSS 的删除时机，以及旧路由共存期间避免 reset 污染的办法。
-5. 视觉基线流程：设计人工结构评审完成后才建立基线；P05–P08/P01/P12/P19 从附件/字节检查迁移为真实比较；P09–P11/P13–P18 补四档和关键 negative state；禁止无说明批量重录。
-6. Bundle 预算：`analytics` warning、空 `viewer` chunk、P02–P04 route eager 的处理和失败阈值。
-
-### 7.2 主题与 Provider 文件边界
-
-建议下一任务只允许新建/修改以下基础设施边界，不触碰业务页：
-
-- `frontend/src/app/providers/index.tsx`：只挂载 UI Provider/locale，不改变现有 Query、Scope、Toast 和 ErrorBoundary 顺序语义。
-- 新目录 `frontend/src/app/theme/`：`tokens.ts`、`component-theme.ts`、`global.css`；全局 CSS 只承载 reset、主题和 Shell 级规则。
-- `frontend/src/main.tsx` 与 `frontend/src/shared/ui/styles.css`：仅为主题入口迁移所需；必须先记录旧全局样式兼容策略。
-- `frontend/package.json` 与 `frontend/pnpm-lock.yaml`：只能由依赖安装任务独占修改，必须与并行前端任务隔离。
-
-明确冲突：当前 `frontend/src/app/env.ts`、`playwright.config.ts`、P01/P12 页面及多个 E2E/截图已有他人修改；主题任务不要把这些文件纳入首批范围。
-
-### 7.3 公共组件批次边界
-
-先落地并单测不带业务 Hook 的 `PageState`、`PageHeader`、`FilterToolbar`、`CursorPager`、`StatusTag`、`EntityDrawer`、`DangerConfirmModal`；再落地只接受服务端分页/排序状态的 `DataTable`。不要为每个组件库控件建立无合同价值的薄包装，也不要在这一批删除页面消费者。
-
-### 7.4 P02/P05/P12 试点前置与文件冲突
-
-- 共同前置：ADR、主题 Provider、核心公共组件、四档真实截图流程通过；现有 Route/Query/API/Schema/Adapter/Query Key/权限合同先由测试锁定。
-- P02：涉及 `src/pages/p02-data-sources/**`、`src/features/ingest/styles.css` 和 P02 E2E/24 张 P02 中的 8 张基线。当前 P02 spec 和 8 张截图已有他人未提交变化，必须先由 Owner 收敛；不得与 P03/P04 同时改共享 ingest CSS。
-- P05：涉及 `src/pages/p05-datasets/**`、`src/features/datasets/components/datasets.css`、datasets 私有分页/确认组件和 P05 E2E。该 CSS 同时被 P06/P07/ViewerShell 消费，迁移时必须跑 P05–P07 跨页视觉回归；现有 4 张 PNG 不是有效断言，先裁定保留或替换。
-- P12：涉及 `src/pages/p12-storage-overview/page.tsx`、storage chart 与 P12 E2E。当前页面和 spec 已有他人未提交修改，必须先合并归属；不得在试点中改变费用/bytes 字符串、只读 Multipart 或图表懒加载合同。
-- 三个试点必须分任务串行处理与验收；不要让 P02/P05/P12 同时修改公共主题、公共组件或 Playwright config。
-
-## 8. 阶段 0 边界声明
-
-本基线证明当前合同、类型、unit、lint、build 和指定 E2E 可运行，同时证明视觉断言与组件复用仍有系统性缺口。它不证明 UI 已通过设计评审，也不授权实现 Ant Design、修改业务合同、解除 fail-closed 能力或重录截图。后续只能按 ADR、主题/公共组件、三个试点的小批量顺序继续。
+以上工程收口不会改变本文的业务边界：后端实现、数据库、Worker、Outbox、producer、真实 API 联调和生产验收不在当前前端完成声明中。

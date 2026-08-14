@@ -1,5 +1,0 @@
-dist
-playwright-report
-coverage
-src/shared/api/generated/**
-public/mockServiceWorker.js

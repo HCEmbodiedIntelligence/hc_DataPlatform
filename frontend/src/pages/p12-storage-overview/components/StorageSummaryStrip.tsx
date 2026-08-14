@@ -1,3 +1,5 @@
+import { Archive, Box, Database, FileText, Layers3, WalletCards } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { StorageMetric } from '../../../entities/storage-inventory';
 import type { StorageOverview } from '../../../features/storage-overview/types';
 import {
@@ -5,7 +7,7 @@ import {
   displayDecimalMetric,
   displayMoneyMetric,
 } from '../../../features/storage-overview/metrics-contract';
-import { UiMetricCard, type MetricState } from '../../../shared/ui';
+import type { MetricState, UiMetricCardProps } from '../../../shared/ui';
 import styles from '../styles.module.css';
 
 function stateOf(metric: StorageMetric<unknown>): MetricState {
@@ -15,6 +17,47 @@ function stateOf(metric: StorageMetric<unknown>): MetricState {
   return 'unknown';
 }
 
+function metricValue(value: string | undefined, state: MetricState): string {
+  if (state === 'loading') return '加载中';
+  if (state === 'forbidden') return '无权查看';
+  if (state === 'error') return '暂不可用';
+  if (state === 'unknown') return '未知';
+  return value ?? '—';
+}
+
+function StorageMetricTile({
+  label,
+  value,
+  detail,
+  icon,
+  tone = 'default',
+}: Readonly<{
+  label: string;
+  value: NonNullable<UiMetricCardProps['value']>;
+  detail: string;
+  icon: ReactNode;
+  tone?: 'default' | 'success' | 'warning';
+}>) {
+  const toneClass =
+    tone === 'success'
+      ? styles.storageMetricSuccess
+      : tone === 'warning'
+        ? styles.storageMetricWarning
+        : '';
+  return (
+    <section className={`${styles.storageMetric} ${toneClass}`} aria-label={label}>
+      <span className={styles.storageMetricIcon} aria-hidden="true">
+        {icon}
+      </span>
+      <div className={styles.storageMetricCopy}>
+        <h2>{label}</h2>
+        <strong>{value}</strong>
+        <span>{detail}</span>
+      </div>
+    </section>
+  );
+}
+
 export function StorageSummaryStrip({
   overview,
   state,
@@ -22,58 +65,95 @@ export function StorageSummaryStrip({
   overview?: StorageOverview;
   state: MetricState;
 }>) {
-  const asOf = overview ? <time dateTime={overview.asOf}>{overview.asOf}</time> : undefined;
   const cards = overview
     ? [
         {
           label: '实际 OSS 容量',
           value: displayByteMetric(overview.totals.actualOssPhysicalBytes),
           state: stateOf(overview.totals.actualOssPhysicalBytes),
-          basis: '服务端不可变 Inventory 快照',
+          detail: '服务端 Inventory 快照',
+          icon: <Database size={29} strokeWidth={1.65} />,
         },
         {
           label: '逻辑引用容量',
           value: displayByteMetric(overview.totals.logicalReferencedBytes),
           state: stateOf(overview.totals.logicalReferencedBytes),
-          basis: '服务端授权聚合',
+          detail: '服务端授权聚合',
+          icon: <Layers3 size={29} strokeWidth={1.65} />,
         },
         {
           label: '计费容量',
           value: displayByteMetric(overview.totals.billedBytes),
           state: stateOf(overview.totals.billedBytes),
-          basis: '服务端计费事实',
+          detail: '服务端计费事实',
+          icon: <Archive size={29} strokeWidth={1.65} />,
         },
         {
           label: '复用率',
           value: displayDecimalMetric(overview.totals.reuseRate),
           state: stateOf(overview.totals.reuseRate),
-          basis: overview.formulaVersion,
+          detail: overview.formulaVersion,
+          icon: <Box size={29} strokeWidth={1.65} />,
+          tone: 'success' as const,
         },
         {
           label: '月度费用',
           value: displayMoneyMetric(overview.totals.monthlyCost),
           state: stateOf(overview.totals.monthlyCost),
-          basis: '服务端 minor-unit 事实',
+          detail: '服务端 minor-unit 事实',
+          icon: <WalletCards size={29} strokeWidth={1.65} />,
+        },
+        {
+          label: '数据新鲜度',
+          value: overview.freshness,
+          state: 'ready' as const,
+          detail: '服务端快照状态',
+          icon: <FileText size={29} strokeWidth={1.65} />,
+          tone: 'success' as const,
         },
       ]
     : [
-        { label: '实际 OSS 容量' },
-        { label: '逻辑引用容量' },
-        { label: '计费容量' },
-        { label: '复用率' },
-        { label: '月度费用' },
+        {
+          label: '实际 OSS 容量',
+          detail: '服务端 Inventory 快照',
+          icon: <Database size={29} strokeWidth={1.65} />,
+        },
+        {
+          label: '逻辑引用容量',
+          detail: '服务端授权聚合',
+          icon: <Layers3 size={29} strokeWidth={1.65} />,
+        },
+        {
+          label: '计费容量',
+          detail: '服务端计费事实',
+          icon: <Archive size={29} strokeWidth={1.65} />,
+        },
+        { label: '复用率', detail: '版本化口径', icon: <Box size={29} strokeWidth={1.65} /> },
+        {
+          label: '月度费用',
+          detail: '服务端 minor-unit 事实',
+          icon: <WalletCards size={29} strokeWidth={1.65} />,
+        },
+        {
+          label: '数据新鲜度',
+          detail: '服务端快照状态',
+          icon: <FileText size={29} strokeWidth={1.65} />,
+        },
       ];
 
   return (
     <section className={styles.summaryGrid} aria-label="存储指标">
       {cards.map((card) => (
-        <UiMetricCard
+        <StorageMetricTile
           key={card.label}
           label={card.label}
-          value={'value' in card ? card.value : undefined}
-          state={'state' in card ? card.state : state}
-          basis={'basis' in card ? card.basis : undefined}
-          asOf={asOf}
+          value={metricValue(
+            'value' in card ? card.value : undefined,
+            'state' in card ? card.state : state,
+          )}
+          detail={card.detail}
+          icon={card.icon}
+          tone={'tone' in card ? card.tone : undefined}
         />
       ))}
     </section>

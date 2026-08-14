@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { Button, Space } from 'antd';
+import { Eye } from 'lucide-react';
 import { useMemo } from 'react';
 import type { DatasetId } from '../../../entities/dataset';
 import type { CursorPageVm, DatasetListItemVm } from '../../../features/datasets/api';
@@ -12,12 +13,16 @@ function actionAllowed(item: DatasetListItemVm, action: string): boolean {
 
 export function DatasetTable({
   page,
+  selectedDatasetId,
   canReadEpisodes,
+  onSelect,
   onOpen,
   onOpenEpisodes,
 }: Readonly<{
   page: CursorPageVm<DatasetListItemVm>;
+  selectedDatasetId: DatasetId;
   canReadEpisodes: boolean;
+  onSelect: (datasetId: DatasetId) => void;
   onOpen: (datasetId: DatasetId) => void;
   onOpenEpisodes: (item: DatasetListItemVm) => void;
 }>) {
@@ -94,6 +99,16 @@ export function DatasetTable({
           <Space size="small" wrap>
             <Button
               type="link"
+              icon={<Eye aria-hidden="true" size={14} />}
+              className={styles.inspectButton}
+              aria-pressed={row.original.datasetId === selectedDatasetId}
+              data-row-selected={row.original.datasetId === selectedDatasetId}
+              onClick={() => onSelect(row.original.datasetId)}
+            >
+              摘要
+            </Button>
+            <Button
+              type="link"
               disabled={!actionAllowed(row.original, 'OPEN_DATASET')}
               onClick={() => onOpen(row.original.datasetId)}
             >
@@ -110,7 +125,7 @@ export function DatasetTable({
         ),
       },
     ],
-    [canReadEpisodes, onOpen, onOpenEpisodes],
+    [canReadEpisodes, onOpen, onOpenEpisodes, onSelect, selectedDatasetId],
   );
 
   return (

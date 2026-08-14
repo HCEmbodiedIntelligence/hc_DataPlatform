@@ -5,8 +5,12 @@ import path from 'node:path';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
-// Historical directory name; its files are frontend API requirement drafts, not backend implementation contracts.
-const contractRoot = process.env.OPENAPI_ROOT ?? '/home/czy/plan/backend';
+// API drafts are external inputs and are not bundled with the cleaned plan directory.
+const contractRoot = process.env.OPENAPI_ROOT;
+if (!contractRoot) {
+  console.error('OPENAPI_ROOT is required; API drafts are not bundled with plan/.');
+  process.exit(1);
+}
 const outputDir = path.join(frontendRoot, 'src/shared/api/generated');
 const notesPath = path.join(frontendRoot, 'docs/frontend-scaffold-notes.md');
 const generatedHeader = '// AUTO-GENERATED — DO NOT EDIT\n';

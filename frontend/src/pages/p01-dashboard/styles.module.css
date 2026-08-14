@@ -1,70 +1,108 @@
 .page {
   width: 100%;
   max-width: 1680px;
-  padding: var(--hc-space-6, 24px);
   margin: 0 auto;
   color: var(--hc-color-text, #17211f);
 }
 
+.page :global([data-layout='standard-page']) {
+  gap: 12px;
+}
+
+.page :global([aria-label='数据工作台主内容']) {
+  padding: 12px;
+}
+
 .contentStack,
-.pendingItem {
+.pendingDetail {
   display: grid;
   min-width: 0;
   gap: var(--hc-space-3, 12px);
 }
 
+.contentStack {
+  gap: 12px;
+}
+
 .summaryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-column: 1 / -1;
   gap: var(--hc-space-3, 12px);
   min-width: 0;
 }
 
-.dashboardGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
-  gap: var(--hc-space-4, 16px);
-  min-width: 0;
+.summaryGrid :global(.ant-card-body) {
+  min-height: 104px;
+  padding: 10px 12px;
+}
+
+.summaryGrid :global([data-metric-state]) strong {
+  font-size: clamp(1.25rem, 1.1rem + 0.45vw, 1.7rem);
+  white-space: nowrap;
+}
+
+.summaryGrid :global(dl) {
+  gap: 2px 8px;
+  margin-top: 2px;
 }
 
 .panel {
   min-width: 0;
-  padding: var(--hc-space-4, 16px);
+  padding: 12px;
   border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: var(--hc-radius-lg, 8px);
+  border-radius: var(--hc-radius-sm, 4px);
   background: var(--hc-color-surface, #fff);
 }
 
 .panel h2 {
-  margin-top: 0;
+  margin: 0 0 8px;
+  font-size: 1rem;
 }
 
-.pendingItem {
-  width: 100%;
-  gap: var(--hc-space-1, 4px);
-}
-
-.pendingTitle {
+.panelHeading {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--hc-space-2, 8px);
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.panelHeading h2 {
+  margin-bottom: 0;
+}
+
+.pendingPanel :global(.ant-btn-link) {
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0;
+}
+
+.pendingDetail {
+  gap: 2px;
+}
+
+.pendingPanel :global(.hc-data-table .ant-table) {
+  font-size: 0.75rem;
+}
+
+.pendingPanel :global(.hc-data-table .ant-table-thead > tr > th),
+.pendingPanel :global(.hc-data-table .ant-table-tbody > tr > td) {
+  padding: 6px 8px;
 }
 
 .unavailable {
   max-width: 760px;
 }
 
-@media (max-width: 768px) {
-  .page {
-    padding: var(--hc-space-4, 16px);
+@media (max-width: 1199px) {
+  .summaryGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 390px) {
-  .page {
-    padding: var(--hc-space-3, 12px);
+@media (max-width: 768px) {
+  .summaryGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

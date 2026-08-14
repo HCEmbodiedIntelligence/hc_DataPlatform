@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bell,
-  BriefcaseBusiness,
+  Box,
   ChevronDown,
   Database,
   Gauge,
+  Globe2,
   HardDrive,
+  ListTodo,
   Menu as MenuIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
   Settings,
   Tags,
   UploadCloud,
@@ -16,6 +21,7 @@ import {
 } from 'lucide-react';
 import {
   Alert,
+  Avatar,
   Button,
   Drawer,
   Dropdown,
@@ -66,14 +72,23 @@ const tabletQuery = '(min-width: 768px)';
 const desktopQuery = '(min-width: 1200px)';
 
 const groupIcons: Readonly<Record<NavigationGroupId, ReactNode>> = {
-  dashboard: <Gauge aria-hidden="true" size={18} />,
-  ingest: <UploadCloud aria-hidden="true" size={18} />,
-  datasets: <Database aria-hidden="true" size={18} />,
-  annotation: <Tags aria-hidden="true" size={18} />,
-  manual: <Wrench aria-hidden="true" size={18} />,
-  storage: <HardDrive aria-hidden="true" size={18} />,
-  settings: <Settings aria-hidden="true" size={18} />,
+  dashboard: <Gauge aria-hidden="true" size={19} strokeWidth={1.8} />,
+  ingest: <UploadCloud aria-hidden="true" size={19} strokeWidth={1.8} />,
+  datasets: <Database aria-hidden="true" size={19} strokeWidth={1.8} />,
+  annotation: <Tags aria-hidden="true" size={19} strokeWidth={1.8} />,
+  manual: <Wrench aria-hidden="true" size={19} strokeWidth={1.8} />,
+  storage: <HardDrive aria-hidden="true" size={19} strokeWidth={1.8} />,
+  settings: <Settings aria-hidden="true" size={19} strokeWidth={1.8} />,
 };
+
+function BrandMark() {
+  return (
+    <span aria-hidden="true" className={styles.brandMark}>
+      <Box size={23} strokeWidth={2} />
+      <span />
+    </span>
+  );
+}
 
 function readViewportMode(): ShellViewportMode {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -126,34 +141,54 @@ function NavigationMenu({
         Boolean(matchPath({ path: pattern, end: true }, location.pathname)),
       ),
     );
+  const activeGroup = manifest.find((group) =>
+    group.items.some((item) => item.pageId === activeItem?.pageId),
+  );
+  const expandedGroup =
+    activeGroup && activeGroup.items.length > 1
+      ? activeGroup
+      : manifest.find((group) => group.groupId === 'ingest' && group.items.length > 1);
+  const defaultOpenKeys = expandedGroup ? [`group:${expandedGroup.groupId}`] : [];
   const itemByPageId = useMemo(
     () => new Map(manifest.flatMap((group) => group.items).map((item) => [item.pageId, item])),
     [manifest],
   );
   const menuItems = useMemo<MenuProps['items']>(
     () =>
-      manifest.map((group) => ({
-        key: `group:${group.groupId}`,
-        icon: groupIcons[group.groupId],
-        label: group.label,
-        title: group.label,
-        children: group.items.map((item) => ({
-          key: item.pageId,
-          label: item.label,
-          title: item.label,
-        })),
-      })),
+      manifest.map((group) => {
+        if (group.items.length === 1) {
+          const item = group.items[0];
+          if (item === undefined) return null;
+          return {
+            key: item.pageId,
+            icon: groupIcons[group.groupId],
+            label: <span aria-label={item.label}>{group.label}</span>,
+            title: group.label,
+          };
+        }
+        return {
+          key: `group:${group.groupId}`,
+          icon: groupIcons[group.groupId],
+          label: group.label,
+          title: group.label,
+          children: group.items.map((item) => ({
+            key: item.pageId,
+            label: item.label,
+            title: item.label,
+          })),
+        };
+      }),
     [manifest],
   );
 
   return (
     <nav aria-label={label} className={styles.navigation}>
       <Menu
-        key={`${label}:${collapsed ? 'collapsed' : 'expanded'}`}
+        key={`${label}:${collapsed ? 'collapsed' : 'expanded'}:${defaultOpenKeys[0] ?? 'none'}`}
         items={menuItems}
         mode="inline"
         inlineCollapsed={collapsed}
-        defaultOpenKeys={collapsed ? [] : manifest.map((group) => `group:${group.groupId}`)}
+        defaultOpenKeys={collapsed ? [] : defaultOpenKeys}
         selectedKeys={activeItem ? [activeItem.pageId] : []}
         onClick={({ key }) => {
           const item = itemByPageId.get(key);
@@ -173,12 +208,6 @@ interface ScopeSelectorPanelProps {
   onSelect: (scope: Scope) => void;
 }
 
-function uniqueSelectOptions(
-  options: readonly { value: string; label: string }[],
-): { value: string; label: string }[] {
-  return [...new Map(options.map((option) => [option.value, option])).values()];
-}
-
 function toScope(option: ScopeOption): Scope {
   return {
     organizationId: option.organizationId,
@@ -188,74 +217,74 @@ function toScope(option: ScopeOption): Scope {
 }
 
 function ScopeSelectorPanel({ disabled, scope, scopeOptions, onSelect }: ScopeSelectorPanelProps) {
-  const organizationOptions = uniqueSelectOptions(
-    scopeOptions.map((option) => ({
-      value: option.organizationId,
-      label: option.organizationName,
-    })),
+  const projectKey = (option: Pick<ScopeOption, 'organizationId' | 'projectId'>) =>
+    `${option.organizationId}/${option.projectId ?? '-'}`;
+  const projectCandidates = [
+    ...new Map(scopeOptions.map((option) => [projectKey(option), option])).values(),
+  ];
+  const selectedOption = scopeOptions.find(
+    (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
   );
-  const projectCandidates = scopeOptions.filter(
-    (option) => option.organizationId === scope?.organizationId && option.projectId !== undefined,
-  );
-  const projectOptions = uniqueSelectOptions(
-    projectCandidates.map((option) => ({
-      value: option.projectId ?? '',
-      label: option.projectName ?? option.projectId ?? '',
-    })),
-  );
+  const currentProjectKey = scope === null ? undefined : projectKey(scope);
+  const projectOptions = projectCandidates.map((option) => ({
+    value: projectKey(option),
+    label: option.projectName ?? option.projectId ?? '未选择项目',
+  }));
+  if (scope !== null && !projectOptions.some((option) => option.value === currentProjectKey)) {
+    projectOptions.push({
+      value: currentProjectKey ?? '',
+      label: scope.projectId ?? '未选择项目',
+    });
+  }
   const regionCandidates = projectCandidates.filter(
-    (option) => option.projectId === scope?.projectId && option.regionCode !== undefined,
+    (option) =>
+      option.organizationId === scope?.organizationId &&
+      option.projectId === scope?.projectId &&
+      option.regionCode !== undefined,
   );
-  const regionOptions = uniqueSelectOptions(
-    regionCandidates.map((option) => ({
-      value: option.regionCode ?? '',
-      label: option.regionName ?? option.regionCode ?? '',
-    })),
-  );
+  const regionOptions = [
+    ...new Map(
+      regionCandidates.map((option) => [
+        option.regionCode ?? '',
+        {
+          value: option.regionCode ?? '',
+          label: option.regionName ?? option.regionCode ?? '',
+        },
+      ]),
+    ).values(),
+  ];
+  if (scope?.regionCode && !regionOptions.some((option) => option.value === scope.regionCode)) {
+    regionOptions.push({ value: scope.regionCode, label: scope.regionCode });
+  }
 
   return (
     <div aria-label="当前作用域" className={styles.scopePanel} role="group">
-      <label className={styles.scopeField}>
-        <Text type="secondary">组织</Text>
-        <Select
-          aria-label="组织"
-          disabled={disabled || organizationOptions.length === 0}
-          loading={disabled}
-          optionFilterProp="label"
-          options={organizationOptions}
-          placeholder="请选择组织"
-          showSearch
-          value={scope?.organizationId}
-          onChange={(organizationId: string) => {
-            const candidate = scopeOptions.find(
-              (option) => option.organizationId === organizationId,
-            );
-            if (candidate !== undefined) onSelect(toScope(candidate));
-          }}
-        />
-      </label>
-      <label className={styles.scopeField}>
-        <Text type="secondary">项目</Text>
+      <label className={`${styles.scopeField} ${styles.projectField}`}>
+        <span className={styles.srOnly}>组织与项目</span>
         <Select
           aria-label="项目"
-          disabled={disabled || projectOptions.length === 0}
+          className={styles.projectSelect}
+          disabled={disabled}
           loading={disabled}
           optionFilterProp="label"
           options={projectOptions}
           placeholder="请选择项目"
           showSearch
-          value={scope?.projectId}
-          onChange={(projectId: string) => {
-            const candidate = projectCandidates.find((option) => option.projectId === projectId);
+          value={currentProjectKey}
+          onChange={(nextProjectKey: string) => {
+            const choices = scopeOptions.filter((option) => projectKey(option) === nextProjectKey);
+            const candidate =
+              choices.find((option) => option.regionCode === scope?.regionCode) ?? choices[0];
             if (candidate !== undefined) onSelect(toScope(candidate));
           }}
         />
       </label>
-      <label className={styles.scopeField}>
-        <Text type="secondary">Region</Text>
+      <label className={`${styles.scopeField} ${styles.regionField}`}>
+        <Globe2 aria-hidden="true" className={styles.regionIcon} size={16} strokeWidth={1.8} />
+        <span className={styles.srOnly}>Region</span>
         <Select
           aria-label="Region"
-          disabled={disabled || regionOptions.length === 0}
+          disabled={disabled}
           loading={disabled}
           optionFilterProp="label"
           options={regionOptions}
@@ -263,7 +292,13 @@ function ScopeSelectorPanel({ disabled, scope, scopeOptions, onSelect }: ScopeSe
           showSearch
           value={scope?.regionCode}
           onChange={(regionCode: string) => {
-            const candidate = regionCandidates.find((option) => option.regionCode === regionCode);
+            const candidate =
+              scopeOptions.find(
+                (option) =>
+                  option.organizationId === scope?.organizationId &&
+                  option.projectId === scope?.projectId &&
+                  option.regionCode === regionCode,
+              ) ?? selectedOption;
             if (candidate !== undefined) onSelect(toScope(candidate));
           }}
         />
@@ -294,6 +329,7 @@ export function PlatformShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -314,7 +350,13 @@ export function PlatformShell({
     const selected = scopeOptions.find(
       (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
     );
-    return selected?.projectName ?? scope?.projectId ?? '未选择作用域';
+    return selected?.projectName ?? selected?.projectId ?? scope?.projectId ?? '未选择项目';
+  }, [scope, scopeOptions]);
+  const activeRegionLabel = useMemo(() => {
+    const selected = scopeOptions.find(
+      (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
+    );
+    return selected?.regionName ?? scope?.regionCode ?? '未选择 Region';
   }, [scope, scopeOptions]);
 
   useEffect(() => {
@@ -387,15 +429,26 @@ export function PlatformShell({
           />
         ) : null}
 
-        <Button className={styles.brand} type="link" onClick={() => void navigate('/dashboard')}>
-          <span className={styles.brandFull}>具身智能数据平台</span>
-          <span className={styles.brandShort}>数据平台</span>
+        <Button
+          aria-label="返回数据工作台"
+          className={styles.brand}
+          type="link"
+          onClick={() => void navigate('/dashboard')}
+        >
+          <BrandMark />
+          <span className={styles.brandFull}>EI 数据平台</span>
+          <span className={styles.brandShort}>EI</span>
         </Button>
 
         {viewportMode === 'desktop' ? (
           <div className={styles.headerScope}>{scopeSelectors}</div>
         ) : viewportMode === 'compact' ? (
-          <Popover content={scopeSelectors} placement="bottom" trigger="click">
+          <Popover
+            content={scopeSelectors}
+            placement="bottom"
+            rootClassName={styles.shellPopover}
+            trigger="click"
+          >
             <Button className={styles.scopeTrigger}>作用域：{activeScopeLabel}</Button>
           </Popover>
         ) : (
@@ -404,7 +457,34 @@ export function PlatformShell({
           </Text>
         )}
 
+        {viewportMode !== 'mobile' ? (
+          <Button
+            aria-label="全局搜索"
+            className={styles.globalSearch}
+            icon={<Search aria-hidden="true" size={17} strokeWidth={1.8} />}
+            type="text"
+            onClick={() =>
+              showToast({
+                title: '全局搜索尚未开放',
+                message: '当前环境没有经过确认的全局搜索接口。',
+                tone: 'info',
+              })
+            }
+          >
+            <span>搜索数据集、Episode、机器人、任务、场景等</span>
+            <kbd>⌘ K</kbd>
+          </Button>
+        ) : null}
+
         <Space className={styles.headerActions} size={4}>
+          {viewportMode !== 'desktop' ? (
+            <Button
+              aria-label={`Region：${activeRegionLabel}`}
+              className={styles.compactRegion}
+              icon={<Globe2 aria-hidden="true" size={17} strokeWidth={1.8} />}
+              type="text"
+            />
+          ) : null}
           <Popover
             content={
               <div className={styles.jobsPanel}>
@@ -413,6 +493,7 @@ export function PlatformShell({
             }
             open={jobsOpen}
             placement="bottomRight"
+            rootClassName={styles.shellPopover}
             trigger="click"
             onOpenChange={(open) => {
               setJobsOpen(open);
@@ -422,20 +503,24 @@ export function PlatformShell({
             <Button
               aria-expanded={jobsOpen}
               aria-label="任务中心"
-              icon={<BriefcaseBusiness aria-hidden="true" />}
+              className={styles.jobButton}
+              icon={<ListTodo aria-hidden="true" size={18} strokeWidth={1.8} />}
               title="任务中心"
-              type="text"
-            />
+              type={viewportMode === 'desktop' ? 'default' : 'text'}
+            >
+              {viewportMode === 'desktop' ? '任务队列' : null}
+            </Button>
           </Popover>
           <Popover
             content={
               <section aria-label="通知中心" className={styles.notificationPanel}>
                 <strong>通知中心</strong>
-                <Text type="secondary">暂无新通知</Text>
+                <Text type="secondary">当前环境未提供通知查询接口。</Text>
               </section>
             }
             open={notificationsOpen}
             placement="bottomRight"
+            rootClassName={styles.shellPopover}
             trigger="click"
             onOpenChange={(open) => {
               setNotificationsOpen(open);
@@ -445,7 +530,8 @@ export function PlatformShell({
             <Button
               aria-expanded={notificationsOpen}
               aria-label="通知中心"
-              icon={<Bell aria-hidden="true" />}
+              className={styles.iconAction}
+              icon={<Bell aria-hidden="true" size={18} strokeWidth={1.8} />}
               title="通知中心"
               type="text"
             />
@@ -458,11 +544,15 @@ export function PlatformShell({
               ],
             }}
             placement="bottomRight"
+            rootClassName={styles.accountDropdown}
             trigger={['click']}
           >
             <Button aria-label="账户菜单" className={styles.accountButton} type="text">
-              <span>{principal?.displayName ?? '未登录'}</span>
-              <ChevronDown aria-hidden="true" size={16} />
+              <Avatar className={styles.accountAvatar} size={32}>
+                {(principal?.displayName ?? '未').trim().slice(0, 1)}
+              </Avatar>
+              <span className={styles.accountName}>{principal?.displayName ?? '未登录'}</span>
+              <ChevronDown aria-hidden="true" size={15} />
             </Button>
           </Dropdown>
         </Space>
@@ -472,17 +562,32 @@ export function PlatformShell({
         {viewportMode !== 'mobile' ? (
           <Sider
             className={styles.sider}
-            collapsed={viewportMode === 'compact'}
-            collapsedWidth={72}
+            collapsed={viewportMode === 'compact' || navigationCollapsed}
+            collapsedWidth={64}
             theme="light"
             trigger={null}
-            width={232}
+            width={218}
           >
             <NavigationMenu
-              collapsed={viewportMode === 'compact'}
+              collapsed={viewportMode === 'compact' || navigationCollapsed}
               label={viewportMode === 'compact' ? '折叠主导航' : '主导航'}
               manifest={visibleManifest}
             />
+            {viewportMode === 'desktop' ? (
+              <Button
+                aria-label={navigationCollapsed ? '展开导航' : '折叠导航'}
+                className={styles.collapseNavigation}
+                icon={
+                  navigationCollapsed ? (
+                    <PanelLeftOpen aria-hidden="true" size={17} />
+                  ) : (
+                    <PanelLeftClose aria-hidden="true" size={17} />
+                  )
+                }
+                type="text"
+                onClick={() => setNavigationCollapsed((current) => !current)}
+              />
+            ) : null}
           </Sider>
         ) : null}
 

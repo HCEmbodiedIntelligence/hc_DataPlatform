@@ -1,6 +1,6 @@
 import { Alert, Button, Descriptions, Flex, Input, Select, Space, Typography } from 'antd';
-import { Plus, Upload } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Database, HardDriveUpload, Plus, Radio, TriangleAlert, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { canMutateDataSource, isUnknownEnum } from '../../entities/data-source';
 import {
@@ -28,7 +28,6 @@ import {
   PageState,
   StandardPageScaffold,
   StatusTag,
-  UiMetricCard,
   type DangerConflict,
   type DangerPreflightEvidence,
   type PageStateKind,
@@ -94,7 +93,13 @@ function stateFromError(error: unknown): PageStateKind {
 }
 
 function listState(
-  query: { readonly isPending: boolean; readonly isError: boolean; readonly isFetching: boolean; readonly error: unknown; readonly data?: { readonly items: readonly unknown[] } },
+  query: {
+    readonly isPending: boolean;
+    readonly isError: boolean;
+    readonly isFetching: boolean;
+    readonly error: unknown;
+    readonly data?: { readonly items: readonly unknown[] };
+  },
   filtered: boolean,
 ): PageStateKind | 'ready' {
   if (query.isPending) return 'loading';
@@ -140,8 +145,72 @@ function ConnectionJob({ jobId, error }: { readonly jobId: string; readonly erro
     <Alert
       type="info"
       showIcon
-      title={<span role="status">连接测试：{job.data?.status ?? 'QUEUED'}{job.connectionStatus !== 'connected' ? `（${job.connectionStatus}）` : ''}</span>}
+      title={
+        <span role="status">
+          连接测试：{job.data?.status ?? 'QUEUED'}
+          {job.connectionStatus !== 'connected' ? `（${job.connectionStatus}）` : ''}
+        </span>
+      }
     />
+  );
+}
+
+function sourceSummaryValue(
+  value: string | undefined,
+  state: 'ready' | 'loading' | 'error' | 'unknown',
+) {
+  if (state === 'loading') return '加载中';
+  if (state === 'error') return '暂不可用';
+  if (state === 'unknown') return '未知';
+  return value ?? '—';
+}
+
+function formatBytes(value: string | undefined): string {
+  if (!value) return '—';
+  try {
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
+    let amount = BigInt(value);
+    let index = 0;
+    while (amount >= 1024n && index < units.length - 1) {
+      amount /= 1024n;
+      index += 1;
+    }
+    return `${amount.toString()} ${units[index]}`;
+  } catch {
+    return value;
+  }
+}
+
+function SourceMetricTile({
+  label,
+  value,
+  detail,
+  icon,
+  tone = 'default',
+}: Readonly<{
+  label: string;
+  value: ReactNode;
+  detail: string;
+  icon: ReactNode;
+  tone?: 'default' | 'success' | 'warning';
+}>) {
+  const toneClass =
+    tone === 'success'
+      ? styles.sourceMetricSuccess
+      : tone === 'warning'
+        ? styles.sourceMetricWarning
+        : '';
+  return (
+    <section className={`${styles.sourceMetric} ${toneClass}`} aria-label={label}>
+      <span className={styles.sourceMetricIcon} aria-hidden="true">
+        {icon}
+      </span>
+      <div className={styles.sourceMetricCopy}>
+        <h2>{label}</h2>
+        <strong>{value}</strong>
+        <span>{detail}</span>
+      </div>
+    </section>
   );
 }
 
@@ -151,9 +220,7 @@ export default function DataSourcesPage() {
   const [params, setParams] = useSearchParams();
   const search = useMemo(() => dataSourcesQueryCodec.parse(params), [params]);
   const [draft, setDraft] = useState<FilterDraft>(() => filterDraft(search));
-  const scopeKey = scope
-    ? `${scope.organizationId}/${scope.projectId}/${scope.regionCode}`
-    : null;
+  const scopeKey = scope ? `${scope.organizationId}/${scope.projectId}/${scope.regionCode}` : null;
   const previousScopeKey = useRef<string | null | undefined>(undefined);
 
   useEffect(() => setDraft(filterDraft(search)), [search]);
@@ -161,11 +228,7 @@ export default function DataSourcesPage() {
     if (previousScopeKey.current !== undefined && previousScopeKey.current !== scopeKey) {
       setParams(
         dataSourcesQueryCodec.build(
-          updateDataSourcesSearch(
-            search,
-            { sourceId: undefined, intent: undefined },
-            true,
-          ),
+          updateDataSourcesSearch(search, { sourceId: undefined, intent: undefined }, true),
         ),
         { replace: true },
       );
@@ -280,22 +343,23 @@ export default function DataSourcesPage() {
     );
   };
 
-  const editorInitial = detail.data && isConnectorEditable(detail.data.configuration)
-    ? {
-        name: detail.data.name,
-        sourceFormat: detail.data.sourceFormat,
-        sourceFormatVersion: detail.data.sourceFormatVersion,
-        uploadPolicyCode: detail.data.uploadPolicy.code,
-        configuration: detail.data.configuration,
-        binding: (detail.data.binding.kind === 'ROBOT'
-          ? { kind: 'ROBOT', robotId: detail.data.binding.robotId }
-          : detail.data.binding.kind === 'EDGE_AGENT'
-            ? { kind: 'EDGE_AGENT', agentId: detail.data.binding.agentId }
-            : detail.data.binding.kind === 'OSS_IMPORT'
-              ? { kind: 'OSS_IMPORT', sourceAlias: detail.data.binding.sourceAlias }
-              : null) as WritableConnectorBinding | null,
-      }
-    : null;
+  const editorInitial =
+    detail.data && isConnectorEditable(detail.data.configuration)
+      ? {
+          name: detail.data.name,
+          sourceFormat: detail.data.sourceFormat,
+          sourceFormatVersion: detail.data.sourceFormatVersion,
+          uploadPolicyCode: detail.data.uploadPolicy.code,
+          configuration: detail.data.configuration,
+          binding: (detail.data.binding.kind === 'ROBOT'
+            ? { kind: 'ROBOT', robotId: detail.data.binding.robotId }
+            : detail.data.binding.kind === 'EDGE_AGENT'
+              ? { kind: 'EDGE_AGENT', agentId: detail.data.binding.agentId }
+              : detail.data.binding.kind === 'OSS_IMPORT'
+                ? { kind: 'OSS_IMPORT', sourceAlias: detail.data.binding.sourceAlias }
+                : null) as WritableConnectorBinding | null,
+        }
+      : null;
 
   const statePreflight = useMemo<DangerPreflightEvidence | null>(() => {
     if (!detail.data || detail.dataUpdatedAt <= 0 || !scopeKey) return null;
@@ -350,10 +414,16 @@ export default function DataSourcesPage() {
   ) : null;
   const listContent =
     resolvedListState === 'ready' ? (
-      <div className={styles.listStack}>{table}{pager}</div>
+      <div className={styles.listStack}>
+        {table}
+        {pager}
+      </div>
     ) : resolvedListState === 'refreshing' ? (
       <PageState state="refreshing" label="数据源列表">
-        <div className={styles.listStack}>{table}{pager}</div>
+        <div className={styles.listStack}>
+          {table}
+          {pager}
+        </div>
       </PageState>
     ) : (
       <PageState
@@ -361,7 +431,11 @@ export default function DataSourcesPage() {
         label="数据源列表"
         requestId={requestId(page.error)}
         onRetry={page.isError ? () => void page.refetch() : undefined}
-        action={resolvedListState === 'filtered-empty' ? <Button onClick={resetFilters}>清除筛选</Button> : undefined}
+        action={
+          resolvedListState === 'filtered-empty' ? (
+            <Button onClick={resetFilters}>清除筛选</Button>
+          ) : undefined
+        }
       />
     );
 
@@ -370,7 +444,10 @@ export default function DataSourcesPage() {
   const stateConflict = conflictFrom(stateMutation.error);
 
   return (
-    <main className={styles.page}>
+    <main
+      className={`${styles.page} ${search.sourceId ? styles.pageWithInspector : ''}`}
+      data-page-id="P02"
+    >
       <StandardPageScaffold
         header={{
           title: '数据源',
@@ -381,7 +458,10 @@ export default function DataSourcesPage() {
           ],
           actions: (
             <>
-              <Button href={routes.uploadJobs.build()} icon={<Upload aria-hidden="true" size={16} />}>
+              <Button
+                href={routes.uploadJobs.build()}
+                icon={<Upload aria-hidden="true" size={16} />}
+              >
                 上传任务
               </Button>
               {canManage && page.data?.allowedActions.includes('CREATE') ? (
@@ -399,15 +479,41 @@ export default function DataSourcesPage() {
             </>
           ),
         }}
-        summary={(
-          <>
-            <UiMetricCard label="数据源总数" value={page.data?.summary.totalCount} state={summaryState} asOf={page.data?.summary.asOf} />
-            <UiMetricCard label="在线" value={page.data?.summary.onlineCount} state={summaryState} asOf={page.data?.summary.asOf} />
-            <UiMetricCard label="今日验证字节" value={page.data?.summary.verifiedBytesToday} unit="B" state={summaryState} asOf={page.data?.summary.asOf} />
-            <UiMetricCard label="异常" value={page.data?.summary.abnormalCount} state={summaryState} asOf={page.data?.summary.asOf} />
-          </>
-        )}
-        filters={(
+        summary={
+          <div className={styles.sourceMetricStrip}>
+            <SourceMetricTile
+              label="数据源总数"
+              value={sourceSummaryValue(page.data?.summary.totalCount, summaryState)}
+              detail="已接入连接器"
+              icon={<Database size={30} strokeWidth={1.65} />}
+            />
+            <SourceMetricTile
+              label="在线"
+              value={sourceSummaryValue(page.data?.summary.onlineCount, summaryState)}
+              detail="最近心跳正常"
+              icon={<Radio size={30} strokeWidth={1.65} />}
+              tone="success"
+            />
+            <SourceMetricTile
+              label="今日验证字节"
+              value={
+                summaryState === 'ready'
+                  ? formatBytes(page.data?.summary.verifiedBytesToday)
+                  : sourceSummaryValue(undefined, summaryState)
+              }
+              detail="通过完整性验证"
+              icon={<HardDriveUpload size={30} strokeWidth={1.65} />}
+            />
+            <SourceMetricTile
+              label="异常"
+              value={sourceSummaryValue(page.data?.summary.abnormalCount, summaryState)}
+              detail="需要人工处理"
+              icon={<TriangleAlert size={30} strokeWidth={1.65} />}
+              tone="warning"
+            />
+          </div>
+        }
+        filters={
           <FilterToolbar
             label="数据源筛选"
             onApply={() =>
@@ -455,7 +561,9 @@ export default function DataSourcesPage() {
                   { label: '已启用', value: 'ENABLED' },
                   { label: '已停用', value: 'DISABLED' },
                 ]}
-                onChange={(administrativeState) => setDraft((current) => ({ ...current, administrativeState }))}
+                onChange={(administrativeState) =>
+                  setDraft((current) => ({ ...current, administrativeState }))
+                }
               />
             </label>
             <label className={styles.filterField}>
@@ -486,7 +594,9 @@ export default function DataSourcesPage() {
                   { label: '已撤销', value: 'REVOKED' },
                   { label: '无效', value: 'INVALID' },
                 ]}
-                onChange={(credentialState) => setDraft((current) => ({ ...current, credentialState }))}
+                onChange={(credentialState) =>
+                  setDraft((current) => ({ ...current, credentialState }))
+                }
               />
             </label>
             <label className={styles.filterField}>
@@ -510,8 +620,8 @@ export default function DataSourcesPage() {
               />
             </label>
           </FilterToolbar>
-        )}
-        state={(
+        }
+        state={
           <div className={styles.contentStack}>
             {page.data?.componentErrors.map((error) => (
               <Alert
@@ -519,18 +629,23 @@ export default function DataSourcesPage() {
                 showIcon
                 key={`${error.component}-${error.requestId}`}
                 title={`${error.component} 区域暂不可用`}
-                description={<span>{error.message}（请求 ID：<code>{error.requestId}</code>）</span>}
+                description={
+                  <span>
+                    {error.message}（请求 ID：<code>{error.requestId}</code>）
+                  </span>
+                }
               />
             ))}
             {listContent}
           </div>
-        )}
+        }
       />
 
       <EntityDrawer
         open={Boolean(search.sourceId)}
         title={detail.data?.name ?? '数据源详情'}
         loading={detail.isPending && Boolean(search.sourceId)}
+        width={330}
         onClose={() => {
           setStateDialog(false);
           setDeleteDialog(false);
@@ -553,17 +668,58 @@ export default function DataSourcesPage() {
               <Descriptions bordered column={1} size="small">
                 <Descriptions.Item label="连接状态">
                   <StatusTag
-                    status={typeof detail.data.connectivity.state === 'string' ? detail.data.connectivity.state : detail.data.connectivity.state.raw}
-                    known={typeof detail.data.connectivity.state === 'string' && detail.data.connectivity.state !== 'UNKNOWN'}
+                    status={
+                      typeof detail.data.connectivity.state === 'string'
+                        ? detail.data.connectivity.state
+                        : detail.data.connectivity.state.raw
+                    }
+                    known={
+                      typeof detail.data.connectivity.state === 'string' &&
+                      detail.data.connectivity.state !== 'UNKNOWN'
+                    }
                     tone={detail.data.connectivity.state === 'ONLINE' ? 'success' : 'warning'}
                   />
                 </Descriptions.Item>
+                <Descriptions.Item label="来源类型">
+                  {typeof detail.data.sourceType === 'string'
+                    ? detail.data.sourceType
+                    : detail.data.sourceType.raw}
+                </Descriptions.Item>
+                <Descriptions.Item label="数据格式">{detail.data.sourceFormat}</Descriptions.Item>
+                <Descriptions.Item label="绑定对象">
+                  {detail.data.binding.kind === 'ROBOT'
+                    ? `机器人 ${detail.data.binding.robotId}`
+                    : detail.data.binding.kind === 'EDGE_AGENT'
+                      ? `边缘代理 ${detail.data.binding.agentId}`
+                      : detail.data.binding.kind === 'OSS_IMPORT'
+                        ? `OSS 导入 ${detail.data.binding.sourceAlias}`
+                        : '未提供'}
+                </Descriptions.Item>
                 <Descriptions.Item label="配置版本">{detail.data.configVersion}</Descriptions.Item>
                 <Descriptions.Item label="凭据">
-                  {detail.data.credential.configured ? '已配置' : '未配置'} {detail.data.credential.maskedHint}
+                  {detail.data.credential.configured ? '已配置' : '未配置'}{' '}
+                  {detail.data.credential.maskedHint}
                 </Descriptions.Item>
                 <Descriptions.Item label="更新时间">
                   <time dateTime={detail.data.updatedAt}>{detail.data.updatedAt}</time>
+                </Descriptions.Item>
+                <Descriptions.Item label="最近心跳">
+                  {detail.data.heartbeat?.lastSeenAt ? (
+                    <time dateTime={detail.data.heartbeat.lastSeenAt}>
+                      {detail.data.heartbeat.lastSeenAt}
+                    </time>
+                  ) : (
+                    '暂无心跳'
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="最近上传">
+                  {detail.data.lastUpload ? (
+                    <time dateTime={detail.data.lastUpload.completedAt}>
+                      {detail.data.lastUpload.completedAt}
+                    </time>
+                  ) : (
+                    '暂无上传'
+                  )}
                 </Descriptions.Item>
               </Descriptions>
               {isUnknownEnum(detail.data.sourceType) ? (
@@ -576,7 +732,11 @@ export default function DataSourcesPage() {
               ) : null}
               <Flex gap="small" wrap="wrap">
                 <Button
-                  disabled={!canManage || !editorInitial?.binding || !detail.data.allowedActions.includes('EDIT_CONFIGURATION')}
+                  disabled={
+                    !canManage ||
+                    !editorInitial?.binding ||
+                    !detail.data.allowedActions.includes('EDIT_CONFIGURATION')
+                  }
                   onClick={() => {
                     updateMutation.reset();
                     setEditDialog(true);
@@ -585,7 +745,11 @@ export default function DataSourcesPage() {
                   编辑
                 </Button>
                 <Button
-                  disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes('ROTATE_CREDENTIAL')}
+                  disabled={
+                    !canManage ||
+                    !canMutateDataSource(detail.data) ||
+                    !detail.data.allowedActions.includes('ROTATE_CREDENTIAL')
+                  }
                   onClick={() => {
                     rotateMutation.reset();
                     setRotateDialog(true);
@@ -594,7 +758,12 @@ export default function DataSourcesPage() {
                   轮换凭据
                 </Button>
                 <Button
-                  disabled={!canManage || !canMutateDataSource(detail.data) || !detail.data.allowedActions.includes('TEST_CONNECTION') || testMutation.isPending}
+                  disabled={
+                    !canManage ||
+                    !canMutateDataSource(detail.data) ||
+                    !detail.data.allowedActions.includes('TEST_CONNECTION') ||
+                    testMutation.isPending
+                  }
                   loading={testMutation.isPending}
                   onClick={() => {
                     testMutation.reset();
@@ -632,7 +801,9 @@ export default function DataSourcesPage() {
                   {detail.data.administrativeState === 'ENABLED' ? '停用' : '启用'}
                 </Button>
                 {detail.data.allowedActions.includes('DELETE') ? (
-                  <Button danger onClick={() => setDeleteDialog(true)}>删除</Button>
+                  <Button danger onClick={() => setDeleteDialog(true)}>
+                    删除
+                  </Button>
                 ) : null}
               </Flex>
               <ConnectionJob jobId={connectionJobId} error={testMutation.error} />
@@ -642,7 +813,11 @@ export default function DataSourcesPage() {
       </EntityDrawer>
 
       <SourceEditorDialog
-        open={search.intent === 'create' && canManage && Boolean(page.data?.allowedActions.includes('CREATE'))}
+        open={
+          search.intent === 'create' &&
+          canManage &&
+          Boolean(page.data?.allowedActions.includes('CREATE'))
+        }
         mode="create"
         pending={createMutation.isPending}
         errorMessage={safeOperationError(createMutation.error)}

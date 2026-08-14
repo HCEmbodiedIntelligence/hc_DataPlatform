@@ -1,6 +1,6 @@
-import { Alert, Button, Descriptions, Form, Input, Modal, Select, Space, Typography } from 'antd';
+import { Alert, Button, Descriptions, Form, Grid, Input, Modal, Select, Space, Tabs, Typography } from 'antd';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { isDatasetId } from '../../entities/dataset';
 import { isDatasetVersionId } from '../../entities/dataset-version';
@@ -26,7 +26,6 @@ import {
   PageState,
   StandardPageScaffold,
   StatusTag,
-  UiMetricCard,
   type PageStateKind,
 } from '../../shared/ui';
 import styles from './styles.module.css';
@@ -97,6 +96,11 @@ function IssueDetail({
 }: Readonly<{ issue: ManualIssue }>) {
   return (
     <Space orientation="vertical" size="middle" className={styles.drawerContent}>
+      <section className={styles.mediaUnavailable} aria-label="来源媒体预览">
+        <strong>来源媒体</strong>
+        <span>当前列表合同不包含安全媒体预览；请通过固定来源打开 Viewer。</span>
+        <Typography.Text className={styles.rangeAccent}>{issue.source.startNs} → {issue.source.endNs} ns</Typography.Text>
+      </section>
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label="稳定 Issue ID"><Typography.Text code>{issue.id}</Typography.Text></Descriptions.Item>
         <Descriptions.Item label="说明">{issue.note || '未填写'}</Descriptions.Item>
@@ -124,6 +128,8 @@ function IssueDetail({
 }
 
 export function ManualIssuesPage() {
+  const screens = Grid.useBreakpoint();
+  const desktopInspector = Boolean(screens.xl);
   const capabilities = useCapabilities();
   const canRead = !capabilities.loading && !capabilities.failed && capabilities.has('manual_issue.read');
   const [params, setParams] = useSearchParams();
@@ -157,6 +163,19 @@ export function ManualIssuesPage() {
     setParams(manualIssuesQueryCodec.build({ returnTo: search.returnTo }));
   };
 
+  useEffect(() => {
+    if (!desktopInspector || !search.issueId) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setParams((currentParams) => {
+        const current = manualIssuesQueryCodec.parse(currentParams);
+        return manualIssuesQueryCodec.build(manualIssuesQueryCodec.withChanges(current, { issueId: undefined }));
+      });
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [desktopInspector, search.issueId, setParams]);
+
   const performCreateDraft = (issue: ManualIssueListItem) => {
     createDraft.mutate({
       manualIssueId: issue.id,
@@ -174,7 +193,7 @@ export function ManualIssuesPage() {
     });
   };
 
-  const columns = useMemo<ColumnDef<ManualIssueListItem, unknown>[]>(() => [
+  const columns: ColumnDef<ManualIssueListItem, unknown>[] = [
     {
       id: 'issue',
       header: '问题',
@@ -234,7 +253,7 @@ export function ManualIssuesPage() {
         );
       },
     },
-  ], [capabilities, changing, currentReturn, list.isFetching, search]);
+  ];
 
   const listState: PageStateKind | 'ready' = capabilities.loading
     ? 'loading'
@@ -273,19 +292,25 @@ export function ManualIssuesPage() {
     <main className={styles.page} data-page-id="P09">
       <StandardPageScaffold
         header={{
-          title: '人工问题',
+          title: '人工问题清单',
           description: 'ManualIssue 是可分诊事实；ReviewFinding 不进入此列表，也不共享任何写操作。',
           breadcrumbs: [{ key: 'cleaning', label: '手动清洗' }, { key: 'issues', label: '人工问题' }],
           actions: <Link to={cleaningRoutes.cleaningDrafts.build({})}>查看清洗草稿</Link>,
         }}
         summary={summary.error
           ? <PageState state={stateFromError(summary.error)} label="问题统计" requestId={requestId(summary.error)} onRetry={() => void summary.refetch()} />
-          : <>
-              <UiMetricCard label="全部" value={summary.data?.counts.total} state={summary.isPending ? 'loading' : undefined} asOf={summary.data?.snapshotAt} />
-              <UiMetricCard label="待处理" value={summary.data?.counts.open} state={summary.isPending ? 'loading' : undefined} />
-              <UiMetricCard label="处理中" value={summary.data?.counts.inProgress} state={summary.isPending ? 'loading' : undefined} />
-              <UiMetricCard label="已解决" value={summary.data?.counts.resolved} state={summary.isPending ? 'loading' : undefined} />
-            </>}
+          : <Tabs
+              className={styles.projectionTabs}
+              activeKey={search.status?.[0] ?? 'all'}
+              onChange={(value) => update({ status: value === 'all' ? undefined : [value as 'OPEN' | 'IN_PROGRESS' | 'RESOLVED'] })}
+              items={[
+                { key: 'OPEN', label: `待处理 ${summary.data?.counts.open ?? '—'}` },
+                { key: 'IN_PROGRESS', label: `处理中 ${summary.data?.counts.inProgress ?? '—'}` },
+                { key: 'RESOLVED', label: `已解决 ${summary.data?.counts.resolved ?? '—'}` },
+                { key: 'all', label: `全部 ${summary.data?.counts.total ?? '—'}` },
+              ]}
+              aria-label="人工问题状态投影"
+            />}
         filters={canRead ? (
           <FilterToolbar label="人工问题筛选" onReset={filtered ? resetFilters : undefined} disabled={list.isFetching}>
             <label className={styles.filterField}>搜索<Input value={search.q ?? ''} onChange={(event) => update({ q: event.target.value || undefined })} placeholder="Issue / Episode / 说明" allowClear /></label>
@@ -311,11 +336,21 @@ export function ManualIssuesPage() {
           />
         ) : undefined}
       >
-        {content}
+        <div className={search.issueId && desktopInspector ? styles.tableInspectorLayout : undefined}>
+          <div className={styles.tableRegion}>{content}</div>
+          {search.issueId && desktopInspector ? (
+            <aside className={styles.desktopInspector} role="dialog" aria-modal="false" aria-label="问题详情">
+              <header><Typography.Title level={2}>问题详情</Typography.Title><Button type="text" onClick={() => update({ issueId: undefined })}>关闭</Button></header>
+              {detail.isPending ? <PageState state="loading" label="问题详情" />
+                : detail.error ? <PageState state={stateFromError(detail.error)} label="问题详情" requestId={requestId(detail.error)} onRetry={() => void detail.refetch()} />
+                  : detail.data ? <IssueDetail issue={detail.data} /> : null}
+            </aside>
+          ) : null}
+        </div>
       </StandardPageScaffold>
 
       <EntityDrawer
-        open={Boolean(search.issueId)}
+        open={Boolean(search.issueId) && !desktopInspector}
         title="问题详情"
         loading={detail.isPending}
         onClose={() => update({ issueId: undefined })}

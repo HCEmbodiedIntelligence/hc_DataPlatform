@@ -1,16 +1,32 @@
-import { useMemo, useState } from 'react';
+import { Alert, Button, Card, Descriptions, Space, Tabs } from 'antd';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LifecyclePolicy } from '../../entities/lifecycle-policy';
 import { useCreateLifecycleSimulation, useEnableLifecyclePolicy, useLifecyclePage, useLifecycleSimulation } from '../../features/lifecycle/api';
+import { storageOverviewPendingLink } from '../../features/lifecycle/pending-links';
 import { simulationAuthorizesDangerousAction, type SimulationEvidence } from '../../features/lifecycle/state-machines';
 import { isDomainError } from '../../shared/api/domain-error';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
 import { useAsyncJob } from '../../shared/jobs/use-async-job';
-import { ConfirmDialog, EmptyState, ErrorPanel, MetricCard, PageHeader, SkeletonBlock, StandardTable, StatusBadge } from '../../shared/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  PageState,
+  StandardPageScaffold,
+  StatusTag,
+  UiMetricCard,
+  type PageStateKind,
+} from '../../shared/ui';
 import { lifecycleTabs, storageLifecycleQueryCodec } from './query-codec';
-import { storageOverviewPendingLink } from '../../features/lifecycle/pending-links';
-import './page.css';
+import styles from './styles.module.css';
+
+const tabLabels = {
+  policies: '策略',
+  executions: '执行记录',
+  restores: '恢复任务',
+  multipart: 'Multipart 诊断',
+} as const;
 
 function formatBytes(value: string): string {
   const bytes = BigInt(value);
@@ -23,6 +39,34 @@ function formatBytes(value: string): string {
     unit += 1;
   }
   return `${new Intl.NumberFormat('zh-CN').format(scaled)} ${units[unit]}`;
+}
+
+function stateFromError(error: unknown): PageStateKind {
+  if (!isDomainError(error)) return 'contract-mismatch';
+  switch (error.code) {
+    case 'FORBIDDEN':
+    case 'UNAUTHENTICATED':
+      return 'forbidden';
+    case 'NOT_FOUND':
+      return 'not-found';
+    case 'GONE':
+      return 'gone';
+    case 'VERSION_CONFLICT':
+    case 'PRECONDITION_FAILED':
+      return 'conflict';
+    case 'RATE_LIMITED':
+      return 'rate-limited';
+    case 'NETWORK_ERROR':
+      return 'offline';
+    case 'CONTRACT_MISMATCH':
+      return 'contract-mismatch';
+    default:
+      return 'error';
+  }
+}
+
+function requestId(error: unknown): string | null {
+  return isDomainError(error) ? error.requestId : null;
 }
 
 export function Component() {
@@ -38,13 +82,19 @@ export function Component() {
   const simulationReport = useLifecycleSimulation(simulationIdentity?.simulationId ?? null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const columns = useMemo<ColumnDef<LifecyclePolicy, unknown>[]>(() => [
-    { id: 'name', header: '策略', cell: ({ row }) => <button className="link-button" type="button" onClick={() => setSelectedPolicy(row.original)}>{row.original.name}</button> },
+  const selectPolicy = (policy: LifecyclePolicy) => {
+    setSelectedPolicy(policy);
+    setSimulationIdentity(null);
+    setParams(storageLifecycleQueryCodec.build({ ...search, policyId: policy.id, simulationId: undefined }, search));
+  };
+
+  const columns: ColumnDef<LifecyclePolicy, unknown>[] = [
+    { id: 'name', header: '策略', cell: ({ row }) => <Button type="link" size="small" onClick={() => selectPolicy(row.original)}>{row.original.name}</Button> },
     { id: 'target', header: '对象角色', cell: ({ row }) => row.original.objectRole },
     { id: 'timeline', header: '时间线', cell: ({ row }) => row.original.actions.map((action) => `${action.afterDays} 天 ${action.type}`).join(' → ') },
-    { id: 'status', header: '状态', cell: ({ row }) => <StatusBadge status={row.original.status} tone={row.original.status === 'UNKNOWN' ? 'warning' : row.original.status === 'ACTIVE' ? 'success' : 'neutral'} /> },
+    { id: 'status', header: '状态', cell: ({ row }) => <StatusTag status={row.original.status} tone={row.original.status === 'ACTIVE' ? 'success' : row.original.status === 'UNKNOWN' ? 'warning' : 'neutral'} known={row.original.status !== 'UNKNOWN'} /> },
     { id: 'version', header: '版本', cell: ({ row }) => row.original.version },
-  ], []);
+  ];
 
   const startSimulation = () => {
     const data = lifecycle.data;
@@ -62,6 +112,7 @@ export function Component() {
     }, {
       onSuccess(accepted) {
         setSimulationIdentity({ simulationId: accepted.id, jobId: accepted.jobId });
+        setParams(storageLifecycleQueryCodec.build({ ...search, simulationId: accepted.id }, search));
       },
     });
   };
@@ -87,50 +138,81 @@ export function Component() {
       policyVersions: lifecycle.data.policyVersions,
     }));
 
-  if (capabilities.loading || lifecycle.isPending) {
-    return <section className="management-page"><PageHeader title="生命周期" description="策略、模拟、执行与恢复" /><SkeletonBlock width="100%" height="28rem" label="生命周期页面加载中" /></section>;
-  }
-  if (lifecycle.error && isDomainError(lifecycle.error)) {
-    return <section className="management-page"><PageHeader title="生命周期" /><ErrorPanel error={lifecycle.error} onRetry={() => void lifecycle.refetch()} /></section>;
-  }
+  const loading = capabilities.loading || lifecycle.isPending;
+  const pageState: PageStateKind | 'ready' = loading
+    ? 'loading'
+    : lifecycle.error
+      ? stateFromError(lifecycle.error)
+      : lifecycle.data ? 'ready' : 'empty';
   const data = lifecycle.data;
-  if (!data) return <section className="management-page"><PageHeader title="生命周期" /><EmptyState kind="no-data" /></section>;
+
+  const simulationPanel = data ? (
+    <Card size="small" title="策略影响概览" className={styles.simulationPanel}>
+      <div className={styles.impactMetrics} aria-label="策略影响概览">
+        <UiMetricCard label="当前 Standard" value={formatBytes(data.impact.standardBytes)} asOf={data.snapshotAt} />
+        <UiMetricCard label="将转为 IA" value={formatBytes(data.impact.toIaBytes)} />
+        <UiMetricCard label="将转为 Archive" value={formatBytes(data.impact.toArchiveBytes)} />
+        <UiMetricCard label="可回收空间" value={formatBytes(data.impact.reclaimableBytes)} />
+      </div>
+      <Descriptions column={1} size="small">
+        <Descriptions.Item label="策略">{selectedPolicy?.id ?? '尚未选择'}</Descriptions.Item>
+        <Descriptions.Item label="任务">{simulationIdentity?.jobId ?? '尚未运行'}</Descriptions.Item>
+        <Descriptions.Item label="状态">{simulationJob.data?.status ?? (simulation.isError ? 'FAILED' : 'IDLE')}</Descriptions.Item>
+        <Descriptions.Item label="受影响对象">{completedSimulation?.objectCount ?? '—'}</Descriptions.Item>
+        <Descriptions.Item label="受影响字节">{formatBytes(completedSimulation?.physicalBytes ?? data.impact.reclaimableBytes)}</Descriptions.Item>
+        <Descriptions.Item label="不可逆">{selectedPolicy?.actions.some((action) => action.type === 'DELETE_OBJECT' || action.type === 'ABORT_MULTIPART') ? '包含不可逆动作' : '无'}</Descriptions.Item>
+      </Descriptions>
+      {simulation.error ? <Alert type="error" showIcon title="Simulation 提交失败" description={isDomainError(simulation.error) ? simulation.error.message : '服务端未接受本次模拟意图。'} /> : null}
+      {selectedPolicy?.blockedReasons.map((reason) => <Alert key={reason.code} type={reason.blocking ? 'error' : 'warning'} showIcon title={reason.code} description={reason.message} />)}
+      <Button danger type="primary" disabled={!canExecute} onClick={() => setConfirmOpen(true)}>启用并进入执行窗口</Button>
+    </Card>
+  ) : null;
+
+  const content = pageState === 'ready' && data ? (
+    search.tab === 'policies' ? (
+      <div className={styles.workspace}>
+        <DataTable data={data.policies} columns={columns} getRowId={(policy) => policy.id} caption="生命周期策略" />
+        {simulationPanel}
+      </div>
+    ) : (
+      <PageState
+        state="feature-unavailable"
+        label={tabLabels[search.tab]}
+        title={`${tabLabels[search.tab]}只读投影尚未开放`}
+        description="现有前端合同尚未提供该区域的列表 DTO；未知状态保持只读，活动 Job 继续由任务中心跟踪。"
+      />
+    )
+  ) : (
+    <PageState
+      state={pageState === 'ready' ? 'empty' : pageState}
+      label="生命周期页面"
+      requestId={requestId(lifecycle.error)}
+      onRetry={lifecycle.error ? () => void lifecycle.refetch() : undefined}
+    />
+  );
 
   return (
-    <section className="management-page">
-      <PageHeader
-        title="生命周期"
-        description="危险动作以当前 Simulation 证据、ETag 与幂等意图为边界。"
-        breadcrumbs={[{ label: '存储管理', href: storageOverviewPendingLink.build() }, { label: '生命周期' }]}
-        actions={<button type="button" disabled={!capabilities.has('storage.lifecycle.simulate') || simulation.isPending} onClick={startSimulation}>{simulation.isPending ? '提交模拟…' : '运行 Simulation'}</button>}
-      />
-      <div className="safety-banner" role="note">执行或恢复前必须确认稳定资源 ID、受影响对象数、字节数、不可逆部分与 blocked reasons；页面不会直接调用 OSS 删除或 Abort。</div>
-      <nav className="local-tabs" aria-label="生命周期区域">
-        {lifecycleTabs.map((tab) => <button key={tab} type="button" aria-current={search.tab === tab ? 'page' : undefined} onClick={() => setParams(storageLifecycleQueryCodec.build({ ...search, tab }, search))}>{tab}</button>)}
-      </nav>
-      <div className="metric-grid">
-        <MetricCard label="标准存储" value={formatBytes(data.impact.standardBytes)} detail={`快照 ${data.snapshotAt}`} />
-        <MetricCard label="转 IA" value={formatBytes(data.impact.toIaBytes)} />
-        <MetricCard label="转归档" value={formatBytes(data.impact.toArchiveBytes)} />
-        <MetricCard label="可回收" value={formatBytes(data.impact.reclaimableBytes)} />
-      </div>
-      {search.tab === 'policies' ? (
-        <div className="workspace-grid">
-          <StandardTable data={data.policies} columns={columns} getRowId={(policy) => policy.id} caption="生命周期策略" empty={<EmptyState kind={search.q ? 'filtered-empty' : 'no-data'} />} />
-          <aside className="detail-panel" aria-label="Simulation 影响">
-            <h2>Simulation 影响</h2>
-            <p>策略：{selectedPolicy?.id ?? '尚未选择'}</p>
-            <p>任务：{simulationIdentity?.jobId ?? '尚未运行'}</p>
-            <p>状态：{simulationJob.data?.status ?? (simulation.isError ? 'FAILED' : 'IDLE')}</p>
-            <p>受影响对象：{completedSimulation?.objectCount ?? '—'}</p>
-            <p>受影响字节：{formatBytes(completedSimulation?.physicalBytes ?? data.impact.reclaimableBytes)}</p>
-            <p>不可逆：{selectedPolicy?.actions.some((action) => action.type === 'DELETE_OBJECT' || action.type === 'ABORT_MULTIPART') ? '包含不可逆动作' : '无'}</p>
-            {selectedPolicy?.blockedReasons.map((reason) => <p key={reason.code} role={reason.blocking ? 'alert' : 'note'}>{reason.code}：{reason.message}</p>)}
-            <button type="button" disabled={!canExecute} onClick={() => setConfirmOpen(true)}>启用并进入执行窗口</button>
-          </aside>
-        </div>
-      ) : <section className="detail-panel"><h2>{search.tab}</h2><p>该列表按稳定游标加载；未知状态保持只读，活动 Job 由任务中心持续跟踪。</p></section>}
-      <ConfirmDialog
+    <main className={styles.page} data-page-id="P13">
+      <StandardPageScaffold
+        header={{
+          title: '生命周期策略',
+          description: '危险动作以当前 Simulation 证据、ETag 与幂等意图为边界。',
+          breadcrumbs: [{ key: 'storage', label: <a href={storageOverviewPendingLink.build()}>存储管理</a> }, { key: 'lifecycle', label: '生命周期' }],
+          actions: <Button type="primary" disabled={!capabilities.has('storage.lifecycle.simulate') || simulation.isPending || !data} loading={simulation.isPending} onClick={startSimulation}>运行 Simulation</Button>,
+        }}
+        summary={data ? <Alert className={styles.safetyBanner} type="warning" showIcon title="Ready 版本引用的 Source 对象禁止直接删除" description="执行或恢复前必须确认稳定资源 ID、受影响对象数、字节数、不可逆部分与 blocked reasons；页面不会直接调用 OSS 删除或 Abort。" /> : undefined}
+        filters={data ? <Tabs className={styles.lifecycleTabs} activeKey={search.tab} onChange={(value) => setParams(storageLifecycleQueryCodec.build({ ...search, tab: value as typeof search.tab }, search))} items={lifecycleTabs.map((tab) => ({ key: tab, label: tabLabels[tab] }))} aria-label="生命周期区域" /> : undefined}
+      >
+        <Space orientation="vertical" size="middle" className={styles.content}>
+          {content}
+          {data ? <section className={styles.guidanceGrid} aria-label="生命周期执行说明">
+            <div><strong>执行说明</strong><ul><li>策略按固定窗口执行。</li><li>删除与清理为最终操作，无法恢复。</li><li>策略修改后等待下一次执行窗口生效。</li></ul></div>
+            <div><strong>恢复时效</strong><p>IA：标准恢复约 1–3 天；加急恢复约 3–6 小时。</p><p>Archive：标准恢复约 3–5 天；加急恢复约 5–12 小时。</p></div>
+            <div><strong>重要提示</strong><p>Source、Preview、Export 与 Incomplete Multipart 继续受现有安全边界保护。</p></div>
+          </section> : null}
+        </Space>
+      </StandardPageScaffold>
+      {data ? <ConfirmDialog
         open={confirmOpen}
         title="确认启用生命周期策略"
         resourceId={selectedPolicy?.id ?? 'unknown'}
@@ -158,8 +240,9 @@ export function Component() {
             },
           }, { onSettled: () => setConfirmOpen(false) });
         }}
-      />
-    </section>
+      /> : null}
+      {enablePolicy.error ? <Alert className={styles.operationAlert} type="error" showIcon title="策略启用未完成" description={isDomainError(enablePolicy.error) ? enablePolicy.error.message : '服务端事实没有被乐观推进。'} /> : null}
+    </main>
   );
 }
 

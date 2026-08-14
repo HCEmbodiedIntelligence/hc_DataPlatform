@@ -15,12 +15,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "e2e": "playwright test",
-    "gen:api": "node scripts/generate-api-client.mjs",
-    "lint": "eslint . --ext .ts,.tsx",
-    "format": "prettier --write ."
+    "gen:api": "node scripts/generate-api-client.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "5.85.5",

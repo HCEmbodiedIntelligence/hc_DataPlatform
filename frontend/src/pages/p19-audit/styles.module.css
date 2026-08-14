@@ -1,9 +1,77 @@
 .page {
   width: 100%;
   max-width: 1680px;
-  padding: var(--hc-space-6, 24px);
   margin: 0 auto;
   color: var(--hc-color-text, #17211f);
+}
+
+.page :global([data-layout='standard-page']) {
+  gap: 12px;
+}
+
+.page :global([aria-label='审计日志主内容']) {
+  padding: 12px;
+}
+
+.desktopSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 12px;
+  align-items: start;
+}
+
+.desktopInspector {
+  position: sticky;
+  top: 76px;
+  min-width: 0;
+  max-height: calc(100vh - 100px);
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-sm, 4px);
+  background: var(--hc-color-surface, #fff);
+  box-shadow: var(--hc-shadow-sm, 0 1px 2px rgb(23 33 31 / 8%));
+}
+
+.inspectorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+}
+
+.inspectorHeader h2 {
+  margin: 1px 0 0;
+  font-size: 1rem;
+}
+
+.inspectorEyebrow {
+  color: var(--hc-color-primary, #078d7d);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.inspectorBody {
+  max-height: calc(100vh - 154px);
+  padding: 12px 14px 18px;
+  overflow: auto;
+}
+
+.inspectorLoading {
+  padding: 24px 0;
+  color: var(--hc-color-text-muted, #64736f);
+  text-align: center;
+}
+
+.desktopSplit .filterForm {
+  grid-template-columns: repeat(2, minmax(130px, 1.25fr)) repeat(7, minmax(76px, 1fr));
+}
+
+.desktopSplit .summaryGrid :global(.ant-card-body) {
+  min-height: 96px;
+  padding: 10px;
 }
 
 .contentStack,
@@ -14,32 +82,65 @@
   gap: var(--hc-space-3, 12px);
 }
 
+.contentStack {
+  gap: 10px;
+}
+
+.changeList {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.changeList > li {
+  padding: var(--hc-space-3, 12px) 0;
+  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+}
+
 .summaryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-column: 1 / -1;
   gap: var(--hc-space-3, 12px);
   min-width: 0;
 }
 
+.summaryGrid :global(.ant-card) {
+  border-radius: var(--hc-radius-sm, 4px);
+}
+
+.summaryGrid :global(.ant-card-body) {
+  min-height: 104px;
+  padding: 12px;
+}
+
+.summaryGrid :global(dl) {
+  margin-top: 4px;
+}
+
 .filterForm {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--hc-space-3, 12px);
-  padding: var(--hc-space-3, 12px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(170px, 1.35fr)) repeat(7, minmax(105px, 1fr));
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: var(--hc-radius-lg, 8px);
+  border-radius: var(--hc-radius-sm, 4px);
   background: var(--hc-color-surface, #fff);
 }
 
 .filterField {
   display: grid;
-  flex: 1 1 190px;
-  min-width: min(100%, 180px);
-  gap: var(--hc-space-1, 4px);
+  min-width: 0;
+  gap: 3px;
   color: var(--hc-color-text-muted, #64736f);
   font-size: 0.8125rem;
   font-weight: 600;
+}
+
+.filterField > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .filterField :global(.ant-select),
@@ -55,9 +156,93 @@
   white-space: normal;
 }
 
+.page :global(.hc-data-table .ant-table-tbody > tr:has(.identityButton[aria-current='true']) > td) {
+  background: rgb(7 139 128 / 7%);
+}
+
+.identityButton[aria-current='true'] strong {
+  color: var(--hc-color-primary, #078d7d);
+}
+
 .identity {
-  gap: var(--hc-space-1, 4px);
-  min-width: 240px;
+  gap: 2px;
+  min-width: 210px;
+}
+
+.unavailableNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid rgb(7 141 125 / 22%);
+  border-radius: var(--hc-radius-sm, 4px);
+  background: rgb(7 141 125 / 5%);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+}
+
+.auditWindowFacts {
+  display: grid;
+  grid-template-columns: 0.7fr 1.5fr 1fr 1.3fr;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-sm, 4px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.auditWindowFacts > div {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.auditWindowFacts > div + div {
+  border-inline-start: 1px solid var(--hc-color-border, #d7e2df);
+}
+
+.auditWindowFacts span,
+.auditWindowFacts strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditWindowFacts span {
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.7rem;
+}
+
+.auditWindowFacts strong {
+  margin-top: 2px;
+  font-size: 0.78rem;
+}
+
+.unavailableNotice > svg,
+.unavailableNotice strong {
+  color: var(--hc-color-primary, #078d7d);
+}
+
+.page :global(.hc-data-table .ant-table) {
+  font-size: 0.75rem;
+}
+
+.page :global([aria-label='按 occurred_at DESC、event_id DESC 稳定排序']) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.page :global(.hc-data-table) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page :global(.hc-data-table .ant-table-thead > tr > th),
+.page :global(.hc-data-table .ant-table-tbody > tr > td) {
+  padding: 7px 8px;
 }
 
 .identity strong,
@@ -71,19 +256,42 @@
   gap: var(--hc-space-1, 4px);
 }
 
-@media (max-width: 768px) {
-  .page {
-    padding: var(--hc-space-4, 16px);
+@media (max-width: 1199px) {
+  .filterForm {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+
+  .auditWindowFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auditWindowFacts > div:nth-child(3) {
+    border-inline-start: 0;
+  }
+
+  .auditWindowFacts > div:nth-child(n + 3) {
+    border-top: 1px solid var(--hc-color-border, #d7e2df);
   }
 }
 
-@media (max-width: 390px) {
-  .page {
-    padding: var(--hc-space-3, 12px);
+@media (max-width: 768px) {
+  .summaryGrid,
+  .filterForm {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .filterField {
     width: 100%;
     min-width: 0;
+  }
+
+  .auditWindowFacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auditWindowFacts > div + div {
+    border-top: 1px solid var(--hc-color-border, #d7e2df);
+    border-inline-start: 0;
   }
 }
