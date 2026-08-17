@@ -1,0 +1,16 @@
+# Ordered, forward-only production migrations. Never reorder or edit an applied SQL file.
+security/001_core.sql
+ingest/001_ingest.sql
+workflow/001_jobs.sql
+workflow/002_job_recovery.sql
+verification/0001_verification_reports.sql
+verification/0002_runtime_scope.sql
+quality/0001_quality_reports.sql
+alignment/0001_alignment_fragments.sql
+alignment/0002_runtime_manifest.sql
+lance_catalog/0001_lance_catalog.sql
+annotation/0001_annotation.sql
+publishing/0001_publishing.sql
+verification/0003_tenant_report_identity.sql
+quality/0002_tenant_report_identity.sql
+alignment/0003_ready_attempt_immutable.sql

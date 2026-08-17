@@ -38,7 +38,7 @@ const invalidDataset = 'dataset_invalid' as DatasetId;
 const invalidVersion = 'version_invalid' as DatasetVersionId;
 const tabs: readonly { id: DatasetDetailTab; label: string }[] = [
   { id: 'overview', label: '概要' },
-  { id: 'versions', label: 'Versions' },
+  { id: 'versions', label: '数据版本' },
   { id: 'episodes', label: 'Episodes' },
   { id: 'schema', label: 'Schema' },
   { id: 'sources', label: '来源' },
@@ -132,8 +132,8 @@ function VersionFilters({
           onChange={(event) => setDraft((value) => ({ ...value, kind: event.target.value }))}
         >
           <option value="">全部</option>
-          <option value="raw">RAW</option>
-          <option value="cleaned">CLEANED</option>
+          <option value="raw">原始基线 · RAW</option>
+          <option value="cleaned">清洗视图 · CLEANED</option>
         </select>
       </label>
       <label className={styles.filterField}>
@@ -143,9 +143,9 @@ function VersionFilters({
           onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}
         >
           <option value="">全部</option>
-          <option value="reviewing">REVIEWING</option>
-          <option value="returned">RETURNED</option>
-          <option value="ready">READY</option>
+          <option value="reviewing">待复核 · REVIEWING</option>
+          <option value="returned">已退回 · RETURNED</option>
+          <option value="ready">可使用 · READY</option>
         </select>
       </label>
       <label className={styles.filterField}>
@@ -488,7 +488,7 @@ export function DatasetDetailPage() {
               <div>
                 <Typography.Title level={2}>概要</Typography.Title>
                 <Typography.Paragraph>
-                  所有统计来自同一授权聚合；未知值不做推断。
+                  统计来自同一授权聚合；未知值不推断。Base Lance 保持不可变，标注与清洗只生成 Revision 视图。
                 </Typography.Paragraph>
               </div>
               <StatusTag
@@ -527,7 +527,7 @@ export function DatasetDetailPage() {
             </div>
           </section>
           <Card
-            title="当前 Ready 版本"
+            title="当前可用版本"
             extra={
               data.currentReadyVersion ? (
                 <Button
@@ -565,7 +565,7 @@ export function DatasetDetailPage() {
             <div>
               <Typography.Title level={2}>Versions</Typography.Title>
               <Typography.Paragraph>
-                Version ID 稳定且不可变；不接受 latest/current。
+                版本身份稳定且不可变；标注与清洗通过 Revision 表达，不接受 latest/current 等漂移指针。
               </Typography.Paragraph>
             </div>
           </div>
@@ -794,8 +794,8 @@ export function DatasetDetailPage() {
           title: data.dataset.name,
           description: data.dataset.description || '暂无描述',
           breadcrumbs: [
-            { key: 'assets', label: '数据资产' },
-            { key: 'datasets', label: '数据集' },
+            { key: 'assets', label: '数据资产', to: routes.datasets.build() },
+            { key: 'datasets', label: '数据集', to: routes.datasets.build() },
             { key: datasetId, label: data.dataset.name },
           ],
           actions: search.returnTo ? (
@@ -806,7 +806,7 @@ export function DatasetDetailPage() {
           <div className={styles.tabBand}>
             <div className={styles.summaryBar}>
               <div>
-                <span>Ready 版本</span>
+                <span>当前可用版本</span>
                 <strong>{data.currentReadyVersion?.displayVersion ?? '—'}</strong>
               </div>
               <div>

@@ -13,12 +13,14 @@ function summaryValue(value: string | undefined, state: MetricState): string {
 }
 
 function DatasetMetric({
+  eyebrow,
   label,
   value,
   detail,
   icon,
   tone = 'default',
 }: Readonly<{
+  eyebrow: string;
   label: string;
   value: string;
   detail: string;
@@ -37,9 +39,10 @@ function DatasetMetric({
         {icon}
       </span>
       <div className={styles.datasetMetricCopy}>
+        <span className={styles.datasetMetricEyebrow}>{eyebrow}</span>
         <h2>{label}</h2>
         <strong>{value}</strong>
-        <span>{detail}</span>
+        <span className={styles.datasetMetricDetail}>{detail}</span>
       </div>
     </section>
   );
@@ -52,18 +55,21 @@ export function DatasetSummaryStrip({
   return (
     <>
       <DatasetMetric
+        eyebrow="DATASETS"
         label="数据集"
         value={summaryValue(summary?.datasetCount, state)}
         detail="服务端授权聚合"
         icon={<Database size={28} strokeWidth={1.65} />}
       />
       <DatasetMetric
+        eyebrow="EPISODES"
         label="Episodes"
         value={summaryValue(summary?.episodeCount, state)}
         detail="当前可读窗口"
         icon={<FileStack size={28} strokeWidth={1.65} />}
       />
       <DatasetMetric
+        eyebrow="REVIEW"
         label="待复核版本"
         value={summaryValue(summary?.pendingReviewVersionCount, state)}
         detail="等待人工确认"
@@ -71,6 +77,7 @@ export function DatasetSummaryStrip({
         tone="warning"
       />
       <DatasetMetric
+        eyebrow="RETURNED"
         label="已退回版本"
         value={summaryValue(summary?.returnedVersionCount, state)}
         detail="需要重新处理"
@@ -78,6 +85,7 @@ export function DatasetSummaryStrip({
         tone="warning"
       />
       <DatasetMetric
+        eyebrow="DRAFTS"
         label="可处理草稿"
         value={summaryValue(summary?.actionableDraftCount, state)}
         detail="已授权的下一步"

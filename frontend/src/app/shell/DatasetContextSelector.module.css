@@ -1,0 +1,63 @@
+.selector {
+  width: clamp(210px, 15vw, 250px);
+  min-width: 190px;
+}
+
+.selector :global(.ant-select-selector) {
+  min-height: 38px !important;
+  border-color: #d9ddea !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.selector:hover :global(.ant-select-selector) {
+  border-color: #a9b1ee !important;
+}
+
+.selector:global(.ant-select-focused) :global(.ant-select-selector),
+.selector:focus-within :global(.ant-select-selector) {
+  border-color: var(--hc-color-primary) !important;
+  box-shadow: 0 0 0 2px rgb(89 101 216 / 17%) !important;
+}
+
+.selector :global(.ant-select-selection-item) {
+  color: #20243a;
+  font-weight: 600;
+}
+
+.option {
+  display: grid;
+  gap: 1px;
+  line-height: 1.35;
+}
+
+.option strong {
+  overflow: hidden;
+  color: #20243a;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option small {
+  overflow: hidden;
+  color: #71758a;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1399px) {
+  .selector {
+    width: 210px;
+    min-width: 180px;
+  }
+}
+
+@media (max-width: 767px) {
+  .selector {
+    width: 100%;
+    min-width: 0;
+  }
+}

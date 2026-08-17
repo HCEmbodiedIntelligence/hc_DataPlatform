@@ -821,7 +821,7 @@ export function ManualCleaningWorkbenchPage() {
         title="手动清洗工作台"
         description={`Draft ${bootstrap.data.draft.id} · 固定 base Revision ${bootstrap.data.base.revisionId}`}
         breadcrumbs={[
-          { label: '手动清洗' },
+          { label: '手动清洗', href: cleaningRoutes.manualIssues.build({}) },
           { label: '清洗草稿', href: cleaningRoutes.cleaningDrafts.build({}) },
           { label: '工作台' },
         ]}

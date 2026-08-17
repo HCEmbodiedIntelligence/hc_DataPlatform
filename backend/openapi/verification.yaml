@@ -1,0 +1,179 @@
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/raw-verification:
+    get:
+      operationId: getRawVerification
+      tags: [verification]
+      parameters:
+        - $ref: "#/components/parameters/VerificationProjectId"
+        - $ref: "#/components/parameters/VerificationRegionCode"
+        - $ref: "#/components/parameters/VerificationRolloutId"
+      responses:
+        "200":
+          description: Immutable MCAP verification report
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawVerificationReportV1"}
+        "404": {description: No immutable verification report exists for the rollout}
+components:
+  parameters:
+    VerificationProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+    VerificationRegionCode:
+      name: region_code
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+    VerificationRolloutId:
+      name: rollout_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+  schemas:
+    VerificationStatus:
+      type: string
+      enum: [RAW_VERIFIED, REJECTED]
+    VerificationSeverity:
+      type: string
+      enum: [warning, error]
+    VerificationCode:
+      type: string
+      enum:
+        - MCAP_MISSING_MAGIC
+        - MCAP_TRUNCATED
+        - MCAP_RECORD_TOO_LARGE
+        - MCAP_HEADER_MISSING
+        - MCAP_DATA_END_MISSING
+        - MCAP_FOOTER_MISSING
+        - MCAP_TRAILING_MAGIC_MISSING
+        - MCAP_RECORD_INVALID
+        - MCAP_DATA_SECTION_CRC_MISMATCH
+        - MCAP_CHUNK_CRC_MISMATCH
+        - MCAP_CHUNK_SIZE_MISMATCH
+        - MCAP_CHUNK_TOO_LARGE
+        - MCAP_CHUNK_DECOMPRESSION_FAILED
+        - MCAP_UNSUPPORTED_COMPRESSION
+        - MCAP_SUMMARY_INVALID
+        - MCAP_SUMMARY_CRC_MISMATCH
+        - MCAP_INDEX_INVALID
+        - MCAP_SCHEMA_MISSING
+        - MCAP_REQUIRED_TOPIC_MISSING
+        - MCAP_TOPIC_EMPTY
+        - MCAP_DECODE_FAILED
+        - MCAP_UNKNOWN_OPTIONAL_TOPIC
+    VerificationFinding:
+      type: object
+      additionalProperties: false
+      required: [code, severity, message, topic, record_offset]
+      properties:
+        code: {$ref: "#/components/schemas/VerificationCode"}
+        severity: {$ref: "#/components/schemas/VerificationSeverity"}
+        message: {type: string}
+        topic: {type: [string, "null"]}
+        record_offset: {type: [integer, "null"], minimum: 0}
+    SchemaInventoryV1:
+      type: object
+      additionalProperties: false
+      required: [schema_id, name, encoding, data_size, data_sha256]
+      properties:
+        schema_id: {type: integer, minimum: 1, maximum: 65535}
+        name: {type: string}
+        encoding: {type: string}
+        data_size: {type: integer, minimum: 0}
+        data_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+    ChannelInventoryV1:
+      type: object
+      additionalProperties: false
+      required: [channel_id, schema_id, topic, message_encoding]
+      properties:
+        channel_id: {type: integer, minimum: 0, maximum: 65535}
+        schema_id: {type: integer, minimum: 0, maximum: 65535}
+        topic: {type: string}
+        message_encoding: {type: string}
+    TopicInventoryV1:
+      type: object
+      additionalProperties: false
+      required:
+        - topic
+        - channel_ids
+        - message_encoding
+        - schema_name
+        - schema_encoding
+        - message_count
+        - log_time_min_ns
+        - log_time_max_ns
+        - decode_checked
+        - decodable
+      properties:
+        topic: {type: string}
+        channel_ids:
+          type: array
+          items: {type: integer, minimum: 0, maximum: 65535}
+        message_encoding: {type: string}
+        schema_name: {type: [string, "null"]}
+        schema_encoding: {type: [string, "null"]}
+        message_count: {type: integer, minimum: 0}
+        log_time_min_ns: {type: [integer, "null"], minimum: 0}
+        log_time_max_ns: {type: [integer, "null"], minimum: 0}
+        decode_checked: {type: boolean}
+        decodable: {type: [boolean, "null"]}
+    RawVerificationReportV1:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - rollout_id
+        - object_key
+        - source_sha256
+        - object_size
+        - profile
+        - library
+        - record_count
+        - message_count
+        - schemas
+        - channels
+        - chunks
+        - schema_inventory
+        - channel_inventory
+        - topics
+        - findings
+        - status
+        - content_sha256
+      properties:
+        schema_version: {type: string, const: raw-verification-report/v1}
+        rollout_id: {type: string, minLength: 1}
+        object_key: {type: string, minLength: 1}
+        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        object_size: {type: integer, minimum: 0}
+        profile: {type: string}
+        library: {type: string}
+        record_count: {type: integer, minimum: 0}
+        message_count: {type: integer, minimum: 0}
+        schemas: {type: integer, minimum: 0}
+        channels: {type: integer, minimum: 0}
+        chunks: {type: integer, minimum: 0}
+        schema_inventory:
+          type: array
+          items: {$ref: "#/components/schemas/SchemaInventoryV1"}
+        channel_inventory:
+          type: array
+          items: {$ref: "#/components/schemas/ChannelInventoryV1"}
+        topics:
+          type: array
+          items: {$ref: "#/components/schemas/TopicInventoryV1"}
+        findings:
+          type: array
+          items: {$ref: "#/components/schemas/VerificationFinding"}
+        status: {$ref: "#/components/schemas/VerificationStatus"}
+        content_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+    RawVerifiedV1:
+      type: object
+      additionalProperties: false
+      required: [event_version, rollout_id, source_sha256, report_sha256]
+      properties:
+        event_version: {type: string, const: raw-verified/v1}
+        rollout_id: {type: string, minLength: 1}
+        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        report_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}

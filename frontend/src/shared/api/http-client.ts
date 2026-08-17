@@ -1,4 +1,5 @@
 import { getRuntimeConfig } from '../config/runtime';
+import { makeScopeKey, type Scope } from '../../entities/scope';
 import { camelToSnake } from '../lib/case-convert';
 import { getShellState } from '../scope/shell-store';
 import {
@@ -21,6 +22,11 @@ export type QueryValue = QueryScalar | readonly QueryScalar[] | null | undefined
 export type RequestOptions = {
   method: RequestMethod;
   path: string;
+  /**
+   * Bind a scoped request to one immutable scope snapshot. When supplied,
+   * both request headers and the post-response scope guard use this value.
+   */
+  scope?: Scope;
   /**
    * Callers may pass a wider record; buildQuery throws TypeError on any
    * non-scalar value. Prefer typing your own query records as
@@ -157,16 +163,20 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   if (shell.scopeChanging && opts.method !== 'GET' && opts.method !== 'HEAD') {
     throw scopeTransitionError('SCOPE_SWITCH_IN_PROGRESS', '作用域切换期间禁止提交写请求');
   }
-  const requestScopeKey = shell.scopeKey;
+  const requestScope = opts.scope ?? shell.scope;
+  const requestScopeKey = requestScope === null ? shell.scopeKey : makeScopeKey(requestScope);
+  if (opts.scope !== undefined && shell.scopeKey !== requestScopeKey) {
+    throw scopeTransitionError('SCOPE_CHANGED', 'Request scope no longer matches the active scope');
+  }
   const headers = new Headers({
     Accept: 'application/json',
     'Accept-Language': resolveAcceptLanguage(),
     'X-Client-Version': config.buildVersion,
   });
   if (shell.sessionToken) headers.set('Authorization', `Bearer ${shell.sessionToken}`);
-  if (shell.scope?.organizationId) headers.set('X-Organization-Id', shell.scope.organizationId);
-  if (shell.scope?.projectId) headers.set('X-Project-Id', shell.scope.projectId);
-  if (shell.scope?.regionCode) headers.set('X-Region-Code', shell.scope.regionCode);
+  if (requestScope?.organizationId) headers.set('X-Organization-Id', requestScope.organizationId);
+  if (requestScope?.projectId) headers.set('X-Project-Id', requestScope.projectId);
+  if (requestScope?.regionCode) headers.set('X-Region-Code', requestScope.regionCode);
   if (opts.idempotencyKey) headers.set('Idempotency-Key', opts.idempotencyKey);
   if (opts.ifMatch) headers.set('If-Match', opts.ifMatch);
   if (opts.body !== undefined) headers.set('Content-Type', 'application/json');

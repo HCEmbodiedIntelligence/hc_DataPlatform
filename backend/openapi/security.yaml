@@ -1,0 +1,87 @@
+components:
+  schemas:
+    ProjectRole:
+      type: string
+      enum: [uploader, annotator, reviewer, publisher, admin]
+    Permission:
+      type: string
+      enum: [read, upload, annotate, review, publish, administer]
+    AuthContext:
+      type: object
+      additionalProperties: false
+      required: [subject_id, project_ids, region_codes, roles, service_identity]
+      properties:
+        subject_id:
+          type: string
+          minLength: 1
+        project_ids:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        region_codes:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        roles:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/ProjectRole'}
+        service_identity:
+          type: boolean
+          description: Workers must still select an issued project and region explicitly.
+    ScopeSelection:
+      type: object
+      additionalProperties: false
+      required: [project_id]
+      properties:
+        project_id: {type: string, minLength: 1}
+        region_code: {type: [string, 'null'], minLength: 1}
+    ResourceVersion:
+      type: object
+      additionalProperties: false
+      required: [version, etag]
+      properties:
+        version: {type: integer, minimum: 1}
+        etag:
+          type: string
+          pattern: '^"v[1-9][0-9]*"$'
+          examples: ['"v3"']
+    IdempotencyConflict:
+      type: object
+      additionalProperties: false
+      required: [status, code, title, detail]
+      properties:
+        status: {type: integer, const: 409}
+        code: {type: string, const: IDEMPOTENCY_KEY_REUSED}
+        title: {type: string}
+        detail: {type: string}
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required:
+        [audit_id, actor_id, action, resource_type, resource_id, project_id, request_id, occurred_at]
+      properties:
+        audit_id: {type: string, format: uuid}
+        actor_id: {type: string, minLength: 1}
+        action: {type: string, minLength: 1}
+        resource_type: {type: string, minLength: 1}
+        resource_id: {type: string, minLength: 1}
+        project_id: {type: string, minLength: 1}
+        region_code: {type: [string, 'null']}
+        request_id: {type: string, minLength: 1}
+        before_hash: {type: [string, 'null'], pattern: '^[a-f0-9]{64}$'}
+        after_hash: {type: [string, 'null'], pattern: '^[a-f0-9]{64}$'}
+        details: {type: object, additionalProperties: true}
+        occurred_at: {type: string, format: date-time}
+    OutboxEvent:
+      type: object
+      additionalProperties: false
+      required: [event_id, project_id, event_type, envelope, occurred_at]
+      properties:
+        event_id: {type: string, format: uuid}
+        project_id: {type: string, minLength: 1}
+        region_code: {type: [string, 'null']}
+        event_type: {type: string, minLength: 1}
+        envelope: {type: object, additionalProperties: true}
+        occurred_at: {type: string, format: date-time}
+        published_at: {type: [string, 'null'], format: date-time}

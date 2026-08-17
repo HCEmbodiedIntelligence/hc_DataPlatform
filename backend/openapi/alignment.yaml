@@ -1,0 +1,150 @@
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/alignment:
+    get:
+      operationId: getRolloutAlignment
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string}}
+        - {name: region_code, in: path, required: true, schema: {type: string}}
+        - {name: rollout_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Attempt-isolated aligned staging fragment metadata
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AlignedFragmentManifestV1"}
+        "404": {description: No ready aligned fragment exists for this rollout}
+components:
+  schemas:
+    AlignmentStrategy:
+      type: string
+      enum: [nearest, linear, causal, recent, window_mean]
+    ModalityKind:
+      type: string
+      enum: [image, point_cloud, continuous, action, discrete, imu, force]
+    TimedSampleV1:
+      type: object
+      additionalProperties: false
+      required: [timestamp_ns, value]
+      properties:
+        timestamp_ns: {type: integer, minimum: 0}
+        value: {}
+    ModalityStreamV1:
+      type: object
+      additionalProperties: false
+      required: [kind, samples]
+      properties:
+        kind: {$ref: "#/components/schemas/ModalityKind"}
+        samples:
+          type: array
+          items: {$ref: "#/components/schemas/TimedSampleV1"}
+    AlignmentProfileV1:
+      type: object
+      additionalProperties: false
+      required: [profile_id, required_modalities]
+      properties:
+        schema_version: {type: string, const: alignment-profile/v1, default: alignment-profile/v1}
+        profile_id: {type: string, minLength: 1}
+        converter_version: {type: string, minLength: 1, default: be07-align/1}
+        frequency_hz: {type: integer, minimum: 1, maximum: 1000, default: 30}
+        required_modalities:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        stream_strategies:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/AlignmentStrategy"}
+          default: {}
+        stream_tolerance_ns:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+          default: {}
+        default_tolerance_ns: {type: integer, minimum: 0, default: 20000000}
+    AlignmentInputV1:
+      type: object
+      additionalProperties: false
+      required: [rollout_id, source_sha256, attempt_id, start_ns, end_ns, streams]
+      properties:
+        schema_version: {type: string, const: alignment-input/v1, default: alignment-input/v1}
+        rollout_id: {type: string, minLength: 1}
+        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        attempt_id: {type: string, minLength: 1}
+        start_ns: {type: integer, minimum: 0}
+        end_ns: {type: integer, minimum: 1}
+        streams:
+          type: object
+          minProperties: 1
+          additionalProperties: {$ref: "#/components/schemas/ModalityStreamV1"}
+    AlignedValueV1:
+      type: object
+      additionalProperties: false
+      required: [value, source_timestamps_ns, time_error_ns, valid, repeated, strategy]
+      properties:
+        value: {}
+        source_timestamps_ns:
+          type: array
+          items: {type: integer, minimum: 0}
+        time_error_ns:
+          oneOf:
+            - {type: integer, minimum: 0}
+            - {type: "null"}
+        valid: {type: boolean}
+        repeated: {type: boolean}
+        strategy: {$ref: "#/components/schemas/AlignmentStrategy"}
+    AlignedRowV1:
+      type: object
+      additionalProperties: false
+      required: [rollout_id, step_index, timestamp_ns, modalities, sample_valid]
+      properties:
+        rollout_id: {type: string, minLength: 1}
+        step_index: {type: integer, minimum: 0}
+        timestamp_ns: {type: integer, minimum: 0}
+        modalities:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/AlignedValueV1"}
+        sample_valid: {type: boolean}
+    AlignedFragmentManifestV1:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - rollout_id
+        - source_sha256
+        - attempt_id
+        - profile_id
+        - converter_version
+        - frequency_hz
+        - row_count
+        - schema_sha256
+        - content_sha256
+        - staging_uri
+        - staging_format
+      properties:
+        schema_version: {type: string, const: aligned-fragment-manifest/v1}
+        rollout_id: {type: string, minLength: 1}
+        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        attempt_id: {type: string, minLength: 1}
+        profile_id: {type: string, minLength: 1}
+        converter_version: {type: string, minLength: 1}
+        frequency_hz: {type: integer, minimum: 1}
+        row_count: {type: integer, minimum: 0}
+        schema_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        content_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        staging_uri: {type: string, minLength: 1}
+        staging_format: {type: string, const: arrow-ipc/v1}
+    AlignedFragmentReadyV1:
+      type: object
+      additionalProperties: false
+      required:
+        - event_version
+        - rollout_id
+        - source_sha256
+        - converter_version
+        - content_sha256
+        - staging_uri
+      properties:
+        event_version: {type: string, const: aligned-fragment-ready/v1}
+        rollout_id: {type: string, minLength: 1}
+        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        converter_version: {type: string, minLength: 1}
+        content_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        staging_uri: {type: string, minLength: 1}

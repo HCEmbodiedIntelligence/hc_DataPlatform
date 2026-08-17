@@ -2,102 +2,150 @@
   width: 100%;
   max-width: 1720px;
   min-height: 100%;
-  padding: 16px 20px 20px;
+  padding: 0;
   margin: 0 auto;
-  color: var(--hc-color-text, #17211f);
+  color: var(--hc-color-text, #171a2a);
 }
 
 .detailStack,
 .sectionContent {
   display: grid;
   min-width: 0;
-  gap: 10px;
+  gap: 16px;
 }
 
 .summaryStrip {
+  position: relative;
   display: grid;
   grid-column: 1 / -1;
   min-width: 0;
-  border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: 4px;
-  background: var(--hc-color-surface, #fff);
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: var(--hc-radius-xl, 20px);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(117 147 239 / 11%), transparent 34%),
+    linear-gradient(155deg, #fff 0%, #fafbfe 100%);
+  box-shadow: var(--hc-shadow-md);
+}
+
+.summaryStrip::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #5965d8, #7593ef 62%, #b596f7);
+  content: '';
 }
 
 .summaryProgress {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+  gap: 13px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid #e3e6f0;
 }
 
 .progressHeader {
-  display: contents;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.progressIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.progressEyebrow {
+  color: #5965d8;
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.13em;
+  line-height: 1;
 }
 
 .progressHeader :global(.ant-typography) {
   margin: 0;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  color: #171a2a;
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
 }
 
 .progressHeader strong {
-  grid-column: 2;
-  grid-row: 1;
-  justify-self: end;
-  padding-right: 4px;
-  font-size: 0.8125rem;
+  color: #5965d8;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.025em;
 }
 
 .progressTrack {
-  grid-column: 2;
-  grid-row: 1;
-  width: calc(100% - 58px);
-  height: 9px;
+  width: 100%;
+  height: 10px;
   overflow: hidden;
-  border-radius: 2px;
-  background: #e8eeed;
+  border-radius: 999px;
+  background: #e8eaf2;
+  box-shadow: inset 0 1px 2px rgb(39 46 90 / 8%);
 }
 
 .progressTrack span {
   display: block;
   height: 100%;
-  background: var(--hc-color-primary, #078d7d);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5965d8, #7593ef 70%, #8ca8f5);
+  box-shadow: 0 0 14px rgb(89 101 216 / 26%);
 }
 
 .summaryMetrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 10px 0;
+  padding: 14px 8px 16px;
 }
 
 .summaryMetrics > div {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   min-width: 0;
-  gap: 1px 10px;
+  gap: 2px 11px;
   align-items: center;
-  padding: 4px 16px;
+  padding: 8px 14px;
 }
 
 .summaryMetrics > div + div {
-  border-left: 1px solid var(--hc-color-border, #d7e2df);
+  border-left: 1px solid #e3e6f0;
 }
 
 .summaryMetrics svg {
   grid-row: 1 / span 2;
-  color: #1d2c28;
+  width: 40px;
+  height: 40px;
+  padding: 10px;
+  color: #5965d8;
+  border: 1px solid rgb(89 101 216 / 14%);
+  border-radius: 13px;
+  background: rgb(89 101 216 / 9%);
 }
 
 .summaryMetrics span {
-  color: var(--hc-color-text-muted, #64736f);
-  font-size: 0.75rem;
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.6875rem;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .summaryMetrics strong {
   overflow: hidden;
-  font-size: 1rem;
+  color: #171a2a;
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 720;
+  letter-spacing: -0.015em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -105,7 +153,7 @@
 .detailTabs {
   display: flex;
   min-width: 0;
-  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+  border-bottom: 1px solid var(--hc-color-border, #d9ddea);
 }
 
 .detailTabs :global(.ant-btn) {
@@ -114,14 +162,14 @@
   border-radius: 0;
 }
 
-.detailTabs :global(.ant-btn[aria-current='page']) {
-  color: var(--hc-color-primary, #078d7d);
-  box-shadow: inset 0 -2px 0 var(--hc-color-primary, #078d7d);
+.detailTabs :global(.ant-btn[aria-selected="true"]) {
+  color: var(--hc-color-primary, #5965d8);
+  box-shadow: inset 0 -2px 0 var(--hc-color-primary, #5965d8);
 }
 
 .operationalGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 270px;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 14px;
   align-items: start;
@@ -135,15 +183,18 @@
 }
 
 .objectsPanel,
+.manifestPanel,
 .validationPanel,
 .eventsPanel {
   min-width: 0;
-  border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: 4px;
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: var(--hc-radius-lg, 18px);
   background: var(--hc-color-surface, #fff);
+  box-shadow: var(--hc-shadow-sm);
 }
 
 .objectsPanel,
+.manifestPanel,
 .eventsPanel {
   padding: 12px;
 }
@@ -159,16 +210,18 @@
 }
 
 .validationPanel > section + section {
-  border-top: 1px solid var(--hc-color-border, #d7e2df);
+  border-top: 1px solid var(--hc-color-border, #d9ddea);
 }
 
 .objectsPanel :global(.ant-typography),
+.manifestPanel :global(.ant-typography),
 .validationPanel :global(.ant-typography),
 .eventsPanel :global(.ant-typography) {
   overflow-wrap: anywhere;
 }
 
 .objectsPanel h2,
+.manifestPanel h2,
 .validationPanel h2,
 .eventsPanel h2 {
   margin: 0;
@@ -194,7 +247,7 @@
   white-space: nowrap;
 }
 
-.objectsPanel :global([aria-label='上传对象清单（服务端游标窗口）']) {
+.objectsPanel :global([aria-label="上传对象清单（服务端游标窗口）"]) {
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -242,7 +295,7 @@
 .validationPanel :global(.ant-card-head) {
   min-height: 32px;
   padding: 0;
-  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+  border-bottom: 1px solid var(--hc-color-border, #d9ddea);
 }
 
 .validationPanel :global(.ant-card-body) {
@@ -265,7 +318,7 @@
   display: grid;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--hc-color-border, #d7e2df);
+  border: 1px solid var(--hc-color-border, #d9ddea);
   border-radius: 3px;
 }
 
@@ -283,7 +336,7 @@
 
 .itemRow + .itemRow,
 .activeJobs > div + div {
-  border-top: 1px solid var(--hc-color-border, #d7e2df);
+  border-top: 1px solid var(--hc-color-border, #d9ddea);
 }
 
 .eventsPanel {
@@ -323,7 +376,7 @@
 
   .validationPanel > section + section {
     border-top: 0;
-    border-left: 1px solid var(--hc-color-border, #d7e2df);
+    border-left: 1px solid var(--hc-color-border, #d9ddea);
   }
 }
 
@@ -345,7 +398,7 @@
   }
 
   .validationPanel > section + section {
-    border-top: 1px solid var(--hc-color-border, #d7e2df);
+    border-top: 1px solid var(--hc-color-border, #d9ddea);
     border-left: 0;
   }
 

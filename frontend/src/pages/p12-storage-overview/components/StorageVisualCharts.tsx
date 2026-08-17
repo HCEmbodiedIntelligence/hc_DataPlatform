@@ -1,4 +1,4 @@
-import { Info } from 'lucide-react';
+import { Activity, Layers3 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import type { StorageOverview } from '../../../features/storage-overview/types';
 import {
@@ -9,7 +9,7 @@ import type { Int64String } from '../../../shared/lib/bigint-string';
 import styles from '../styles.module.css';
 
 const STORAGE_COLORS: Record<string, string> = {
-  STANDARD: '#078d7d',
+  STANDARD: '#5965d8',
   IA: '#f59e0b',
   ARCHIVE: '#4f7dd9',
 };
@@ -72,11 +72,17 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
     <section className={styles.storageVisualCharts} aria-label="存储概览图表">
       <article className={styles.storageChartCard}>
         <header className={styles.storageChartHeader}>
-          <div>
-            <h2>最近容量趋势</h2>
-            <p>服务端快照中的对象角色物理量</p>
+          <div className={styles.storageChartTitle}>
+            <span className={styles.storageChartIcon} aria-hidden="true">
+              <Activity size={19} strokeWidth={1.8} />
+            </span>
+            <div>
+              <span className={styles.storageChartEyebrow}>TREND</span>
+              <h2>最近容量趋势</h2>
+              <p>服务端快照中的对象角色物理量</p>
+            </div>
           </div>
-          <span>TB</span>
+          <span className={styles.storageChartBadge}>TB</span>
         </header>
         <div
           className={styles.trendVisual}
@@ -110,7 +116,7 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
             <span key={role.role}>
               <i
                 style={{
-                  background: ['#078d7d', '#29a98b', '#65b85b', '#f59e0b', '#7367d8'][index % 5],
+                  background: ['#5965d8', '#4d8fe8', '#9b72d8', '#f59e0b', '#7367d8'][index % 5],
                 }}
               />
               {role.role}
@@ -121,18 +127,24 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
 
       <article className={styles.storageChartCard}>
         <header className={styles.storageChartHeader}>
-          <div>
-            <h2>存储层级分布</h2>
-            <p>同一 Inventory 快照</p>
+          <div className={styles.storageChartTitle}>
+            <span className={styles.storageChartIcon} aria-hidden="true">
+              <Layers3 size={19} strokeWidth={1.8} />
+            </span>
+            <div>
+              <span className={styles.storageChartEyebrow}>TIERING</span>
+              <h2>存储层级分布</h2>
+              <p>同一 Inventory 快照</p>
+            </div>
           </div>
-          <Info size={16} aria-label="分层容量说明" />
+          <span className={styles.storageChartBadge}>INVENTORY</span>
         </header>
         <div className={styles.distributionVisual}>
           <div
             className={styles.storageDonut}
             role="img"
             aria-label="存储层级物理容量分布图"
-            style={{ '--storage-donut': gradient || '#e6ecea 0% 100%' } as CSSProperties}
+            style={{ '--storage-donut': gradient || '#e7e9f2 0% 100%' } as CSSProperties}
           >
             <span>
               物理容量<strong>{formatCapacity(classTotal)}</strong>

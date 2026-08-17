@@ -47,7 +47,7 @@
 }
 
 .inspectorEyebrow {
-  color: var(--hc-color-primary, #078d7d);
+  color: var(--hc-color-primary, #5965d8);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -157,11 +157,11 @@
 }
 
 .page :global(.hc-data-table .ant-table-tbody > tr:has(.identityButton[aria-current='true']) > td) {
-  background: rgb(7 139 128 / 7%);
+  background: rgb(89 101 216 / 7%);
 }
 
 .identityButton[aria-current='true'] strong {
-  color: var(--hc-color-primary, #078d7d);
+  color: var(--hc-color-primary, #5965d8);
 }
 
 .identity {
@@ -174,9 +174,9 @@
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border: 1px solid rgb(7 141 125 / 22%);
+  border: 1px solid rgb(89 101 216 / 20%);
   border-radius: var(--hc-radius-sm, 4px);
-  background: rgb(7 141 125 / 5%);
+  background: rgb(89 101 216 / 6%);
   color: var(--hc-color-text-muted, #64736f);
   font-size: 0.8125rem;
 }
@@ -219,7 +219,7 @@
 
 .unavailableNotice > svg,
 .unavailableNotice strong {
-  color: var(--hc-color-primary, #078d7d);
+  color: var(--hc-color-primary, #5965d8);
 }
 
 .page :global(.hc-data-table .ant-table) {

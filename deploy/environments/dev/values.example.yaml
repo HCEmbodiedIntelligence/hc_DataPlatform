@@ -1,0 +1,26 @@
+global:
+  releaseId: platform-dev-sha
+frontend:
+  image:
+    repository: registry.example.com/hc-data-platform/frontend
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  runtimeConfig:
+    releaseEnvironment: dev
+ingress:
+  enabled: true
+  host: data-platform.dev.example.com
+  tls:
+    secretName: hc-data-platform-dev-tls
+backend:
+  api:
+    image:
+      repository: registry.example.com/hc-data-platform/api
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  worker:
+    image:
+      repository: registry.example.com/hc-data-platform/worker
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  config:
+    environment: staging
+    serviceVersion: platform-dev-sha
+    workflowActivityFactory: hc_data_platform.runtime:activity_dependencies

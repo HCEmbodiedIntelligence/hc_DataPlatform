@@ -1,0 +1,146 @@
+paths:
+  /api/v1/previews/sessions:
+    post:
+      operationId: createPreviewSession
+      tags: [preview]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PreviewRequestV1'}
+      responses:
+        "201":
+          description: Preview generated or reused from the temporary cache
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PreviewDescriptorV1'}
+  /api/v1/previews/sessions/{session_id}:
+    get:
+      operationId: getPreviewSession
+      tags: [preview]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Preview descriptor with a refreshed short-lived URL
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PreviewDescriptorV1'}
+components:
+  schemas:
+    EncodingProfileV1:
+      type: object
+      properties:
+        name: {type: string, default: h264-cmaf-preview-v1}
+        width: {type: integer, minimum: 16, maximum: 4096, default: 1280}
+        height: {type: integer, minimum: 16, maximum: 2160, default: 720}
+        video_codec: {type: string, const: h264, default: h264}
+        pixel_format: {type: string, const: yuv420p, default: yuv420p}
+        video_bitrate_kbps: {type: integer, minimum: 64, maximum: 50000, default: 2000}
+        segment_duration_seconds: {type: number, minimum: 0.25, maximum: 10, default: 2}
+        preset:
+          type: string
+          enum: [ultrafast, superfast, veryfast, faster, fast, medium, slow]
+          default: veryfast
+    PreviewRequestV1:
+      type: object
+      required:
+        - project_id
+        - dataset_id
+        - rollout_id
+        - lance_version
+        - annotation_revision
+        - camera_id
+        - view_mode
+      properties:
+        project_id: {type: string, minLength: 1}
+        dataset_id: {type: string, minLength: 1}
+        rollout_id: {type: string, minLength: 1}
+        lance_version: {type: string, minLength: 1}
+        annotation_revision: {type: integer, minimum: 0}
+        camera_id: {type: string, minLength: 1}
+        view_mode: {type: string, enum: [original, edited, compare]}
+        frequency_hz: {type: number, exclusiveMinimum: 0, maximum: 240, default: 30}
+        encoding_profile: {$ref: '#/components/schemas/EncodingProfileV1'}
+        start_step: {type: [integer, "null"], minimum: 0}
+        end_step: {type: [integer, "null"], minimum: 1}
+    PlaceholderDescriptorV1:
+      type: object
+      required: [code, invalid_reason, playback_frame, step_index]
+      properties:
+        code: {type: string, const: INVALID_IMAGE_STEP}
+        invalid_reason: {type: string, minLength: 1}
+        playback_frame: {type: integer, minimum: 0}
+        step_index: {type: integer, minimum: 0}
+    TimelineSegmentV1:
+      type: object
+      description: Half-open presentation-time interval mapped to a half-open source-step interval.
+      required:
+        - playback_start_seconds
+        - playback_end_seconds
+        - source_start_step
+        - source_end_step
+        - excluded
+      properties:
+        playback_start_seconds: {type: number, minimum: 0}
+        playback_end_seconds: {type: number, exclusiveMinimum: 0}
+        source_start_step: {type: integer, minimum: 0}
+        source_end_step: {type: integer, minimum: 1}
+        excluded: {type: boolean}
+    TimelineMappingV1:
+      type: object
+      required: [frequency_hz, segments]
+      properties:
+        frequency_hz: {type: number, exclusiveMinimum: 0}
+        segments:
+          type: array
+          items: {$ref: '#/components/schemas/TimelineSegmentV1'}
+    PreviewDescriptorV1:
+      type: object
+      required:
+        - schema_version
+        - session_id
+        - cache_key
+        - project_id
+        - dataset_id
+        - rollout_id
+        - lance_version
+        - annotation_revision
+        - camera_id
+        - view_mode
+        - encoding_profile
+        - playlist_url
+        - media_type
+        - frame_count
+        - placeholder_count
+        - placeholders
+        - duration_seconds
+        - timeline
+        - cache_expires_at
+        - signed_url_expires_at
+      properties:
+        schema_version: {type: integer, const: 1}
+        session_id: {type: string}
+        cache_key: {type: string}
+        project_id: {type: string}
+        dataset_id: {type: string}
+        rollout_id: {type: string}
+        lance_version: {type: string}
+        annotation_revision: {type: integer}
+        camera_id: {type: string}
+        view_mode: {type: string, enum: [original, edited, compare]}
+        encoding_profile: {$ref: '#/components/schemas/EncodingProfileV1'}
+        playlist_url: {type: string}
+        media_type: {type: string}
+        frame_count: {type: integer, minimum: 0}
+        placeholder_count: {type: integer, minimum: 0}
+        placeholders:
+          type: array
+          items: {$ref: '#/components/schemas/PlaceholderDescriptorV1'}
+        duration_seconds: {type: number, minimum: 0}
+        timeline: {$ref: '#/components/schemas/TimelineMappingV1'}
+        cache_expires_at: {type: string, format: date-time}
+        signed_url_expires_at: {type: string, format: date-time}

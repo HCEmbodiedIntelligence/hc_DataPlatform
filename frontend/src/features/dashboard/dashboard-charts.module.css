@@ -4,7 +4,7 @@
     'upload storage episode'
     'coverage history history';
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -29,78 +29,230 @@
 }
 
 .grid :global(.ant-card) {
-  border-radius: var(--hc-radius-sm, 4px);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(207 212 230 / 86%);
+  border-radius: var(--hc-radius-xl, 20px);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(117 147 239 / 10%), transparent 34%),
+    linear-gradient(150deg, #fff 0%, #fafbfe 100%);
+  box-shadow: var(--hc-shadow-md);
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.grid :global(.ant-card)::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #5965d8 0%, #7593ef 58%, #b596f7 100%);
+  content: '';
 }
 
 .grid :global(.ant-card-head) {
-  min-height: 38px;
-  padding-inline: 12px;
+  min-height: 82px;
+  padding: 18px 20px 14px;
+  border-bottom-color: rgb(220 223 235 / 72%);
+}
+
+.grid :global(.ant-card-head-title) {
+  padding: 0;
+  overflow: visible;
+  white-space: normal;
 }
 
 .grid :global(.ant-card-body) {
-  padding: 8px 12px 10px;
+  padding: 16px 20px 18px;
+}
+
+.cardTitle {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.cardTitleIcon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(89 101 216 / 14%);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgb(89 101 216 / 13%), rgb(117 147 239 / 7%));
+  color: #5965d8;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 82%);
+}
+
+.cardTitleCopy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.cardEyebrow {
+  color: #5965d8;
+  font-size: 0.625rem;
+  font-weight: 760;
+  letter-spacing: 0.13em;
+  line-height: 1.1;
 }
 
 .grid h2 {
   margin: 0;
-  font-size: 1rem;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 0.9375rem;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.cardDescription {
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chart {
   width: 100%;
-  height: 140px;
+  height: 176px;
 }
 
 .historyCard .chart {
-  height: 144px;
+  height: 182px;
 }
 
 .coverageCard :global(.ant-card-body) {
-  max-height: 176px;
+  max-height: 224px;
   overflow: auto;
 }
 
 .funnel {
   display: grid;
-  padding: 8px 0 0;
+  padding: 2px 0 0;
   margin: 0;
-  gap: 8px;
+  gap: 10px;
   list-style: none;
 }
 
 .funnel li {
-  display: flex;
-  min-height: 40px;
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 30px minmax(0, 1fr) max-content;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 14px;
-  background: linear-gradient(90deg, rgb(7 141 125 / 14%), rgb(7 141 125 / 4%));
+  gap: 10px;
+  padding: 10px 13px;
+  border: 1px solid rgb(89 101 216 / 12%);
+  border-radius: 13px;
+  background: linear-gradient(90deg, rgb(89 101 216 / 10%), rgb(117 147 239 / 4%));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 80%);
 }
 
 .funnel li:nth-child(2) {
-  margin-inline: 8%;
+  margin-inline: 6%;
+  background: linear-gradient(90deg, rgb(90 122 220 / 10%), rgb(117 147 239 / 4%));
 }
 
 .funnel li:nth-child(3) {
-  margin-inline: 16%;
+  margin-inline: 12%;
+  border-color: rgb(51 119 231 / 16%);
+  background: linear-gradient(90deg, rgb(51 119 231 / 12%), rgb(89 101 216 / 5%));
+}
+
+.stepIndex {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 76%);
+  color: #5965d8;
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 780;
+  letter-spacing: 0.06em;
+}
+
+.stepCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 0.8125rem;
+  font-weight: 680;
+}
+
+.stepCopy small {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
 }
 
 .funnel strong {
-  color: var(--hc-color-primary, #078d7d);
+  color: var(--hc-color-primary, #5965d8);
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.02em;
 }
 
 .dataDisclosure {
-  margin-top: 4px;
-  color: var(--hc-color-text-muted, #64736f);
+  padding-top: 10px;
+  border-top: 1px solid rgb(220 223 235 / 70%);
+  margin-top: 8px;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.75rem;
 }
 
 .dataDisclosure summary {
+  width: max-content;
+  min-height: 30px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  margin-left: -8px;
+  color: var(--hc-color-primary, #5965d8);
   cursor: pointer;
+  font-weight: 680;
+}
+
+.dataDisclosure summary:hover {
+  background: rgb(89 101 216 / 7%);
+}
+
+.dataDisclosure summary:focus-visible {
+  outline: 2px solid var(--hc-color-primary, #5965d8);
+  outline-offset: 2px;
+}
+
+.dataDisclosure ul {
+  padding-left: 20px;
+  margin: 8px 0 0;
 }
 
 .dataDisclosure li {
+  margin-top: 5px;
   overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .grid :global(.ant-card):hover {
+    box-shadow: 0 18px 42px rgb(39 46 90 / 13%);
+    transform: translateY(-2px);
+  }
 }
 
 @media (max-width: 1024px) {
@@ -122,5 +274,31 @@
       'coverage'
       'history';
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .grid :global(.ant-card-head) {
+    min-height: 78px;
+    padding: 16px 16px 13px;
+  }
+
+  .grid :global(.ant-card-body) {
+    padding: 14px 16px 16px;
+  }
+}
+
+@media (max-width: 390px) {
+  .cardDescription {
+    white-space: normal;
+  }
+
+  .funnel li:nth-child(2),
+  .funnel li:nth-child(3) {
+    margin-inline: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grid :global(.ant-card) {
+    transition: none;
   }
 }

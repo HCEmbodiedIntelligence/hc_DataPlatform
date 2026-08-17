@@ -289,7 +289,7 @@ export function Component() {
           title: '数据 Schema',
           description: '管理 Channel 数据结构、语义角色与固定版本兼容性。',
           breadcrumbs: [
-            { key: 'settings', label: '系统管理' },
+            { key: 'settings', label: '系统管理', to: '/settings/robot-models' },
             { key: 'schemas', label: '数据 Schema' },
           ],
           actions: (

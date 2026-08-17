@@ -1,0 +1,135 @@
+name: platform-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Production bundle safety gate
+        env:
+          VITE_API_BASE_URL: /api/v1
+          VITE_SSE_BASE_URL: /api/v1/events
+          VITE_MOCK_MODE: "off"
+          VITE_BUILD_VERSION: ci-${{ github.sha }}
+          VITE_RELEASE_ENV: production
+        run: pnpm build:container
+      - name: Reject public source maps
+        run: test -z "$(find dist -type f -name '*.map' -print -quit)"
+
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.3"
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install locked dependencies
+        run: >-
+          uv sync --frozen
+          --extra dev --extra database --extra workflow --extra storage --extra data
+      - run: uv run ruff format --check src tests
+      - run: uv run ruff check src tests
+      - run: uv run mypy src
+      - run: uv run pytest --cov=hc_data_platform --cov-report=term-missing
+      - run: uv run python -m hc_data_platform.core.openapi --check
+      - name: OpenAPI target compatibility
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git show "origin/${BASE_REF}:backend/openapi.generated.yaml" > /tmp/backend-openapi-baseline.yaml; then
+            uv run python -m hc_data_platform.core.openapi --check --baseline /tmp/backend-openapi-baseline.yaml
+          fi
+
+  migration-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d
+        env:
+          POSTGRES_USER: hc
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: hc_data
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hc -d hc_data"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.3"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install locked migration runtime
+        run: uv sync --frozen --extra database
+      - name: Prove ordered and idempotent schema upgrade
+        env:
+          HC_POSTGRES_DSN: postgresql://hc:ci-only@127.0.0.1:5432/hc_data
+        run: |
+          uv run hc-data-migrate upgrade
+          uv run hc-data-migrate upgrade
+          uv run hc-data-migrate status
+
+  delivery-contract:
+    runs-on: ubuntu-latest
+    needs: [frontend, backend, migration-contract]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: Validate development Compose
+        run: docker compose -f compose.dev.yaml config --quiet
+      - name: Validate unified Helm release
+        run: |
+          helm lint deploy/helm/hc-data-platform -f deploy/helm/hc-data-platform/values-ci.yaml --strict
+          helm template ci deploy/helm/hc-data-platform \
+            -f deploy/helm/hc-data-platform/values-ci.yaml > /tmp/hc-data-platform.yaml
+      - name: Dockerfile static checks
+        run: |
+          docker build --check --target runtime frontend
+          docker build --check --target api backend
+          docker build --check --target worker backend

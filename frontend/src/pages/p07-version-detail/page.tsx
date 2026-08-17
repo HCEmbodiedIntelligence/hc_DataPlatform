@@ -521,8 +521,12 @@ export function VersionDetailPage() {
           title: version.displayVersion,
           description: '内容快照与 operational revision 分离，均绑定固定 Version。',
           breadcrumbs: [
-            { key: 'assets', label: '数据资产' },
-            { key: datasetId, label: <code>{datasetId}</code> },
+            { key: 'assets', label: '数据资产', to: routes.datasets.build() },
+            {
+              key: datasetId,
+              label: <code>{datasetId}</code>,
+              to: routes.datasetDetail.build({ datasetId }),
+            },
             { key: versionId, label: version.displayVersion },
           ],
           metadata: (

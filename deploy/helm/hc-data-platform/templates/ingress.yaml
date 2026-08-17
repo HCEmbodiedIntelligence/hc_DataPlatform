@@ -1,0 +1,51 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hc-data-platform.fullname" . }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /health/live
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" . }}-api
+                port:
+                  number: {{ .Values.backend.api.service.port }}
+          - path: /health/ready
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" . }}-api
+                port:
+                  number: {{ .Values.backend.api.service.port }}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" . }}-api
+                port:
+                  number: {{ .Values.backend.api.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "hc-data-platform.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

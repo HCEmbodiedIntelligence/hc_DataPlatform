@@ -1,0 +1,60 @@
+{{- if .Values.backend.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-migration
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- with .Values.backend.migration.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.backend.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.backend.migration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.backend.migration.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migration
+          image: {{ include "hc-data-platform.backendImage" .Values.backend.api.image | quote }}
+          imagePullPolicy: {{ .Values.backend.api.image.pullPolicy }}
+          command: ["hc-data-migrate", "upgrade"]
+          securityContext:
+            {{- toYaml .Values.backend.migrationContainerSecurityContext | nindent 12 }}
+          env:
+            - name: HC_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "existingSecrets.postgres.name is required" .Values.backend.existingSecrets.postgres.name | quote }}
+                  key: {{ required "existingSecrets.postgres.dsnKey is required" .Values.backend.existingSecrets.postgres.dsnKey | quote }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

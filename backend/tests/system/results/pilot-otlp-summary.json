@@ -1,0 +1,26 @@
+{
+  "environment": "kind-be12-pilot",
+  "log_bodies_retained": false,
+  "log_exports": 4,
+  "log_records": 4,
+  "metric_exports": 4,
+  "metric_names": [
+    "http.server.active_requests",
+    "http.server.duration",
+    "http.server.response.size"
+  ],
+  "metrics": 12,
+  "schema_version": 1,
+  "services": [
+    "hc-data-backend-api",
+    "hc-data-backend-worker"
+  ],
+  "span_names": [
+    "GET /health/live",
+    "GET /health/live http send",
+    "GET /health/ready",
+    "GET /health/ready http send"
+  ],
+  "spans": 232,
+  "trace_exports": 36
+}

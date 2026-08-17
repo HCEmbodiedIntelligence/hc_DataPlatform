@@ -259,8 +259,16 @@ export function EpisodeViewerShell() {
           title: `Episode ${episodeId}`,
           description: 'Readonly episode viewer；时间范围采用半开区间 [start, end)。',
           breadcrumbs: [
-            { key: datasetId, label: <code>{datasetId}</code> },
-            { key: versionId, label: <code>{versionId}</code> },
+            {
+              key: datasetId,
+              label: <code>{datasetId}</code>,
+              to: routes.datasetDetail.build({ datasetId }),
+            },
+            {
+              key: versionId,
+              label: <code>{versionId}</code>,
+              to: routes.versionDetail.build({ datasetId, versionId }),
+            },
             { key: episodeId, label: <code>{episodeId}</code> },
           ],
           metadata: <>Revision <code>{revision!.revision_id}</code></>,

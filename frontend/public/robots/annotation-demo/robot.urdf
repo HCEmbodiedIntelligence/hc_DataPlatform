@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="annotation_demo_arm">
+  <material name="teal"><color rgba="0.08 0.56 0.52 1"/></material>
+  <material name="dark"><color rgba="0.12 0.18 0.17 1"/></material>
+  <material name="light"><color rgba="0.73 0.82 0.79 1"/></material>
+  <material name="orange"><color rgba="0.94 0.55 0.20 1"/></material>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.08"/>
+      <geometry><cylinder radius="0.24" length="0.16"/></geometry>
+      <material name="dark"/>
+    </visual>
+  </link>
+
+  <joint name="joint_1" type="continuous">
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <origin xyz="0 0 0.16"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <link name="shoulder_link">
+    <visual>
+      <origin xyz="0 0 0.15"/>
+      <geometry><cylinder radius="0.13" length="0.30"/></geometry>
+      <material name="teal"/>
+    </visual>
+  </link>
+
+  <joint name="joint_2" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="upper_arm_link"/>
+    <origin xyz="0 0 0.30" rpy="0 0.28 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.4" upper="2.4" effort="80" velocity="2"/>
+  </joint>
+  <link name="upper_arm_link">
+    <visual>
+      <origin xyz="0 0 0.24"/>
+      <geometry><box size="0.13 0.13 0.48"/></geometry>
+      <material name="light"/>
+    </visual>
+  </link>
+
+  <joint name="joint_3" type="continuous">
+    <parent link="upper_arm_link"/>
+    <child link="elbow_link"/>
+    <origin xyz="0 0 0.48"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <link name="elbow_link">
+    <visual>
+      <geometry><sphere radius="0.15"/></geometry>
+      <material name="orange"/>
+    </visual>
+  </link>
+
+  <joint name="joint_4" type="revolute">
+    <parent link="elbow_link"/>
+    <child link="forearm_link"/>
+    <origin xyz="0 0 0.08" rpy="0 -0.52 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.6" upper="2.6" effort="60" velocity="2.5"/>
+  </joint>
+  <link name="forearm_link">
+    <visual>
+      <origin xyz="0 0 0.21"/>
+      <geometry><box size="0.11 0.11 0.42"/></geometry>
+      <material name="teal"/>
+    </visual>
+  </link>
+
+  <joint name="joint_5" type="continuous">
+    <parent link="forearm_link"/>
+    <child link="wrist_pitch_link"/>
+    <origin xyz="0 0 0.42"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <link name="wrist_pitch_link">
+    <visual>
+      <geometry><sphere radius="0.11"/></geometry>
+      <material name="dark"/>
+    </visual>
+  </link>
+
+  <joint name="joint_6" type="revolute">
+    <parent link="wrist_pitch_link"/>
+    <child link="wrist_roll_link"/>
+    <origin xyz="0 0 0.08" rpy="0 0.48 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.8" upper="2.8" effort="35" velocity="3"/>
+  </joint>
+  <link name="wrist_roll_link">
+    <visual>
+      <origin xyz="0 0 0.11"/>
+      <geometry><cylinder radius="0.075" length="0.22"/></geometry>
+      <material name="light"/>
+    </visual>
+  </link>
+
+  <joint name="joint_7" type="continuous">
+    <parent link="wrist_roll_link"/>
+    <child link="tool_link"/>
+    <origin xyz="0 0 0.22"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <link name="tool_link">
+    <visual>
+      <origin xyz="0 0 0.05"/>
+      <geometry><box size="0.19 0.12 0.10"/></geometry>
+      <material name="orange"/>
+    </visual>
+  </link>
+
+  <joint name="left_finger_fixed" type="fixed">
+    <parent link="tool_link"/>
+    <child link="left_finger"/>
+    <origin xyz="0 0.075 0.13"/>
+  </joint>
+  <link name="left_finger">
+    <visual>
+      <origin xyz="0 0 0.08"/>
+      <geometry><box size="0.035 0.035 0.16"/></geometry>
+      <material name="dark"/>
+    </visual>
+  </link>
+
+  <joint name="right_finger_fixed" type="fixed">
+    <parent link="tool_link"/>
+    <child link="right_finger"/>
+    <origin xyz="0 -0.075 0.13"/>
+  </joint>
+  <link name="right_finger">
+    <visual>
+      <origin xyz="0 0 0.08"/>
+      <geometry><box size="0.035 0.035 0.16"/></geometry>
+      <material name="dark"/>
+    </visual>
+  </link>
+</robot>

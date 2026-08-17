@@ -22,6 +22,23 @@ export type AnnotationTaskDisplayState =
   | 'STALE'
   | 'UNKNOWN';
 
+const annotationTaskDisplayStateLabels: Readonly<Record<AnnotationTaskDisplayState, string>> = {
+  UNASSIGNED: '未分配',
+  ASSIGNED: '已分配',
+  IN_PROGRESS: '进行中',
+  BLOCKED: '已阻塞',
+  SUBMITTED: '已提交',
+  RETURNED: '已退回',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消',
+  STALE: '已失效',
+  UNKNOWN: '未知',
+};
+
+export function annotationTaskDisplayStateLabel(state: AnnotationTaskDisplayState): string {
+  return annotationTaskDisplayStateLabels[state];
+}
+
 export type AnnotationTaskAction =
   | 'CLAIM'
   | 'ASSIGN'

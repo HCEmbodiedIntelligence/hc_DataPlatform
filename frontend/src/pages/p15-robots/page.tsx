@@ -228,7 +228,7 @@ export function Component() {
           title: '机器人与组件',
           description: '管理机器人实例、组件拓扑以及固定 Frame、Calibration 与 Schema 引用。',
           breadcrumbs: [
-            { key: 'settings', label: '系统管理' },
+            { key: 'settings', label: '系统管理', to: '/settings/robot-models' },
             { key: 'robots', label: '机器人与组件' },
           ],
           actions: (

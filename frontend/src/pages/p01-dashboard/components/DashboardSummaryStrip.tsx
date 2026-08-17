@@ -1,3 +1,12 @@
+import {
+  ArrowDownToLine,
+  ArrowUpRight,
+  CircleGauge,
+  Clapperboard,
+  Database,
+  FilePenLine,
+  ShieldAlert,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { DashboardActivity, DashboardSnapshot } from '../../../features/dashboard/types';
 import { storageOverviewRoute } from '../../../features/storage-overview/routing';
@@ -24,6 +33,18 @@ function bytesMetric(value: bigint | null | undefined): string | undefined {
   return `${amount.toLocaleString('zh-CN', { maximumFractionDigits: digits })} ${units[unitIndex]}`;
 }
 
+function formatDateTime(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
+}
+
 export function DashboardSummaryStrip({
   activity,
   snapshot,
@@ -45,43 +66,65 @@ export function DashboardSummaryStrip({
   return (
     <section className={styles.summaryGrid} aria-label="关键指标">
       <UiMetricCard
-        label="期间上传量"
+        eyebrow="INGEST"
+        icon={<ArrowDownToLine size={19} strokeWidth={1.8} />}
+        label="本期接收数据"
         value={bytesMetric(activity?.acceptedUniqueBytes)}
         state={activityState}
-        basis="服务端去重接受字节"
-        asOf={activity ? <time dateTime={activity.asOf}>{activity.asOf}</time> : undefined}
+        tone="primary"
+        description="去重后进入原始数据域"
+        asOf={activity ? <time dateTime={activity.asOf}>{formatDateTime(activity.asOf, activity.timezone)}</time> : undefined}
       />
       <UiMetricCard
+        eyebrow="QUALITY"
+        icon={<CircleGauge size={19} strokeWidth={1.8} />}
         label="上传成功率"
         value={success}
         state={activityState}
-        basis="成功终态 / 全部终态"
+        tone="info"
+        description="按当前统计周期计算"
       />
       <UiMetricCard
-        label="Raw 物理容量"
+        eyebrow="RAW"
+        icon={<Database size={19} strokeWidth={1.8} />}
+        label="原始数据容量"
         value={bytesMetric(rawBytes)}
         state={snapshotState}
-        basis="服务端快照"
-        description={rawBytes !== undefined ? (
+        tone="primary"
+        description="接收后保留的不可变原始对象"
+        action={rawBytes !== undefined ? (
           <Link to={storageOverviewRoute.build({ tab: 'objects', objectRole: 'SOURCE' })}>
-            查看对象
+            查看原始对象
+            <ArrowUpRight aria-hidden="true" size={14} />
           </Link>
         ) : undefined}
       />
       <UiMetricCard
+        eyebrow="VIEWABLE"
+        icon={<Clapperboard size={19} strokeWidth={1.8} />}
         label="可查看 Episode"
         value={metric(snapshot?.episodes.viewableCount)}
         state={snapshotState}
+        tone="info"
+        description="已校验且当前授权范围内可查看"
       />
       <UiMetricCard
-        label="开放人工问题"
+        eyebrow="ISSUES"
+        icon={<ShieldAlert size={19} strokeWidth={1.8} />}
+        label="待处理质量问题"
         value={metric(snapshot?.work.openManualIssueCount)}
         state={snapshotState}
+        tone="warning"
+        description="仍需人工复核或处理"
       />
       <UiMetricCard
-        label="可行动清洗草稿"
+        eyebrow="CLEANING"
+        icon={<FilePenLine size={19} strokeWidth={1.8} />}
+        label="可处理清洗草稿"
         value={metric(snapshot?.work.activeCleaningDraftCount)}
         state={snapshotState}
+        tone="neutral"
+        description="排除区间，不改写 Lance 基线"
       />
     </section>
   );

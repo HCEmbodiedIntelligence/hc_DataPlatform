@@ -5,16 +5,16 @@
   padding: 12px 16px 18px;
   margin: 0 auto;
   overflow-x: clip;
-  color: #1d2b28;
-  background: #f7f9f8;
+  color: #292d43;
+  background: #f8f9fc;
 }
 
 .originBar {
   padding: 7px 10px;
-  border: 1px solid #d7e2df;
+  border: 1px solid #d9ddea;
   border-top: 0;
   background: #fff;
-  color: #5f706b;
+  color: #686c80;
   font-size: 0.72rem;
 }
 .originBar p {
@@ -26,7 +26,7 @@
   justify-content: space-between;
   padding: 5px 0;
   margin: 0;
-  border-bottom: 1px solid #d7e2df;
+  border-bottom: 1px solid #d9ddea;
 }
 .toolbarFacts,
 .toolbarActions {
@@ -51,21 +51,21 @@
   gap: 6px;
   align-items: center;
   padding: 5px 10px;
-  border: 1px solid #cbd8d5;
-  border-radius: 3px;
-  color: #263531;
+  border: 1px solid #d4d7e4;
+  border-radius: 8px;
+  color: #35394f;
   background: #fff;
   font-size: 0.72rem;
   text-decoration: none;
 }
 .toolbarActions button:disabled {
-  color: #91a09c;
-  background: #f1f4f3;
+  color: #9397a8;
+  background: #f3f4f8;
 }
 .toolbarActions .submitButton {
-  border-color: #078d7d;
+  border-color: #5965d8;
   color: #fff;
-  background: #078d7d;
+  background: #5965d8;
 }
 .workbenchGrid {
   display: grid;
@@ -84,10 +84,10 @@
 .inspectorPanel {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #d7e2df;
-  border-radius: 3px;
+  border: 1px solid #d9ddea;
+  border-radius: 8px;
   background: #fff;
-  box-shadow: 0 1px 2px rgb(18 55 48 / 4%);
+  box-shadow: 0 1px 2px rgb(27 31 68 / 6%);
 }
 .operationPanel {
   display: flex;
@@ -101,7 +101,7 @@
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
-  border-bottom: 1px solid #d7e2df;
+  border-bottom: 1px solid #d9ddea;
 }
 .panelTitle h2,
 .feedbackTitle h2 {
@@ -111,15 +111,15 @@
 .panelTitle span {
   display: block;
   margin-top: 1px;
-  color: #6a7975;
+  color: #707489;
   font-size: 0.66rem;
 }
 .rangeButton {
   min-height: 32px;
   margin: 8px 10px;
-  border-color: #9fc9c2;
-  border-radius: 3px;
-  color: #08796f;
+  border-color: #a9b1ee;
+  border-radius: 8px;
+  color: #4c57c6;
   font-size: 0.7rem;
 }
 .operationPanel :global(.cleaning-operation-list) {
@@ -128,19 +128,19 @@
   gap: 0;
   margin: 0;
   overflow: auto;
-  border-top: 1px solid #edf2f0;
+  border-top: 1px solid #eff1f6;
 }
 .operationPanel :global(.cleaning-operation) {
   gap: 4px;
   padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid #e6ecea;
+  border-bottom: 1px solid #e9ebf3;
   border-radius: 0;
   font-size: 0.68rem;
 }
 .operationPanel :global(.cleaning-operation[aria-current='true']) {
-  box-shadow: inset 3px 0 #078d7d;
-  background: #edf8f6;
+  box-shadow: inset 3px 0 #5965d8;
+  background: #eef0ff;
 }
 .operationPanel :global(.cleaning-operation code) {
   overflow: hidden;
@@ -163,14 +163,14 @@
   display: flex;
   gap: 4px;
   align-items: center;
-  color: #63736e;
+  color: #6b6f83;
   font-weight: 400;
 }
 .operationHash {
   display: grid;
   gap: 3px;
   padding: 9px 10px;
-  color: #697974;
+  color: #6f7388;
   font-size: 0.65rem;
 }
 .operationHash code {
@@ -198,7 +198,7 @@
   font-size: 0.68rem;
 }
 .viewerHeader :global(.cleaning-projection-tabs a:first-child) {
-  border-radius: 3px 0 0 3px;
+  border-radius: 8px 0 0 8px;
 }
 .viewerHeader :global(.cleaning-projection-tabs a:last-child) {
   border-radius: 0 3px 3px 0;
@@ -224,9 +224,9 @@
   min-height: 220px;
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
-  border: 1px solid #cad7d4;
+  border: 1px solid #d3d6e3;
   border-radius: 2px;
-  background: #f2f5f4;
+  background: #f4f5f9;
 }
 
 .compareDeck header,
@@ -242,11 +242,11 @@
 
 .compareDeck header span,
 .compareDeck footer {
-  color: #687873;
+  color: #6e7287;
 }
 
 .compareDeck footer {
-  border-top: 1px solid #dbe4e2;
+  border-top: 1px solid #dfe2ec;
   overflow-wrap: anywhere;
 }
 
@@ -256,7 +256,7 @@
   justify-items: center;
   gap: 5px;
   padding: 14px;
-  color: #687873;
+  color: #6e7287;
   text-align: center;
 }
 
@@ -265,7 +265,7 @@
 }
 
 .compareDeck section > div strong {
-  color: #35443f;
+  color: #494d63;
   font-size: 0.74rem;
 }
 
@@ -282,9 +282,9 @@
   min-height: 210px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid #cad7d4;
-  color: #263531;
-  background: #edf1f0;
+  border: 1px solid #d3d6e3;
+  color: #35394f;
+  background: #eff0f5;
 }
 .viewerPanel :global(.viewer-panel header) {
   min-height: 30px;
@@ -298,25 +298,26 @@
   object-fit: cover;
 }
 .viewerPanel :global(.viewer-axis-group) {
-  max-height: 106px;
+  max-height: none;
   padding: 5px 8px;
+  overflow: visible;
   font-size: 0.68rem;
 }
 .viewerPanel :global(.viewer-timeline) {
   height: 100px;
   margin: 8px 0;
-  border-color: #b4c7c2;
+  border-color: #c1c5d6;
   border-radius: 2px;
 }
 .viewerPanel :global(.viewer-playback-controls) {
   min-height: 42px;
   padding: 4px;
-  border-top: 1px solid #e4ebe9;
+  border-top: 1px solid #e7e9f2;
 }
 .viewerPanel > p {
   padding: 0 10px 8px;
   margin: 0;
-  color: #65746f;
+  color: #6c7084;
   font-size: 0.68rem;
   overflow-wrap: anywhere;
 }
@@ -325,7 +326,7 @@
   display: grid;
   margin: 0 8px 8px;
   overflow: hidden;
-  border: 1px solid #d4dfdc;
+  border: 1px solid #dde0ea;
   border-radius: 2px;
   background: #fff;
 }
@@ -334,8 +335,8 @@
   display: flex;
   justify-content: space-between;
   padding: 5px 9px;
-  color: #687873;
-  background: #f6f8f7;
+  color: #6e7287;
+  background: #f8f8fb;
   font-size: 0.62rem;
 }
 
@@ -343,20 +344,20 @@
   display: grid;
   grid-template-columns: 86px minmax(0, 1fr);
   min-height: 40px;
-  border-top: 1px solid #e4ebe9;
+  border-top: 1px solid #e7e9f2;
   font-size: 0.64rem;
 }
 
 .trackRow > strong {
   padding: 8px;
-  border-right: 1px solid #e4ebe9;
+  border-right: 1px solid #e7e9f2;
 }
 
 .trackRow > div {
   position: relative;
   min-width: 0;
   padding: 6px;
-  background-image: repeating-linear-gradient(90deg, transparent 0 19.8%, #edf2f0 20%);
+  background-image: repeating-linear-gradient(90deg, transparent 0 19.8%, #eff1f6 20%);
 }
 
 .keepBand,
@@ -375,9 +376,9 @@
 
 .keepBand {
   width: 100%;
-  border: 1px solid #79bcb3;
-  color: #08675f;
-  background: #bfe1dd;
+  border: 1px solid #8b96ff;
+  color: #424bb2;
+  background: #dfe3ff;
 }
 
 .operationBand {
@@ -397,9 +398,9 @@
 }
 
 .channelBand {
-  border: 1px solid #78aaa5;
-  color: #0b6760;
-  background: #a8d3cf;
+  border: 1px solid #9ba5dd;
+  color: #434db4;
+  background: #b7bef1;
 }
 .inspectorPanel {
   max-height: none;
@@ -414,7 +415,7 @@
 .validationSummary,
 .factSection {
   padding: 10px;
-  border-bottom: 1px solid #e4ebe9;
+  border-bottom: 1px solid #e7e9f2;
   font-size: 0.7rem;
 }
 .validationSummary h3,
@@ -429,7 +430,7 @@
   margin: 8px 0 0;
 }
 .validationSummary dt {
-  color: #667570;
+  color: #6d7185;
 }
 .validationSummary dd {
   margin: 0;
@@ -466,7 +467,7 @@
 .feedbackPanel :global(.primary-link) {
   min-height: 30px;
   padding: 5px 8px;
-  border-radius: 3px;
+  border-radius: 8px;
   font-size: 0.68rem;
 }
 

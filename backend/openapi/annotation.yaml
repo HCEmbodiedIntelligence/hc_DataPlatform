@@ -1,0 +1,612 @@
+openapi: 3.1.0
+info:
+  title: Annotation API Fragment
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/projects/{project_id}/annotation-tasks:
+    get:
+      operationId: listAnnotationTasks
+      tags: [annotation]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AnnotationStatus'
+      responses:
+        '200':
+          description: Project-scoped annotation queue.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AnnotationTask'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+  /api/v1/annotation-tasks/{task_id}:
+    get:
+      operationId: getAnnotationTask
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Current task state in the caller's project scope.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationTask'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task does not exist.}
+  /api/v1/annotation-tasks/{task_id}/claim:
+    post:
+      operationId: claimAnnotationTask
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: The task is claimed by the Annotator.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationTask'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Annotator role or project scope is missing.}
+        '404': {description: The task does not exist.}
+        '409': {description: The task is claimed by another Annotator.}
+  /api/v1/annotation-tasks/{task_id}/draft:
+    get:
+      operationId: getAnnotationDraft
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Current assignee-only draft projection.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationDraft'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: The caller is not the scoped Annotator assignee.}
+        '404': {description: The task does not exist.}
+  /api/v1/annotation-tasks/{task_id}/current:
+    get:
+      operationId: getAnnotationCurrent
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Current workflow pointers.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationCurrent'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task does not exist.}
+  /api/v1/annotation-tasks/{task_id}/revisions:
+    get:
+      operationId: listAnnotationRevisions
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Immutable revision history, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AnnotationRevision'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task does not exist.}
+    post:
+      operationId: saveAnnotationDraft
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: string, minLength: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SaveDraftRequest'}
+      responses:
+        '201':
+          description: Immutable revision created, or the identical mutation replayed.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationRevision'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: The caller is not the scoped Annotator assignee.}
+        '404': {description: The task does not exist.}
+        '409': {description: client_mutation_id or operation_id was reused differently.}
+        '412': {description: expected_revision or If-Match is stale.}
+        '422': {description: The range is empty or the request is malformed.}
+  /api/v1/annotation-tasks/{task_id}/revisions/{revision}:
+    get:
+      operationId: getAnnotationRevision
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: revision
+          in: path
+          required: true
+          schema: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: One immutable revision.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationRevision'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task or revision does not exist.}
+  /api/v1/annotation-tasks/{task_id}/submit:
+    post:
+      operationId: submitAnnotationRevision
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: string, minLength: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitRequest'}
+      responses:
+        '200':
+          description: Exact current revision submitted for review.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationTask'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: The caller is not the scoped Annotator assignee.}
+        '404': {description: The task does not exist.}
+        '409': {description: The task cannot be submitted from its current state.}
+        '412': {description: expected_revision or If-Match is stale.}
+  /api/v1/annotation-tasks/{task_id}/reviews:
+    get:
+      operationId: listAnnotationReviews
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Append-only review history.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AnnotationReview'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task does not exist.}
+    post:
+      operationId: reviewAnnotationRevision
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: string, minLength: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReviewRequest'}
+      responses:
+        '200':
+          description: Review appended and current workflow state updated.
+          headers:
+            ETag:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationTask'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Reviewer role/scope is missing or this is self-review.}
+        '404': {description: The task does not exist.}
+        '409': {description: Only a submitted revision may be reviewed.}
+        '412': {description: The review target or If-Match is stale.}
+  /api/v1/annotation-tasks/{task_id}/history:
+    get:
+      operationId: getAnnotationHistory
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Current task plus immutable revisions and reviews.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationHistory'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task does not exist.}
+  /api/v1/annotation-tasks/{task_id}/exclusions:
+    get:
+      operationId: getEffectiveExclusions
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: revision
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: Canonical disjoint half-open ranges applied to all modalities.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ExclusionRange'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task or revision does not exist.}
+  /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:
+    get:
+      operationId: getApprovedAnnotation
+      tags: [annotation]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: rollout_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Immutable approved revision snapshot for a Publisher.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationApprovedV1'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Publisher role or project scope is missing.}
+        '404': {description: The scoped task does not exist.}
+        '409': {description: There is no currently approved revision.}
+  /api/v1/capabilities/auto-annotation:
+    get:
+      operationId: getAutoAnnotationCapability
+      tags: [annotation]
+      security: []
+      responses:
+        '200':
+          description: Phase-one VLM capability is explicitly disabled.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AutoAnnotationCapability'}
+  /api/v1/annotation-tasks/{task_id}/auto-annotation:
+    post:
+      operationId: requestAutoAnnotation
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision]
+              properties:
+                revision: {type: integer, minimum: 0}
+      responses:
+        '501': {description: FEATURE_DISABLED; no task or fake result is created.}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AnnotationStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, NEEDS_REVISION, REJECTED]
+    ReviewDecision:
+      type: string
+      enum: [APPROVE, NEEDS_REVISION, REJECT]
+    AnnotationTask:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - task_id
+        - project_id
+        - dataset_id
+        - dataset_version
+        - rollout_id
+        - current_revision
+        - state_version
+        - status
+        - etag
+        - created_at
+        - updated_at
+      properties:
+        schema_version: {type: string, const: '1'}
+        task_id: {type: string, minLength: 1}
+        project_id: {type: string, minLength: 1}
+        dataset_id: {type: string, minLength: 1}
+        dataset_version: {type: integer, minimum: 1}
+        rollout_id: {type: string, minLength: 1}
+        assignee_id: {type: [string, 'null']}
+        current_revision: {type: integer, minimum: 0}
+        state_version: {type: integer, minimum: 0}
+        status: {$ref: '#/components/schemas/AnnotationStatus'}
+        submitted_revision: {type: [integer, 'null'], minimum: 0}
+        submitted_by: {type: [string, 'null']}
+        approved_revision: {type: [integer, 'null'], minimum: 0}
+        approved_review_id: {type: [string, 'null']}
+        etag: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AnnotationOperation:
+      type: object
+      additionalProperties: false
+      required: [operation_id, kind, start_step, end_step]
+      properties:
+        schema_version: {type: string, const: '1', default: '1'}
+        operation_id: {type: string, minLength: 1}
+        kind: {type: string, enum: [EXCLUDE, RESTORE]}
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 1}
+        reason: {type: string, maxLength: 2000, default: ''}
+        modality_scope: {type: string, const: ALL_MODALITIES, default: ALL_MODALITIES}
+    AnnotationRevision:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - task_id
+        - revision
+        - parent_revision
+        - author_id
+        - client_mutation_id
+        - operations
+        - created_at
+      properties:
+        schema_version: {type: string, const: '1'}
+        task_id: {type: string}
+        revision: {type: integer, minimum: 0}
+        parent_revision: {type: [integer, 'null'], minimum: 0}
+        author_id: {type: string}
+        client_mutation_id: {type: string}
+        operations:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationOperation'}
+        created_at: {type: string, format: date-time}
+    AnnotationReview:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - review_id
+        - task_id
+        - revision
+        - reviewer_id
+        - decision
+        - comment
+        - created_at
+      properties:
+        schema_version: {type: string, const: '1'}
+        review_id: {type: string}
+        task_id: {type: string}
+        revision: {type: integer, minimum: 0}
+        reviewer_id: {type: string}
+        decision: {$ref: '#/components/schemas/ReviewDecision'}
+        comment: {type: string, maxLength: 10000}
+        created_at: {type: string, format: date-time}
+    ExclusionRange:
+      type: object
+      additionalProperties: false
+      required: [start_step, end_step, modality_scope]
+      properties:
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 1}
+        modality_scope: {type: string, const: ALL_MODALITIES}
+    AnnotationDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - task_id
+        - revision
+        - author_id
+        - client_mutation_id
+        - operations
+        - effective_exclusions
+        - etag
+        - updated_at
+      properties:
+        schema_version: {type: string, const: '1'}
+        task_id: {type: string}
+        revision: {type: integer, minimum: 0}
+        author_id: {type: string}
+        client_mutation_id: {type: string}
+        operations:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationOperation'}
+        effective_exclusions:
+          type: array
+          items: {$ref: '#/components/schemas/ExclusionRange'}
+        etag: {type: string}
+        updated_at: {type: string, format: date-time}
+    AnnotationCurrent:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - task_id
+        - current_revision
+        - state_version
+        - status
+        - etag
+        - updated_at
+      properties:
+        schema_version: {type: string, const: '1'}
+        task_id: {type: string}
+        current_revision: {type: integer, minimum: 0}
+        state_version: {type: integer, minimum: 0}
+        status: {$ref: '#/components/schemas/AnnotationStatus'}
+        submitted_revision: {type: [integer, 'null'], minimum: 0}
+        submitted_by: {type: [string, 'null']}
+        approved_revision: {type: [integer, 'null'], minimum: 0}
+        approved_review_id: {type: [string, 'null']}
+        etag: {type: string}
+        updated_at: {type: string, format: date-time}
+    AnnotationHistory:
+      type: object
+      additionalProperties: false
+      required: [task, revisions, reviews]
+      properties:
+        task: {$ref: '#/components/schemas/AnnotationTask'}
+        revisions:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationRevision'}
+        reviews:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationReview'}
+    AnnotationApprovedV1:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - project_id
+        - dataset_id
+        - dataset_version
+        - rollout_id
+        - task_id
+        - annotation_revision
+        - review_id
+        - reviewer_id
+        - excluded_ranges
+        - approved_at
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: integer, minimum: 1}
+        rollout_id: {type: string}
+        task_id: {type: string}
+        annotation_revision: {type: integer, minimum: 0}
+        review_id: {type: string}
+        reviewer_id: {type: string}
+        excluded_ranges:
+          type: array
+          items: {$ref: '#/components/schemas/ExclusionRange'}
+        approved_at: {type: string, format: date-time}
+    SaveDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, client_mutation_id, operations]
+      properties:
+        expected_revision: {type: integer, minimum: 0}
+        client_mutation_id: {type: string, minLength: 1, maxLength: 256}
+        operations:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationOperation'}
+    SubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision: {type: integer, minimum: 0}
+    ReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [revision, decision]
+      properties:
+        revision: {type: integer, minimum: 0}
+        decision: {$ref: '#/components/schemas/ReviewDecision'}
+        comment: {type: string, maxLength: 10000, default: ''}
+    AutoAnnotationCapability:
+      type: object
+      additionalProperties: false
+      required: [enabled, code]
+      properties:
+        enabled: {type: boolean, const: false}
+        code: {type: string, const: FEATURE_DISABLED}

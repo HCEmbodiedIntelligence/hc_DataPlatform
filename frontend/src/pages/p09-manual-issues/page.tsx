@@ -294,7 +294,7 @@ export function ManualIssuesPage() {
         header={{
           title: '人工问题清单',
           description: 'ManualIssue 是可分诊事实；ReviewFinding 不进入此列表，也不共享任何写操作。',
-          breadcrumbs: [{ key: 'cleaning', label: '手动清洗' }, { key: 'issues', label: '人工问题' }],
+          breadcrumbs: [{ key: 'cleaning', label: '手动清洗', to: cleaningRoutes.manualIssues.build({}) }, { key: 'issues', label: '人工问题' }],
           actions: <Link to={cleaningRoutes.cleaningDrafts.build({})}>查看清洗草稿</Link>,
         }}
         summary={summary.error

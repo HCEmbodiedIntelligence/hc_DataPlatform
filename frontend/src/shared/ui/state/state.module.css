@@ -6,9 +6,10 @@
 
 .pageState {
   overflow: hidden;
-  border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: var(--hc-radius-lg, 8px);
-  background: var(--hc-color-surface, #fff);
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: var(--hc-radius-xl, 20px);
+  background: linear-gradient(145deg, #fff, #f8f9fd);
+  box-shadow: var(--hc-shadow-md);
 }
 
 .pageState :global(.ant-result) {
@@ -42,7 +43,7 @@
   display: block;
   max-width: 54ch;
   margin-top: var(--hc-space-2, 8px);
-  color: var(--hc-color-text-muted, #64736f);
+  color: var(--hc-color-text-muted, #676b80);
 }
 
 .statusTag {
@@ -60,47 +61,165 @@
 }
 
 .metricCard :global(.ant-card) {
+  --metric-accent: #5965d8;
+  --metric-accent-soft: rgb(89 101 216 / 11%);
+
+  position: relative;
   height: 100%;
+  overflow: hidden;
+  border-color: rgb(206 211 229 / 88%);
+  border-radius: var(--hc-radius-xl, 20px);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(164 209 255 / 16%), transparent 34%),
+    linear-gradient(145deg, #fff, #f8f9fd);
+  box-shadow: var(--hc-shadow-md);
+}
+
+.metricCard[data-tone='info'] :global(.ant-card) {
+  --metric-accent: #3377e7;
+  --metric-accent-soft: rgb(51 119 231 / 11%);
+}
+
+.metricCard[data-tone='success'] :global(.ant-card) {
+  --metric-accent: #3377e7;
+  --metric-accent-soft: rgb(51 119 231 / 11%);
+}
+
+.metricCard[data-tone='warning'] :global(.ant-card) {
+  --metric-accent: #b26b00;
+  --metric-accent-soft: rgb(178 107 0 / 11%);
+}
+
+.metricCard[data-tone='neutral'] :global(.ant-card) {
+  --metric-accent: #6f748c;
+  --metric-accent-soft: rgb(111 116 140 / 11%);
+}
+
+.metricCard :global(.ant-card)::before {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--metric-accent) 0%, #7593ef 62%, #b596f7 100%);
+  content: '';
+}
+
+.metricCard :global(.ant-card-body) {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  padding: 22px;
+}
+
+.metricHeader,
+.metricIdentity {
+  display: flex;
+  align-items: center;
+}
+
+.metricHeader {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metricIdentity {
+  min-width: 0;
+  gap: 11px;
+}
+
+.metricIcon {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--metric-accent) 18%, white);
+  border-radius: 12px;
+  background: var(--metric-accent-soft);
+  color: var(--metric-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 78%);
+}
+
+.metricHeading {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.metricEyebrow {
+  color: var(--metric-accent);
+  font-size: 0.625rem;
+  font-weight: 760;
+  letter-spacing: 0.13em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.metricTrend {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--metric-accent) 16%, white);
+  border-radius: 999px;
+  background: var(--metric-accent-soft);
+  color: var(--metric-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .metricLabel {
   margin: 0;
-  color: var(--hc-color-text-muted, #64736f);
+  color: var(--hc-color-text-muted, #676b80);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 680;
+  letter-spacing: 0.012em;
+  line-height: 1.3;
 }
 
 .metricValue {
   display: flex;
   gap: var(--hc-space-2, 8px);
   align-items: baseline;
-  min-height: 2.25rem;
-  margin-top: var(--hc-space-2, 8px);
+  min-height: 2.5rem;
+  margin-top: 20px;
   overflow-wrap: anywhere;
 }
 
 .metricValue strong {
-  color: var(--hc-color-text, #17211f);
-  font-size: clamp(1.35rem, 1.2rem + 0.5vw, 1.75rem);
-  line-height: 1.2;
+  color: var(--hc-color-text, #171a2a);
+  font-size: clamp(1.875rem, 1.5rem + 0.82vw, 2.375rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 740;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
 }
 
 .metricUnit,
 .metricDescription,
 .metricMetadata {
-  color: var(--hc-color-text-muted, #64736f);
+  color: var(--hc-color-text-muted, #676b80);
   font-size: 0.75rem;
+  line-height: 1.55;
 }
 
 .metricDescription {
-  margin-top: var(--hc-space-2, 8px);
+  min-height: 1.2rem;
+  margin-top: 7px;
 }
 
 .metricMetadata {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: var(--hc-space-1, 4px) var(--hc-space-2, 8px);
-  margin: var(--hc-space-2, 8px) 0 0;
+  padding-top: 11px;
+  border-top: 1px solid rgb(220 223 235 / 76%);
+  margin: 13px 0 0;
 }
 
 .metricMetadata dt,
@@ -110,7 +229,37 @@
 
 .metricMetadata dd {
   overflow-wrap: anywhere;
-  color: var(--hc-color-text, #17211f);
+  color: var(--hc-color-text, #171a2a);
+}
+
+.metricAction {
+  padding-top: 12px;
+  border-top: 1px solid rgb(220 223 235 / 76%);
+  margin-top: auto;
+}
+
+.metricAction a,
+.metricAction button {
+  display: inline-flex;
+  min-height: 30px;
+  gap: 5px;
+  align-items: center;
+  color: var(--metric-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.metricAction a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.metricAction a:focus-visible,
+.metricAction button:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--metric-accent);
+  outline-offset: 3px;
 }
 
 .srOnly {

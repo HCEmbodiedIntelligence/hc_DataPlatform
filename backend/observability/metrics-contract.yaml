@@ -1,0 +1,61 @@
+schema_version: 1
+required_resource_attributes:
+  - service.name
+  - service.version
+  - deployment.environment.name
+required_dimensions: &required_dimensions
+  - project_id
+  - resource_id
+  - workflow_id
+metrics:
+  - name: hc_data_upload_backlog
+    type: gauge
+    unit: sessions
+    owner: BE-03
+    description: Upload sessions waiting for raw verification.
+    labels: *required_dimensions
+  - name: hc_data_workflow_failures_total
+    type: counter
+    unit: failures
+    owner: BE-04
+    description: Durable workflow terminal technical failures.
+    labels: [project_id, resource_id, workflow_id, workflow_kind, error_code]
+  - name: hc_data_qc_outcomes_total
+    type: counter
+    unit: reports
+    owner: BE-06
+    description: Deterministic quality outcomes.
+    labels: [project_id, resource_id, workflow_id, outcome, profile_id]
+  - name: hc_data_lance_commits_total
+    type: counter
+    unit: commits
+    owner: BE-08
+    description: Lance physical commit and catalog registration outcomes.
+    labels: [project_id, resource_id, workflow_id, outcome, dataset_id]
+  - name: hc_data_transcode_duration_seconds
+    type: histogram
+    unit: seconds
+    owner: BE-10
+    description: Preview transcode latency through atomic cache publication.
+    labels: [project_id, resource_id, workflow_id, outcome, view_mode]
+  - name: hc_data_exports_total
+    type: counter
+    unit: exports
+    owner: BE-11
+    description: Immutable training export attempts by format and outcome.
+    labels: [project_id, resource_id, workflow_id, outcome, format]
+logging:
+  required_fields:
+    - request_id
+    - project_id
+    - resource_id
+    - workflow_id
+    - error_code
+  forbidden_fields:
+    - authorization
+    - jwt
+    - access_token
+    - refresh_token
+    - signature
+    - signed_url
+    - object_store_secret_key

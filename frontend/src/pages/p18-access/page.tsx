@@ -191,7 +191,7 @@ export function Component() {
         header={{
           title: '用户权限',
           description: '成员、固定角色、ScopeGrant 与 canonical capability 安全投影。',
-          breadcrumbs: [{ key: 'settings', label: '系统管理' }, { key: 'access', label: '用户权限' }],
+          breadcrumbs: [{ key: 'settings', label: '系统管理', to: '/settings/robot-models' }, { key: 'access', label: '用户权限' }],
         }}
         summary={roleSummary}
         filters={bootstrapState === 'ready' ? (

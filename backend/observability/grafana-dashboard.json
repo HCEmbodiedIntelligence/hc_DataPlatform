@@ -1,0 +1,70 @@
+{
+  "annotations": {"list": []},
+  "description": "HC Data Platform BE-12 pipeline acceptance dashboard",
+  "editable": false,
+  "links": [
+    {"title": "Pipeline runbook", "type": "link", "url": "/runbooks/pipeline-alerts"}
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Upload backlog",
+      "type": "timeseries",
+      "links": [{"title": "Runbook", "url": "/runbooks/pipeline-alerts#upload-backlog"}],
+      "targets": [{"expr": "hc_data_upload_backlog{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}", "legendFormat": "{{project_id}} {{resource_id}} {{workflow_id}}"}]
+    },
+    {
+      "id": 2,
+      "title": "Workflow failures",
+      "type": "timeseries",
+      "links": [{"title": "Runbook", "url": "/runbooks/pipeline-alerts#workflow-failures"}],
+      "targets": [{"expr": "sum by (project_id, resource_id, workflow_id, error_code) (rate(hc_data_workflow_failures_total{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[10m]))", "legendFormat": "{{project_id}} {{resource_id}} {{workflow_id}} {{error_code}}"}]
+    },
+    {
+      "id": 3,
+      "title": "QC distribution",
+      "type": "timeseries",
+      "links": [{"title": "Runbook", "url": "/runbooks/pipeline-alerts#quality-rejects"}],
+      "targets": [{"expr": "sum by (project_id, resource_id, workflow_id, outcome) (rate(hc_data_qc_outcomes_total{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[15m]))", "legendFormat": "{{project_id}} {{resource_id}} {{workflow_id}} {{outcome}}"}]
+    },
+    {
+      "id": 4,
+      "title": "Lance commit outcomes",
+      "type": "timeseries",
+      "links": [{"title": "Runbook", "url": "/runbooks/pipeline-alerts#lance-commit"}],
+      "targets": [{"expr": "sum by (project_id, resource_id, workflow_id, outcome) (rate(hc_data_lance_commits_total{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[10m]))", "legendFormat": "{{project_id}} {{resource_id}} {{workflow_id}} {{outcome}}"}]
+    },
+    {
+      "id": 5,
+      "title": "Preview transcode p50/p95/p99",
+      "type": "timeseries",
+      "links": [{"title": "Runbook", "url": "/runbooks/pipeline-alerts#preview-transcode"}],
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le, project_id, resource_id, workflow_id) (rate(hc_data_transcode_duration_seconds_bucket{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[15m])))", "legendFormat": "p50 {{project_id}} {{resource_id}} {{workflow_id}}"},
+        {"expr": "histogram_quantile(0.95, sum by (le, project_id, resource_id, workflow_id) (rate(hc_data_transcode_duration_seconds_bucket{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[15m])))", "legendFormat": "p95 {{project_id}} {{resource_id}} {{workflow_id}}"},
+        {"expr": "histogram_quantile(0.99, sum by (le, project_id, resource_id, workflow_id) (rate(hc_data_transcode_duration_seconds_bucket{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[15m])))", "legendFormat": "p99 {{project_id}} {{resource_id}} {{workflow_id}}"}
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Export outcomes",
+      "type": "timeseries",
+      "links": [{"title": "Runbook", "url": "/runbooks/pipeline-alerts#training-export"}],
+      "targets": [{"expr": "sum by (project_id, resource_id, workflow_id, format, outcome) (rate(hc_data_exports_total{project_id=~\"$project_id\",resource_id=~\"$resource_id\",workflow_id=~\"$workflow_id\"}[15m]))", "legendFormat": "{{project_id}} {{resource_id}} {{workflow_id}} {{format}} {{outcome}}"}]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["hc-data-platform", "be-12"],
+  "templating": {
+    "list": [
+      {"name": "project_id", "label": "Project", "type": "query", "includeAll": true, "query": "label_values(hc_data_workflow_failures_total, project_id)", "current": {"text": "All", "value": "$__all"}},
+      {"name": "resource_id", "label": "Resource", "type": "query", "includeAll": true, "query": "label_values({project_id=~\"$project_id\"}, resource_id)", "current": {"text": "All", "value": "$__all"}},
+      {"name": "workflow_id", "label": "Workflow", "type": "query", "includeAll": true, "query": "label_values({project_id=~\"$project_id\",resource_id=~\"$resource_id\"}, workflow_id)", "current": {"text": "All", "value": "$__all"}}
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "HC Data Pipeline Acceptance",
+  "uid": "hc-data-be12-pipeline",
+  "version": 1
+}

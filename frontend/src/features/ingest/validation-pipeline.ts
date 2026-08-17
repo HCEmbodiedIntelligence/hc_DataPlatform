@@ -20,6 +20,24 @@ export type ValidationStageStatus =
   | 'CANCELLED'
   | UnknownEnum;
 
+const VALIDATION_STAGE_LABELS: Readonly<Record<KnownValidationStageCode, string>> = {
+  MANIFEST_SCHEMA: '清单结构校验',
+  OBJECT_EXISTENCE_SIZE: '对象存在性与大小校验',
+  OBJECT_SHA256: '对象 SHA-256 校验',
+  ADAPTER_PARSE: '适配器解析',
+  DATASET_SCHEMA_SEMANTIC: '数据集结构与语义校验',
+  ATOMIC_AVAILABILITY_COMMIT: '原子可用性提交',
+};
+
+const VALIDATION_STAGE_STATUS_LABELS: Readonly<Record<string, string>> = {
+  PENDING: '待执行',
+  RUNNING: '校验中',
+  PASSED: '已通过',
+  FAILED: '未通过',
+  SKIPPED: '已跳过',
+  CANCELLED: '已取消',
+};
+
 export interface ValidationStage {
   readonly code: ValidationStageCode;
   readonly status: ValidationStageStatus;
@@ -60,6 +78,24 @@ const QUARANTINE_TRANSITIONS: Record<string, readonly string[]> = {
 
 export function parseValidationStageCode(raw: string): ValidationStageCode {
   return (VALIDATION_STAGE_CODES as readonly string[]).includes(raw) ? (raw as KnownValidationStageCode) : { kind: 'UNKNOWN', raw };
+}
+
+export function validationStageLabel(code: ValidationStageCode): string {
+  return typeof code === 'string' ? VALIDATION_STAGE_LABELS[code] : `未知校验阶段（${code.raw}）`;
+}
+
+export function validationStageStatusLabel(status: ValidationStageStatus): string {
+  if (typeof status !== 'string') return `未知状态（${status.raw}）`;
+  return VALIDATION_STAGE_STATUS_LABELS[status] ?? `未知状态（${status}）`;
+}
+
+export function validationStageSkipReasonLabel(reason: string): string {
+  const blockedBy = /^blocked by (.+)$/.exec(reason);
+  if (!blockedBy) return reason;
+  const rawBlockingCode = blockedBy[1];
+  if (!rawBlockingCode) return reason;
+  const blockingCode = parseValidationStageCode(rawBlockingCode);
+  return `被上游阶段“${validationStageLabel(blockingCode)}”阻断`;
 }
 
 export function validationStageOrder(code: ValidationStageCode): number {

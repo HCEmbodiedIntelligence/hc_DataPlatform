@@ -1,12 +1,12 @@
 .page {
-  --workbench-line: #d7e2df;
+  --workbench-line: #d9ddea;
   width: 100%;
   max-width: 1720px;
   min-height: 100%;
   padding: 10px 12px 16px;
   margin: 0 auto;
   overflow-x: clip;
-  background: #f7f9f8;
+  background: #f8f9fc;
 }
 
 .taskHeader {
@@ -41,7 +41,7 @@
 
 .identity p {
   margin: 0;
-  color: #687873;
+  color: #6c7084;
   font-size: 0.74rem;
 }
 
@@ -73,14 +73,14 @@
   gap: 6px;
   align-items: center;
   padding: 5px 11px;
-  border-radius: 3px;
+  border-radius: 8px;
   font-size: 0.76rem;
 }
 
 .primaryActions button:nth-of-type(3) {
-  border-color: #078d7d;
+  border-color: #5965d8;
   color: #fff;
-  background: #078d7d;
+  background: #5965d8;
 }
 
 .issueAction {
@@ -103,8 +103,8 @@
 .viewerArea,
 .inspector {
   border-color: var(--workbench-line);
-  border-radius: 3px;
-  box-shadow: 0 1px 2px rgb(18 55 48 / 4%);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(27 31 68 / 6%);
 }
 
 .toolRail {
@@ -139,15 +139,15 @@
   align-items: center;
   padding: 7px 11px;
   border: 0;
-  border-bottom: 1px solid #edf2f0;
+  border-bottom: 1px solid #eff1f6;
   border-radius: 0;
   font-size: 0.76rem;
   text-align: left;
 }
 
 .toolButtons > button:hover:not(:disabled) {
-  color: #087d72;
-  background: #edf8f6;
+  color: #5260cc;
+  background: #eef0ff;
 }
 
 .railMeta {
@@ -155,13 +155,13 @@
   gap: 2px;
   margin-top: auto;
   padding: 10px;
-  color: #6a7975;
+  color: #6e7287;
   font-size: 0.68rem;
 }
 
 .railMeta strong {
   overflow-wrap: anywhere;
-  color: #24322f;
+  color: #31354b;
   font-size: 0.72rem;
 }
 
@@ -185,7 +185,7 @@
 }
 
 .panelHeader span {
-  color: #6a7975;
+  color: #6e7287;
   font-size: 0.7rem;
 }
 
@@ -210,15 +210,15 @@
   min-height: 54px;
   padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid #edf2f0;
+  border-bottom: 1px solid #eff1f6;
   border-radius: 0;
   text-align: left;
 }
 
 .taskQueue button[aria-current='page'] {
-  box-shadow: inset 3px 0 #078d7d;
-  color: #08776e;
-  background: #eaf7f5;
+  box-shadow: inset 3px 0 #5965d8;
+  color: #4c57c6;
+  background: #eef0ff;
 }
 
 .taskQueue button span {
@@ -231,7 +231,7 @@
 
 .taskQueue button small,
 .queueState {
-  color: #6a7975;
+  color: #6e7287;
   font-size: 0.64rem;
 }
 
@@ -260,9 +260,9 @@
   min-height: 210px;
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
-  border: 1px solid #ccd9d6;
+  border: 1px solid #d4d7e4;
   border-radius: 2px;
-  background: #f4f7f6;
+  background: #f6f7fa;
 }
 
 .resourcePanel > div:first-child,
@@ -278,11 +278,11 @@
 
 .resourcePanel > div:first-child span,
 .resourcePanel footer {
-  color: #687873;
+  color: #6c7084;
 }
 
 .resourcePanel footer {
-  border-top: 1px solid #dce5e3;
+  border-top: 1px solid #dfe2ec;
 }
 
 .resourceUnavailable {
@@ -291,7 +291,7 @@
   justify-items: center;
   gap: 5px;
   padding: 14px;
-  color: #697873;
+  color: #6d7185;
   text-align: center;
 }
 
@@ -300,7 +300,7 @@
 }
 
 .resourceUnavailable strong {
-  color: #35443f;
+  color: #494d63;
   font-size: 0.76rem;
 }
 
@@ -319,9 +319,9 @@
   min-height: 188px;
   padding: 0;
   overflow: hidden;
-  border-color: #cfdbd8;
-  color: #23312e;
-  background: #eef2f1;
+  border-color: #d8dbe7;
+  color: #303449;
+  background: #f0f1f6;
 }
 
 .viewerArea :global(.viewer-panel header) {
@@ -338,31 +338,31 @@
 }
 
 .viewerArea :global(.viewer-axis-group) {
-  min-height: 108px;
-  max-height: 126px;
+  max-height: none;
   padding: 5px 8px;
+  overflow: visible;
   font-size: 0.7rem;
 }
 
 .viewerArea :global(.viewer-timeline) {
-  height: 86px;
-  margin: 8px 0;
-  border-color: #b8c9c5;
+  height: auto;
+  margin: 0 8px 8px;
+  border-color: #c4c8d8;
   border-radius: 2px;
 }
 
 .viewerArea :global(.viewer-playback-controls) {
   min-height: 42px;
   padding: 4px;
-  border-top: 1px solid #e5ecea;
+  border-top: 1px solid #e8eaf2;
 }
 
 .annotationTracks {
-  display: grid;
+  display: none;
   gap: 0;
   margin: 0 8px 8px;
   overflow: hidden;
-  border: 1px solid #d6e0de;
+  border: 1px solid #dfe2ec;
   border-radius: 2px;
   background: #fff;
 }
@@ -371,8 +371,8 @@
   display: flex;
   justify-content: space-between;
   padding: 5px 9px;
-  color: #6a7975;
-  background: #f6f8f7;
+  color: #6e7287;
+  background: #f8f8fb;
   font-size: 0.62rem;
 }
 
@@ -380,24 +380,24 @@
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
   min-height: 37px;
-  border-top: 1px solid #e5ecea;
+  border-top: 1px solid #e8eaf2;
   font-size: 0.66rem;
 }
 
 .trackRow > strong {
   padding: 8px;
-  border-right: 1px solid #e5ecea;
+  border-right: 1px solid #e8eaf2;
 }
 
 .trackRow > div {
   position: relative;
   min-width: 0;
   padding: 6px 8px;
-  background-image: repeating-linear-gradient(90deg, transparent 0 19.8%, #edf2f0 20%);
+  background-image: repeating-linear-gradient(90deg, transparent 0 19.8%, #eff1f6 20%);
 }
 
 .trackRow em {
-  color: #82908c;
+  color: #838798;
   font-style: normal;
 }
 
@@ -407,10 +407,10 @@
   height: 22px;
   overflow: hidden;
   padding: 3px 7px;
-  border: 1px solid #7fc4ba;
+  border: 1px solid #8b96ff;
   border-radius: 2px;
-  color: #075f58;
-  background: #bfe3de;
+  color: #424bb2;
+  background: #dfe3ff;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -450,8 +450,8 @@
 }
 
 .inspectorTabs button[aria-current='page'] {
-  color: #087d72;
-  box-shadow: inset 0 -2px #078d7d;
+  color: #5260cc;
+  box-shadow: inset 0 -2px #5965d8;
 }
 
 .issueSummary {
@@ -460,7 +460,7 @@
   padding: 9px 11px;
   margin: 10px;
   border: 1px solid #efccc7;
-  border-radius: 3px;
+  border-radius: 8px;
   color: #983f3c;
   background: #fff4f2;
   font-size: 0.7rem;
@@ -487,9 +487,9 @@
   width: 100%;
   min-height: 32px;
   padding: 6px 9px;
-  border: 1px solid #b9c9c5;
-  border-radius: 3px;
-  color: #20312e;
+  border: 1px solid #c5c9d9;
+  border-radius: 8px;
+  color: #2e3248;
   background-color: #fff;
   box-shadow: inset 0 1px 1px rgb(26 58 52 / 4%);
   transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
@@ -498,23 +498,24 @@
 .inspector :global(.annotation-form-field input:not([type='checkbox']):hover:not(:disabled)),
 .inspector :global(.annotation-form-field select:hover:not(:disabled)),
 .issues textarea:hover:not(:disabled) {
-  border-color: #7baaa3;
+  border-color: #9ba5dd;
 }
 
 .inspector :global(.annotation-form-field input:focus-visible),
 .inspector :global(.annotation-form-field select:focus-visible),
 .issues textarea:focus-visible {
-  border-color: #078d7d;
-  outline: none;
-  box-shadow: 0 0 0 2px rgb(7 141 125 / 18%);
+  border-color: #5965d8;
+  outline: 2px solid #5965d8;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgb(89 101 216 / 14%);
 }
 
 .inspector :global(.annotation-form-field input:disabled),
 .inspector :global(.annotation-form-field select:disabled),
 .issues textarea:disabled {
-  color: #7c8986;
-  border-color: #d7dfdd;
-  background: #f1f4f3;
+  color: #7e8294;
+  border-color: #e0e3ec;
+  background: #f3f4f8;
   box-shadow: none;
   cursor: not-allowed;
 }
@@ -522,30 +523,30 @@
 .inspector :global(.annotation-form-field input[type='checkbox']) {
   width: 16px;
   min-height: 16px;
-  accent-color: #078d7d;
+  accent-color: #5965d8;
 }
 
 .inspector :global(.annotation-schema-form > button),
 .issues > button {
   min-height: 32px;
-  border-color: #078d7d;
-  border-radius: 3px;
+  border-color: #5965d8;
+  border-radius: 8px;
   color: #fff;
-  background: #078d7d;
+  background: #5965d8;
   font-weight: 650;
 }
 
 .inspector :global(.annotation-schema-form > button:hover:not(:disabled)),
 .issues > button:hover:not(:disabled) {
-  border-color: #066f64;
-  background: #066f64;
+  border-color: #3f48ad;
+  background: #3f48ad;
 }
 
 .inspector :global(.annotation-schema-form > button:disabled),
 .issues > button:disabled {
-  color: #89938f;
-  border-color: #d4dcda;
-  background: #edf1f0;
+  color: #8a8e9d;
+  border-color: #dde0e9;
+  background: #eff0f5;
   opacity: 1;
 }
 
@@ -563,9 +564,9 @@
   width: 100%;
   min-height: 54px;
   padding: 7px 9px;
-  border: 1px solid #b9c9c5;
-  border-radius: 3px;
-  color: #20312e;
+  border: 1px solid #c5c9d9;
+  border-radius: 8px;
+  color: #2e3248;
   background: #fff;
   resize: vertical;
 }
@@ -615,7 +616,7 @@
 
   .toolButtons > button {
     flex: 0 0 auto;
-    border-right: 1px solid #edf2f0;
+    border-right: 1px solid #eff1f6;
     border-bottom: 0;
   }
 

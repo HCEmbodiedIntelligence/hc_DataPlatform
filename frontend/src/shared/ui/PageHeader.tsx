@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
+import { Link, type To } from 'react-router-dom';
 
 export interface BreadcrumbItem {
   label: string;
-  href?: string;
+  href?: To;
 }
 
 export interface PageHeaderProps {
@@ -19,11 +20,17 @@ export function PageHeader({ title, description, breadcrumbs = [], actions }: Pa
         {breadcrumbs.length > 0 ? (
           <nav aria-label="面包屑">
             <ol className="breadcrumbs">
-              {breadcrumbs.map((item, index) => (
-                <li key={`${item.label}-${index}`}>
-                  {item.href ? <a href={item.href}>{item.label}</a> : <span aria-current="page">{item.label}</span>}
-                </li>
-              ))}
+              {breadcrumbs.map((item, index) => {
+                const current = index === breadcrumbs.length - 1;
+                return (
+                  <li
+                    key={`${item.label}-${index}`}
+                    aria-current={current ? 'page' : undefined}
+                  >
+                    {!current && item.href ? <Link to={item.href}>{item.label}</Link> : item.label}
+                  </li>
+                );
+              })}
             </ol>
           </nav>
         ) : null}

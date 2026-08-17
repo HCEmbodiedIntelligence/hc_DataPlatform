@@ -1,0 +1,188 @@
+name: hc-data-platform-dev
+
+services:
+  postgres:
+    image: postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d
+    environment:
+      POSTGRES_USER: hc
+      POSTGRES_PASSWORD: hc
+      POSTGRES_DB: hc_data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U hc -d hc_data]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports: [127.0.0.1:5432:5432]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-local-only
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports: [127.0.0.1:9000:9000, 127.0.0.1:9001:9001]
+    volumes: [minio-data:/data]
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - mc alias set local http://minio:9000 minio minio-local-only && mc mb --ignore-existing local/hc-data-local
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: hc
+      POSTGRES_PWD: hc
+      POSTGRES_SEEDS: postgres
+    healthcheck:
+      test: [CMD, tctl, --address, temporal:7233, cluster, health]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports: [127.0.0.1:7233:7233]
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports: [127.0.0.1:8080:8080]
+
+  migration:
+    build:
+      context: backend
+      target: api
+    command: [hc-data-migrate, upgrade]
+    environment:
+      HC_ENVIRONMENT: local
+      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: no
+
+  api:
+    image: hc-data-platform-api:dev
+    build:
+      context: backend
+      target: api-dev
+    init: true
+    environment:
+      HC_ENVIRONMENT: ${HC_ENVIRONMENT:-local}
+      HC_RUNTIME_BACKEND: production
+      HC_API_HOST: 0.0.0.0
+      HC_API_PORT: 8000
+      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
+      HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
+      HC_OBJECT_STORE_ENDPOINT: ${HC_OBJECT_STORE_ENDPOINT:-http://minio:9000}
+      HC_OBJECT_STORE_BUCKET: ${HC_OBJECT_STORE_BUCKET:-hc-data-local}
+      HC_OBJECT_STORE_ACCESS_KEY: ${HC_OBJECT_STORE_ACCESS_KEY:-minio}
+      HC_OBJECT_STORE_SECRET_KEY: ${HC_OBJECT_STORE_SECRET_KEY:-minio-local-only}
+      HC_OBJECT_STORE_REGION: ${HC_OBJECT_STORE_REGION:-us-east-1}
+      HC_JWT_ISSUER: ${HC_JWT_ISSUER:-https://identity.example.invalid/}
+      HC_JWT_AUDIENCE: ${HC_JWT_AUDIENCE:-hc-data-platform}
+      HC_JWT_ALGORITHMS: ${HC_JWT_ALGORITHMS:-["HS256"]}
+      HC_JWT_JWKS_URL: ${HC_JWT_JWKS_URL:-}
+      HC_JWT_SIGNING_KEY: ${HC_JWT_SIGNING_KEY:-local-development-signing-key-change-me}
+      HC_CURSOR_SECRET: ${HC_CURSOR_SECRET:-local-cursor-secret-change-me}
+      HC_READINESS_TIMEOUT_SECONDS: ${HC_READINESS_TIMEOUT_SECONDS:-3}
+      HC_ENFORCE_SCHEMA_MIGRATIONS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migration:
+        condition: service_completed_successfully
+    ports: [127.0.0.1:8000:8000]
+    volumes:
+      - ./backend:/app:ro
+
+  worker:
+    image: hc-data-platform-worker:dev
+    build:
+      context: backend
+      target: worker-dev
+    init: true
+    environment:
+      HC_ENVIRONMENT: ${HC_ENVIRONMENT:-local}
+      HC_RUNTIME_BACKEND: production
+      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
+      HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
+      HC_TEMPORAL_TASK_QUEUE: ${HC_TEMPORAL_TASK_QUEUE:-hc-data-pipeline}
+      HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:activity_dependencies
+      HC_OBJECT_STORE_ENDPOINT: ${HC_OBJECT_STORE_ENDPOINT:-http://minio:9000}
+      HC_OBJECT_STORE_BUCKET: ${HC_OBJECT_STORE_BUCKET:-hc-data-local}
+      HC_OBJECT_STORE_ACCESS_KEY: ${HC_OBJECT_STORE_ACCESS_KEY:-minio}
+      HC_OBJECT_STORE_SECRET_KEY: ${HC_OBJECT_STORE_SECRET_KEY:-minio-local-only}
+      HC_OBJECT_STORE_REGION: ${HC_OBJECT_STORE_REGION:-us-east-1}
+      HC_CURSOR_SECRET: ${HC_CURSOR_SECRET:-local-cursor-secret-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migration:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend:/app:ro
+
+  frontend:
+    image: hc-data-platform-frontend:dev
+    build:
+      context: frontend
+      target: frontend-dev
+    environment:
+      VITE_API_BASE_URL: /api/v1
+      VITE_SSE_BASE_URL: /api/v1/events
+      VITE_MOCK_MODE: "off"
+      VITE_BUILD_VERSION: dev
+      VITE_RELEASE_ENV: dev
+      VITE_DEV_PROXY_TARGET: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports: ["127.0.0.1:${HC_FRONTEND_PORT:-5174}:5173"]
+    volumes:
+      - ./frontend:/app:ro
+      - /app/node_modules
+
+  gateway:
+    image: ghcr.io/nginx/nginx-unprivileged:1.29.4-alpine@sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    volumes:
+      - ./deploy/compose/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports: [127.0.0.1:8088:8080]
+
+volumes:
+  postgres-data:
+  minio-data:

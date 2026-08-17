@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Descriptions, Space, Tabs } from 'antd';
 import type { ColumnDef } from '@tanstack/react-table';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LifecyclePolicy } from '../../entities/lifecycle-policy';
@@ -81,6 +82,7 @@ export function Component() {
   const simulationJob = useAsyncJob(simulationIdentity?.jobId ?? '');
   const simulationReport = useLifecycleSimulation(simulationIdentity?.simulationId ?? null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [introExpanded, setIntroExpanded] = useState(true);
 
   const selectPolicy = (policy: LifecyclePolicy) => {
     setSelectedPolicy(policy);
@@ -196,11 +198,23 @@ export function Component() {
       <StandardPageScaffold
         header={{
           title: '生命周期策略',
-          description: '危险动作以当前 Simulation 证据、ETag 与幂等意图为边界。',
-          breadcrumbs: [{ key: 'storage', label: <a href={storageOverviewPendingLink.build()}>存储管理</a> }, { key: 'lifecycle', label: '生命周期' }],
-          actions: <Button type="primary" disabled={!capabilities.has('storage.lifecycle.simulate') || simulation.isPending || !data} loading={simulation.isPending} onClick={startSimulation}>运行 Simulation</Button>,
+          description: introExpanded ? '危险动作以当前 Simulation 证据、ETag 与幂等意图为边界。' : undefined,
+          breadcrumbs: introExpanded ? [{ key: 'storage', label: '存储管理', to: storageOverviewPendingLink.build() }, { key: 'lifecycle', label: '生命周期' }] : undefined,
+          actions: (
+            <Space size="small" wrap>
+              <Button type="primary" disabled={!capabilities.has('storage.lifecycle.simulate') || simulation.isPending || !data} loading={simulation.isPending} onClick={startSimulation}>运行 Simulation</Button>
+              <Button
+                type="text"
+                aria-expanded={introExpanded}
+                icon={introExpanded ? <ChevronUp aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
+                onClick={() => setIntroExpanded((expanded) => !expanded)}
+              >
+                {introExpanded ? '收起说明' : '展开说明'}
+              </Button>
+            </Space>
+          ),
         }}
-        summary={data ? <Alert className={styles.safetyBanner} type="warning" showIcon title="Ready 版本引用的 Source 对象禁止直接删除" description="执行或恢复前必须确认稳定资源 ID、受影响对象数、字节数、不可逆部分与 blocked reasons；页面不会直接调用 OSS 删除或 Abort。" /> : undefined}
+        summary={introExpanded && data ? <Alert className={styles.safetyBanner} type="warning" showIcon title="Ready 版本引用的 Source 对象禁止直接删除" description="执行或恢复前必须确认稳定资源 ID、受影响对象数、字节数、不可逆部分与 blocked reasons；页面不会直接调用 OSS 删除或 Abort。" /> : undefined}
         filters={data ? <Tabs className={styles.lifecycleTabs} activeKey={search.tab} onChange={(value) => setParams(storageLifecycleQueryCodec.build({ ...search, tab: value as typeof search.tab }, search))} items={lifecycleTabs.map((tab) => ({ key: tab, label: tabLabels[tab] }))} aria-label="生命周期区域" /> : undefined}
       >
         <Space orientation="vertical" size="middle" className={styles.content}>

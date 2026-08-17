@@ -1,7 +1,7 @@
 export const datasetContractVersion = 'dataset-version-review.v1alpha1' as const;
 export const datasetFixtureScope = {
   organization_id: 'org_fx_01',
-  project_id: 'project_fx_01',
+  project_id: 'prj_fx_01',
   region_code: 'cn-shanghai',
 } as const;
 export const datasetIds = {

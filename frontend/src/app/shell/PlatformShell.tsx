@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bell,
-  Box,
   ChevronDown,
   Database,
   Gauge,
@@ -47,10 +46,13 @@ import {
   type NavigationManifest,
   type PageAvailability,
 } from './navigation-manifest';
+import hangchaLogo from '../../assets/hangcha-logo.png';
 import styles from './PlatformShell.module.css';
+import { datasetContextKind } from './dataset-context';
 
 const { Content, Header, Sider } = Layout;
 const { Text } = Typography;
+const DatasetContextSelector = lazy(() => import('./DatasetContextSelector'));
 
 export interface ScopeOption extends Scope {
   organizationName: string;
@@ -70,6 +72,7 @@ type ShellViewportMode = 'desktop' | 'compact' | 'mobile';
 const noPages: PageAvailability = {};
 const tabletQuery = '(min-width: 768px)';
 const desktopQuery = '(min-width: 1200px)';
+const navigationPreferenceKey = 'hc-platform-navigation-collapsed';
 
 const groupIcons: Readonly<Record<NavigationGroupId, ReactNode>> = {
   dashboard: <Gauge aria-hidden="true" size={19} strokeWidth={1.8} />,
@@ -84,8 +87,7 @@ const groupIcons: Readonly<Record<NavigationGroupId, ReactNode>> = {
 function BrandMark() {
   return (
     <span aria-hidden="true" className={styles.brandMark}>
-      <Box size={23} strokeWidth={2} />
-      <span />
+      <img alt="" src={hangchaLogo} />
     </span>
   );
 }
@@ -121,13 +123,32 @@ function useShellViewportMode(): ShellViewportMode {
   return mode;
 }
 
+function readNavigationCollapsedPreference(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(navigationPreferenceKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistNavigationCollapsedPreference(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(navigationPreferenceKey, String(collapsed));
+  } catch {
+    // Navigation remains usable when storage is unavailable or blocked.
+  }
+}
+
 function NavigationMenu({
   manifest,
+  id,
   collapsed = false,
   label,
   onNavigate,
 }: {
   manifest: NavigationManifest;
+  id?: string;
   collapsed?: boolean;
   label: string;
   onNavigate?: () => void;
@@ -182,7 +203,7 @@ function NavigationMenu({
   );
 
   return (
-    <nav aria-label={label} className={styles.navigation}>
+    <nav aria-label={label} className={styles.navigation} id={id}>
       <Menu
         key={`${label}:${collapsed ? 'collapsed' : 'expanded'}:${defaultOpenKeys[0] ?? 'none'}`}
         items={menuItems}
@@ -201,7 +222,7 @@ function NavigationMenu({
   );
 }
 
-interface ScopeSelectorPanelProps {
+interface RegionSelectorProps {
   disabled: boolean;
   scope: Scope | null;
   scopeOptions: readonly ScopeOption[];
@@ -216,27 +237,11 @@ function toScope(option: ScopeOption): Scope {
   };
 }
 
-function ScopeSelectorPanel({ disabled, scope, scopeOptions, onSelect }: ScopeSelectorPanelProps) {
-  const projectKey = (option: Pick<ScopeOption, 'organizationId' | 'projectId'>) =>
-    `${option.organizationId}/${option.projectId ?? '-'}`;
-  const projectCandidates = [
-    ...new Map(scopeOptions.map((option) => [projectKey(option), option])).values(),
-  ];
+function RegionSelector({ disabled, scope, scopeOptions, onSelect }: RegionSelectorProps) {
   const selectedOption = scopeOptions.find(
     (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
   );
-  const currentProjectKey = scope === null ? undefined : projectKey(scope);
-  const projectOptions = projectCandidates.map((option) => ({
-    value: projectKey(option),
-    label: option.projectName ?? option.projectId ?? '未选择项目',
-  }));
-  if (scope !== null && !projectOptions.some((option) => option.value === currentProjectKey)) {
-    projectOptions.push({
-      value: currentProjectKey ?? '',
-      label: scope.projectId ?? '未选择项目',
-    });
-  }
-  const regionCandidates = projectCandidates.filter(
+  const regionCandidates = scopeOptions.filter(
     (option) =>
       option.organizationId === scope?.organizationId &&
       option.projectId === scope?.projectId &&
@@ -259,26 +264,6 @@ function ScopeSelectorPanel({ disabled, scope, scopeOptions, onSelect }: ScopeSe
 
   return (
     <div aria-label="当前作用域" className={styles.scopePanel} role="group">
-      <label className={`${styles.scopeField} ${styles.projectField}`}>
-        <span className={styles.srOnly}>组织与项目</span>
-        <Select
-          aria-label="项目"
-          className={styles.projectSelect}
-          disabled={disabled}
-          loading={disabled}
-          optionFilterProp="label"
-          options={projectOptions}
-          placeholder="请选择项目"
-          showSearch
-          value={currentProjectKey}
-          onChange={(nextProjectKey: string) => {
-            const choices = scopeOptions.filter((option) => projectKey(option) === nextProjectKey);
-            const candidate =
-              choices.find((option) => option.regionCode === scope?.regionCode) ?? choices[0];
-            if (candidate !== undefined) onSelect(toScope(candidate));
-          }}
-        />
-      </label>
       <label className={`${styles.scopeField} ${styles.regionField}`}>
         <Globe2 aria-hidden="true" className={styles.regionIcon} size={16} strokeWidth={1.8} />
         <span className={styles.srOnly}>Region</span>
@@ -325,14 +310,16 @@ export function PlatformShell({
   const { switchScope } = useScope();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const viewportMode = useShellViewportMode();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [navigationCollapsed, setNavigationCollapsed] = useState(false);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(readNavigationCollapsedPreference);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
 
+  const desktopNavigationCollapsed = viewportMode === 'desktop' && navigationCollapsed;
   const grantedCapabilities = useMemo(
     () =>
       new Set<Capability>(
@@ -346,12 +333,7 @@ export function PlatformShell({
     () => filterNavigationManifest(grantedCapabilities, pageAvailability),
     [grantedCapabilities, pageAvailability],
   );
-  const activeScopeLabel = useMemo(() => {
-    const selected = scopeOptions.find(
-      (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
-    );
-    return selected?.projectName ?? selected?.projectId ?? scope?.projectId ?? '未选择项目';
-  }, [scope, scopeOptions]);
+  const showDatasetSelector = datasetContextKind(location.pathname) !== null;
   const activeRegionLabel = useMemo(() => {
     const selected = scopeOptions.find(
       (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
@@ -397,8 +379,8 @@ export function PlatformShell({
     }
   };
 
-  const scopeSelectors = (
-    <ScopeSelectorPanel
+  const regionSelector = (
+    <RegionSelector
       disabled={scopeChanging}
       scope={scope}
       scopeOptions={scopeOptions}
@@ -410,6 +392,7 @@ export function PlatformShell({
     <Layout
       className={styles.shell}
       data-scope-changing={scopeChanging || undefined}
+      data-navigation-collapsed={desktopNavigationCollapsed || undefined}
       data-viewport={viewportMode}
     >
       <Header className={styles.header}>
@@ -430,32 +413,27 @@ export function PlatformShell({
         ) : null}
 
         <Button
-          aria-label="返回数据工作台"
-          className={styles.brand}
+          aria-label="返回 HC 数据平台工作台"
+          className={`${styles.brand} ${desktopNavigationCollapsed ? styles.brandCollapsed : ''}`}
           type="link"
           onClick={() => void navigate('/dashboard')}
         >
           <BrandMark />
-          <span className={styles.brandFull}>EI 数据平台</span>
-          <span className={styles.brandShort}>EI</span>
+          <span className={styles.brandFull}>HC 数据平台</span>
+          <span className={styles.brandShort}>HC</span>
         </Button>
 
+        {showDatasetSelector && viewportMode !== 'mobile' ? (
+          <div className={styles.headerDataset}>
+            <Suspense fallback={<span className={styles.contextLoading}>加载数据集…</span>}>
+              <DatasetContextSelector />
+            </Suspense>
+          </div>
+        ) : null}
+
         {viewportMode === 'desktop' ? (
-          <div className={styles.headerScope}>{scopeSelectors}</div>
-        ) : viewportMode === 'compact' ? (
-          <Popover
-            content={scopeSelectors}
-            placement="bottom"
-            rootClassName={styles.shellPopover}
-            trigger="click"
-          >
-            <Button className={styles.scopeTrigger}>作用域：{activeScopeLabel}</Button>
-          </Popover>
-        ) : (
-          <Text className={styles.mobileScopeLabel} ellipsis title={activeScopeLabel}>
-            {activeScopeLabel}
-          </Text>
-        )}
+          <div className={styles.headerScope}>{regionSelector}</div>
+        ) : null}
 
         {viewportMode !== 'mobile' ? (
           <Button
@@ -478,12 +456,20 @@ export function PlatformShell({
 
         <Space className={styles.headerActions} size={4}>
           {viewportMode !== 'desktop' ? (
-            <Button
-              aria-label={`Region：${activeRegionLabel}`}
-              className={styles.compactRegion}
-              icon={<Globe2 aria-hidden="true" size={17} strokeWidth={1.8} />}
-              type="text"
-            />
+            <Popover
+              content={regionSelector}
+              placement="bottomRight"
+              rootClassName={styles.shellPopover}
+              trigger="click"
+            >
+              <Button
+                aria-label={`Region：${activeRegionLabel}`}
+                className={styles.compactRegion}
+                icon={<Globe2 aria-hidden="true" size={17} strokeWidth={1.8} />}
+                title={activeRegionLabel}
+                type="text"
+              />
+            </Popover>
           ) : null}
           <Popover
             content={
@@ -562,20 +548,24 @@ export function PlatformShell({
         {viewportMode !== 'mobile' ? (
           <Sider
             className={styles.sider}
-            collapsed={viewportMode === 'compact' || navigationCollapsed}
+            collapsed={viewportMode === 'compact' || desktopNavigationCollapsed}
             collapsedWidth={64}
+            data-navigation-collapsed={desktopNavigationCollapsed || undefined}
             theme="light"
             trigger={null}
             width={218}
           >
             <NavigationMenu
               collapsed={viewportMode === 'compact' || navigationCollapsed}
+              id="platform-primary-navigation"
               label={viewportMode === 'compact' ? '折叠主导航' : '主导航'}
               manifest={visibleManifest}
             />
             {viewportMode === 'desktop' ? (
               <Button
                 aria-label={navigationCollapsed ? '展开导航' : '折叠导航'}
+                aria-controls="platform-primary-navigation"
+                aria-expanded={!navigationCollapsed}
                 className={styles.collapseNavigation}
                 icon={
                   navigationCollapsed ? (
@@ -585,7 +575,14 @@ export function PlatformShell({
                   )
                 }
                 type="text"
-                onClick={() => setNavigationCollapsed((current) => !current)}
+                title={navigationCollapsed ? '展开导航' : '折叠导航'}
+                onClick={() =>
+                  setNavigationCollapsed((current) => {
+                    const next = !current;
+                    persistNavigationCollapsedPreference(next);
+                    return next;
+                  })
+                }
               />
             ) : null}
           </Sider>
@@ -614,7 +611,7 @@ export function PlatformShell({
         placement="left"
         rootClassName={styles.mobileDrawerRoot}
         size="min(360px, 92vw)"
-        title="导航与作用域"
+        title="导航"
         onClose={closeMobileNavigation}
       >
         <Button
@@ -627,7 +624,17 @@ export function PlatformShell({
         >
           关闭
         </Button>
-        <div className={styles.mobileScope}>{scopeSelectors}</div>
+        <div className={styles.mobileScope}>
+          {showDatasetSelector ? (
+            <div className={styles.mobileDataset}>
+              <span>数据集</span>
+              <Suspense fallback={<span className={styles.contextLoading}>加载数据集…</span>}>
+                <DatasetContextSelector />
+              </Suspense>
+            </div>
+          ) : null}
+          {regionSelector}
+        </div>
         <NavigationMenu
           label="移动端导航"
           manifest={visibleManifest}

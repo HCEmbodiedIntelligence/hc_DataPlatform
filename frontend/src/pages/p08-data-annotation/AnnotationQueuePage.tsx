@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { AnnotationTask } from '../../entities/annotation-task';
+import { annotationTaskDisplayStateLabel, type AnnotationTask, type AnnotationTaskDisplayState } from '../../entities/annotation-task';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
 import { isDomainError } from '../../shared/api/domain-error';
 import { useShellStore } from '../../shared/scope/shell-store';
@@ -12,17 +12,38 @@ import { annotationRoutes } from './routes';
 import { annotationQueueQueryCodec } from './query-codec';
 import './p08.css';
 
+const taskStateOptions: readonly AnnotationTaskDisplayState[] = [
+  'UNASSIGNED',
+  'ASSIGNED',
+  'IN_PROGRESS',
+  'SUBMITTED',
+  'RETURNED',
+  'COMPLETED',
+  'BLOCKED',
+  'STALE',
+];
+
+const NANOSECONDS_PER_SECOND = 1_000_000_000n;
+
+function formatNanosecondsAsSeconds(value: string): string {
+  const nanoseconds = BigInt(value);
+  const seconds = nanoseconds / NANOSECONDS_PER_SECOND;
+  const remainder = nanoseconds % NANOSECONDS_PER_SECOND;
+  if (remainder === 0n) return seconds.toString();
+  return `${seconds}.${remainder.toString().padStart(9, '0').replace(/0+$/u, '')}`;
+}
+
 function TaskRow({ task, scope, canClaim, onOpen }: { task: AnnotationTask; scope: AnnotationScope; canClaim: boolean; onOpen: (id: string) => void }): JSX.Element {
   const claim = useClaimAnnotationTask(scope, task.id);
   const allowed = canClaim && task.allowedActions.has('CLAIM') && task.displayState === 'UNASSIGNED';
   return (
     <tr>
       <th scope="row"><button type="button" className="p08-link-button" onClick={() => onOpen(task.id)}>{task.id}</button></th>
-      <td><span className={`p08-badge p08-badge--${task.displayState.toLowerCase()}`}>{task.displayState}</span></td>
+      <td><span className={`p08-badge p08-badge--${task.displayState.toLowerCase()}`}>{annotationTaskDisplayStateLabel(task.displayState)}</span></td>
       <td>{task.source.datasetId}</td>
       <td>{task.source.episodeId}</td>
       <td>{task.ontology.version}</td>
-      <td>{task.source.startNs}–{task.source.endNs}</td>
+      <td>{formatNanosecondsAsSeconds(task.source.startNs)}–{formatNanosecondsAsSeconds(task.source.endNs)}</td>
       <td>{task.priority}</td>
       <td>
         {allowed ? <button type="button" disabled={claim.isPending} onClick={() => claim.mutate({ ...scope, taskId: task.id, etag: task.etag, idempotencyKey: createIdempotencyKey(), clientSessionId: createIdempotencyKey() })}>{claim.isPending ? '领取中…' : '领取任务'}</button> : <button type="button" onClick={() => onOpen(task.id)}>打开任务</button>}
@@ -96,11 +117,11 @@ export function AnnotationQueuePage(): JSX.Element {
       <section className="p08-filter-bar" aria-label="服务端筛选">
         <label>搜索任务或 Episode<input value={q} onChange={(event) => setQ(event.target.value)} /></label>
         <label>Dataset ID<input value={search.datasetId ?? ''} onChange={(event) => setSearch({ ...search, datasetId: event.target.value || undefined, after: undefined, before: undefined })} /></label>
-        <label>状态<select value={search.states[0] ?? ''} onChange={(event) => setSearch({ ...search, states: event.target.value ? [event.target.value as typeof search.states[number]] : [], after: undefined, before: undefined })}><option value="">全部</option>{['UNASSIGNED','ASSIGNED','IN_PROGRESS','SUBMITTED','RETURNED','COMPLETED','BLOCKED','STALE'].map((state) => <option key={state}>{state}</option>)}</select></label>
+        <label>状态<select value={search.states[0] ?? ''} onChange={(event) => setSearch({ ...search, states: event.target.value ? [event.target.value as typeof search.states[number]] : [], after: undefined, before: undefined })}><option value="">全部</option>{taskStateOptions.map((state) => <option value={state} key={state}>{annotationTaskDisplayStateLabel(state)}</option>)}</select></label>
       </section>
       {claimDecision.state === 'feature-unavailable' ? <AnnotationPageState kind="feature-unavailable" detail={claimDecision.reason} /> : null}
       {!result.items.length ? <AnnotationPageState kind="empty" detail={search.q || search.datasetId || search.states.length ? '当前筛选无结果。' : undefined} /> : (
-        <div className="p08-table-wrap"><table><caption>标注任务，快照时间 {result.snapshotAt}</caption><thead><tr><th>任务</th><th>状态</th><th>Dataset</th><th>Episode</th><th>Schema</th><th>范围(ns)</th><th>优先级</th><th>操作</th></tr></thead><tbody>{result.items.map((task) => <TaskRow key={task.id} task={task} scope={scope} canClaim={claimDecision.state === 'allowed'} onOpen={(id) => { void navigate(annotationRoutes.task.build({ taskId: id }, { returnTo: `${location.pathname}${location.search}` })); }} />)}</tbody></table></div>
+        <div className="p08-table-wrap"><table><caption>标注任务，快照时间 {result.snapshotAt}</caption><thead><tr><th>任务</th><th>状态</th><th>Dataset</th><th>Episode</th><th>Schema</th><th>范围(s)</th><th>优先级</th><th>操作</th></tr></thead><tbody>{result.items.map((task) => <TaskRow key={task.id} task={task} scope={scope} canClaim={claimDecision.state === 'allowed'} onOpen={(id) => { void navigate(annotationRoutes.task.build({ taskId: id }, { returnTo: `${location.pathname}${location.search}` })); }} />)}</tbody></table></div>
       )}
       <footer className="p08-pagination"><button type="button" disabled={!result.pageInfo.hasPreviousPage || !result.pageInfo.startCursor} onClick={() => setSearch({ ...search, before: result.pageInfo.startCursor ?? undefined, after: undefined })}>上一组</button><span>每组 {search.limit}</span><button type="button" disabled={!result.pageInfo.hasNextPage || !result.pageInfo.endCursor} onClick={() => setSearch({ ...search, after: result.pageInfo.endCursor ?? undefined, before: undefined })}>下一组</button></footer>
     </main>

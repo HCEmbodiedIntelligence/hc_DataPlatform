@@ -26,12 +26,14 @@ function metricValue(value: string | undefined, state: MetricState): string {
 }
 
 function StorageMetricTile({
+  eyebrow,
   label,
   value,
   detail,
   icon,
   tone = 'default',
 }: Readonly<{
+  eyebrow: string;
   label: string;
   value: NonNullable<UiMetricCardProps['value']>;
   detail: string;
@@ -50,9 +52,10 @@ function StorageMetricTile({
         {icon}
       </span>
       <div className={styles.storageMetricCopy}>
+        <span className={styles.storageMetricEyebrow}>{eyebrow}</span>
         <h2>{label}</h2>
         <strong>{value}</strong>
-        <span>{detail}</span>
+        <span className={styles.storageMetricDetail}>{detail}</span>
       </div>
     </section>
   );
@@ -68,6 +71,7 @@ export function StorageSummaryStrip({
   const cards = overview
     ? [
         {
+          eyebrow: 'PHYSICAL',
           label: '实际 OSS 容量',
           value: displayByteMetric(overview.totals.actualOssPhysicalBytes),
           state: stateOf(overview.totals.actualOssPhysicalBytes),
@@ -75,6 +79,7 @@ export function StorageSummaryStrip({
           icon: <Database size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'LOGICAL',
           label: '逻辑引用容量',
           value: displayByteMetric(overview.totals.logicalReferencedBytes),
           state: stateOf(overview.totals.logicalReferencedBytes),
@@ -82,6 +87,7 @@ export function StorageSummaryStrip({
           icon: <Layers3 size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'BILLING',
           label: '计费容量',
           value: displayByteMetric(overview.totals.billedBytes),
           state: stateOf(overview.totals.billedBytes),
@@ -89,6 +95,7 @@ export function StorageSummaryStrip({
           icon: <Archive size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'REUSE',
           label: '复用率',
           value: displayDecimalMetric(overview.totals.reuseRate),
           state: stateOf(overview.totals.reuseRate),
@@ -97,6 +104,7 @@ export function StorageSummaryStrip({
           tone: 'success' as const,
         },
         {
+          eyebrow: 'COST',
           label: '月度费用',
           value: displayMoneyMetric(overview.totals.monthlyCost),
           state: stateOf(overview.totals.monthlyCost),
@@ -104,6 +112,7 @@ export function StorageSummaryStrip({
           icon: <WalletCards size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'FRESHNESS',
           label: '数据新鲜度',
           value: overview.freshness,
           state: 'ready' as const,
@@ -114,27 +123,32 @@ export function StorageSummaryStrip({
       ]
     : [
         {
+          eyebrow: 'PHYSICAL',
           label: '实际 OSS 容量',
           detail: '服务端 Inventory 快照',
           icon: <Database size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'LOGICAL',
           label: '逻辑引用容量',
           detail: '服务端授权聚合',
           icon: <Layers3 size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'BILLING',
           label: '计费容量',
           detail: '服务端计费事实',
           icon: <Archive size={29} strokeWidth={1.65} />,
         },
-        { label: '复用率', detail: '版本化口径', icon: <Box size={29} strokeWidth={1.65} /> },
+        { eyebrow: 'REUSE', label: '复用率', detail: '版本化口径', icon: <Box size={29} strokeWidth={1.65} /> },
         {
+          eyebrow: 'COST',
           label: '月度费用',
           detail: '服务端 minor-unit 事实',
           icon: <WalletCards size={29} strokeWidth={1.65} />,
         },
         {
+          eyebrow: 'FRESHNESS',
           label: '数据新鲜度',
           detail: '服务端快照状态',
           icon: <FileText size={29} strokeWidth={1.65} />,
@@ -146,6 +160,7 @@ export function StorageSummaryStrip({
       {cards.map((card) => (
         <StorageMetricTile
           key={card.label}
+          eyebrow={card.eyebrow}
           label={card.label}
           value={metricValue(
             'value' in card ? card.value : undefined,

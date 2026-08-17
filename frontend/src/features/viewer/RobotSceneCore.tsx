@@ -9,6 +9,7 @@ export interface RobotSceneCoreProps {
   calibrationRef?: { setId: string; version: string };
   frameGraphRef?: string;
   clock?: PlaybackClock;
+  runtimeLoader?: RobotSceneRuntimeLoader;
   onIncompatible?: (reason: 'JOINT_MAPPING'|'MODEL_VERSION'|'CALIBRATION_VERSION'|'FRAME_GRAPH') => void;
   onContextLost?: (recovered: boolean) => void;
 }
@@ -63,7 +64,7 @@ function incompatible(manifest: RobotSceneManifest, props: RobotSceneCoreProps):
 }
 
 export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
-  const { calibrationRef, clock, frameGraphRef, jointMapping, modelRef, onContextLost, onIncompatible } = p;
+  const { calibrationRef, clock, frameGraphRef, jointMapping, modelRef, onContextLost, onIncompatible, runtimeLoader: providedRuntimeLoader } = p;
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'incompatible' | 'context-lost'>('loading');
   const [reason, setReason] = useState<string>('');
@@ -77,14 +78,15 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
     setStatus('loading');
     setReason('');
 
-    if (!runtimeLoader) {
+    const activeRuntimeLoader = providedRuntimeLoader ?? runtimeLoader;
+    if (!activeRuntimeLoader) {
       setStatus('unavailable');
       setReason('3D runtime provider 未安装；视频与曲线仍可使用。');
       return () => controller.abort();
     }
 
     const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, onContextLost, onIncompatible };
-    runtimeLoader(host, runtimeProps, controller.signal).then(async ({ manifest, createRuntime, runtime: eagerRuntime }) => {
+    activeRuntimeLoader(host, runtimeProps, controller.signal).then(async ({ manifest, createRuntime, runtime: eagerRuntime }) => {
       if (controller.signal.aborted) { eagerRuntime?.dispose(); return; }
       const mismatch = incompatible(manifest, runtimeProps);
       if (mismatch) {
@@ -132,7 +134,7 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       resources.dispose();
       host.replaceChildren();
     };
-  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, onContextLost, onIncompatible]);
+  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, onContextLost, onIncompatible, providedRuntimeLoader]);
 
   return (
     <section className="robot-scene-core" data-status={status} aria-label="机器人 3D 场景">

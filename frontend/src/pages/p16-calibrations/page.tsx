@@ -283,7 +283,7 @@ export function Component() {
           title: '标定管理',
           description: '管理固定机器人坐标系、相机内外参与手眼标定版本。',
           breadcrumbs: [
-            { key: 'settings', label: '系统管理' },
+            { key: 'settings', label: '系统管理', to: '/settings/robot-models' },
             { key: 'calibrations', label: '标定管理' },
           ],
           actions: (

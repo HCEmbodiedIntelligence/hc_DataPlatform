@@ -1,0 +1,64 @@
+groups:
+  - name: hc-data-pipeline
+    interval: 30s
+    rules:
+      - alert: HcDataUploadBacklogHigh
+        expr: max by (project_id, resource_id, workflow_id) (hc_data_upload_backlog) > 500
+        for: 30m
+        labels:
+          severity: warning
+          component: ingest
+        annotations:
+          summary: Upload backlog is high for project {{ $labels.project_id }}
+          description: project_id={{ $labels.project_id }} resource_id={{ $labels.resource_id }} workflow_id={{ $labels.workflow_id }} backlog={{ $value }}
+          runbook_url: /runbooks/pipeline-alerts#upload-backlog
+      - alert: HcDataWorkflowFailureRateHigh
+        expr: sum by (project_id, resource_id, workflow_id) (rate(hc_data_workflow_failures_total[10m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          component: workflow
+        annotations:
+          summary: Workflow failures are elevated for project {{ $labels.project_id }}
+          description: project_id={{ $labels.project_id }} resource_id={{ $labels.resource_id }} workflow_id={{ $labels.workflow_id }} rate={{ $value }}
+          runbook_url: /runbooks/pipeline-alerts#workflow-failures
+      - alert: HcDataQcRejectRateHigh
+        expr: sum by (project_id, resource_id, workflow_id) (rate(hc_data_qc_outcomes_total{outcome="REJECT"}[15m])) > 0.02
+        for: 20m
+        labels:
+          severity: warning
+          component: quality
+        annotations:
+          summary: QC rejects are elevated for project {{ $labels.project_id }}
+          description: project_id={{ $labels.project_id }} resource_id={{ $labels.resource_id }} workflow_id={{ $labels.workflow_id }} reject_rate={{ $value }}
+          runbook_url: /runbooks/pipeline-alerts#quality-rejects
+      - alert: HcDataLanceCommitFailures
+        expr: sum by (project_id, resource_id, workflow_id) (increase(hc_data_lance_commits_total{outcome="failed"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: lance_catalog
+        annotations:
+          summary: Lance commits are failing for project {{ $labels.project_id }}
+          description: project_id={{ $labels.project_id }} resource_id={{ $labels.resource_id }} workflow_id={{ $labels.workflow_id }} failures={{ $value }}
+          runbook_url: /runbooks/pipeline-alerts#lance-commit
+      - alert: HcDataTranscodeP95Slow
+        expr: histogram_quantile(0.95, sum by (le, project_id, resource_id, workflow_id) (rate(hc_data_transcode_duration_seconds_bucket[15m]))) > 600
+        for: 20m
+        labels:
+          severity: warning
+          component: preview
+        annotations:
+          summary: Preview transcode p95 is slow for project {{ $labels.project_id }}
+          description: project_id={{ $labels.project_id }} resource_id={{ $labels.resource_id }} workflow_id={{ $labels.workflow_id }} p95_seconds={{ $value }}
+          runbook_url: /runbooks/pipeline-alerts#preview-transcode
+      - alert: HcDataExportFailures
+        expr: sum by (project_id, resource_id, workflow_id) (increase(hc_data_exports_total{outcome="failed"}[30m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: publishing
+        annotations:
+          summary: Training exports are failing for project {{ $labels.project_id }}
+          description: project_id={{ $labels.project_id }} resource_id={{ $labels.resource_id }} workflow_id={{ $labels.workflow_id }} failures={{ $value }}
+          runbook_url: /runbooks/pipeline-alerts#training-export

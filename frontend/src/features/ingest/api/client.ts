@@ -53,49 +53,49 @@ function secretEnvelope<S extends ZodType>(schema: S, raw: unknown, endpoint: st
 
 export async function getDataSourcesPage(scope: IngestScope, query: Record<string, unknown>, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/data-sources/page`;
-  const raw = await request<unknown>({ method: 'GET', path, query, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, query, signal });
   return ordinary(dataSourcePageWireSchema, raw, path);
 }
 
 export async function getDataSource(scope: IngestScope, sourceId: string, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/data-sources/${encodeURIComponent(sourceId)}`;
-  const raw = await request<unknown>({ method: 'GET', path, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, signal });
   return ordinary(dataSourceEnvelopeWireSchema, raw, path);
 }
 
 export async function listUploadSessions(scope: IngestScope, query: Record<string, unknown>, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/upload-sessions`;
-  const raw = await request<unknown>({ method: 'GET', path, query, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, query, signal });
   return ordinary(uploadSessionPageWireSchema, raw, path);
 }
 
 export async function getUploadCreationOptions(scope: IngestScope, query: Record<string, unknown>, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/upload-sessions:creation-options`;
-  const raw = await request<unknown>({ method: 'GET', path, query, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, query, signal });
   return ordinary(uploadCreationOptionsEnvelopeWireSchema, raw, path);
 }
 
 export async function getUploadSessionBootstrap(scope: IngestScope, uploadId: string, signal?: AbortSignal): Promise<UploadSessionBootstrapWire> {
   const path = `${resourceRoot(scope)}/upload-sessions/${encodeURIComponent(uploadId)}/bootstrap`;
-  const raw = await request<unknown>({ method: 'GET', path, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, signal });
   return ordinary(uploadSessionBootstrapWireSchema, raw, path);
 }
 
 export async function listUploadObjects(scope: IngestScope, uploadId: string, query: Record<string, unknown>, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/upload-sessions/${encodeURIComponent(uploadId)}/objects`;
-  const raw = await request<unknown>({ method: 'GET', path, query, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, query, signal });
   return ordinary(uploadObjectPageWireSchema, raw, path);
 }
 
 export async function listVerificationRuns(scope: IngestScope, uploadId: string, query: Record<string, unknown>, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/upload-sessions/${encodeURIComponent(uploadId)}/verification-runs`;
-  const raw = await request<unknown>({ method: 'GET', path, query, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, query, signal });
   return ordinary(verificationRunPageWireSchema, raw, path);
 }
 
 export async function listUploadEvents(scope: IngestScope, uploadId: string, query: Record<string, unknown>, signal?: AbortSignal) {
   const path = `${resourceRoot(scope)}/upload-sessions/${encodeURIComponent(uploadId)}/events`;
-  const raw = await request<unknown>({ method: 'GET', path, query, signal });
+  const raw = await request<unknown>({ method: 'GET', path, scope, query, signal });
   return ordinary(uploadEventPageWireSchema, raw, path);
 }
 
@@ -119,6 +119,7 @@ export async function mutateDataSource<T extends DataSourceOperation>(options: {
   const raw = await request<unknown>({
     method: operation === 'update' ? 'PATCH' : 'POST',
     path,
+    scope,
     body: options.body,
     idempotencyKey: options.idempotencyKey,
     ifMatch: options.ifMatch,
@@ -152,6 +153,7 @@ export async function mutateUploadSession<T extends UploadSessionOperation>(opti
   const raw = await request<unknown>({
     method: 'POST',
     path,
+    scope: options.scope,
     body: options.body,
     idempotencyKey: options.idempotencyKey,
     ifMatch: options.ifMatch,

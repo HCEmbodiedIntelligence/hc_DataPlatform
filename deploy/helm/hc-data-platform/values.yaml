@@ -1,0 +1,201 @@
+nameOverride: ""
+fullnameOverride: ""
+
+global:
+  releaseId: unreleased
+
+imagePullSecrets: []
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: registry.example.invalid/hc-data-platform/frontend
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    pullPolicy: IfNotPresent
+  port: 8080
+  service:
+    type: ClusterIP
+    port: 80
+  runtimeConfig:
+    apiBaseUrl: /api/v1
+    sseBaseUrl: /api/v1/events
+    mockMode: "off"
+    releaseEnvironment: production
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  strategy:
+    maxUnavailable: 0
+    maxSurge: 1
+  terminationGracePeriodSeconds: 30
+  probes:
+    startup:
+      failureThreshold: 30
+      periodSeconds: 2
+      timeoutSeconds: 2
+    readiness:
+      failureThreshold: 3
+      periodSeconds: 5
+      timeoutSeconds: 2
+    liveness:
+      failureThreshold: 3
+      periodSeconds: 10
+      timeoutSeconds: 2
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: platform.example.invalid
+  tls:
+    enabled: true
+    secretName: hc-data-platform-tls
+
+networkPolicy:
+  enabled: false
+  ingressController:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: ingress-nginx
+    podSelector: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+
+podDisruptionBudget:
+  enabled: true
+  frontendMinAvailable: 1
+  apiMinAvailable: 1
+  workerMinAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+backend:
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  api:
+    image:
+      repository: registry.example.invalid/hc-data-platform/api
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullPolicy: IfNotPresent
+    replicaCount: 2
+    port: 8000
+    service:
+      type: ClusterIP
+      port: 80
+    strategy:
+      maxUnavailable: 0
+      maxSurge: 1
+    terminationGracePeriodSeconds: 30
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    probes:
+      startup:
+        failureThreshold: 30
+        periodSeconds: 2
+        timeoutSeconds: 2
+      readiness:
+        failureThreshold: 3
+        periodSeconds: 5
+        timeoutSeconds: 3
+      liveness:
+        failureThreshold: 3
+        periodSeconds: 10
+        timeoutSeconds: 3
+  worker:
+    image:
+      repository: registry.example.invalid/hc-data-platform/worker
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullPolicy: IfNotPresent
+    replicaCount: 2
+    taskQueue: hc-data-pipeline
+    strategy:
+      maxUnavailable: 1
+      maxSurge: 1
+    terminationGracePeriodSeconds: 90
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+    probes:
+      startup:
+        failureThreshold: 30
+        periodSeconds: 2
+        timeoutSeconds: 2
+      readiness:
+        failureThreshold: 3
+        periodSeconds: 10
+        timeoutSeconds: 3
+      liveness:
+        failureThreshold: 3
+        periodSeconds: 15
+        timeoutSeconds: 3
+  config:
+    environment: production
+    serviceVersion: unreleased
+    temporalTarget: temporal-frontend.temporal.svc:7233
+    workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
+    objectStoreEndpoint: https://object-store.example.invalid
+    objectStoreBucket: hc-data-production
+    objectStoreRegion: us-east-1
+    jwtIssuer: https://identity.example.invalid
+    jwtAudience: hc-data-platform
+    jwtAlgorithms: '["RS256"]'
+    jwtJwksUrl: https://identity.example.invalid/.well-known/jwks.json
+    readinessTimeoutSeconds: "3"
+    enforceSchemaMigrations: "true"
+    otelExporterOtlpEndpoint: http://otel-collector.observability.svc:4317
+  migration:
+    enabled: true
+    backoffLimit: 1
+    activeDeadlineSeconds: 600
+    ttlSecondsAfterFinished: 86400
+    annotations: {}
+  existingSecrets:
+    postgres:
+      name: hc-data-postgres
+      dsnKey: dsn
+    objectStore:
+      name: hc-data-object-store
+      accessKeyKey: access-key
+      secretKeyKey: secret-key
+    application:
+      name: hc-data-application
+      cursorSecretKey: cursor-secret
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  migrationContainerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true

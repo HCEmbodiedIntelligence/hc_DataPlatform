@@ -3,6 +3,11 @@ import { createElement } from 'react';
 
 const DEVELOPMENT_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
+declare global {
+  // Populated by /config.js in the production container.
+  var __HC_RUNTIME_CONFIG__: Partial<Record<string, unknown>> | undefined;
+}
+
 function isLoopbackHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -50,12 +55,13 @@ export type EnvironmentResult =
   | { ok: false; issues: readonly string[] };
 
 export function readAppEnvironment(): EnvironmentResult {
+  const runtime = globalThis.__HC_RUNTIME_CONFIG__ ?? {};
   return readEnvironment({
-    VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL as unknown,
-    VITE_SSE_BASE_URL: import.meta.env.VITE_SSE_BASE_URL as unknown,
-    VITE_MOCK_MODE: import.meta.env.VITE_MOCK_MODE as unknown,
-    VITE_BUILD_VERSION: import.meta.env.VITE_BUILD_VERSION as unknown,
-    VITE_RELEASE_ENV: import.meta.env.VITE_RELEASE_ENV as unknown,
+    VITE_API_BASE_URL: runtime.VITE_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL,
+    VITE_SSE_BASE_URL: runtime.VITE_SSE_BASE_URL ?? import.meta.env.VITE_SSE_BASE_URL,
+    VITE_MOCK_MODE: runtime.VITE_MOCK_MODE ?? import.meta.env.VITE_MOCK_MODE,
+    VITE_BUILD_VERSION: runtime.VITE_BUILD_VERSION ?? import.meta.env.VITE_BUILD_VERSION,
+    VITE_RELEASE_ENV: runtime.VITE_RELEASE_ENV ?? import.meta.env.VITE_RELEASE_ENV,
   });
 }
 

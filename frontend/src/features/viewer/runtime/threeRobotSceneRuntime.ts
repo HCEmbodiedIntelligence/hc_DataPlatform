@@ -1,10 +1,12 @@
 import {
   AmbientLight,
+  Box3,
   Color,
   DirectionalLight,
   PerspectiveCamera,
   Scene,
   Texture,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 import type { Material, Object3D } from 'three';
@@ -47,7 +49,7 @@ export async function createThreeRobotSceneRuntime(
   const scene = new Scene();
   scene.background = new Color(assets.background ?? '#101820');
   const camera = new PerspectiveCamera(45, 1, 0.01, 1_000);
-  camera.position.set(2.5, 2, 2.5);
+  camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   scene.add(new AmbientLight(0xffffff, 1.2));
@@ -75,6 +77,16 @@ export async function createThreeRobotSceneRuntime(
     throw abortError();
   }
   scene.add(robot);
+
+  const bounds = new Box3().setFromObject(robot);
+  const center = bounds.getCenter(new Vector3());
+  const size = bounds.getSize(new Vector3());
+  const extent = Math.max(size.x, size.y, size.z, 0.75);
+  const distance = extent * 1.65;
+  camera.position.set(center.x + distance, center.y - distance, center.z + distance * 0.72);
+  camera.lookAt(center);
+  controls.target.copy(center);
+  controls.update();
 
   let disposed = false;
   let frame = 0;

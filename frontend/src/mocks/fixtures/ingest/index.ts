@@ -84,7 +84,8 @@ export const quarantineFixture = {
   retain_until: '2026-09-05T08:22:00Z', created_at: '2026-08-05T08:22:00Z', superseded_by_quarantine_id: null,
 } as const;
 
-export const uploadListFixture = { items: [uploadingSessionFixture, uploadSessionFixture], page_info: fixturePageInfo, snapshot_at: '2026-08-05T08:22:00Z', scope: ingestFixtureScope, request_id: 'req_fx_p03_list', contract_version: 'ingest.v1alpha1' } as const;
+export const uploadListFixture = { items: [uploadingSessionFixture], page_info: fixturePageInfo, snapshot_at: '2026-08-05T08:22:00Z', scope: ingestFixtureScope, request_id: 'req_fx_p03_list', contract_version: 'ingest.v1alpha1' } as const;
+export const quarantinedUploadListFixture = { ...uploadListFixture, items: [uploadSessionFixture], request_id: 'req_fx_p03_list_failed' } as const;
 export const uploadCreationOptionsFixture = {
   data: {
     data_sources: [{ id: 'source_fx_01', name: '上海采集站 A', source_type: 'ROBOT', source_format: 'LEROBOT_V2', configuration_version: '7', credential_version: '3', upload_policy_version: '4', allowed: true, blocked_reasons: [] }],
@@ -95,8 +96,11 @@ export const uploadCreationOptionsFixture = {
   }, scope: ingestFixtureScope, request_id: 'req_fx_p03_options', contract_version: 'ingest.v1alpha1',
 } as const;
 export const uploadBootstrapFixture = { data: { session: uploadSessionFixture, objects: [rawObjectFixture], latest_verification_run: verificationRunFixture, latest_quarantine: quarantineFixture, active_jobs: [] }, scope: ingestFixtureScope, request_id: 'req_fx_p04_bootstrap', contract_version: 'ingest.v1alpha1' } as const;
+export const uploadingBootstrapFixture = { data: { session: uploadingSessionFixture, objects: [], latest_verification_run: null, latest_quarantine: null, active_jobs: [] }, scope: ingestFixtureScope, request_id: 'req_fx_p04_bootstrap_uploading', contract_version: 'ingest.v1alpha1' } as const;
 export const uploadObjectPageFixture = { items: [rawObjectFixture], page_info: fixturePageInfo, snapshot_at: '2026-08-05T08:25:00Z', scope: ingestFixtureScope, request_id: 'req_fx_objects', contract_version: 'ingest.v1alpha1' } as const;
+export const uploadingObjectPageFixture = { ...uploadObjectPageFixture, items: [], request_id: 'req_fx_objects_uploading' } as const;
 export const verificationRunPageFixture = { items: [verificationRunFixture], page_info: fixturePageInfo, snapshot_at: '2026-08-05T08:22:00Z', scope: ingestFixtureScope, request_id: 'req_fx_runs', contract_version: 'ingest.v1alpha1' } as const;
+export const uploadingVerificationRunPageFixture = { ...verificationRunPageFixture, items: [], request_id: 'req_fx_runs_uploading' } as const;
 
 export const uploadEventFixture = {
   event_id: 'upload_event_fx_01', event_type: 'upload.verification.completed', event_level: 'ERROR', occurred_at: '2026-08-05T08:22:00Z',
@@ -105,6 +109,7 @@ export const uploadEventFixture = {
   safe_payload: { previous_status: 'VERIFYING', new_status: 'QUARANTINED', reason_code: 'OBJECT_SHA256_MISMATCH', verification_run_id: 'verification_run_fx_failed', quarantine_id: 'quarantine_fx_01', retryable: false },
 } as const;
 export const uploadEventPageFixture = { items: [uploadEventFixture], page_info: fixturePageInfo, snapshot_at: '2026-08-05T08:22:00Z', scope: ingestFixtureScope, request_id: 'req_fx_events', contract_version: 'ingest.v1alpha1' } as const;
+export const uploadingEventPageFixture = { ...uploadEventPageFixture, items: [], request_id: 'req_fx_events_uploading' } as const;
 
 export const asyncJobFixture = {
   job_id: 'job_verify_retry', job_type: 'UPLOAD_VERIFICATION', status: 'QUEUED', resource_type: 'VERIFICATION_RUN', resource_id: 'verification_run_fx_retry',

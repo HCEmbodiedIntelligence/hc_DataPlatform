@@ -1,0 +1,835 @@
+from __future__ import annotations
+
+import asyncio
+import threading
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from typing import cast
+
+import pytest
+from pydantic import ValidationError
+from temporalio.client import WorkflowFailureError
+from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.testing import WorkflowEnvironment
+from temporalio.worker import Replayer, Worker
+
+from hc_data_platform.alignment.engine import AlignmentEngine
+from hc_data_platform.alignment.models import (
+    AlignedFragmentManifestV1 as StagedManifestV1,
+)
+from hc_data_platform.alignment.models import (
+    AlignmentInputV1,
+    AlignmentProfileV1,
+    ModalityKind,
+    ModalityStreamV1,
+    TimedSampleV1,
+)
+from hc_data_platform.alignment.ports import FakeFragmentWriter
+from hc_data_platform.core.context import current_request_context
+from hc_data_platform.lance_catalog.models import (
+    AlignedFragmentManifestV1 as CatalogManifestV1,
+)
+from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot, StepRecord
+from hc_data_platform.lance_catalog.ports import LanceCatalogPort
+from hc_data_platform.lance_catalog.service import (
+    CatalogIndexPendingError,
+    InMemoryLanceCatalog,
+    compute_fragment_hash,
+)
+from hc_data_platform.preview.models import (
+    PreviewDescriptorV1,
+    PreviewRequestV1,
+    TimelineMappingV1,
+    ViewMode,
+)
+from hc_data_platform.publishing.models import (
+    ExportFormat,
+    ExportResultV1,
+    PublishDatasetRequestV1,
+    PublishedDatasetManifestV1,
+)
+from hc_data_platform.quality.models import (
+    QcReportV1,
+    QualityInputV1,
+    QualityProfileV1,
+    QualityStatus,
+)
+from hc_data_platform.verification.models import (
+    RawVerificationReportV1,
+    VerificationStatus,
+)
+from hc_data_platform.workflow.activities import (
+    ALL_ACTIVITIES,
+    ActivityDependencies,
+    CatalogFragmentAdapterPort,
+    FragmentWriterFactoryPort,
+    configure_activity_dependencies,
+)
+from hc_data_platform.workflow.models import (
+    AlignmentActivityInput,
+    CatalogCommitActivityInput,
+    CatalogFragmentPayloadV1,
+    CatalogReconciliationWorkflowInput,
+    DatasetWriterWorkflowInput,
+    ExportWorkflowInput,
+    IngestRolloutWorkflowInput,
+    JobRecord,
+    JobStatus,
+    PreviewWorkflowInput,
+    PublishDatasetWorkflowInput,
+    PublishReconciliationWorkflowInput,
+    QualityActivityInput,
+    VerificationActivityInput,
+    workflow_id,
+)
+from hc_data_platform.workflow.names import INGEST_ROLLOUT_WORKFLOW
+from hc_data_platform.workflow.service import TemporalWorkflowLauncher
+from hc_data_platform.workflow.temporal_workflows import (
+    ALL_WORKFLOWS,
+    CatalogReconciliationWorkflow,
+    DatasetWriterWorkflow,
+    ExportWorkflow,
+    IngestRolloutWorkflow,
+    PreviewWorkflow,
+    PublishDatasetWorkflow,
+    PublishReconciliationWorkflow,
+)
+
+SHA = "a" * 64
+
+
+def _verification_report(
+    status: VerificationStatus = VerificationStatus.VERIFIED,
+) -> RawVerificationReportV1:
+    return RawVerificationReportV1.build(
+        rollout_id="r1",
+        object_key="raw/r1.mcap",
+        source_sha256=SHA,
+        object_size=64,
+        profile="",
+        library="test",
+        record_count=0,
+        message_count=0,
+        schemas=0,
+        channels=0,
+        chunks=0,
+        schema_inventory=(),
+        channel_inventory=(),
+        topics=(),
+        findings=(),
+        status=status,
+    )
+
+
+def _quality_profile() -> QualityProfileV1:
+    return QualityProfileV1(profile_id="qc-v1", required_topics=frozenset())
+
+
+def _quality_report(status: QualityStatus) -> QcReportV1:
+    profile = _quality_profile()
+    return QcReportV1.build(
+        rollout_id="r1",
+        source_sha256=SHA,
+        profile_id=profile.profile_id,
+        profile_version=profile.profile_version,
+        profile_sha256=profile.content_sha256(),
+        engine_version=profile.engine_version,
+        start_ns=0,
+        end_ns=1,
+        status=status,
+        topic_metrics=(),
+        findings=(),
+    )
+
+
+def _schema() -> DatasetSchemaSnapshot:
+    return DatasetSchemaSnapshot.create(
+        project_id="p1",
+        dataset_id="d1",
+        schema_snapshot_id="schema-1",
+        frequency_hz=30,
+        fields={"x": "float64"},
+    )
+
+
+def _ingest_input() -> IngestRolloutWorkflowInput:
+    quality_data = QualityInputV1(
+        rollout_id="r1",
+        source_sha256=SHA,
+        start_ns=0,
+        end_ns=1,
+        topic_timestamps_ns={},
+    )
+    alignment_data = AlignmentInputV1(
+        rollout_id="r1",
+        source_sha256=SHA,
+        attempt_id="attempt-r1-v1",
+        start_ns=0,
+        end_ns=1,
+        streams={
+            "x": ModalityStreamV1(
+                kind=ModalityKind.CONTINUOUS,
+                samples=(TimedSampleV1(timestamp_ns=0, value=1.0),),
+            )
+        },
+    )
+    return IngestRolloutWorkflowInput(
+        project_id="p1",
+        region_code="cn",
+        dataset_id="d1",
+        rollout_id="r1",
+        verification=VerificationActivityInput(
+            project_id="p1",
+            region_code="cn",
+            rollout_id="r1",
+            object_key="raw/r1.mcap",
+            source_sha256=SHA,
+            required_topics=frozenset(),
+        ),
+        quality=QualityActivityInput(
+            project_id="p1",
+            region_code="cn",
+            data=quality_data,
+            profile=_quality_profile(),
+        ),
+        alignment=AlignmentActivityInput(
+            project_id="p1",
+            region_code="cn",
+            dataset_id="d1",
+            schema_snapshot_id="schema-1",
+            data=alignment_data,
+            profile=AlignmentProfileV1(
+                profile_id="align-v1",
+                frequency_hz=30,
+                required_modalities=frozenset({"x"}),
+            ),
+        ),
+    )
+
+
+def test_ingest_workflow_rejects_missing_or_mismatched_persistence_scope() -> None:
+    payload = _ingest_input().model_dump(mode="json")
+    payload["verification"]["project_id"] = None
+    with pytest.raises(ValidationError, match="project_ids"):
+        IngestRolloutWorkflowInput.model_validate(payload)
+
+    payload = _ingest_input().model_dump(mode="json")
+    payload["quality"]["region_code"] = "eu"
+    with pytest.raises(ValidationError, match="region_codes"):
+        IngestRolloutWorkflowInput.model_validate(payload)
+
+
+class StaticVerifier:
+    def __init__(self, status: VerificationStatus = VerificationStatus.VERIFIED) -> None:
+        self.status = status
+        self.calls = 0
+
+    def verify(
+        self,
+        *,
+        rollout_id: str,
+        object_key: str,
+        source_sha256: str,
+        required_topics: set[str],
+        known_optional_topics: set[str] | None = None,
+    ) -> RawVerificationReportV1:
+        del rollout_id, object_key, source_sha256, required_topics, known_optional_topics
+        self.calls += 1
+        return _verification_report(self.status)
+
+
+class StaticQuality:
+    def __init__(self, status: QualityStatus, *, failures: int = 0) -> None:
+        self.status = status
+        self.failures = failures
+        self.calls = 0
+
+    def evaluate(self, data: QualityInputV1, profile: QualityProfileV1) -> QcReportV1:
+        del data, profile
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise OSError("temporary network failure")
+        return _quality_report(self.status)
+
+
+class Writers(FragmentWriterFactoryPort):
+    def __init__(self) -> None:
+        self.by_attempt: dict[str, FakeFragmentWriter] = {}
+        self.calls = 0
+
+    def create(self, request: AlignmentActivityInput) -> FakeFragmentWriter:
+        self.calls += 1
+        writer = FakeFragmentWriter()
+        self.by_attempt[request.data.attempt_id] = writer
+        return writer
+
+
+class CatalogAdapter(CatalogFragmentAdapterPort):
+    def __init__(self, writers: Writers, schema: DatasetSchemaSnapshot) -> None:
+        self.writers = writers
+        self.schema = schema
+
+    def prepare(
+        self,
+        request: AlignmentActivityInput,
+        manifest: StagedManifestV1,
+    ) -> CatalogFragmentPayloadV1:
+        rows = self.writers.by_attempt[request.data.attempt_id].rows
+        steps = tuple(
+            StepRecord(
+                rollout_id=row.rollout_id,
+                step_index=row.step_index,
+                timestamp_ns=row.timestamp_ns,
+                modalities={name: value.value for name, value in row.modalities.items()},
+                source_timestamps_ns={
+                    name: value.source_timestamps_ns[0] if value.source_timestamps_ns else None
+                    for name, value in row.modalities.items()
+                },
+                time_error_ns={name: value.time_error_ns for name, value in row.modalities.items()},
+                valid={name: value.valid for name, value in row.modalities.items()},
+                repeated={name: value.repeated for name, value in row.modalities.items()},
+                sample_valid=row.sample_valid,
+            )
+            for row in rows
+        )
+        catalog_manifest = CatalogManifestV1(
+            project_id=request.project_id,
+            dataset_id=request.dataset_id,
+            schema_snapshot_id=request.schema_snapshot_id,
+            schema_fingerprint=self.schema.fingerprint,
+            frequency_hz=manifest.frequency_hz,
+            rollout_id=manifest.rollout_id,
+            source_sha256=manifest.source_sha256,
+            converter_version=manifest.converter_version,
+            attempt_id=manifest.attempt_id,
+            fragment_uri=manifest.staging_uri,
+            step_count=len(steps),
+            content_hash=compute_fragment_hash(steps),
+        )
+        return CatalogFragmentPayloadV1(manifest=catalog_manifest, steps=steps)
+
+
+class CrashAfterCommitCatalog:
+    def __init__(self, catalog: InMemoryLanceCatalog) -> None:
+        self.catalog = catalog
+        self.calls = 0
+
+    def commit_fragment(
+        self,
+        manifest: CatalogManifestV1,
+        steps: Sequence[StepRecord],
+    ) -> tuple[object, object]:
+        self.calls += 1
+        result = self.catalog.commit_fragment(manifest, steps)
+        if self.calls == 1:
+            raise OSError("worker died after the storage commit")
+        return result
+
+
+class ScopedCatalogReconciler:
+    def __init__(self, catalog: InMemoryLanceCatalog) -> None:
+        self.catalog = catalog
+
+    def reconcile(self, dataset_id: str, *, project_id: str | None = None) -> tuple[object, ...]:
+        assert project_id is not None
+        assert current_request_context().project_id == project_id
+        return self.catalog.reconcile(dataset_id, project_id=project_id)
+
+
+class BlockingVerifier(StaticVerifier):
+    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+        super().__init__()
+        self.started = started
+        self.release = release
+
+    def verify(
+        self,
+        *,
+        rollout_id: str,
+        object_key: str,
+        source_sha256: str,
+        required_topics: set[str],
+        known_optional_topics: set[str] | None = None,
+    ) -> RawVerificationReportV1:
+        self.started.set()
+        self.release.wait(timeout=10)
+        return super().verify(
+            rollout_id=rollout_id,
+            object_key=object_key,
+            source_sha256=source_sha256,
+            required_topics=required_topics,
+            known_optional_topics=known_optional_topics,
+        )
+
+
+class PendingPublicationRecovery:
+    """Models immutable assets written before the manifest transaction failed."""
+
+    def __init__(self) -> None:
+        self.temporary_assets = {
+            "published/p1/d1/v1/annotations.lance",
+            "published/p1/d1/v1/training-manifest.json",
+        }
+        self.calls = 0
+
+    def publish(self, request: PublishDatasetRequestV1) -> PublishedDatasetManifestV1:
+        assert current_request_context().project_id == request.project_id
+        self.calls += 1
+        return PublishedDatasetManifestV1(
+            project_id=request.project_id,
+            dataset_id=request.dataset_id,
+            dataset_version=request.dataset_version,
+            base_lance_version=request.base_lance_version,
+            created_at=datetime(2026, 8, 14, tzinfo=timezone.utc),
+            content_hash="d" * 64,
+            annotations_uri="published/p1/d1/v1/annotations.lance",
+            annotations_content_sha256="e" * 64,
+            training_manifest_uri="published/p1/d1/v1/training-manifest.json",
+            training_manifest_content_sha256="f" * 64,
+            rollouts=(),
+        )
+
+
+class StaticPreview:
+    def create(self, request: PreviewRequestV1) -> PreviewDescriptorV1:
+        assert current_request_context().project_id == request.project_id
+        now = datetime(2026, 8, 14, tzinfo=timezone.utc)
+        return PreviewDescriptorV1(
+            session_id="preview-session",
+            cache_key="preview-cache-key",
+            project_id=request.project_id,
+            dataset_id=request.dataset_id,
+            rollout_id=request.rollout_id,
+            lance_version=request.lance_version,
+            annotation_revision=request.annotation_revision,
+            camera_id=request.camera_id,
+            view_mode=request.view_mode,
+            encoding_profile=request.encoding_profile,
+            playlist_url="https://preview.invalid/session.m3u8",
+            media_type="application/vnd.apple.mpegurl",
+            frame_count=0,
+            placeholder_count=0,
+            duration_seconds=0,
+            timeline=TimelineMappingV1(frequency_hz=request.frequency_hz),
+            cache_expires_at=now,
+            signed_url_expires_at=now,
+        )
+
+
+class StaticExporter:
+    def export(
+        self,
+        manifest: PublishedDatasetManifestV1,
+        *,
+        format: ExportFormat,
+    ) -> ExportResultV1:
+        assert current_request_context().project_id == manifest.project_id
+        return ExportResultV1(
+            format=format,
+            project_id=manifest.project_id,
+            dataset_id=manifest.dataset_id,
+            dataset_version=manifest.dataset_version,
+            manifest_content_hash=manifest.content_hash,
+            attempt_id="export-attempt-v1",
+            artifact_uri="exports/d1/v1/artifact.json",
+            download_uri="https://download.invalid/artifact.json",
+            artifact_content_hash="1" * 64,
+            row_count=0,
+            media_type="application/json",
+        )
+
+
+def _dependencies(
+    *,
+    verifier: StaticVerifier,
+    quality: StaticQuality,
+    catalog: InMemoryLanceCatalog,
+) -> tuple[ActivityDependencies, Writers]:
+    writers = Writers()
+    return (
+        ActivityDependencies(
+            verifier=verifier,
+            quality=quality,
+            alignment=AlignmentEngine(),
+            fragment_writers=writers,
+            catalog_fragments=CatalogAdapter(writers, _schema()),
+            catalog=catalog,
+            catalog_reconciler=catalog,
+        ),
+        writers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> None:
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        verifier = StaticVerifier()
+        quality = StaticQuality(QualityStatus.PASS, failures=2)
+        dependencies, writers = _dependencies(
+            verifier=verifier,
+            quality=quality,
+            catalog=catalog,
+        )
+        configure_activity_dependencies(dependencies)
+
+        async with Worker(
+            environment.client,
+            task_queue="workflow-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            identifier = workflow_id("ingest-rollout", "p1", "r1")
+            handle = await environment.client.start_workflow(
+                IngestRolloutWorkflow.run,
+                _ingest_input(),
+                id=identifier,
+                task_queue="workflow-tests",
+            )
+            result = await handle.result()
+            assert result.status is JobStatus.SUCCEEDED
+            assert result.result is not None
+            assert result.result["training_eligible"] is True
+            assert quality.calls == 3
+            assert writers.calls == 1
+            assert len(catalog.list_versions("d1", project_id="p1")) == 1
+
+            history = await handle.fetch_history()
+            await Replayer(
+                workflows=list(ALL_WORKFLOWS),
+                data_converter=pydantic_data_converter,
+            ).replay_workflow(history)
+
+            risk_verifier = StaticVerifier()
+            risk_quality = StaticQuality(QualityStatus.RISK)
+            risk_dependencies, risk_writers = _dependencies(
+                verifier=risk_verifier,
+                quality=risk_quality,
+                catalog=catalog,
+            )
+            configure_activity_dependencies(risk_dependencies)
+            risk_input = _ingest_input().model_copy(update={"rollout_id": "r-risk"})
+            risk_input = risk_input.model_copy(
+                update={
+                    "verification": risk_input.verification.model_copy(
+                        update={"rollout_id": "r-risk"}
+                    ),
+                    "quality": risk_input.quality.model_copy(
+                        update={
+                            "data": risk_input.quality.data.model_copy(
+                                update={"rollout_id": "r-risk"}
+                            )
+                        }
+                    ),
+                    "alignment": risk_input.alignment.model_copy(
+                        update={
+                            "data": risk_input.alignment.data.model_copy(
+                                update={"rollout_id": "r-risk", "attempt_id": "risk-attempt"}
+                            )
+                        }
+                    ),
+                }
+            )
+            risk_id = workflow_id("ingest-rollout", "p1", "r-risk")
+            launcher = TemporalWorkflowLauncher(
+                "unused",
+                task_queue="workflow-tests",
+                client=environment.client,
+            )
+            first, second = await asyncio.gather(
+                launcher.start(
+                    workflow_name=INGEST_ROLLOUT_WORKFLOW,
+                    workflow_input=risk_input,
+                    workflow_id=risk_id,
+                    job_type=INGEST_ROLLOUT_WORKFLOW,
+                    project_id="p1",
+                    resource_id="r-risk",
+                ),
+                launcher.start(
+                    workflow_name=INGEST_ROLLOUT_WORKFLOW,
+                    workflow_input=risk_input,
+                    workflow_id=risk_id,
+                    job_type=INGEST_ROLLOUT_WORKFLOW,
+                    project_id="p1",
+                    resource_id="r-risk",
+                ),
+            )
+            assert first.job_id == second.job_id == risk_id
+            risk_result = await environment.client.get_workflow_handle(
+                risk_id,
+                result_type=JobRecord,
+            ).result()
+            assert risk_result.status is JobStatus.QUALITY_RISK
+            assert risk_result.result["preview_state"] == "ISOLATED"
+            assert risk_result.result["training_eligible"] is False
+            assert risk_verifier.calls == 1
+            assert risk_writers.calls == 0
+            third = await launcher.start(
+                workflow_name=INGEST_ROLLOUT_WORKFLOW,
+                workflow_input=risk_input,
+                workflow_id=risk_id,
+                job_type=INGEST_ROLLOUT_WORKFLOW,
+                project_id="p1",
+                resource_id="r-risk",
+            )
+            assert third.job_id == risk_id
+            assert third.status is JobStatus.QUALITY_RISK
+            assert risk_verifier.calls == 1
+            recovered_job = await launcher.get(risk_id)
+            assert recovered_job.status is JobStatus.QUALITY_RISK
+    finally:
+        await environment.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_temporal_commit_retries_without_duplicate_version_and_reconciles() -> None:
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        schema = _schema()
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(schema)
+        steps = (
+            StepRecord(
+                rollout_id="r-crash",
+                step_index=0,
+                timestamp_ns=0,
+                modalities={"x": 1.0},
+                source_timestamps_ns={"x": 0},
+                time_error_ns={"x": 0},
+                valid={"x": True},
+                repeated={"x": False},
+            ),
+        )
+        manifest = CatalogManifestV1(
+            project_id="p1",
+            dataset_id="d1",
+            schema_snapshot_id="schema-1",
+            schema_fingerprint=schema.fingerprint,
+            frequency_hz=30,
+            rollout_id="r-crash",
+            source_sha256="b" * 64,
+            converter_version="align-v1",
+            attempt_id="attempt-crash",
+            fragment_uri="fake://staging/r-crash",
+            step_count=1,
+            content_hash=compute_fragment_hash(steps),
+        )
+        crashing = CrashAfterCommitCatalog(catalog)
+        configure_activity_dependencies(
+            ActivityDependencies(
+                catalog=cast(LanceCatalogPort, crashing),
+                catalog_reconciler=catalog,
+            )
+        )
+        writer_input = DatasetWriterWorkflowInput(
+            project_id="p1",
+            dataset_id="d1",
+            resource_id="d1/r-crash",
+            commit=CatalogCommitActivityInput(
+                fragment=CatalogFragmentPayloadV1(manifest=manifest, steps=steps)
+            ),
+        )
+        # The execution is durable even when submitted while no worker is polling.
+        handle = await environment.client.start_workflow(
+            DatasetWriterWorkflow.run,
+            writer_input,
+            id=workflow_id("dataset-writer", "p1", "d1/r-crash"),
+            task_queue="workflow-tests",
+        )
+
+        async with Worker(
+            environment.client,
+            task_queue="workflow-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            result = await handle.result()
+            assert result.status is JobStatus.SUCCEEDED
+            assert crashing.calls == 2
+            assert len(catalog.list_versions("d1", project_id="p1")) == 1
+
+            history = await handle.fetch_history()
+            await Replayer(
+                workflows=list(ALL_WORKFLOWS),
+                data_converter=pydantic_data_converter,
+            ).replay_workflow(history)
+
+            pending_steps = tuple(
+                step.model_copy(update={"rollout_id": "r-pending"}) for step in steps
+            )
+            pending_manifest = manifest.model_copy(
+                update={
+                    "rollout_id": "r-pending",
+                    "source_sha256": "c" * 64,
+                    "attempt_id": "attempt-pending",
+                    "content_hash": compute_fragment_hash(pending_steps),
+                }
+            )
+            with pytest.raises(CatalogIndexPendingError, match="indexing was interrupted"):
+                catalog.commit_fragment(
+                    pending_manifest,
+                    pending_steps,
+                    simulate_catalog_failure=True,
+                )
+            configure_activity_dependencies(
+                ActivityDependencies(catalog_reconciler=ScopedCatalogReconciler(catalog))
+            )
+            reconciled = await environment.client.execute_workflow(
+                CatalogReconciliationWorkflow.run,
+                CatalogReconciliationWorkflowInput(project_id="p1", dataset_id="d1"),
+                id=workflow_id("catalog-reconciliation", "p1", "d1"),
+                task_queue="workflow-tests",
+            )
+            assert reconciled.status is JobStatus.SUCCEEDED
+            assert len(catalog.list_versions("d1", project_id="p1")) == 2
+
+            publication = PendingPublicationRecovery()
+            configure_activity_dependencies(ActivityDependencies(publisher=publication))
+            publication_request = PublishDatasetRequestV1(
+                project_id="p1",
+                dataset_id="d1",
+                dataset_version="v1",
+                base_lance_version="2",
+            )
+            publication_result = await environment.client.execute_workflow(
+                PublishReconciliationWorkflow.run,
+                PublishReconciliationWorkflowInput(request=publication_request),
+                id=workflow_id("publish-reconciliation", "p1", "d1/v1"),
+                task_queue="workflow-tests",
+            )
+            assert publication_result.status is JobStatus.SUCCEEDED
+            assert publication.calls == 1
+            assert publication.temporary_assets == {
+                "published/p1/d1/v1/annotations.lance",
+                "published/p1/d1/v1/training-manifest.json",
+            }
+
+            configure_activity_dependencies(
+                ActivityDependencies(
+                    preview=StaticPreview(),
+                    publisher=publication,
+                    exporter=StaticExporter(),
+                )
+            )
+            preview_request = PreviewRequestV1(
+                project_id="p1",
+                dataset_id="d1",
+                rollout_id="r1",
+                lance_version="2",
+                annotation_revision=0,
+                camera_id="front",
+                view_mode=ViewMode.ORIGINAL,
+            )
+            preview_job = await environment.client.execute_workflow(
+                PreviewWorkflow.run,
+                PreviewWorkflowInput(request=preview_request),
+                id=workflow_id("preview", "p1", "d1/r1/front"),
+                task_queue="workflow-tests",
+            )
+            publish_job = await environment.client.execute_workflow(
+                PublishDatasetWorkflow.run,
+                PublishDatasetWorkflowInput(request=publication_request),
+                id=workflow_id("publish-dataset", "p1", "d1/v1"),
+                task_queue="workflow-tests",
+            )
+            assert publish_job.result is not None
+            manifest_payload = publish_job.result["manifest"]
+            export_job = await environment.client.execute_workflow(
+                ExportWorkflow.run,
+                ExportWorkflowInput(
+                    manifest=PublishedDatasetManifestV1.model_validate(manifest_payload),
+                    format=ExportFormat.LANCE_SNAPSHOT,
+                ),
+                id=workflow_id("export", "p1", "d1/v1/lance"),
+                task_queue="workflow-tests",
+            )
+            assert preview_job.status is JobStatus.SUCCEEDED
+            assert publish_job.status is JobStatus.SUCCEEDED
+            assert export_job.status is JobStatus.SUCCEEDED
+    finally:
+        await environment.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_temporal_quality_reject_and_cancellation_never_start_alignment() -> None:
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        reject_quality = StaticQuality(QualityStatus.REJECT)
+        dependencies, writers = _dependencies(
+            verifier=StaticVerifier(),
+            quality=reject_quality,
+            catalog=catalog,
+        )
+        configure_activity_dependencies(dependencies)
+        async with Worker(
+            environment.client,
+            task_queue="workflow-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            rejected = await environment.client.execute_workflow(
+                IngestRolloutWorkflow.run,
+                _ingest_input(),
+                id=workflow_id("ingest-rollout", "p1", "reject"),
+                task_queue="workflow-tests",
+            )
+            assert rejected.status is JobStatus.QUALITY_REJECTED
+            assert rejected.result is not None
+            assert rejected.result["raw_preserved"] is True
+            assert writers.calls == 0
+
+            invalid_verifier = StaticVerifier(VerificationStatus.REJECTED)
+            untouched_quality = StaticQuality(QualityStatus.PASS)
+            invalid_dependencies, invalid_writers = _dependencies(
+                verifier=invalid_verifier,
+                quality=untouched_quality,
+                catalog=catalog,
+            )
+            configure_activity_dependencies(invalid_dependencies)
+            invalid = await environment.client.execute_workflow(
+                IngestRolloutWorkflow.run,
+                _ingest_input(),
+                id=workflow_id("ingest-rollout", "p1", "verification-reject"),
+                task_queue="workflow-tests",
+            )
+            assert invalid.status is JobStatus.QUALITY_REJECTED
+            assert invalid.error_code == "RAW_VERIFICATION_REJECTED"
+            assert invalid_verifier.calls == 1
+            assert untouched_quality.calls == 0
+            assert invalid_writers.calls == 0
+
+            started = threading.Event()
+            release = threading.Event()
+            blocking = BlockingVerifier(started, release)
+            cancel_quality = StaticQuality(QualityStatus.PASS)
+            cancel_dependencies, cancel_writers = _dependencies(
+                verifier=blocking,
+                quality=cancel_quality,
+                catalog=catalog,
+            )
+            configure_activity_dependencies(cancel_dependencies)
+            handle = await environment.client.start_workflow(
+                IngestRolloutWorkflow.run,
+                _ingest_input(),
+                id=workflow_id("ingest-rollout", "p1", "cancel"),
+                task_queue="workflow-tests",
+            )
+            assert await asyncio.to_thread(started.wait, 5)
+            await handle.cancel()
+            release.set()
+            with pytest.raises(WorkflowFailureError):
+                await handle.result()
+            assert cancel_quality.calls == 0
+            assert cancel_writers.calls == 0
+    finally:
+        await environment.shutdown()

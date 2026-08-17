@@ -373,7 +373,7 @@ export function StorageOverviewPage() {
           title: '存储容量',
           description: '只读容量、费用、复用与 Inventory 事实；全页不提供存储写入口。',
           breadcrumbs: [
-            { key: 'storage', label: '存储管理' },
+            { key: 'storage', label: '存储管理', to: '/storage/overview' },
             { key: 'overview', label: '存储容量' },
           ],
           metadata: overview.data ? (

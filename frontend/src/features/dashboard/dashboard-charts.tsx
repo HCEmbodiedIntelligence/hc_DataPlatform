@@ -1,4 +1,12 @@
 import { Card } from 'antd';
+import {
+  Activity,
+  Database,
+  GitBranch,
+  Grid3X3,
+  Layers3,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { DashboardActivity, DashboardSnapshot } from './types';
 import styles from './dashboard-charts.module.css';
@@ -12,6 +20,73 @@ function compactBytes(value: number): string {
     unitIndex += 1;
   }
   return `${amount.toLocaleString('zh-CN', { maximumFractionDigits: amount >= 10 ? 0 : 1 })} ${units[unitIndex]}`;
+}
+
+function readableBytes(value: bigint): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const;
+  let unitIndex = 0;
+  let divisor = 1n;
+  while (value >= divisor * 1_024n && unitIndex < units.length - 1) {
+    divisor *= 1_024n;
+    unitIndex += 1;
+  }
+  if (unitIndex === 0) return `${value.toLocaleString('zh-CN')} B`;
+
+  const whole = value / divisor;
+  if (whole >= 10n) {
+    const rounded = (value + divisor / 2n) / divisor;
+    return `${rounded.toLocaleString('zh-CN')} ${units[unitIndex]}`;
+  }
+
+  const tenths = (value * 10n + divisor / 2n) / divisor;
+  const fraction = tenths % 10n;
+  return `${tenths / 10n}${fraction === 0n ? '' : `.${fraction}`} ${units[unitIndex]}`;
+}
+
+function readableDateTime(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function readableTime(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function ChartCardTitle({
+  eyebrow,
+  title,
+  description,
+  icon: Icon,
+}: Readonly<{
+  eyebrow: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+}>) {
+  return (
+    <div className={styles.cardTitle}>
+      <span className={styles.cardTitleIcon} aria-hidden="true">
+        <Icon size={19} strokeWidth={1.8} />
+      </span>
+      <span className={styles.cardTitleCopy}>
+        <span className={styles.cardEyebrow}>{eyebrow}</span>
+        <h2>{title}</h2>
+        <span className={styles.cardDescription}>{description}</span>
+      </span>
+    </div>
+  );
 }
 
 export function DashboardCharts(props: Readonly<{
@@ -62,9 +137,9 @@ export function DashboardCharts(props: Readonly<{
         xAxis: {
           type: 'category',
           boundaryGap: props.activity.buckets.length === 1,
-          data: props.activity.buckets.map((bucket) => bucket.start.slice(11, 16)),
+          data: props.activity.buckets.map((bucket) => readableTime(bucket.start, props.activity.timezone)),
           axisTick: { show: false },
-          axisLabel: { color: '#64736f', fontSize: 10, hideOverlap: true },
+          axisLabel: { color: '#676b80', fontSize: 10, hideOverlap: true },
         },
         yAxis: [
           {
@@ -75,12 +150,12 @@ export function DashboardCharts(props: Readonly<{
             axisLine: { show: false },
             axisTick: { show: false },
             axisLabel: {
-              color: '#64736f',
+              color: '#676b80',
               fontSize: 10,
               formatter: (value: number) => compactBytes(value),
               hideOverlap: true,
             },
-            splitLine: { lineStyle: { color: '#e3ebe9', type: 'dashed' } },
+            splitLine: { lineStyle: { color: '#e7e9f2', type: 'dashed' } },
           },
           {
             type: 'value',
@@ -89,14 +164,14 @@ export function DashboardCharts(props: Readonly<{
             max: failureMaximum,
             splitNumber: Math.min(2, failureMaximum),
             minInterval: 1,
-            nameTextStyle: { color: '#64736f', fontSize: 10, align: 'right' },
+            nameTextStyle: { color: '#676b80', fontSize: 10, align: 'right' },
             axisLine: { show: false },
             axisTick: { show: false },
-            axisLabel: { color: '#64736f', fontSize: 10, hideOverlap: true },
+            axisLabel: { color: '#676b80', fontSize: 10, hideOverlap: true },
             splitLine: { show: false },
           },
         ],
-        color: ['#078d7d', '#ef4444'],
+        color: ['#5965d8', '#ef4444'],
         series: [
           {
             type: 'line',
@@ -128,7 +203,7 @@ export function DashboardCharts(props: Readonly<{
           inverse: true,
           data: props.snapshot.roles.map((role) => role.role === 'UNKNOWN' ? '未知' : role.role),
         },
-        color: ['#078d7d'],
+        color: ['#5965d8'],
         series: [{
           type: 'bar',
           name: '物理容量',
@@ -142,7 +217,7 @@ export function DashboardCharts(props: Readonly<{
         grid: { left: 54, right: 24, top: 12, bottom: 42 },
         xAxis: { type: 'category', data: props.snapshot.history.map((item) => item.month) },
         yAxis: { type: 'value', axisLabel: { formatter: (value: number) => compactBytes(value) } },
-        color: ['#078d7d', '#f59e0b', '#3b82f6', '#0e7490'],
+        color: ['#5965d8', '#f59e0b', '#3b82f6', '#9b72d8'],
         series: [
           { type: 'bar', stack: 'storage', name: 'STANDARD', data: props.snapshot.history.map((item) => Number(item.standardBytes)) },
           { type: 'bar', stack: 'storage', name: 'IA', data: props.snapshot.history.map((item) => Number(item.iaBytes)) },
@@ -168,27 +243,104 @@ export function DashboardCharts(props: Readonly<{
 
   return (
     <div className={styles.grid}>
-      <Card className={styles.uploadCard} size="small" title={<h2>24 小时上传吞吐量与失败情况</h2>}>
+      <Card
+        className={styles.uploadCard}
+        size="small"
+        title={(
+          <ChartCardTitle
+            eyebrow="INGEST"
+            title="24 小时上传吞吐量与失败情况"
+            description="输入速率与异常信号"
+            icon={Activity}
+          />
+        )}
+      >
         <div ref={uploadRef} className={styles.chart} role="img" aria-label="按时间分桶的上传字节趋势图" />
-        <details className={styles.dataDisclosure}><summary>查看上传趋势数据表</summary><ul>{props.activity.buckets.map((bucket) => <li key={bucket.start}>{bucket.start}：{bucket.acceptedUniqueBytes.toString()} bytes</li>)}</ul></details>
+        <details className={styles.dataDisclosure}>
+          <summary>查看上传趋势数据表</summary>
+          <ul>
+            {props.activity.buckets.map((bucket) => (
+              <li key={bucket.start}>
+                <time dateTime={bucket.start}>{readableDateTime(bucket.start, props.activity.timezone)}</time>
+                {'：上传 '}{readableBytes(bucket.acceptedUniqueBytes)}，失败 {bucket.failedCount.toLocaleString('zh-CN')} 次
+              </li>
+            ))}
+          </ul>
+        </details>
       </Card>
-      <Card className={styles.storageCard} size="small" title={<h2>存储构成</h2>}>
+      <Card
+        className={styles.storageCard}
+        size="small"
+        title={(
+          <ChartCardTitle
+            eyebrow="STORAGE"
+            title="存储构成"
+            description="按对象角色查看物理占用"
+            icon={Database}
+          />
+        )}
+      >
         <div ref={storageRef} className={styles.chart} role="img" aria-label="按对象角色划分的物理容量横向条形图" />
-        <details className={styles.dataDisclosure}><summary>查看存储构成数据表</summary><ul>{props.snapshot.roles.map((role) => <li key={role.wireRole}>{role.role}：{role.bytes.toString()} bytes</li>)}</ul></details>
+        <details className={styles.dataDisclosure}><summary>查看存储构成数据表</summary><ul>{props.snapshot.roles.map((role) => <li key={role.wireRole}>{role.role}：{readableBytes(role.bytes)}</li>)}</ul></details>
       </Card>
-      <Card className={styles.episodeCard} size="small" title={<h2>Episode 可用性</h2>}>
+      <Card
+        className={styles.episodeCard}
+        size="small"
+        title={(
+          <ChartCardTitle
+            eyebrow="EPISODE"
+            title="Episode 可用性"
+            description="从接收到可查看的转化"
+            icon={GitBranch}
+          />
+        )}
+      >
         <ol className={styles.funnel} aria-label="Episode 可用性漏斗">
-          <li><span>已上传</span><strong>{props.snapshot.episodes.uploadedCount.toLocaleString('zh-CN')}</strong></li>
-          <li><span>已校验</span><strong>{props.snapshot.episodes.validatedCount.toLocaleString('zh-CN')}</strong></li>
-          <li><span>可查看</span><strong>{props.snapshot.episodes.viewableCount.toLocaleString('zh-CN')}</strong></li>
+          <li>
+            <span className={styles.stepIndex}>01</span>
+            <span className={styles.stepCopy}><span>已上传</span><small>RAW RECEIVED</small></span>
+            <strong>{props.snapshot.episodes.uploadedCount.toLocaleString('zh-CN')}</strong>
+          </li>
+          <li>
+            <span className={styles.stepIndex}>02</span>
+            <span className={styles.stepCopy}><span>已校验</span><small>VALIDATED</small></span>
+            <strong>{props.snapshot.episodes.validatedCount.toLocaleString('zh-CN')}</strong>
+          </li>
+          <li>
+            <span className={styles.stepIndex}>03</span>
+            <span className={styles.stepCopy}><span>可查看</span><small>VIEWABLE</small></span>
+            <strong>{props.snapshot.episodes.viewableCount.toLocaleString('zh-CN')}</strong>
+          </li>
         </ol>
       </Card>
-      <Card className={styles.coverageCard} size="small" title={<h2>机器人与任务覆盖矩阵</h2>}>
+      <Card
+        className={styles.coverageCard}
+        size="small"
+        title={(
+          <ChartCardTitle
+            eyebrow="COVERAGE"
+            title="机器人与任务覆盖矩阵"
+            description="机器人组 × 任务矩阵"
+            icon={Grid3X3}
+          />
+        )}
+      >
         {props.coverage}
       </Card>
-      <Card className={styles.historyCard} size="small" title={<h2>月度存储增长与分层构成</h2>}>
+      <Card
+        className={styles.historyCard}
+        size="small"
+        title={(
+          <ChartCardTitle
+            eyebrow="HISTORY"
+            title="月度存储增长与分层构成"
+            description="容量增长与存储层级迁移"
+            icon={Layers3}
+          />
+        )}
+      >
         <div ref={historyRef} className={styles.chart} role="img" aria-label="按存储层级划分的月度物理容量趋势图" />
-        <details className={styles.dataDisclosure}><summary>查看月度存储数据表</summary><ul>{props.snapshot.history.map((item) => <li key={item.month}>{item.month}：{item.dataPhysicalBytes.toString()} bytes</li>)}</ul></details>
+        <details className={styles.dataDisclosure}><summary>查看月度存储数据表</summary><ul>{props.snapshot.history.map((item) => <li key={item.month}>{item.month}：{readableBytes(item.dataPhysicalBytes)}</li>)}</ul></details>
       </Card>
     </div>
   );

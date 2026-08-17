@@ -1,0 +1,26 @@
+global:
+  releaseId: platform-v2026.08.17.1
+frontend:
+  image:
+    repository: registry.example.com/hc-data-platform/frontend
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  runtimeConfig:
+    releaseEnvironment: staging
+ingress:
+  enabled: true
+  host: data-platform.staging.example.com
+networkPolicy:
+  enabled: true
+backend:
+  api:
+    image:
+      repository: registry.example.com/hc-data-platform/api
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  worker:
+    image:
+      repository: registry.example.com/hc-data-platform/worker
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  config:
+    environment: staging
+    serviceVersion: platform-v2026.08.17.1
+    workflowActivityFactory: hc_data_platform.runtime:activity_dependencies

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { AnnotationEntryWire } from '../../entities/annotation-draft';
 import { annotationEntryWireSchema } from '../../entities/annotation-draft';
+import { annotationTaskDisplayStateLabel } from '../../entities/annotation-task';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
 import { isDomainError } from '../../shared/api/domain-error';
 import { useShellStore } from '../../shared/scope/shell-store';
@@ -41,11 +42,32 @@ import {
 } from '../../features/annotation';
 import { annotationCapabilities } from '../../features/annotation/capabilities';
 import type { AnnotationTaskDetail } from '../../features/annotation/api/adapter';
-import { createPlaybackClock, EpisodeWorkbenchCore } from '../../features/viewer';
+import {
+  createLazyThreeRobotSceneLoader,
+  createPlaybackClock,
+  EpisodeWorkbenchCore,
+} from '../../features/viewer';
+import type { ViewerTimelineSelection, ViewerTimelineTrack } from '../../features/viewer';
 import { annotationRoutes } from './routes';
 import { annotationTaskQueryCodec } from './query-codec';
 import './p08.css';
 import styles from './workbench.module.css';
+
+const annotationRobotJointNames = Array.from({ length: 7 }, (_, index) => `joint_${index + 1}`);
+const annotationRobotModelRef = { modelId: 'annotation-demo-arm', modelVersion: '1.0.0' } as const;
+const annotationRobotJointMapping: Readonly<Record<string, string>> = Object.fromEntries(
+  annotationRobotJointNames.map((jointName) => [jointName, jointName]),
+);
+const annotationRobotSceneLoader = createLazyThreeRobotSceneLoader(() =>
+  Promise.resolve({
+    manifest: {
+      ...annotationRobotModelRef,
+      requiredJoints: annotationRobotJointNames,
+    },
+    urdfUrl: `${import.meta.env.BASE_URL}robots/annotation-demo/robot.urdf`,
+    background: '#eaf1ef',
+  }),
+);
 
 type DialogKind = 'submit' | 'review-approve' | 'review-return' | 'rebase' | null;
 
@@ -558,12 +580,117 @@ export function AnnotationTaskPage(): JSX.Element {
     }
   };
 
-  const pendingCapabilityReason = [draftDecision, rebaseDecision].find(
-    (decision) => decision.state === 'feature-unavailable',
-  )?.reason;
   const semanticEntry = detail.draft.entries.find(
     (entry): entry is AnnotationEntryWire => 'semantic_type' in entry,
   );
+  const semanticTypes: readonly AnnotationEntryWire['semantic_type'][] = [
+    'PHASE',
+    'ACTION',
+    'OBJECT',
+    'EVENT',
+    'KEYFRAME',
+  ];
+  const rawSemanticType = typeof values.semanticType === 'string' ? values.semanticType : '';
+  const currentSemanticType: AnnotationEntryWire['semantic_type'] = semanticTypes.includes(
+    rawSemanticType as AnnotationEntryWire['semantic_type'],
+  )
+    ? (rawSemanticType as AnnotationEntryWire['semantic_type'])
+    : (semanticEntry?.semantic_type ?? 'PHASE');
+  const currentLabel =
+    typeof values.labelCode === 'string' && values.labelCode
+      ? values.labelCode
+      : (semanticEntry?.label_code ?? '未命名标注');
+  const isRangeSemantic = ['PHASE', 'ACTION', 'OBJECT'].includes(currentSemanticType);
+  const selectedStart =
+    typeof values.startNs === 'string'
+      ? values.startNs
+      : semanticEntry?.anchor.anchor_type !== 'TIME_POINT'
+        ? semanticEntry?.anchor.start_ns
+        : undefined;
+  const selectedEnd =
+    typeof values.endNs === 'string'
+      ? values.endNs
+      : semanticEntry?.anchor.anchor_type !== 'TIME_POINT'
+        ? semanticEntry?.anchor.end_ns
+        : undefined;
+  const canonicalNs = /^(0|[1-9][0-9]*)$/;
+  const validSelection =
+    isRangeSemantic &&
+    selectedStart !== undefined &&
+    selectedEnd !== undefined &&
+    canonicalNs.test(selectedStart) &&
+    canonicalNs.test(selectedEnd) &&
+    BigInt(selectedStart) < BigInt(selectedEnd) &&
+    BigInt(selectedStart) >= BigInt(task.source.startNs) &&
+    BigInt(selectedEnd) <= BigInt(task.source.endNs);
+  const timelineSelection: ViewerTimelineSelection | undefined = validSelection
+    ? { startNs: selectedStart!, endNs: selectedEnd!, label: currentLabel }
+    : undefined;
+  const toneBySemantic = {
+    PHASE: 'phase',
+    ACTION: 'action',
+    OBJECT: 'object',
+    EVENT: 'event',
+    KEYFRAME: 'event',
+  } as const;
+  const segmentBuckets = new Map<
+    AnnotationEntryWire['semantic_type'],
+    ViewerTimelineTrack['segments'][number][]
+  >(semanticTypes.map((semanticType) => [semanticType, []]));
+  const currentAtNs =
+    typeof values.atNs === 'string'
+      ? values.atNs
+      : semanticEntry?.anchor.anchor_type === 'TIME_POINT'
+        ? semanticEntry.anchor.at_ns
+        : undefined;
+  if (isRangeSemantic && timelineSelection) {
+    segmentBuckets.get(currentSemanticType)?.push({
+      id: semanticEntry?.annotation_id ?? `${task.id}:current`,
+      label: currentLabel,
+      startNs: timelineSelection.startNs,
+      endNs: timelineSelection.endNs,
+      tone: toneBySemantic[currentSemanticType],
+    });
+  } else if (currentAtNs && canonicalNs.test(currentAtNs)) {
+    segmentBuckets.get(currentSemanticType)?.push({
+      id: semanticEntry?.annotation_id ?? `${task.id}:current`,
+      label: currentLabel,
+      startNs: currentAtNs,
+      tone: toneBySemantic[currentSemanticType],
+    });
+  }
+  detail.draft.entries.forEach((entry) => {
+    if (!('semantic_type' in entry) || entry.annotation_id === semanticEntry?.annotation_id) return;
+    const segment = entry.anchor.anchor_type === 'TIME_POINT'
+      ? { id: entry.annotation_id, label: entry.label_code, startNs: entry.anchor.at_ns, tone: toneBySemantic[entry.semantic_type] }
+      : { id: entry.annotation_id, label: entry.label_code, startNs: entry.anchor.start_ns, endNs: entry.anchor.end_ns, tone: toneBySemantic[entry.semantic_type] };
+    segmentBuckets.get(entry.semantic_type)?.push(segment);
+  });
+  const trackDefinitions = [
+    { id: 'phase', label: '阶段', level: 0, semanticType: 'PHASE' },
+    { id: 'action', label: '动作', level: 1, semanticType: 'ACTION' },
+    { id: 'object', label: '对象', level: 2, semanticType: 'OBJECT' },
+    { id: 'event', label: '事件', level: 1, semanticType: 'EVENT' },
+    { id: 'keyframe', label: '关键帧', level: 2, semanticType: 'KEYFRAME' },
+  ] as const;
+  const timelineTracks: readonly ViewerTimelineTrack[] = [
+    ...trackDefinitions.map((track) => ({ ...track, segments: segmentBuckets.get(track.semanticType) ?? [] })),
+    {
+      id: 'issues',
+      label: '数据问题',
+      level: 0,
+      segments: detail.manualIssues.map((issue) => ({
+        id: issue.id,
+        label: issue.summary || issue.impact,
+        startNs: issue.startNs,
+        endNs: issue.endNs,
+        tone: 'issue' as const,
+      })),
+    },
+  ];
+  const pendingCapabilityReason = [draftDecision, rebaseDecision].find(
+    (decision) => decision.state === 'feature-unavailable',
+  )?.reason;
   const semanticRange =
     semanticEntry && semanticEntry.anchor.anchor_type !== 'TIME_POINT'
       ? timelineRange(
@@ -592,7 +719,7 @@ export function AnnotationTaskPage(): JSX.Element {
           <div className={styles.titleLine}>
             <h1>任务 {task.id}</h1>
             <span className={`p08-badge p08-badge--${task.displayState.toLowerCase()}`}>
-              {task.displayState}
+              {annotationTaskDisplayStateLabel(task.displayState)}
             </span>
           </div>
           <p>
@@ -643,7 +770,7 @@ export function AnnotationTaskPage(): JSX.Element {
       ) : null}
       {stale ? (
         <section className="p08-stale-banner" role="alert">
-          <h2>基础数据已更新，任务已 STALE</h2>
+          <h2>基础数据已更新，任务已失效</h2>
           <p>旧草稿保持只读且不会静默迁移。Rebase 将在权威替代 Revision 上创建空白任务。</p>
           <button type="button" disabled={!canRebase} onClick={() => setDialog('rebase')}>
             在新修订上重建任务
@@ -680,7 +807,7 @@ export function AnnotationTaskPage(): JSX.Element {
               >
                 <span>{item.id}</span>
                 <small>
-                  {item.displayState} · P{item.priority}
+                  {annotationTaskDisplayStateLabel(item.displayState)} · P{item.priority}
                 </small>
               </button>
             )) ?? <span className={styles.queueState}>任务列表加载中</span>}
@@ -708,7 +835,7 @@ export function AnnotationTaskPage(): JSX.Element {
           </div>
         </aside>
         <section
-          className={`p08-viewer-area ${styles.viewerArea} ${!authorizedMediaAvailable ? styles.noAuthorizedMedia : ''}`}
+          className={`p08-viewer-area ${styles.viewerArea}`}
           aria-label="多模态标注画布"
         >
           <div className={styles.panelHeader}>
@@ -720,29 +847,6 @@ export function AnnotationTaskPage(): JSX.Element {
               {authorizedMediaAvailable ? '● 资源就绪' : '○ 媒体未授权'}
             </span>
           </div>
-          {!authorizedMediaAvailable ? (
-            <section className={styles.resourceDeck} aria-label="资源安全缺省视图">
-              {detail.streams.map((stream) => (
-                <section key={stream.id} className={styles.resourcePanel}>
-                  <div>
-                    <strong>{stream.displayName}</strong>
-                    <span>{stream.canonicalPath}</span>
-                  </div>
-                  <div className={styles.resourceUnavailable}>
-                    <TriangleAlert aria-hidden="true" size={22} />
-                    <strong>媒体资源不可用</strong>
-                    <span>Bootstrap 未返回授权媒体 descriptor；未尝试猜测或加载 URL。</span>
-                  </div>
-                  <footer>
-                    <span>
-                      {stream.schema.id}@{stream.schema.version}
-                    </span>
-                    <span>{stream.availability}</span>
-                  </footer>
-                </section>
-              ))}
-            </section>
-          ) : null}
           <EpisodeWorkbenchCore
             episodeId={task.source.episodeId}
             datasetId={task.source.datasetId}
@@ -750,6 +854,25 @@ export function AnnotationTaskPage(): JSX.Element {
             clock={clock}
             mode="annotate"
             streams={detail.streams}
+            timelineSelection={timelineSelection}
+            timelineTracks={timelineTracks}
+            timelineDisabled={!canEdit || !isRangeSemantic}
+            onTimeRangeSelect={(startNs, endNs) => {
+              setValues((currentValues) => ({ ...currentValues, startNs, endNs }));
+              setDirty(true);
+              setRecoveredLocalDraft(false);
+              setPreflightResult(null);
+              setServerErrors([]);
+              if (dialog === 'submit') setDialog(null);
+            }}
+            robotScene={{
+              modelRef: annotationRobotModelRef,
+              jointMapping: annotationRobotJointMapping,
+              clock,
+              runtimeLoader: annotationRobotSceneLoader,
+              title: '机器人 URDF',
+              canonicalPath: 'robot/model/annotation-demo',
+            }}
             onResourceError={(error) => setSummaryErrors([`局部资源失败：${error.message}`])}
           />
           <section className={styles.annotationTracks} aria-label="标注状态与事件时间带">
@@ -808,7 +931,7 @@ export function AnnotationTaskPage(): JSX.Element {
           ) : null}
           {detail.formDefinition && editorReady ? (
             <SchemaDrivenAnnotationForm
-              key={`${task.id}:${detail.draft.revision}`}
+              key={`${task.id}:${detail.draft.revision}:${timelineSelection?.startNs ?? 'point'}:${timelineSelection?.endNs ?? 'point'}`}
               definition={detail.formDefinition}
               defaultValues={values}
               disabled={!canEdit}
@@ -880,7 +1003,7 @@ export function AnnotationTaskPage(): JSX.Element {
         impact={[
           `冻结 Draft revision ${detail.draft.revision}`,
           '创建不可变 AnnotationSubmission 与 AnnotationSet',
-          '任务进入 SUBMITTED，编辑器切换为只读',
+          '任务进入已提交状态，编辑器切换为只读',
         ]}
         blockedReasons={preflightResult?.submission_gate.blocked_reasons}
         pending={submit.isPending}
@@ -894,7 +1017,7 @@ export function AnnotationTaskPage(): JSX.Element {
         stableResourceId={task.id}
         impact={
           dialog === 'review-return'
-            ? ['创建不可变 RETURNED 复核记录', '任务返回标注员继续修订，旧提交快照保持不变']
+            ? ['创建不可变的退回复核记录', '任务返回标注员继续修订，旧提交快照保持不变']
             : ['创建不可变 APPROVED 复核记录', '任务进入完成状态，提交快照不可修改']
         }
         pending={review.isPending}
@@ -907,7 +1030,7 @@ export function AnnotationTaskPage(): JSX.Element {
         title="确认在新修订上重建任务"
         stableResourceId={task.id}
         impact={[
-          '旧任务与旧草稿永久保持 STALE 只读',
+          '旧任务与旧草稿永久保持失效只读',
           '创建新的 taskId 与 revision-0 空白草稿',
           '不会复制任何标签、锚点或 annotation ID',
         ]}

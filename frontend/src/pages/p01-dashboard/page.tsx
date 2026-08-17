@@ -23,6 +23,7 @@ import {
   type PageStateKind,
 } from '../../shared/ui';
 import { DashboardCoverageTable } from './components/DashboardCoverageTable';
+import { DataLifecycleRail } from './components/DataLifecycleRail';
 import { DashboardPendingDrawer } from './components/DashboardPendingDrawer';
 import { DashboardPendingList } from './components/DashboardPendingList';
 import { DashboardSummaryStrip } from './components/DashboardSummaryStrip';
@@ -180,7 +181,7 @@ export function DashboardPage() {
 
   const header = {
     title: '数据工作台',
-    description: '项目数据、质量、存储与待办的只读聚合视图。',
+    description: '从原始数据、质量门禁、Lance 基线到发布版本的项目运营视图。',
     breadcrumbs: [{ key: 'dashboard', label: '工作台' }],
   } as const;
 
@@ -266,6 +267,7 @@ export function DashboardPage() {
   const readyContent = (
     <div className={styles.contentStack}>
       {snapshot.data?.hasUnknownEnum ? <PageState state="unknown" label="工作台未知状态" /> : null}
+      <DataLifecycleRail />
       {renderRegion(
         trendsState,
         '工作台趋势',

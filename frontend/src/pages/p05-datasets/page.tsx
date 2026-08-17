@@ -270,7 +270,7 @@ export function DatasetsPage() {
           title: '数据集',
           description: '服务端筛选、稳定排序与游标分页；筛选变化会回到首个游标窗口。',
           breadcrumbs: [
-            { key: 'assets', label: '数据资产' },
+            { key: 'assets', label: '数据资产', to: routes.datasets.build() },
             { key: 'datasets', label: '数据集' },
           ],
           actions: (

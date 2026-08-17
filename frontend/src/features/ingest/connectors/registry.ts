@@ -60,6 +60,30 @@ export type WritableConnectorBinding =
   | { readonly kind: 'EDGE_AGENT'; readonly agentId: string }
   | { readonly kind: 'OSS_IMPORT'; readonly sourceAlias: string };
 
+/**
+ * Client-owned connector fields. Robot endpoint and TLS bindings are resolved by the
+ * server from the selected robot, project and region, so they are intentionally absent.
+ */
+export type WritableConnectorConfiguration =
+  | {
+      readonly kind: 'ROBOT';
+      readonly transport: 'HTTPS' | 'MQTTS';
+    }
+  | {
+      readonly kind: 'EDGE_AGENT';
+      readonly agentId: string;
+      readonly transport: 'OUTBOUND_HTTPS' | 'MQTTS';
+      readonly heartbeatPolicyId: string;
+    }
+  | {
+      readonly kind: 'OSS_IMPORT';
+      readonly ossAccountAlias: string;
+      readonly bucketAlias: string;
+      readonly prefixHint: string;
+      readonly roleRef: string;
+      readonly sourceRegionCode: string;
+    };
+
 export interface ConnectorRegistryEntry {
   readonly kind: KnownConnectorConfiguration['kind'];
   readonly label: string;
@@ -101,14 +125,12 @@ export function isConnectorEditable(value: ConnectorConfiguration): value is Kno
 }
 
 /** Explicit serializer keeps camelCase UI/domain values out of the snake_case wire contract. */
-export function toWritableConnectorWire(configuration: KnownConnectorConfiguration): Record<string, unknown> {
+export function toWritableConnectorWire(configuration: WritableConnectorConfiguration): Record<string, unknown> {
   switch (configuration.kind) {
     case 'ROBOT':
       return {
         kind: configuration.kind,
         transport: configuration.transport,
-        endpoint_ref: configuration.endpointRef,
-        tls_profile_id: configuration.tlsProfileId,
       };
     case 'EDGE_AGENT':
       return {

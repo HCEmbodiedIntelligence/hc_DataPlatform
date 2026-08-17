@@ -46,8 +46,7 @@
 .viewer-panel { border: 1px solid var(--p08-line); min-width: 0; background: #fff; }
 .viewer-panel header { display: flex; justify-content: space-between; padding: 7px; }
 .viewer-panel video, .viewer-panel canvas { display: block; width: 100%; aspect-ratio: 16/9; background: #edf1f2; }
-.viewer-axis-group { max-height: 180px; overflow: auto; border: 1px solid var(--p08-line); padding: 8px; }
-.viewer-axis-group > div { display: flex; justify-content: space-between; border-bottom: 1px solid #eef2f3; padding: 4px; }
+.viewer-axis-group { --viewer-axis-border: var(--p08-line); --viewer-axis-accent: var(--p08-teal); }
 .viewer-timeline { height: 86px; margin-top: 8px; border: 1px solid var(--p08-line); background: linear-gradient(90deg, #e2f3f2 0 25%, #d9ece8 25% 48%, #fae7c8 48% 70%, #e2f3f2 70%); cursor: crosshair; }
 .viewer-playback-controls { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
 .annotation-schema-form { display: grid; gap: 12px; }

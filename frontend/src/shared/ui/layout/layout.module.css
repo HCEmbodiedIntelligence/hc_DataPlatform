@@ -4,6 +4,8 @@
   justify-content: space-between;
   gap: var(--hc-space-6, 24px);
   min-width: 0;
+  padding: 6px 4px 18px;
+  border-bottom: 1px solid rgb(202 205 220 / 72%);
 }
 
 .pageHeaderCopy {
@@ -12,15 +14,20 @@
 
 .pageTitle.pageTitle {
   margin: var(--hc-space-1, 4px) 0 0;
-  color: var(--hc-color-text, #17211f);
-  font-size: clamp(1.5rem, 1.25rem + 0.6vw, 2rem);
-  line-height: 1.3;
+  color: var(--hc-color-text, #171a2a);
+  font-size: clamp(2rem, 1.62rem + 1vw, 2.7rem);
+  font-weight: 760;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
 }
 
 .pageDescription {
   max-width: 72ch;
-  margin-top: var(--hc-space-2, 8px);
-  color: var(--hc-color-text-muted, #64736f);
+  margin-top: 10px;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.9375rem;
+  line-height: 1.68;
 }
 
 .pageMetadata {
@@ -29,7 +36,7 @@
   gap: var(--hc-space-2, 8px);
   align-items: center;
   margin-top: var(--hc-space-2, 8px);
-  color: var(--hc-color-text-muted, #64736f);
+  color: var(--hc-color-text-muted, #676b80);
   font-size: 0.875rem;
 }
 
@@ -44,15 +51,26 @@
   gap: var(--hc-space-2, 8px);
   padding: 0;
   margin: 0;
-  color: var(--hc-color-text-muted, #64736f);
+  color: var(--hc-color-text-muted, #676b80);
   font-size: 0.75rem;
   list-style: none;
 }
 
 .breadcrumbs li:not(:last-child)::after {
   padding-left: var(--hc-space-2, 8px);
-  color: var(--hc-color-border, #d7e2df);
+  color: var(--hc-color-border, #d9ddea);
   content: '/';
+}
+
+.breadcrumbLink {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+.breadcrumbLink:hover {
+  color: var(--hc-color-primary, #4c57c6);
+  text-decoration: underline;
 }
 
 .standardPage,
@@ -60,7 +78,7 @@
 .workbench {
   display: grid;
   min-width: 0;
-  gap: var(--hc-space-4, 16px);
+  gap: var(--hc-space-6, 24px);
 }
 
 .summaryRegion,
@@ -81,7 +99,7 @@
 .summaryRegion {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: var(--hc-space-3, 12px);
+  gap: var(--hc-space-4, 16px);
 }
 
 .contentRegion,
@@ -92,10 +110,10 @@
 .workbenchEditor,
 .workbenchInspector,
 .workbenchTimeline {
-  border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: var(--hc-radius-lg, 8px);
-  background: var(--hc-color-surface, #fff);
-  box-shadow: var(--hc-shadow-sm, 0 1px 2px rgb(23 33 31 / 8%));
+  border: 1px solid rgb(209 213 229 / 88%);
+  border-radius: var(--hc-radius-xl, 20px);
+  background: linear-gradient(145deg, rgb(255 255 255 / 97%), rgb(248 249 253 / 96%));
+  box-shadow: var(--hc-shadow-md, 0 14px 34px rgb(27 31 68 / 11%));
 }
 
 .contentRegion,
@@ -104,7 +122,7 @@
 .workbenchNavigation,
 .workbenchEditor,
 .workbenchInspector {
-  padding: var(--hc-space-4, 16px);
+  padding: var(--hc-space-6, 24px);
 }
 
 .paginationRegion {
@@ -121,30 +139,32 @@
 
 .resourceIdentity code {
   overflow-wrap: anywhere;
-  color: var(--hc-color-text, #17211f);
+  color: var(--hc-color-text, #171a2a);
 }
 
 .detailGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-  gap: var(--hc-space-4, 16px);
+  gap: var(--hc-space-6, 24px);
   align-items: start;
 }
 
 .inspectorRegion {
   position: sticky;
-  top: calc(56px + var(--hc-space-4, 16px));
-  max-height: calc(100vh - 88px);
+  top: calc(68px + var(--hc-space-6, 24px));
+  max-height: calc(100vh - 116px);
   overflow: auto;
 }
 
 .filterToolbar,
 .filterToolbarCompact,
 .workbenchToolbar {
-  padding: var(--hc-space-3, 12px);
-  border: 1px solid var(--hc-color-border, #d7e2df);
-  border-radius: var(--hc-radius-lg, 8px);
-  background: var(--hc-color-surface, #fff);
+  padding: var(--hc-space-4, 16px);
+  border: 1px solid rgb(202 207 226 / 90%);
+  border-radius: var(--hc-radius-lg, 16px);
+  background:
+    linear-gradient(135deg, rgb(238 240 255 / 95%), rgb(250 250 255 / 97%));
+  box-shadow: var(--hc-shadow-sm);
 }
 
 .filterForm {
@@ -184,7 +204,7 @@
     'navigation editor inspector'
     'timeline timeline timeline';
   grid-template-columns: minmax(200px, 240px) minmax(360px, 1fr) minmax(260px, 320px);
-  gap: var(--hc-space-3, 12px);
+  gap: var(--hc-space-4, 16px);
   align-items: stretch;
 }
 

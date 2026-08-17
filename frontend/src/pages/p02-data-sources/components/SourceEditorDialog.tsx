@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type {
   KnownConnectorConfiguration,
   WritableConnectorBinding,
+  WritableConnectorConfiguration,
 } from '../../../features/ingest/connectors/registry';
 import {
   createZodResolver,
@@ -18,7 +19,7 @@ export interface SourceDraft {
   readonly sourceFormat: string;
   readonly sourceFormatVersion: string | null;
   readonly uploadPolicyCode: string;
-  readonly configuration: KnownConnectorConfiguration;
+  readonly configuration: WritableConnectorConfiguration;
   readonly binding: WritableConnectorBinding;
   readonly credentialToken?: string;
   readonly changeReason?: string;
@@ -43,8 +44,6 @@ const sourceEditorSchema = z
     uploadPolicyCode: z.string().trim().min(1, '请输入上传策略'),
     robotId: z.string().trim(),
     transport: z.enum(['HTTPS', 'MQTTS', 'OUTBOUND_HTTPS']),
-    endpointRef: z.string().trim(),
-    tlsProfileId: z.string().trim(),
     agentId: z.string().trim(),
     heartbeatPolicyId: z.string().trim(),
     sourceAlias: z.string().trim(),
@@ -63,7 +62,6 @@ const sourceEditorSchema = z
     };
     if (value.kind === 'ROBOT') {
       requireField('robotId', '请输入机器人稳定 ID');
-      requireField('endpointRef', '请输入 Endpoint 引用');
     } else if (value.kind === 'EDGE_AGENT') {
       requireField('agentId', '请输入 Agent 稳定 ID');
       requireField('heartbeatPolicyId', '请输入心跳策略 ID');
@@ -100,8 +98,6 @@ function defaults(
         : configuration?.kind === 'EDGE_AGENT'
           ? configuration.transport
           : 'HTTPS',
-    endpointRef: configuration?.kind === 'ROBOT' ? configuration.endpointRef : '',
-    tlsProfileId: configuration?.kind === 'ROBOT' ? (configuration.tlsProfileId ?? '') : '',
     agentId:
       binding?.kind === 'EDGE_AGENT'
         ? binding.agentId
@@ -122,14 +118,11 @@ function defaults(
   };
 }
 
-function makeConfiguration(value: SourceFormValues): KnownConnectorConfiguration {
+function makeConfiguration(value: SourceFormValues): WritableConnectorConfiguration {
   if (value.kind === 'ROBOT') {
     return {
       kind: value.kind,
       transport: value.transport === 'MQTTS' ? 'MQTTS' : 'HTTPS',
-      endpointRef: value.endpointRef,
-      safeEndpointHint: null,
-      tlsProfileId: value.tlsProfileId || null,
     };
   }
   if (value.kind === 'EDGE_AGENT') {
@@ -176,8 +169,6 @@ function ConnectorFields({
           disabled={pending}
           options={[{ label: 'HTTPS', value: 'HTTPS' }, { label: 'MQTTS', value: 'MQTTS' }]}
         />
-        <RHFInput control={control} name="endpointRef" label="Endpoint 引用" disabled={pending} autoComplete="off" />
-        <RHFInput control={control} name="tlsProfileId" label="TLS Profile ID" disabled={pending} autoComplete="off" />
       </>
     );
   }
@@ -303,7 +294,7 @@ export function SourceEditorDialog(props: {
             <Form.Item
               className={styles.fullWidthField}
               label="访问 Token（可选）"
-              help="仅在本次提交的 ephemeral mutation closure 内使用；不回显、不持久化、不进入缓存、遥测或错误报告。"
+              help="仅当数据源需要 Token 认证时填写。Token 仅随本次请求提交，页面不会回显或保存到浏览器缓存。"
             >
               <Input.Password
                 ref={credentialRef}

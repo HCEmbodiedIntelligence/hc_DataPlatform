@@ -1,22 +1,22 @@
 .page {
   width: 100%;
-  max-width: none;
-  min-height: calc(100vh - 56px);
-  padding: 10px 8px 28px;
-  width: calc(100% + 40px);
-  margin: -20px;
-  background: var(--hc-color-surface, #fff);
-  color: var(--hc-color-text, #17211f);
+  max-width: 1680px;
+  min-height: calc(100vh - 68px);
+  padding: 0;
+  margin: 0 auto;
+  color: var(--hc-color-text, #171a2a);
+  background: transparent;
 }
 
 .page :global([data-layout='standard-page']) {
-  gap: 14px;
+  gap: 22px;
 }
 
 .page :global([class*='pageTitle']) {
-  margin-top: 3px;
-  font-size: 24px;
-  line-height: 1.28;
+  margin-top: 4px;
+  font-size: clamp(2rem, 1.65rem + 0.9vw, 2.6rem);
+  font-weight: 760;
+  line-height: 1.12;
 }
 
 .page :global([class*='pageDescription']) {
@@ -27,51 +27,74 @@
 .page :global([class*='summaryRegion']) {
   display: block;
   overflow: hidden;
-  border: 1px solid #dfe8e6;
-  border-radius: 4px;
+  border: 1px solid #e1e4ef;
+  border-radius: var(--hc-radius-xl, 20px);
   background: #fff;
+  box-shadow: var(--hc-shadow-md);
 }
 
 .sourceMetricStrip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-height: 82px;
+  min-height: 108px;
 }
 
 .sourceMetric {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 14px;
   align-items: center;
   min-width: 0;
-  padding: 13px 22px;
-  background: linear-gradient(180deg, #fff 0%, #fbfdfc 100%);
+  padding: 18px 22px;
+  background:
+    radial-gradient(circle at 100% 0%, rgb(117 147 239 / 8%), transparent 42%),
+    linear-gradient(155deg, #fff 0%, #fafbfe 100%);
 }
 
 .sourceMetric + .sourceMetric {
-  border-left: 1px solid #e4ecea;
+  border-left: 1px solid #e7e9f2;
+}
+
+.sourceMetric::before {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: rgb(89 101 216 / 0%);
+  content: '';
 }
 
 .sourceMetricIcon {
   display: grid;
-  flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
-  color: #167b71;
+  width: 44px;
+  height: 44px;
+  color: #5965d8;
+  border: 1px solid rgb(89 101 216 / 14%);
+  border-radius: 14px;
+  background: rgb(89 101 216 / 9%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 82%);
   place-items: center;
 }
 
 .sourceMetricSuccess .sourceMetricIcon {
-  color: #14a15d;
+  color: #3377e7;
+  border-color: rgb(51 119 231 / 16%);
+  background: rgb(51 119 231 / 9%);
 }
 
 .sourceMetricWarning .sourceMetricIcon {
-  color: #d97706;
+  color: #b26b00;
+  border-color: rgb(178 107 0 / 18%);
+  background: rgb(178 107 0 / 9%);
 }
 
 .sourceMetricCopy {
   display: grid;
-  gap: 1px;
   min-width: 0;
+  gap: 2px;
 }
 
 .sourceMetricCopy h2,
@@ -80,26 +103,51 @@
   margin: 0;
 }
 
-.sourceMetricCopy h2,
-.sourceMetricCopy span {
+.sourceMetricEyebrow {
   overflow: hidden;
-  color: #697a77;
-  font-size: 12px;
+  color: #5965d8;
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.13em;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.sourceMetricCopy h2,
+.sourceMetricDetail {
+  overflow: hidden;
+  color: #6e7287;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceMetricCopy h2 {
+  font-weight: 640;
+  line-height: 1.35;
+}
+
 .sourceMetricCopy strong {
-  color: #17211f;
-  font-size: 23px;
-  letter-spacing: 0.01em;
+  overflow: hidden;
+  color: #171a2a;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 740;
+  letter-spacing: -0.025em;
   line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceMetricDetail {
+  margin-top: 2px;
 }
 
 .page :global([class*='toolbarRegion']) :global([class*='filterToolbar']) {
-  padding: 12px 14px;
-  border-radius: 4px;
-  box-shadow: none;
+  padding: 16px;
+  border-radius: var(--hc-radius-lg, 16px);
+  box-shadow: var(--hc-shadow-sm);
 }
 
 .page :global([class*='filterForm']) {
@@ -127,46 +175,46 @@
 .page :global([class*='contentRegion']) {
   padding: 0;
   overflow: hidden;
-  border-radius: 4px;
-  box-shadow: none;
+  border-radius: var(--hc-radius-xl, 20px);
+  box-shadow: var(--hc-shadow-md);
 }
 
 .page :global(.ant-card),
 .page :global(.ant-table-wrapper) {
-  border-radius: 4px;
-  box-shadow: none;
+  border-radius: var(--hc-radius-lg, 18px);
+  box-shadow: var(--hc-shadow-sm);
 }
 
 .page :global(.hc-data-table .ant-table-thead > tr > th) {
   padding: 11px 13px;
-  color: #4d5e5b;
-  background: #f7faf9;
+  color: #50546a;
+  background: #f8f9fd;
   font-size: 12px;
   font-weight: 600;
 }
 
 .page :global(.hc-data-table .ant-table-tbody > tr > td) {
   padding: 11px 13px;
-  border-bottom-color: #e6ecea;
+  border-bottom-color: #eaecf4;
   font-size: 13px;
 }
 
 .page :global(.hc-data-table .ant-table-tbody > tr:nth-child(even) > td) {
-  background: #fcfdfd;
+  background: #fdfdff;
 }
 
 .page :global(.hc-data-table .ant-table-tbody > tr:first-child > td) {
-  border-top: 1px solid #67cbbb;
-  border-bottom-color: #67cbbb;
-  background: #f1fbf8;
+  border-top: 1px solid #8b96ff;
+  border-bottom-color: #8b96ff;
+  background: #f1f2ff;
 }
 
 .page :global(.hc-data-table .ant-table-tbody > tr:first-child > td:first-child) {
-  border-left: 2px solid #16a58e;
+  border-left: 2px solid #5965d8;
 }
 
 .page :global(.hc-data-table .ant-table-tbody > tr:hover > td) {
-  background: #e9f8f4;
+  background: #f2f3ff;
 }
 
 .contentStack,
@@ -239,14 +287,14 @@
   }
 
   :global(.ant-drawer:has([class*='inspector']) .ant-drawer-content) {
-    border-left: 1px solid #dfe8e6;
+    border-left: 1px solid #e1e4ef;
     box-shadow: none;
   }
 
   :global(.ant-drawer:has([class*='inspector']) .ant-drawer-header) {
     min-height: 48px;
     padding: 13px 16px;
-    border-bottom-color: #e4ecea;
+    border-bottom-color: #e7e9f2;
   }
 
   :global(.ant-drawer:has([class*='inspector']) .ant-drawer-body) {
@@ -295,11 +343,11 @@
 
   .sourceMetric:nth-child(3) {
     border-left: 0;
-    border-top: 1px solid #e4ecea;
+    border-top: 1px solid #e7e9f2;
   }
 
   .sourceMetric:nth-child(4) {
-    border-top: 1px solid #e4ecea;
+    border-top: 1px solid #e7e9f2;
   }
 
   .formGrid {

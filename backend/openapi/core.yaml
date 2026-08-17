@@ -1,0 +1,100 @@
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      tags: [health]
+      responses:
+        "200":
+          description: The API process is live; no dependency readiness is implied.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, environment]
+                properties:
+                  status: {type: string, const: live}
+                  environment: {type: string}
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags: [health]
+      responses:
+        "200":
+          description: Every required dependency is ready.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReadinessReport"}
+        "503":
+          description: At least one required dependency is not ready.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReadinessReport"}
+components:
+  schemas:
+    DependencyStatus:
+      type: object
+      required: [status, latency_ms]
+      properties:
+        status: {type: string, enum: [ready, not_ready]}
+        latency_ms: {type: number, minimum: 0}
+        detail: {type: [string, "null"]}
+    DomainEventEnvelope:
+      type: object
+      required: [event_id, event_type, schema_version, aggregate_type, aggregate_id, project_id, occurred_at, payload]
+      properties:
+        event_id: {type: string}
+        event_type: {type: string}
+        schema_version: {type: integer, minimum: 1}
+        aggregate_type: {type: string}
+        aggregate_id: {type: string}
+        project_id: {type: string}
+        region_code: {type: [string, "null"]}
+        occurred_at: {type: string, format: date-time}
+        trace_id: {type: [string, "null"]}
+        payload: {type: object, additionalProperties: true}
+    ETag:
+      type: string
+      pattern: '^(W/)?"[!#-~\u0080-\u00FF]+"$'
+    PageInfo:
+      type: object
+      required: [has_next_page, has_previous_page]
+      properties:
+        has_next_page: {type: boolean}
+        has_previous_page: {type: boolean}
+        start_cursor: {type: [string, "null"]}
+        end_cursor: {type: [string, "null"]}
+    ProblemDetails:
+      type: object
+      required: [type, title, status, detail, code, retryable]
+      properties:
+        type: {type: string, default: "about:blank"}
+        title: {type: string}
+        status: {type: integer, minimum: 400, maximum: 599}
+        detail: {type: string}
+        instance: {type: [string, "null"]}
+        code: {type: string}
+        request_id: {type: [string, "null"]}
+        retryable: {type: boolean}
+        details: {type: object, additionalProperties: true}
+    ReadinessReport:
+      type: object
+      required: [status, dependencies]
+      properties:
+        status: {type: string, enum: [ready, not_ready]}
+        dependencies:
+          type: object
+          required: [postgresql, temporal, object_storage]
+          properties:
+            postgresql: {$ref: "#/components/schemas/DependencyStatus"}
+            temporal: {$ref: "#/components/schemas/DependencyStatus"}
+            object_storage: {$ref: "#/components/schemas/DependencyStatus"}
+    RequestContext:
+      type: object
+      required: [request_id, roles, service_identity]
+      properties:
+        request_id: {type: string}
+        project_id: {type: [string, "null"]}
+        subject_id: {type: [string, "null"]}
+        region_code: {type: [string, "null"]}
+        roles: {type: array, items: {type: string}, uniqueItems: true}
+        service_identity: {type: boolean}

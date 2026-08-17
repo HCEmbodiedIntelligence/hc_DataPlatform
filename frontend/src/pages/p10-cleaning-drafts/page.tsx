@@ -461,7 +461,7 @@ export function CleaningDraftsPage() {
           title: '清洗草稿',
           description: 'P10 只读聚合五条正交状态轴；所有编辑、Preview 与 Commit 都在 P11 完成。',
           breadcrumbs: [
-            { key: 'cleaning', label: '手动清洗' },
+            { key: 'cleaning', label: '手动清洗', to: cleaningRoutes.manualIssues.build({}) },
             { key: 'drafts', label: '清洗草稿' },
           ],
           actions: <Link to={cleaningRoutes.manualIssues.build({})}>从人工问题进入清洗</Link>,

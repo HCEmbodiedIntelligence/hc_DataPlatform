@@ -182,12 +182,14 @@ function formatBytes(value: string | undefined): string {
 }
 
 function SourceMetricTile({
+  eyebrow,
   label,
   value,
   detail,
   icon,
   tone = 'default',
 }: Readonly<{
+  eyebrow: string;
   label: string;
   value: ReactNode;
   detail: string;
@@ -206,9 +208,10 @@ function SourceMetricTile({
         {icon}
       </span>
       <div className={styles.sourceMetricCopy}>
+        <span className={styles.sourceMetricEyebrow}>{eyebrow}</span>
         <h2>{label}</h2>
         <strong>{value}</strong>
-        <span>{detail}</span>
+        <span className={styles.sourceMetricDetail}>{detail}</span>
       </div>
     </section>
   );
@@ -453,7 +456,7 @@ export default function DataSourcesPage() {
           title: '数据源',
           description: '管理机器人、边缘代理与 OSS 导入连接器。',
           breadcrumbs: [
-            { key: 'ingest', label: '数据接入' },
+            { key: 'ingest', label: '数据接入', to: routes.uploadJobs.build() },
             { key: 'sources', label: '数据源' },
           ],
           actions: (
@@ -482,12 +485,14 @@ export default function DataSourcesPage() {
         summary={
           <div className={styles.sourceMetricStrip}>
             <SourceMetricTile
+              eyebrow="CONNECTORS"
               label="数据源总数"
               value={sourceSummaryValue(page.data?.summary.totalCount, summaryState)}
               detail="已接入连接器"
               icon={<Database size={30} strokeWidth={1.65} />}
             />
             <SourceMetricTile
+              eyebrow="ONLINE"
               label="在线"
               value={sourceSummaryValue(page.data?.summary.onlineCount, summaryState)}
               detail="最近心跳正常"
@@ -495,6 +500,7 @@ export default function DataSourcesPage() {
               tone="success"
             />
             <SourceMetricTile
+              eyebrow="VERIFIED"
               label="今日验证字节"
               value={
                 summaryState === 'ready'
@@ -505,6 +511,7 @@ export default function DataSourcesPage() {
               icon={<HardDriveUpload size={30} strokeWidth={1.65} />}
             />
             <SourceMetricTile
+              eyebrow="ISSUES"
               label="异常"
               value={sourceSummaryValue(page.data?.summary.abnormalCount, summaryState)}
               detail="需要人工处理"

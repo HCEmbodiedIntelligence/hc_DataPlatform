@@ -1,0 +1,4316 @@
+components:
+  parameters:
+    DatasetId:
+      in: path
+      name: dataset_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    ProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    PublishingDatasetId:
+      in: path
+      name: dataset_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    PublishingDatasetVersion:
+      in: path
+      name: dataset_version
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    QualityProfileId:
+      in: path
+      name: profile_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    QualityProfileVersion:
+      in: path
+      name: profile_version
+      required: true
+      schema:
+        minimum: 1
+        type: integer
+    QualityProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    QualityRegionCode:
+      in: path
+      name: region_code
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    QualityRolloutId:
+      in: path
+      name: rollout_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    RolloutId:
+      in: path
+      name: rollout_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    VerificationProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    VerificationRegionCode:
+      in: path
+      name: region_code
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    VerificationRolloutId:
+      in: path
+      name: rollout_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    Version:
+      in: path
+      name: version
+      required: true
+      schema:
+        minimum: 1
+        type: integer
+  schemas:
+    ActionQualityProfileV1:
+      additionalProperties: false
+      properties:
+        dimension_mismatch_is_reject:
+          default: true
+          type: boolean
+        maximum_jump_reject:
+          default: null
+          exclusiveMinimum: 0
+          type:
+          - number
+          - 'null'
+        maximum_jump_risk:
+          default: null
+          exclusiveMinimum: 0
+          type:
+          - number
+          - 'null'
+        minimum_observation_count_reject:
+          default: 0
+          minimum: 0
+          type: integer
+        minimum_observation_count_risk:
+          default: 1
+          minimum: 0
+          type: integer
+        topic:
+          default: /action
+          type: string
+      required:
+      - topic
+      - minimum_observation_count_risk
+      - minimum_observation_count_reject
+      - maximum_jump_risk
+      - maximum_jump_reject
+      - dimension_mismatch_is_reject
+      type: object
+    AlignedFragmentManifestV1:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          minLength: 1
+          type: string
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        converter_version:
+          minLength: 1
+          type: string
+        frequency_hz:
+          minimum: 1
+          type: integer
+        profile_id:
+          minLength: 1
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+        row_count:
+          minimum: 0
+          type: integer
+        schema_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        schema_version:
+          const: aligned-fragment-manifest/v1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        staging_format:
+          const: arrow-ipc/v1
+          type: string
+        staging_uri:
+          minLength: 1
+          type: string
+      required:
+      - schema_version
+      - rollout_id
+      - source_sha256
+      - attempt_id
+      - profile_id
+      - converter_version
+      - frequency_hz
+      - row_count
+      - schema_sha256
+      - content_sha256
+      - staging_uri
+      - staging_format
+      type: object
+    AlignedFragmentReadyV1:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        converter_version:
+          minLength: 1
+          type: string
+        event_version:
+          const: aligned-fragment-ready/v1
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        staging_uri:
+          minLength: 1
+          type: string
+      required:
+      - event_version
+      - rollout_id
+      - source_sha256
+      - converter_version
+      - content_sha256
+      - staging_uri
+      type: object
+    AlignedRowV1:
+      additionalProperties: false
+      properties:
+        modalities:
+          additionalProperties:
+            $ref: '#/components/schemas/AlignedValueV1'
+          type: object
+        rollout_id:
+          minLength: 1
+          type: string
+        sample_valid:
+          type: boolean
+        step_index:
+          minimum: 0
+          type: integer
+        timestamp_ns:
+          minimum: 0
+          type: integer
+      required:
+      - rollout_id
+      - step_index
+      - timestamp_ns
+      - modalities
+      - sample_valid
+      type: object
+    AlignedValueV1:
+      additionalProperties: false
+      properties:
+        repeated:
+          type: boolean
+        source_timestamps_ns:
+          items:
+            minimum: 0
+            type: integer
+          type: array
+        strategy:
+          $ref: '#/components/schemas/AlignmentStrategy'
+        time_error_ns:
+          oneOf:
+          - minimum: 0
+            type: integer
+          - type: 'null'
+        valid:
+          type: boolean
+        value: {}
+      required:
+      - value
+      - source_timestamps_ns
+      - time_error_ns
+      - valid
+      - repeated
+      - strategy
+      type: object
+    AlignmentInputV1:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          minLength: 1
+          type: string
+        end_ns:
+          minimum: 1
+          type: integer
+        rollout_id:
+          minLength: 1
+          type: string
+        schema_version:
+          const: alignment-input/v1
+          default: alignment-input/v1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        start_ns:
+          minimum: 0
+          type: integer
+        streams:
+          additionalProperties:
+            $ref: '#/components/schemas/ModalityStreamV1'
+          minProperties: 1
+          type: object
+      required:
+      - rollout_id
+      - source_sha256
+      - attempt_id
+      - start_ns
+      - end_ns
+      - streams
+      type: object
+    AlignmentProfileV1:
+      additionalProperties: false
+      properties:
+        converter_version:
+          default: be07-align/1
+          minLength: 1
+          type: string
+        default_tolerance_ns:
+          default: 20000000
+          minimum: 0
+          type: integer
+        frequency_hz:
+          default: 30
+          maximum: 1000
+          minimum: 1
+          type: integer
+        profile_id:
+          minLength: 1
+          type: string
+        required_modalities:
+          items:
+            minLength: 1
+            type: string
+          type: array
+          uniqueItems: true
+        schema_version:
+          const: alignment-profile/v1
+          default: alignment-profile/v1
+          type: string
+        stream_strategies:
+          additionalProperties:
+            $ref: '#/components/schemas/AlignmentStrategy'
+          default: {}
+          type: object
+        stream_tolerance_ns:
+          additionalProperties:
+            minimum: 0
+            type: integer
+          default: {}
+          type: object
+      required:
+      - profile_id
+      - required_modalities
+      type: object
+    AlignmentStrategy:
+      enum:
+      - nearest
+      - linear
+      - causal
+      - recent
+      - window_mean
+      type: string
+    AnnotationApprovedV1:
+      additionalProperties: false
+      properties:
+        annotation_revision:
+          minimum: 0
+          type: integer
+        approved_at:
+          format: date-time
+          type: string
+        dataset_id:
+          type: string
+        dataset_version:
+          minimum: 1
+          type: integer
+        excluded_ranges:
+          items:
+            $ref: '#/components/schemas/ExclusionRange'
+          type: array
+        project_id:
+          type: string
+        review_id:
+          type: string
+        reviewer_id:
+          type: string
+        rollout_id:
+          type: string
+        schema_version:
+          const: '1'
+          type: string
+        task_id:
+          type: string
+      required:
+      - schema_version
+      - project_id
+      - dataset_id
+      - dataset_version
+      - rollout_id
+      - task_id
+      - annotation_revision
+      - review_id
+      - reviewer_id
+      - excluded_ranges
+      - approved_at
+      type: object
+    AnnotationCurrent:
+      additionalProperties: false
+      properties:
+        approved_review_id:
+          type:
+          - string
+          - 'null'
+        approved_revision:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        current_revision:
+          minimum: 0
+          type: integer
+        etag:
+          type: string
+        schema_version:
+          const: '1'
+          type: string
+        state_version:
+          minimum: 0
+          type: integer
+        status:
+          $ref: '#/components/schemas/AnnotationStatus'
+        submitted_by:
+          type:
+          - string
+          - 'null'
+        submitted_revision:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        task_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - task_id
+      - current_revision
+      - state_version
+      - status
+      - etag
+      - updated_at
+      type: object
+    AnnotationDraft:
+      additionalProperties: false
+      properties:
+        author_id:
+          type: string
+        client_mutation_id:
+          type: string
+        effective_exclusions:
+          items:
+            $ref: '#/components/schemas/ExclusionRange'
+          type: array
+        etag:
+          type: string
+        operations:
+          items:
+            $ref: '#/components/schemas/AnnotationOperation'
+          type: array
+        revision:
+          minimum: 0
+          type: integer
+        schema_version:
+          const: '1'
+          type: string
+        task_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - task_id
+      - revision
+      - author_id
+      - client_mutation_id
+      - operations
+      - effective_exclusions
+      - etag
+      - updated_at
+      type: object
+    AnnotationHistory:
+      additionalProperties: false
+      properties:
+        reviews:
+          items:
+            $ref: '#/components/schemas/AnnotationReview'
+          type: array
+        revisions:
+          items:
+            $ref: '#/components/schemas/AnnotationRevision'
+          type: array
+        task:
+          $ref: '#/components/schemas/AnnotationTask'
+      required:
+      - task
+      - revisions
+      - reviews
+      type: object
+    AnnotationOperation:
+      additionalProperties: false
+      properties:
+        end_step:
+          minimum: 1
+          type: integer
+        kind:
+          enum:
+          - EXCLUDE
+          - RESTORE
+          type: string
+        modality_scope:
+          const: ALL_MODALITIES
+          default: ALL_MODALITIES
+          type: string
+        operation_id:
+          minLength: 1
+          type: string
+        reason:
+          default: ''
+          maxLength: 2000
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          type: string
+        start_step:
+          minimum: 0
+          type: integer
+      required:
+      - operation_id
+      - kind
+      - start_step
+      - end_step
+      type: object
+    AnnotationReview:
+      additionalProperties: false
+      properties:
+        comment:
+          maxLength: 10000
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        review_id:
+          type: string
+        reviewer_id:
+          type: string
+        revision:
+          minimum: 0
+          type: integer
+        schema_version:
+          const: '1'
+          type: string
+        task_id:
+          type: string
+      required:
+      - schema_version
+      - review_id
+      - task_id
+      - revision
+      - reviewer_id
+      - decision
+      - comment
+      - created_at
+      type: object
+    AnnotationRevision:
+      additionalProperties: false
+      properties:
+        author_id:
+          type: string
+        client_mutation_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        operations:
+          items:
+            $ref: '#/components/schemas/AnnotationOperation'
+          type: array
+        parent_revision:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        revision:
+          minimum: 0
+          type: integer
+        schema_version:
+          const: '1'
+          type: string
+        task_id:
+          type: string
+      required:
+      - schema_version
+      - task_id
+      - revision
+      - parent_revision
+      - author_id
+      - client_mutation_id
+      - operations
+      - created_at
+      type: object
+    AnnotationStatus:
+      enum:
+      - DRAFT
+      - SUBMITTED
+      - APPROVED
+      - NEEDS_REVISION
+      - REJECTED
+      type: string
+    AnnotationTask:
+      additionalProperties: false
+      properties:
+        approved_review_id:
+          type:
+          - string
+          - 'null'
+        approved_revision:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        assignee_id:
+          type:
+          - string
+          - 'null'
+        created_at:
+          format: date-time
+          type: string
+        current_revision:
+          minimum: 0
+          type: integer
+        dataset_id:
+          minLength: 1
+          type: string
+        dataset_version:
+          minimum: 1
+          type: integer
+        etag:
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+        schema_version:
+          const: '1'
+          type: string
+        state_version:
+          minimum: 0
+          type: integer
+        status:
+          $ref: '#/components/schemas/AnnotationStatus'
+        submitted_by:
+          type:
+          - string
+          - 'null'
+        submitted_revision:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        task_id:
+          minLength: 1
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - task_id
+      - project_id
+      - dataset_id
+      - dataset_version
+      - rollout_id
+      - current_revision
+      - state_version
+      - status
+      - etag
+      - created_at
+      - updated_at
+      type: object
+    AuditRecord:
+      additionalProperties: false
+      properties:
+        action:
+          minLength: 1
+          type: string
+        actor_id:
+          minLength: 1
+          type: string
+        after_hash:
+          pattern: ^[a-f0-9]{64}$
+          type:
+          - string
+          - 'null'
+        audit_id:
+          format: uuid
+          type: string
+        before_hash:
+          pattern: ^[a-f0-9]{64}$
+          type:
+          - string
+          - 'null'
+        details:
+          additionalProperties: true
+          type: object
+        occurred_at:
+          format: date-time
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+        region_code:
+          type:
+          - string
+          - 'null'
+        request_id:
+          minLength: 1
+          type: string
+        resource_id:
+          minLength: 1
+          type: string
+        resource_type:
+          minLength: 1
+          type: string
+      required:
+      - audit_id
+      - actor_id
+      - action
+      - resource_type
+      - resource_id
+      - project_id
+      - request_id
+      - occurred_at
+      type: object
+    AuthContext:
+      additionalProperties: false
+      properties:
+        project_ids:
+          items:
+            minLength: 1
+            type: string
+          type: array
+          uniqueItems: true
+        region_codes:
+          items:
+            minLength: 1
+            type: string
+          type: array
+          uniqueItems: true
+        roles:
+          items:
+            $ref: '#/components/schemas/ProjectRole'
+          type: array
+          uniqueItems: true
+        service_identity:
+          description: Workers must still select an issued project and region explicitly.
+          type: boolean
+        subject_id:
+          minLength: 1
+          type: string
+      required:
+      - subject_id
+      - project_ids
+      - region_codes
+      - roles
+      - service_identity
+      type: object
+    AutoAnnotationCapability:
+      additionalProperties: false
+      properties:
+        code:
+          const: FEATURE_DISABLED
+          type: string
+        enabled:
+          const: false
+          type: boolean
+      required:
+      - enabled
+      - code
+      type: object
+    ChannelInventoryV1:
+      additionalProperties: false
+      properties:
+        channel_id:
+          maximum: 65535
+          minimum: 0
+          type: integer
+        message_encoding:
+          type: string
+        schema_id:
+          maximum: 65535
+          minimum: 0
+          type: integer
+        topic:
+          type: string
+      required:
+      - channel_id
+      - schema_id
+      - topic
+      - message_encoding
+      type: object
+    CompleteStepProfileV1:
+      additionalProperties: false
+      properties:
+        minimum_ratio_reject:
+          default: 0.8
+          maximum: 1
+          minimum: 0
+          type: number
+        minimum_ratio_risk:
+          default: 0.98
+          maximum: 1
+          minimum: 0
+          type: number
+        topic:
+          default: __multimodal_step__
+          type: string
+      required:
+      - topic
+      - minimum_ratio_risk
+      - minimum_ratio_reject
+      type: object
+    CompleteUploadRequest:
+      additionalProperties: false
+      properties:
+        parts:
+          items:
+            $ref: '#/components/schemas/CompletedPart'
+          maxItems: 10000
+          minItems: 1
+          type: array
+          x-sorted-by: part_number
+      required:
+      - parts
+      type: object
+    CompletedPart:
+      additionalProperties: false
+      properties:
+        etag:
+          maxLength: 512
+          minLength: 1
+          type: string
+        part_number:
+          maximum: 10000
+          minimum: 1
+          type: integer
+      required:
+      - part_number
+      - etag
+      type: object
+    CreateUploadRequest:
+      additionalProperties: false
+      properties:
+        manifest:
+          $ref: '#/components/schemas/RolloutManifestV1'
+        part_numbers:
+          items:
+            maximum: 10000
+            minimum: 1
+            type: integer
+          maxItems: 10000
+          type: array
+          uniqueItems: true
+      required:
+      - manifest
+      type: object
+    DatasetVersionRef:
+      properties:
+        committed_rollouts:
+          items:
+            type: string
+          type: array
+        content_hash:
+          $ref: '#/components/schemas/Sha256'
+        created_at:
+          format: date-time
+          type: string
+        dataset_id:
+          type: string
+        dataset_uri:
+          type: string
+        frequency_hz:
+          exclusiveMinimum: 0
+          type: number
+        lance_version:
+          minimum: 1
+          type: integer
+        project_id:
+          type: string
+        schema_fingerprint:
+          $ref: '#/components/schemas/Sha256'
+        schema_snapshot_id:
+          type: string
+        storage_commit_id:
+          $ref: '#/components/schemas/Sha256'
+        version:
+          minimum: 1
+          type: integer
+      required:
+      - project_id
+      - dataset_id
+      - version
+      - schema_snapshot_id
+      - schema_fingerprint
+      - frequency_hz
+      - content_hash
+      - dataset_uri
+      - lance_version
+      - storage_commit_id
+      - committed_rollouts
+      - created_at
+      type: object
+    DependencyStatus:
+      properties:
+        detail:
+          type:
+          - string
+          - 'null'
+        latency_ms:
+          minimum: 0
+          type: number
+        status:
+          enum:
+          - ready
+          - not_ready
+          type: string
+      required:
+      - status
+      - latency_ms
+      type: object
+    DomainEventEnvelope:
+      properties:
+        aggregate_id:
+          type: string
+        aggregate_type:
+          type: string
+        event_id:
+          type: string
+        event_type:
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        payload:
+          additionalProperties: true
+          type: object
+        project_id:
+          type: string
+        region_code:
+          type:
+          - string
+          - 'null'
+        schema_version:
+          minimum: 1
+          type: integer
+        trace_id:
+          type:
+          - string
+          - 'null'
+      required:
+      - event_id
+      - event_type
+      - schema_version
+      - aggregate_type
+      - aggregate_id
+      - project_id
+      - occurred_at
+      - payload
+      type: object
+    ETag:
+      pattern: ^(W/)?"[!#-~\u0080-\u00FF]+"$
+      type: string
+    EncodingProfileV1:
+      properties:
+        height:
+          default: 720
+          maximum: 2160
+          minimum: 16
+          type: integer
+        name:
+          default: h264-cmaf-preview-v1
+          type: string
+        pixel_format:
+          const: yuv420p
+          default: yuv420p
+          type: string
+        preset:
+          default: veryfast
+          enum:
+          - ultrafast
+          - superfast
+          - veryfast
+          - faster
+          - fast
+          - medium
+          - slow
+          type: string
+        segment_duration_seconds:
+          default: 2
+          maximum: 10
+          minimum: 0.25
+          type: number
+        video_bitrate_kbps:
+          default: 2000
+          maximum: 50000
+          minimum: 64
+          type: integer
+        video_codec:
+          const: h264
+          default: h264
+          type: string
+        width:
+          default: 1280
+          maximum: 4096
+          minimum: 16
+          type: integer
+      type: object
+    EvidenceScalar:
+      anyOf:
+      - type: boolean
+      - type: integer
+      - type: number
+      - type: string
+    ExcludedPublishedRolloutV1:
+      additionalProperties: false
+      properties:
+        derived_status:
+          $ref: '#/components/schemas/PublishingDerivedStatus'
+        quality_status:
+          $ref: '#/components/schemas/PublishingQualityStatus'
+        reasons:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        rollout_id:
+          type: string
+      required:
+      - rollout_id
+      - reasons
+      - quality_status
+      - derived_status
+      type: object
+    ExclusionRange:
+      additionalProperties: false
+      properties:
+        end_step:
+          minimum: 1
+          type: integer
+        modality_scope:
+          const: ALL_MODALITIES
+          type: string
+        start_step:
+          minimum: 0
+          type: integer
+      required:
+      - start_step
+      - end_step
+      - modality_scope
+      type: object
+    ExportDatasetRequestV1:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          minLength: 1
+          type:
+          - string
+          - 'null'
+        format:
+          enum:
+          - lance_snapshot
+          - lerobot_v3
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+      required:
+      - project_id
+      - format
+      type: object
+    ExportResultV1:
+      additionalProperties: false
+      properties:
+        artifact_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        artifact_uri:
+          type: string
+        attempt_id:
+          minLength: 1
+          type: string
+        dataset_id:
+          type: string
+        dataset_version:
+          type: string
+        download_uri:
+          type: string
+        format:
+          enum:
+          - lance_snapshot
+          - lerobot_v3
+          type: string
+        manifest_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        media_type:
+          type: string
+        project_id:
+          type: string
+        row_count:
+          minimum: 0
+          type: integer
+      required:
+      - format
+      - project_id
+      - dataset_id
+      - dataset_version
+      - manifest_content_hash
+      - attempt_id
+      - artifact_uri
+      - download_uri
+      - artifact_content_hash
+      - row_count
+      - media_type
+      type: object
+    FindingSeverity:
+      enum:
+      - warning
+      - error
+      type: string
+    IdempotencyConflict:
+      additionalProperties: false
+      properties:
+        code:
+          const: IDEMPOTENCY_KEY_REUSED
+          type: string
+        detail:
+          type: string
+        status:
+          const: 409
+          type: integer
+        title:
+          type: string
+      required:
+      - status
+      - code
+      - title
+      - detail
+      type: object
+    ImageQualityProfileV1:
+      additionalProperties: false
+      properties:
+        black_luma_threshold:
+          default: 5
+          maximum: 255
+          minimum: 0
+          type: number
+        maximum_black_frame_ratio_reject:
+          default: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_black_frame_ratio_risk:
+          default: 0.02
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_corrupt_frame_ratio_reject:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_corrupt_frame_ratio_risk:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_repeated_frame_ratio_reject:
+          default: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_repeated_frame_ratio_risk:
+          default: 0.05
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+      - black_luma_threshold
+      - maximum_black_frame_ratio_risk
+      - maximum_black_frame_ratio_reject
+      - maximum_repeated_frame_ratio_risk
+      - maximum_repeated_frame_ratio_reject
+      - maximum_corrupt_frame_ratio_risk
+      - maximum_corrupt_frame_ratio_reject
+      type: object
+    IngestIdentifier:
+      maxLength: 128
+      minLength: 1
+      pattern: ^[A-Za-z0-9._-]+$
+      type: string
+    JobListV1:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/JobRecord'
+          type: array
+        total:
+          minimum: 0
+          type: integer
+      required:
+      - items
+      - total
+      type: object
+    JobRecord:
+      properties:
+        attempt:
+          minimum: 0
+          type: integer
+        cancellation_requested:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        error_code:
+          type:
+          - string
+          - 'null'
+        error_message:
+          type:
+          - string
+          - 'null'
+        job_id:
+          type: string
+        job_type:
+          type: string
+        project_id:
+          type: string
+        resource_id:
+          type: string
+        result:
+          additionalProperties: true
+          type:
+          - object
+          - 'null'
+        stage:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        updated_at:
+          format: date-time
+          type: string
+        workflow_id:
+          type: string
+        workflow_run_id:
+          type:
+          - string
+          - 'null'
+        workflow_version:
+          type: string
+      required:
+      - job_id
+      - workflow_id
+      - workflow_version
+      - job_type
+      - project_id
+      - resource_id
+      - status
+      - stage
+      - attempt
+      - cancellation_requested
+      - created_at
+      - updated_at
+      type: object
+    JobStatus:
+      enum:
+      - PENDING
+      - RUNNING
+      - SUCCEEDED
+      - TECHNICAL_FAILED
+      - QUALITY_RISK
+      - QUALITY_REJECTED
+      - CANCELLED
+      type: string
+    ModalityKind:
+      enum:
+      - image
+      - point_cloud
+      - continuous
+      - action
+      - discrete
+      - imu
+      - force
+      type: string
+    ModalityOffsetProfileV1:
+      additionalProperties: false
+      properties:
+        maximum_p95_offset_ns_reject:
+          default: 100000000
+          minimum: 0
+          type: integer
+        maximum_p95_offset_ns_risk:
+          default: 20000000
+          minimum: 0
+          type: integer
+      required:
+      - maximum_p95_offset_ns_risk
+      - maximum_p95_offset_ns_reject
+      type: object
+    ModalityStreamV1:
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: '#/components/schemas/ModalityKind'
+        samples:
+          items:
+            $ref: '#/components/schemas/TimedSampleV1'
+          type: array
+      required:
+      - kind
+      - samples
+      type: object
+    OutboxEvent:
+      additionalProperties: false
+      properties:
+        envelope:
+          additionalProperties: true
+          type: object
+        event_id:
+          format: uuid
+          type: string
+        event_type:
+          minLength: 1
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+        published_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        region_code:
+          type:
+          - string
+          - 'null'
+      required:
+      - event_id
+      - project_id
+      - event_type
+      - envelope
+      - occurred_at
+      type: object
+    PageInfo:
+      properties:
+        end_cursor:
+          type:
+          - string
+          - 'null'
+        has_next_page:
+          type: boolean
+        has_previous_page:
+          type: boolean
+        start_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - has_next_page
+      - has_previous_page
+      type: object
+    PartAuthorization:
+      properties:
+        expires_at:
+          format: date-time
+          type: string
+        part_number:
+          maximum: 10000
+          minimum: 1
+          type: integer
+        url:
+          format: uri
+          type: string
+          writeOnly: true
+      required:
+      - part_number
+      - url
+      - expires_at
+      type: object
+    PartNumbersRequest:
+      additionalProperties: false
+      properties:
+        part_numbers:
+          items:
+            maximum: 10000
+            minimum: 1
+            type: integer
+          maxItems: 10000
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+      - part_numbers
+      type: object
+    Permission:
+      enum:
+      - read
+      - upload
+      - annotate
+      - review
+      - publish
+      - administer
+      type: string
+    PlaceholderDescriptorV1:
+      properties:
+        code:
+          const: INVALID_IMAGE_STEP
+          type: string
+        invalid_reason:
+          minLength: 1
+          type: string
+        playback_frame:
+          minimum: 0
+          type: integer
+        step_index:
+          minimum: 0
+          type: integer
+      required:
+      - code
+      - invalid_reason
+      - playback_frame
+      - step_index
+      type: object
+    PointCloudQualityProfileV1:
+      additionalProperties: false
+      properties:
+        maximum_abnormal_count_ratio_reject:
+          default: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_abnormal_count_ratio_risk:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_empty_ratio_reject:
+          default: 0.2
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_empty_ratio_risk:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_point_count:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        minimum_point_count:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      required:
+      - minimum_point_count
+      - maximum_point_count
+      - maximum_empty_ratio_risk
+      - maximum_empty_ratio_reject
+      - maximum_abnormal_count_ratio_risk
+      - maximum_abnormal_count_ratio_reject
+      type: object
+    PreviewDescriptorV1:
+      properties:
+        annotation_revision:
+          type: integer
+        cache_expires_at:
+          format: date-time
+          type: string
+        cache_key:
+          type: string
+        camera_id:
+          type: string
+        dataset_id:
+          type: string
+        duration_seconds:
+          minimum: 0
+          type: number
+        encoding_profile:
+          $ref: '#/components/schemas/EncodingProfileV1'
+        frame_count:
+          minimum: 0
+          type: integer
+        lance_version:
+          type: string
+        media_type:
+          type: string
+        placeholder_count:
+          minimum: 0
+          type: integer
+        placeholders:
+          items:
+            $ref: '#/components/schemas/PlaceholderDescriptorV1'
+          type: array
+        playlist_url:
+          type: string
+        project_id:
+          type: string
+        rollout_id:
+          type: string
+        schema_version:
+          const: 1
+          type: integer
+        session_id:
+          type: string
+        signed_url_expires_at:
+          format: date-time
+          type: string
+        timeline:
+          $ref: '#/components/schemas/TimelineMappingV1'
+        view_mode:
+          enum:
+          - original
+          - edited
+          - compare
+          type: string
+      required:
+      - schema_version
+      - session_id
+      - cache_key
+      - project_id
+      - dataset_id
+      - rollout_id
+      - lance_version
+      - annotation_revision
+      - camera_id
+      - view_mode
+      - encoding_profile
+      - playlist_url
+      - media_type
+      - frame_count
+      - placeholder_count
+      - placeholders
+      - duration_seconds
+      - timeline
+      - cache_expires_at
+      - signed_url_expires_at
+      type: object
+    PreviewRequestV1:
+      properties:
+        annotation_revision:
+          minimum: 0
+          type: integer
+        camera_id:
+          minLength: 1
+          type: string
+        dataset_id:
+          minLength: 1
+          type: string
+        encoding_profile:
+          $ref: '#/components/schemas/EncodingProfileV1'
+        end_step:
+          minimum: 1
+          type:
+          - integer
+          - 'null'
+        frequency_hz:
+          default: 30
+          exclusiveMinimum: 0
+          maximum: 240
+          type: number
+        lance_version:
+          minLength: 1
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+        start_step:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        view_mode:
+          enum:
+          - original
+          - edited
+          - compare
+          type: string
+      required:
+      - project_id
+      - dataset_id
+      - rollout_id
+      - lance_version
+      - annotation_revision
+      - camera_id
+      - view_mode
+      type: object
+    ProblemDetails:
+      properties:
+        code:
+          type: string
+        detail:
+          type: string
+        details:
+          additionalProperties: true
+          type: object
+        instance:
+          type:
+          - string
+          - 'null'
+        request_id:
+          type:
+          - string
+          - 'null'
+        retryable:
+          type: boolean
+        status:
+          maximum: 599
+          minimum: 400
+          type: integer
+        title:
+          type: string
+        type:
+          default: about:blank
+          type: string
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - code
+      - retryable
+      type: object
+    ProjectRole:
+      enum:
+      - uploader
+      - annotator
+      - reviewer
+      - publisher
+      - admin
+      type: string
+    PublishDatasetRequestV1:
+      additionalProperties: false
+      properties:
+        base_lance_version:
+          minLength: 1
+          type: string
+        dataset_id:
+          minLength: 1
+          type: string
+        dataset_version:
+          minLength: 1
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+      required:
+      - project_id
+      - dataset_id
+      - dataset_version
+      - base_lance_version
+      type: object
+    PublishPreflightReportV1:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          type: string
+        dataset_version:
+          type: string
+        eligible_rollouts:
+          items:
+            $ref: '#/components/schemas/PublishedRolloutV1'
+          type: array
+        excluded_rollouts:
+          items:
+            $ref: '#/components/schemas/ExcludedPublishedRolloutV1'
+          type: array
+        project_id:
+          type: string
+      required:
+      - project_id
+      - dataset_id
+      - dataset_version
+      - eligible_rollouts
+      - excluded_rollouts
+      type: object
+    PublishedDatasetManifestV1:
+      additionalProperties: false
+      properties:
+        annotations_content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        annotations_uri:
+          type: string
+        base_lance_version:
+          type: string
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        dataset_id:
+          type: string
+        dataset_version:
+          type: string
+        excluded_rollouts:
+          items:
+            $ref: '#/components/schemas/ExcludedPublishedRolloutV1'
+          type: array
+        project_id:
+          type: string
+        rollouts:
+          items:
+            $ref: '#/components/schemas/PublishedRolloutV1'
+          minItems: 1
+          type: array
+        schema_version:
+          const: published-dataset-manifest/v1
+          type: string
+        training_manifest_content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        training_manifest_uri:
+          type: string
+      required:
+      - schema_version
+      - project_id
+      - dataset_id
+      - dataset_version
+      - base_lance_version
+      - created_at
+      - content_hash
+      - annotations_uri
+      - annotations_content_sha256
+      - training_manifest_uri
+      - training_manifest_content_sha256
+      - rollouts
+      - excluded_rollouts
+      type: object
+    PublishedRolloutV1:
+      additionalProperties: false
+      properties:
+        alignment_frequency_hz:
+          minimum: 1
+          type: integer
+        alignment_profile_version:
+          minLength: 1
+          type: string
+        annotation_revision:
+          minimum: 0
+          type: integer
+        annotation_task_id:
+          type:
+          - string
+          - 'null'
+        base_lance_version:
+          minLength: 1
+          type: string
+        converter_version:
+          minLength: 1
+          type: string
+        excluded_step_ranges:
+          items:
+            $ref: '#/components/schemas/PublishingStepRangeV1'
+          type: array
+        included_step_ranges:
+          items:
+            $ref: '#/components/schemas/PublishingStepRangeV1'
+          minItems: 1
+          type: array
+        quality_profile_version:
+          minLength: 1
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+        source_mcap_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        total_steps:
+          minimum: 1
+          type: integer
+      required:
+      - rollout_id
+      - source_mcap_sha256
+      - base_lance_version
+      - annotation_revision
+      - quality_profile_version
+      - alignment_profile_version
+      - alignment_frequency_hz
+      - converter_version
+      - total_steps
+      - included_step_ranges
+      - excluded_step_ranges
+      type: object
+    PublishingDerivedStatus:
+      enum:
+      - PENDING
+      - CONVERTING
+      - STAGED
+      - COMMITTING
+      - DERIVED_READY
+      - FAILED
+      type: string
+    PublishingQualityStatus:
+      enum:
+      - PENDING
+      - RUNNING
+      - PASS
+      - RISK
+      - REJECT
+      type: string
+    PublishingStepRangeV1:
+      additionalProperties: false
+      properties:
+        end_step:
+          minimum: 1
+          type: integer
+        start_step:
+          minimum: 0
+          type: integer
+      required:
+      - start_step
+      - end_step
+      type: object
+    QcFinding:
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/QualityCode'
+        end_ns:
+          minimum: 0
+          type: integer
+        message:
+          type: string
+        observed:
+          $ref: '#/components/schemas/EvidenceScalar'
+        severity:
+          $ref: '#/components/schemas/FindingSeverity'
+        start_ns:
+          minimum: 0
+          type: integer
+        threshold:
+          $ref: '#/components/schemas/EvidenceScalar'
+        topic:
+          minLength: 1
+          type: string
+      required:
+      - code
+      - severity
+      - message
+      - topic
+      - start_ns
+      - end_ns
+      - observed
+      - threshold
+      type: object
+    QcReportV1:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        duration_ns:
+          minimum: 1
+          type: integer
+        end_ns:
+          minimum: 1
+          type: integer
+        engine_version:
+          type: string
+        findings:
+          items:
+            $ref: '#/components/schemas/QcFinding'
+          type: array
+        profile_id:
+          type: string
+        profile_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        rollout_id:
+          type: string
+        schema_version:
+          const: qc-report/v1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        start_ns:
+          minimum: 0
+          type: integer
+        status:
+          $ref: '#/components/schemas/QualityStatus'
+        topic_metrics:
+          items:
+            $ref: '#/components/schemas/TopicTimingMetricsV1'
+          type: array
+      required:
+      - schema_version
+      - rollout_id
+      - source_sha256
+      - profile_id
+      - profile_version
+      - profile_sha256
+      - engine_version
+      - start_ns
+      - end_ns
+      - duration_ns
+      - status
+      - topic_metrics
+      - findings
+      - content_sha256
+      type: object
+    QualityCode:
+      enum:
+      - QC_REQUIRED_TOPIC_MISSING
+      - QC_TIMESTAMP_DUPLICATE
+      - QC_TIMESTAMP_BACKWARD
+      - QC_FREQUENCY_LOW
+      - QC_GAP_EXCESSIVE
+      - QC_CONSECUTIVE_FRAMES_MISSING
+      - QC_COVERAGE_LOW
+      - QC_IMAGE_BLACK
+      - QC_IMAGE_REPEATED
+      - QC_IMAGE_CORRUPT
+      - QC_JOINT_OUT_OF_RANGE
+      - QC_ACTION_MISSING
+      - QC_ACTION_JUMP
+      - QC_POINT_CLOUD_EMPTY
+      - QC_POINT_COUNT_ABNORMAL
+      - QC_MODALITY_OFFSET
+      - QC_COMPLETE_STEP_RATIO_LOW
+      type: string
+    QualityCompletedV1:
+      additionalProperties: false
+      properties:
+        engine_version:
+          type: string
+        event_version:
+          const: quality-completed/v1
+          type: string
+        profile_id:
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        rollout_id:
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        status:
+          $ref: '#/components/schemas/QualityStatus'
+      required:
+      - event_version
+      - rollout_id
+      - source_sha256
+      - profile_id
+      - profile_version
+      - engine_version
+      - status
+      - report_sha256
+      type: object
+    QualityProfileV1:
+      additionalProperties: false
+      properties:
+        action:
+          $ref: '#/components/schemas/ActionQualityProfileV1'
+        complete_step:
+          $ref: '#/components/schemas/CompleteStepProfileV1'
+        default_image:
+          $ref: '#/components/schemas/ImageQualityProfileV1'
+        default_point_cloud:
+          $ref: '#/components/schemas/PointCloudQualityProfileV1'
+        default_timing:
+          $ref: '#/components/schemas/TopicTimingProfileV1'
+        engine_version:
+          minLength: 1
+          type: string
+        image_profiles:
+          additionalProperties:
+            $ref: '#/components/schemas/ImageQualityProfileV1'
+          type: object
+        joint_limits:
+          additionalProperties:
+            items:
+              type: number
+            maxItems: 2
+            minItems: 2
+            type: array
+          type: object
+        joint_out_of_range_is_reject:
+          type: boolean
+        joint_topic:
+          minLength: 1
+          type: string
+        modality_offset:
+          $ref: '#/components/schemas/ModalityOffsetProfileV1'
+        point_cloud_profiles:
+          additionalProperties:
+            $ref: '#/components/schemas/PointCloudQualityProfileV1'
+          type: object
+        profile_id:
+          minLength: 1
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        required_topics:
+          items:
+            minLength: 1
+            type: string
+          type: array
+          uniqueItems: true
+        schema_version:
+          const: quality-profile/v1
+          type: string
+        topic_timing:
+          additionalProperties:
+            $ref: '#/components/schemas/TopicTimingProfileV1'
+          type: object
+      required:
+      - schema_version
+      - profile_id
+      - profile_version
+      - engine_version
+      - required_topics
+      - default_timing
+      - topic_timing
+      - default_image
+      - image_profiles
+      - joint_topic
+      - joint_limits
+      - joint_out_of_range_is_reject
+      - action
+      - default_point_cloud
+      - point_cloud_profiles
+      - modality_offset
+      - complete_step
+      type: object
+    QualityStatus:
+      enum:
+      - PASS
+      - RISK
+      - REJECT
+      type: string
+    QualitySummaryV1:
+      additionalProperties: false
+      properties:
+        engine_version:
+          type: string
+        profile_id:
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        rollout_id:
+          type: string
+        schema_version:
+          const: quality-summary/v1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        status:
+          $ref: '#/components/schemas/QualityStatus'
+      required:
+      - schema_version
+      - rollout_id
+      - source_sha256
+      - profile_id
+      - profile_version
+      - engine_version
+      - status
+      - report_sha256
+      type: object
+    RawObjectCommittedV1:
+      properties:
+        committed_at:
+          format: date-time
+          type: string
+        event_type:
+          const: rollout.raw_committed.v1
+          type: string
+        file_size:
+          minimum: 1
+          type: integer
+        manifest_key:
+          pattern: /rollout_manifest.json$
+          type: string
+        object_key:
+          pattern: ^raw/v1/
+          type: string
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        region_code:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: 1
+          type: integer
+        sha256:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+      required:
+      - event_type
+      - schema_version
+      - project_id
+      - region_code
+      - rollout_id
+      - object_key
+      - manifest_key
+      - sha256
+      - file_size
+      - committed_at
+      type: object
+    RawVerificationReportV1:
+      additionalProperties: false
+      properties:
+        channel_inventory:
+          items:
+            $ref: '#/components/schemas/ChannelInventoryV1'
+          type: array
+        channels:
+          minimum: 0
+          type: integer
+        chunks:
+          minimum: 0
+          type: integer
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        findings:
+          items:
+            $ref: '#/components/schemas/VerificationFinding'
+          type: array
+        library:
+          type: string
+        message_count:
+          minimum: 0
+          type: integer
+        object_key:
+          minLength: 1
+          type: string
+        object_size:
+          minimum: 0
+          type: integer
+        profile:
+          type: string
+        record_count:
+          minimum: 0
+          type: integer
+        rollout_id:
+          minLength: 1
+          type: string
+        schema_inventory:
+          items:
+            $ref: '#/components/schemas/SchemaInventoryV1'
+          type: array
+        schema_version:
+          const: raw-verification-report/v1
+          type: string
+        schemas:
+          minimum: 0
+          type: integer
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        topics:
+          items:
+            $ref: '#/components/schemas/TopicInventoryV1'
+          type: array
+      required:
+      - schema_version
+      - rollout_id
+      - object_key
+      - source_sha256
+      - object_size
+      - profile
+      - library
+      - record_count
+      - message_count
+      - schemas
+      - channels
+      - chunks
+      - schema_inventory
+      - channel_inventory
+      - topics
+      - findings
+      - status
+      - content_sha256
+      type: object
+    RawVerifiedV1:
+      additionalProperties: false
+      properties:
+        event_version:
+          const: raw-verified/v1
+          type: string
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+      required:
+      - event_version
+      - rollout_id
+      - source_sha256
+      - report_sha256
+      type: object
+    ReadinessReport:
+      properties:
+        dependencies:
+          properties:
+            object_storage:
+              $ref: '#/components/schemas/DependencyStatus'
+            postgresql:
+              $ref: '#/components/schemas/DependencyStatus'
+            temporal:
+              $ref: '#/components/schemas/DependencyStatus'
+          required:
+          - postgresql
+          - temporal
+          - object_storage
+          type: object
+        status:
+          enum:
+          - ready
+          - not_ready
+          type: string
+      required:
+      - status
+      - dependencies
+      type: object
+    RequestContext:
+      properties:
+        project_id:
+          type:
+          - string
+          - 'null'
+        region_code:
+          type:
+          - string
+          - 'null'
+        request_id:
+          type: string
+        roles:
+          items:
+            type: string
+          type: array
+          uniqueItems: true
+        service_identity:
+          type: boolean
+        subject_id:
+          type:
+          - string
+          - 'null'
+      required:
+      - request_id
+      - roles
+      - service_identity
+      type: object
+    ResourceVersion:
+      additionalProperties: false
+      properties:
+        etag:
+          examples:
+          - '"v3"'
+          pattern: ^"v[1-9][0-9]*"$
+          type: string
+        version:
+          minimum: 1
+          type: integer
+      required:
+      - version
+      - etag
+      type: object
+    ResumeUploadRequest:
+      additionalProperties: false
+      properties:
+        part_numbers:
+          items:
+            maximum: 10000
+            minimum: 1
+            type: integer
+          maxItems: 10000
+          type: array
+          uniqueItems: true
+      type: object
+    ReviewDecision:
+      enum:
+      - APPROVE
+      - NEEDS_REVISION
+      - REJECT
+      type: string
+    ReviewRequest:
+      additionalProperties: false
+      properties:
+        comment:
+          default: ''
+          maxLength: 10000
+          type: string
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        revision:
+          minimum: 0
+          type: integer
+      required:
+      - revision
+      - decision
+      type: object
+    RolloutLineage:
+      properties:
+        converter_version:
+          type: string
+        dataset_id:
+          type: string
+        dataset_uri:
+          type: string
+        dataset_version:
+          minimum: 1
+          type: integer
+        fragment_content_hash:
+          $ref: '#/components/schemas/Sha256'
+        fragment_uri:
+          type: string
+        lance_version:
+          minimum: 1
+          type: integer
+        project_id:
+          type: string
+        rollout_id:
+          type: string
+        schema_fingerprint:
+          $ref: '#/components/schemas/Sha256'
+        schema_snapshot_id:
+          type: string
+        source_sha256:
+          $ref: '#/components/schemas/Sha256'
+      required:
+      - project_id
+      - dataset_id
+      - dataset_version
+      - rollout_id
+      - source_sha256
+      - converter_version
+      - schema_snapshot_id
+      - schema_fingerprint
+      - fragment_uri
+      - fragment_content_hash
+      - dataset_uri
+      - lance_version
+      type: object
+    RolloutManifestV1:
+      additionalProperties: false
+      properties:
+        actual_topics:
+          items:
+            type: string
+          type: array
+        collection_job_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        compression:
+          type: string
+        crc64:
+          maximum: 18446744073709551615
+          minimum: 0
+          type: integer
+        end_time:
+          format: date-time
+          type: string
+        expected_topics:
+          items:
+            type: string
+          type: array
+        file_size:
+          minimum: 1
+          type: integer
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        recorder_version:
+          type: string
+        robot_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: 1
+          type: integer
+        sequence_no:
+          minimum: 1
+          type: integer
+        sha256:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        start_time:
+          format: date-time
+          type: string
+        task_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+      required:
+      - schema_version
+      - project_id
+      - task_id
+      - collection_job_id
+      - rollout_id
+      - sequence_no
+      - robot_id
+      - start_time
+      - end_time
+      - expected_topics
+      - actual_topics
+      - file_size
+      - sha256
+      - crc64
+      - compression
+      - recorder_version
+      type: object
+    SaveDraftRequest:
+      additionalProperties: false
+      properties:
+        client_mutation_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        expected_revision:
+          minimum: 0
+          type: integer
+        operations:
+          items:
+            $ref: '#/components/schemas/AnnotationOperation'
+          type: array
+      required:
+      - expected_revision
+      - client_mutation_id
+      - operations
+      type: object
+    SchemaInventoryV1:
+      additionalProperties: false
+      properties:
+        data_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        data_size:
+          minimum: 0
+          type: integer
+        encoding:
+          type: string
+        name:
+          type: string
+        schema_id:
+          maximum: 65535
+          minimum: 1
+          type: integer
+      required:
+      - schema_id
+      - name
+      - encoding
+      - data_size
+      - data_sha256
+      type: object
+    ScopeSelection:
+      additionalProperties: false
+      properties:
+        project_id:
+          minLength: 1
+          type: string
+        region_code:
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      required:
+      - project_id
+      type: object
+    Sha256:
+      pattern: ^[0-9a-f]{64}$
+      type: string
+    StepRecord:
+      properties:
+        modalities:
+          additionalProperties: true
+          type: object
+        repeated:
+          additionalProperties:
+            type: boolean
+          type: object
+        rollout_id:
+          type: string
+        sample_valid:
+          type: boolean
+        source_timestamps_ns:
+          additionalProperties:
+            items:
+              minimum: 0
+              type: integer
+            type: array
+          type: object
+        step_index:
+          minimum: 0
+          type: integer
+        time_error_ns:
+          additionalProperties:
+            type:
+            - integer
+            - 'null'
+          type: object
+        timestamp_ns:
+          minimum: 0
+          type: integer
+        valid:
+          additionalProperties:
+            type: boolean
+          type: object
+      required:
+      - rollout_id
+      - step_index
+      - timestamp_ns
+      - modalities
+      - source_timestamps_ns
+      - time_error_ns
+      - valid
+      - repeated
+      - sample_valid
+      type: object
+    StepWindow:
+      properties:
+        dataset_id:
+          type: string
+        dataset_version:
+          minimum: 1
+          type: integer
+        end_step:
+          minimum: 0
+          type: integer
+        project_id:
+          type: string
+        rollout_id:
+          type: string
+        start_step:
+          minimum: 0
+          type: integer
+        steps:
+          items:
+            $ref: '#/components/schemas/StepRecord'
+          type: array
+      required:
+      - project_id
+      - dataset_id
+      - dataset_version
+      - rollout_id
+      - start_step
+      - end_step
+      - steps
+      type: object
+    SubmitRequest:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0
+          type: integer
+      required:
+      - expected_revision
+      type: object
+    TimedSampleV1:
+      additionalProperties: false
+      properties:
+        timestamp_ns:
+          minimum: 0
+          type: integer
+        value: {}
+      required:
+      - timestamp_ns
+      - value
+      type: object
+    TimelineMappingV1:
+      properties:
+        frequency_hz:
+          exclusiveMinimum: 0
+          type: number
+        segments:
+          items:
+            $ref: '#/components/schemas/TimelineSegmentV1'
+          type: array
+      required:
+      - frequency_hz
+      - segments
+      type: object
+    TimelineSegmentV1:
+      description: Half-open presentation-time interval mapped to a half-open source-step interval.
+      properties:
+        excluded:
+          type: boolean
+        playback_end_seconds:
+          exclusiveMinimum: 0
+          type: number
+        playback_start_seconds:
+          minimum: 0
+          type: number
+        source_end_step:
+          minimum: 1
+          type: integer
+        source_start_step:
+          minimum: 0
+          type: integer
+      required:
+      - playback_start_seconds
+      - playback_end_seconds
+      - source_start_step
+      - source_end_step
+      - excluded
+      type: object
+    TopicInventoryV1:
+      additionalProperties: false
+      properties:
+        channel_ids:
+          items:
+            maximum: 65535
+            minimum: 0
+            type: integer
+          type: array
+        decodable:
+          type:
+          - boolean
+          - 'null'
+        decode_checked:
+          type: boolean
+        log_time_max_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        log_time_min_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        message_count:
+          minimum: 0
+          type: integer
+        message_encoding:
+          type: string
+        schema_encoding:
+          type:
+          - string
+          - 'null'
+        schema_name:
+          type:
+          - string
+          - 'null'
+        topic:
+          type: string
+      required:
+      - topic
+      - channel_ids
+      - message_encoding
+      - schema_name
+      - schema_encoding
+      - message_count
+      - log_time_min_ns
+      - log_time_max_ns
+      - decode_checked
+      - decodable
+      type: object
+    TopicTimingMetricsV1:
+      additionalProperties: false
+      properties:
+        actual_frequency_hz:
+          minimum: 0
+          type: number
+        backward_count:
+          minimum: 0
+          type: integer
+        coverage_ratio:
+          maximum: 1
+          minimum: 0
+          type: number
+        duplicate_count:
+          minimum: 0
+          type: integer
+        expected_frame_count:
+          minimum: 1
+          type: integer
+        interval_p50_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        interval_p95_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        interval_p99_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        maximum_consecutive_missing:
+          minimum: 0
+          type: integer
+        maximum_gap_ns:
+          minimum: 0
+          type: integer
+        message_count:
+          minimum: 0
+          type: integer
+        topic:
+          type: string
+        unique_frame_count:
+          minimum: 0
+          type: integer
+      required:
+      - topic
+      - message_count
+      - unique_frame_count
+      - expected_frame_count
+      - duplicate_count
+      - backward_count
+      - actual_frequency_hz
+      - interval_p50_ns
+      - interval_p95_ns
+      - interval_p99_ns
+      - maximum_gap_ns
+      - maximum_consecutive_missing
+      - coverage_ratio
+      type: object
+    TopicTimingProfileV1:
+      additionalProperties: false
+      properties:
+        maximum_backward_timestamps_reject:
+          default: 0
+          minimum: 0
+          type: integer
+        maximum_consecutive_missing_reject:
+          default: 29
+          minimum: 0
+          type: integer
+        maximum_consecutive_missing_risk:
+          default: 2
+          minimum: 0
+          type: integer
+        maximum_duplicate_timestamps_reject:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        maximum_duplicate_timestamps_risk:
+          default: 0
+          minimum: 0
+          type: integer
+        maximum_gap_ns_reject:
+          default: 1000000000
+          minimum: 0
+          type: integer
+        maximum_gap_ns_risk:
+          default: 100000000
+          minimum: 0
+          type: integer
+        minimum_coverage_ratio_reject:
+          default: 0.8
+          maximum: 1
+          minimum: 0
+          type: number
+        minimum_coverage_ratio_risk:
+          default: 0.98
+          maximum: 1
+          minimum: 0
+          type: number
+        minimum_frequency_hz_reject:
+          default: 22.5
+          minimum: 0
+          type: number
+        minimum_frequency_hz_risk:
+          default: 28.5
+          minimum: 0
+          type: number
+        target_frequency_hz:
+          default: 30
+          maximum: 1000
+          minimum: 1
+          type: integer
+      required:
+      - target_frequency_hz
+      - minimum_frequency_hz_risk
+      - minimum_frequency_hz_reject
+      - minimum_coverage_ratio_risk
+      - minimum_coverage_ratio_reject
+      - maximum_gap_ns_risk
+      - maximum_gap_ns_reject
+      - maximum_consecutive_missing_risk
+      - maximum_consecutive_missing_reject
+      - maximum_duplicate_timestamps_risk
+      - maximum_duplicate_timestamps_reject
+      - maximum_backward_timestamps_reject
+      type: object
+    UploadPart:
+      properties:
+        authorization_expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        crc64:
+          maximum: 18446744073709551615
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        etag:
+          type:
+          - string
+          - 'null'
+        part_number:
+          maximum: 10000
+          minimum: 1
+          type: integer
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        region_code:
+          $ref: '#/components/schemas/IngestIdentifier'
+        session_id:
+          format: uuid
+          type: string
+        size:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        status:
+          enum:
+          - AUTHORIZED
+          - UPLOADED
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - session_id
+      - project_id
+      - region_code
+      - part_number
+      - status
+      - updated_at
+      type: object
+    UploadSession:
+      properties:
+        completed_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        created_at:
+          format: date-time
+          type: string
+        etag:
+          type:
+          - string
+          - 'null'
+        expected_crc64:
+          maximum: 18446744073709551615
+          minimum: 0
+          type: integer
+        expected_sha256:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        expected_size:
+          minimum: 1
+          type: integer
+        failure_code:
+          type:
+          - string
+          - 'null'
+        manifest_fingerprint:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        multipart_upload_id:
+          type: string
+        object_key:
+          pattern: ^raw/v1/
+          type: string
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        region_code:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        session_id:
+          format: uuid
+          type: string
+        status:
+          enum:
+          - REGISTERED
+          - UPLOADING
+          - PAUSED
+          - MULTIPART_COMPLETED
+          - RAW_COMMITTED
+          - FAILED
+          - CANCELLED
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - session_id
+      - project_id
+      - region_code
+      - rollout_id
+      - object_key
+      - multipart_upload_id
+      - expected_sha256
+      - expected_size
+      - expected_crc64
+      - manifest_fingerprint
+      - status
+      - created_at
+      - updated_at
+      type: object
+    UploadSessionGrant:
+      properties:
+        parts:
+          items:
+            $ref: '#/components/schemas/PartAuthorization'
+          type: array
+        session:
+          $ref: '#/components/schemas/UploadSession'
+      required:
+      - session
+      - parts
+      type: object
+    VerificationCode:
+      enum:
+      - MCAP_MISSING_MAGIC
+      - MCAP_TRUNCATED
+      - MCAP_RECORD_TOO_LARGE
+      - MCAP_HEADER_MISSING
+      - MCAP_DATA_END_MISSING
+      - MCAP_FOOTER_MISSING
+      - MCAP_TRAILING_MAGIC_MISSING
+      - MCAP_RECORD_INVALID
+      - MCAP_DATA_SECTION_CRC_MISMATCH
+      - MCAP_CHUNK_CRC_MISMATCH
+      - MCAP_CHUNK_SIZE_MISMATCH
+      - MCAP_CHUNK_TOO_LARGE
+      - MCAP_CHUNK_DECOMPRESSION_FAILED
+      - MCAP_UNSUPPORTED_COMPRESSION
+      - MCAP_SUMMARY_INVALID
+      - MCAP_SUMMARY_CRC_MISMATCH
+      - MCAP_INDEX_INVALID
+      - MCAP_SCHEMA_MISSING
+      - MCAP_REQUIRED_TOPIC_MISSING
+      - MCAP_TOPIC_EMPTY
+      - MCAP_DECODE_FAILED
+      - MCAP_UNKNOWN_OPTIONAL_TOPIC
+      type: string
+    VerificationFinding:
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/VerificationCode'
+        message:
+          type: string
+        record_offset:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        severity:
+          $ref: '#/components/schemas/VerificationSeverity'
+        topic:
+          type:
+          - string
+          - 'null'
+      required:
+      - code
+      - severity
+      - message
+      - topic
+      - record_offset
+      type: object
+    VerificationSeverity:
+      enum:
+      - warning
+      - error
+      type: string
+    VerificationStatus:
+      enum:
+      - RAW_VERIFIED
+      - REJECTED
+      type: string
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      scheme: bearer
+      type: http
+info:
+  title: HC Data Platform Backend
+  version: 0.1.0
+openapi: 3.1.0
+paths:
+  /api/v1/annotation-tasks/{task_id}:
+    get:
+      operationId: getAnnotationTask
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationTask'
+          description: Current task state in the caller's project scope.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/auto-annotation:
+    post:
+      operationId: requestAutoAnnotation
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              properties:
+                revision:
+                  minimum: 0
+                  type: integer
+              required:
+              - revision
+              type: object
+        required: true
+      responses:
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '501':
+          description: FEATURE_DISABLED; no task or fake result is created.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/claim:
+    post:
+      operationId: claimAnnotationTask
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationTask'
+          description: The task is claimed by the Annotator.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Annotator role or project scope is missing.
+        '404':
+          description: The task does not exist.
+        '409':
+          description: The task is claimed by another Annotator.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/current:
+    get:
+      operationId: getAnnotationCurrent
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationCurrent'
+          description: Current workflow pointers.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/draft:
+    get:
+      operationId: getAnnotationDraft
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationDraft'
+          description: Current assignee-only draft projection.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: The caller is not the scoped Annotator assignee.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/exclusions:
+    get:
+      operationId: getEffectiveExclusions
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: query
+        name: revision
+        required: false
+        schema:
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ExclusionRange'
+                type: array
+          description: Canonical disjoint half-open ranges applied to all modalities.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task or revision does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/history:
+    get:
+      operationId: getAnnotationHistory
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationHistory'
+          description: Current task plus immutable revisions and reviews.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/reviews:
+    get:
+      operationId: listAnnotationReviews
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AnnotationReview'
+                type: array
+          description: Append-only review history.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+    post:
+      operationId: reviewAnnotationRevision
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationTask'
+          description: Review appended and current workflow state updated.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Reviewer role/scope is missing or this is self-review.
+        '404':
+          description: The task does not exist.
+        '409':
+          description: Only a submitted revision may be reviewed.
+        '412':
+          description: The review target or If-Match is stale.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/revisions:
+    get:
+      operationId: listAnnotationRevisions
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AnnotationRevision'
+                type: array
+          description: Immutable revision history, oldest first.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+    post:
+      operationId: saveAnnotationDraft
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveDraftRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationRevision'
+          description: Immutable revision created, or the identical mutation replayed.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: The caller is not the scoped Annotator assignee.
+        '404':
+          description: The task does not exist.
+        '409':
+          description: client_mutation_id or operation_id was reused differently.
+        '412':
+          description: expected_revision or If-Match is stale.
+        '422':
+          description: The range is empty or the request is malformed.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/revisions/{revision}:
+    get:
+      operationId: getAnnotationRevision
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: revision
+        required: true
+        schema:
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationRevision'
+          description: One immutable revision.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task or revision does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/submit:
+    post:
+      operationId: submitAnnotationRevision
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationTask'
+          description: Exact current revision submitted for review.
+          headers:
+            ETag:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: The caller is not the scoped Annotator assignee.
+        '404':
+          description: The task does not exist.
+        '409':
+          description: The task cannot be submitted from its current state.
+        '412':
+          description: expected_revision or If-Match is stale.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/capabilities/auto-annotation:
+    get:
+      operationId: getAutoAnnotationCapability
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoAnnotationCapability'
+          description: Phase-one VLM capability is explicitly disabled.
+      security: []
+      tags:
+      - annotation
+  /api/v1/datasets/publication-preflight:
+    post:
+      operationId: preflightDatasetPublication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishDatasetRequestV1'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishPreflightReportV1'
+          description: Deterministic eligibility and effective-exclusion report.
+        '409':
+          description: A frozen upstream snapshot is internally inconsistent.
+        '422':
+          description: The publication target or Lance version is invalid.
+      tags:
+      - publishing
+  /api/v1/datasets/publications:
+    post:
+      operationId: publishDatasetVersion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishDatasetRequestV1'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishedDatasetManifestV1'
+          description: Immutable published dataset version and logical asset hashes.
+        '409':
+          description: The version already exists with different frozen content.
+        '422':
+          description: No PASS + DERIVED_READY + APPROVED rollout is eligible.
+      tags:
+      - publishing
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}:
+    get:
+      operationId: getPublishedDatasetVersion
+      parameters:
+      - $ref: '#/components/parameters/PublishingDatasetId'
+      - $ref: '#/components/parameters/PublishingDatasetVersion'
+      - in: query
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishedDatasetManifestV1'
+          description: Frozen publication manifest.
+        '404':
+          description: The immutable dataset version does not exist.
+      tags:
+      - publishing
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports:
+    post:
+      operationId: exportPublishedDatasetVersion
+      parameters:
+      - $ref: '#/components/parameters/PublishingDatasetId'
+      - $ref: '#/components/parameters/PublishingDatasetVersion'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportDatasetRequestV1'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResultV1'
+          description: Validated promoted export with download authorization.
+        '409':
+          description: Source coverage
+          native reload: null
+          or immutable promotion failed.: null
+        '501':
+          description: The requested exporter or optional data dependency is disabled.
+      tags:
+      - publishing
+  /api/v1/jobs:
+    get:
+      operationId: listJobs
+      parameters:
+      - in: query
+        name: project_id
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          $ref: '#/components/schemas/JobStatus'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListV1'
+          description: Durable workflow jobs ordered newest first
+      tags:
+      - jobs
+  /api/v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobRecord'
+          description: Durable workflow job status reconstructed from Temporal history
+        '404':
+          description: Job not found
+      tags:
+      - jobs
+  /api/v1/jobs/{job_id}:cancel:
+    post:
+      operationId: cancelJob
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobRecord'
+          description: Current terminal state or accepted cancellation state
+        '404':
+          description: Job not found
+      tags:
+      - jobs
+  /api/v1/previews/sessions:
+    post:
+      operationId: createPreviewSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewRequestV1'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewDescriptorV1'
+          description: Preview generated or reused from the temporary cache
+      tags:
+      - preview
+  /api/v1/previews/sessions/{session_id}:
+    get:
+      operationId: getPreviewSession
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewDescriptorV1'
+          description: Preview descriptor with a refreshed short-lived URL
+      tags:
+      - preview
+  /api/v1/projects/{project_id}/annotation-tasks:
+    get:
+      operationId: listAnnotationTasks
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          $ref: '#/components/schemas/AnnotationStatus'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AnnotationTask'
+                type: array
+          description: Project-scoped annotation queue.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/reconciliation:
+    post:
+      operationId: reconcileLanceCatalog
+      parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DatasetId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DatasetVersionRef'
+                type: array
+          description: Logical versions restored from durable Lance receipts.
+        '409':
+          description: Receipt history is non-contiguous or conflicts with the catalog.
+        '503':
+          description: PostgreSQL indexing is still unavailable.
+      tags:
+      - lance_catalog
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/rollouts/{rollout_id}/lineage:
+    get:
+      operationId: getRolloutLineage
+      parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DatasetId'
+      - $ref: '#/components/parameters/RolloutId'
+      - in: query
+        name: version
+        schema:
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutLineage'
+          description: Source, converter, fragment, and Lance snapshot lineage.
+        '404':
+          description: Lineage was not found.
+      tags:
+      - lance_catalog
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/rollouts/{rollout_id}/steps:
+    get:
+      operationId: readStepWindow
+      parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DatasetId'
+      - $ref: '#/components/parameters/RolloutId'
+      - in: query
+        name: start_step
+        required: true
+        schema:
+          minimum: 0
+          type: integer
+      - in: query
+        name: end_step
+        required: true
+        schema:
+          minimum: 0
+          type: integer
+      - in: query
+        name: version
+        required: false
+        schema:
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepWindow'
+          description: Stable, half-open logical step window.
+        '404':
+          description: Dataset
+          or rollout was not found.: null
+          version: null
+      tags:
+      - lance_catalog
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions:
+    get:
+      operationId: listDatasetVersions
+      parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DatasetId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DatasetVersionRef'
+                type: array
+          description: Immutable logical dataset version snapshots.
+      tags:
+      - lance_catalog
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version}:
+    get:
+      operationId: getDatasetVersionSnapshot
+      parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/DatasetId'
+      - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetVersionRef'
+          description: One immutable logical version pinned to a Lance snapshot.
+        '404':
+          description: Dataset or version was not found.
+      tags:
+      - lance_catalog
+  /api/v1/projects/{project_id}/quality-profiles:
+    post:
+      operationId: createQualityProfileVersion
+      parameters:
+      - $ref: '#/components/parameters/QualityProjectId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualityProfileV1'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityProfileV1'
+          description: Immutable quality profile version created
+        '409':
+          description: The profile version already exists with different content
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}:
+    get:
+      operationId: getQualityProfileVersion
+      parameters:
+      - $ref: '#/components/parameters/QualityProjectId'
+      - $ref: '#/components/parameters/QualityProfileId'
+      - $ref: '#/components/parameters/QualityProfileVersion'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityProfileV1'
+          description: Immutable quality profile version
+        '404':
+          description: Quality profile version not found
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/alignment:
+    get:
+      operationId: getRolloutAlignment
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: rollout_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlignedFragmentManifestV1'
+          description: Attempt-isolated aligned staging fragment metadata
+        '404':
+          description: No ready aligned fragment exists for this rollout
+  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/quality:
+    get:
+      operationId: getRolloutQuality
+      parameters:
+      - $ref: '#/components/parameters/QualityProjectId'
+      - $ref: '#/components/parameters/QualityRegionCode'
+      - $ref: '#/components/parameters/QualityRolloutId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QcReportV1'
+          description: Latest persisted quality summary and its immutable full report
+        '404':
+          description: No persisted quality report exists for the rollout
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/raw-verification:
+    get:
+      operationId: getRawVerification
+      parameters:
+      - $ref: '#/components/parameters/VerificationProjectId'
+      - $ref: '#/components/parameters/VerificationRegionCode'
+      - $ref: '#/components/parameters/VerificationRolloutId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RawVerificationReportV1'
+          description: Immutable MCAP verification report
+        '404':
+          description: No immutable verification report exists for the rollout
+      tags:
+      - verification
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions:
+    post:
+      description: Creates or returns the one immutable multipart session for a rollout and SHA-256.
+      operationId: createUploadSession
+      parameters:
+      - &id001
+        in: header
+        name: Authorization
+        required: true
+        schema:
+          pattern: ^Bearer .+$
+          type: string
+      - &id002
+        in: path
+        name: project_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          type: string
+      - &id003
+        in: path
+        name: region_code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionGrant'
+          description: Multipart session and short-lived direct-upload authorizations.
+          headers:
+            Cache-Control:
+              description: Signed URLs are never cached.
+              schema:
+                type: string
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified AuthContext is absent.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Uploader role or project/region scope is denied.
+        '409': &id006
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Immutable identity, content, state, or multipart part conflict.
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:
+    get:
+      operationId: getUploadSession
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - &id004
+        in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+          description: Persisted upload session.
+        '404': &id005
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Session does not exist in the authorized scope.
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts:
+    get:
+      description: Reconciles and returns the object store's uploaded multipart parts.
+      operationId: listUploadParts
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/UploadPart'
+                type: array
+          description: Parts sorted by ascending part_number.
+        '404': *id005
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:cancel:
+    post:
+      operationId: cancelUploadSession
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+          description: Multipart state aborted and session cancelled.
+        '409': *id006
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:commit-manifest:
+    post:
+      description: Streams integrity checks, then writes the immutable manifest as the final commit marker.
+      operationId: commitRolloutManifest
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolloutManifestV1'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RawObjectCommittedV1'
+          description: Immutable raw object committed; same rollout and SHA retries return this resource.
+        '409': *id006
+        '422': &id007
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Request or raw-object integrity validation failed.
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:complete:
+    post:
+      description: Completes multipart only when the sorted client list exactly matches storage.
+      operationId: completeUploadSession
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+          description: Multipart object exists but is not committed until the manifest call succeeds.
+        '409': *id006
+        '422': *id007
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:pause:
+    post:
+      operationId: pauseUploadSession
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+          description: Session paused without aborting uploaded parts.
+        '409': *id006
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:renew:
+    post:
+      description: Reissues short-lived PUT URLs; object bytes never pass through this API.
+      operationId: renewUploadPartAuthorizations
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartNumbersRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PartAuthorization'
+                type: array
+          description: Short-lived direct PUT authorizations.
+          headers:
+            Cache-Control:
+              description: Clients must not cache signed URLs.
+              schema:
+                type: string
+        '409': *id006
+        '422': *id007
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:resume:
+    post:
+      operationId: resumeUploadSession
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id004
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeUploadRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionGrant'
+          description: Resumed persisted session and optional renewed PUT URLs.
+          headers:
+            Cache-Control:
+              description: Signed URLs are never cached.
+              schema:
+                type: string
+        '409': *id006
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:
+    get:
+      operationId: getApprovedAnnotation
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: rollout_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationApprovedV1'
+          description: Immutable approved revision snapshot for a Publisher.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Publisher role or project scope is missing.
+        '404':
+          description: The scoped task does not exist.
+        '409':
+          description: There is no currently approved revision.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /health/live:
+    get:
+      operationId: getLiveness
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  environment:
+                    type: string
+                  status:
+                    const: live
+                    type: string
+                required:
+                - status
+                - environment
+                type: object
+          description: The API process is live; no dependency readiness is implied.
+      tags:
+      - health
+  /health/ready:
+    get:
+      operationId: getReadiness
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+          description: Every required dependency is ready.
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+          description: At least one required dependency is not ready.
+      tags:
+      - health

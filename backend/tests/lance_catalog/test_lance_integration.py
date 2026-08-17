@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("pyarrow")
+lance = pytest.importorskip("lance")
+
+from hc_data_platform.lance_catalog import (  # noqa: E402
+    AlignedFragmentManifestV1,
+    CatalogIndexPendingError,
+    DatasetSchemaSnapshot,
+    InMemoryCatalogRepository,
+    InMemoryDatasetWriterLock,
+    LanceAdapter,
+    LanceCatalogService,
+    StepRecord,
+    compute_fragment_hash,
+)
+
+
+def _schema() -> DatasetSchemaSnapshot:
+    return DatasetSchemaSnapshot.create(
+        project_id="project-a",
+        dataset_id="dataset-a",
+        schema_snapshot_id="schema-1",
+        frequency_hz=30,
+        fields={"camera.front": "binary", "joint.position": "list<float32>"},
+    )
+
+
+def _fragment(
+    snapshot: DatasetSchemaSnapshot, rollout_id: str, count: int = 2
+) -> tuple[AlignedFragmentManifestV1, tuple[StepRecord, ...]]:
+    steps = tuple(
+        StepRecord(
+            rollout_id=rollout_id,
+            step_index=index,
+            timestamp_ns=index * 33_333_333,
+            modalities={
+                "camera.front": f"frame-{index}".encode(),
+                "joint.position": [float(index)],
+            },
+            source_timestamps_ns={
+                "camera.front": index * 33_333_333,
+                "joint.position": index * 33_333_333,
+            },
+            time_error_ns={"camera.front": 0, "joint.position": 0},
+            valid={"camera.front": True, "joint.position": True},
+            repeated={"camera.front": False, "joint.position": False},
+        )
+        for index in range(count)
+    )
+    manifest = AlignedFragmentManifestV1(
+        project_id=snapshot.project_id,
+        dataset_id=snapshot.dataset_id,
+        schema_snapshot_id=snapshot.schema_snapshot_id,
+        schema_fingerprint=snapshot.fingerprint,
+        frequency_hz=snapshot.frequency_hz,
+        rollout_id=rollout_id,
+        source_sha256=hashlib.sha256(rollout_id.encode()).hexdigest(),
+        converter_version="aligner-1.0.0",
+        attempt_id=f"attempt-{rollout_id}",
+        fragment_uri=f"s3://alignment-staging/{rollout_id}.arrow",
+        step_count=count,
+        content_hash=compute_fragment_hash(steps),
+    )
+    return manifest, steps
+
+
+def _service(
+    root: Path, repository: InMemoryCatalogRepository | None = None
+) -> tuple[LanceCatalogService, LanceAdapter, InMemoryCatalogRepository]:
+    adapter = LanceAdapter(root)
+    selected_repository = repository or InMemoryCatalogRepository()
+    service = LanceCatalogService(adapter, selected_repository, InMemoryDatasetWriterLock())
+    service.register_schema(_schema())
+    return service, adapter, selected_repository
+
+
+@pytest.mark.integration
+def test_real_lance_shared_dataset_idempotency_and_compaction(tmp_path: Path) -> None:
+    service, adapter, _ = _service(tmp_path)
+    snapshot = _schema()
+    first = _fragment(snapshot, "rollout-1")
+    second = _fragment(snapshot, "rollout-2")
+
+    first_version, _ = service.commit_fragment(*first)
+    second_version, _ = service.commit_fragment(*second)
+    retry = first[0].model_copy(
+        update={
+            "attempt_id": "retry-attempt",
+            "fragment_uri": "s3://retry/rollout-1.arrow",
+        }
+    )
+    replayed_version, _ = service.commit_fragment(retry, first[1])
+
+    assert replayed_version == first_version
+    assert second_version.dataset_uri.endswith(
+        "/project-a/dataset-a/schema-1/30hz/aligned_steps.lance"
+    )
+    assert len(adapter.list_commits(snapshot)) == 2
+    assert [item.version for item in service.list_versions("dataset-a")] == [1, 2]
+    before = service.read_steps("dataset-a", "rollout-1", 0, 2).steps
+
+    compacted_lance_version = adapter.compact(snapshot, target_rows_per_fragment=1024)
+
+    assert compacted_lance_version >= second_version.lance_version
+    assert service.read_steps("dataset-a", "rollout-1", 0, 2).steps == before
+    assert before == first[1]
+    assert [(step.rollout_id, step.step_index) for step in before] == [
+        ("rollout-1", 0),
+        ("rollout-1", 1),
+    ]
+
+    third_version, _ = service.commit_fragment(*_fragment(snapshot, "rollout-3"))
+    assert third_version.version == 3
+    assert third_version.lance_version > compacted_lance_version
+    assert service.read_steps("dataset-a", "rollout-1", 0, 2).steps == first[1]
+
+
+class _FailOnceRepository(InMemoryCatalogRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_next_commit = True
+
+    def record_commit(self, receipt):  # type: ignore[no-untyped-def]
+        if self.fail_next_commit:
+            self.fail_next_commit = False
+            raise RuntimeError("injected catalog transaction failure")
+        super().record_commit(receipt)
+
+
+@pytest.mark.integration
+def test_real_lance_receipt_reconciles_db_failure_without_reappend(tmp_path: Path) -> None:
+    repository = _FailOnceRepository()
+    service, adapter, _ = _service(tmp_path, repository)
+    item = _fragment(_schema(), "rollout-1")
+
+    with pytest.raises(CatalogIndexPendingError):
+        service.commit_fragment(*item)
+    assert len(repository.pending_reconciliations()) == 1
+    physical_versions_before = lance.dataset(adapter.dataset_uri(_schema())).versions()
+
+    version, _ = service.commit_fragment(*item)
+
+    physical_versions_after = lance.dataset(adapter.dataset_uri(_schema())).versions()
+    assert version.version == 1
+    assert len(physical_versions_after) == len(physical_versions_before) == 1
+    assert repository.pending_reconciliations() == ()
+
+
+@pytest.mark.integration
+def test_real_lance_twenty_parallel_rollouts_use_one_writer(tmp_path: Path) -> None:
+    service, adapter, _ = _service(tmp_path)
+    snapshot = _schema()
+    fragments = [_fragment(snapshot, f"rollout-{index}", count=1) for index in range(20)]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda item: service.commit_fragment(item[0], item[1]), fragments))
+
+    assert sorted(version.version for version, _ in results) == list(range(1, 21))
+    assert len(adapter.list_commits(snapshot)) == 20
+    latest = service.version_snapshot("dataset-a")
+    identities = {
+        (rollout_id, step.step_index)
+        for rollout_id in latest.committed_rollouts
+        for step in service.read_steps("dataset-a", rollout_id, 0, 1).steps
+    }
+    assert len(identities) == 20

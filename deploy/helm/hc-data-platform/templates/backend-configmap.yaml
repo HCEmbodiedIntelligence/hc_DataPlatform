@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+data:
+  HC_ENVIRONMENT: {{ .Values.backend.config.environment | quote }}
+  HC_RUNTIME_BACKEND: production
+  HC_API_PORT: {{ .Values.backend.api.port | quote }}
+  HC_TEMPORAL_TARGET: {{ .Values.backend.config.temporalTarget | quote }}
+  HC_TEMPORAL_TASK_QUEUE: {{ .Values.backend.worker.taskQueue | quote }}
+  {{- with .Values.backend.config.workflowActivityFactory }}
+  HC_WORKFLOW_ACTIVITY_FACTORY: {{ . | quote }}
+  {{- end }}
+  HC_OBJECT_STORE_ENDPOINT: {{ .Values.backend.config.objectStoreEndpoint | quote }}
+  HC_OBJECT_STORE_BUCKET: {{ .Values.backend.config.objectStoreBucket | quote }}
+  HC_OBJECT_STORE_REGION: {{ .Values.backend.config.objectStoreRegion | quote }}
+  HC_JWT_ISSUER: {{ .Values.backend.config.jwtIssuer | quote }}
+  HC_JWT_AUDIENCE: {{ .Values.backend.config.jwtAudience | quote }}
+  HC_JWT_ALGORITHMS: {{ .Values.backend.config.jwtAlgorithms | quote }}
+  HC_JWT_JWKS_URL: {{ required "config.jwtJwksUrl is required" .Values.backend.config.jwtJwksUrl | quote }}
+  HC_READINESS_TIMEOUT_SECONDS: {{ .Values.backend.config.readinessTimeoutSeconds | quote }}
+  HC_ENFORCE_SCHEMA_MIGRATIONS: {{ .Values.backend.config.enforceSchemaMigrations | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.backend.config.otelExporterOtlpEndpoint | quote }}
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_RESOURCE_ATTRIBUTES: {{ printf "deployment.environment.name=%s,service.version=%s" .Values.backend.config.environment .Values.backend.config.serviceVersion | quote }}
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"

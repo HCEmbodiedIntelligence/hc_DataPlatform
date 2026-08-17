@@ -1,0 +1,20 @@
+global:
+  releaseId: ci-validate
+
+frontend:
+  image:
+    repository: registry.example.invalid/hc-data-platform/frontend
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+
+backend:
+  api:
+    image:
+      repository: registry.example.invalid/hc-data-platform/api
+      digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+  worker:
+    image:
+      repository: registry.example.invalid/hc-data-platform/worker
+      digest: sha256:3333333333333333333333333333333333333333333333333333333333333333
+  config:
+    serviceVersion: ci-validate
+    workflowActivityFactory: hc_data_platform.runtime:activity_dependencies

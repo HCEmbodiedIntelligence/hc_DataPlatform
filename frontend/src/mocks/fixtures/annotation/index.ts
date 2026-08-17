@@ -19,6 +19,8 @@ export const annotationFixtureIds = {
   staleTask: 'ann-task-stale-01',
   successorTask: 'ann-task-successor-01',
   stream: 'stream_fx_rgb_front',
+  leftWristStream: 'stream_fx_rgb_wrist_left',
+  rightWristStream: 'stream_fx_rgb_wrist_right',
   jointStream: 'stream_fx_joint',
   ontology: 'ontology_fx_assembly',
 } as const;
@@ -37,7 +39,12 @@ export function makeAnnotationTask(overrides: Readonly<Record<string, unknown>> 
       dataset_version_id: annotationFixtureIds.version,
       episode_id: annotationFixtureIds.episode,
       base_revision_id: annotationFixtureIds.revision,
-      stream_ids: [annotationFixtureIds.stream, annotationFixtureIds.jointStream],
+      stream_ids: [
+        annotationFixtureIds.stream,
+        annotationFixtureIds.leftWristStream,
+        annotationFixtureIds.rightWristStream,
+        annotationFixtureIds.jointStream,
+      ],
       start_ns: '0',
       end_ns: '120000000000',
     },
@@ -122,6 +129,8 @@ const axes = (count: number) => Array.from({ length: count }, (_, index) => ({
 export const annotationViewerStreams = {
   sevenAxis: [
     { stream_id: annotationFixtureIds.stream, channel_definition_id: 'channel_fx_rgb_front', canonical_path: 'camera/front/rgb', display_name: '头部相机', modality: 'RGB', semantic_role: 'PRIMARY_RGB', schema: { schema_id: 'image/rgb', schema_version: '1', encoding: 'h264' }, start_ns: '0', end_ns: '120000000000', availability: 'READY' },
+    { stream_id: annotationFixtureIds.leftWristStream, channel_definition_id: 'channel_fx_rgb_wrist_left', canonical_path: 'camera/wrist_left/rgb', display_name: '左腕相机', modality: 'RGB', semantic_role: 'LEFT_WRIST_RGB', schema: { schema_id: 'image/rgb', schema_version: '1', encoding: 'h264' }, start_ns: '0', end_ns: '120000000000', availability: 'READY' },
+    { stream_id: annotationFixtureIds.rightWristStream, channel_definition_id: 'channel_fx_rgb_wrist_right', canonical_path: 'camera/wrist_right/rgb', display_name: '右腕相机', modality: 'RGB', semantic_role: 'RIGHT_WRIST_RGB', schema: { schema_id: 'image/rgb', schema_version: '1', encoding: 'h264' }, start_ns: '0', end_ns: '120000000000', availability: 'READY' },
     { stream_id: annotationFixtureIds.jointStream, channel_definition_id: 'channel_fx_joint', canonical_path: 'robot/joints', display_name: '关节状态', modality: 'JOINT_STATE', schema: { schema_id: 'joint/state', schema_version: '3', shape: [7], axes: axes(7) }, start_ns: '0', end_ns: '120000000000', availability: 'READY' },
   ],
   sixAxisPointcloud: [

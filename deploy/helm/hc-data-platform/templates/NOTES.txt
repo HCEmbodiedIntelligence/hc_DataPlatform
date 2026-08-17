@@ -1,0 +1,9 @@
+Unified release: {{ .Values.global.releaseId }}
+Frontend image: {{ include "hc-data-platform.image" .Values.frontend.image }}
+API image: {{ .Values.backend.api.image.repository }}@{{ .Values.backend.api.image.digest }}
+Worker image: {{ .Values.backend.worker.image.repository }}@{{ .Values.backend.worker.image.digest }}
+
+Do not deploy the example registry or zero digests. Production values must contain release
+registry repositories, immutable sha256 digests, external Secret names, and a configured Worker
+activity factory.
+

@@ -1,0 +1,1040 @@
+# PostgreSQL 数据库表设计说明
+
+本文档说明 `backend/migrations` 当前迁移完成后的 PostgreSQL 表结构，包括表用途、字段、
+主键、外键、唯一键、普通索引以及主要数据约束。SQL 迁移文件是最终事实来源；修改表结构时，
+应新增迁移文件并同步更新本文档，不要直接修改已经应用过的迁移。
+
+## 1. 数据库定位
+
+本目录内的 SQL 全部用于 PostgreSQL。Lance 数据本身存放在 Lance 数据集或对象存储中；
+`lance_*` 表只保存 Lance 数据集的目录、版本、回执和血缘元数据。
+
+```text
++--------------------------- PostgreSQL ----------------------------+
+| core         安全、幂等、审计、Outbox、迁移记录                    |
+| ingest       采集任务、Rollout、分片上传、原始对象                  |
+| workflow     工作流作业和失败对账                                  |
+| annotation   标注任务、修订、操作、审核                            |
+| publishing   数据集发布版本、资产和导出                            |
+| public (*)   校验、质检、对齐、Lance 目录元数据                     |
++-------------------------------------------------------------------+
+                              |
+                              | dataset_uri / artifact_uri / object_key
+                              v
++---------------------- Lance / 对象存储 ----------------------------+
+| MCAP 原始文件、Arrow 暂存片段、Lance 数据集、发布产物               |
++-------------------------------------------------------------------+
+
+(*) 未在 SQL 中显式指定 schema 的表会创建到当前 search_path 的首个可写 schema；
+    按 PostgreSQL 默认配置通常是 public。本文后续统一按 public.<table> 表示。
+```
+
+## 2. Key 和约束标记
+
+```text
+PK      Primary Key，主键；唯一且非空，用于唯一定位一行
+FK      Foreign Key，外键；由 PostgreSQL 强制保证引用目标存在
+UK      Unique Key，唯一键；禁止指定字段组合重复
+IDX     Index，普通索引；用于查询加速，不保证唯一
+NN      NOT NULL，不能为空
+CK      CHECK，数据库检查约束
+DEFAULT 数据库默认值
+RLS     Row-Level Security，行级安全隔离
+
+PK(1), PK(2) 表示复合主键中的字段顺序。
+FK -> schema.table(columns) 表示真实数据库外键。
+LOGICAL -> table 表示仅有业务关联，数据库没有创建外键约束。
+```
+
+本项目大量使用复合主键，将 `project_id`、`region_code` 放入主键是为了让相同业务 ID 或
+内容哈希可以安全地出现在不同租户中。
+
+## 3. Schema 与表清单
+
+```text
+PostgreSQL
+|
++-- core
+|   +-- schema_migrations
+|   +-- idempotency_records
+|   +-- audit_events
+|   `-- outbox_events
+|
++-- ingest
+|   +-- collection_jobs
+|   +-- rollouts
+|   +-- upload_sessions
+|   +-- upload_objects
+|   +-- upload_parts
+|   `-- rollout_objects
+|
++-- workflow
+|   +-- jobs
+|   `-- reconciliation_items
+|
++-- annotation
+|   +-- annotation_tasks
+|   +-- annotation_revisions
+|   +-- annotation_operations
+|   +-- annotation_reviews
+|   +-- annotation_mutations
+|   +-- annotation_current             [VIEW]
+|   `-- annotation_drafts              [VIEW]
+|
++-- publishing
+|   +-- dataset_versions
+|   +-- publication_assets
+|   +-- export_attempts
+|   `-- published_exports
+|
+`-- public (默认 search_path)
+    +-- raw_verification_reports
+    +-- quality_profiles
+    +-- qc_reports
+    +-- quality_rollout_summaries
+    +-- alignment_profiles
+    +-- aligned_fragment_attempts
+    +-- lance_schema_snapshots
+    +-- lance_datasets
+    +-- lance_dataset_versions
+    +-- lance_rollout_lineage
+    `-- lance_pending_reconciliation
+```
+
+表数量：32；视图数量：2。`preview` 模块只使用带 TTL 的缓存，没有 PostgreSQL 业务表。
+
+## 4. 主要关系图
+
+图中 `1 ----< N` 表示一对多，`1 ---- 1` 表示一对一。实线关系均有数据库 FK；跨模块的
+相同 ID 多数是逻辑关联，详见各表说明。
+
+```text
+ingest.collection_jobs
+        1
+        |
+        `----< ingest.rollouts
+                    1
+                    +---- 1 ingest.upload_sessions
+                    |           1
+                    |           +---- 1 ingest.upload_objects
+                    |           `----< N ingest.upload_parts
+                    |
+                    `---- 1 ingest.rollout_objects
+
+quality_profiles
+        1
+        `----< N qc_reports
+                    1
+                    `----< N quality_rollout_summaries
+
+lance_schema_snapshots
+        1
+        `----< N lance_datasets
+                    1
+                    +----< N lance_dataset_versions
+                    |           1
+                    |           `----< N lance_rollout_lineage
+                    `----< N lance_pending_reconciliation
+
+annotation.annotation_tasks
+        1
+        +----< N annotation.annotation_revisions
+        |           1
+        |           +----< N annotation.annotation_operations
+        |           +----< N annotation.annotation_reviews
+        |           `----< N annotation.annotation_mutations
+        |
+        +---- 1 current_revision      (延迟外键)
+        +---- 0..1 submitted_revision (延迟外键)
+        `---- 0..1 approved_review    (延迟外键)
+
+publishing.dataset_versions
+        1
+        +----< N publishing.publication_assets
+        +----< N publishing.export_attempts
+        `----< N publishing.published_exports
+                    N
+                    `---- 1 publishing.export_attempts (promoted_attempt_id)
+```
+
+## 5. core：平台基础表
+
+### 5.1 `core.schema_migrations`
+
+用途：记录已执行迁移的版本和 SHA-256 校验值。该表由迁移程序创建，不在业务 SQL 文件中。
+
+```text
++ core.schema_migrations
+| PK: version
+| RLS: 否
+|
++-- version          text         NN PK       迁移文件相对路径/版本
++-- checksum_sha256  char(64)     NN CK       迁移 SQL 的 SHA-256
+`-- applied_at       timestamptz  NN DEFAULT  执行时间，默认 now()
+```
+
+### 5.2 `core.idempotency_records`
+
+用途：保存接口幂等请求指纹与响应，避免同一请求被重复执行。
+
+```text
++ core.idempotency_records
+| PK: (project_id, region_code, scope_key, idempotency_key)
+| IDX: idempotency_records_expiry_idx(expires_at)
+| RLS: 是，project_id + region_code
+|
++-- project_id          text         NN PK(1) CK  项目/租户
++-- region_code         text         NN PK(2)     区域；默认空字符串
++-- scope_key           text         NN PK(3) CK  幂等作用域
++-- idempotency_key     text         NN PK(4) CK  客户端幂等键
++-- request_fingerprint char(64)     NN           请求内容指纹
++-- response_json       jsonb                     已缓存响应
++-- created_at          timestamptz  NN DEFAULT   创建时间
+`-- expires_at          timestamptz  NN           过期时间
+```
+
+### 5.3 `core.audit_events`
+
+用途：保存用户或系统对资源执行操作的审计事件。
+
+```text
++ core.audit_events
+| PK: audit_id
+| IDX: audit_events_project_occurred_idx(project_id, occurred_at DESC, audit_id)
+| RLS: 是，project_id + 可选 region_code
+|
++-- audit_id       uuid         NN PK  审计事件 ID
++-- project_id     text         NN CK  项目/租户
++-- region_code    text                可选区域
++-- actor_id       text         NN CK  操作者 ID
++-- action         text         NN CK  操作名称
++-- resource_type  text         NN     资源类型
++-- resource_id    text         NN     资源 ID
++-- request_id     text         NN CK  请求追踪 ID
++-- before_hash    char(64)            变更前内容哈希
++-- after_hash     char(64)            变更后内容哈希
++-- details        jsonb        NN     详情，默认空对象
+`-- occurred_at    timestamptz NN     事件发生时间
+```
+
+### 5.4 `core.outbox_events`
+
+用途：事务 Outbox，保存等待发布到消息系统的领域事件。
+
+```text
++ core.outbox_events
+| PK: event_id
+| IDX: outbox_events_pending_idx(available_at, occurred_at)
+|      WHERE published_at IS NULL
+| RLS: 是，project_id + 可选 region_code
+|
++-- event_id          uuid         NN PK       事件 ID
++-- project_id        text         NN CK       项目/租户
++-- region_code       text                     可选区域
++-- event_type        text         NN CK       事件类型
++-- envelope          jsonb        NN          事件信封/载荷
++-- occurred_at       timestamptz  NN          事件发生时间
++-- published_at      timestamptz              成功发布时间
++-- publish_attempts  integer      NN CK       发布次数，默认 0
++-- available_at      timestamptz  NN DEFAULT  下次允许发布时间
+`-- last_error        text                     最近一次错误
+```
+
+## 6. ingest：数据采集与上传
+
+### 6.1 `ingest.collection_jobs`
+
+用途：采集任务主表，一个采集任务可包含多个 Rollout。
+
+```text
++ ingest.collection_jobs
+| PK: (project_id, collection_job_id)
+| RLS: 是，project_id + region_code
+|
++-- project_id        text         NN PK(1)  项目/租户
++-- region_code       text         NN        区域
++-- task_id           text         NN        上游任务 ID，无数据库 FK
++-- collection_job_id text         NN PK(2)  采集任务 ID
++-- robot_id          text         NN        机器人 ID
++-- status            text         NN CK     REGISTERED/COLLECTING/PAUSED/
+|                                            COMPLETED/FAILED/CANCELLED
++-- created_at        timestamptz  NN        创建时间
+`-- updated_at        timestamptz  NN        更新时间
+```
+
+### 6.2 `ingest.rollouts`
+
+用途：采集任务中的一次 Rollout/轨迹记录。
+
+```text
++ ingest.rollouts
+| PK: (project_id, rollout_id)
+| UK: (project_id, collection_job_id, sequence_no)
+| FK: (project_id, collection_job_id)
+|     -> ingest.collection_jobs(project_id, collection_job_id)
+| RLS: 是，project_id + region_code
+|
++-- project_id        text         NN PK(1) FK  项目/租户
++-- region_code       text         NN           区域
++-- collection_job_id text         NN FK         所属采集任务
++-- rollout_id        text         NN PK(2)      Rollout ID
++-- sequence_no       integer      NN UK CK      任务内序号，必须大于 0
++-- robot_id          text         NN            机器人 ID
++-- source_sha256     char(64)     NN CK         原始数据哈希
++-- status            text         NN CK         REGISTERED/UPLOADING/
+|                                                 RAW_COMMITTED/VERIFYING/
+|                                                 RAW_VERIFIED/FAILED/CANCELLED
++-- created_at        timestamptz  NN            创建时间
+`-- updated_at        timestamptz  NN            更新时间
+```
+
+### 6.3 `ingest.upload_sessions`
+
+用途：一次 Rollout 对应的对象存储分片上传会话。
+
+```text
++ ingest.upload_sessions
+| PK: session_id
+| UK: object_key
+| UK: (project_id, rollout_id)
+| FK: (project_id, rollout_id) -> ingest.rollouts(project_id, rollout_id)
+| IDX: upload_sessions_active_idx(project_id, region_code, status, updated_at DESC)
+| RLS: 是，project_id + region_code
+|
++-- session_id             uuid          NN PK     上传会话 ID
++-- project_id             text          NN UK FK  项目/租户
++-- region_code            text          NN        区域
++-- rollout_id             text          NN UK FK  Rollout ID
++-- object_key             text          NN UK     对象存储 Key
++-- multipart_upload_id    text          NN        对象存储分片上传 ID
++-- expected_sha256        char(64)      NN CK     预期 SHA-256
++-- expected_size          bigint        NN CK     预期字节数，必须大于 0
++-- expected_crc64         numeric(20,0) NN CK     预期 CRC64
++-- manifest_fingerprint   char(64)      NN CK     上传清单指纹
++-- status                 text          NN CK     REGISTERED/UPLOADING/PAUSED/
+|                                                  MULTIPART_COMPLETED/RAW_COMMITTED/
+|                                                  FAILED/CANCELLED
++-- etag                   text                    对象 ETag
++-- failure_code           text                    失败码
++-- created_at             timestamptz   NN        创建时间
++-- updated_at             timestamptz   NN        更新时间
+`-- completed_at           timestamptz             完成时间
+```
+
+### 6.4 `ingest.upload_objects`
+
+用途：上传会话对应的对象校验结果；`session_id` 唯一，因此与上传会话是一对一关系。
+
+```text
++ ingest.upload_objects
+| PK: object_id
+| UK: session_id
+| UK: object_key
+| FK: session_id -> ingest.upload_sessions(session_id)
+| RLS: 是，project_id + region_code
+|
++-- object_id       uuid          NN PK     上传对象 ID
++-- session_id      uuid          NN UK FK  上传会话 ID
++-- project_id      text          NN        项目/租户
++-- region_code     text          NN        区域
++-- rollout_id      text          NN        Rollout ID，逻辑关联
++-- object_key      text          NN UK     对象存储 Key
++-- expected_size   bigint        NN CK     预期大小
++-- expected_sha256 char(64)      NN        预期 SHA-256
++-- expected_crc64  numeric(20,0) NN CK     预期 CRC64
++-- actual_size     bigint           CK     实际大小
++-- actual_sha256   char(64)                 实际 SHA-256
++-- actual_crc64    numeric(20,0)    CK     实际 CRC64
++-- etag            text                    对象 ETag
++-- status          text          NN CK     PENDING/MULTIPART_COMPLETED/
+|                                           VERIFIED/COMMITTED/FAILED/CANCELLED
++-- created_at      timestamptz   NN        创建时间
+`-- updated_at      timestamptz   NN        更新时间
+```
+
+### 6.5 `ingest.upload_parts`
+
+用途：记录上传会话中的每一个分片。
+
+```text
++ ingest.upload_parts
+| PK: (session_id, part_number)
+| FK: session_id -> ingest.upload_sessions(session_id)
+| IDX: upload_parts_session_status_idx(session_id, status, part_number)
+| RLS: 是，project_id + region_code
+|
++-- session_id               uuid          NN PK(1) FK  上传会话 ID
++-- project_id               text          NN           项目/租户
++-- region_code              text          NN           区域
++-- part_number              integer       NN PK(2) CK  分片号，1..10000
++-- status                   text          NN CK         AUTHORIZED/UPLOADED
++-- etag                     text                        分片 ETag
++-- size                     bigint           CK         分片大小
++-- crc64                    numeric(20,0)    CK         分片 CRC64
++-- authorization_expires_at timestamptz                 上传授权过期时间
+`-- updated_at               timestamptz   NN           更新时间
+```
+
+### 6.6 `ingest.rollout_objects`
+
+用途：记录验证并提交成功的 Rollout 原始对象及其清单。
+
+```text
++ ingest.rollout_objects
+| PK: (project_id, rollout_id)
+| UK: object_key
+| UK: manifest_key
+| FK: (project_id, rollout_id) -> ingest.rollouts(project_id, rollout_id)
+| RLS: 是，project_id + region_code
+|
++-- project_id    text          NN PK(1) FK  项目/租户
++-- region_code   text          NN           区域
++-- rollout_id    text          NN PK(2) FK  Rollout ID
++-- object_key    text          NN UK        原始对象 Key
++-- manifest_key  text          NN UK        清单对象 Key
++-- source_sha256 char(64)      NN CK        原始内容 SHA-256
++-- crc64         numeric(20,0) NN CK        CRC64
++-- file_size     bigint        NN CK        文件大小
++-- status        text          NN CK        固定为 COMMITTED
+`-- committed_at  timestamptz   NN           提交时间
+```
+
+## 7. workflow：工作流与恢复
+
+### 7.1 `workflow.jobs`
+
+用途：记录 Temporal 工作流对应的平台作业和执行状态。
+
+```text
++ workflow.jobs
+| PK: job_id
+| UK: workflow_id
+| IDX: jobs_project_status_updated_idx(project_id, status, updated_at DESC)
+| RLS: 是，project_id
+|
++-- job_id                  uuid         NN PK       作业 ID
++-- workflow_id             text         NN UK       Temporal Workflow ID
++-- project_id              text         NN          项目/租户
++-- resource_id             text         NN          业务资源 ID
++-- job_type                text         NN          作业类型
++-- status                  text         NN CK       PENDING/RUNNING/SUCCEEDED/
+|                                                   TECHNICAL_FAILED/QUALITY_RISK/
+|                                                   QUALITY_REJECTED/CANCELLED
++-- attempt                 integer      NN DEFAULT  尝试次数，默认 0
++-- result                  jsonb                    执行结果
++-- error_code              text                     错误码
++-- created_at              timestamptz  NN          创建时间
++-- updated_at              timestamptz  NN          更新时间
++-- workflow_run_id         text                     Temporal Run ID
++-- workflow_version        text         NN DEFAULT  工作流版本，默认 v1
++-- temporal_namespace      text         NN DEFAULT  Temporal 命名空间
++-- task_queue              text         NN DEFAULT  Temporal Task Queue
++-- stage                   text         NN DEFAULT  当前阶段，默认 pending
++-- error_message           text                     错误详情
+`-- cancellation_requested  boolean      NN DEFAULT  是否请求取消，默认 false
+```
+
+### 7.2 `workflow.reconciliation_items`
+
+用途：保存 Lance 目录或发布资产写入失败后需要重试的对账项目。
+
+```text
++ workflow.reconciliation_items
+| PK: reconciliation_id
+| UK: workflow_id
+| UK: idempotency_key
+| IDX: reconciliation_pending_idx(kind, status, updated_at)
+|      WHERE status IN ('PENDING', 'FAILED')
+| RLS: 是，project_id
+|
++-- reconciliation_id uuid         NN PK       对账 ID
++-- workflow_id        text         NN UK       工作流 ID
++-- project_id         text         NN          项目/租户
++-- resource_id        text         NN          资源 ID
++-- kind               text         NN CK       LANCE_CATALOG/PUBLISHING_ASSET
++-- idempotency_key    text         NN UK       幂等键
++-- status             text         NN CK       PENDING/RUNNING/RESOLVED/FAILED
++-- payload            jsonb        NN          重试所需载荷
++-- attempt            integer      NN DEFAULT  尝试次数，默认 0
++-- last_error_code    text                     最近错误码
++-- created_at         timestamptz  NN          创建时间
++-- updated_at         timestamptz  NN          更新时间
+`-- resolved_at        timestamptz              解决时间
+```
+
+## 8. verification：原始数据校验
+
+### 8.1 `public.raw_verification_reports`
+
+用途：保存不可变的原始数据验证报告。最终主键包含租户和区域，相同内容哈希可出现在不同租户。
+
+```text
++ public.raw_verification_reports
+| PK: (project_id, region_code, report_sha256)
+| UK: (project_id, region_code, rollout_id, source_sha256)
+| IDX: raw_verification_reports_rollout_created_idx
+|      (project_id, rollout_id, created_at DESC)
+| IDX: raw_verification_reports_scope_idx
+|      (project_id, region_code, rollout_id, created_at DESC)
+| RLS: 是，project_id + region_code
+| IMMUTABLE: UPDATE/DELETE 由触发器拒绝
+|
++-- project_id    text         NN PK(1) UK  项目/租户
++-- region_code   text         NN PK(2) UK  区域
++-- report_sha256 char(64)     NN PK(3) CK  规范化报告内容哈希
++-- rollout_id    text         NN UK        Rollout ID，逻辑关联 ingest.rollouts
++-- source_sha256 char(64)     NN UK CK     原始数据哈希
++-- object_key    text         NN           原始对象 Key
++-- status        text         NN CK        RAW_VERIFIED/REJECTED
++-- report_json   jsonb        NN CK        完整报告，内部关键字段与列值一致
+`-- created_at    timestamptz  NN DEFAULT   创建时间
+```
+
+## 9. quality：质量检测
+
+### 9.1 `public.quality_profiles`
+
+用途：保存有版本的质量检测配置。
+
+```text
++ public.quality_profiles
+| PK: (project_id, profile_id, profile_version)
+| UK: (project_id, profile_id, profile_version, profile_sha256)
+| UK: (project_id, profile_sha256)
+| RLS: 是，project_id
+|
++-- project_id      text         NN PK(1) UK  项目/租户
++-- profile_id      text         NN PK(2) UK  配置 ID
++-- profile_version integer      NN PK(3) CK  配置版本，大于 0
++-- schema_version  text         NN CK        固定 quality-profile/v1
++-- profile_sha256  char(64)     NN UK CK     配置内容哈希
++-- profile_json    jsonb        NN           完整配置
+`-- created_at      timestamptz  NN DEFAULT   创建时间
+```
+
+### 9.2 `public.qc_reports`
+
+用途：保存按设计不可变的完整质检报告。最终主键按租户和区域限定内容哈希。当前迁移没有为
+该表设置拒绝 `UPDATE/DELETE` 的触发器，不可变性仍需由数据库权限或服务层保证。
+
+```text
++ public.qc_reports
+| PK: (project_id, region_code, report_sha256)
+| UK: (project_id, region_code, rollout_id, source_sha256,
+|      profile_id, profile_version, engine_version)
+| FK: (project_id, profile_id, profile_version, profile_sha256)
+|     -> quality_profiles(project_id, profile_id, profile_version, profile_sha256)
+| IDX: qc_reports_rollout_created_idx
+|      (project_id, region_code, rollout_id, created_at DESC)
+| RLS: 是，project_id + region_code
+|
++-- project_id      text         NN PK(1) UK FK  项目/租户
++-- region_code     text         NN PK(2) UK     区域
++-- report_sha256   char(64)     NN PK(3) CK     报告内容哈希
++-- rollout_id      text         NN UK           Rollout ID，逻辑关联
++-- source_sha256   char(64)     NN UK CK        原始数据哈希
++-- profile_id      text         NN UK FK        质量配置 ID
++-- profile_version integer      NN UK FK CK     质量配置版本
++-- profile_sha256  char(64)     NN FK CK        质量配置哈希
++-- engine_version  text         NN UK           质检引擎版本
++-- schema_version  text         NN CK           固定 qc-report/v1
++-- status          text         NN CK           PASS/RISK/REJECT
++-- report_json     jsonb        NN              完整质检报告
+`-- created_at      timestamptz  NN DEFAULT      创建时间
+```
+
+### 9.3 `public.quality_rollout_summaries`
+
+用途：保存每个 Rollout 当前生效的质检摘要；与完整报告不同，该表允许更新。
+
+```text
++ public.quality_rollout_summaries
+| PK: (project_id, region_code, rollout_id)
+| FK: (project_id, region_code, report_sha256)
+|     -> qc_reports(project_id, region_code, report_sha256)
+| RLS: 是，project_id + region_code
+|
++-- project_id      text         NN PK(1) FK  项目/租户
++-- region_code     text         NN PK(2) FK  区域
++-- rollout_id      text         NN PK(3)     Rollout ID
++-- source_sha256   char(64)     NN CK        原始数据哈希
++-- profile_id      text         NN           质量配置 ID
++-- profile_version integer      NN CK        质量配置版本
++-- engine_version  text         NN           质检引擎版本
++-- status          text         NN CK        PASS/RISK/REJECT
++-- report_sha256   char(64)     NN FK        当前完整报告哈希
+`-- updated_at      timestamptz  NN DEFAULT   更新时间
+```
+
+## 10. alignment：数据对齐
+
+### 10.1 `public.alignment_profiles`
+
+用途：保存项目级数据对齐配置。
+
+```text
++ public.alignment_profiles
+| PK: (project_id, profile_id)
+| RLS: 是，project_id
+|
++-- project_id   text         NN PK(1)     项目/租户
++-- profile_id   text         NN PK(2) CK  对齐配置 ID
++-- profile_json jsonb        NN CK        完整配置，schema_version 必须为
+|                                          alignment-profile/v1
+`-- created_at   timestamptz  NN DEFAULT   创建时间
+```
+
+### 10.2 `public.aligned_fragment_attempts`
+
+用途：记录将 Rollout 转换为 Arrow 暂存片段的每次尝试。
+
+```text
++ public.aligned_fragment_attempts
+| PK: (project_id, rollout_id, source_sha256, converter_version, attempt_id)
+| IDX: aligned_fragment_ready_scope_idx
+|      (project_id, region_code, rollout_id, updated_at DESC)
+|      WHERE status = 'READY'
+| RLS: 是，project_id + region_code
+| IMMUTABLE: 状态变为 READY 后，UPDATE/DELETE 由触发器拒绝
+|
++-- project_id        text         NN PK(1)  项目/租户
++-- region_code       text         NN        区域
++-- rollout_id        text         NN PK(2)  Rollout ID，逻辑关联
++-- source_sha256     char(64)     NN PK(3) CK  原始数据哈希
++-- converter_version text         NN PK(4)  转换器版本
++-- attempt_id        text         NN PK(5)  尝试 ID
++-- content_sha256    char(64)        CK     片段内容哈希
++-- schema_sha256     char(64)        CK     Arrow Schema 哈希
++-- row_count         bigint           CK     行数
++-- staging_uri       text                    暂存片段 URI
++-- staging_format    text             CK     READY 时固定 arrow-ipc/v1
++-- status            text         NN CK     WRITING/READY/ABORTED
++-- manifest_json     jsonb                    运行时清单
++-- created_at        timestamptz  NN DEFAULT  创建时间
+`-- updated_at        timestamptz  NN DEFAULT  更新时间
+```
+
+## 11. Lance Catalog：Lance 目录元数据
+
+这些表位于 PostgreSQL，保存 Lance 数据集的管理信息，不保存 Lance 的实际数据行。
+
+### 11.1 `public.lance_schema_snapshots`
+
+用途：保存数据集的不可变 Schema 快照和指纹。
+
+```text
++ public.lance_schema_snapshots
+| PK: (project_id, dataset_id, schema_snapshot_id)
+| UK: (project_id, dataset_id, fingerprint)
+| RLS: 是，project_id
+|
++-- project_id         text              NN PK(1) UK  项目/租户
++-- dataset_id         text              NN PK(2) UK  数据集 ID
++-- schema_snapshot_id text              NN PK(3)     Schema 快照 ID
++-- frequency_hz       double precision  NN CK        数据频率，必须大于 0
++-- fields_json        jsonb             NN           字段定义
++-- fingerprint        text              NN UK CK     Schema 指纹，64 位十六进制
++-- snapshot_json      jsonb             NN           完整 Schema 快照
+`-- created_at         timestamptz       NN DEFAULT  创建时间
+```
+
+### 11.2 `public.lance_datasets`
+
+用途：保存每个逻辑数据集当前对应的 Lance 地址、Schema 和当前版本。
+
+```text
++ public.lance_datasets
+| PK: (project_id, dataset_id)
+| UK: dataset_uri
+| UK: (project_id, dataset_id, fingerprint)
+| FK: (project_id, dataset_id, schema_snapshot_id)
+|     -> lance_schema_snapshots(project_id, dataset_id, schema_snapshot_id)
+| RLS: 是，project_id
+|
++-- project_id         text              NN PK(1) FK UK  项目/租户
++-- dataset_id         text              NN PK(2) FK UK  数据集 ID
++-- schema_snapshot_id text              NN FK        当前 Schema 快照 ID
++-- frequency_hz       double precision  NN CK        数据频率
++-- fingerprint        text              NN UK CK     Schema 指纹
++-- dataset_uri        text              NN UK        Lance 数据集 URI
++-- current_version    bigint            NN CK        逻辑当前版本，默认 0
++-- created_at         timestamptz       NN DEFAULT   创建时间
+`-- updated_at         timestamptz       NN DEFAULT   更新时间
+```
+
+### 11.3 `public.lance_dataset_versions`
+
+用途：保存数据集每次成功提交后的逻辑版本及 Lance 物理版本回执。版本在业务设计上不可变，
+但当前迁移没有设置拒绝 `UPDATE/DELETE` 的触发器。
+
+```text
++ public.lance_dataset_versions
+| PK: (project_id, dataset_id, version)
+| UK: storage_commit_id
+| UK: (project_id, dataset_id, rollout_id, source_sha256, converter_version)
+| FK: (project_id, dataset_id) -> lance_datasets(project_id, dataset_id)
+| IDX: lance_versions_lance_snapshot_idx(dataset_uri, lance_version)
+| RLS: 是，project_id
+|
++-- project_id         text         NN PK(1) FK UK  项目/租户
++-- dataset_id         text         NN PK(2) FK UK  数据集 ID
++-- version            bigint       NN PK(3) CK     平台逻辑版本，大于 0
++-- schema_snapshot_id text         NN              Schema 快照 ID
++-- frequency_hz       double precision NN CK       数据频率
++-- fingerprint        text         NN CK           Schema 指纹
++-- content_hash       text         NN CK           版本内容哈希
++-- dataset_uri        text         NN IDX          Lance 数据集 URI
++-- lance_version      bigint       NN CK IDX       Lance 物理版本，大于 0
++-- storage_commit_id  text         NN UK CK        存储提交 ID
++-- rollout_id         text         NN UK           本次提交的 Rollout ID
++-- source_sha256      text         NN UK CK        原始数据哈希
++-- converter_version  text         NN UK           转换器版本
++-- committed_rollouts jsonb        NN              已提交 Rollout 清单
++-- receipt_json       jsonb        NN              完整提交回执
+`-- created_at         timestamptz  NN              创建时间
+```
+
+### 11.4 `public.lance_rollout_lineage`
+
+用途：记录 Rollout 被加入哪个 Lance 版本，以及来源片段和转换器血缘。
+
+```text
++ public.lance_rollout_lineage
+| PK: (project_id, dataset_id, rollout_id)
+| UK: storage_commit_id
+| FK: storage_commit_id -> lance_dataset_versions(storage_commit_id)
+| FK: (project_id, dataset_id, version_added)
+|     -> lance_dataset_versions(project_id, dataset_id, version)
+| RLS: 是，project_id
+|
++-- project_id           text         NN PK(1) FK  项目/租户
++-- dataset_id           text         NN PK(2) FK  数据集 ID
++-- rollout_id           text         NN PK(3)     Rollout ID，逻辑关联 ingest
++-- version_added        bigint       NN FK CK     首次加入的逻辑版本
++-- source_sha256        text         NN CK        原始数据哈希
++-- converter_version    text         NN           转换器版本
++-- schema_snapshot_id   text         NN           Schema 快照 ID
++-- fingerprint          text         NN CK        Schema 指纹
++-- fragment_uri         text         NN           Arrow 暂存片段 URI
++-- fragment_content_hash text        NN CK        暂存片段内容哈希
++-- step_count           bigint       NN CK        步数，不能小于 0
++-- storage_commit_id    text         NN UK FK     存储提交 ID
+`-- created_at           timestamptz  NN DEFAULT   创建时间
+```
+
+### 11.5 `public.lance_pending_reconciliation`
+
+用途：Lance 已成功提交但 PostgreSQL 目录登记失败时，保存待恢复记录。
+
+```text
++ public.lance_pending_reconciliation
+| PK: storage_commit_id
+| FK: (project_id, dataset_id) -> lance_datasets(project_id, dataset_id)
+| IDX: lance_pending_dataset_idx(project_id, dataset_id, first_seen_at)
+| RLS: 是，project_id
+|
++-- storage_commit_id text         NN PK CK   存储提交 ID
++-- project_id        text         NN FK IDX  项目/租户
++-- dataset_id        text         NN FK IDX  数据集 ID
++-- dataset_uri       text         NN         Lance 数据集 URI
++-- lance_version     bigint       NN CK      Lance 物理版本
++-- last_error        text         NN         最近错误
++-- attempt_count     integer      NN CK      尝试次数，默认 1
++-- first_seen_at     timestamptz  NN DEFAULT 首次发现时间
+`-- last_attempt_at   timestamptz  NN DEFAULT 最近尝试时间
+```
+
+## 12. annotation：数据标注
+
+### 12.1 `annotation.annotation_tasks`
+
+用途：标注任务聚合根，保存当前修订、提交修订、审核结果和并发控制信息。
+
+```text
++ annotation.annotation_tasks
+| PK: task_id
+| UK: (project_id, rollout_id)
+| FK: (task_id, current_revision)
+|     -> annotation_revisions(task_id, revision) [DEFERRABLE]
+| FK: (task_id, submitted_revision)
+|     -> annotation_revisions(task_id, revision) [DEFERRABLE]
+| FK: (task_id, approved_revision, approved_review_id)
+|     -> annotation_reviews(task_id, revision, review_id) [DEFERRABLE]
+| IDX: annotation_tasks_project_status_idx(project_id, status, updated_at DESC)
+| RLS: 是，project_id
+|
++-- task_id            text         NN PK       标注任务 ID
++-- project_id         text         NN UK       项目/租户
++-- dataset_id         text         NN          数据集 ID，逻辑关联
++-- dataset_version    bigint       NN CK       数据集版本，大于 0
++-- rollout_id         text         NN UK       Rollout ID，逻辑关联
++-- assignee_id        text                     当前标注人
++-- current_revision   bigint       NN FK CK    当前修订，默认 0
++-- state_version      bigint       NN CK       状态并发版本，默认 0
++-- status             text         NN CK       DRAFT/SUBMITTED/APPROVED/
+|                                              NEEDS_REVISION/REJECTED
++-- submitted_revision bigint          FK CK    已提交修订
++-- submitted_by       text                     提交人
++-- approved_revision  bigint          FK CK    已批准修订
++-- approved_review_id text            FK       批准审核 ID
++-- etag               text         NN          乐观并发 ETag
++-- created_at         timestamptz  NN DEFAULT  创建时间
+`-- updated_at         timestamptz  NN DEFAULT  更新时间
+```
+
+### 12.2 `annotation.annotation_revisions`
+
+用途：标注任务的不可变修订版本；修订号必须从父修订连续递增。
+
+```text
++ annotation.annotation_revisions
+| PK: (task_id, revision)
+| FK: task_id -> annotation_tasks(task_id)
+| RLS: 是，通过 annotation_tasks 继承项目作用域
+| APPEND ONLY: UPDATE/DELETE 由触发器拒绝
+|
++-- task_id            text         NN PK(1) FK  标注任务 ID
++-- revision           bigint       NN PK(2) CK  修订号，从 0 开始
++-- parent_revision    bigint           CK       父修订；revision=0 时为空
++-- author_id          text         NN           作者 ID
++-- client_mutation_id text         NN           产生修订的客户端变更 ID
+`-- created_at         timestamptz  NN DEFAULT   创建时间
+```
+
+### 12.3 `annotation.annotation_operations`
+
+用途：记录某个修订中对步骤区间执行的排除或恢复操作。
+
+```text
++ annotation.annotation_operations
+| PK: (task_id, revision, operation_id)
+| UK: (task_id, operation_id)
+| UK: (task_id, revision, operation_sequence)
+| FK: (task_id, revision) -> annotation_revisions(task_id, revision)
+| RLS: 是，通过 annotation_tasks 继承项目作用域
+| APPEND ONLY: UPDATE/DELETE 由触发器拒绝
+|
++-- task_id            text     NN PK(1) UK FK  标注任务 ID
++-- revision           bigint   NN PK(2) UK FK  修订号
++-- operation_id       text     NN PK(3) UK     操作 ID
++-- operation_sequence integer  NN UK CK        修订内操作序号
++-- kind               text     NN CK           EXCLUDE/RESTORE
++-- start_step         bigint   NN CK           起始步骤，包含
++-- end_step           bigint   NN CK           结束步骤，必须大于 start_step
++-- reason             text     NN DEFAULT      原因，默认空字符串
+`-- modality_scope     text     NN CK           固定 ALL_MODALITIES
+```
+
+### 12.4 `annotation.annotation_reviews`
+
+用途：保存审核员对某一修订的不可变审核决定。
+
+```text
++ annotation.annotation_reviews
+| PK: review_id
+| UK: (task_id, revision, review_id)
+| FK: (task_id, revision) -> annotation_revisions(task_id, revision)
+| IDX: annotation_reviews_task_revision_idx(task_id, revision, created_at)
+| RLS: 是，通过 annotation_tasks 继承项目作用域
+| APPEND ONLY: UPDATE/DELETE 由触发器拒绝
+|
++-- review_id  text         NN PK UK  审核 ID
++-- task_id    text         NN UK FK  标注任务 ID
++-- revision   bigint       NN UK FK CK  被审核修订
++-- reviewer_id text        NN        审核人 ID
++-- decision   text         NN CK     APPROVE/NEEDS_REVISION/REJECT
++-- comment    text         NN DEFAULT 审核意见
+`-- created_at timestamptz  NN DEFAULT 创建时间
+```
+
+### 12.5 `annotation.annotation_mutations`
+
+用途：保存客户端变更的幂等结果，保证同一 `client_mutation_id` 不被重复应用。
+
+```text
++ annotation.annotation_mutations
+| PK: (task_id, client_mutation_id)
+| FK: (task_id, result_revision) -> annotation_revisions(task_id, revision)
+| RLS: 是，通过 annotation_tasks 继承项目作用域
+| APPEND ONLY: UPDATE/DELETE 由触发器拒绝
+|
++-- task_id             text         NN PK(1) FK  标注任务 ID
++-- client_mutation_id  text         NN PK(2)     客户端变更 ID
++-- actor_id            text         NN           操作者 ID
++-- request_fingerprint char(64)     NN           请求指纹
++-- expected_revision   bigint       NN CK        请求期望的旧修订
++-- request_etag        text         NN           请求携带的 ETag
++-- result_revision     bigint       NN FK CK     变更产生的新修订
++-- result_etag         text         NN           变更后的 ETag
+`-- created_at          timestamptz  NN DEFAULT   创建时间
+```
+
+### 12.6 标注视图
+
+```text
+annotation.annotation_current [VIEW]
+  来源: annotation_tasks
+  内容: 当前修订、状态版本、状态、提交/批准指针、ETag、更新时间
+
+annotation.annotation_drafts [VIEW]
+  来源: annotation_tasks
+  过滤: status IN ('DRAFT', 'NEEDS_REVISION', 'REJECTED')
+  内容: task_id、当前 revision、etag、assignee_id、updated_at
+```
+
+## 13. publishing：数据发布与导出
+
+### 13.1 `publishing.dataset_versions`
+
+用途：保存准备发布的数据集不可变版本清单。
+
+```text
++ publishing.dataset_versions
+| PK: (project_id, dataset_id, dataset_version)
+| RLS: 是，project_id
+| IMMUTABLE: UPDATE/DELETE 由触发器拒绝
+|
++-- project_id         text         NN PK(1)  项目/租户
++-- dataset_id         text         NN PK(2)  数据集 ID
++-- dataset_version    text         NN PK(3)  发布数据集版本
++-- base_lance_version text         NN        基础 Lance 版本，逻辑关联
++-- content_hash       text         NN CK     版本内容哈希
++-- manifest_json      jsonb        NN        不可变发布清单
+`-- created_at         timestamptz  NN        创建时间
+```
+
+### 13.2 `publishing.publication_assets`
+
+用途：保存一个发布版本所需的标注覆盖层或训练清单资产。
+
+```text
++ publishing.publication_assets
+| PK: (project_id, dataset_id, dataset_version, asset_kind)
+| FK: (project_id, dataset_id, dataset_version)
+|     -> publishing.dataset_versions(project_id, dataset_id, dataset_version)
+| RLS: 是，project_id
+| IMMUTABLE: UPDATE/DELETE 由触发器拒绝
+|
++-- project_id      text    NN PK(1) FK  项目/租户
++-- dataset_id      text    NN PK(2) FK  数据集 ID
++-- dataset_version text    NN PK(3) FK  数据集版本
++-- asset_kind      text    NN PK(4) CK  ANNOTATIONS_LANCE/TRAINING_MANIFEST
++-- artifact_uri    text    NN           资产 URI
++-- content_sha256  text    NN CK        资产内容 SHA-256
++-- media_type      text    NN           MIME 类型
+`-- size_bytes      bigint  NN CK        资产大小，不能小于 0
+```
+
+### 13.3 `publishing.export_attempts`
+
+用途：记录每次导出尝试；这是发布模块中唯一允许更新生命周期状态的表。
+
+```text
++ publishing.export_attempts
+| PK: (project_id, dataset_id, dataset_version, export_format, attempt_id)
+| FK: (project_id, dataset_id, dataset_version)
+|     -> publishing.dataset_versions(project_id, dataset_id, dataset_version)
+| IDX: export_attempts_status_idx(project_id, status, updated_at)
+| RLS: 是，project_id
+|
++-- project_id            text         NN PK(1) FK  项目/租户
++-- dataset_id            text         NN PK(2) FK  数据集 ID
++-- dataset_version       text         NN PK(3) FK  数据集版本
++-- export_format         text         NN PK(4) CK  lance_snapshot/lerobot_v3
++-- attempt_id            text         NN PK(5)     尝试 ID
++-- status                text         NN CK        STAGING/VALIDATING/FAILED/PUBLISHED
++-- staging_uri           text         NN           暂存位置
++-- staged_content_sha256 text            CK        暂存产物内容哈希
++-- failure_code          text                       失败码
++-- created_at            timestamptz  NN DEFAULT   创建时间
+`-- updated_at            timestamptz  NN DEFAULT   更新时间
+```
+
+### 13.4 `publishing.published_exports`
+
+用途：保存已经验证并提升为正式产物的导出记录。
+
+```text
++ publishing.published_exports
+| PK: (project_id, dataset_id, dataset_version, export_format)
+| FK: (project_id, dataset_id, dataset_version)
+|     -> publishing.dataset_versions(project_id, dataset_id, dataset_version)
+| FK: (project_id, dataset_id, dataset_version, export_format, promoted_attempt_id)
+|     -> publishing.export_attempts(..., attempt_id)
+| RLS: 是，project_id
+| IMMUTABLE: UPDATE/DELETE 由触发器拒绝
+| INSERT GUARD: 对应 attempt 必须为 PUBLISHED，且 SHA-256 必须一致
+|
++-- project_id             text         NN PK(1) FK  项目/租户
++-- dataset_id             text         NN PK(2) FK  数据集 ID
++-- dataset_version        text         NN PK(3) FK  数据集版本
++-- export_format          text         NN PK(4) FK CK  lance_snapshot/lerobot_v3
++-- manifest_content_hash  text         NN CK        发布清单内容哈希
++-- artifact_uri           text         NN           正式产物 URI
++-- artifact_content_sha256 text        NN CK        正式产物 SHA-256
++-- media_type             text         NN           MIME 类型
++-- row_count              bigint       NN CK        数据行数
++-- promoted_attempt_id    text         NN FK        被提升的导出尝试 ID
+`-- published_at           timestamptz  NN DEFAULT   发布时间
+```
+
+## 14. 跨模块逻辑关联
+
+以下关联在业务上存在，但当前 SQL 没有创建跨模块外键。删除或修改上游数据时，PostgreSQL
+不会自动阻止产生孤立记录，需要由服务层和工作流保证一致性。
+
+```text
+ingest.rollouts.rollout_id
+    +-- LOGICAL -> raw_verification_reports.rollout_id
+    +-- LOGICAL -> qc_reports.rollout_id
+    +-- LOGICAL -> quality_rollout_summaries.rollout_id
+    +-- LOGICAL -> aligned_fragment_attempts.rollout_id
+    +-- LOGICAL -> lance_rollout_lineage.rollout_id
+    `-- LOGICAL -> annotation.annotation_tasks.rollout_id
+
+aligned_fragment_attempts.staging_uri
+    `-- LOGICAL -> lance_rollout_lineage.fragment_uri
+
+lance_datasets / lance_dataset_versions
+    +-- LOGICAL -> annotation.annotation_tasks(dataset_id, dataset_version)
+    `-- LOGICAL -> publishing.dataset_versions(dataset_id, base_lance_version)
+
+workflow.jobs.resource_id
+    `-- LOGICAL -> 任意流水线业务资源，由 job_type 决定具体表
+```
+
+## 15. 安全性、不可变性和生命周期规则
+
+```text
+租户隔离
+  project_id              项目级租户边界
+  region_code             项目内区域边界
+  core.scope_matches()    读取事务中的 app.project_id/app.region_code
+  core.apply_project_rls  为带 project_id 的表启用并强制 RLS
+  annotation 自有策略    同时使用 app.project_ids/app.is_admin
+
+不可变表/记录
+  raw_verification_reports                  整表禁止 UPDATE/DELETE
+  aligned_fragment_attempts(status=READY)   READY 后禁止 UPDATE/DELETE
+  annotation_revisions                      仅追加
+  annotation_operations                     仅追加
+  annotation_reviews                        仅追加
+  annotation_mutations                      仅追加
+  publishing.dataset_versions               仅追加
+  publishing.publication_assets             仅追加
+  publishing.published_exports              仅追加
+
+允许更新的生命周期表
+  ingest.*
+  workflow.jobs
+  workflow.reconciliation_items
+  quality_rollout_summaries
+  lance_datasets
+  lance_pending_reconciliation
+  annotation.annotation_tasks
+  publishing.export_attempts
+```
+
+迁移程序会在一个 PostgreSQL 事务中执行待应用的 SQL，使用 advisory lock 防止多个实例并发
+迁移，并将校验值写入 `core.schema_migrations`。迁移是只向前执行的：已经应用的迁移文件不应
+重排或修改。

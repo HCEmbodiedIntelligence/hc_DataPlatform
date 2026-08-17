@@ -322,7 +322,7 @@ export function AuditPage() {
           title: '审计日志',
           description: '当前读取者可见的脱敏、追加式审计投影。',
           breadcrumbs: [
-            { key: 'settings', label: '系统管理' },
+            { key: 'settings', label: '系统管理', to: '/settings/robot-models' },
             { key: 'audit', label: '审计日志' },
           ],
           metadata: bootstrap.data ? (

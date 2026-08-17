@@ -236,7 +236,7 @@ export function Component() {
           title: '机器人模型资产',
           description: '管理一次性上传的 URDF 与 Mesh，并将固定版本安全绑定到机器人。',
           breadcrumbs: [
-            { key: 'settings', label: '系统管理' },
+            { key: 'settings', label: '系统管理', to: '/settings/robot-models' },
             { key: 'models', label: '机器人模型资产' },
           ],
           actions: (

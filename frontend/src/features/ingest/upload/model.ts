@@ -1,20 +1,52 @@
-import type { BlockedReason, Brand, DecimalString, IngestScope, UnknownEnum } from '../../../entities/data-source';
-import type { RawObject } from '../../../entities/raw-object';
-import type { UploadJob } from '../../../entities/upload-job';
-import type { QuarantineDisposition, ValidationStage } from '../validation-pipeline';
+import type {
+  BlockedReason,
+  Brand,
+  DecimalString,
+  IngestScope,
+  UnknownEnum,
+} from "../../../entities/data-source";
+import type { RawObject } from "../../../entities/raw-object";
+import type { UploadJob } from "../../../entities/upload-job";
+import type {
+  QuarantineDisposition,
+  ValidationStage,
+} from "../validation-pipeline";
 
-export type UploadId = Brand<string, 'UploadId'>;
-export type UploadETag = Brand<string, 'UploadETag'>;
+export type UploadId = Brand<string, "UploadId">;
+export type UploadETag = Brand<string, "UploadETag">;
 export type UploadLifecycleStatus =
-  | 'CREATED' | 'AUTHORIZING' | 'UPLOADING' | 'PAUSED' | 'FINALIZING'
-  | 'PENDING_VERIFY' | 'VERIFYING' | 'AVAILABLE' | 'FAILED' | 'QUARANTINED'
-  | 'CANCELLING' | 'CANCELLED' | 'EXPIRED' | UnknownEnum;
+  | "CREATED"
+  | "AUTHORIZING"
+  | "UPLOADING"
+  | "PAUSED"
+  | "FINALIZING"
+  | "PENDING_VERIFY"
+  | "VERIFYING"
+  | "AVAILABLE"
+  | "FAILED"
+  | "QUARANTINED"
+  | "CANCELLING"
+  | "CANCELLED"
+  | "EXPIRED"
+  | UnknownEnum;
 export type VerificationStatus =
-  | 'NOT_STARTED' | 'QUEUED' | 'RUNNING' | 'PASSED' | 'FAILED' | 'CANCELLED' | UnknownEnum;
+  | "NOT_STARTED"
+  | "QUEUED"
+  | "RUNNING"
+  | "PASSED"
+  | "FAILED"
+  | "CANCELLED"
+  | UnknownEnum;
 
 export type UploadAllowedAction =
-  | 'VIEW' | 'PAUSE' | 'RESUME' | 'RETRY_UPLOAD' | 'SUBMIT_MANIFEST'
-  | 'RETRY_VERIFY' | 'CREATE_REPLACEMENT' | 'CANCEL';
+  | "VIEW"
+  | "PAUSE"
+  | "RESUME"
+  | "RETRY_UPLOAD"
+  | "SUBMIT_MANIFEST"
+  | "RETRY_VERIFY"
+  | "CREATE_REPLACEMENT"
+  | "CANCEL";
 
 export interface UploadProgress {
   readonly expectedBytes: DecimalString | null;
@@ -26,6 +58,28 @@ export interface UploadProgress {
   readonly throughputBytesPerSecond: DecimalString | null;
   readonly estimatedRemainingSeconds: DecimalString | null;
   readonly verificationStage: string | null;
+}
+
+export interface SourceManifestSummary {
+  readonly manifestId: string;
+  readonly revision: DecimalString;
+  readonly schemaVersion: string;
+  readonly canonicalization: "RFC8785";
+  readonly sha256: string;
+  readonly objectSetHash: string;
+  readonly sourceFormat: string;
+  readonly sourceFormatVersion: string | null;
+  readonly adapterVersion: string;
+  readonly declaredObjectCount: DecimalString;
+  readonly declaredBytes: DecimalString;
+  readonly submittedBy: { readonly id: string; readonly displayName: string };
+  readonly submittedAt: string;
+  readonly status: string;
+  readonly schemaIssueCounts: {
+    readonly error: DecimalString;
+    readonly warning: DecimalString;
+    readonly info: DecimalString;
+  };
 }
 
 export interface UploadSession {
@@ -53,6 +107,7 @@ export interface UploadSession {
   readonly lifecycleStatus: UploadLifecycleStatus;
   readonly verificationStatus: VerificationStatus;
   readonly progress: UploadProgress;
+  readonly sourceManifest: SourceManifestSummary | null;
   readonly latestVerificationRunId: string | null;
   readonly activeJobIds: readonly string[];
   readonly createdBy: { readonly id: string; readonly displayName: string };
@@ -104,10 +159,22 @@ export function compareResourceVersion(a: string, b: string): number {
   return left === right ? 0 : left > right ? 1 : -1;
 }
 
-export function acceptNewerResource<T extends { readonly resourceVersion: string }>(current: T, incoming: T): T {
-  return compareResourceVersion(incoming.resourceVersion, current.resourceVersion) > 0 ? incoming : current;
+export function acceptNewerResource<
+  T extends { readonly resourceVersion: string },
+>(current: T, incoming: T): T {
+  return compareResourceVersion(
+    incoming.resourceVersion,
+    current.resourceVersion,
+  ) > 0
+    ? incoming
+    : current;
 }
 
 export function isUploadTerminal(status: UploadLifecycleStatus): boolean {
-  return typeof status === 'string' && ['AVAILABLE', 'FAILED', 'QUARANTINED', 'CANCELLED', 'EXPIRED'].includes(status);
+  return (
+    typeof status === "string" &&
+    ["AVAILABLE", "FAILED", "QUARANTINED", "CANCELLED", "EXPIRED"].includes(
+      status,
+    )
+  );
 }

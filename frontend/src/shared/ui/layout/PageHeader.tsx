@@ -1,10 +1,12 @@
 import { Flex, Typography } from 'antd';
 import { useId, type ReactNode } from 'react';
+import { Link, type To } from 'react-router-dom';
 import styles from './layout.module.css';
 
 export interface PageBreadcrumbItem {
   key: string;
   label: ReactNode;
+  to?: To;
 }
 
 export interface PageHeaderProps {
@@ -33,14 +35,20 @@ export function PageHeader({
         {breadcrumbs.length > 0 ? (
           <nav aria-label="面包屑">
             <ol className={styles.breadcrumbs}>
-              {breadcrumbs.map((item, index) => (
-                <li
-                  key={item.key}
-                  aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
-                >
-                  {item.label}
-                </li>
-              ))}
+              {breadcrumbs.map((item, index) => {
+                const current = index === breadcrumbs.length - 1;
+                return (
+                  <li key={item.key} aria-current={current ? 'page' : undefined}>
+                    {!current && item.to ? (
+                      <Link className={styles.breadcrumbLink} to={item.to}>
+                        {item.label}
+                      </Link>
+                    ) : (
+                      item.label
+                    )}
+                  </li>
+                );
+              })}
             </ol>
           </nav>
         ) : null}

@@ -26,7 +26,7 @@ async function bootstrap(): Promise<void> {
     releaseEnv: environment.value.releaseEnv,
   });
 
-  if (environment.value.mockMode === 'browser') {
+  if (import.meta.env.VITE_MOCK_MODE === 'browser' && environment.value.mockMode === 'browser') {
     const { startBrowserMocks } = await import('./mocks');
     await startBrowserMocks();
   }

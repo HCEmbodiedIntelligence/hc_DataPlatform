@@ -6,13 +6,18 @@ import {
   dataSourcePageFixture,
   ingestFixtureScope,
   internalUploadJobFixture,
+  quarantinedUploadListFixture,
   uploadBootstrapFixture,
   uploadCreationOptionsFixture,
   uploadEventPageFixture,
   uploadListFixture,
   uploadObjectPageFixture,
   uploadSessionFixture,
+  uploadingBootstrapFixture,
+  uploadingEventPageFixture,
+  uploadingObjectPageFixture,
   uploadingSessionFixture,
+  uploadingVerificationRunPageFixture,
   verificationRunFixture,
   verificationRunPageFixture,
 } from '../fixtures/ingest';
@@ -20,6 +25,7 @@ import {
 const api = '*/api/v1/projects/:projectId/regions/:regionCode';
 let rateLimitAttempts = 0;
 const ingestJobIds = new Set(['job_connection_fx_01', 'job_verify_retry']);
+const uploadNotFoundMessage = '\u8d44\u6e90\u4e0d\u5b58\u5728\u3002';
 
 function error(status: number, code: string, message: string, blockedReasons: readonly { code: string; message: string }[] = []) {
   return HttpResponse.json({ error: { code, message, field_errors: [], operation_errors: [], blocked_reasons: blockedReasons, request_id: `req_fx_${code.toLowerCase()}`, retryable: status >= 500 } }, { status });
@@ -42,6 +48,38 @@ function validateWrite(request: Request, params: Record<string, string | readonl
   if (read) return read;
   if (!request.headers.get('Idempotency-Key')) return error(400, 'IDEMPOTENCY_KEY_REQUIRED', '写操作必须提供 Idempotency-Key');
   if (etag && !request.headers.get('If-Match')) return error(428, 'PRECONDITION_REQUIRED', '写操作必须提供 If-Match');
+  return null;
+}
+
+function filterUploadSessions(
+  request: Request,
+  sessions: readonly {
+    readonly lifecycle_status: string;
+    readonly verification_status: string;
+  }[],
+) {
+  const query = new URL(request.url).searchParams;
+  const lifecycleStatuses = new Set(query.getAll('lifecycle_status'));
+  const verificationStatuses = new Set(query.getAll('verification_status'));
+
+  return sessions.filter((session) =>
+    (lifecycleStatuses.size === 0 || lifecycleStatuses.has(session.lifecycle_status))
+    && (verificationStatuses.size === 0 || verificationStatuses.has(session.verification_status)),
+  );
+}
+
+function rejectClientManagedRobotEndpoint(body: unknown): Response | null {
+  if (!body || typeof body !== 'object') return null;
+  const configuration = (body as Record<string, unknown>).configuration;
+  if (!configuration || typeof configuration !== 'object') return null;
+  const fields = configuration as Record<string, unknown>;
+  if ('endpoint_ref' in fields || 'tls_profile_id' in fields) {
+    return error(
+      422,
+      'SERVER_MANAGED_ENDPOINT',
+      '机器人 Endpoint 和 TLS 配置由服务端根据绑定关系解析',
+    );
+  }
   return null;
 }
 
@@ -79,6 +117,8 @@ export const ingestHandlers = [
   }),
   http.post(`${api}/data-sources`, async ({ request, params }) => {
     const invalid = validateWrite(request, params, false); if (invalid) return invalid;
+    const body = await request.json() as Record<string, unknown>;
+    const invalidEndpoint = rejectClientManagedRobotEndpoint(body); if (invalidEndpoint) return invalidEndpoint;
     await scenarioDelay();
     if (getIngestScenario() === 'validation-error') return error(422, 'VALIDATION_ERROR', '字段校验失败');
     return HttpResponse.json({ data: dataSourceFixture, scope: ingestFixtureScope, request_id: 'req_fx_source_create', contract_version: 'ingest.v1alpha1' }, { status: 201 });
@@ -87,6 +127,7 @@ export const ingestHandlers = [
     const invalid = validateWrite(request, params, true); if (invalid) return invalid;
     if (getIngestScenario() === 'etag-conflict' || getIngestScenario() === 'conflict') return error(412, 'VERSION_CONFLICT', 'ETag 已变化');
     const body = await request.json() as Record<string, unknown>;
+    const invalidEndpoint = rejectClientManagedRobotEndpoint(body); if (invalidEndpoint) return invalidEndpoint;
     return HttpResponse.json({ data: { ...dataSourceFixture, name: typeof body.name === 'string' ? body.name : dataSourceFixture.name, etag: 'source-rv-10', config_version: '8' }, scope: ingestFixtureScope, request_id: 'req_fx_source_update', contract_version: 'ingest.v1alpha1' });
   }),
   http.post(`${api}/data-sources/:sourceId\\:rotate-credential`, ({ request, params }) => {
@@ -110,8 +151,9 @@ export const ingestHandlers = [
     const scenario = getIngestScenario();
     if (scenario === 'empty' || scenario === 'filtered-empty') return HttpResponse.json({ ...uploadListFixture, items: [] });
     if (scenario === 'contract-mismatch') return HttpResponse.json({ ...uploadListFixture, security_token: 'fixture-only-leak' });
-    if (scenario === 'unknown-enum') return HttpResponse.json({ ...uploadListFixture, items: [{ ...uploadSessionFixture, lifecycle_status: 'FUTURE_TRANSFER' }] });
-    return HttpResponse.json(uploadListFixture);
+    if (scenario === 'unknown-enum') return HttpResponse.json({ ...uploadListFixture, items: [{ ...uploadingSessionFixture, lifecycle_status: 'FUTURE_TRANSFER' }] });
+    const fixture = scenario === 'job-failed' ? quarantinedUploadListFixture : uploadListFixture;
+    return HttpResponse.json({ ...fixture, items: filterUploadSessions(request, fixture.items) });
   }),
   http.get(`${api}/upload-sessions:creation-options`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
@@ -126,28 +168,46 @@ export const ingestHandlers = [
   http.get(`${api}/upload-sessions/:uploadId/bootstrap`, async ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
     await scenarioDelay(); const failed = scenarioFailure('detail'); if (failed) return failed;
-    if (getIngestScenario() === 'contract-mismatch') return HttpResponse.json({ ...uploadBootstrapFixture, signed_url: 'https://fixture.invalid/leak' });
-    return HttpResponse.json(uploadBootstrapFixture);
+    const uploadId = String(params.uploadId);
+    const fixture = uploadId === uploadingSessionFixture.upload_id
+      ? uploadingBootstrapFixture
+      : uploadId === uploadSessionFixture.upload_id
+        ? uploadBootstrapFixture
+        : null;
+    if (!fixture) return error(404, 'NOT_FOUND', uploadNotFoundMessage);
+    if (getIngestScenario() === 'contract-mismatch') return HttpResponse.json({ ...fixture, signed_url: 'https://fixture.invalid/leak' });
+    return HttpResponse.json(fixture);
   }),
   http.get(`${api}/upload-sessions/:uploadId/objects`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
     if (getIngestScenario() === 'partial-error') return error(500, 'INTERNAL_ERROR', '对象区域不可用');
     if (getIngestScenario() === 'empty') return HttpResponse.json({ ...uploadObjectPageFixture, items: [] });
-    return HttpResponse.json(uploadObjectPageFixture);
+    const uploadId = String(params.uploadId);
+    if (uploadId === uploadingSessionFixture.upload_id) return HttpResponse.json(uploadingObjectPageFixture);
+    if (uploadId === uploadSessionFixture.upload_id) return HttpResponse.json(uploadObjectPageFixture);
+    return error(404, 'NOT_FOUND', uploadNotFoundMessage);
   }),
   http.get(`${api}/upload-sessions/:uploadId/verification-runs`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
-    return HttpResponse.json(verificationRunPageFixture);
+    const uploadId = String(params.uploadId);
+    if (uploadId === uploadingSessionFixture.upload_id) return HttpResponse.json(uploadingVerificationRunPageFixture);
+    if (uploadId === uploadSessionFixture.upload_id) return HttpResponse.json(verificationRunPageFixture);
+    return error(404, 'NOT_FOUND', uploadNotFoundMessage);
   }),
   http.get(`${api}/upload-sessions/:uploadId/events`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
     if (getIngestScenario() === 'partial-error') return error(500, 'INTERNAL_ERROR', '事件区域不可用');
-    return HttpResponse.json(getIngestScenario() === 'empty' ? { ...uploadEventPageFixture, items: [] } : uploadEventPageFixture);
+    const uploadId = String(params.uploadId);
+    if (uploadId === uploadingSessionFixture.upload_id) return HttpResponse.json(uploadingEventPageFixture);
+    if (uploadId === uploadSessionFixture.upload_id) {
+      return HttpResponse.json(getIngestScenario() === 'empty' ? { ...uploadEventPageFixture, items: [] } : uploadEventPageFixture);
+    }
+    return error(404, 'NOT_FOUND', uploadNotFoundMessage);
   }),
   http.post(`${api}/upload-sessions/:uploadId\\:pause`, ({ request, params }) => {
     const invalid = validateWrite(request, params, true); if (invalid) return invalid;
     if (getIngestScenario() === 'etag-conflict' || getIngestScenario() === 'conflict') return error(412, 'VERSION_CONFLICT', 'ETag 已变化');
-    return HttpResponse.json({ data: { ...uploadSessionFixture, upload_id: String(params.uploadId), lifecycle_status: 'PAUSED', allowed_actions: ['RESUME', 'CANCEL'], etag: 'upload-rv-9', resource_version: '9' }, scope: ingestFixtureScope, request_id: 'req_fx_pause', contract_version: 'ingest.v1alpha1' });
+    return HttpResponse.json({ data: { ...uploadingSessionFixture, upload_id: String(params.uploadId), lifecycle_status: 'PAUSED', allowed_actions: ['RESUME', 'CANCEL'], etag: 'upload-rv-9', resource_version: '9' }, scope: ingestFixtureScope, request_id: 'req_fx_pause', contract_version: 'ingest.v1alpha1' });
   }),
   http.post(`${api}/upload-sessions/:uploadId\\:cancel`, ({ request, params }) => {
     const invalid = validateWrite(request, params, true); if (invalid) return invalid;
