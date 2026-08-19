@@ -1,0 +1,59 @@
+{
+  "actual_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action"
+  ],
+  "cameras": [
+    {
+      "camera_id": "front",
+      "topic": "/camera/front/image"
+    }
+  ],
+  "collection_job_id": "be22-legal-job",
+  "collection_session_id": "be22-legal-session",
+  "compression": "none",
+  "crc64": "13305216265320122395",
+  "data_package_id": "be22-legal-package",
+  "end_time": "2023-11-14T22:13:21Z",
+  "expected_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action"
+  ],
+  "file_size": 4637,
+  "files": [
+    {
+      "crc64": "13305216265320122395",
+      "media_type": "application/octet-stream",
+      "path": "recording.mcap",
+      "role": "RAW_MCAP",
+      "sha256": "2519485c1c0d93c0e759be517bfbc90df43f8d293319edbd075e53c309f8d403",
+      "size": 4637
+    }
+  ],
+  "project_id": "be22-template-project",
+  "recorder_version": "hc-be22-fixture/1",
+  "recording_request_id": "be22-legal-request",
+  "robot_id": "be22-test-robot",
+  "rollout_id": "be22-legal-rollout",
+  "schema_version": 1,
+  "sequence_no": 1,
+  "sha256": "2519485c1c0d93c0e759be517bfbc90df43f8d293319edbd075e53c309f8d403",
+  "start_time": "2023-11-14T22:13:20Z",
+  "task_id": "be22-template-task",
+  "topics": [
+    {
+      "name": "/camera/front/image",
+      "required": true
+    },
+    {
+      "name": "/joint_states",
+      "required": true
+    },
+    {
+      "name": "/action",
+      "required": true
+    }
+  ]
+}

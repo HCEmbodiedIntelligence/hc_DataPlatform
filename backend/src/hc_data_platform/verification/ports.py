@@ -264,6 +264,11 @@ class _ChunkIteratorStream:
                 self._pending = chunk
         return bytes(result)
 
+    def seekable(self) -> bool:
+        """Advertise the cloud body as streaming so MCAP selects its sequential reader."""
+
+        return False
+
     def close(self) -> None:
         self._closed = True
         close = getattr(self._chunks, "close", None)

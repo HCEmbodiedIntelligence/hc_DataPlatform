@@ -7,3 +7,6 @@ Do not deploy the example registry or zero digests. Production values must conta
 registry repositories, immutable sha256 digests, external Secret names, and a configured Worker
 activity factory.
 
+The external object-store provider must independently configure bucket CORS for the exact
+platform origins (PUT/HEAD, required request headers, exposed ETag). This chart configures the
+browser presign endpoint but does not manage vendor bucket CORS.

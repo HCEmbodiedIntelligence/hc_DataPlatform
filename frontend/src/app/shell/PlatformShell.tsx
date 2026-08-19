@@ -1,122 +1,189 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Bell,
+  Bot,
+  Box,
   ChevronDown,
+  ClipboardList,
+  Clock3,
+  CloudUpload,
+  Crosshair,
   Database,
-  Gauge,
-  Globe2,
+  FolderKanban,
   HardDrive,
-  ListTodo,
+  House,
+  ListChecks,
+  MapPin,
   Menu as MenuIcon,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
   Settings,
+  ShieldAlert,
+  ScrollText,
   Tags,
-  UploadCloud,
   UserRound,
-  Wrench,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   Alert,
   Avatar,
   Button,
   Drawer,
   Dropdown,
+  Input,
   Layout,
   Menu,
-  Popover,
   Select,
   Space,
-  Typography,
   type MenuProps,
-} from 'antd';
-import { Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom';
-import type { AuthorizationSnapshot, Capability } from '../../entities/capability';
-import { makeScopeKey, type Scope } from '../../entities/scope';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { GlobalJobCenter } from '../../shared/jobs/GlobalJobCenter';
-import { useShellStore } from '../../shared/scope/shell-store';
-import { useScope } from '../providers/ScopeProvider';
-import { useToast } from '../providers/ToastProvider';
+} from "antd";
+import {
+  Link,
+  Outlet,
+  matchPath,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import type { AuthorizationSnapshot } from "../../entities/capability";
+import { makeScopeKey, type Scope } from "../../entities/scope";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
+import { useScope } from "../providers/ScopeProvider";
+import { useToast } from "../providers/ToastProvider";
 import {
   filterNavigationManifest,
-  type NavigationGroupId,
+  navigationManifest,
   type NavigationManifest,
   type PageAvailability,
-} from './navigation-manifest';
-import hangchaLogo from '../../assets/hangcha-logo.png';
-import styles from './PlatformShell.module.css';
-import { datasetContextKind } from './dataset-context';
+} from "./navigation-manifest";
+import hangchaLogo from "../../assets/hangcha-logo.png";
+import styles from "./PlatformShell.module.css";
+import { ShellLoadingPage } from "./ShellLoadingPage";
+import { datasetContextKind } from "./dataset-context";
 
 const { Content, Header, Sider } = Layout;
-const { Text } = Typography;
-const DatasetContextSelector = lazy(() => import('./DatasetContextSelector'));
+const DatasetContextSelector = lazy(() => import("./DatasetContextSelector"));
 
 export interface ScopeOption extends Scope {
   organizationName: string;
   projectName?: string;
   regionName?: string;
+  projectWide?: boolean;
 }
 
 export interface PlatformShellProps {
   scopeOptions?: readonly ScopeOption[];
   pageAvailability?: PageAvailability;
-  authorizationLoader?: (scope: Scope, signal: AbortSignal) => Promise<AuthorizationSnapshot>;
+  authorizationLoader?: (
+    scope: Scope,
+    signal: AbortSignal,
+  ) => Promise<AuthorizationSnapshot>;
   navigationReloader?: (scope: Scope, signal: AbortSignal) => Promise<void>;
 }
 
-type ShellViewportMode = 'desktop' | 'compact' | 'mobile';
+type ShellViewportMode = "desktop" | "compact" | "mobile";
 
 const noPages: PageAvailability = {};
-const tabletQuery = '(min-width: 768px)';
-const desktopQuery = '(min-width: 1200px)';
-const navigationPreferenceKey = 'hc-platform-navigation-collapsed';
+const tabletQuery = "(min-width: 768px)";
+const desktopQuery = "(min-width: 1360px)";
+const navigationPreferenceKey = "hc-platform-navigation-collapsed";
+const e02VisualFixtureEnabled =
+  import.meta.env.VITE_E02_VISUAL_FIXTURE === "loading";
+const e02VisualScope: Scope = Object.freeze({
+  organizationId: "org_e02_visual",
+  projectId: "project_e02_visual",
+  regionCode: "cn-east-01",
+});
+const e02VisualScopeOptions: readonly ScopeOption[] = Object.freeze([
+  {
+    ...e02VisualScope,
+    organizationName: "杭叉集团",
+    projectName: "双臂采集一期",
+    regionName: "华东-01",
+  },
+]);
+const e02VisualPrincipal = Object.freeze({
+  actorId: "actor_e02_visual",
+  displayName: "张驰",
+  roleIds: ["PROJECT_ADMIN"],
+});
 
-const groupIcons: Readonly<Record<NavigationGroupId, ReactNode>> = {
-  dashboard: <Gauge aria-hidden="true" size={19} strokeWidth={1.8} />,
-  ingest: <UploadCloud aria-hidden="true" size={19} strokeWidth={1.8} />,
-  datasets: <Database aria-hidden="true" size={19} strokeWidth={1.8} />,
-  annotation: <Tags aria-hidden="true" size={19} strokeWidth={1.8} />,
-  manual: <Wrench aria-hidden="true" size={19} strokeWidth={1.8} />,
-  storage: <HardDrive aria-hidden="true" size={19} strokeWidth={1.8} />,
-  settings: <Settings aria-hidden="true" size={19} strokeWidth={1.8} />,
+const pageIcons: Readonly<Record<string, ReactNode>> = {
+  P01: <House aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P20: <ClipboardList aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P02: <Database aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P03: <CloudUpload aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P05: <Box aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P08: <Tags aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P09: <ShieldAlert aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P10Q: <ListChecks aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P12: <HardDrive aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P13: <Clock3 aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P14: <Bot aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P16: <Crosshair aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P17: <Network aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P18: <UserRound aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P19: <ScrollText aria-hidden="true" size={18} strokeWidth={1.8} />,
 };
 
 function BrandMark() {
   return (
-    <span aria-hidden="true" className={styles.brandMark}>
-      <img alt="" src={hangchaLogo} />
+    <span className={styles.brandMark}>
+      <img alt="杭叉集团" height="62" src={hangchaLogo} width="106" />
     </span>
   );
 }
 
+function focusMainContent(event: React.MouseEvent<HTMLAnchorElement>) {
+  event.preventDefault();
+  document.getElementById("main-content")?.focus();
+}
+
 function readViewportMode(): ShellViewportMode {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return 'desktop';
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
+    return "desktop";
   }
-  if (window.matchMedia(desktopQuery).matches) return 'desktop';
-  if (window.matchMedia(tabletQuery).matches) return 'compact';
-  return 'mobile';
+  if (window.matchMedia(desktopQuery).matches) return "desktop";
+  if (window.matchMedia(tabletQuery).matches) return "compact";
+  return "mobile";
 }
 
 function useShellViewportMode(): ShellViewportMode {
   const [mode, setMode] = useState<ShellViewportMode>(readViewportMode);
 
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
+    if (typeof window.matchMedia !== "function") return undefined;
     const desktopMedia = window.matchMedia(desktopQuery);
     const tabletMedia = window.matchMedia(tabletQuery);
     const update = () => {
-      setMode(desktopMedia.matches ? 'desktop' : tabletMedia.matches ? 'compact' : 'mobile');
+      setMode(
+        desktopMedia.matches
+          ? "desktop"
+          : tabletMedia.matches
+            ? "compact"
+            : "mobile",
+      );
     };
-    desktopMedia.addEventListener('change', update);
-    tabletMedia.addEventListener('change', update);
+    desktopMedia.addEventListener("change", update);
+    tabletMedia.addEventListener("change", update);
     update();
     return () => {
-      desktopMedia.removeEventListener('change', update);
-      tabletMedia.removeEventListener('change', update);
+      desktopMedia.removeEventListener("change", update);
+      tabletMedia.removeEventListener("change", update);
     };
   }, []);
 
@@ -124,9 +191,9 @@ function useShellViewportMode(): ShellViewportMode {
 }
 
 function readNavigationCollapsedPreference(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(navigationPreferenceKey) === 'true';
+    return window.localStorage.getItem(navigationPreferenceKey) === "true";
   } catch {
     return false;
   }
@@ -162,67 +229,61 @@ function NavigationMenu({
         Boolean(matchPath({ path: pattern, end: true }, location.pathname)),
       ),
     );
-  const activeGroup = manifest.find((group) =>
-    group.items.some((item) => item.pageId === activeItem?.pageId),
-  );
-  const expandedGroup =
-    activeGroup && activeGroup.items.length > 1
-      ? activeGroup
-      : manifest.find((group) => group.groupId === 'ingest' && group.items.length > 1);
-  const defaultOpenKeys = expandedGroup ? [`group:${expandedGroup.groupId}`] : [];
   const itemByPageId = useMemo(
-    () => new Map(manifest.flatMap((group) => group.items).map((item) => [item.pageId, item])),
-    [manifest],
-  );
-  const menuItems = useMemo<MenuProps['items']>(
     () =>
-      manifest.map((group) => {
-        if (group.items.length === 1) {
-          const item = group.items[0];
-          if (item === undefined) return null;
-          return {
-            key: item.pageId,
-            icon: groupIcons[group.groupId],
-            label: <span aria-label={item.label}>{group.label}</span>,
-            title: group.label,
-          };
-        }
-        return {
-          key: `group:${group.groupId}`,
-          icon: groupIcons[group.groupId],
-          label: group.label,
-          title: group.label,
-          children: group.items.map((item) => ({
-            key: item.pageId,
-            label: item.label,
-            title: item.label,
-          })),
-        };
-      }),
+      new Map(
+        manifest
+          .flatMap((group) => group.items)
+          .map((item) => [item.pageId, item]),
+      ),
     [manifest],
   );
+  const menuItems = useMemo<MenuProps["items"]>(() => {
+    const groups: NonNullable<MenuProps["items"]> = [];
+    for (const group of manifest) {
+      const items: NonNullable<MenuProps["items"]> = group.items.map(
+        (item) => ({
+          key: item.pageId,
+          icon: pageIcons[item.pageId],
+          label: <Link to={item.path}>{item.label}</Link>,
+          title: item.label,
+        }),
+      );
+      if (group.groupId === "dashboard") groups.push(...items);
+      else {
+        groups.push({
+          key: `group:${group.groupId}`,
+          type: "group" as const,
+          label: group.label,
+          children: items,
+        });
+      }
+    }
+    return groups;
+  }, [manifest]);
 
   return (
     <nav aria-label={label} className={styles.navigation} id={id}>
       <Menu
-        key={`${label}:${collapsed ? 'collapsed' : 'expanded'}:${defaultOpenKeys[0] ?? 'none'}`}
+        key={`${label}:${collapsed ? "collapsed" : "expanded"}`}
         items={menuItems}
         mode="inline"
         inlineCollapsed={collapsed}
-        defaultOpenKeys={collapsed ? [] : defaultOpenKeys}
         selectedKeys={activeItem ? [activeItem.pageId] : []}
-        onClick={({ key }) => {
+        onClick={({ key, domEvent }) => {
           const item = itemByPageId.get(key);
           if (item === undefined) return;
-          void navigate(item.path);
           onNavigate?.();
+          const target = domEvent.target;
+          if (target instanceof Element && target.closest("a") !== null) return;
+          void navigate(item.path);
         }}
       />
     </nav>
   );
 }
 
-interface RegionSelectorProps {
+interface ScopeSelectorsProps {
   disabled: boolean;
   scope: Scope | null;
   scopeOptions: readonly ScopeOption[];
@@ -233,14 +294,49 @@ function toScope(option: ScopeOption): Scope {
   return {
     organizationId: option.organizationId,
     ...(option.projectId === undefined ? {} : { projectId: option.projectId }),
-    ...(option.regionCode === undefined ? {} : { regionCode: option.regionCode }),
+    ...(option.regionCode === undefined
+      ? {}
+      : { regionCode: option.regionCode }),
   };
 }
 
-function RegionSelector({ disabled, scope, scopeOptions, onSelect }: RegionSelectorProps) {
+function ScopeSelectors({
+  disabled,
+  scope,
+  scopeOptions,
+  onSelect,
+}: ScopeSelectorsProps) {
+  const [manualRegion, setManualRegion] = useState(scope?.regionCode ?? "");
+  useEffect(
+    () => setManualRegion(scope?.regionCode ?? ""),
+    [scope?.regionCode],
+  );
   const selectedOption = scopeOptions.find(
     (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
   );
+  const projectOptions = [
+    ...new Map(
+      scopeOptions.flatMap((option) =>
+        option.projectId === undefined
+          ? []
+          : [
+              [
+                option.projectId,
+                {
+                  value: option.projectId,
+                  label: option.projectName ?? option.projectId,
+                },
+              ] as const,
+            ],
+      ),
+    ).values(),
+  ];
+  if (
+    scope?.projectId &&
+    !projectOptions.some((option) => option.value === scope.projectId)
+  ) {
+    projectOptions.push({ value: scope.projectId, label: scope.projectId });
+  }
   const regionCandidates = scopeOptions.filter(
     (option) =>
       option.organizationId === scope?.organizationId &&
@@ -250,43 +346,110 @@ function RegionSelector({ disabled, scope, scopeOptions, onSelect }: RegionSelec
   const regionOptions = [
     ...new Map(
       regionCandidates.map((option) => [
-        option.regionCode ?? '',
+        option.regionCode ?? "",
         {
-          value: option.regionCode ?? '',
-          label: option.regionName ?? option.regionCode ?? '',
+          value: option.regionCode ?? "",
+          label: option.regionName ?? option.regionCode ?? "",
         },
       ]),
     ).values(),
   ];
-  if (scope?.regionCode && !regionOptions.some((option) => option.value === scope.regionCode)) {
+  const acceptsManualRegion =
+    scope?.projectId !== undefined &&
+    scopeOptions.some(
+      (option) =>
+        option.projectId === scope.projectId && option.projectWide === true,
+    );
+  const applyManualRegion = () => {
+    const regionCode = manualRegion.trim();
+    if (!scope || !regionCode || regionCode === scope.regionCode) return;
+    onSelect({ ...scope, regionCode });
+  };
+  if (
+    scope?.regionCode &&
+    !regionOptions.some((option) => option.value === scope.regionCode)
+  ) {
     regionOptions.push({ value: scope.regionCode, label: scope.regionCode });
   }
 
   return (
     <div aria-label="当前作用域" className={styles.scopePanel} role="group">
-      <label className={`${styles.scopeField} ${styles.regionField}`}>
-        <Globe2 aria-hidden="true" className={styles.regionIcon} size={16} strokeWidth={1.8} />
-        <span className={styles.srOnly}>Region</span>
+      <label className={`${styles.scopeField} ${styles.projectField}`}>
+        <FolderKanban
+          aria-hidden="true"
+          className={styles.scopeIcon}
+          size={17}
+          strokeWidth={1.8}
+        />
+        <span className={styles.srOnly}>当前项目</span>
         <Select
-          aria-label="Region"
+          aria-label="当前项目"
           disabled={disabled}
-          loading={disabled}
+          loading={disabled && scope !== null}
           optionFilterProp="label"
-          options={regionOptions}
-          placeholder="请选择 Region"
+          options={projectOptions}
+          placeholder="请选择项目"
           showSearch
-          value={scope?.regionCode}
-          onChange={(regionCode: string) => {
+          value={scope?.projectId}
+          onChange={(projectId: string) => {
             const candidate =
               scopeOptions.find(
                 (option) =>
                   option.organizationId === scope?.organizationId &&
-                  option.projectId === scope?.projectId &&
-                  option.regionCode === regionCode,
-              ) ?? selectedOption;
+                  option.projectId === projectId &&
+                  option.regionCode === scope?.regionCode,
+              ) ??
+              scopeOptions.find(
+                (option) =>
+                  option.organizationId === scope?.organizationId &&
+                  option.projectId === projectId,
+              );
             if (candidate !== undefined) onSelect(toScope(candidate));
           }}
         />
+      </label>
+      <label className={`${styles.scopeField} ${styles.regionField}`}>
+        <MapPin
+          aria-hidden="true"
+          className={styles.scopeIcon}
+          size={17}
+          strokeWidth={1.8}
+        />
+        <span className={styles.srOnly}>当前区域</span>
+        {acceptsManualRegion && regionOptions.length === 0 ? (
+          <Input
+            aria-label="当前区域"
+            disabled={disabled}
+            placeholder="输入区域后回车"
+            title="当前项目为项目级授权，服务端未返回区域目录；请输入真实区域代码。"
+            value={manualRegion}
+            onBlur={applyManualRegion}
+            onChange={(event) => setManualRegion(event.target.value)}
+            onPressEnter={applyManualRegion}
+          />
+        ) : (
+          <Select
+            aria-label="当前区域"
+            disabled={disabled}
+            loading={disabled && scope !== null}
+            optionFilterProp="label"
+            options={regionOptions}
+            placeholder="请选择区域"
+            showSearch
+            value={scope?.regionCode}
+            onChange={(regionCode: string) => {
+              const candidate =
+                scopeOptions.find(
+                  (option) =>
+                    option.organizationId === scope?.organizationId &&
+                    option.projectId === scope?.projectId &&
+                    option.regionCode === regionCode,
+                ) ?? selectedOption;
+              if (candidate !== undefined)
+                onSelect({ ...toScope(candidate), regionCode });
+            }}
+          />
+        )}
       </label>
     </div>
   );
@@ -298,8 +461,8 @@ export function PlatformShell({
   authorizationLoader,
   navigationReloader,
 }: PlatformShellProps) {
-  const principal = useShellStore((state) => state.principal);
-  const scope = useShellStore((state) => state.scope);
+  const storedPrincipal = useShellStore((state) => state.principal);
+  const storedScope = useShellStore((state) => state.scope);
   const authorization = useShellStore((state) => state.authorization);
   const scopeChanging = useShellStore((state) => state.scopeChanging);
   const {
@@ -313,41 +476,61 @@ export function PlatformShell({
   const location = useLocation();
   const viewportMode = useShellViewportMode();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [jobsOpen, setJobsOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [navigationCollapsed, setNavigationCollapsed] = useState(readNavigationCollapsedPreference);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(
+    readNavigationCollapsedPreference,
+  );
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const previousPathnameRef = useRef(location.pathname);
+  const principal = e02VisualFixtureEnabled
+    ? e02VisualPrincipal
+    : storedPrincipal;
+  const scope = e02VisualFixtureEnabled ? e02VisualScope : storedScope;
+  const availableScopeOptions = e02VisualFixtureEnabled
+    ? e02VisualScopeOptions
+    : scopeOptions;
 
-  const desktopNavigationCollapsed = viewportMode === 'desktop' && navigationCollapsed;
+  const desktopNavigationCollapsed =
+    viewportMode === "desktop" && navigationCollapsed;
+  const shellNavigationCollapsed =
+    viewportMode === "compact" || desktopNavigationCollapsed;
   const grantedCapabilities = useMemo(
     () =>
-      new Set<Capability>(
+      expandGrantedCapabilities(
         capabilitiesLoading || capabilitiesFailed
           ? []
-          : (authorization?.capabilities.filter((capability) => hasCapability(capability)) ?? []),
+          : (authorization?.capabilities ?? []),
       ),
     [authorization, capabilitiesFailed, capabilitiesLoading, hasCapability],
   );
   const visibleManifest = useMemo(
-    () => filterNavigationManifest(grantedCapabilities, pageAvailability),
+    () =>
+      e02VisualFixtureEnabled
+        ? navigationManifest
+        : filterNavigationManifest(grantedCapabilities, pageAvailability),
     [grantedCapabilities, pageAvailability],
   );
   const showDatasetSelector = datasetContextKind(location.pathname) !== null;
-  const activeRegionLabel = useMemo(() => {
-    const selected = scopeOptions.find(
-      (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
-    );
-    return selected?.regionName ?? scope?.regionCode ?? '未选择 Region';
-  }, [scope, scopeOptions]);
 
   useEffect(() => {
-    if (viewportMode !== 'mobile') setMobileOpen(false);
+    if (viewportMode !== "mobile") setMobileOpen(false);
   }, [viewportMode]);
 
   useEffect(() => {
+    if (previousPathnameRef.current === location.pathname) return undefined;
+    previousPathnameRef.current = location.pathname;
+    const frame = globalThis.requestAnimationFrame(() => {
+      document.getElementById("main-content")?.focus({ preventScroll: true });
+    });
+    return () => globalThis.cancelAnimationFrame(frame);
+  }, [location.pathname]);
+
+  useEffect(() => {
     if (!mobileOpen) return undefined;
-    const timer = globalThis.setTimeout(() => mobileCloseButtonRef.current?.focus(), 0);
+    const timer = globalThis.setTimeout(
+      () => mobileCloseButtonRef.current?.focus(),
+      0,
+    );
     return () => globalThis.clearTimeout(timer);
   }, [mobileOpen]);
 
@@ -357,8 +540,13 @@ export function PlatformShell({
   };
 
   const selectScope = async (next: Scope) => {
+    if (e02VisualFixtureEnabled) return;
     if (authorizationLoader === undefined) {
-      showToast({ title: '无法切换作用域', message: '授权快照加载器尚未配置', tone: 'error' });
+      showToast({
+        title: "无法切换作用域",
+        message: "授权快照加载器尚未配置",
+        tone: "error",
+      });
       return;
     }
     try {
@@ -366,24 +554,30 @@ export function PlatformShell({
         ...(navigationReloader ? { reloadNavigation: navigationReloader } : {}),
         resolveLegalPath: (snapshot) => {
           const allowed = new Set(snapshot.capabilities);
-          return filterNavigationManifest(allowed, pageAvailability)[0]?.items[0]?.path ?? null;
+          return (
+            filterNavigationManifest(allowed, pageAvailability)[0]?.items[0]
+              ?.path ?? null
+          );
         },
         navigate: (path) => void navigate(path),
       });
     } catch {
       showToast({
-        title: '作用域切换失败',
-        message: '旧作用域数据已清理，当前授权按失败关闭处理。',
-        tone: 'error',
+        title: "作用域切换失败",
+        message: "旧作用域数据已清理，当前授权按失败关闭处理。",
+        tone: "error",
       });
     }
   };
 
-  const regionSelector = (
-    <RegionSelector
-      disabled={scopeChanging}
+  const scopeSelectors = (
+    <ScopeSelectors
+      disabled={
+        scopeChanging ||
+        (authorizationLoader === undefined && !e02VisualFixtureEnabled)
+      }
       scope={scope}
-      scopeOptions={scopeOptions}
+      scopeOptions={availableScopeOptions}
       onSelect={(next) => void selectScope(next)}
     />
   );
@@ -392,11 +586,18 @@ export function PlatformShell({
     <Layout
       className={styles.shell}
       data-scope-changing={scopeChanging || undefined}
-      data-navigation-collapsed={desktopNavigationCollapsed || undefined}
+      data-navigation-collapsed={shellNavigationCollapsed || undefined}
       data-viewport={viewportMode}
     >
+      <a
+        className={styles.skipLink}
+        href="#main-content"
+        onClick={focusMainContent}
+      >
+        跳到主要内容
+      </a>
       <Header className={styles.header}>
-        {viewportMode === 'mobile' ? (
+        {viewportMode === "mobile" ? (
           <Button
             ref={mobileMenuButtonRef}
             aria-expanded={mobileOpen}
@@ -404,140 +605,92 @@ export function PlatformShell({
             icon={<MenuIcon aria-hidden="true" />}
             title="打开导航"
             type="text"
-            onClick={() => {
-              setJobsOpen(false);
-              setNotificationsOpen(false);
-              setMobileOpen(true);
-            }}
+            onClick={() => setMobileOpen(true)}
           />
         ) : null}
 
-        <Button
-          aria-label="返回 HC 数据平台工作台"
-          className={`${styles.brand} ${desktopNavigationCollapsed ? styles.brandCollapsed : ''}`}
-          type="link"
-          onClick={() => void navigate('/dashboard')}
+        <Link
+          aria-label="杭叉集团 HC 数据平台工作台"
+          className={`${styles.brand} ${shellNavigationCollapsed ? styles.brandCollapsed : ""}`}
+          to="/dashboard"
         >
           <BrandMark />
           <span className={styles.brandFull}>HC 数据平台</span>
           <span className={styles.brandShort}>HC</span>
-        </Button>
+        </Link>
 
-        {showDatasetSelector && viewportMode !== 'mobile' ? (
+        {viewportMode !== "mobile" ? (
+          <div className={styles.headerScope}>{scopeSelectors}</div>
+        ) : null}
+
+        {showDatasetSelector && viewportMode !== "mobile" ? (
           <div className={styles.headerDataset}>
-            <Suspense fallback={<span className={styles.contextLoading}>加载数据集…</span>}>
+            <Suspense
+              fallback={
+                <span className={styles.contextLoading}>加载数据集…</span>
+              }
+            >
               <DatasetContextSelector />
             </Suspense>
           </div>
         ) : null}
 
-        {viewportMode === 'desktop' ? (
-          <div className={styles.headerScope}>{regionSelector}</div>
-        ) : null}
-
-        {viewportMode !== 'mobile' ? (
+        {viewportMode !== "mobile" ? (
           <Button
-            aria-label="全局搜索"
+            aria-label="全局搜索尚未开放"
             className={styles.globalSearch}
+            disabled
             icon={<Search aria-hidden="true" size={17} strokeWidth={1.8} />}
             type="text"
-            onClick={() =>
-              showToast({
-                title: '全局搜索尚未开放',
-                message: '当前环境没有经过确认的全局搜索接口。',
-                tone: 'info',
-              })
-            }
           >
-            <span>搜索数据集、Episode、机器人、任务、场景等</span>
-            <kbd>⌘ K</kbd>
+            <span>搜索尚未开放</span>
           </Button>
         ) : null}
 
         <Space className={styles.headerActions} size={4}>
-          {viewportMode !== 'desktop' ? (
-            <Popover
-              content={regionSelector}
-              placement="bottomRight"
-              rootClassName={styles.shellPopover}
-              trigger="click"
-            >
-              <Button
-                aria-label={`Region：${activeRegionLabel}`}
-                className={styles.compactRegion}
-                icon={<Globe2 aria-hidden="true" size={17} strokeWidth={1.8} />}
-                title={activeRegionLabel}
-                type="text"
-              />
-            </Popover>
-          ) : null}
-          <Popover
-            content={
-              <div className={styles.jobsPanel}>
-                <GlobalJobCenter />
-              </div>
-            }
-            open={jobsOpen}
-            placement="bottomRight"
-            rootClassName={styles.shellPopover}
-            trigger="click"
-            onOpenChange={(open) => {
-              setJobsOpen(open);
-              if (open) setNotificationsOpen(false);
-            }}
-          >
+          {viewportMode !== "mobile" ? (
             <Button
-              aria-expanded={jobsOpen}
-              aria-label="任务中心"
-              className={styles.jobButton}
-              icon={<ListTodo aria-hidden="true" size={18} strokeWidth={1.8} />}
-              title="任务中心"
-              type={viewportMode === 'desktop' ? 'default' : 'text'}
-            >
-              {viewportMode === 'desktop' ? '任务队列' : null}
-            </Button>
-          </Popover>
-          <Popover
-            content={
-              <section aria-label="通知中心" className={styles.notificationPanel}>
-                <strong>通知中心</strong>
-                <Text type="secondary">当前环境未提供通知查询接口。</Text>
-              </section>
-            }
-            open={notificationsOpen}
-            placement="bottomRight"
-            rootClassName={styles.shellPopover}
-            trigger="click"
-            onOpenChange={(open) => {
-              setNotificationsOpen(open);
-              if (open) setJobsOpen(false);
-            }}
-          >
-            <Button
-              aria-expanded={notificationsOpen}
-              aria-label="通知中心"
-              className={styles.iconAction}
+              aria-label="通知尚未开放"
+              className={styles.unavailableAction}
+              disabled
               icon={<Bell aria-hidden="true" size={18} strokeWidth={1.8} />}
-              title="通知中心"
               type="text"
-            />
-          </Popover>
+            >
+              <span>通知尚未开放</span>
+            </Button>
+          ) : null}
           <Dropdown
             menu={{
               items: [
-                { key: 'settings', label: '账户设置', icon: <Settings aria-hidden="true" /> },
-                { key: 'logout', label: '退出登录', icon: <UserRound aria-hidden="true" /> },
+                {
+                  key: "settings",
+                  label: "账户设置（尚未开放）",
+                  icon: <Settings aria-hidden="true" />,
+                  disabled: true,
+                },
+                {
+                  key: "logout",
+                  label: "退出登录（尚未接入）",
+                  icon: <UserRound aria-hidden="true" />,
+                  disabled: true,
+                },
               ],
             }}
             placement="bottomRight"
             rootClassName={styles.accountDropdown}
-            trigger={['click']}
+            trigger={["click"]}
           >
-            <Button aria-label="账户菜单" className={styles.accountButton} type="text">
+            <Button
+              aria-label="账户菜单"
+              className={styles.accountButton}
+              type="text"
+            >
               <Avatar className={styles.accountAvatar} size={32}>
-                {(principal?.displayName ?? '未').trim().slice(0, 1)}
+                {(principal?.displayName ?? "未").trim().slice(0, 1)}
               </Avatar>
-              <span className={styles.accountName}>{principal?.displayName ?? '未登录'}</span>
+              <span className={styles.accountName}>
+                {principal?.displayName ?? "未登录"}
+              </span>
               <ChevronDown aria-hidden="true" size={15} />
             </Button>
           </Dropdown>
@@ -545,25 +698,25 @@ export function PlatformShell({
       </Header>
 
       <Layout className={styles.body}>
-        {viewportMode !== 'mobile' ? (
+        {viewportMode !== "mobile" ? (
           <Sider
             className={styles.sider}
-            collapsed={viewportMode === 'compact' || desktopNavigationCollapsed}
+            collapsed={viewportMode === "compact" || desktopNavigationCollapsed}
             collapsedWidth={64}
-            data-navigation-collapsed={desktopNavigationCollapsed || undefined}
+            data-navigation-collapsed={shellNavigationCollapsed || undefined}
             theme="light"
             trigger={null}
             width={218}
           >
             <NavigationMenu
-              collapsed={viewportMode === 'compact' || navigationCollapsed}
+              collapsed={viewportMode === "compact" || navigationCollapsed}
               id="platform-primary-navigation"
-              label={viewportMode === 'compact' ? '折叠主导航' : '主导航'}
+              label={viewportMode === "compact" ? "折叠主导航" : "主导航"}
               manifest={visibleManifest}
             />
-            {viewportMode === 'desktop' ? (
+            {viewportMode === "desktop" ? (
               <Button
-                aria-label={navigationCollapsed ? '展开导航' : '折叠导航'}
+                aria-label={navigationCollapsed ? "展开导航" : "折叠导航"}
                 aria-controls="platform-primary-navigation"
                 aria-expanded={!navigationCollapsed}
                 className={styles.collapseNavigation}
@@ -575,7 +728,7 @@ export function PlatformShell({
                   )
                 }
                 type="text"
-                title={navigationCollapsed ? '展开导航' : '折叠导航'}
+                title={navigationCollapsed ? "展开导航" : "折叠导航"}
                 onClick={() =>
                   setNavigationCollapsed((current) => {
                     const next = !current;
@@ -588,8 +741,14 @@ export function PlatformShell({
           </Sider>
         ) : null}
 
-        <Content aria-busy={scopeChanging} className={styles.content}>
-          {capabilitiesFailed ? (
+        <Content
+          aria-busy={scopeChanging}
+          className={styles.content}
+          id="main-content"
+          role="main"
+          tabIndex={-1}
+        >
+          {capabilitiesFailed && !e02VisualFixtureEnabled ? (
             <Alert
               className={styles.authorizationWarning}
               role="alert"
@@ -598,7 +757,7 @@ export function PlatformShell({
               type="warning"
             />
           ) : null}
-          <Outlet />
+          {e02VisualFixtureEnabled ? <ShellLoadingPage /> : <Outlet />}
         </Content>
       </Layout>
 
@@ -628,12 +787,16 @@ export function PlatformShell({
           {showDatasetSelector ? (
             <div className={styles.mobileDataset}>
               <span>数据集</span>
-              <Suspense fallback={<span className={styles.contextLoading}>加载数据集…</span>}>
+              <Suspense
+                fallback={
+                  <span className={styles.contextLoading}>加载数据集…</span>
+                }
+              >
                 <DatasetContextSelector />
               </Suspense>
             </div>
           ) : null}
-          {regionSelector}
+          {scopeSelectors}
         </div>
         <NavigationMenu
           label="移动端导航"

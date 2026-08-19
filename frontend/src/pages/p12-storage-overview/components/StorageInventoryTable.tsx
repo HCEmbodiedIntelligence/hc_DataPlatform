@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import type { StorageInventoryFact } from '../../../entities/storage-inventory';
 import { formatByteString } from '../../../features/storage-overview/metrics-contract';
 import { DataTable, StatusTag } from '../../../shared/ui';
+import { objectRoleLabel, objectStatusLabel, storageClassLabel } from '../display-labels';
 import styles from '../styles.module.css';
 
 export function StorageInventoryTable({
@@ -17,7 +18,7 @@ export function StorageInventoryTable({
     () => [
       {
         id: 'object',
-        header: '对象',
+        header: '对象路径',
         size: 240,
         cell: ({ row }) => (
           <Button
@@ -38,7 +39,7 @@ export function StorageInventoryTable({
         cell: ({ row }) => (
           <StatusTag
             status={row.original.objectRole}
-            label={row.original.objectRole}
+            label={objectRoleLabel(row.original.objectRole)}
             known={row.original.objectRole !== 'UNKNOWN'}
           />
         ),
@@ -49,7 +50,7 @@ export function StorageInventoryTable({
         cell: ({ row }) => (
           <StatusTag
             status={row.original.storageClass}
-            label={row.original.storageClass}
+            label={storageClassLabel(row.original.storageClass)}
             known={row.original.storageClass !== 'UNKNOWN'}
             tone="info"
           />
@@ -57,12 +58,12 @@ export function StorageInventoryTable({
       },
       {
         id: 'physicalBytes',
-        header: '物理量',
+        header: '占用空间',
         cell: ({ row }) => formatByteString(row.original.physicalBytes),
       },
       {
         id: 'referenceCount',
-        header: '引用',
+        header: '引用次数',
         cell: ({ row }) => row.original.referenceCount,
       },
       {
@@ -71,7 +72,7 @@ export function StorageInventoryTable({
         cell: ({ row }) => (
           <StatusTag
             status={row.original.status}
-            label={row.original.status}
+            label={objectStatusLabel(row.original.status)}
             tone={row.original.status === 'AVAILABLE' ? 'success' : 'warning'}
           />
         ),
@@ -85,7 +86,7 @@ export function StorageInventoryTable({
       data={items}
       columns={columns}
       getRowId={(item) => item.objectId}
-      caption="同一快照下的存储对象事实"
+      caption="同一次盘点中的存储对象"
     />
   );
 }

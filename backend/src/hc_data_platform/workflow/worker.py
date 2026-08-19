@@ -37,10 +37,18 @@ def _load_dependency_factory() -> None:
 def discover_temporal_registrations() -> tuple[list[type[Any]], list[Any]]:
     """Return every concrete workflow and activity registered by the worker."""
 
+    from hc_data_platform.storage.temporal import (
+        ALL_STORAGE_ACTIVITIES,
+        ALL_STORAGE_WORKFLOWS,
+    )
+
     from .activities import ALL_ACTIVITIES
     from .temporal_workflows import ALL_WORKFLOWS
 
-    return list(ALL_WORKFLOWS), list(ALL_ACTIVITIES)
+    return [*ALL_WORKFLOWS, *ALL_STORAGE_WORKFLOWS], [
+        *ALL_ACTIVITIES,
+        *ALL_STORAGE_ACTIVITIES,
+    ]
 
 
 async def serve() -> None:
@@ -68,7 +76,32 @@ async def serve() -> None:
         workflows=workflows,
         activities=activities,
     )
-    await worker.run()
+    from hc_data_platform.runtime import build_worker_outbox
+
+    from .outbox_worker import serve_outbox
+
+    outbox = build_worker_outbox(settings, temporal_client=client)
+    if outbox is None:
+        await worker.run()
+        return
+    tasks = {
+        asyncio.create_task(worker.run(), name="temporal-worker"),
+        asyncio.create_task(
+            serve_outbox(
+                outbox.dispatcher,
+                scopes=outbox.scopes,
+                poll_interval_seconds=outbox.poll_interval_seconds,
+                batch_size=outbox.batch_size,
+            ),
+            name="outbox-dispatcher",
+        ),
+    }
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    for task in done:
+        task.result()
 
 
 def main() -> None:

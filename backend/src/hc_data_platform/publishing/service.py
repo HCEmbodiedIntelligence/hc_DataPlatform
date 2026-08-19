@@ -314,7 +314,9 @@ class DatasetPublisher:
         )
         if existing is not None:
             if existing.content_hash == digest:
-                return existing
+                # Re-enter the immutable repository boundary so a replay also repairs or
+                # verifies rollout-region lineage atomically after the BR01 migration.
+                return self._repository.create_immutable(existing)
             raise problem(
                 status=409,
                 code="DATASET_VERSION_IMMUTABLE",

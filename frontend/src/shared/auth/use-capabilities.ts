@@ -1,7 +1,38 @@
 import { useCallback, useMemo } from 'react';
-import { isCapability, type Capability } from '../../entities/capability';
 import type { ScopeKey } from '../../entities/scope';
 import { useShellStore } from '../scope/shell-store';
+
+const runtimeCapabilityImplications: Readonly<Record<string, readonly string[]>> = {
+  'collection.upload': ['upload.read', 'upload.manage'],
+  'ingest.upload': ['upload.read', 'upload.manage'],
+  'annotation.write': [
+    'annotation_task.read',
+    'annotation_task.claim',
+    'episode.read',
+    'annotation.edit',
+    'annotation.save',
+    'annotation.submit',
+    'annotation_draft.edit',
+  ],
+  'annotation.review': ['annotation_task.read', 'episode.read'],
+  'project.access.manage': ['access.read', 'access.manage'],
+  'datasets.read': ['dataset.read', 'dataset_version.read', 'episode.read'],
+  'datasets.write': ['dataset.create'],
+  'datasets.publish': ['dataset_version.publish'],
+  'tag_schema.write': ['data_schema.read', 'data_schema.create', 'data_schema.publish'],
+};
+
+export function expandGrantedCapabilities(
+  capabilities: readonly string[],
+): ReadonlySet<string> {
+  const expanded = new Set(capabilities);
+  for (const capability of capabilities) {
+    for (const implied of runtimeCapabilityImplications[capability] ?? []) {
+      expanded.add(implied);
+    }
+  }
+  return expanded;
+}
 
 export interface CapabilitiesResult {
   has: (capability: string) => boolean;
@@ -19,7 +50,7 @@ export function useCapabilities(): CapabilitiesResult {
   const expiresAt = snapshot?.expiresAt === undefined ? null : Date.parse(snapshot.expiresAt);
   const expired = expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= Date.now());
   const granted = useMemo(
-    () => new Set<Capability>(scopeMatches && snapshot ? snapshot.capabilities : []),
+    () => expandGrantedCapabilities(scopeMatches && snapshot ? snapshot.capabilities : []),
     [scopeMatches, snapshot],
   );
   const failed =
@@ -29,7 +60,7 @@ export function useCapabilities(): CapabilitiesResult {
     expired;
   const has = useCallback(
     (capability: string) =>
-      !loading && !failed && scopeMatches && isCapability(capability) && granted.has(capability),
+      !loading && !failed && scopeMatches && granted.has(capability),
     [failed, granted, loading, scopeMatches],
   );
   return { has, loading, failed };

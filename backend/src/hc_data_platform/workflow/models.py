@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, unquote
 from uuid import uuid4
 
@@ -12,6 +12,14 @@ from hc_data_platform.alignment.models import (
     AlignedFragmentManifestV1 as StagedFragmentManifestV1,
 )
 from hc_data_platform.alignment.models import AlignmentInputV1, AlignmentProfileV1
+from hc_data_platform.annotation.models import (
+    AnnotationOperation,
+    AnnotationRevision,
+    AnnotationTaskKind,
+    TagSchemaStatus,
+    TagSchemaVersion,
+)
+from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
 )
@@ -64,6 +72,7 @@ class WorkflowKind(str, Enum):
     EXPORT = "export"
     CATALOG_RECONCILIATION = "catalog-reconciliation"
     PUBLISH_RECONCILIATION = "publish-reconciliation"
+    ANNOTATION_REVIEW_PREPARATION = "annotation-review-preparation"
 
 
 class JobRecord(BaseModel):
@@ -142,6 +151,24 @@ class VerificationActivityOutput(BaseModel):
     report: RawVerificationReportV1
 
 
+class ManifestActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    rollout_id: str = Field(min_length=1)
+    data_package_id: str = Field(min_length=1)
+    manifest_key: str = Field(min_length=1, max_length=2048)
+    manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ManifestActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    preflight: ManifestPreflightResultV1
+
+
 class QualityActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -149,6 +176,7 @@ class QualityActivityInput(BaseModel):
     region_code: str | None = Field(default=None, min_length=1)
     data: QualityInputV1
     profile: QualityProfileV1
+    decision_source: Literal["AUTOMATIC"] = "AUTOMATIC"
 
 
 class QualityActivityOutput(BaseModel):
@@ -195,6 +223,30 @@ class CatalogCommitActivityOutput(BaseModel):
 
     version: DatasetVersionRef
     derived_ready: DerivedReadyV1
+
+
+class AutomaticAnnotationActivityInput(BaseModel):
+    """Immutable Lance hand-off used only by the ingest workflow."""
+
+    model_config = ConfigDict(frozen=True)
+
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    rollout_id: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    dataset_version: int = Field(ge=1)
+    lance_version: int = Field(ge=1)
+    dataset_schema_snapshot_id: str = Field(min_length=1)
+    base_step_count: int = Field(gt=0)
+    source_workflow_id: str = Field(min_length=1)
+    task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
+
+
+class AutomaticAnnotationActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str = Field(min_length=1)
+    status: Literal["CREATED"] = "CREATED"
 
 
 class PreviewActivityInput(BaseModel):
@@ -266,6 +318,8 @@ class IngestRolloutWorkflowInput(BaseModel):
     region_code: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     rollout_id: str = Field(min_length=1)
+    automatic_qc_run_id: str = Field(default="initial", min_length=1, max_length=128)
+    manifest: ManifestActivityInput
     verification: VerificationActivityInput
     quality: QualityActivityInput
     alignment: AlignmentActivityInput
@@ -274,6 +328,7 @@ class IngestRolloutWorkflowInput(BaseModel):
     def consistent_lineage(self) -> IngestRolloutWorkflowInput:
         rollout_ids = {
             self.rollout_id,
+            self.manifest.rollout_id,
             self.verification.rollout_id,
             self.quality.data.rollout_id,
             self.alignment.data.rollout_id,
@@ -287,7 +342,10 @@ class IngestRolloutWorkflowInput(BaseModel):
             raise ValueError("all ingest activity inputs must reference the same rollout")
         if len(source_hashes) != 1:
             raise ValueError("all ingest activity inputs must reference the same Raw hash")
+        if self.manifest.source_sha256 not in source_hashes:
+            raise ValueError("Manifest and ingest activity inputs must reference the same Raw hash")
         project_ids = {
+            self.manifest.project_id,
             self.verification.project_id,
             self.quality.project_id,
             self.alignment.project_id,
@@ -295,6 +353,7 @@ class IngestRolloutWorkflowInput(BaseModel):
         if project_ids != {self.project_id}:
             raise ValueError("all ingest activity project_ids must match workflow project_id")
         region_codes = {
+            self.manifest.region_code,
             self.verification.region_code,
             self.quality.region_code,
             self.alignment.region_code,
@@ -345,3 +404,31 @@ class PublishReconciliationWorkflowInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request: PublishDatasetRequestV1
+
+
+class AnnotationReviewPreparationWorkflowInput(BaseModel):
+    """Complete deterministic input for producing one reviewable annotation version."""
+
+    model_config = ConfigDict(frozen=True)
+
+    project_id: str = Field(min_length=1)
+    submitted_by: str = Field(min_length=1)
+    base_step_count: int | None = Field(default=None, gt=0)
+    tag_schema: TagSchemaVersion
+    revision: AnnotationRevision
+    cumulative_operations: tuple[AnnotationOperation, ...]
+
+    @model_validator(mode="after")
+    def fixed_references_match(self) -> AnnotationReviewPreparationWorkflowInput:
+        if self.tag_schema.project_id != self.project_id:
+            raise ValueError("Tag Schema project_id must match workflow project_id")
+        if self.tag_schema.status != TagSchemaStatus.PUBLISHED:
+            raise ValueError("review preparation requires a published Tag Schema")
+        if self.revision.base_lance_version < 1:
+            raise ValueError("revision must pin a positive Lance version")
+        if (
+            self.revision.tag_schema_id,
+            self.revision.tag_schema_version,
+        ) != (self.tag_schema.schema_id, self.tag_schema.version):
+            raise ValueError("revision must pin the supplied Tag Schema version")
+        return self

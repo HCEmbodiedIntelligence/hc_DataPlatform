@@ -24,8 +24,8 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     uv sync --frozen --no-dev --no-editable \
     --extra database \
     --extra workflow \
-     --extra storage \
-     --extra data
+    --extra storage \
+    --extra data
 RUN /opt/venv/bin/python -c "import lance, mcap, pyarrow"
 
 FROM dependencies AS api-dev-builder
@@ -81,6 +81,8 @@ FROM runtime-media AS worker
 COPY --from=worker-builder /opt/venv /opt/venv
 COPY migrations /app/migrations
 LABEL org.opencontainers.image.component="worker"
+HEALTHCHECK --interval=10s --timeout=7s --start-period=30s --retries=6 \
+    CMD ["python", "-m", "hc_data_platform.workflow.healthcheck", "--timeout", "5"]
 CMD ["hc-data-worker"]
 
 FROM runtime-base AS api
@@ -111,4 +113,6 @@ COPY src /app/src
 COPY migrations /app/migrations
 LABEL org.opencontainers.image.component="worker" \
       org.opencontainers.image.description="HC Data Platform Worker development image"
+HEALTHCHECK --interval=10s --timeout=7s --start-period=30s --retries=6 \
+    CMD ["python", "-m", "hc_data_platform.workflow.healthcheck", "--timeout", "5"]
 CMD ["watchfiles", "--filter", "python", "--target-type", "command", "python -m hc_data_platform.workflow.worker", "/app/src"]

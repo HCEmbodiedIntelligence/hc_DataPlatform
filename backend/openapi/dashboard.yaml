@@ -1,0 +1,440 @@
+openapi: 3.1.0
+info:
+  title: P01 Dashboard API Fragment
+  version: 1.1.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/projects/{project_id}/dashboard/snapshot:
+    get:
+      operationId: getDashboardSnapshot
+      tags: [dashboard]
+      description: >-
+        Returns one project and one exact region for the explicit half-open UTC range. The
+        published-region subsection counts only certain rollout-publication lineage. Episode,
+        work, and the remaining signal formulas stay BLOCKED. Region storage is not a P01 field.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+      responses:
+        '200':
+          description: Factual and explicitly blocked snapshot sections at one response read time.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardSnapshotResponse'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+  /api/v1/projects/{project_id}/dashboard/activity:
+    get:
+      operationId: getDashboardActivity
+      tags: [dashboard]
+      description: >-
+        Recent durable business events, not throughput buckets or byte trends. Every item has a
+        stable event ID, source ID, deduplication key, fact time, safe display text, target, and
+        deterministic descending ordering by occurred_at, event_type, and source_id.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+        - {$ref: '#/components/parameters/DashboardCursor'}
+        - {$ref: '#/components/parameters/DashboardLimit'}
+      responses:
+        '200':
+          description: Scope-bound recent business-event page; missing lineage is explicit PARTIAL.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardActivityResponse'}
+        '400': {$ref: '#/components/responses/DashboardInvalidCursor'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+  /api/v1/projects/{project_id}/dashboard/coverage:
+    get:
+      operationId: getDashboardCoverage
+      tags: [dashboard]
+      description: >-
+        Always returns BLOCKED until a versioned collection plan, robot group, task catalog, and
+        denominator exist. Historical observations are not projected as a percentage.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+      responses:
+        '200':
+          description: Explicit coverage blocker; no fabricated numeric zero or percentage.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardCoverageResponse'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+  /api/v1/projects/{project_id}/dashboard/pending-items:
+    get:
+      operationId: getDashboardPendingItems
+      tags: [dashboard]
+      description: >-
+        Current upload failures, QC anomalies, pending Tag reviews, and pending publications,
+        intersected with principal capabilities. Items are deduplicated and ordered by domain
+        severity, oldest opened_at, item_type, and source_id. No SLA duration is implied.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+        - {$ref: '#/components/parameters/DashboardCursor'}
+        - {$ref: '#/components/parameters/DashboardLimit'}
+      responses:
+        '200':
+          description: Capability-intersected pending page with allowlisted relative deep links.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardPendingItemsResponse'}
+        '400': {$ref: '#/components/responses/DashboardInvalidCursor'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+components:
+  parameters:
+    DashboardProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/DashboardIdentifier'}
+    DashboardRegionCode:
+      name: region_code
+      in: query
+      required: true
+      description: Exact authorized region. Administrators are not aggregated across regions.
+      schema: {$ref: '#/components/schemas/DashboardIdentifier'}
+    DashboardFrom:
+      name: from
+      in: query
+      required: true
+      description: Inclusive RFC 3339 instant with an explicit UTC offset.
+      schema: {type: string, format: date-time}
+    DashboardTo:
+      name: to
+      in: query
+      required: true
+      description: Exclusive RFC 3339 instant with an explicit UTC offset.
+      schema: {type: string, format: date-time}
+    DashboardTimezone:
+      name: timezone
+      in: query
+      required: true
+      description: >-
+        Explicit project IANA timezone. The UI defaults to 24 hours and may request 7 or 30 days;
+        the service never reads a browser-local timezone.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$'
+    DashboardCursor:
+      name: cursor
+      in: query
+      required: false
+      description: >-
+        HMAC-protected cursor bound to principal, project, region, range, timezone, endpoint, and
+        the endpoint's complete stable source tuple. Cross-scope cursor reuse is rejected.
+      schema: {type: string, minLength: 1, maxLength: 16384}
+    DashboardLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+  headers:
+    DashboardNoStore:
+      required: true
+      schema: {type: string, const: no-store}
+  responses:
+    DashboardInvalidCursor:
+      description: Cursor is malformed or belongs to another principal or exact query scope.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardUnauthorized:
+      description: A verified Bearer identity is required.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardForbidden:
+      description: Exact project/region scope and dashboard.read capability are required.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardInvalidQuery:
+      description: >-
+        Validation failed, timestamps lack offsets, timezone is invalid, from is not before to,
+        or the configured synchronous technical query budget was exceeded.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardRateLimited:
+      description: The deployment query-admission policy rejected this request.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+  schemas:
+    DashboardIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9._-]+$'
+    DashboardSectionStatus:
+      type: string
+      enum: [READY, EMPTY, PARTIAL, STALE, ERROR, BLOCKED]
+    DashboardSectionError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable, needs_product_confirmation]
+      properties:
+        code: {type: string, minLength: 1, maxLength: 128}
+        message: {type: string, minLength: 1, maxLength: 500}
+        retryable: {type: boolean, default: false}
+        needs_product_confirmation: {type: boolean, default: false}
+    DashboardSectionState:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+      description: >-
+        BLOCKED is not numeric zero. PARTIAL may include only explicitly identified factual data.
+    SignalStage:
+      type: string
+      enum: [COLLECTED, RECEIVED, AUTO_QC, ALIGNED_30_HZ, LANCE, ANNOTATION, REVIEW, PUBLISHED]
+      description: >-
+        Ordered catalog: 采集、已接收、自动质检、30 Hz 对齐、Lance、数据标注、审核、已发布。
+        Cleaning is not a separate signal stage.
+    DashboardPublishedRegionState:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error, lineage_count, publication_count, unresolved_history_count]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+        lineage_count:
+          type: [integer, 'null']
+          minimum: 0
+          description: Count of certain unique publication+rollout lineage facts.
+        publication_count:
+          type: [integer, 'null']
+          minimum: 0
+          description: Count of distinct certain publication identities in the exact scope.
+        unresolved_history_count:
+          type: integer
+          minimum: 0
+          description: Project/range historical rollout references not assigned to any region.
+    DashboardSignalPipelineState:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error, stages, published_region]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+        stages:
+          type: array
+          minItems: 8
+          maxItems: 8
+          prefixItems:
+            - {const: COLLECTED}
+            - {const: RECEIVED}
+            - {const: AUTO_QC}
+            - {const: ALIGNED_30_HZ}
+            - {const: LANCE}
+            - {const: ANNOTATION}
+            - {const: REVIEW}
+            - {const: PUBLISHED}
+          items: false
+        published_region: {$ref: '#/components/schemas/DashboardPublishedRegionState'}
+    DashboardSnapshotSections:
+      type: object
+      additionalProperties: false
+      required: [signal_pipeline, episodes, work]
+      properties:
+        signal_pipeline: {$ref: '#/components/schemas/DashboardSignalPipelineState'}
+        episodes: {$ref: '#/components/schemas/DashboardSectionState'}
+        work: {$ref: '#/components/schemas/DashboardSectionState'}
+      description: Region storage is intentionally absent; capacity belongs to P12.
+    DashboardResourceType:
+      type: string
+      enum: [UPLOAD_SESSION, ROLLOUT, ANNOTATION_TASK, DATASET_VERSION]
+    DashboardTargetResource:
+      type: object
+      additionalProperties: false
+      required: [resource_type, resource_id, resource_version, deep_link]
+      properties:
+        resource_type: {$ref: '#/components/schemas/DashboardResourceType'}
+        resource_id: {type: string, minLength: 1, maxLength: 512}
+        resource_version: {type: [string, 'null'], minLength: 1, maxLength: 512}
+        deep_link:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1024
+          description: Relative link from a fixed upload, annotation, or dataset template.
+    DashboardActivityEventType:
+      type: string
+      enum: [UPLOAD_COMMITTED, QC_COMPLETED, TAG_REVIEW_DECIDED, DATASET_PUBLISHED]
+    DashboardActivityEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [event_id, event_type, source_id, deduplication_key, occurred_at, source_state, title,
+         summary, target]
+      properties:
+        event_id: {type: string, minLength: 1, maxLength: 512}
+        event_type: {$ref: '#/components/schemas/DashboardActivityEventType'}
+        source_id: {type: string, minLength: 1, maxLength: 512}
+        deduplication_key: {type: string, minLength: 1, maxLength: 512}
+        occurred_at: {type: string, format: date-time}
+        source_state: {type: string, minLength: 1, maxLength: 64}
+        title: {type: string, minLength: 1, maxLength: 128}
+        summary: {type: string, minLength: 1, maxLength: 256}
+        target: {$ref: '#/components/schemas/DashboardTargetResource'}
+    DashboardActivityPage:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error, page_info, items]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+        page_info:
+          oneOf:
+            - {$ref: '#/components/schemas/PageInfo'}
+            - {type: 'null'}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DashboardActivityEvent'}
+    DashboardPendingItemType:
+      type: string
+      enum: [UPLOAD_FAILED, QC_ANOMALY, TAG_REVIEW_PENDING, PUBLICATION_PENDING]
+    DashboardPendingSeverity:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW]
+    DashboardPendingItem:
+      type: object
+      additionalProperties: false
+      required:
+        [item_type, source_id, deduplication_key, source_state, severity, opened_at, target]
+      properties:
+        item_type: {$ref: '#/components/schemas/DashboardPendingItemType'}
+        source_id: {type: string, minLength: 1, maxLength: 512}
+        deduplication_key: {type: string, minLength: 1, maxLength: 512}
+        source_state: {type: string, minLength: 1, maxLength: 64}
+        severity: {$ref: '#/components/schemas/DashboardPendingSeverity'}
+        opened_at: {type: string, format: date-time}
+        target: {$ref: '#/components/schemas/DashboardTargetResource'}
+    DashboardPendingItemsPage:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error, page_info, authorized_source_types, items]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+        page_info:
+          oneOf:
+            - {$ref: '#/components/schemas/PageInfo'}
+            - {type: 'null'}
+        authorized_source_types:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/DashboardPendingItemType'}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DashboardPendingItem'}
+    DashboardSnapshotResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, region_code, from, to, timezone, as_of, sections]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        sections: {$ref: '#/components/schemas/DashboardSnapshotSections'}
+    DashboardActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, region_code, from, to, timezone, as_of, activity]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        activity: {$ref: '#/components/schemas/DashboardActivityPage'}
+    DashboardCoverageResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, region_code, from, to, timezone, as_of, coverage]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        coverage: {$ref: '#/components/schemas/DashboardSectionState'}
+    DashboardPendingItemsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        [schema_version, project_id, region_code, from, to, timezone, as_of, pending_items]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        pending_items: {$ref: '#/components/schemas/DashboardPendingItemsPage'}

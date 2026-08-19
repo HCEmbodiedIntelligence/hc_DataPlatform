@@ -1,566 +1,439 @@
-import { Alert, Button, Input, Segmented, Select, Space } from 'antd';
-import { CircleCheckBig, Database, HardDriveUpload, Plus, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useUploadBatchMutation, useUploadCreationOptions, useUploadSessions, useUploadSessionMutation } from '../../features/ingest/api';
-import { createMutationIntentKey } from '../../features/ingest/mutation-machine';
-import { routes } from '../../features/ingest/routing';
-import { ingestUploadAuthorizationVault } from '../../features/ingest/upload/authorization-vault';
-import { useUploadProgressStream } from '../../features/ingest/upload/use-upload-progress-stream';
-import { useIngestScope } from '../../features/ingest/use-ingest-scope';
-import { isDomainError } from '../../shared/api/domain-error';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { DangerConfirmModal, DataCursorPager, FilterToolbar, PageState, StandardPageScaffold, type DangerPreflightEvidence, type PageStateKind } from '../../shared/ui';
-import { BatchOperationBar } from './components/BatchOperationBar';
-import { CreateUploadDialog, type CreateUploadDraft } from './components/CreateUploadDialog';
-import { UploadSessionFacts, UploadSessionTable } from './components/UploadSessionTable';
-import { updateUploadJobsSearch, uploadJobsQueryCodec, type UploadJobsSearch } from './query-codec';
-import styles from './styles.module.css';
+import { useQuery } from "@tanstack/react-query";
+import { Alert, Button } from "antd";
+import { ArrowUp, FileJson2, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { dataUploadRoutes } from "../../app/shell/navigation-routes";
+import { useIngestScope } from "../../features/ingest/use-ingest-scope";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { PageState, UiPageHeader } from "../../shared/ui";
+import { ManifestPreflightPanel } from "./components/ManifestPreflightPanel";
+import {
+  UploadMethodPanel,
+  type UploadSourceChoice,
+} from "./components/UploadMethodPanel";
+import { UploadQueuePanel } from "./components/UploadQueuePanel";
+import { UploadRecordsPanel } from "./components/UploadRecordsPanel";
+import {
+  listFormalUploadSessions,
+  preflightUploadManifest,
+  type ManifestPreflight,
+  type UploadStatus,
+} from "./formal-client";
+import styles from "./styles.module.css";
+import {
+  findManifestFile,
+  findRawPackageFile,
+  parseManifestFile,
+  uploadProblemCopy,
+  validateObjectStorageUri,
+  type UploadProblemCopy,
+} from "./upload-contract";
+import { useUploadQueueStore } from "./upload-queue-store";
 
-interface FilterDraft {
-  readonly q: string;
-  readonly dataSourceId: string;
-  readonly lifecycleStatus: string;
-  readonly sort: UploadJobsSearch['sort'];
-  readonly limit: UploadJobsSearch['limit'];
-}
-
-function filterDraft(search: UploadJobsSearch): FilterDraft {
-  return {
-    q: search.q ?? '',
-    dataSourceId: search.dataSourceId ?? '',
-    lifecycleStatus: search.lifecycleStatus[0] ?? '',
-    sort: search.sort,
-    limit: search.limit,
-  };
-}
-
-function MetricTile(props: Readonly<{
-  eyebrow: string;
-  label: string;
-  value: ReactNode;
-  icon: ReactNode;
-  loading: boolean;
-  failed: boolean;
-}>) {
-  return (
-    <section
-      className={styles.metricTile}
-      aria-label={props.label}
-      data-metric-state={props.loading ? 'loading' : props.failed ? 'error' : 'ready'}
-    >
-      <span className={styles.metricIcon} aria-hidden="true">
-        {props.icon}
-      </span>
-      <span className={styles.metricCopy}>
-        <span className={styles.metricEyebrow}>{props.eyebrow}</span>
-        <span className={styles.metricLabel}>{props.label}</span>
-        <strong>{props.loading ? '…' : props.failed ? '暂不可用' : props.value}</strong>
-      </span>
-    </section>
+function useNetworkStatus(): boolean {
+  const [online, setOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine,
   );
-}
-
-function stateFromError(error: unknown): PageStateKind {
-  if (!isDomainError(error)) return 'contract-mismatch';
-  switch (error.code) {
-    case 'FORBIDDEN':
-    case 'UNAUTHENTICATED':
-      return 'forbidden';
-    case 'NOT_FOUND':
-      return 'not-found';
-    case 'GONE':
-      return 'gone';
-    case 'VERSION_CONFLICT':
-    case 'PRECONDITION_FAILED':
-      return 'conflict';
-    case 'RATE_LIMITED':
-      return 'rate-limited';
-    case 'NETWORK_ERROR':
-      return 'offline';
-    case 'CONTRACT_MISMATCH':
-      return 'contract-mismatch';
-    default:
-      return 'error';
-  }
-}
-
-function listState(
-  query: {
-    readonly isPending: boolean;
-    readonly isError: boolean;
-    readonly isFetching: boolean;
-    readonly isPlaceholderData: boolean;
-    readonly error: unknown;
-    readonly data?: { readonly items: readonly unknown[] };
-  },
-  filtered: boolean,
-): PageStateKind | 'ready' {
-  if (query.isPending) return 'loading';
-  if (query.isError && query.data === undefined) return stateFromError(query.error);
-  if (query.data?.items.length === 0) return filtered ? 'filtered-empty' : 'empty';
-  return query.isFetching && query.isPlaceholderData ? 'refreshing' : 'ready';
-}
-
-function requestId(error: unknown): string | null {
-  return isDomainError(error) ? error.requestId : null;
-}
-
-function safeOperationError(error: unknown): string | null {
-  if (!error) return null;
-  if (!isDomainError(error)) return '操作未完成；服务端事实没有被乐观推进。';
-  const message = error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED' ? '当前授权不允许执行此操作。' : error.code === 'VALIDATION_ERROR' ? '输入未通过服务端校验，请核对后重试。' : '操作未完成；服务端事实没有被乐观推进。';
-  return error.requestId ? `${message} 请求 ID：${error.requestId}` : message;
+  useEffect(() => {
+    const markOnline = () => setOnline(true);
+    const markOffline = () => setOnline(false);
+    window.addEventListener("online", markOnline);
+    window.addEventListener("offline", markOffline);
+    return () => {
+      window.removeEventListener("online", markOnline);
+      window.removeEventListener("offline", markOffline);
+    };
+  }, []);
+  return online;
 }
 
 export default function UploadJobsPage() {
-  const scope = useIngestScope();
-  const capabilities = useCapabilities();
-  const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const search = useMemo(() => uploadJobsQueryCodec.parse(params), [params]);
-  const [draft, setDraft] = useState<FilterDraft>(() => filterDraft(search));
-  useEffect(() => setDraft(filterDraft(search)), [search]);
-
-  const listFilters = useMemo(() => {
-    const tabStates = search.tab === 'uploading' ? ['CREATED', 'AUTHORIZING', 'UPLOADING', 'PAUSED', 'FINALIZING'] : search.tab === 'verifying' ? ['PENDING_VERIFY', 'VERIFYING'] : search.tab === 'available' ? ['AVAILABLE'] : search.tab === 'failed' ? ['FAILED', 'QUARANTINED', 'EXPIRED'] : [];
-    return {
-      q: search.q,
-      dataSourceId: search.dataSourceId,
-      datasetId: search.datasetId,
-      lifecycleStatus: search.lifecycleStatus.length ? search.lifecycleStatus : tabStates,
-      verificationStatus: search.verificationStatus,
-      sort: search.sort,
-      after: search.after,
-      before: search.before,
-      limit: search.limit,
-    };
-  }, [search]);
-
-  const list = useUploadSessions(scope, listFilters, capabilities.has('upload.read'));
-  const creationOptions = useUploadCreationOptions(
-    scope,
-    {
-      targetDataSourceId: search.targetDataSourceId,
-      targetDatasetId: search.targetDatasetId,
-    },
-    capabilities.has('upload.manage') && search.intent === 'create',
+  const scopeSnapshot = useIngestScope();
+  const scope = useMemo(
+    () => (scopeSnapshot ? { ...scopeSnapshot } : null),
+    [
+      scopeSnapshot?.organizationId,
+      scopeSnapshot?.projectId,
+      scopeSnapshot?.regionCode,
+    ],
   );
-  useUploadProgressStream(list.data?.items ?? [], capabilities.has('upload.read') && scope !== null);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [focusedUploadId, setFocusedUploadId] = useState<string>();
-  const handleSelectedChange = useCallback((uploadIds: readonly string[]) => setSelected(new Set(uploadIds)), []);
-  const handleOpenUpload = useCallback((uploadId: string) => void navigate(routes.uploads.build({ uploadId })), [navigate]);
-  const vault = ingestUploadAuthorizationVault;
-  const create = useUploadSessionMutation('create', vault);
-  const pauseBatch = useUploadBatchMutation('pause', vault);
-  const cancelBatch = useUploadBatchMutation('cancel', vault);
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const scopeKey = scope ? `${scope.organizationId}/${scope.projectId}/${scope.regionCode}` : null;
-  const previousScopeKey = useRef<string | null | undefined>(undefined);
+  const capabilities = useCapabilities();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const newUploadTabRef = useRef<HTMLAnchorElement>(null);
+  const recordsTabRef = useRef<HTMLAnchorElement>(null);
+  const activeTab =
+    location.pathname === dataUploadRoutes.records ? "records" : "new";
+  const online = useNetworkStatus();
+  const [sourceType, setSourceType] =
+    useState<UploadSourceChoice>("BROWSER_MULTIPART");
+  const [files, setFiles] = useState<readonly File[]>([]);
+  const [objectStorageUri, setObjectStorageUri] = useState("");
+  const [preflight, setPreflight] = useState<ManifestPreflight | null>(null);
+  const [preflightStatus, setPreflightStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [preflightProblem, setPreflightProblem] =
+    useState<UploadProblemCopy | null>(null);
+  const [preflightNonce, setPreflightNonce] = useState(0);
+  const [packageFilter, setPackageFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<UploadStatus>();
+
+  const queueItems = useUploadQueueStore((state) => state.items);
+  const recovering = useUploadQueueStore((state) => state.recovering);
+  const recoverQueue = useUploadQueueStore((state) => state.recover);
+  const startUpload = useUploadQueueStore((state) => state.start);
+  const pauseUpload = useUploadQueueStore((state) => state.pause);
+  const resumeUpload = useUploadQueueStore((state) => state.resume);
+  const retryFailedParts = useUploadQueueStore(
+    (state) => state.retryFailedParts,
+  );
+  const reattachAndResume = useUploadQueueStore(
+    (state) => state.reattachAndResume,
+  );
+  const cancelUpload = useUploadQueueStore((state) => state.cancel);
+  const clearSettled = useUploadQueueStore((state) => state.clearSettled);
+  const canRead = capabilities.has("upload.read");
+  const canManage = capabilities.has("upload.manage");
 
   useEffect(() => {
-    vault.bindScope(scopeKey);
-    if (previousScopeKey.current !== undefined && previousScopeKey.current !== scopeKey) {
-      setParams(
-        uploadJobsQueryCodec.build(
-          updateUploadJobsSearch(
-            search,
-            {
-              intent: undefined,
-              targetDataSourceId: undefined,
-              targetDatasetId: undefined,
-            },
-            true,
-          ),
-        ),
-        { replace: true },
-      );
-      setSelected(new Set());
-      setConfirmCancel(false);
+    if (scope && canRead) void recoverQueue(scope);
+  }, [canRead, recoverQueue, scope]);
+
+  useEffect(() => {
+    if (!scope || files.length === 0) {
+      setPreflight(null);
+      setPreflightProblem(null);
+      setPreflightStatus("idle");
+      return;
     }
-    previousScopeKey.current = scopeKey;
-  }, [scopeKey, search, setParams, vault]);
+    const controller = new AbortController();
+    const manifestFile = findManifestFile(files);
+    setPreflight(null);
+    setPreflightProblem(null);
+    setPreflightStatus("loading");
+    void (async () => {
+      try {
+        if (!manifestFile) throw new Error("MANIFEST_FILE_MISSING");
+        const manifest = await parseManifestFile(manifestFile);
+        const result = await preflightUploadManifest(
+          scope,
+          manifest,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        setPreflight(result);
+        setPreflightStatus("ready");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        const normalized =
+          error instanceof Error && error.message === "MANIFEST_FILE_MISSING"
+            ? uploadProblemCopy({})
+            : uploadProblemCopy(error);
+        setPreflightProblem(
+          error instanceof Error && error.message === "MANIFEST_FILE_MISSING"
+            ? {
+                title: "未发现 Manifest",
+                detail:
+                  "所选数据包中没有可识别的 .json Manifest；请选择 Manifest 与 RAW_MCAP。",
+                requestId: null,
+                retryable: false,
+                status: 422,
+                problemCode: "MANIFEST_FILE_MISSING",
+              }
+            : normalized,
+        );
+        setPreflightStatus("error");
+      }
+    })();
+    return () => controller.abort();
+  }, [files, preflightNonce, scope]);
 
-  const selectedSessions = useMemo(() => list.data?.items.filter((session) => selected.has(session.uploadId)) ?? [], [list.data?.items, selected]);
-  const focusedSession = list.data?.items.find((session) => session.uploadId === focusedUploadId) ?? list.data?.items[0];
-  const cancelPreflight = useMemo<DangerPreflightEvidence | null>(() => {
-    if (!scopeKey || list.dataUpdatedAt <= 0 || selectedSessions.length === 0) return null;
-    const preparedAt = new Date(list.dataUpdatedAt);
-    return {
-      preparedAt: preparedAt.toISOString(),
-      expiresAt: new Date(preparedAt.getTime() + 60_000).toISOString(),
-      resourceVersion: selectedSessions.map((session) => `${session.uploadId}:${session.etag}`).join('|'),
-      scopeKey,
-    };
-  }, [list.dataUpdatedAt, scopeKey, selectedSessions]);
+  const records = useQuery({
+    queryKey: [
+      "p03-formal-upload-sessions",
+      scope?.projectId,
+      scope?.regionCode,
+      packageFilter.trim(),
+      statusFilter,
+    ],
+    enabled: activeTab === "records" && Boolean(scope) && canRead,
+    staleTime: 10_000,
+    queryFn: ({ signal }) => {
+      if (!scope) throw new Error("INGEST_SCOPE_UNAVAILABLE");
+      return listFormalUploadSessions(
+        scope,
+        {
+          limit: 100,
+          status: statusFilter,
+          data_package_id: packageFilter.trim() || undefined,
+        },
+        signal,
+      );
+    },
+  });
 
-  if (!scope)
+  const objectUriError =
+    sourceType === "OBJECT_STORAGE_REFERENCE"
+      ? validateObjectStorageUri(objectStorageUri)
+      : null;
+  const rawPackageFile = useMemo(
+    () =>
+      preflight && sourceType === "BROWSER_MULTIPART"
+        ? findRawPackageFile(files, preflight.manifest)
+        : null,
+    [files, preflight, sourceType],
+  );
+  const localSizeMatches =
+    !rawPackageFile ||
+    !preflight ||
+    rawPackageFile.size === preflight.manifest.file_size;
+  const startBlockedReason = !online
+    ? "网络未连接"
+    : !canManage
+      ? "当前授权只有查看权限"
+      : preflightStatus !== "ready" || !preflight
+        ? "请先通过 Manifest 预检"
+        : sourceType === "BROWSER_MULTIPART" && !rawPackageFile
+          ? "未找到 Manifest 声明的 RAW_MCAP"
+          : !localSizeMatches
+            ? "本地文件大小与 Manifest 不一致"
+            : objectUriError;
+
+  if (!scope) {
     return (
       <main className={styles.page}>
-        <PageState state="feature-unavailable" label="上传任务" />
+        <PageState
+          state="feature-unavailable"
+          label="数据上传"
+          description="请先选择项目和区域。"
+        />
       </main>
     );
-  if (!capabilities.has('upload.read') && !capabilities.loading) {
+  }
+  if (capabilities.loading) {
     return (
       <main className={styles.page}>
-        <PageState state="forbidden" label="上传任务" />
+        <PageState state="loading" label="数据上传" layout="workbench" />
+      </main>
+    );
+  }
+  if (!canRead) {
+    return (
+      <main className={styles.page}>
+        <PageState state="forbidden" label="数据上传" />
       </main>
     );
   }
 
-  const apply = (next: Partial<UploadJobsSearch>) => {
-    setSelected(new Set());
-    setParams(uploadJobsQueryCodec.build({ ...search, ...next }, search));
+  const changeSourceType = (value: UploadSourceChoice) => {
+    setSourceType(value);
+    setFiles([]);
+    setPreflight(null);
+    setPreflightProblem(null);
+    setPreflightStatus("idle");
   };
-  const submitCreate = (uploadDraft: CreateUploadDraft) => {
-    const source = creationOptions.data?.dataSources.find((candidate) => candidate.id === uploadDraft.dataSourceId && candidate.allowed);
-    if (!source) return;
-    create.mutate(
-      {
-        scope,
-        idempotencyKey: createMutationIntentKey(),
-        localFiles: uploadDraft.files,
-        body: {
-          data_source_id: uploadDraft.dataSourceId,
-          target_dataset_id: uploadDraft.targetDatasetId,
-          source_format: source.sourceFormat,
-          source_format_version: creationOptions.data?.formats.find((format) => format.code === source.sourceFormat)?.version ?? null,
-          expected_source_versions: {
-            configuration_version: source.configurationVersion,
-            credential_version: source.credentialVersion,
-            upload_policy_version: source.uploadPolicyVersion,
-          },
-          objects: uploadDraft.files.map((file, index) => ({
-            client_object_id: `local-${index + 1}`,
-            relative_path: file.webkitRelativePath || file.name,
-            size_bytes: String(file.size),
-            media_type: file.type || 'application/octet-stream',
-            last_modified_at: new Date(file.lastModified).toISOString(),
-            declared_sha256: null,
-          })),
-          client_capabilities: {
-            supports_web_worker_hash: true,
-            supports_crc64: true,
-            supports_background_continuation: false,
-          },
-        },
-      },
-      {
-        onSuccess: (session) => {
-          apply({
-            intent: undefined,
-            targetDataSourceId: undefined,
-            targetDatasetId: undefined,
-          });
-          void navigate(routes.uploads.build({ uploadId: session.uploadId }));
-        },
-      },
-    );
+
+  const beginUpload = () => {
+    if (!preflight || startBlockedReason) return;
+    void startUpload({ scope, preflight, sourceType, files, objectStorageUri });
+    setFiles([]);
+    setPreflight(null);
+    setPreflightProblem(null);
+    setPreflightStatus("idle");
+    if (sourceType === "OBJECT_STORAGE_REFERENCE") setObjectStorageUri("");
   };
-  const clearAfterFullSuccess = (result: { readonly failed: number }) => {
-    if (result.failed === 0) setSelected(new Set());
+
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLAnchorElement>,
+    target: string,
+    targetRef: React.RefObject<HTMLAnchorElement | null>,
+  ) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    void navigate(target);
+    queueMicrotask(() => targetRef.current?.focus());
   };
-  const creationBlockedReasons =
-    creationOptions.data && !creationOptions.data.allowedActions.includes('CREATE')
-      ? [
-          ...creationOptions.data.blockedReasons,
-          {
-            code: 'ACTION_NOT_ALLOWED',
-            message: '当前作用域未授予创建上传动作。',
-          },
-        ]
-      : (creationOptions.data?.blockedReasons ?? []);
-  const hasActiveFilters = search.tab !== 'all' || Boolean(search.q || search.dataSourceId || search.datasetId || search.lifecycleStatus.length || search.verificationStatus.length);
-  const resolvedListState = listState(list, hasActiveFilters);
-  const staleListSnapshot = list.isError && list.data !== undefined;
-  const table = <UploadSessionTable items={list.data?.items ?? []} selected={selected} focusedUploadId={focusedSession?.uploadId} onSelectedChange={handleSelectedChange} onFocus={setFocusedUploadId} onOpen={handleOpenUpload} />;
-  const pager = list.data ? <DataCursorPager pageInfo={list.data.pageInfo} busy={list.isFetching && list.isPlaceholderData} windowLabel={`当前窗口 ${list.data.items.length} 条 · 快照 ${list.data.snapshotAt}`} onChange={(cursor) => apply(cursor)} /> : null;
-  const listContent =
-    resolvedListState === 'ready' ? (
-      table
-    ) : resolvedListState === 'refreshing' ? (
-      <PageState state="refreshing" label="上传任务列表">
-        {table}
-      </PageState>
-    ) : (
-      <PageState
-        state={resolvedListState}
-        label="上传任务列表"
-        requestId={requestId(list.error)}
-        onRetry={resolvedListState === 'error' || resolvedListState === 'offline' || resolvedListState === 'rate-limited' ? () => void list.refetch() : undefined}
-        action={
-          resolvedListState === 'filtered-empty' ? (
-            <Button
-              onClick={() =>
-                apply({
-                  tab: 'all',
-                  q: undefined,
-                  lifecycleStatus: [],
-                  verificationStatus: [],
-                  dataSourceId: undefined,
-                  datasetId: undefined,
-                })
-              }
-            >
-              清除筛选
-            </Button>
-          ) : undefined
-        }
-      />
-    );
-  const operationError = safeOperationError(create.error ?? pauseBatch.error ?? cancelBatch.error);
-  const metricState = { loading: list.isPending, failed: list.isError && list.data === undefined };
-  const uploadingCount = list.data?.items.filter((item) => item.lifecycleStatus === 'UPLOADING').length ?? 0;
-  const verifyingCount = list.data?.items.filter((item) => item.lifecycleStatus === 'VERIFYING').length ?? 0;
-  const completedCount = list.data?.items.filter((item) => item.lifecycleStatus === 'AVAILABLE').length ?? 0;
-  const visibleBytes = list.data?.items.reduce((total, item) => total + BigInt(item.progress.confirmedReceivedBytes), 0n) ?? 0n;
-  const visibleGigabytes = Number((visibleBytes * 10n) / 1_073_741_824n) / 10;
 
   return (
     <main className={styles.page}>
-      <StandardPageScaffold
-        header={{
-          title: '上传任务',
-          breadcrumbs: [
-            { key: 'ingest', label: '数据接入', to: routes.uploadJobs.build() },
-            { key: 'uploads', label: '上传任务' },
-          ],
-          actions: (
-            <>
-              <Button href={routes.sources.build()}>数据源</Button>
-              {capabilities.has('upload.manage') ? (
-                <Button type="primary" icon={<Plus aria-hidden="true" size={16} />} onClick={() => apply({ intent: 'create' })}>
-                  新建上传
-                </Button>
-              ) : null}
-            </>
-          ),
-        }}
-        summary={
-          <div className={styles.summaryStack}>
-            <nav className={styles.statusTabs} aria-label="上传状态">
-              <Segmented
-                value={search.tab}
-                options={[
-                  { value: 'all', label: '全部' },
-                  { value: 'uploading', label: '上传中' },
-                  { value: 'verifying', label: '校验中' },
-                  { value: 'available', label: '已完成' },
-                  { value: 'failed', label: '失败' },
-                ]}
-                onChange={(tab) =>
-                  apply({
-                    tab: tab as UploadJobsSearch['tab'],
-                    lifecycleStatus: [],
-                    verificationStatus: [],
-                  })
-                }
-              />
-            </nav>
-            <section className={styles.metricGrid} aria-label="当前窗口">
-              <MetricTile {...metricState} eyebrow="UPLOADING" label="上传中" value={uploadingCount} icon={<HardDriveUpload size={28} />} />
-              <MetricTile {...metricState} eyebrow="VERIFYING" label="校验中" value={verifyingCount} icon={<ShieldCheck size={28} />} />
-              <MetricTile {...metricState} eyebrow="COMPLETED" label="当前窗口已完成" value={completedCount} icon={<CircleCheckBig size={28} />} />
-              <MetricTile {...metricState} eyebrow="THROUGHPUT" label="窗口确认流量" value={`${visibleGigabytes.toFixed(1)} GB`} icon={<Database size={28} />} />
-            </section>
-          </div>
-        }
-        filters={
-          <div className={styles.filterStack}>
-            <FilterToolbar
-              label="上传任务筛选"
-              onApply={() =>
-                apply({
-                  q: draft.q.trim() || undefined,
-                  dataSourceId: draft.dataSourceId.trim() || undefined,
-                  lifecycleStatus: draft.lifecycleStatus ? [draft.lifecycleStatus] : [],
-                  verificationStatus: [],
-                  sort: draft.sort,
-                  limit: draft.limit,
-                })
-              }
-              onReset={() => {
-                const next = {
-                  q: '',
-                  dataSourceId: '',
-                  lifecycleStatus: '',
-                  sort: 'createdAt:desc' as const,
-                  limit: 20 as const,
-                };
-                setDraft(next);
-                apply({
-                  tab: 'all',
-                  q: undefined,
-                  sort: next.sort,
-                  limit: next.limit,
-                  lifecycleStatus: [],
-                  verificationStatus: [],
-                  dataSourceId: undefined,
-                  datasetId: undefined,
-                });
-              }}
-            >
-              <label className={styles.filterField}>
-                搜索
-                <Input
-                  allowClear
-                  placeholder="任务 ID、Dataset"
-                  value={draft.q}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      q: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className={styles.filterField}>
-                数据源
-                <Input
-                  allowClear
-                  placeholder="全部数据源"
-                  value={draft.dataSourceId}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      dataSourceId: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className={styles.filterField}>
-                状态
-                <Select
-                  value={draft.lifecycleStatus}
-                  onChange={(lifecycleStatus) => setDraft((current) => ({ ...current, lifecycleStatus }))}
-                  options={[
-                    { value: '', label: '全部状态' },
-                    { value: 'UPLOADING', label: '上传中' },
-                    { value: 'VERIFYING', label: '校验中' },
-                    { value: 'AVAILABLE', label: '已完成' },
-                    { value: 'FAILED', label: '失败' },
-                    { value: 'QUARANTINED', label: '隔离' },
-                  ]}
-                />
-              </label>
-              <label className={styles.filterField}>
-                排序
-                <Select
-                  value={draft.sort}
-                  onChange={(sort) => setDraft((current) => ({ ...current, sort }))}
-                  options={[
-                    { value: 'createdAt:desc', label: '最近创建' },
-                    { value: 'updatedAt:desc', label: '最近更新' },
-                  ]}
-                />
-              </label>
-              <label className={styles.filterField}>
-                每页
-                <Select
-                  value={draft.limit}
-                  onChange={(limit) => setDraft((current) => ({ ...current, limit }))}
-                  options={[10, 20, 50].map((value) => ({
-                    value,
-                    label: String(value),
-                  }))}
-                />
-              </label>
-            </FilterToolbar>
-          </div>
-        }
-        state={
-          <Space className={styles.contentStack} orientation="vertical" size="middle">
-            {operationError ? <Alert type="error" showIcon title={operationError} /> : null}
-            {staleListSnapshot ? (
-              <Alert
-                type="warning"
-                showIcon
-                title={'\u5217\u8868\u5237\u65b0\u5931\u8d25\uff0c\u5f53\u524d\u663e\u793a\u4e0a\u6b21\u6210\u529f\u5feb\u7167\u3002'}
-                description={
-                  requestId(list.error)
-                    ? `\u8bf7\u6c42 ID\uff1a${requestId(list.error)}`
-                    : '\u8bf7\u786e\u8ba4\u5f53\u524d\u9879\u76ee\u548c Region \u540e\u91cd\u8bd5\u3002'
-                }
-                action={<Button onClick={() => void list.refetch()}>{'\u91cd\u65b0\u52a0\u8f7d'}</Button>}
-              />
-            ) : null}
-            <BatchOperationBar
-              count={selected.size}
-              pauseDisabled={staleListSnapshot || !capabilities.has('upload.manage') || selectedSessions.some((session) => !session.allowedActions.includes('PAUSE'))}
-              cancelDisabled={staleListSnapshot || !capabilities.has('upload.manage') || selectedSessions.some((session) => !session.allowedActions.includes('CANCEL'))}
-              pending={pauseBatch.isPending || cancelBatch.isPending}
-              result={pauseBatch.data ?? cancelBatch.data}
-              onClear={() => setSelected(new Set())}
-              onPause={() =>
-                pauseBatch.mutate({
-                  scope,
-                  sessions: selectedSessions,
-                  reason: '用户批量暂停',
-                })
-              }
-              onCancel={() => setConfirmCancel(true)}
+      <UiPageHeader
+        title="数据上传"
+        breadcrumbs={[
+          { key: "ingest", label: "采集与接收" },
+          { key: "upload", label: "数据上传" },
+        ]}
+      />
+
+      <nav className={styles.pageTabs} aria-label="数据上传页面" role="tablist">
+        <Link
+          ref={newUploadTabRef}
+          to={dataUploadRoutes.newUpload}
+          role="tab"
+          aria-controls="new-upload-panel"
+          aria-selected={activeTab === "new"}
+          tabIndex={activeTab === "new" ? 0 : -1}
+          onKeyDown={(event) =>
+            handleTabKeyDown(event, dataUploadRoutes.records, recordsTabRef)
+          }
+        >
+          新建上传
+        </Link>
+        <Link
+          ref={recordsTabRef}
+          to={dataUploadRoutes.records}
+          role="tab"
+          aria-controls="upload-records-panel"
+          aria-selected={activeTab === "records"}
+          tabIndex={activeTab === "records" ? 0 : -1}
+          onKeyDown={(event) =>
+            handleTabKeyDown(event, dataUploadRoutes.newUpload, newUploadTabRef)
+          }
+        >
+          上传记录
+        </Link>
+      </nav>
+
+      {activeTab === "new" ? (
+        <section
+          id="new-upload-panel"
+          className={styles.tabPanel}
+          role="tabpanel"
+          aria-label="新建上传"
+        >
+          {!canManage ? (
+            <Alert
+              type="warning"
+              showIcon
+              title="当前为只读模式"
+              description="可以查看 Manifest 预检结构和上传记录，但当前授权不能创建、暂停、恢复、重试或取消上传。"
             />
-            {listContent}
-            {resolvedListState === 'ready' && focusedSession ? (
-              <div className={styles.sessionFacts} aria-label="当前选中任务详情">
-                <UploadSessionFacts session={focusedSession} onOpen={handleOpenUpload} />
-              </div>
-            ) : null}
-          </Space>
-        }
-        pagination={pager}
-      />
-      <CreateUploadDialog
-        open={search.intent === 'create' && capabilities.has('upload.manage')}
-        pending={create.isPending}
-        optionsPending={creationOptions.isPending}
-        dataSources={creationOptions.data?.dataSources ?? []}
-        datasets={creationOptions.data?.datasets ?? []}
-        blockedReasons={creationBlockedReasons}
-        initialDataSourceId={search.targetDataSourceId}
-        initialDatasetId={search.targetDatasetId}
-        onClose={() =>
-          apply({
-            intent: undefined,
-            targetDataSourceId: undefined,
-            targetDatasetId: undefined,
-          })
-        }
-        onSubmit={submitCreate}
-      />
-      <DangerConfirmModal
-        open={confirmCancel}
-        title="确认批量取消上传"
-        actionLabel="确认取消"
-        resourceId={selectedSessions.map((session) => session.uploadId).join(', ')}
-        impact="逐项清除内存上传授权，并携带各自 If-Match 与 Idempotency-Key 请求取消；服务端完成前任务保持 CANCELLING，不会从列表乐观移除。"
-        blockers={
-          selectedSessions.length !== selected.size
-            ? [
-                {
-                  code: 'SELECTION_STALE',
-                  message: '选择中包含已离开当前权威窗口的任务，请清除后重新选择。',
-                },
-              ]
-            : []
-        }
-        preflight={cancelPreflight}
-        currentScopeKey={scopeKey ?? ''}
-        pending={cancelBatch.isPending}
-        onCancel={() => setConfirmCancel(false)}
-        onConfirm={() => {
-          cancelBatch.mutate(
-            { scope, sessions: selectedSessions, reason: '用户确认批量取消' },
-            {
-              onSuccess: (result) => {
-                setConfirmCancel(false);
-                clearAfterFullSuccess(result);
-              },
-            },
-          );
-        }}
-      />
+          ) : null}
+          <div className={styles.uploadWorkspace}>
+            <UploadMethodPanel
+              sourceType={sourceType}
+              files={files}
+              objectStorageUri={objectStorageUri}
+              projectId={scope.projectId}
+              regionCode={scope.regionCode}
+              preflight={preflight}
+              disabled={!canManage}
+              onSourceTypeChange={changeSourceType}
+              onFilesChange={setFiles}
+              onObjectStorageUriChange={setObjectStorageUri}
+            />
+            <ManifestPreflightPanel
+              status={preflightStatus}
+              preflight={preflight}
+              problem={preflightProblem}
+              onRetry={() => setPreflightNonce((value) => value + 1)}
+            />
+            <UploadQueuePanel
+              items={queueItems}
+              recovering={recovering}
+              canManage={canManage}
+              onPause={(id) => void pauseUpload(id)}
+              onResume={(id) => void resumeUpload(id)}
+              onRetry={(id) => void retryFailedParts(id)}
+              onCancel={(id) => void cancelUpload(id)}
+              onReattach={(id, file) => void reattachAndResume(id, file)}
+              onClearSettled={clearSettled}
+            />
+          </div>
+
+          <section
+            className={styles.securityNotice}
+            aria-labelledby="upload-security-heading"
+          >
+            <header>
+              <ShieldCheck size={17} aria-hidden="true" />
+              <h2 id="upload-security-heading">
+                安全与操作提示 <small>（公网环境）</small>
+              </h2>
+            </header>
+            <div>
+              <article>
+                <strong>完整性</strong>
+                <span>
+                  Manifest 预检只验证声明；提交时服务端再核验 SHA-256、CRC64
+                  与对象大小。
+                </span>
+              </article>
+              <article>
+                <strong>大小限制</strong>
+                <span>
+                  Manifest ≤ 1 MiB；单包与文件声明合计 ≤ 5 TiB；最多 10,000
+                  个分片。
+                </span>
+              </article>
+              <article>
+                <strong>支持格式</strong>
+                <span>
+                  V1 要求且仅允许 1 个 RAW_MCAP；Manifest 最多 256
+                  个文件声明、128 路相机。
+                </span>
+              </article>
+              <article>
+                <strong>敏感信息与审计</strong>
+                <span>
+                  禁止上传凭据、密钥或个人隐私；预检、暂停、恢复、取消和提交均记录请求事实。
+                </span>
+              </article>
+            </div>
+          </section>
+
+          <footer className={styles.uploadActions}>
+            <div>
+              <span
+                className={
+                  online ? styles.networkOnline : styles.networkOffline
+                }
+              >
+                {online ? (
+                  <Wifi size={13} aria-hidden="true" />
+                ) : (
+                  <WifiOff size={13} aria-hidden="true" />
+                )}
+                {online ? "公网连接可用" : "网络已断开"}
+              </span>
+              <FileJson2 size={14} aria-hidden="true" />
+              <span>
+                {startBlockedReason ??
+                  `预检已通过：${preflight?.identifiers.data_package_id}`}
+              </span>
+            </div>
+            <Button onClick={clearSettled}>清理已完成</Button>
+            <Button
+              type="primary"
+              icon={<ArrowUp size={15} />}
+              disabled={Boolean(startBlockedReason)}
+              onClick={beginUpload}
+            >
+              开始上传
+            </Button>
+          </footer>
+        </section>
+      ) : (
+        <section
+          id="upload-records-panel"
+          className={styles.tabPanel}
+          role="tabpanel"
+          aria-label="上传记录"
+        >
+          <UploadRecordsPanel
+            items={records.data?.items ?? []}
+            total={records.data?.total ?? 0}
+            loading={records.isPending || records.isFetching}
+            problem={records.isError ? uploadProblemCopy(records.error) : null}
+            packageFilter={packageFilter}
+            statusFilter={statusFilter}
+            onPackageFilterChange={setPackageFilter}
+            onStatusFilterChange={setStatusFilter}
+            onRefresh={() => void records.refetch()}
+          />
+        </section>
+      )}
     </main>
   );
 }

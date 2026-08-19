@@ -1,0 +1,33 @@
+# Overlay for the explicit real-API development mode.
+# Use together with compose.dev.yaml; this file intentionally does not redefine
+# the browser-Mock development default chosen by the base file.
+services:
+  migration-check:
+    build:
+      context: backend
+      target: api
+    command: [hc-data-migrate, status]
+    environment:
+      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    restart: "no"
+
+  api:
+    environment:
+      # The API signs browser PUTs for the host-reachable endpoint while all
+      # server-side S3 operations continue to use the base file's internal endpoint.
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
+    depends_on:
+      migration-check:
+        condition: service_completed_successfully
+
+  worker:
+    depends_on:
+      migration-check:
+        condition: service_completed_successfully
+
+  frontend:
+    environment:
+      VITE_MOCK_MODE: "off"

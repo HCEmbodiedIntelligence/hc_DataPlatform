@@ -31,13 +31,29 @@ const copy: Readonly<Record<AnnotationPageStateKind, string>> = {
   'feature-unavailable': '此能力尚未完成授权合同签署或当前部署不可用。',
 };
 
-export function AnnotationPageState({ kind, detail, requestId, onRetry }: { kind: AnnotationPageStateKind; detail?: string; requestId?: string; onRetry?: () => void }): JSX.Element {
+export function AnnotationPageState({
+  kind,
+  detail,
+  problemCode,
+  requestId,
+  retryable,
+  onRetry,
+}: {
+  kind: AnnotationPageStateKind;
+  detail?: string;
+  problemCode?: string;
+  requestId?: string;
+  retryable?: boolean;
+  onRetry?: () => void;
+}): JSX.Element {
   return (
     <section className={`annotation-page-state annotation-page-state--${kind}`} role={kind.includes('loading') || kind === 'refreshing' ? 'status' : 'alert'} aria-live="polite">
       <p>{copy[kind]}</p>
       {detail ? <p>{detail}</p> : null}
+      {problemCode ? <p>问题代码：<code>{problemCode}</code></p> : null}
       {requestId ? <p>请求 ID：<code>{requestId}</code></p> : null}
-      {onRetry ? <button type="button" onClick={onRetry}>重试</button> : null}
+      {retryable ? <p>服务端允许重试；请确认当前内容后再操作。</p> : null}
+      {onRetry ? <button type="button" onClick={onRetry}>{retryable ? '按服务端提示重试' : '重新加载'}</button> : null}
     </section>
   );
 }

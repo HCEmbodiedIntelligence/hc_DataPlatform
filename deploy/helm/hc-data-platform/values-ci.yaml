@@ -18,3 +18,4 @@ backend:
   config:
     serviceVersion: ci-validate
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
+    objectStorePublicEndpoint: https://uploads.example.invalid

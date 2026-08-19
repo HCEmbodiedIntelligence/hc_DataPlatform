@@ -6,39 +6,33 @@ const pageInfo = {
   end_cursor: null,
 } as const;
 
-export const lifecyclePageFixture = {
-  data: {
-    scope: {
-      organization_id: 'org_fx_01', project_id: 'prj_fx_01',
-      region_code: 'cn-shanghai', timezone: 'Asia/Shanghai',
-    },
-    snapshot: { id: 'inventory_fx_01', as_of: at, status: 'READY' },
-    policy_set_version: '3',
-    policy_versions: [{ policy_id: 'policy_fx_01', version: '2' }],
-    simulation_input_hash: 'sha256:fixture-lifecycle-input',
-    policies: [{
-      id: 'policy_fx_01', name: '冷数据转 IA', version: '2', etag: '"policy-2"',
-      status: 'PAUSED',
-      target: { scope_id: 'prj_fx_01', object_role: 'SOURCE' },
-      actions: [{ type: 'TRANSITION', after_days: 30, target_class: 'IA' }],
-      simulation_input_hash: 'sha256:fixture-lifecycle-input',
-      allowed_actions: [{ action: 'SIMULATE', allowed: true, reason_code: null }],
-      protected_reasons: [],
-    }],
-    impact: {
-      snapshot_id: 'inventory_fx_01', policy_set_version: '3',
-      standard_bytes: '5368709120', to_ia_bytes: '3221225472',
-      to_archive_bytes: '0', reclaimable_bytes: '2147483648',
-    },
-    capabilities: ['storage.lifecycle.read', 'storage.lifecycle.manage', 'storage.lifecycle.simulate'],
-  },
-  scope: {
-    organization_id: 'org_fx_01', project_id: 'prj_fx_01',
-    region_code: 'cn-shanghai', timezone: 'Asia/Shanghai',
-  },
-  request_id: 'req_fx_lifecycle_page',
-  contract_version: 'storage-lifecycle.v1',
-} as const;
+export const lifecyclePoliciesFixture = [{
+  policy_id: 'policy_fx_retain_raw', project_id: 'prj_fx_01', name: '原始数据长期保留',
+  business_category: 'RAW', object_role: 'RAW', action: 'RETAIN', minimum_age_days: 0,
+  priority: 10, state: 'ENABLED', version: 3, etag: '"v3"', created_at: at, updated_at: at,
+}, {
+  policy_id: 'policy_fx_review_pending', project_id: 'prj_fx_01', name: '待标注数据到期复核',
+  business_category: 'PENDING_ANNOTATION', object_role: 'OTHER', action: 'REVIEW_EXPIRATION',
+  minimum_age_days: 30, priority: 100, state: 'DRAFT', version: 1, etag: '"v1"',
+  created_at: at, updated_at: at,
+}, {
+  policy_id: 'policy_fx_clean_cache', project_id: 'prj_fx_01', name: '可重建缓存清理',
+  business_category: 'ANNOTATION_COMPLETE', object_role: 'REBUILDABLE_DERIVATIVE',
+  action: 'CLEAN_REBUILDABLE_CACHE', minimum_age_days: 14, priority: 200,
+  state: 'PAUSED', version: 2, etag: '"v2"', created_at: at, updated_at: at,
+}] as const;
+
+export const lifecycleAuditFixture = [{
+  audit_id: 'audit_fx_001', project_id: 'prj_fx_01', policy_id: 'policy_fx_retain_raw',
+  actor_id: 'usr_fx_admin', action: 'storage.lifecycle_policy.created', before_digest: null,
+  after_digest: 'a'.repeat(64), request_id: 'req_fx_policy_create',
+  details: { state: 'DRAFT', version: 1 }, occurred_at: at,
+}, {
+  audit_id: 'audit_fx_002', project_id: 'prj_fx_01', policy_id: 'policy_fx_retain_raw',
+  actor_id: 'usr_fx_admin', action: 'storage.lifecycle_policy.enabled',
+  before_digest: 'a'.repeat(64), after_digest: 'b'.repeat(64),
+  request_id: 'req_fx_policy_enable', details: { state: 'ENABLED', version: 3 }, occurred_at: at,
+}] as const;
 
 export const robotModelsPageFixture = {
   items: [{

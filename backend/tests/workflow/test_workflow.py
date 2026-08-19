@@ -170,17 +170,22 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "ExportWorkflow",
         "CatalogReconciliationWorkflow",
         "PublishReconciliationWorkflow",
+        "AnnotationReviewPreparationWorkflow",
+        "StorageLifecycleExecutionWorkflow",
     }
     assert {item.__name__ for item in activities} == {
         "verify_raw",
         "evaluate_quality",
         "align_fragment",
         "commit_fragment",
+        "create_annotation_task",
         "create_preview",
         "publish_dataset",
         "export_dataset",
         "reconcile_catalog",
         "reconcile_publication",
+        "storage_apply_lifecycle_batch",
+        "parse_manifest",
     }
     assert ACTIVITY_RETRY_POLICY.maximum_attempts == 8
     assert ACTIVITY_RETRY_POLICY.backoff_coefficient == 2

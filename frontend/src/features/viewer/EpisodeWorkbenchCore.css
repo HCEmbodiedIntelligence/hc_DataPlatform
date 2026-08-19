@@ -1,3 +1,138 @@
+.episode-workbench-core,
+.viewer-media-surface {
+  min-width: 0;
+}
+
+.episode-workbench-core {
+  color: var(--hc-color-text);
+}
+
+.viewer-media-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--hc-space-2, 8px);
+}
+
+.viewer-media-grid:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: -2px;
+}
+
+.viewer-panel-slot,
+.viewer-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.viewer-panel-slot {
+  display: contents;
+}
+
+.viewer-panel {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-sm, 10px);
+  background: var(--hc-color-surface);
+}
+
+.viewer-panel > header {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hc-space-2, 8px);
+  padding: 6px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hc-color-border) 66%, transparent);
+  color: var(--hc-color-surface);
+  background: var(--hc-color-text);
+}
+
+.viewer-panel > header h3 {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-panel > header span {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--hc-color-surface) 72%, transparent);
+  font-size: 11px;
+}
+
+.viewer-panel[data-panel-state='partial'] > header span,
+.viewer-panel[data-panel-state='missing'] > header span {
+  color: color-mix(in srgb, var(--hc-color-error) 48%, white);
+}
+
+.viewer-panel[data-panel-state='pending'] > header span {
+  color: color-mix(in srgb, var(--hc-color-warning) 42%, white);
+}
+
+.viewer-panel video,
+.viewer-panel canvas {
+  display: block;
+  width: 100%;
+  min-height: 148px;
+  flex: 1 1 auto;
+  aspect-ratio: 16 / 9;
+  background: var(--hc-color-text);
+  object-fit: cover;
+}
+
+.viewer-panel__error,
+.viewer-panel__unavailable {
+  display: grid;
+  min-height: 148px;
+  flex: 1 1 auto;
+  place-content: center;
+  justify-items: center;
+  gap: var(--hc-space-2, 8px);
+  padding: var(--hc-space-4, 16px);
+  color: var(--hc-color-text-muted);
+  background: var(--hc-color-surface-muted);
+  text-align: center;
+}
+
+.viewer-panel__error button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+}
+
+.viewer-panel__unavailable code {
+  overflow-wrap: anywhere;
+  color: var(--hc-color-text-muted);
+  font-size: 11px;
+}
+
+.viewer-media-empty {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  padding: var(--hc-space-6, 24px);
+  border: 1px dashed var(--hc-color-border);
+  border-radius: var(--hc-radius-sm, 10px);
+  color: var(--hc-color-text-muted);
+  background: var(--hc-color-surface-muted);
+  text-align: center;
+}
+
+.viewer-playback-controls:focus-visible,
+.episode-workbench-core button:focus-visible,
+.viewer-media-surface button:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+
 .viewer-axis-group {
   --viewer-axis-accent: #0f8f8b;
   --viewer-axis-border: #d8e3e1;
@@ -317,6 +452,7 @@
 }
 
 .viewer-timeline__surface {
+  position: relative;
   min-width: 100%;
   padding: 0 9px 8px;
   box-sizing: border-box;
@@ -362,6 +498,24 @@
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
   cursor: crosshair;
   touch-action: none;
+}
+
+.viewer-timeline[data-variant='signals'] .viewer-timeline__filmstrip {
+  height: 28px;
+  margin-block: 3px 6px;
+  border-color: var(--hc-color-border);
+  background: var(--hc-color-surface-muted);
+  cursor: pointer;
+}
+
+.viewer-timeline__scrub-line {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  left: 7px;
+  height: 2px;
+  background: var(--hc-color-border);
+  transform: translateY(-50%);
 }
 
 .viewer-timeline__filmstrip:focus-visible {
@@ -476,7 +630,7 @@
   top: -6px;
   bottom: -6px;
   width: 2px;
-  background: #f04d3f;
+  background: var(--hc-color-primary);
   pointer-events: none;
   transform: translateX(-1px);
 }
@@ -488,7 +642,39 @@
   width: 11px;
   height: 8px;
   border-radius: 2px 2px 6px 6px;
-  background: #f04d3f;
+  background: var(--hc-color-primary);
+  transform: translateX(-50%);
+}
+
+.viewer-timeline__cursor-layer {
+  position: absolute;
+  z-index: 6;
+  top: 29px;
+  right: 9px;
+  bottom: 8px;
+  left: calc(var(--timeline-label-width) + 9px);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.viewer-timeline__shared-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--hc-color-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--hc-color-primary) 14%, transparent);
+  transform: translateX(-1px);
+}
+
+.viewer-timeline__shared-playhead span {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 9px;
+  height: 7px;
+  border-radius: 2px 2px 6px 6px;
+  background: var(--hc-color-primary);
   transform: translateX(-50%);
 }
 
@@ -584,6 +770,22 @@
   background: #f9d5d2;
 }
 
+.viewer-timeline__segment[data-tone='signal'],
+.viewer-timeline__segment[data-tone='quality-pass'] {
+  border-color: color-mix(in srgb, var(--hc-color-info) 58%, var(--hc-color-border));
+  color: color-mix(in srgb, var(--hc-color-info) 80%, var(--hc-color-text));
+  background:
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--hc-color-info) 14%, var(--hc-color-surface)) 0 5px,
+      color-mix(in srgb, var(--hc-color-info) 22%, var(--hc-color-surface)) 5px 7px
+    );
+}
+
+.viewer-timeline__segment[data-tone='quality-pass'] {
+  border-style: dashed;
+}
+
 .viewer-timeline__segment--point {
   width: auto;
   min-width: 14px;
@@ -610,7 +812,7 @@
 .viewer-timeline__hint {
   padding: 5px 10px 6px;
   border-top: 1px solid #e1e9e7;
-  color: #71807c;
+  color: var(--hc-color-text-muted);
   background: #fff;
   font-size: 0.59rem;
 }
@@ -645,5 +847,12 @@
 
   .viewer-timeline__frames {
     grid-template-columns: repeat(12, minmax(28px, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .episode-workbench-core *,
+  .viewer-media-surface * {
+    scroll-behavior: auto !important;
   }
 }

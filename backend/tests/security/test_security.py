@@ -12,6 +12,7 @@ from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import AuditRecord, canonical_hash
 from hc_data_platform.security.auth import AuthContext, JwtVerifier, Permission, Role
+from hc_data_platform.security.capabilities import legacy_roles_from_capabilities
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
 from hc_data_platform.security.scope import (
     InMemoryScopedRepository,
@@ -122,6 +123,30 @@ def test_project_roles_have_explicit_permissions(
     admin.require_permission(denied)
 
 
+def test_approved_capability_is_authoritative_and_never_bleeds_across_projects() -> None:
+    auth = AuthContext(
+        subject_id="platform-session",
+        project_ids=frozenset({"p1", "p2"}),
+        region_codes=frozenset({"cn"}),
+        roles=frozenset(),
+        scope_pairs=frozenset({("p1", "cn"), ("p2", "cn")}),
+        scoped_capabilities=frozenset({("p1", "collection.upload")}),
+        capability_revision=7,
+    )
+    ScopeGuard.require(auth, "p1", "cn")
+    auth.require_permission(Permission.UPLOAD, project_id="p1")
+    _assert_problem(
+        "PERMISSION_REQUIRED",
+        lambda: auth.require_permission(Permission.UPLOAD, project_id="p2"),
+    )
+    assert auth.legacy_roles("p1") == frozenset({Role.UPLOADER.value})
+    assert auth.legacy_roles("p2") == frozenset()
+
+
+def test_read_capability_does_not_activate_a_legacy_write_role() -> None:
+    assert legacy_roles_from_capabilities({"datasets.read"}) == frozenset()
+
+
 def test_scope_repository_denies_cross_project_and_region_reads_and_writes() -> None:
     repository = InMemoryScopedRepository[ScopedResource]()
     p1_cn = AuthContext("u1", frozenset({"p1"}), frozenset({"cn"}), frozenset({"uploader"}))
@@ -138,6 +163,8 @@ def test_scope_repository_denies_cross_project_and_region_reads_and_writes() -> 
         "REGION_SCOPE_DENIED",
         lambda: repository.add(p1_cn, "cross-region", ScopedResource("p1", "us")),
     )
+    unscoped_admin = AuthContext("admin", frozenset(), frozenset(), frozenset({Role.ADMIN.value}))
+    _assert_problem("PROJECT_SCOPE_DENIED", lambda: repository.get(unscoped_admin, "resource"))
 
 
 def test_service_identity_requires_issued_explicit_scope_even_when_admin() -> None:

@@ -168,7 +168,139 @@ def aggregate_fragments(fragment_dir: Path) -> OpenAPIDocument:
                 output_section[component_name] = section[component_name]
 
     output_components.setdefault("schemas", {})
+    # Apply the same public-auth contract normalization used by app.openapi().  This keeps
+    # fragments declarative while making omitted legacy fragment security explicit.
+    from .app import _normalize_operation_contracts
+
+    _normalize_operation_contracts(document)
     return document
+
+
+def runtime_document() -> OpenAPIDocument:
+    """Build the production-composed runtime schema used for generated client types."""
+
+    from .app import create_app
+    from .config import Settings
+
+    application = create_app(settings=Settings(environment="test", runtime_backend="production"))
+    return application.openapi()
+
+
+def _resolve_component_reference(document: Mapping[str, Any], value: Any) -> Any:
+    current = value
+    seen: set[str] = set()
+    while isinstance(current, dict):
+        reference = current.get("$ref")
+        if not isinstance(reference, str) or not reference.startswith("#/components/"):
+            break
+        parts = reference.removeprefix("#/").split("/")
+        if len(parts) != 3 or reference in seen:
+            break
+        seen.add(reference)
+        section = _mapping(document.get(parts[0]), location=parts[0])
+        subsection = _mapping(section.get(parts[1]), location=f"{parts[0]}.{parts[1]}")
+        current = subsection.get(parts[2], current)
+    return current
+
+
+def _schema_references(value: Any) -> tuple[str, ...]:
+    references: set[str] = set()
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            reference = item.get("$ref")
+            if isinstance(reference, str):
+                references.add(reference)
+            for key, child in item.items():
+                if key != "$ref":
+                    visit(child)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return tuple(sorted(references))
+
+
+def _media_schema_references(document: Mapping[str, Any], container: Any) -> tuple[str, ...]:
+    resolved = _resolve_component_reference(document, container)
+    if not isinstance(resolved, dict):
+        return ()
+    content = resolved.get("content", {})
+    if not isinstance(content, dict):
+        return ()
+    references: set[str] = set()
+    for media in content.values():
+        if isinstance(media, dict):
+            references.update(_schema_references(media.get("schema", {})))
+    return tuple(sorted(references))
+
+
+def formal_runtime_contract_issues(
+    formal: Mapping[str, Any],
+    runtime: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Compare the wire-significant operation identity of fragments and runtime."""
+
+    issues: list[str] = []
+    formal_paths = _mapping(formal.get("paths"), location="formal.paths")
+    runtime_paths = _mapping(runtime.get("paths"), location="runtime.paths")
+    for path in sorted(formal_paths.keys() - runtime_paths.keys()):
+        issues.append(f"runtime is missing path {path}")
+    for path in sorted(runtime_paths.keys() - formal_paths.keys()):
+        issues.append(f"formal fragments are missing runtime path {path}")
+    for path in sorted(formal_paths.keys() & runtime_paths.keys()):
+        formal_operations = _operations(formal_paths[path])
+        runtime_operations = _operations(runtime_paths[path])
+        for method in sorted(formal_operations.keys() - runtime_operations.keys()):
+            issues.append(f"runtime is missing {method.upper()} {path}")
+        for method in sorted(runtime_operations.keys() - formal_operations.keys()):
+            issues.append(f"formal fragments are missing {method.upper()} {path}")
+        for method in sorted(formal_operations.keys() & runtime_operations.keys()):
+            location = f"{method.upper()} {path}"
+            expected = _mapping(formal_operations[method], location=f"formal {location}")
+            actual = _mapping(runtime_operations[method], location=f"runtime {location}")
+            if expected.get("operationId") != actual.get("operationId"):
+                issues.append(f"{location}: operationId differs")
+            if expected.get("security", []) != actual.get("security", []):
+                issues.append(f"{location}: security differs")
+
+            expected_request_refs = _media_schema_references(
+                formal, expected.get("requestBody", {})
+            )
+            actual_request_refs = _media_schema_references(runtime, actual.get("requestBody", {}))
+            if expected_request_refs != actual_request_refs:
+                issues.append(
+                    f"{location}: request schema refs differ "
+                    f"({expected_request_refs!r} != {actual_request_refs!r})"
+                )
+
+            expected_responses = _mapping(
+                expected.get("responses"), location=f"formal {location}.responses"
+            )
+            actual_responses = _mapping(
+                actual.get("responses"), location=f"runtime {location}.responses"
+            )
+            for status in sorted(expected_responses.keys() & actual_responses.keys()):
+                expected_refs = _media_schema_references(formal, expected_responses[status])
+                if not expected_refs:
+                    continue
+                actual_refs = _media_schema_references(runtime, actual_responses[status])
+                if expected_refs != actual_refs:
+                    issues.append(
+                        f"{location} response {status}: schema refs differ "
+                        f"({expected_refs!r} != {actual_refs!r})"
+                    )
+    return tuple(issues)
+
+
+def check_formal_runtime_contract(
+    formal: Mapping[str, Any],
+    runtime: Mapping[str, Any],
+) -> None:
+    issues = formal_runtime_contract_issues(formal, runtime)
+    if issues:
+        raise IncompatibleOpenAPIError(issues)
 
 
 def render(document: Mapping[str, Any]) -> str:
@@ -662,6 +794,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--fragments", type=Path, default=Path("openapi"))
     parser.add_argument("--output", type=Path, default=Path("openapi.generated.yaml"))
     parser.add_argument(
+        "--runtime",
+        action="store_true",
+        help="explicitly render the production-composed app.openapi() document (the default)",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="fail if the committed output differs; do not write it",
@@ -677,7 +814,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     try:
-        document = aggregate_fragments(args.fragments)
+        formal = aggregate_fragments(args.fragments)
+        if args.runtime:
+            document = runtime_document()
+            check_formal_runtime_contract(formal, document)
+        else:
+            document = formal
         rendered = render(document)
         if args.baseline is not None:
             if not args.baseline.is_file():

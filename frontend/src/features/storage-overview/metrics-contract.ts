@@ -8,6 +8,29 @@ export const STORAGE_METRICS_CONTRACT = {
   reconciliation: 'registered, observed OSS, unclassified and multipart bytes remain separate until the backend freezes a signed gap formula',
 } as const;
 
+const METRIC_STATE_LABELS: Readonly<Record<string, string>> = {
+  UNKNOWN: '未知',
+  COMPUTING: '计算中',
+  FORBIDDEN: '无权查看',
+  NOT_SETTLED: '尚未结算',
+  FAILED: '暂不可用',
+};
+
+const CURRENCY_LABELS: Readonly<Record<string, string>> = {
+  CNY: '人民币',
+  USD: '美元',
+  EUR: '欧元',
+  JPY: '日元',
+};
+
+function metricStateLabel(state: string): string {
+  return METRIC_STATE_LABELS[state] ?? '未知';
+}
+
+function currencyLabel(currency: string): string {
+  return CURRENCY_LABELS[currency] ?? '金额';
+}
+
 export function formatByteString(value: Int64String): string {
   let scaled = int64ToBigInt(value);
   let divisor = 1n;
@@ -25,11 +48,11 @@ export function formatByteString(value: Int64String): string {
 }
 
 export function displayByteMetric(metric: StorageMetric<Int64String>): string {
-  return metric.state === 'KNOWN' ? formatByteString(metric.value) : metric.state;
+  return metric.state === 'KNOWN' ? formatByteString(metric.value) : metricStateLabel(metric.state);
 }
 
 export function displayDecimalMetric(metric: StorageMetric<string>): string {
-  if (metric.state !== 'KNOWN') return metric.state;
+  if (metric.state !== 'KNOWN') return metricStateLabel(metric.state);
   const negative = metric.value.startsWith('-');
   const source = negative ? metric.value.slice(1) : metric.value;
   const [whole = '0', fraction = ''] = source.split('.');
@@ -43,19 +66,19 @@ export function displayDecimalMetric(metric: StorageMetric<string>): string {
 }
 
 export function displayMoneyMetric(metric: StorageMetric<{ minorUnits: Int64String; currency: string }>): string {
-  if (metric.state !== 'KNOWN') return metric.state;
+  if (metric.state !== 'KNOWN') return metricStateLabel(metric.state);
   const raw = int64ToBigInt(metric.value.minorUnits);
   const major = raw / 100n;
   const minor = (raw % 100n).toString().padStart(2, '0');
-  return `${metric.value.currency} ${major.toString()}.${minor}`;
+  return `${currencyLabel(metric.value.currency)} ${major.toString()}.${minor}`;
 }
 
 export function displayMinorUnitMetric(metric: StorageMetric<Int64String>, currency: string): string {
-  if (metric.state !== 'KNOWN') return metric.state;
+  if (metric.state !== 'KNOWN') return metricStateLabel(metric.state);
   const raw = int64ToBigInt(metric.value);
   const sign = raw < 0n ? '-' : '';
   const absolute = raw < 0n ? -raw : raw;
   const major = absolute / 100n;
   const minor = (absolute % 100n).toString().padStart(2, '0');
-  return `${currency} ${sign}${major.toString()}.${minor}`;
+  return `${currencyLabel(currency)} ${sign}${major.toString()}.${minor}`;
 }

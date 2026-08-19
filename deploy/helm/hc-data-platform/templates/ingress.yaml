@@ -20,6 +20,22 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.fullname" . }}-public-deny
+                port:
+                  number: 80
+          {{- range $path := list "/docs" "/docs/oauth2-redirect" "/redoc" "/openapi.json" }}
+          - path: {{ $path }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" $ }}-api
+                port:
+                  number: {{ $.Values.backend.api.service.port }}
+          {{- end }}
           - path: /health/live
             pathType: Exact
             backend:
@@ -48,4 +64,24 @@ spec:
                 name: {{ include "hc-data-platform.fullname" . }}-frontend
                 port:
                   number: {{ .Values.frontend.service.port }}
+---
+# This Service intentionally has no matching Pods. The public Ingress maps /metrics here,
+# so a future frontend catch-all can never make the monitoring endpoint publicly reachable.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hc-data-platform.fullname" . }}-public-deny
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: public-deny
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hc-data-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: public-deny
+  ports:
+    - name: deny
+      port: 80
+      targetPort: 8080
+      protocol: TCP
 {{- end }}

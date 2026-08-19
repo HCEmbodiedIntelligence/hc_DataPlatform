@@ -1,18 +1,14 @@
 export interface LifecycleRouteSearch {
-  readonly tab?: 'policies' | 'executions' | 'restores' | 'multipart';
-  readonly policyId?: string;
-  readonly simulationId?: string;
-  readonly executionId?: string;
-  readonly restoreTaskId?: string;
-  readonly uploadId?: string;
+  readonly tab?: 'policies' | 'audit';
+  readonly cursor?: string;
+  readonly limit?: 20 | 50 | 100;
 }
 
 const build = (search: LifecycleRouteSearch = {}): string => {
   const query = new URLSearchParams();
-  if (search.tab && search.tab !== 'policies') query.set('tab', search.tab);
-  for (const key of ['policyId', 'simulationId', 'executionId', 'restoreTaskId', 'uploadId'] as const) {
-    if (search[key]) query.set(key, search[key]);
-  }
+  if (search.tab === 'audit') query.set('tab', 'audit');
+  if (search.cursor) query.set('cursor', search.cursor);
+  if (search.limit && search.limit !== 50) query.set('limit', String(search.limit));
   const encoded = query.toString();
   return encoded ? `/storage/lifecycle?${encoded}` : '/storage/lifecycle';
 };

@@ -32,15 +32,32 @@ def _request(
         "task_id": "capacity",
         "collection_job_id": "be12-50-concurrent",
         "rollout_id": f"rollout-{index:04d}",
+        "collection_session_id": "capacity-session",
+        "recording_request_id": f"request-{index:04d}",
+        "data_package_id": f"package-{index:04d}",
         "sequence_no": index + 1,
         "robot_id": "capacity-probe",
         "start_time": started_at.isoformat(),
         "end_time": (started_at + timedelta(minutes=10)).isoformat(),
         "expected_topics": ["/camera/front/image", "/joint_states", "/action", "/points"],
         "actual_topics": ["/camera/front/image", "/joint_states", "/action", "/points"],
+        "cameras": [{"camera_id": "front", "topic": "/camera/front/image"}],
+        "topics": [
+            {"name": name, "required": True}
+            for name in ["/camera/front/image", "/joint_states", "/action", "/points"]
+        ],
+        "files": [
+            {
+                "path": "recording.mcap",
+                "size": rollout_size,
+                "sha256": f"{index + 1:064x}",
+                "crc64": str(index + 1),
+                "role": "RAW_MCAP",
+            }
+        ],
         "file_size": rollout_size,
         "sha256": f"{index + 1:064x}",
-        "crc64": index + 1,
+        "crc64": str(index + 1),
         "compression": "zstd",
         "recorder_version": "be12-capacity/1",
     }

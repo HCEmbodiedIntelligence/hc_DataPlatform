@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from http import HTTPStatus
 from types import ModuleType
-from uuid import uuid4
+from typing import Any, Literal
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 import hc_data_platform
+from hc_data_platform.security.access_repository import InMemoryAccessRepository
+from hc_data_platform.security.access_service import AccessService
 from hc_data_platform.security.auth import AuthContext, JwtVerifier
 from hc_data_platform.security.scope import ScopeGuard
 
@@ -24,7 +28,6 @@ from .discovery import discover_module_routers
 from .errors import ProblemDetails, ProblemException
 from .health import (
     ReadinessProbe,
-    ReadinessReport,
     check_readiness,
     default_readiness_probes,
     validate_readiness_probes,
@@ -32,15 +35,239 @@ from .health import (
 
 logger = logging.getLogger(__name__)
 
+_SAFE_REQUEST_ID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+_SAFE_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
+_SAFE_VALIDATION_TYPE = re.compile(r"^[a-z][a-z0-9_.]{0,127}$")
+_SENSITIVE_TEXT = re.compile(
+    r"(?i)(?:authorization|cookie|password|secret|access[_-]?key|session[_-]?token|"
+    r"postgres(?:ql)?(?:\+asyncpg)?://|s3://|minio://|x-amz-(?:signature|credential)|"
+    r"traceback \(most recent call last\)|object[_-]?(?:key|path)|signed[_-]?url|dsn)"
+)
+_SENSITIVE_DETAIL_KEYS = re.compile(
+    r"(?i)(?:authorization|cookie|password|secret|token|credential|dsn|url|uri|"
+    r"object|manifest|bucket|path|stack|traceback|request_body)"
+)
+_UNTRUSTED_DETAIL_TEXT_KEYS = re.compile(
+    r"(?i)^(?:detail|error|exception|message|msg|reason|stack|traceback)$"
+)
+_FORBIDDEN_METRIC_LABEL = re.compile(
+    r"(?:^|[{,])\s*(?:principal|subject|user|project|tenant|region|resource|workflow|"
+    r"dataset|profile|object|manifest|bucket|session|token|secret|key|dsn|url|uri)"
+    r"(?:_[a-z0-9]+)*\s*="
+)
+_SAFE_HTTP_HEADERS = frozenset({"allow", "retry-after"})
+_SAFE_EXCEPTION_TYPES = frozenset(
+    {
+        "AuthenticationDependencyError",
+        "HTTPException",
+        "ProblemException",
+        "UnhandledException",
+        "UnsafeHTTPResponse",
+    }
+)
+_VALIDATION_SOURCES = frozenset({"body", "cookie", "header", "path", "query"})
+_SAFE_DETAIL_TEXT_VALUES = frozenset({"Invalid value"})
+_REDACTION_MARKER = "[REDACTED]"
+_PUBLIC_API_OPERATIONS = frozenset(
+    {
+        ("/api/v1/auth/registrations", "post"),
+        ("/api/v1/auth/sessions", "post"),
+        ("/api/v1/capabilities/auto-annotation", "get"),
+    }
+)
+_OPERATION_ID_OVERRIDES = {
+    ("/health/live", "get"): "getLiveness",
+    ("/health/ready", "get"): "getReadiness",
+    (
+        "/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/manifest",
+        "get",
+    ): "getUploadManifestDiscovery",
+    (
+        "/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts",
+        "get",
+    ): "listUploadParts",
+    (
+        "/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:commit-manifest",
+        "post",
+    ): "commitRolloutManifest",
+    (
+        "/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:renew",
+        "post",
+    ): "renewUploadPartAuthorizations",
+    (
+        "/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version}",
+        "get",
+    ): "getDatasetVersionSnapshot",
+    ("/api/v1/datasets/publication-preflight", "post"): "preflightDatasetPublication",
+    ("/api/v1/datasets/publications", "post"): "publishDatasetVersion",
+    (
+        "/api/v1/datasets/{dataset_id}/versions/{dataset_version}",
+        "get",
+    ): "getPublishedDatasetVersion",
+    (
+        "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports",
+        "post",
+    ): "exportPublishedDatasetVersion",
+    (
+        "/api/v1/projects/{project_id}/quality-profiles",
+        "post",
+    ): "createQualityProfileVersion",
+    (
+        "/api/v1/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}",
+        "get",
+    ): "getQualityProfileVersion",
+}
+
+
+class PublicReadinessReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["ready"] = "ready"
+
 
 def _request_id(request: Request) -> str:
-    supplied = request.headers.get("X-Request-ID", "")
-    if supplied and len(supplied) <= 128 and all("!" <= char <= "~" for char in supplied):
-        return supplied
+    supplied = request.headers.get("X-Request-ID", "").strip().lower()
+    if _SAFE_REQUEST_ID.fullmatch(supplied):
+        try:
+            return str(UUID(supplied))
+        except ValueError:
+            pass
     return str(uuid4())
 
 
+def _safe_business_text(value: object, *, fallback: str) -> str:
+    if not isinstance(value, str) or not value or len(value) > 1024:
+        return fallback
+    if any(ord(character) < 32 and character not in "\t" for character in value):
+        return fallback
+    if _SENSITIVE_TEXT.search(value):
+        return fallback
+    return value
+
+
+def _safe_details_value(value: object, *, depth: int = 0) -> object:
+    if depth >= 5:
+        return _REDACTION_MARKER
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _safe_business_text(value, fallback=_REDACTION_MARKER)
+    if isinstance(value, (list, tuple)):
+        return [_safe_details_value(item, depth=depth + 1) for item in value[:50]]
+    if isinstance(value, dict):
+        sanitized: dict[str, object] = {}
+        for raw_key, item in list(value.items())[:50]:
+            key = str(raw_key)[:128]
+            if _SENSITIVE_DETAIL_KEYS.search(key):
+                sanitized[key] = _REDACTION_MARKER
+            elif _UNTRUSTED_DETAIL_TEXT_KEYS.fullmatch(key):
+                sanitized[key] = (
+                    item
+                    if isinstance(item, str) and item in _SAFE_DETAIL_TEXT_VALUES
+                    else _REDACTION_MARKER
+                )
+            else:
+                sanitized[key] = _safe_details_value(item, depth=depth + 1)
+        return sanitized
+    return _REDACTION_MARKER
+
+
+def _safe_route_locator(request: Request) -> str | None:
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if not isinstance(path, str) or not path.startswith("/") or len(path) > 256:
+        return None
+    return path
+
+
+def _server_problem(
+    *,
+    request_id: str,
+    instance: str | None = None,
+    status: int = 500,
+) -> ProblemDetails:
+    try:
+        normalized_status = status if status >= 500 else 500
+        title = HTTPStatus(normalized_status).phrase
+    except ValueError:
+        normalized_status = 500
+        title = HTTPStatus.INTERNAL_SERVER_ERROR.phrase
+    code = "INTERNAL_SERVER_ERROR" if normalized_status == 500 else f"HTTP_{normalized_status}"
+    return ProblemDetails(
+        type=f"https://hc-data-platform.invalid/problems/http-{normalized_status}",
+        title=title,
+        status=normalized_status,
+        detail="The server could not complete the request.",
+        instance=instance,
+        code=code,
+        request_id=request_id,
+        retryable=True,
+    )
+
+
+def _safe_problem(problem: ProblemDetails) -> ProblemDetails:
+    if problem.status >= 500:
+        return _server_problem(
+            request_id=problem.request_id or str(uuid4()),
+            instance=problem.instance,
+            status=problem.status,
+        )
+    return problem.model_copy(
+        update={
+            "title": _safe_business_text(
+                problem.title, fallback=_http_status_title(problem.status)
+            ),
+            "detail": _safe_business_text(
+                problem.detail,
+                fallback="The request could not be completed.",
+            ),
+            "code": (
+                problem.code if _SAFE_ERROR_CODE.fullmatch(problem.code) else "REQUEST_FAILED"
+            ),
+            "details": _safe_details_value(problem.details),
+        }
+    )
+
+
+def _log_security_failure(
+    request: Request,
+    *,
+    request_id: str,
+    error_code: str,
+    exception_type: str,
+) -> None:
+    # Every value is either server-generated or selected from a closed set.  In particular,
+    # do not add exception messages, raw request paths, headers, bodies, or object locators.
+    logger.error(
+        "request_failed",
+        extra={
+            "error_code": (
+                error_code if _SAFE_ERROR_CODE.fullmatch(error_code) else "INTERNAL_SERVER_ERROR"
+            ),
+            "exception_type": (
+                exception_type if exception_type in _SAFE_EXCEPTION_TYPES else "UnhandledException"
+            ),
+            "request_id": request_id,
+            "route": _safe_route_locator(request),
+        },
+    )
+
+
+def _safe_metrics_payload() -> bytes:
+    safe_lines: list[str] = []
+    for line in generate_latest().decode("utf-8", errors="replace").splitlines(keepends=True):
+        if not line.startswith("#") and (
+            _FORBIDDEN_METRIC_LABEL.search(line) or _SENSITIVE_TEXT.search(line)
+        ):
+            continue
+        safe_lines.append(line)
+    return "".join(safe_lines).encode("utf-8")
+
+
 def _problem_response(problem: ProblemDetails) -> JSONResponse:
+    problem = _safe_problem(problem)
     response = JSONResponse(
         status_code=problem.status,
         content=problem.model_dump(mode="json", exclude_none=True),
@@ -56,6 +283,214 @@ def _http_status_title(status: int) -> str:
         return HTTPStatus(status).phrase
     except ValueError:
         return "HTTP request failed"
+
+
+def _safe_validation_errors(exc: RequestValidationError) -> list[dict[str, object]]:
+    """Return useful locations and messages without echoing request inputs or validator context."""
+
+    errors: list[dict[str, object]] = []
+    for error in exc.errors()[:50]:
+        raw_type = str(error.get("type", "validation_error"))
+        error_type = raw_type if _SAFE_VALIDATION_TYPE.fullmatch(raw_type) else "validation_error"
+        raw_location = error.get("loc", ())
+        source = (
+            str(raw_location[0])
+            if isinstance(raw_location, (list, tuple)) and raw_location
+            else "request"
+        )
+        errors.append(
+            {
+                "type": error_type,
+                "loc": [source] if source in _VALIDATION_SOURCES else ["request"],
+                "msg": "Invalid value",
+            }
+        )
+    return errors
+
+
+def _promote_inline_openapi_definitions(
+    value: object,
+    schemas: dict[str, Any],
+) -> None:
+    """Promote Pydantic inline $defs so every runtime-local $ref is resolvable."""
+
+    if isinstance(value, list):
+        for item in value:
+            _promote_inline_openapi_definitions(item, schemas)
+        return
+    if not isinstance(value, dict):
+        return
+
+    definitions = value.pop("$defs", {})
+    if isinstance(definitions, dict):
+        for name, definition in definitions.items():
+            if not isinstance(name, str) or not isinstance(definition, dict):
+                continue
+            _promote_inline_openapi_definitions(definition, schemas)
+            schemas.setdefault(name, definition)
+
+    reference = value.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/$defs/"):
+        value["$ref"] = f"#/components/schemas/{reference.removeprefix('#/$defs/')}"
+    for child in tuple(value.values()):
+        _promote_inline_openapi_definitions(child, schemas)
+
+
+def _normalize_runtime_openapi(document: dict[str, Any]) -> dict[str, Any]:
+    components = document.setdefault("components", {})
+    schemas = components.setdefault("schemas", {})
+    if not isinstance(schemas, dict):
+        raise RuntimeError("runtime OpenAPI components.schemas must be an object")
+
+    problem_schema = ProblemDetails.model_json_schema(ref_template="#/components/schemas/{model}")
+    _promote_inline_openapi_definitions(problem_schema, schemas)
+    schemas.setdefault("ProblemDetails", problem_schema)
+    _promote_inline_openapi_definitions(document, schemas)
+    _promote_titled_operation_schemas(document, schemas)
+    _normalize_operation_contracts(document)
+    return document
+
+
+def _promote_titled_operation_schemas(
+    document: dict[str, Any],
+    schemas: dict[str, Any],
+) -> None:
+    """Give Pydantic's titled inline bodies stable component references."""
+
+    paths = document.get("paths", {})
+    if not isinstance(paths, dict):
+        return
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in {
+                "get",
+                "put",
+                "post",
+                "delete",
+                "options",
+                "head",
+                "patch",
+                "trace",
+            } or not isinstance(operation, dict):
+                continue
+            request_body = operation.get("requestBody", {})
+            if isinstance(request_body, dict):
+                _promote_media_schema(request_body.get("content"), schemas)
+            responses = operation.get("responses", {})
+            if isinstance(responses, dict):
+                for response in responses.values():
+                    if isinstance(response, dict):
+                        _promote_media_schema(response.get("content"), schemas)
+
+
+def _promote_media_schema(content: object, schemas: dict[str, Any]) -> None:
+    if not isinstance(content, dict):
+        return
+    for media in content.values():
+        if not isinstance(media, dict):
+            continue
+        schema = media.get("schema")
+        if not isinstance(schema, dict) or "$ref" in schema:
+            continue
+        title = schema.get("title")
+        if (
+            not isinstance(title, str)
+            or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", title) is None
+        ):
+            continue
+        definition = dict(schema)
+        schemas.setdefault(title, definition)
+        media["schema"] = {"$ref": f"#/components/schemas/{title}"}
+
+
+def _normalize_operation_contracts(document: dict[str, Any]) -> None:
+    """Stabilize public security and operation IDs across composed routers."""
+
+    components = document.setdefault("components", {})
+    if not isinstance(components, dict):
+        raise RuntimeError("runtime OpenAPI components must be an object")
+    security_schemes = components.setdefault("securitySchemes", {})
+    if not isinstance(security_schemes, dict):
+        raise RuntimeError("runtime OpenAPI securitySchemes must be an object")
+    security_schemes.setdefault(
+        "bearerAuth",
+        {"type": "http", "scheme": "bearer", "bearerFormat": "JWT or opaque platform session"},
+    )
+
+    paths = document.get("paths", {})
+    if not isinstance(paths, dict):
+        raise RuntimeError("runtime OpenAPI paths must be an object")
+    for path, path_item in paths.items():
+        if not isinstance(path, str) or not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            normalized_method = method.lower()
+            if normalized_method not in {
+                "get",
+                "put",
+                "post",
+                "delete",
+                "options",
+                "head",
+                "patch",
+                "trace",
+            } or not isinstance(operation, dict):
+                continue
+            operation_key = (path, normalized_method)
+            _normalize_error_response_contracts(operation)
+            if path.startswith("/api/v1/"):
+                operation["security"] = (
+                    [] if operation_key in _PUBLIC_API_OPERATIONS else [{"bearerAuth": []}]
+                )
+            override = _OPERATION_ID_OVERRIDES.get(operation_key)
+            if override is not None:
+                operation["operationId"] = override
+                continue
+            operation_id = operation.get("operationId")
+            if not isinstance(operation_id, str):
+                continue
+            suffix = re.sub(r"\W", "_", path.lstrip("/")) + f"_{normalized_method}"
+            if not operation_id.endswith(f"_{suffix}"):
+                continue
+            endpoint_name = operation_id[: -(len(suffix) + 1)]
+            words = endpoint_name.split("_")
+            operation["operationId"] = words[0] + "".join(
+                word[:1].upper() + word[1:] for word in words[1:]
+            )
+
+
+def _normalize_error_response_contracts(operation: dict[str, Any]) -> None:
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return
+    for raw_status, response in responses.items():
+        try:
+            status = int(str(raw_status))
+        except ValueError:
+            continue
+        if status < 400 or not isinstance(response, dict):
+            continue
+        content = response.get("content", {})
+        if not isinstance(content, dict):
+            continue
+        schema: object | None = None
+        for media in content.values():
+            if isinstance(media, dict) and isinstance(media.get("schema"), dict):
+                schema = media["schema"]
+                break
+        if not isinstance(schema, dict):
+            continue
+        reference = schema.get("$ref")
+        if reference not in {
+            "#/components/schemas/HTTPValidationError",
+            "#/components/schemas/ProblemDetails",
+        }:
+            continue
+        response["content"] = {
+            "application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDetails"}}
+        }
 
 
 def _request_context_from_state(request: Request) -> RequestContext:
@@ -74,6 +509,7 @@ def create_app(
     readiness_probes: Mapping[str, ReadinessProbe] | None = None,
     module_package: ModuleType = hc_data_platform,
     jwt_verifier: JwtVerifier | None = None,
+    access_service: AccessService | None = None,
 ) -> FastAPI:
     """Create an independently testable API application with injectable dependency probes."""
 
@@ -84,17 +520,29 @@ def create_app(
         else default_readiness_probes(resolved_settings)
     )
     validate_readiness_probes(probes)
-    app = FastAPI(title="HC Data Platform Backend", version=hc_data_platform.__version__)
+    docs_enabled = resolved_settings.api_docs_enabled
+    app = FastAPI(
+        title="HC Data Platform Backend",
+        version=hc_data_platform.__version__,
+        openapi_url="/openapi.json" if docs_enabled else None,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+    )
     app.state.settings = resolved_settings
     app.state.readiness_probes = probes
     verifier = jwt_verifier or _jwt_verifier_from_settings(resolved_settings)
     app.state.jwt_verifier = verifier
+    resolved_access_service = access_service
     if resolved_settings.runtime_backend == "production" and module_package is hc_data_platform:
         from hc_data_platform.runtime import build_runtime, configure_api
 
         runtime = build_runtime(resolved_settings)
         configure_api(runtime)
         app.state.runtime = runtime
+        resolved_access_service = resolved_access_service or runtime.access
+    if resolved_access_service is None:
+        resolved_access_service = AccessService(InMemoryAccessRepository())
+    app.state.access_service = resolved_access_service
 
     @app.middleware("http")
     async def request_context_middleware(
@@ -105,24 +553,53 @@ def create_app(
         request.state.request_id = request_id
         request.state.auth_context = None
         try:
-            auth = _authenticate_request(request, verifier)
+            auth = _authenticate_request(request, verifier, resolved_access_service)
             context = _request_context(request, request_id=request_id, auth=auth)
         except ProblemException as exc:
+            if exc.problem.status >= 500:
+                _log_security_failure(
+                    request,
+                    request_id=request_id,
+                    error_code="INTERNAL_SERVER_ERROR",
+                    exception_type="ProblemException",
+                )
             problem = exc.problem.model_copy(
                 update={
-                    "request_id": exc.problem.request_id or request_id,
-                    "instance": exc.problem.instance or request.url.path,
+                    "request_id": request_id,
+                    "instance": None,
                 }
             )
             auth_failure_response = _problem_response(problem)
             if problem.status == 401:
                 auth_failure_response.headers["WWW-Authenticate"] = "Bearer"
             return auth_failure_response
+        except Exception:
+            _log_security_failure(
+                request,
+                request_id=request_id,
+                error_code="INTERNAL_SERVER_ERROR",
+                exception_type="AuthenticationDependencyError",
+            )
+            return _problem_response(_server_problem(request_id=request_id))
         request.state.auth_context = auth
         request.state.request_context = context
         token = bind_request_context(context)
         try:
             response = await call_next(request)
+            if response.status_code >= 500:
+                _log_security_failure(
+                    request,
+                    request_id=context.request_id,
+                    error_code="INTERNAL_SERVER_ERROR",
+                    exception_type="UnsafeHTTPResponse",
+                )
+                response = _problem_response(
+                    _server_problem(
+                        request_id=context.request_id,
+                        instance=_safe_route_locator(request),
+                        status=response.status_code,
+                    )
+                )
             response.headers["X-Request-ID"] = context.request_id
             return response
         finally:
@@ -131,13 +608,18 @@ def create_app(
     @app.exception_handler(ProblemException)
     async def handle_problem(request: Request, exc: ProblemException) -> JSONResponse:
         context = _request_context_from_state(request)
-        problem = exc.problem
-        if problem.request_id is None or problem.instance is None:
-            problem = problem.model_copy(
-                update={
-                    "request_id": problem.request_id or context.request_id,
-                    "instance": problem.instance or request.url.path,
-                }
+        problem = exc.problem.model_copy(
+            update={
+                "request_id": context.request_id,
+                "instance": _safe_route_locator(request),
+            }
+        )
+        if problem.status >= 500:
+            _log_security_failure(
+                request,
+                request_id=context.request_id,
+                error_code="INTERNAL_SERVER_ERROR",
+                exception_type="ProblemException",
             )
         return _problem_response(problem)
 
@@ -153,10 +635,10 @@ def create_app(
                 title="Request validation failed",
                 status=422,
                 detail="The request does not satisfy the API contract.",
-                instance=request.url.path,
+                instance=_safe_route_locator(request),
                 code="REQUEST_VALIDATION_FAILED",
                 request_id=context.request_id,
-                details={"errors": jsonable_encoder(exc.errors())},
+                details={"errors": _safe_validation_errors(exc)},
             )
         )
 
@@ -164,72 +646,96 @@ def create_app(
     async def handle_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         context = _request_context_from_state(request)
         status = exc.status_code if 400 <= exc.status_code <= 599 else 500
-        detail = exc.detail if isinstance(exc.detail, str) else _http_status_title(status)
+        if status >= 500:
+            _log_security_failure(
+                request,
+                request_id=context.request_id,
+                error_code="INTERNAL_SERVER_ERROR",
+                exception_type="HTTPException",
+            )
+        detail = _http_status_title(status)
         response = _problem_response(
             ProblemDetails(
                 type=f"https://hc-data-platform.invalid/problems/http-{status}",
                 title=_http_status_title(status),
                 status=status,
                 detail=detail,
-                instance=request.url.path,
+                instance=_safe_route_locator(request),
                 code=f"HTTP_{status}",
                 request_id=context.request_id,
             )
         )
-        if exc.headers is not None:
-            response.headers.update(exc.headers)
+        if exc.headers is not None and status < 500:
+            for name, value in exc.headers.items():
+                normalized_name = name.lower()
+                safe_allow = normalized_name == "allow" and bool(
+                    re.fullmatch(r"[A-Z]+(?:,\s*[A-Z]+)*", value)
+                )
+                safe_retry = normalized_name == "retry-after" and value.isdigit()
+                if normalized_name in _SAFE_HTTP_HEADERS and (safe_allow or safe_retry):
+                    response.headers[name] = value
         return response
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         context = _request_context_from_state(request)
-        logger.error(
-            "Unhandled request exception",
-            extra={
-                "error_code": "INTERNAL_SERVER_ERROR",
-                "exception_type": type(exc).__name__,
-                "project_id": context.project_id,
-                "request_id": context.request_id,
-            },
+        del exc
+        _log_security_failure(
+            request,
+            request_id=context.request_id,
+            error_code="INTERNAL_SERVER_ERROR",
+            exception_type="UnhandledException",
         )
         return _problem_response(
-            ProblemDetails(
-                type="https://hc-data-platform.invalid/problems/internal-server-error",
-                title="Internal Server Error",
-                status=500,
-                detail="The server could not complete the request.",
-                instance=request.url.path,
-                code="INTERNAL_SERVER_ERROR",
+            _server_problem(
                 request_id=context.request_id,
-                retryable=True,
+                instance=_safe_route_locator(request),
             )
         )
 
     @app.get("/health/live", tags=["health"])
     async def live() -> dict[str, str]:
-        return {"status": "live", "environment": resolved_settings.environment}
+        return {"status": "live"}
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
-        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+        return Response(content=_safe_metrics_payload(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get(
         "/health/ready",
         tags=["health"],
-        response_model=ReadinessReport,
-        responses={503: {"model": ReadinessReport, "description": "A dependency is not ready"}},
+        response_model=PublicReadinessReport,
+        responses={503: {"model": ProblemDetails, "description": "A dependency is not ready"}},
     )
-    async def ready() -> ReadinessReport | JSONResponse:
+    async def ready(request: Request) -> PublicReadinessReport | JSONResponse:
         report = await check_readiness(
             probes,
             timeout_seconds=resolved_settings.readiness_timeout_seconds,
         )
         if report.status != "ready":
-            return JSONResponse(status_code=503, content=report.model_dump(mode="json"))
-        return report
+            context = _request_context_from_state(request)
+            return _problem_response(
+                ProblemDetails(
+                    type="https://hc-data-platform.invalid/problems/service-not-ready",
+                    title="Service Unavailable",
+                    status=503,
+                    detail="The server could not complete the request.",
+                    instance=_safe_route_locator(request),
+                    code="SERVICE_NOT_READY",
+                    request_id=context.request_id,
+                    retryable=True,
+                )
+            )
+        return PublicReadinessReport()
 
     for module in discover_module_routers(module_package):
         app.include_router(module.router)
+    original_openapi = app.openapi
+
+    def normalized_openapi() -> dict[str, Any]:
+        return _normalize_runtime_openapi(original_openapi())
+
+    app.openapi = normalized_openapi  # type: ignore[method-assign]
     return app
 
 
@@ -251,7 +757,11 @@ def _jwt_verifier_from_settings(settings: Settings) -> JwtVerifier | None:
     return None
 
 
-def _authenticate_request(request: Request, verifier: JwtVerifier | None) -> AuthContext | None:
+def _authenticate_request(
+    request: Request,
+    verifier: JwtVerifier | None,
+    access_service: AccessService,
+) -> AuthContext | None:
     authorization = request.headers.get("Authorization")
     if authorization is None:
         return None
@@ -266,6 +776,20 @@ def _authenticate_request(request: Request, verifier: JwtVerifier | None) -> Aut
                 code="INVALID_AUTHORIZATION_HEADER",
             )
         )
+    token = credentials.strip()
+    if token.startswith(AccessService.TOKEN_PREFIX):
+        auth = access_service.authenticate_access_token(token)
+        if auth is None:
+            raise ProblemException(
+                ProblemDetails(
+                    type="https://hc-data-platform.invalid/problems/session-invalid",
+                    title="Session invalid",
+                    status=401,
+                    detail="The session is revoked or no longer valid.",
+                    code="SESSION_INVALID",
+                )
+            )
+        return auth
     if verifier is None:
         raise ProblemException(
             ProblemDetails(
@@ -277,7 +801,7 @@ def _authenticate_request(request: Request, verifier: JwtVerifier | None) -> Aut
                 retryable=False,
             )
         )
-    return verifier.verify(credentials.strip())
+    return verifier.verify(token)
 
 
 def _request_context(

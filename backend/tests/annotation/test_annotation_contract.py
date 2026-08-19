@@ -16,6 +16,7 @@ from hc_data_platform.annotation import (
     InvalidAnnotationStateError,
     OperationKind,
     ReviewDecision,
+    SelfReviewPolicy,
 )
 from hc_data_platform.security import AuthContext
 
@@ -47,13 +48,14 @@ def operation(operation_id: str, kind: OperationKind, start: int, end: int) -> A
 
 
 def prepared() -> tuple[InMemoryAnnotationService, AnnotationActor]:
-    service = InMemoryAnnotationService()
+    service = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.DENY)
     service.create_task(
         task_id="task-1",
         project_id="project-a",
         dataset_id="dataset-a",
         dataset_version=3,
         rollout_id="rollout-a",
+        base_step_count=2_000,
     )
     annotator = actor("alice", "annotator")
     service.claim("task-1", annotator)
@@ -111,7 +113,7 @@ def test_half_open_models_reject_empty_or_reversed_ranges() -> None:
         operation("reversed", OperationKind.RESTORE, 13, 12)
 
 
-def test_concurrent_authorized_saves_have_one_winner_and_one_412() -> None:
+def test_concurrent_authorized_saves_have_one_winner_and_one_409() -> None:
     service, annotator = prepared()
     administrator = actor("root-reviewer", "admin", projects=())
     stale = service.get_task("task-1")
@@ -136,7 +138,7 @@ def test_concurrent_authorized_saves_have_one_winner_and_one_412() -> None:
         )
         results = tuple(future.result() for future in futures)
 
-    assert sorted(results, key=str) == sorted((1, 412), key=str)
+    assert sorted(results, key=str) == sorted((1, 409), key=str)
     assert service.get_task("task-1").current_revision == 1
     assert len(service.list_revisions("task-1")) == 2
 
@@ -229,13 +231,14 @@ def test_be02_scope_roles_self_review_and_publisher_contract() -> None:
 
 
 def test_admin_is_not_allowed_to_self_review() -> None:
-    service = InMemoryAnnotationService()
+    service = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.DENY)
     service.create_task(
         task_id="task-admin",
         project_id="project-a",
         dataset_id="dataset-a",
         dataset_version=1,
         rollout_id="rollout-admin",
+        base_step_count=2_000,
     )
     administrator = actor("admin", "admin", projects=())
     service.claim("task-admin", administrator)

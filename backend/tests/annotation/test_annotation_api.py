@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from hc_data_platform.annotation import InMemoryAnnotationService
+from hc_data_platform.annotation import InMemoryAnnotationService, SelfReviewPolicy
 from hc_data_platform.annotation.router import (
     get_annotation_auth,
     get_annotation_service,
@@ -28,13 +28,14 @@ def auth(subject: str, *roles: str, projects: tuple[str, ...] = ("project-a",)):
 
 @pytest.fixture
 def api() -> Iterator[tuple[TestClient, dict[str, AuthContext], InMemoryAnnotationService]]:
-    service = InMemoryAnnotationService()
+    service = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.DENY)
     service.create_task(
         task_id="task-api",
         project_id="project-a",
         dataset_id="dataset-a",
         dataset_version=8,
         rollout_id="rollout-api",
+        base_step_count=2_000,
     )
     app = FastAPI()
     app.include_router(router)
@@ -118,16 +119,17 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
             "operations": [],
         },
     )
-    assert stale.status_code == 412
+    assert stale.status_code == 409
     assert stale.json()["code"] == "ANNOTATION_REVISION_CONFLICT"
 
     submitted = client.post(
         "/api/v1/annotation-tasks/task-api/submit",
-        headers={"If-Match": saved_etag},
+        headers={"If-Match": saved_etag, "Idempotency-Key": "submit-api-1"},
         json={"expected_revision": 1},
     )
-    assert submitted.status_code == 200
-    assert submitted.json()["status"] == "SUBMITTED"
+    assert submitted.status_code == 201
+    assert submitted.json()["revision"] == 1
+    assert submitted.json()["task_id"] == "task-api"
 
     current["auth"] = auth("alice", "annotator", "reviewer")
     self_review = client.post(

@@ -1,0 +1,332 @@
+.pageFrame {
+  display: grid;
+  min-width: 0;
+  align-items: start;
+}
+
+.pageFrameWithDrawer {
+  grid-template-columns: minmax(0, 1fr) clamp(440px, 34vw, 540px);
+}
+
+.page {
+  min-width: 0;
+}
+
+.pageFrameWithDrawer .page {
+  padding-inline-end: var(--hc-space-4);
+}
+
+.tableStack {
+  min-width: 0;
+}
+
+.filterField {
+  display: grid;
+  min-width: 128px;
+  gap: var(--hc-space-1);
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.filterField :global(.ant-select),
+.filterField :global(.ant-input-affix-wrapper),
+.filterField > :global(.ant-input) {
+  min-width: 128px;
+}
+
+.searchField {
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.pagination {
+  justify-content: flex-end;
+}
+
+.taskIdentity,
+.qualityValue,
+.packageProgress {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.taskIdentity strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--hc-color-text);
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.taskIdentity code,
+.closeIdentity code {
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.projectId,
+.typeValue {
+  display: block;
+  max-width: 15ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectId {
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+}
+
+.packageProgress {
+  width: 132px;
+}
+
+.packageProgress :global(.ant-progress) {
+  margin: 0;
+}
+
+.packageProgress :global(.ant-progress-bg) {
+  background: var(--hc-color-signal);
+}
+
+.packageProgress small,
+.qualityValue small {
+  color: var(--hc-color-text-muted);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.qualityValue {
+  color: var(--hc-color-success);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.progressPending,
+.progressError,
+.mutedValue {
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+}
+
+.progressError {
+  display: inline-flex;
+  gap: var(--hc-space-1);
+  align-items: center;
+  color: var(--hc-color-warning);
+}
+
+.editorDrawer {
+  position: sticky;
+  top: 0;
+  display: grid;
+  height: calc(100vh - var(--hc-shell-header-height) - 24px);
+  min-height: 600px;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-md) 0 0 var(--hc-radius-md);
+  background: var(--hc-color-surface);
+  box-shadow: var(--hc-shadow-lg);
+  overscroll-behavior: contain;
+}
+
+.drawerHeader {
+  display: flex;
+  min-width: 0;
+  min-height: 76px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hc-space-3);
+  padding: var(--hc-space-4) var(--hc-space-5);
+  border-bottom: 1px solid var(--hc-color-border-subtle);
+}
+
+.drawerHeader > div {
+  min-width: 0;
+}
+
+.drawerHeader :global(.ant-typography) {
+  margin: 0;
+  color: var(--hc-color-text);
+  font-size: 1.125rem;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+.drawerHeader p {
+  margin: var(--hc-space-1) 0 0;
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.drawerBody {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--hc-space-4) var(--hc-space-5) 0;
+  overscroll-behavior: contain;
+}
+
+.drawerBody :global(.ant-form-item) {
+  margin-bottom: var(--hc-space-4);
+}
+
+.drawerBody :global(.ant-form-item-label) {
+  padding-bottom: var(--hc-space-1);
+}
+
+.drawerBody :global(.ant-form-item-label > label),
+.targetFieldset legend {
+  color: var(--hc-color-text);
+  font-size: 0.8125rem;
+  font-weight: 620;
+}
+
+.drawerBody :global(.ant-input-number) {
+  width: 100%;
+}
+
+.drawerBody :global(.ant-input),
+.drawerBody :global(.ant-input-number),
+.drawerBody :global(textarea) {
+  scroll-margin-block: 92px;
+}
+
+.codeInput {
+  color: var(--hc-color-text-muted);
+  background: var(--hc-color-surface-muted);
+  font-family: var(--hc-font-mono, "Cascadia Mono", Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.fieldHint {
+  display: block;
+  margin-top: var(--hc-space-1);
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.targetFieldset {
+  padding: 0;
+  margin: 0 0 var(--hc-space-4);
+  border: 0;
+}
+
+.targetFieldset legend {
+  margin-bottom: var(--hc-space-2);
+}
+
+.targetGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hc-space-3);
+}
+
+.targetGrid :global(.ant-form-item) {
+  margin-bottom: 0;
+}
+
+.formError {
+  margin-top: var(--hc-space-3);
+}
+
+.fieldErrorList {
+  padding-inline-start: var(--hc-space-5);
+  margin: 0;
+}
+
+.drawerFooter {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hc-space-3);
+  padding: var(--hc-space-4) 0;
+  margin-top: var(--hc-space-5);
+  border-top: 1px solid var(--hc-color-border-subtle);
+  background: var(--hc-color-surface);
+}
+
+.closeIdentity {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--hc-space-2);
+  align-items: baseline;
+  margin: 0;
+}
+
+.closeIdentity strong {
+  overflow-wrap: anywhere;
+}
+
+.page :global(.hc-data-table .ant-table-cell) {
+  vertical-align: middle;
+}
+
+.page :global(.hc-data-table .ant-btn-link) {
+  height: 28px;
+  padding-inline: 0;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1180px) {
+  .pageFrameWithDrawer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pageFrameWithDrawer .page {
+    padding-inline-end: 0;
+  }
+
+  .editorDrawer {
+    position: fixed;
+    z-index: 1000;
+    top: var(--hc-shell-header-height);
+    right: 0;
+    width: min(540px, 100vw);
+    height: calc(100vh - var(--hc-shell-header-height));
+    min-height: 0;
+    border-radius: var(--hc-radius-md) 0 0 var(--hc-radius-md);
+  }
+}
+
+@media (max-width: 768px) {
+  .editorDrawer {
+    left: 0;
+    width: 100vw;
+    border-radius: 0;
+  }
+
+  .drawerHeader,
+  .drawerBody {
+    padding-inline: var(--hc-space-4);
+  }
+
+  .targetGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .searchField {
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editorDrawer {
+    scroll-behavior: auto;
+  }
+}

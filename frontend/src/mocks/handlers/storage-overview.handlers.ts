@@ -36,6 +36,53 @@ async function gate(endpoint: string): Promise<Response | null> {
 }
 
 export const storageOverviewHandlers = [
+  http.get('*/api/v1/projects/:projectId/storage/capacity', async ({ params }) => {
+    const gated = await gate('overview'); if (gated) return gated;
+    const projectId = typeof params.projectId === 'string' ? params.projectId : 'prj_fx_01';
+    return HttpResponse.json({
+      snapshot_id: 'inventory_fx_capacity_01',
+      project_id: projectId,
+      observed_at: '2026-08-17T02:30:00Z',
+      physical_total_bytes: '6764573491',
+      physical_instance_count: 29,
+      candidate_business_total_bytes: '5905580032',
+      candidate_logical_object_count: 24,
+      categories: [
+        { category: 'RAW', candidate_bytes: '3221225472', logical_object_count: 8 },
+        { category: 'ANNOTATION_COMPLETE', candidate_bytes: '1610612736', logical_object_count: 6 },
+        { category: 'PENDING_ANNOTATION', candidate_bytes: '805306368', logical_object_count: 5 },
+        { category: 'ISSUE_DATA', candidate_bytes: '268435456', logical_object_count: 5 },
+      ],
+      reconciliation: {
+        replica_overhead_bytes: '805306368',
+        replica_instance_count: 4,
+        temporary_bytes: '53687091',
+        temporary_instance_count: 1,
+        duplicate_inventory_rows_ignored: 2,
+        formula: 'physical_total_bytes = candidate_business_total_bytes + replica_overhead_bytes + temporary_bytes',
+        balanced: true,
+      },
+    });
+  }),
+  http.get('*/api/v1/projects/:projectId/storage/inventory', async ({ request, params }) => {
+    const gated = await gate('objects'); if (gated) return gated;
+    const projectId = typeof params.projectId === 'string' ? params.projectId : 'prj_fx_01';
+    const snapshotId = new URL(request.url).searchParams.get('snapshot_id') ?? 'inventory_fx_capacity_01';
+    const observedAt = '2026-08-17T02:30:00Z';
+    return HttpResponse.json({
+      snapshot_id: snapshotId,
+      project_id: projectId,
+      items: [
+        { snapshot_id: snapshotId, project_id: projectId, physical_instance_id: 'oss/raw-primary.mcap', logical_object_id: 'rollout/raw-001', physical_bytes: '3221225472', disposition: 'PRIMARY', business_category: 'RAW', object_role: 'RAW', observed_at: observedAt },
+        { snapshot_id: snapshotId, project_id: projectId, physical_instance_id: 'oss/raw-replica.mcap', logical_object_id: 'rollout/raw-001', physical_bytes: '3221225472', disposition: 'REPLICA', business_category: 'RAW', object_role: 'RAW', observed_at: observedAt },
+        { snapshot_id: snapshotId, project_id: projectId, physical_instance_id: 'oss/annotation-complete.lance', logical_object_id: 'dataset/complete-001', physical_bytes: '1610612736', disposition: 'PRIMARY', business_category: 'ANNOTATION_COMPLETE', object_role: 'REBUILDABLE_DERIVATIVE', observed_at: observedAt },
+        { snapshot_id: snapshotId, project_id: projectId, physical_instance_id: 'oss/pending-clean.lance', logical_object_id: 'dataset/pending-001', physical_bytes: '805306368', disposition: 'PRIMARY', business_category: 'PENDING_ANNOTATION', object_role: 'REBUILDABLE_DERIVATIVE', observed_at: observedAt },
+        { snapshot_id: snapshotId, project_id: projectId, physical_instance_id: 'oss/issue.lance', logical_object_id: 'dataset/issue-001', physical_bytes: '268435456', disposition: 'PRIMARY', business_category: 'ISSUE_DATA', object_role: 'OTHER', observed_at: observedAt },
+        { snapshot_id: snapshotId, project_id: projectId, physical_instance_id: 'oss/tmp/sample.part', logical_object_id: null, physical_bytes: '53687091', disposition: 'TEMPORARY', business_category: null, object_role: 'OTHER', observed_at: observedAt },
+      ],
+      page_info: { has_next_page: false, has_previous_page: false, start_cursor: null, end_cursor: null },
+    });
+  }),
   http.get('*/api/v1/projects/:projectId/storage/overview', async ({ request, params }) => {
     const invalid = validate(request, params); if (invalid) return invalid;
     const months = new URL(request.url).searchParams.get('months') ?? '6';

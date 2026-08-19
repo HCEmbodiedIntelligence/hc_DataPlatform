@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from pydantic import BaseModel
 
 from hc_data_platform.ingest.cli import HttpResponse, import_offline_bundle
-from hc_data_platform.ingest.models import CompletedPart, RolloutManifestV1
+from hc_data_platform.ingest.models import CompletedPart, ManifestFileV1, RolloutManifestV1
 from hc_data_platform.ingest.ports import InMemoryObjectStorage, crc64_ecma
 from hc_data_platform.ingest.service import UploadSessionService
 
@@ -22,12 +22,25 @@ def manifest_for(body: bytes) -> RolloutManifestV1:
         task_id="t1",
         collection_job_id="j1",
         rollout_id="r1",
+        collection_session_id="session1",
+        recording_request_id="request1",
+        data_package_id="package1",
         sequence_no=1,
         robot_id="robot1",
         start_time=start,
         end_time=start + timedelta(seconds=1),
         expected_topics=[],
         actual_topics=[],
+        cameras=[],
+        topics=[],
+        files=[
+            ManifestFileV1(
+                path="recording.mcap",
+                size=len(body),
+                sha256=hashlib.sha256(body).hexdigest(),
+                crc64=crc64_ecma(body),
+            )
+        ],
         file_size=len(body),
         sha256=hashlib.sha256(body).hexdigest(),
         crc64=crc64_ecma(body),

@@ -14,6 +14,7 @@ from hc_data_platform.annotation import (
     InvalidAnnotationStateError,
     OperationKind,
     ReviewDecision,
+    SelfReviewPolicy,
 )
 
 
@@ -33,6 +34,7 @@ def service_with_claimed_task():
         dataset_id="dataset-a",
         dataset_version=7,
         rollout_id="rollout-a",
+        base_step_count=2_000,
     )
     annotator = actor("alice", "annotator")
     service.claim("task-1", annotator)
@@ -265,13 +267,14 @@ def test_reviewer_scope_and_role_are_enforced() -> None:
 
 
 def test_submitter_cannot_review_own_revision() -> None:
-    service = InMemoryAnnotationService()
+    service = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.DENY)
     service.create_task(
         task_id="task-1",
         project_id="project-a",
         dataset_id="dataset-a",
         dataset_version=1,
         rollout_id="rollout-a",
+        base_step_count=2_000,
     )
     dual_role = actor("alice", "annotator", "reviewer")
     service.claim("task-1", dual_role)

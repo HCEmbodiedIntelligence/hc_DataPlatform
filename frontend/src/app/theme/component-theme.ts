@@ -1,19 +1,23 @@
-import type { ThemeConfig } from 'antd';
-import { platformTokens as tokens } from './tokens';
+import type { ThemeConfig } from "antd";
+import { platformTokens as tokens } from "./tokens";
 
 const focusShadow = `0 0 0 3px ${tokens.color.focus}55`;
 
 export const uiTheme: ThemeConfig = {
   inherit: false,
-  cssVar: { prefix: 'hc', key: 'hc-platform' },
+  cssVar: { prefix: "hc", key: "hc-platform" },
   token: {
     colorPrimary: tokens.color.primary,
     colorPrimaryHover: tokens.color.primaryHover,
     colorPrimaryActive: tokens.color.primaryActive,
     colorInfo: tokens.color.info,
+    colorInfoText: tokens.color.infoText,
     colorSuccess: tokens.color.success,
+    colorSuccessText: tokens.color.successText,
     colorWarning: tokens.color.warning,
+    colorWarningText: tokens.color.warningText,
     colorError: tokens.color.error,
+    colorErrorText: tokens.color.errorText,
     colorBgLayout: tokens.color.page,
     colorBgContainer: tokens.color.surface,
     colorBgElevated: tokens.color.surface,
@@ -38,9 +42,9 @@ export const uiTheme: ThemeConfig = {
     lineHeightHeading1: tokens.typography.lineHeightHeading,
     lineHeightHeading2: tokens.typography.lineHeightHeading,
     lineHeightHeading3: tokens.typography.lineHeightHeading,
-    motionDurationFast: '0.14s',
-    motionDurationMid: '0.2s',
-    motionDurationSlow: '0.28s',
+    motionDurationFast: "0.14s",
+    motionDurationMid: "0.2s",
+    motionDurationSlow: "0.28s",
     paddingXXS: tokens.spacing.xs,
     paddingXS: tokens.spacing.sm,
     paddingSM: tokens.spacing.md,
@@ -81,7 +85,7 @@ export const uiTheme: ThemeConfig = {
       borderRadius: tokens.radius.md,
       controlHeight: tokens.controlHeight.md,
       paddingInline: tokens.spacing.lg,
-      primaryShadow: '0 8px 20px rgb(89 101 216 / 25%)',
+      primaryShadow: "0 8px 20px rgb(89 101 216 / 25%)",
       defaultShadow: tokens.shadow.sm,
       fontWeight: 600,
     },
@@ -108,12 +112,12 @@ export const uiTheme: ThemeConfig = {
     },
     Table: {
       borderColor: tokens.color.border,
-      headerBg: '#eef0fb',
+      headerBg: "#eef0fb",
       headerColor: tokens.color.text,
       headerBorderRadius: tokens.radius.lg,
-      rowHoverBg: '#f2f3ff',
-      rowSelectedBg: '#e6e8ff',
-      rowSelectedHoverBg: '#dfe2ff',
+      rowHoverBg: "#f2f3ff",
+      rowSelectedBg: "#e6e8ff",
+      rowSelectedHoverBg: "#dfe2ff",
       cellPaddingBlock: 11,
       cellPaddingInline: 14,
       cellPaddingBlockMD: 9,
@@ -139,19 +143,19 @@ export const uiTheme: ThemeConfig = {
     Menu: {
       itemBorderRadius: 12,
       subMenuItemBorderRadius: 10,
-      itemSelectedBg: '#e5e7ff',
+      itemSelectedBg: "#e5e7ff",
       itemSelectedColor: tokens.color.primaryActive,
-      itemHoverBg: '#eef0fb',
+      itemHoverBg: "#eef0fb",
       itemHoverColor: tokens.color.primaryActive,
       activeBarBorderWidth: 0,
     },
     Notification: {
       zIndexPopup: tokens.zIndex.toast,
       width: 360,
-      colorSuccessBg: '#effaf5',
-      colorWarningBg: '#fff8e8',
-      colorErrorBg: '#fff1f0',
-      colorInfoBg: '#eef3ff',
+      colorSuccessBg: "#eff8f4",
+      colorWarningBg: "#fff8e8",
+      colorErrorBg: "#fff1f0",
+      colorInfoBg: "#eef3ff",
     },
     Card: {
       bodyPadding: 22,
@@ -164,8 +168,8 @@ export const uiTheme: ThemeConfig = {
     },
     Segmented: {
       itemSelectedBg: tokens.color.surface,
-      itemHoverBg: '#e9ebf7',
-      trackBg: '#eceef6',
+      itemHoverBg: "#e9ebf7",
+      trackBg: "#eceef6",
       trackPadding: 4,
     },
   },

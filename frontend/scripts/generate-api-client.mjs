@@ -1,98 +1,141 @@
-import { spawn } from 'node:child_process';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { access, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const frontendRoot = path.resolve(scriptDir, '..');
-// API drafts are external inputs and are not bundled with the cleaned plan directory.
-const contractRoot = process.env.OPENAPI_ROOT;
-if (!contractRoot) {
-  console.error('OPENAPI_ROOT is required; API drafts are not bundled with plan/.');
-  process.exit(1);
-}
-const outputDir = path.join(frontendRoot, 'src/shared/api/generated');
-const notesPath = path.join(frontendRoot, 'docs/frontend-scaffold-notes.md');
-const generatedHeader = '// AUTO-GENERATED — DO NOT EDIT\n';
+const frontendRoot = path.resolve(scriptDir, "..");
+const repositoryRoot = path.resolve(frontendRoot, "..");
+const backendRoot = path.join(repositoryRoot, "backend");
+const aggregateContractPath = path.join(backendRoot, "openapi.generated.yaml");
+const runtimeContractPath = path.join(
+  frontendRoot,
+  "src/shared/api/generated/.runtime-openapi.tmp.yaml",
+);
+const outputPath = path.join(
+  frontendRoot,
+  "src/shared/api/generated/platform.ts",
+);
+const temporaryPath = path.join(
+  frontendRoot,
+  "src/shared/api/generated/.platform.tmp.ts",
+);
+const checkOnly = process.argv.slice(2).includes("--check");
 
-const domains = {
-  ingest: '01-ingest/ingest-api.openapi.yaml',
-  datasets: '02-dataset-version-review/dataset-version-review-api.openapi.yaml',
-  cleaning: '03-manual-cleaning/manual-cleaning-api.openapi.yaml',
-  storage: '04-storage-lifecycle/storage-lifecycle-api.openapi.yaml',
-  robotics: '05-robotics-calibration-schema/robotics-calibration-schema-api.openapi.yaml',
-  access: '06-access-audit/access-audit-api.openapi.yaml',
-  platform: '07-platform-foundation/platform-api-baseline.yaml',
-  annotation: '09-data-annotation/data-annotation-api.openapi.yaml',
-};
-
-function runGenerator(input, output) {
+function runProcess(executable, args, cwd) {
   return new Promise((resolve) => {
-    const executable = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-    const child = spawn(executable, ['exec', 'openapi-typescript', input, '--output', output], {
-      cwd: frontendRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const child = spawn(executable, args, {
+      cwd,
+      stdio: ["ignore", "inherit", "inherit"],
     });
-    let stderr = '';
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.on('error', (error) => resolve({ ok: false, reason: error.message }));
-    child.on('close', (code) =>
+    child.on("error", (error) => resolve({ ok: false, reason: error.message }));
+    child.on("close", (code) =>
       resolve({
         ok: code === 0,
-        reason: stderr.trim().split('\n').slice(-3).join(' ') || `exit code ${String(code)}`,
+        reason: `openapi-typescript exited with ${String(code)}`,
       }),
     );
   });
 }
 
-function safeReason(reason) {
-  return reason.replaceAll(frontendRoot, '<frontend>').replaceAll(contractRoot, '<api-drafts>');
-}
-
-async function updateNotes(successes, failures) {
-  const start = '<!-- generated-api-status:start -->';
-  const end = '<!-- generated-api-status:end -->';
-  const successLines = successes.length
-    ? successes.map((domain) => `- \`${domain}.ts\``).join('\n')
-    : '- 无';
-  const failureLines = failures.length
-    ? failures.map(({ domain, reason }) => `- \`${domain}\`: ${safeReason(reason)}`).join('\n')
-    : '- 无';
-  const block = `${start}\n### OpenAPI 生成状态\n\n已生成：\n\n${successLines}\n\n失败域：\n\n${failureLines}\n${end}`;
-  let current = '';
+async function runtimeExporter() {
+  const localPython = path.join(backendRoot, ".venv/bin/python");
   try {
-    current = await readFile(notesPath, 'utf8');
+    await access(localPython);
+    return {
+      executable: localPython,
+      args: [
+        "-m",
+        "hc_data_platform.core.openapi",
+        "--runtime",
+        "--output",
+        runtimeContractPath,
+      ],
+    };
   } catch {
-    current = '# 前端脚手架交接说明\n\n';
+    const executable = process.platform === "win32" ? "uv.exe" : "uv";
+    return {
+      executable,
+      args: [
+        "run",
+        "python",
+        "-m",
+        "hc_data_platform.core.openapi",
+        "--runtime",
+        "--output",
+        runtimeContractPath,
+      ],
+    };
   }
-  const pattern = new RegExp(`${start}[\\s\\S]*?${end}`);
-  const next = pattern.test(current) ? current.replace(pattern, block) : `${current.trim()}\n\n${block}\n`;
-  await writeFile(notesPath, next, 'utf8');
 }
 
-const successes = [];
-const failures = [];
-
-for (const [domain, relativeInput] of Object.entries(domains)) {
-  const input = path.join(contractRoot, relativeInput);
-  const output = path.join(outputDir, `${domain}.ts`);
-  const temporary = path.join(outputDir, `.${domain}.tmp.ts`);
-  const result = await runGenerator(input, temporary);
-  if (!result.ok) {
-    await rm(temporary, { force: true });
-    failures.push({ domain, reason: result.reason });
-    process.stderr.write(`[gen:api] skipped ${domain}: ${result.reason}\n`);
-    continue;
+try {
+  const exporter = await runtimeExporter();
+  const exportResult = await runProcess(
+    exporter.executable,
+    exporter.args,
+    backendRoot,
+  );
+  if (!exportResult.ok) {
+    throw new Error(`runtime OpenAPI export failed: ${exportResult.reason}`);
   }
-  const generated = await readFile(temporary, 'utf8');
-  await writeFile(temporary, generatedHeader + generated.replace(/^\/\/ AUTO-GENERATED.*\n/u, ''), 'utf8');
-  await rename(temporary, output);
-  successes.push(domain);
-  process.stdout.write(`[gen:api] generated ${domain}.ts\n`);
-}
 
-await updateNotes(successes, failures);
-process.stdout.write(`[gen:api] complete: ${successes.length} generated, ${failures.length} skipped\n`);
+  const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const generateResult = await runProcess(
+    pnpm,
+    [
+      "exec",
+      "openapi-typescript",
+      runtimeContractPath,
+      "--output",
+      temporaryPath,
+    ],
+    frontendRoot,
+  );
+  if (!generateResult.ok) {
+    throw new Error(generateResult.reason);
+  }
+
+  const runtimeContract = await readFile(runtimeContractPath);
+  const aggregateContract = await readFile(aggregateContractPath);
+  const runtimeSha256 = createHash("sha256")
+    .update(runtimeContract)
+    .digest("hex");
+  const aggregateSha256 = createHash("sha256")
+    .update(aggregateContract)
+    .digest("hex");
+  const generatedHeader = [
+    "// AUTO-GENERATED — DO NOT EDIT",
+    "// Source: production-composed runtime create_app(...).openapi()",
+    `// Runtime-OpenAPI-SHA256: ${runtimeSha256}`,
+    `// Fragment-Aggregate-SHA256: ${aggregateSha256}`,
+    "",
+  ].join("\n");
+  const generated = await readFile(temporaryPath, "utf8");
+  const expected =
+    generatedHeader + generated.replace(/^\/\/ AUTO-GENERATED.*\n/u, "");
+  await writeFile(temporaryPath, expected, "utf8");
+
+  if (checkOnly) {
+    const current = await readFile(outputPath, "utf8").catch(() => "");
+    if (current !== expected) {
+      process.stderr.write(
+        "[gen:api] drift: frontend/src/shared/api/generated/platform.ts is not reproducible\n",
+      );
+      process.exitCode = 1;
+    } else {
+      process.stdout.write(
+        `[gen:api] current: platform.ts (runtime ${runtimeSha256})\n`,
+      );
+    }
+  } else {
+    await rename(temporaryPath, outputPath);
+    process.stdout.write(
+      `[gen:api] generated platform.ts (runtime ${runtimeSha256})\n`,
+    );
+  }
+} finally {
+  await rm(temporaryPath, { force: true });
+  await rm(runtimeContractPath, { force: true });
+}

@@ -62,6 +62,13 @@ networkPolicy:
       matchLabels:
         kubernetes.io/metadata.name: ingress-nginx
     podSelector: {}
+  monitoring:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: observability
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
 
 podSecurityContext:
   runAsNonRoot: true
@@ -100,6 +107,9 @@ backend:
     service:
       type: ClusterIP
       port: 80
+    metrics:
+      enabled: true
+      servicePort: 9090
     strategy:
       maxUnavailable: 0
       maxSurge: 1
@@ -161,6 +171,8 @@ backend:
     temporalTarget: temporal-frontend.temporal.svc:7233
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     objectStoreEndpoint: https://object-store.example.invalid
+    # Required deployment input: browser-reachable HTTPS S3 endpoint used only for presigning.
+    objectStorePublicEndpoint: ""
     objectStoreBucket: hc-data-production
     objectStoreRegion: us-east-1
     jwtIssuer: https://identity.example.invalid
@@ -169,6 +181,7 @@ backend:
     jwtJwksUrl: https://identity.example.invalid/.well-known/jwks.json
     readinessTimeoutSeconds: "3"
     enforceSchemaMigrations: "true"
+    apiDocsEnabled: "false"
     otelExporterOtlpEndpoint: http://otel-collector.observability.svc:4317
   migration:
     enabled: true

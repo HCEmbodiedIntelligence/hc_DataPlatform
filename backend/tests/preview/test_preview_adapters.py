@@ -113,6 +113,7 @@ def test_annotation_adapter_consumes_effective_exclusions_at_requested_revision(
         dataset_id="dataset-1",
         dataset_version=7,
         rollout_id="rollout-1",
+        base_step_count=10,
     )
     actor = AnnotationActor(
         actor_id="annotator-1",

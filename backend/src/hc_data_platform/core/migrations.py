@@ -13,6 +13,9 @@ from typing import Any
 import asyncpg
 
 _LOCK_NAME = "hc-data-platform-schema-migrations-v1"
+_REPEATABLE_SECURITY_MIGRATIONS = frozenset(
+    {"security/001_core.sql", "security/002_access_control.sql"}
+)
 _TRACKING_TABLE_SQL = """
 CREATE SCHEMA IF NOT EXISTS core;
 CREATE TABLE IF NOT EXISTS core.schema_migrations (
@@ -130,9 +133,22 @@ async def apply_migrations(dsn: str) -> list[str]:
                 )
                 applied_now.append(migration.version)
 
-            # The security migration is intentionally repeatable. Running it after every
-            # module migration installs FORCE RLS policies on newly introduced tenant tables.
-            await connection.execute(migrations[0].sql)
+            # Security reconciliation is intentionally repeatable. The core pass installs
+            # FORCE RLS on tenant-owned domain tables; the access-control pass then restores
+            # its repository-enforced boundary because bootstrap must discover all of a
+            # principal's active projects before any one project is selected.
+            repeatable = {
+                migration.version: migration
+                for migration in migrations
+                if migration.version in _REPEATABLE_SECURITY_MIGRATIONS
+            }
+            missing_repeatable = _REPEATABLE_SECURITY_MIGRATIONS - repeatable.keys()
+            if missing_repeatable:
+                raise RuntimeError(
+                    f"repeatable security migrations missing: {sorted(missing_repeatable)}"
+                )
+            for version in ("security/001_core.sql", "security/002_access_control.sql"):
+                await connection.execute(repeatable[version].sql)
     finally:
         await connection.close()
     return applied_now

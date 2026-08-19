@@ -10,10 +10,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [status, environment]
+                additionalProperties: false
+                required: [status]
                 properties:
                   status: {type: string, const: live}
-                  environment: {type: string}
   /health/ready:
     get:
       operationId: getReadiness
@@ -23,21 +23,14 @@ paths:
           description: Every required dependency is ready.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ReadinessReport"}
+              schema: {$ref: "#/components/schemas/PublicReadinessReport"}
         "503":
           description: At least one required dependency is not ready.
           content:
-            application/json:
-              schema: {$ref: "#/components/schemas/ReadinessReport"}
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
 components:
   schemas:
-    DependencyStatus:
-      type: object
-      required: [status, latency_ms]
-      properties:
-        status: {type: string, enum: [ready, not_ready]}
-        latency_ms: {type: number, minimum: 0}
-        detail: {type: [string, "null"]}
     DomainEventEnvelope:
       type: object
       required: [event_id, event_type, schema_version, aggregate_type, aggregate_id, project_id, occurred_at, payload]
@@ -76,18 +69,12 @@ components:
         request_id: {type: [string, "null"]}
         retryable: {type: boolean}
         details: {type: object, additionalProperties: true}
-    ReadinessReport:
+    PublicReadinessReport:
       type: object
-      required: [status, dependencies]
+      additionalProperties: false
+      required: [status]
       properties:
-        status: {type: string, enum: [ready, not_ready]}
-        dependencies:
-          type: object
-          required: [postgresql, temporal, object_storage]
-          properties:
-            postgresql: {$ref: "#/components/schemas/DependencyStatus"}
-            temporal: {$ref: "#/components/schemas/DependencyStatus"}
-            object_storage: {$ref: "#/components/schemas/DependencyStatus"}
+        status: {type: string, const: ready}
     RequestContext:
       type: object
       required: [request_id, roles, service_identity]

@@ -1,12 +1,12 @@
-import type { DashboardPendingPage } from '../../../features/dashboard/types';
+import type { DashboardPendingPage } from "../../../features/dashboard/types";
 import {
   DataCursorPager,
   EntityDrawer,
   PageState,
   type PageStateKind,
-} from '../../../shared/ui';
-import { DashboardPendingList } from './DashboardPendingList';
-import styles from '../styles.module.css';
+} from "../../../shared/ui";
+import { DashboardPendingList } from "./DashboardPendingList";
+import styles from "../styles.module.css";
 
 export function DashboardPendingDrawer({
   open,
@@ -19,15 +19,16 @@ export function DashboardPendingDrawer({
 }: Readonly<{
   open: boolean;
   page?: DashboardPendingPage;
-  state: PageStateKind | 'ready';
+  state: PageStateKind | "ready";
   requestId?: string | null;
   onRetry?: () => void;
-  onCursorChange: (cursor: Readonly<{ after?: string; before?: string }>) => void;
+  onCursorChange: (
+    cursor: Readonly<{ after?: string; before?: string }>,
+  ) => void;
   onClose: () => void;
 }>) {
   const content = page ? (
     <div className={styles.contentStack}>
-      {page.hasUnknownEnum ? <PageState state="unknown" label="分页待办未知状态" /> : null}
       <DashboardPendingList items={page.items} />
     </div>
   ) : null;
@@ -37,20 +38,31 @@ export function DashboardPendingDrawer({
       open={open}
       title="全部待办"
       onClose={onClose}
-      loading={state === 'loading'}
-      footer={page && page.items.length > 0 ? (
-        <DataCursorPager
-          pageInfo={page.pageInfo}
-          busy={state === 'refreshing'}
-          windowLabel={`当前窗口 ${page.items.length} 条 · 快照 ${page.snapshotAt}`}
-          onChange={onCursorChange}
-        />
-      ) : undefined}
+      loading={state === "loading"}
+      footer={
+        page?.pageInfo && page.items.length > 0 ? (
+          <DataCursorPager
+            pageInfo={page.pageInfo}
+            busy={state === "refreshing"}
+            windowLabel={`当前窗口 ${page.items.length} 条 · 快照 ${page.asOf}`}
+            onChange={onCursorChange}
+          />
+        ) : undefined
+      }
     >
-      {state === 'ready' ? content : state === 'refreshing' ? (
-        <PageState state="refreshing" label="分页待办">{content}</PageState>
-      ) : state !== 'loading' ? (
-        <PageState state={state} label="分页待办" requestId={requestId} onRetry={onRetry} />
+      {state === "ready" ? (
+        content
+      ) : state === "refreshing" ? (
+        <PageState state="refreshing" label="分页待办">
+          {content}
+        </PageState>
+      ) : state !== "loading" ? (
+        <PageState
+          state={state}
+          label="分页待办"
+          requestId={requestId}
+          onRetry={onRetry}
+        />
       ) : null}
     </EntityDrawer>
   );

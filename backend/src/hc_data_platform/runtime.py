@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -13,12 +15,24 @@ from hc_data_platform.alignment.arrow_writer import ArrowFragmentWriter
 from hc_data_platform.alignment.engine import AlignmentEngine
 from hc_data_platform.alignment.models import AlignedFragmentManifestV1, AlignedValueV1
 from hc_data_platform.alignment.postgres import PostgresAlignmentRepository
+from hc_data_platform.annotation.automation import (
+    AutomaticAnnotationTaskService,
+    PostgresAutomaticAnnotationRepository,
+)
 from hc_data_platform.annotation.postgres import PostgresAnnotationRepository
 from hc_data_platform.annotation.router import configure_annotation
 from hc_data_platform.annotation.service import AnnotationService
+from hc_data_platform.collection_tasks.models import CollectionTaskRecord
+from hc_data_platform.collection_tasks.postgres import PostgresCollectionTaskRepository
+from hc_data_platform.collection_tasks.router import configure_collection_tasks
+from hc_data_platform.collection_tasks.service import CollectionTaskService
 from hc_data_platform.core.config import Settings, get_settings
 from hc_data_platform.core.dbapi import psycopg_connection_factory
+from hc_data_platform.dashboard.postgres import PostgresDashboardRepository
+from hc_data_platform.dashboard.router import configure_dashboard
+from hc_data_platform.dashboard.service import DashboardService
 from hc_data_platform.ingest.adapters import S3ObjectStorage
+from hc_data_platform.ingest.manifest import ObjectStorageManifestParser
 from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.router import configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
@@ -62,6 +76,20 @@ from hc_data_platform.publishing.service import DatasetPublisher, ExportCoordina
 from hc_data_platform.quality.engine import QualityEngine
 from hc_data_platform.quality.postgres import PostgresQualityRepository
 from hc_data_platform.quality.router import configure_quality_repository
+from hc_data_platform.security.access_postgres import PostgresAccessRepository
+from hc_data_platform.security.access_service import AccessService
+from hc_data_platform.security.outbox import (
+    OutboxDispatcher,
+    PostgresOutboxDeliveryRepository,
+)
+from hc_data_platform.security.psycopg import PsycopgIdempotencyStore
+from hc_data_platform.storage.postgres import (
+    PostgresStorageIdempotencyStore,
+    PostgresStorageRepository,
+    StorageTransactionConnectionFactory,
+)
+from hc_data_platform.storage.router import configure_storage_governance
+from hc_data_platform.storage.service import StorageGovernanceService
 from hc_data_platform.verification.engine import McapVerifier
 from hc_data_platform.verification.ports import (
     ChunkedObjectStorageReader,
@@ -73,10 +101,14 @@ from hc_data_platform.verification.ports import (
 from hc_data_platform.verification.postgres import PostgresVerificationRepository
 from hc_data_platform.verification.router import configure_verification_repository
 from hc_data_platform.workflow.activities import ActivityDependencies
+from hc_data_platform.workflow.ingest_dispatch import IngestOutboxHandler
+from hc_data_platform.workflow.ingest_plan import PostgresIngestWorkflowInputResolver
 from hc_data_platform.workflow.models import (
     AlignmentActivityInput,
     CatalogFragmentPayloadV1,
 )
+from hc_data_platform.workflow.service import TemporalWorkflowLauncher
+from hc_data_platform.workflow.worker import DEFAULT_TASK_QUEUE
 
 
 class ArrowFragmentWriterFactory:
@@ -172,7 +204,11 @@ class PublicationReconciler:
 
 @dataclass(frozen=True)
 class RuntimeComponents:
+    access: AccessService
+    dashboard: DashboardService
     ingest: UploadSessionService
+    collection_tasks: CollectionTaskService
+    storage: StorageGovernanceService
     annotation: AnnotationService
     catalog: LanceCatalogService
     verification_repository: PostgresVerificationRepository
@@ -184,19 +220,42 @@ class RuntimeComponents:
     activities: ActivityDependencies
 
 
+@dataclass(frozen=True)
+class WorkerOutboxRuntime:
+    dispatcher: OutboxDispatcher
+    scopes: tuple[str, ...]
+    poll_interval_seconds: float
+    batch_size: int
+
+
 def _s3(settings: Settings) -> tuple[Any, S3ObjectStorage]:
     import boto3
     from botocore.config import Config
 
-    client = boto3.client(
+    client_options = {
+        "aws_access_key_id": settings.object_store_access_key,
+        "aws_secret_access_key": settings.object_store_secret_key,
+        "region_name": settings.object_store_region,
+        "config": Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+    }
+    operation_client = boto3.client(
         "s3",
         endpoint_url=settings.object_store_endpoint,
-        aws_access_key_id=settings.object_store_access_key,
-        aws_secret_access_key=settings.object_store_secret_key,
-        region_name=settings.object_store_region,
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        **client_options,
     )
-    return client, S3ObjectStorage(client, settings.object_store_bucket)
+    public_endpoint = settings.object_store_public_endpoint
+    if public_endpoint is None:  # Defensive: Settings resolves local/test and rejects prod absence.
+        raise RuntimeError("public object-store endpoint is not configured")
+    presign_client = boto3.client(
+        "s3",
+        endpoint_url=public_endpoint,
+        **client_options,
+    )
+    return operation_client, S3ObjectStorage(
+        operation_client,
+        settings.object_store_bucket,
+        presign_client=presign_client,
+    )
 
 
 def _decoder(settings: Settings) -> DecoderProbe:
@@ -221,13 +280,38 @@ def _decoder(settings: Settings) -> DecoderProbe:
 def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
     resolved = settings or get_settings()
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
+    access = AccessService(PostgresAccessRepository.from_dsn(resolved.postgres_dsn))
+    dashboard = DashboardService(
+        PostgresDashboardRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
     s3_client, object_storage = _s3(resolved)
 
     ingest = UploadSessionService(
         object_storage,
         persistence=PostgresIngestPersistence(connection_factory),
     )
+    collection_tasks = CollectionTaskService(
+        PostgresCollectionTaskRepository(connection_factory),
+        PsycopgIdempotencyStore(
+            connection_factory,
+            response_decoder=CollectionTaskRecord.model_validate,
+        ),
+        cursor_secret=resolved.cursor_secret,
+    )
+    storage_connection_factory = StorageTransactionConnectionFactory(connection_factory)
+    storage = StorageGovernanceService(
+        PostgresStorageRepository(storage_connection_factory),
+        cursor_secret=resolved.cursor_secret,
+        idempotency=PostgresStorageIdempotencyStore(
+            connection_factory,
+            storage_connection_factory,
+        ),
+    )
     annotation = AnnotationService(PostgresAnnotationRepository(connection_factory))
+    automatic_annotation = AutomaticAnnotationTaskService(
+        PostgresAutomaticAnnotationRepository(connection_factory)
+    )
     verification_repository = PostgresVerificationRepository(connection_factory)
     quality_repository = PostgresQualityRepository(connection_factory)
     alignment_repository = PostgresAlignmentRepository(connection_factory)
@@ -280,6 +364,7 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         exporters=(LanceSnapshotExporter(), LeRobotV3Exporter()),
     )
     activities = ActivityDependencies(
+        manifest_parser=ObjectStorageManifestParser(object_storage),
         verifier=McapVerifier(
             ChunkedObjectStorageReader(object_storage),
             decoder=_decoder(resolved),
@@ -297,9 +382,14 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         verification_reports=verification_repository,
         quality_reports=quality_repository,
         alignment_manifests=alignment_repository,
+        annotation_tasks=automatic_annotation,
     )
     return RuntimeComponents(
+        access=access,
+        dashboard=dashboard,
         ingest=ingest,
+        collection_tasks=collection_tasks,
+        storage=storage,
         annotation=annotation,
         catalog=catalog,
         verification_repository=verification_repository,
@@ -313,7 +403,10 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
 
 
 def configure_api(runtime: RuntimeComponents) -> None:
+    configure_dashboard(runtime.dashboard)
     configure_ingest_service(runtime.ingest)
+    configure_collection_tasks(runtime.collection_tasks)
+    configure_storage_governance(runtime.storage)
     configure_annotation(runtime.annotation)
     configure_verification_repository(runtime.verification_repository)
     configure_quality_repository(runtime.quality_repository)
@@ -330,3 +423,56 @@ def activity_dependencies() -> ActivityDependencies:
     """Deployment-owned factory referenced by HC_WORKFLOW_ACTIVITY_FACTORY."""
 
     return build_runtime().activities
+
+
+def build_worker_outbox(
+    settings: Settings | None = None,
+    *,
+    temporal_client: Any | None = None,
+) -> WorkerOutboxRuntime | None:
+    """Compose durable upload-event delivery for explicitly authorized scopes."""
+
+    resolved = settings or get_settings()
+    if not resolved.outbox_scopes:
+        return None
+    connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
+    _s3_client, object_storage = _s3(resolved)
+    catalog_repository = PostgresCatalogAdapter(connection_factory)
+    lance_root = resolved.lance_root_uri or f"s3://{resolved.object_store_bucket}/lance"
+    catalog = LanceCatalogService(
+        LanceAdapter(
+            lance_root,
+            storage_options={
+                "aws_endpoint": resolved.object_store_endpoint,
+                "aws_access_key_id": resolved.object_store_access_key,
+                "aws_secret_access_key": resolved.object_store_secret_key,
+                "aws_region": resolved.object_store_region,
+                "allow_http": str(resolved.object_store_endpoint.startswith("http://")).lower(),
+            },
+        ),
+        catalog_repository,
+        PostgresAdvisoryDatasetLock(connection_factory),
+    )
+    launcher = TemporalWorkflowLauncher(
+        resolved.temporal_target,
+        namespace=os.getenv("HC_TEMPORAL_NAMESPACE", "default"),
+        task_queue=os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE),
+        client=temporal_client,
+    )
+    resolver = PostgresIngestWorkflowInputResolver(
+        connection_factory,
+        ChunkedObjectStorageReader(object_storage),
+        catalog,
+    )
+    handler = IngestOutboxHandler(launcher, resolver)
+    dispatcher = OutboxDispatcher(
+        PostgresOutboxDeliveryRepository(connection_factory),
+        {handler.EVENT_TYPE: handler},
+        worker_id=f"hc-outbox-{socket.gethostname()}",
+    )
+    return WorkerOutboxRuntime(
+        dispatcher=dispatcher,
+        scopes=resolved.outbox_scopes,
+        poll_interval_seconds=resolved.outbox_poll_interval_seconds,
+        batch_size=resolved.outbox_batch_size,
+    )

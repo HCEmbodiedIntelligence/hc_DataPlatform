@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Sequence
 from datetime import timedelta
 from threading import RLock
+from uuid import NAMESPACE_URL, uuid5
 
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdempotencyStore
+from hc_data_platform.workflow.models import WorkflowKind, workflow_id
 
+from .manifest import ObjectStorageManifestParser, preflight_manifest
 from .models import (
     CollectionJob,
     CollectionJobStatus,
     CompletedPart,
+    FailedPartV1,
+    IdempotencyOutcome,
+    IngestTriggerStatus,
+    IngestWorkflowLocator,
+    ManifestPreflightResultV1,
     PartAuthorization,
     RawObjectCommittedV1,
     Rollout,
@@ -24,13 +31,15 @@ from .models import (
     UploadPartStatus,
     UploadSession,
     UploadSessionGrant,
+    UploadSessionListV1,
+    UploadSourceType,
     UploadStatus,
     manifest_object_key,
     raw_object_key,
     utc_now,
 )
 from .persistence import IngestPersistencePort, InMemoryIngestPersistence
-from .ports import ObjectStoragePort, crc64_ecma, normalize_etag
+from .ports import ObjectMetadata, ObjectStoragePort, crc64_ecma, normalize_etag
 
 
 class UploadSessionService:
@@ -41,9 +50,15 @@ class UploadSessionService:
         idempotency: IdempotencyStore | None = None,
         *,
         authorization_ttl_seconds: int = 900,
+        max_authorizations_per_request: int = 256,
+        max_part_retries: int = 5,
     ) -> None:
         if not 1 <= authorization_ttl_seconds <= 3600:
             raise ValueError("part authorization TTL must be between 1 and 3600 seconds")
+        if not 1 <= max_authorizations_per_request <= 1000:
+            raise ValueError("authorization batch size must be between 1 and 1000")
+        if not 1 <= max_part_retries <= 10:
+            raise ValueError("part retry limit must be between 1 and 10")
         self.storage = storage
         self.persistence = persistence or InMemoryIngestPersistence()
         persistence_idempotency = getattr(self.persistence, "idempotency_store", None)
@@ -51,6 +66,8 @@ class UploadSessionService:
             idempotency or persistence_idempotency or InMemoryIdempotencyStore()
         )
         self.authorization_ttl_seconds = authorization_ttl_seconds
+        self.max_authorizations_per_request = max_authorizations_per_request
+        self.max_part_retries = max_part_retries
         self._lock = RLock()
 
     def create_session(
@@ -62,9 +79,10 @@ class UploadSessionService:
     ) -> UploadSession:
         def create() -> UploadSession:
             with self._lock:
-                existing_rollout = self.persistence.get_rollout(
+                preflight = preflight_manifest(manifest)
+                existing_rollout = self.persistence.get_rollout_by_package(
                     manifest.project_id,
-                    manifest.rollout_id,
+                    manifest.data_package_id,
                 )
                 if existing_rollout is not None:
                     if existing_rollout.source_sha256 != manifest.sha256:
@@ -76,12 +94,34 @@ class UploadSessionService:
                             title="Rollout scope conflict",
                             detail="This rollout id is registered in a different region.",
                         )
-                    existing_session = self.persistence.find_session(
+                    existing_session = self.persistence.find_session_by_package(
                         manifest.project_id,
-                        manifest.rollout_id,
+                        manifest.data_package_id,
                     )
                     if existing_session is not None:
+                        if existing_session.source_type is not UploadSourceType.BROWSER_MULTIPART:
+                            raise problem(
+                                status=409,
+                                code="UPLOAD_SOURCE_CONFLICT",
+                                title="Upload source conflict",
+                                detail="This data package was registered from object storage.",
+                            )
+                        if existing_session.manifest_fingerprint != preflight.manifest_fingerprint:
+                            raise _manifest_changed()
                         return existing_session
+                existing_rollout_id = self.persistence.get_rollout(
+                    manifest.project_id, manifest.rollout_id
+                )
+                if (
+                    existing_rollout_id is not None
+                    and existing_rollout_id.data_package_id != manifest.data_package_id
+                ):
+                    raise problem(
+                        status=409,
+                        code="ROLLOUT_ID_CONFLICT",
+                        title="Rollout identity conflict",
+                        detail="This rollout_id already identifies another data package.",
+                    )
 
                 key = raw_object_key(manifest)
                 if self.storage.head(key) is not None:
@@ -96,16 +136,18 @@ class UploadSessionService:
                     project_id=manifest.project_id,
                     region_code=region_code,
                     rollout_id=manifest.rollout_id,
+                    data_package_id=manifest.data_package_id,
                     object_key=key,
+                    source_type=UploadSourceType.BROWSER_MULTIPART,
                     multipart_upload_id=upload_id,
                     expected_sha256=manifest.sha256,
                     expected_size=manifest.file_size,
                     expected_crc64=manifest.crc64,
-                    manifest_fingerprint=_manifest_fingerprint(manifest),
+                    manifest_fingerprint=preflight.manifest_fingerprint,
                     status=UploadStatus.UPLOADING,
                 )
                 try:
-                    persisted = self._persist_new_upload(session, manifest, region_code)
+                    persisted = self._persist_new_upload(session, manifest, preflight, region_code)
                 except Exception:
                     self.storage.abort_multipart(key, upload_id)
                     raise
@@ -121,6 +163,119 @@ class UploadSessionService:
         ).value
         return self.get_session(result.session_id)
 
+    def register_object_storage_session(
+        self,
+        *,
+        manifest: RolloutManifestV1,
+        region_code: str,
+        object_storage_uri: str,
+        idempotency_key: str,
+    ) -> UploadSession:
+        """Register an existing canonical Raw object using server-held storage authority."""
+
+        def register() -> UploadSession:
+            with self._lock:
+                preflight = preflight_manifest(manifest)
+                key = raw_object_key(manifest)
+                metadata = self.storage.authorize_existing_object(object_storage_uri, key)
+                if metadata.size != manifest.file_size:
+                    raise _integrity_problem(
+                        "OBJECT_SIZE_MISMATCH",
+                        "Object size mismatch",
+                        "The authorized object size differs from the manifest.",
+                    )
+                if metadata.crc64 is not None and metadata.crc64 != manifest.crc64:
+                    raise _integrity_problem(
+                        "CRC64_MISMATCH",
+                        "CRC64 mismatch",
+                        "The authorized object CRC64 differs from the manifest.",
+                    )
+                existing_rollout = self.persistence.get_rollout_by_package(
+                    manifest.project_id,
+                    manifest.data_package_id,
+                )
+                if existing_rollout is not None:
+                    if existing_rollout.source_sha256 != manifest.sha256:
+                        raise _rollout_content_conflict()
+                    if existing_rollout.region_code != region_code:
+                        raise problem(
+                            status=409,
+                            code="ROLLOUT_SCOPE_CONFLICT",
+                            title="Rollout scope conflict",
+                            detail="This data package is registered in a different region.",
+                        )
+                existing = self.persistence.find_session_by_package(
+                    manifest.project_id, manifest.data_package_id
+                )
+                if existing is not None:
+                    if existing.source_type is not UploadSourceType.OBJECT_STORAGE_REFERENCE:
+                        raise problem(
+                            status=409,
+                            code="UPLOAD_SOURCE_CONFLICT",
+                            title="Upload source conflict",
+                            detail=(
+                                "This data package was registered as a browser multipart upload."
+                            ),
+                        )
+                    if (
+                        existing.expected_sha256 != manifest.sha256
+                        or existing.manifest_fingerprint != preflight.manifest_fingerprint
+                    ):
+                        raise _rollout_content_conflict()
+                    return existing
+                existing_rollout_id = self.persistence.get_rollout(
+                    manifest.project_id, manifest.rollout_id
+                )
+                if (
+                    existing_rollout_id is not None
+                    and existing_rollout_id.data_package_id != manifest.data_package_id
+                ):
+                    raise problem(
+                        status=409,
+                        code="ROLLOUT_ID_CONFLICT",
+                        title="Rollout identity conflict",
+                        detail="This rollout_id already identifies another data package.",
+                    )
+                now = utc_now()
+                session = UploadSession(
+                    project_id=manifest.project_id,
+                    region_code=region_code,
+                    rollout_id=manifest.rollout_id,
+                    data_package_id=manifest.data_package_id,
+                    object_key=key,
+                    source_type=UploadSourceType.OBJECT_STORAGE_REFERENCE,
+                    multipart_upload_id=None,
+                    expected_sha256=manifest.sha256,
+                    expected_size=manifest.file_size,
+                    expected_crc64=manifest.crc64,
+                    manifest_fingerprint=preflight.manifest_fingerprint,
+                    status=UploadStatus.MULTIPART_COMPLETED,
+                    etag=metadata.etag,
+                    completed_at=now,
+                    updated_at=now,
+                )
+                return self._persist_new_upload(
+                    session,
+                    manifest,
+                    preflight,
+                    region_code,
+                    object_metadata=metadata,
+                )
+
+        result = self.idempotency.execute(
+            scope=manifest.project_id,
+            key=idempotency_key,
+            payload={
+                "manifest": manifest.model_dump(mode="json"),
+                "region_code": region_code,
+                "object_storage_uri_fingerprint": hashlib.sha256(
+                    object_storage_uri.encode("utf-8")
+                ).hexdigest(),
+            },
+            action=register,
+        ).value
+        return self.get_session(result.session_id)
+
     def create_upload(
         self,
         *,
@@ -128,16 +283,46 @@ class UploadSessionService:
         region_code: str,
         idempotency_key: str,
         part_numbers: Sequence[int] = (),
+        object_storage_uri: str | None = None,
     ) -> UploadSessionGrant:
-        session = self.create_session(
-            manifest=manifest,
-            region_code=region_code,
-            idempotency_key=idempotency_key,
+        if object_storage_uri is not None and part_numbers:
+            raise problem(
+                status=422,
+                code="UPLOAD_SOURCE_CONFLICT",
+                title="Upload source conflict",
+                detail="Part authorizations cannot be requested for an object storage reference.",
+            )
+        previous = self.persistence.find_session_by_package(
+            manifest.project_id, manifest.data_package_id
+        )
+        session = (
+            self.register_object_storage_session(
+                manifest=manifest,
+                region_code=region_code,
+                object_storage_uri=object_storage_uri,
+                idempotency_key=idempotency_key,
+            )
+            if object_storage_uri is not None
+            else self.create_session(
+                manifest=manifest,
+                region_code=region_code,
+                idempotency_key=idempotency_key,
+            )
         )
         parts = (
             self.renew_part_authorizations(session.session_id, part_numbers) if part_numbers else []
         )
-        return UploadSessionGrant(session=session, parts=parts)
+        if previous is None:
+            outcome = IdempotencyOutcome.CREATED
+        elif session.status is UploadStatus.RAW_COMMITTED:
+            outcome = IdempotencyOutcome.ALREADY_COMMITTED
+        else:
+            outcome = IdempotencyOutcome.RESUMED
+        return UploadSessionGrant(
+            session=session,
+            parts=parts,
+            idempotency_outcome=outcome,
+        )
 
     def renew_part_authorizations(
         self,
@@ -154,6 +339,18 @@ class UploadSessionService:
                 title="Part numbers are invalid",
                 detail="Part numbers must be a non-empty, unique, ascending list.",
             )
+        if len(numbers) > self.max_authorizations_per_request:
+            raise problem(
+                status=422,
+                code="PART_AUTHORIZATION_BATCH_TOO_LARGE",
+                title="Part authorization batch is too large",
+                detail=(
+                    f"Request at most {self.max_authorizations_per_request} part "
+                    "authorizations at a time."
+                ),
+            )
+        if session.multipart_upload_id is None:
+            raise _invalid_state(session, "issue multipart authorizations")
         expires_at = utc_now() + timedelta(seconds=self.authorization_ttl_seconds)
         authorizations: list[PartAuthorization] = []
         known = {part.part_number: part for part in self.persistence.list_parts(session_id)}
@@ -189,6 +386,8 @@ class UploadSessionService:
                     etag=None if existing is None else existing.etag,
                     size=None if existing is None else existing.size,
                     crc64=None if existing is None else existing.crc64,
+                    retry_count=0 if existing is None else existing.retry_count,
+                    failure_code=None if existing is None else existing.failure_code,
                     authorization_expires_at=expires_at,
                 )
             )
@@ -196,6 +395,8 @@ class UploadSessionService:
 
     def list_parts(self, session_id: str) -> list[UploadPart]:
         session = self.get_session(session_id)
+        if session.multipart_upload_id is None:
+            return self.persistence.list_parts(session_id)
         if session.status in {
             UploadStatus.MULTIPART_COMPLETED,
             UploadStatus.RAW_COMMITTED,
@@ -219,6 +420,8 @@ class UploadSessionService:
                     etag=normalize_etag(uploaded.etag),
                     size=uploaded.size,
                     crc64=uploaded.crc64,
+                    retry_count=0 if previous is None else previous.retry_count,
+                    failure_code=None,
                     authorization_expires_at=(
                         None if previous is None else previous.authorization_expires_at
                     ),
@@ -232,7 +435,14 @@ class UploadSessionService:
         parts: Sequence[CompletedPart],
     ) -> UploadSession:
         session = self.get_session(session_id)
+        if session.status in {
+            UploadStatus.MULTIPART_COMPLETED,
+            UploadStatus.RAW_COMMITTED,
+        }:
+            return session
         self._require_status(session, UploadStatus.UPLOADING)
+        if session.multipart_upload_id is None:
+            raise _invalid_state(session, "complete multipart upload")
         numbers = [part.part_number for part in parts]
         if numbers != sorted(numbers) or len(numbers) != len(set(numbers)):
             raise problem(
@@ -242,11 +452,13 @@ class UploadSessionService:
                 detail="Parts must be unique and sorted by ascending part_number.",
             )
         self.list_parts(session_id)
-        metadata = self.storage.complete_multipart(
-            session.object_key,
-            session.multipart_upload_id,
-            parts,
-        )
+        metadata = self.storage.head(session.object_key)
+        if metadata is None:
+            metadata = self.storage.complete_multipart(
+                session.object_key,
+                session.multipart_upload_id,
+                parts,
+            )
         now = utc_now()
         updated = session.model_copy(
             update={
@@ -285,7 +497,11 @@ class UploadSessionService:
         self._require_status(session, UploadStatus.PAUSED)
         resumed = self._set_session_status(session, UploadStatus.UPLOADING)
         parts = self.renew_part_authorizations(session_id, part_numbers) if part_numbers else []
-        return UploadSessionGrant(session=resumed, parts=parts)
+        return UploadSessionGrant(
+            session=resumed,
+            parts=parts,
+            idempotency_outcome=IdempotencyOutcome.RESUMED,
+        )
 
     def cancel_upload(self, session_id: str) -> UploadSession:
         session = self.get_session(session_id)
@@ -293,7 +509,10 @@ class UploadSessionService:
             if session.status is UploadStatus.CANCELLED:
                 return session
             raise _invalid_state(session, "cancel")
-        if session.status is not UploadStatus.MULTIPART_COMPLETED:
+        if (
+            session.status is not UploadStatus.MULTIPART_COMPLETED
+            and session.multipart_upload_id is not None
+        ):
             self.storage.abort_multipart(session.object_key, session.multipart_upload_id)
         updated = self._set_session_status(session, UploadStatus.CANCELLED)
         upload_object = self._get_upload_object(session_id)
@@ -311,14 +530,76 @@ class UploadSessionService:
             )
         return updated
 
+    def retry_failed_parts(
+        self,
+        session_id: str,
+        failures: Sequence[FailedPartV1],
+    ) -> list[PartAuthorization]:
+        session = self.get_session(session_id)
+        self._require_status(session, UploadStatus.UPLOADING)
+        if not failures or len(failures) > self.max_authorizations_per_request:
+            raise problem(
+                status=422,
+                code="FAILED_PARTS_INVALID",
+                title="Failed parts are invalid",
+                detail=(
+                    "Provide a non-empty failed-part list no larger than the authorization "
+                    "batch limit."
+                ),
+            )
+        numbers = [item.part_number for item in failures]
+        if numbers != sorted(numbers) or len(numbers) != len(set(numbers)):
+            raise problem(
+                status=422,
+                code="FAILED_PARTS_INVALID",
+                title="Failed parts are invalid",
+                detail="Failed parts must be unique and sorted by part_number.",
+            )
+        known = {part.part_number: part for part in self.persistence.list_parts(session_id)}
+        now = utc_now()
+        for failure in failures:
+            previous = known.get(failure.part_number)
+            retries = 1 if previous is None else previous.retry_count + 1
+            if retries > self.max_part_retries:
+                raise problem(
+                    status=409,
+                    code="PART_RETRY_LIMIT_EXCEEDED",
+                    title="Part retry limit exceeded",
+                    detail="This failed part has exhausted its retry budget.",
+                    details={"part_number": failure.part_number},
+                )
+            self.persistence.save_part(
+                UploadPart(
+                    session_id=session_id,
+                    project_id=session.project_id,
+                    region_code=session.region_code,
+                    part_number=failure.part_number,
+                    status=UploadPartStatus.FAILED,
+                    etag=None if previous is None else previous.etag,
+                    size=None if previous is None else previous.size,
+                    crc64=None if previous is None else previous.crc64,
+                    retry_count=retries,
+                    failure_code=failure.failure_code,
+                    authorization_expires_at=None,
+                    updated_at=now,
+                )
+            )
+        return self.renew_part_authorizations(session_id, numbers)
+
     def commit_manifest(
         self,
         *,
         session_id: str,
         manifest: RolloutManifestV1,
+        actor_id: str = "system",
+        request_id: str = "ingest-service",
     ) -> RawObjectCommittedV1:
         session = self.get_session(session_id)
-        if session.project_id != manifest.project_id or session.rollout_id != manifest.rollout_id:
+        if (
+            session.project_id != manifest.project_id
+            or session.rollout_id != manifest.rollout_id
+            or session.data_package_id != manifest.data_package_id
+        ):
             raise problem(
                 status=409,
                 code="MANIFEST_SESSION_MISMATCH",
@@ -327,9 +608,19 @@ class UploadSessionService:
             )
         existing = self.persistence.get_committed(manifest.project_id, manifest.rollout_id)
         if existing is not None:
-            if existing.sha256 != manifest.sha256:
+            if (
+                existing.sha256 != manifest.sha256
+                or existing.data_package_id != manifest.data_package_id
+                or existing.object_key != session.object_key
+            ):
                 raise _rollout_content_conflict()
-            return existing
+            workflow = self._stage_workflow_trigger(
+                session=session,
+                event=existing,
+                actor_id=actor_id,
+                request_id=request_id,
+            )
+            return existing.model_copy(update={"workflow": workflow})
         if session.expected_sha256 != manifest.sha256:
             raise _rollout_content_conflict()
         if session.manifest_fingerprint != _manifest_fingerprint(manifest):
@@ -400,30 +691,50 @@ class UploadSessionService:
                 "The server-computed content digest differs from the manifest.",
             )
 
-        upload_object = self._get_upload_object(session_id)
-        self.persistence.save_upload_object(
-            upload_object.model_copy(
-                update={
-                    "status": UploadObjectStatus.VERIFIED,
-                    "actual_size": streamed_size,
-                    "actual_crc64": streamed_crc64,
-                    "actual_sha256": actual_sha256,
-                    "updated_at": utc_now(),
-                }
-            )
-        )
         event = RawObjectCommittedV1(
             project_id=manifest.project_id,
             region_code=session.region_code,
             rollout_id=manifest.rollout_id,
+            data_package_id=manifest.data_package_id,
             object_key=session.object_key,
             manifest_key=manifest_object_key(session.object_key),
             sha256=manifest.sha256,
             file_size=manifest.file_size,
         )
         self._write_or_reconcile_manifest(event.manifest_key, manifest)
-        self._mark_committed(session, event)
-        return event
+        workflow = self._stage_workflow_trigger(
+            session=session,
+            event=event,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+        return event.model_copy(update={"workflow": workflow})
+
+    def _stage_workflow_trigger(
+        self,
+        *,
+        session: UploadSession,
+        event: RawObjectCommittedV1,
+        actor_id: str,
+        request_id: str,
+    ) -> IngestWorkflowLocator:
+        locator = workflow_id(
+            WorkflowKind.INGEST_ROLLOUT,
+            session.project_id,
+            f"{session.region_code}/{session.rollout_id}",
+        )
+        trigger = IngestWorkflowLocator(
+            event_id=str(uuid5(NAMESPACE_URL, f"hc-data-platform:{locator}")),
+            workflow_id=locator,
+            status=IngestTriggerStatus.PENDING,
+        )
+        return self.persistence.commit_raw_and_stage_workflow(
+            session=session,
+            event=event,
+            workflow=trigger,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
 
     def get_session(self, session_id: str) -> UploadSession:
         session = self.persistence.get_session(session_id)
@@ -436,11 +747,44 @@ class UploadSessionService:
             )
         return session
 
+    def get_manifest_preflight(self, session_id: str) -> ManifestPreflightResultV1:
+        self.get_session(session_id)
+        result = self.persistence.get_manifest_preflight(session_id)
+        if result is None:
+            raise problem(
+                status=404,
+                code="MANIFEST_PREFLIGHT_NOT_FOUND",
+                title="Manifest preflight not found",
+                detail="No persisted Manifest discovery exists for this upload session.",
+            )
+        return result
+
+    def list_sessions(
+        self,
+        project_id: str,
+        region_code: str,
+        *,
+        status: UploadStatus | None = None,
+        data_package_id: str | None = None,
+        limit: int = 50,
+    ) -> UploadSessionListV1:
+        rows = self.persistence.list_sessions(
+            project_id,
+            region_code,
+            status=None if status is None else status.value,
+            data_package_id=data_package_id,
+            limit=limit,
+        )
+        return UploadSessionListV1(items=tuple(rows), total=len(rows))
+
     def _persist_new_upload(
         self,
         session: UploadSession,
         manifest: RolloutManifestV1,
+        preflight: ManifestPreflightResultV1,
         region_code: str,
+        *,
+        object_metadata: ObjectMetadata | None = None,
     ) -> UploadSession:
         job = CollectionJob(
             project_id=manifest.project_id,
@@ -455,6 +799,10 @@ class UploadSessionService:
             region_code=region_code,
             collection_job_id=manifest.collection_job_id,
             rollout_id=manifest.rollout_id,
+            collection_session_id=manifest.collection_session_id,
+            recording_request_id=manifest.recording_request_id,
+            data_package_id=manifest.data_package_id,
+            pico_instance_id=manifest.pico_instance_id,
             sequence_no=manifest.sequence_no,
             robot_id=manifest.robot_id,
             source_sha256=manifest.sha256,
@@ -470,7 +818,17 @@ class UploadSessionService:
             expected_sha256=session.expected_sha256,
             expected_crc64=session.expected_crc64,
         )
-        return self.persistence.register_upload(job, rollout, session, upload_object)
+        if object_metadata is not None:
+            upload_object = upload_object.model_copy(
+                update={
+                    "status": UploadObjectStatus.MULTIPART_COMPLETED,
+                    "actual_size": object_metadata.size,
+                    "actual_crc64": object_metadata.crc64,
+                    "etag": object_metadata.etag,
+                    "updated_at": utc_now(),
+                }
+            )
+        return self.persistence.register_upload(job, rollout, session, upload_object, preflight)
 
     def _write_or_reconcile_manifest(
         self,
@@ -488,10 +846,9 @@ class UploadSessionService:
             self._assert_existing_manifest(key, manifest)
 
     def _assert_existing_manifest(self, key: str, manifest: RolloutManifestV1) -> None:
-        encoded = b"".join(self.storage.read_chunks(key, chunk_size=64 * 1024))
         try:
-            existing = RolloutManifestV1.model_validate(json.loads(encoded))
-        except (ValueError, TypeError) as exc:
+            existing = ObjectStorageManifestParser(self.storage).parse(key).manifest
+        except (ProblemException, ValueError, TypeError) as exc:
             raise problem(
                 status=409,
                 code="MANIFEST_COMMIT_CONFLICT",
@@ -504,27 +861,6 @@ class UploadSessionService:
                 code="MANIFEST_COMMIT_CONFLICT",
                 title="Manifest commit marker conflict",
                 detail="The existing commit marker belongs to different content.",
-            )
-
-    def _mark_committed(self, session: UploadSession, event: RawObjectCommittedV1) -> None:
-        self.persistence.save_committed(event)
-        self.persistence.save_session(
-            session.model_copy(
-                update={"status": UploadStatus.RAW_COMMITTED, "updated_at": utc_now()}
-            )
-        )
-        upload_object = self._get_upload_object(session.session_id)
-        self.persistence.save_upload_object(
-            upload_object.model_copy(
-                update={"status": UploadObjectStatus.COMMITTED, "updated_at": utc_now()}
-            )
-        )
-        rollout = self.persistence.get_rollout(session.project_id, session.rollout_id)
-        if rollout is not None:
-            self.persistence.save_rollout(
-                rollout.model_copy(
-                    update={"status": RolloutStatus.RAW_COMMITTED, "updated_at": utc_now()}
-                )
             )
 
     def _get_upload_object(self, session_id: str) -> UploadObject:
@@ -568,12 +904,7 @@ class UploadSessionService:
 
 
 def _manifest_fingerprint(manifest: RolloutManifestV1) -> str:
-    payload = json.dumps(
-        manifest.model_dump(mode="json"),
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode()
-    return hashlib.sha256(payload).hexdigest()
+    return preflight_manifest(manifest).manifest_fingerprint
 
 
 def _manifest_changed() -> ProblemException:

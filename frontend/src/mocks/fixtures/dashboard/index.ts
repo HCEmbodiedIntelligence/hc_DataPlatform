@@ -1,54 +1,118 @@
-const scope = { organization_id: 'org_fx_01', project_id: 'prj_fx_01', region_code: 'cn-shanghai' };
-const envelope = <T>(data: T, requestId: string) => ({ data, scope, request_id: requestId, contract_version: 'v1' as const });
+import type { components } from '../../../shared/api/generated/platform';
 
-export const dashboardActivityFixture = envelope({
-  from: '2026-08-04T08:00:00Z', to: '2026-08-05T08:00:00Z', timezone: 'Asia/Shanghai', as_of: '2026-08-05T08:00:00Z',
-  uploads: {
-    accepted_unique_bytes: '1099511627776', succeeded_count: '18', terminal_count: '20',
-    buckets: [{ start: '2026-08-04T08:00:00Z', end: '2026-08-05T08:00:00Z', accepted_unique_bytes: '1099511627776', failed_count: '2' }],
+const base = {
+  schema_version: '1' as const,
+  project_id: 'prj_fx_01',
+  region_code: 'cn-shanghai',
+  from: '2026-08-04T08:00:00Z',
+  to: '2026-08-05T08:00:00Z',
+  timezone: 'Asia/Shanghai',
+  as_of: '2026-08-05T08:00:00Z',
+};
+const pageInfo = { has_next_page: false, has_previous_page: false, start_cursor: null, end_cursor: null };
+const ready = { status: 'READY' as const, as_of: base.as_of, error: null };
+const empty = { status: 'EMPTY' as const, as_of: base.as_of, error: null };
+
+export const dashboardActivityFixture = {
+  ...base,
+  activity: {
+    ...ready,
+    page_info: pageInfo,
+    items: [
+      {
+        event_id: 'event-upload-1', event_type: 'UPLOAD_COMMITTED' as const,
+        source_id: 'upload-1', deduplication_key: 'UPLOAD_COMMITTED:upload-1',
+        occurred_at: '2026-08-05T07:58:00Z', source_state: 'RAW_COMMITTED',
+        title: '上传已提交', summary: 'Raw 对象和 Manifest 已持久化',
+        target: { resource_type: 'UPLOAD_SESSION' as const, resource_id: 'upload-1', resource_version: null, deep_link: '/ingest/uploads/upload-1' },
+      },
+      {
+        event_id: 'event-publish-1', event_type: 'DATASET_PUBLISHED' as const,
+        source_id: 'dataset-1:v1', deduplication_key: 'DATASET_PUBLISHED:dataset-1:v1',
+        occurred_at: '2026-08-05T07:59:00Z', source_state: 'PUBLISHED',
+        title: '数据集已发布', summary: '发布血缘已登记',
+        target: { resource_type: 'DATASET_VERSION' as const, resource_id: 'dataset-1', resource_version: '1', deep_link: '/datasets/dataset-1/versions/1' },
+      },
+    ],
   },
-}, 'req_fx_p01_activity');
+} satisfies components['schemas']['DashboardActivityResponse'];
 
-export const dashboardSnapshotFixture = envelope({
-  timezone: 'Asia/Shanghai', as_of: '2026-08-05T08:00:00Z',
-  storage: {
-    data_physical_bytes: '1500',
-    by_role: [{ role: 'RAW', bytes: '800' }, { role: 'REVISION', bytes: '400' }, { role: 'PREVIEW', bytes: '200' }, { role: 'EXPORT', bytes: '100' }],
-    history: [{ month: '2026-08', standard_bytes: '1000', ia_bytes: '300', archive_bytes: '200', data_physical_bytes: '1500' }],
+export const dashboardSnapshotFixture = {
+  ...base,
+  sections: {
+    signal_pipeline: {
+      ...ready,
+      stages: ['COLLECTED', 'RECEIVED', 'AUTO_QC', 'ALIGNED_30_HZ', 'LANCE', 'ANNOTATION', 'REVIEW', 'PUBLISHED'],
+      published_region: { ...ready, lineage_count: 8, publication_count: 3, unresolved_history_count: 0 },
+    },
+    episodes: ready,
+    work: ready,
   },
-  episodes: { uploaded_count: '100', validated_count: '90', viewable_count: '80' },
-  work: { open_manual_issue_count: '11', pending_review_version_count: '7', returned_actionable_draft_count: '2', returned_scope: 'ACTIONABLE_SUCCESSOR' as const, active_cleaning_draft_count: '4', draft_scope: 'ACTIONABLE' as const },
-}, 'req_fx_p01_snapshot');
+} satisfies components['schemas']['DashboardSnapshotResponse'];
 
-export const dashboardCoverageFixture = envelope({
-  timezone: 'Asia/Shanghai', as_of: '2026-08-05T08:00:00Z',
-  robot_groups: [{ id: 'robot_group_fx_01', name: '双臂机器人', order: 10 }],
-  tasks: [{ id: 'task_fx_pick', name: '抓取', order: 10 }, { id: 'task_fx_empty', name: '装配', order: 20 }],
-  cells: [
-    { robot_group_id: 'robot_group_fx_01', task_id: 'task_fx_pick', ratio: 0.8, numerator: '8', denominator: '10' },
-    { robot_group_id: 'robot_group_fx_01', task_id: 'task_fx_empty', ratio: null, numerator: '0', denominator: '0' },
-  ],
-}, 'req_fx_p01_coverage');
+export const dashboardCoverageFixture = {
+  ...base,
+  coverage: {
+    status: 'BLOCKED' as const,
+    as_of: null,
+    error: {
+      code: 'COVERAGE_PRODUCT_DECISION_REQUIRED',
+      message: '覆盖率口径尚未确认',
+      retryable: false,
+      needs_product_confirmation: true,
+    },
+  },
+} satisfies components['schemas']['DashboardCoverageResponse'];
 
-export const dashboardPendingFixture = envelope({
-  as_of: '2026-08-05T08:00:00Z', total_count: '6',
-  items: [
-    { item_id: 'pending_fx_upload_01', type: 'UPLOAD_FAILED', title: '上传任务失败', summary: '部分分片上传失败', status: 'FAILED', priority: 'HIGH', updated_at: '2026-08-05T07:59:00Z', upload_id: 'upload_fx_01', failure_code: 'PART_UPLOAD_FAILED' },
-    { item_id: 'pending_fx_issue_01', type: 'MANUAL_ISSUE', title: '人工问题待分诊', summary: '高严重度问题尚未分派', status: 'OPEN', priority: 'HIGH', updated_at: '2026-08-05T07:57:30Z', issue_id: 'manual_issue_fx_01', version_id: 'version_fx_01', episode_id: 'episode_fx_01' },
-    { item_id: 'pending_fx_draft_01', type: 'CLEANING_DRAFT_ACTIONABLE', title: '清洗草稿待预览', summary: '尚未生成预览', status: 'EDITING', priority: 'MEDIUM', updated_at: '2026-08-05T07:56:00Z', draft_id: 'cleaning_draft_fx_01', preview_status: 'NONE' },
-  ],
-  page_info: { has_next_page: false, has_previous_page: false, start_cursor: 'cursor_fx_p01_start', end_cursor: 'cursor_fx_p01_end' },
-  snapshot_at: '2026-08-05T08:00:00Z',
-}, 'req_fx_p01_pending');
+const pendingItem = (
+  item_type: components['schemas']['DashboardPendingItemType'],
+  source_id: string,
+  resource_type: components['schemas']['DashboardResourceType'],
+  deep_link: string,
+) => ({
+  item_type,
+  source_id,
+  deduplication_key: `${item_type}:${source_id}`,
+  source_state: item_type === 'UPLOAD_FAILED' ? 'FAILED' : item_type === 'QC_ANOMALY' ? 'RISK' : item_type === 'TAG_REVIEW_PENDING' ? 'SUBMITTED' : 'APPROVED',
+  severity: 'HIGH' as const,
+  opened_at: '2026-08-05T07:57:00Z',
+  target: { resource_type, resource_id: source_id, resource_version: null, deep_link },
+});
+
+export const dashboardPendingFixture = {
+  ...base,
+  pending_items: {
+    ...ready,
+    authorized_source_types: ['UPLOAD_FAILED', 'QC_ANOMALY', 'TAG_REVIEW_PENDING', 'PUBLICATION_PENDING'],
+    page_info: pageInfo,
+    items: [
+      pendingItem('UPLOAD_FAILED', 'upload-1', 'UPLOAD_SESSION', '/ingest/uploads/upload-1'),
+      pendingItem('QC_ANOMALY', 'rollout-1', 'ROLLOUT', '/datasets/dataset-1/rollouts/rollout-1'),
+      pendingItem('TAG_REVIEW_PENDING', 'annotation-1', 'ANNOTATION_TASK', '/annotations/tasks/annotation-1'),
+      pendingItem('PUBLICATION_PENDING', 'dataset-1', 'DATASET_VERSION', '/datasets/dataset-1/versions/1'),
+    ],
+  },
+} satisfies components['schemas']['DashboardPendingItemsResponse'];
 
 export const dashboardEmptyFixtures = {
-  activity: envelope({ from: '2026-08-04T08:00:00Z', to: '2026-08-05T08:00:00Z', timezone: 'Asia/Shanghai', as_of: '2026-08-05T08:00:00Z', uploads: { accepted_unique_bytes: '0', succeeded_count: '0', terminal_count: '0', buckets: [] } }, 'req_fx_p01_activity_empty'),
-  snapshot: envelope({ timezone: 'Asia/Shanghai', as_of: '2026-08-05T08:00:00Z', storage: { data_physical_bytes: '0', by_role: [{ role: 'RAW', bytes: '0' }, { role: 'REVISION', bytes: '0' }, { role: 'PREVIEW', bytes: '0' }, { role: 'EXPORT', bytes: '0' }], history: [] }, episodes: { uploaded_count: '0', validated_count: '0', viewable_count: '0' }, work: { open_manual_issue_count: '0', pending_review_version_count: '0', returned_actionable_draft_count: '0', returned_scope: 'ACTIONABLE_SUCCESSOR' as const, active_cleaning_draft_count: '0', draft_scope: 'ACTIONABLE' as const } }, 'req_fx_p01_snapshot_empty'),
-  coverage: envelope({ timezone: 'Asia/Shanghai', as_of: '2026-08-05T08:00:00Z', robot_groups: [], tasks: [], cells: [] }, 'req_fx_p01_coverage_empty'),
-  pending: envelope({ as_of: '2026-08-05T08:00:00Z', total_count: '0', items: [], page_info: { has_next_page: false, has_previous_page: false, start_cursor: null, end_cursor: null }, snapshot_at: '2026-08-05T08:00:00Z' }, 'req_fx_p01_pending_empty'),
+  activity: { ...base, activity: { ...empty, page_info: pageInfo, items: [] } } satisfies components['schemas']['DashboardActivityResponse'],
+  snapshot: {
+    ...base,
+    sections: {
+      signal_pipeline: {
+        ...empty,
+        stages: ['COLLECTED', 'RECEIVED', 'AUTO_QC', 'ALIGNED_30_HZ', 'LANCE', 'ANNOTATION', 'REVIEW', 'PUBLISHED'],
+        published_region: { ...empty, lineage_count: 0, publication_count: 0, unresolved_history_count: 0 },
+      },
+      episodes: empty,
+      work: empty,
+    },
+  } satisfies components['schemas']['DashboardSnapshotResponse'],
+  coverage: dashboardCoverageFixture,
+  pending: { ...base, pending_items: { ...empty, authorized_source_types: [], page_info: pageInfo, items: [] } } satisfies components['schemas']['DashboardPendingItemsResponse'],
 };
 
 export const dashboardUnknownFixtures = {
-  snapshot: { ...dashboardSnapshotFixture, data: { ...dashboardSnapshotFixture.data, storage: { ...dashboardSnapshotFixture.data.storage, data_physical_bytes: '1501', by_role: [...dashboardSnapshotFixture.data.storage.by_role, { role: 'FUTURE_ROLE', bytes: '1' }] } } },
-  pending: { ...dashboardPendingFixture, data: { ...dashboardPendingFixture.data, total_count: '4', items: [...dashboardPendingFixture.data.items, { item_id: 'pending_fx_future', type: 'FUTURE_PENDING', title: '未来待办', summary: null, status: 'FUTURE', priority: 'FUTURE', updated_at: '2026-08-05T07:55:00Z' }] } },
+  snapshot: dashboardSnapshotFixture,
+  pending: dashboardPendingFixture,
 };

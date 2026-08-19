@@ -20,10 +20,15 @@ from .models import (
     AnnotationReview,
     AnnotationRevision,
     AnnotationStatus,
+    AnnotationSubmission,
+    AnnotationTag,
     AnnotationTask,
     AutoAnnotationCapability,
     ExclusionRange,
     ReviewDecision,
+    TagSchemaDocument,
+    TagSchemaTarget,
+    TagSchemaVersion,
 )
 from .ports import AutoAnnotationProvider
 from .service import AnnotationService, DisabledAutoAnnotationProvider, InMemoryAnnotationService
@@ -50,7 +55,7 @@ def get_annotation_service() -> AnnotationService:
     return _service
 
 
-def get_annotation_auth(request: Request) -> AuthContext:
+async def get_annotation_auth(request: Request) -> AuthContext:
     """Consume the verified BE-02 context installed by authentication middleware."""
 
     auth = getattr(request.state, "auth_context", None)
@@ -79,6 +84,15 @@ def get_annotation_auth(request: Request) -> AuthContext:
             detail="X-Project-ID is required for annotation task routes without a project path.",
         )
     region_code = request.headers.get("X-Region-Code")
+    if (
+        "/annotation-tasks" in request.url.path or "/approved-annotation" in request.url.path
+    ) and region_code is None:
+        raise problem(
+            status=400,
+            code="REGION_SCOPE_REQUIRED",
+            title="Region scope required",
+            detail="X-Region-Code is required for annotation task resources.",
+        )
     ScopeGuard.require(auth, project_id, region_code)
     select_request_scope(project_id, region_code)
     return auth
@@ -87,6 +101,7 @@ def get_annotation_auth(request: Request) -> AuthContext:
 ServiceDependency = Annotated[AnnotationService, Depends(get_annotation_service)]
 AuthDependency = Annotated[AuthContext, Depends(get_annotation_auth)]
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1)]
+IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=256)]
 StatusQuery = Annotated[AnnotationStatus | None, Query()]
 RevisionQuery = Annotated[int | None, Query(ge=0)]
 
@@ -96,6 +111,7 @@ class SaveDraftRequest(BaseModel):
 
     expected_revision: int = Field(ge=0)
     client_mutation_id: str = Field(min_length=1, max_length=256)
+    tags: tuple[AnnotationTag, ...] | None = None
     operations: tuple[AnnotationOperation, ...]
 
 
@@ -109,6 +125,7 @@ class ReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     revision: int = Field(ge=0)
+    submission_id: str | None = Field(default=None, min_length=1)
     decision: ReviewDecision
     comment: str = Field(default="", max_length=10000)
 
@@ -119,8 +136,91 @@ class AutoAnnotationRequest(BaseModel):
     revision: int = Field(ge=0)
 
 
+class CreateTagSchemaVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = Field(default=None, min_length=1, max_length=256)
+    version: int | None = Field(default=None, ge=1)
+    name: str = Field(min_length=1, max_length=256)
+    document: TagSchemaDocument
+    compatible_targets: tuple[TagSchemaTarget, ...] = ()
+
+
 def _etag(response: Response, task: AnnotationTask) -> None:
     response.headers["ETag"] = task.etag
+
+
+@router.post(
+    "/projects/{project_id}/tag-schemas",
+    response_model=TagSchemaVersion,
+    status_code=201,
+)
+def create_tag_schema_version(
+    project_id: str,
+    command: CreateTagSchemaVersionRequest,
+    service: ServiceDependency,
+    auth: AuthDependency,
+) -> TagSchemaVersion:
+    return service.create_tag_schema_version(
+        project_id=project_id,
+        name=command.name,
+        document=command.document,
+        compatible_targets=command.compatible_targets,
+        schema_id=command.schema_id,
+        version=command.version,
+        actor=auth,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/tag-schemas/{schema_id}/versions",
+    response_model=list[TagSchemaVersion],
+)
+def list_tag_schema_versions(
+    project_id: str,
+    schema_id: str,
+    service: ServiceDependency,
+    auth: AuthDependency,
+) -> tuple[TagSchemaVersion, ...]:
+    return service.list_tag_schema_versions(project_id=project_id, schema_id=schema_id, actor=auth)
+
+
+@router.get(
+    "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}",
+    response_model=TagSchemaVersion,
+)
+def get_tag_schema_version(
+    project_id: str,
+    schema_id: str,
+    version: int,
+    service: ServiceDependency,
+    auth: AuthDependency,
+) -> TagSchemaVersion:
+    return service.get_tag_schema_version(
+        project_id=project_id,
+        schema_id=schema_id,
+        version=version,
+        actor=auth,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}/publish",
+    response_model=TagSchemaVersion,
+)
+def publish_tag_schema_version(
+    project_id: str,
+    schema_id: str,
+    version: int,
+    service: ServiceDependency,
+    auth: AuthDependency,
+) -> TagSchemaVersion:
+    return service.publish_tag_schema_version(
+        project_id=project_id,
+        schema_id=schema_id,
+        version=version,
+        actor=auth,
+    )
 
 
 @router.get(
@@ -201,6 +301,7 @@ def save_annotation_draft(
         task_id,
         auth,
         command.operations,
+        tags=command.tags,
         expected_revision=command.expected_revision,
         if_match=if_match,
         client_mutation_id=command.client_mutation_id,
@@ -234,23 +335,55 @@ def get_annotation_revision(
     return service.get_revision(task_id, revision, auth)
 
 
-@router.post("/annotation-tasks/{task_id}/submit", response_model=AnnotationTask)
+@router.post(
+    "/annotation-tasks/{task_id}/submit",
+    response_model=AnnotationSubmission,
+    status_code=201,
+)
 def submit_annotation_revision(
     task_id: str,
     command: SubmitRequest,
     response: Response,
     if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
     service: ServiceDependency,
     auth: AuthDependency,
-) -> AnnotationTask:
-    task = service.submit(
+) -> AnnotationSubmission:
+    submission = service.submit_for_review(
         task_id,
         auth,
         expected_revision=command.expected_revision,
         if_match=if_match,
+        idempotency_key=idempotency_key,
     )
+    task = service.read_task(task_id, auth)
     _etag(response, task)
-    return task
+    return submission
+
+
+@router.get(
+    "/annotation-tasks/{task_id}/submissions",
+    response_model=list[AnnotationSubmission],
+)
+def list_annotation_submissions(
+    task_id: str,
+    service: ServiceDependency,
+    auth: AuthDependency,
+) -> tuple[AnnotationSubmission, ...]:
+    return service.list_submissions(task_id, auth)
+
+
+@router.get(
+    "/annotation-tasks/{task_id}/submissions/{submission_id}",
+    response_model=AnnotationSubmission,
+)
+def get_annotation_submission(
+    task_id: str,
+    submission_id: str,
+    service: ServiceDependency,
+    auth: AuthDependency,
+) -> AnnotationSubmission:
+    return service.get_submission(task_id, submission_id, auth)
 
 
 @router.post("/annotation-tasks/{task_id}/reviews", response_model=AnnotationTask)
@@ -267,6 +400,7 @@ def review_annotation_revision(
         auth,
         command.decision,
         revision=command.revision,
+        submission_id=command.submission_id,
         if_match=if_match,
         comment=command.comment,
     )

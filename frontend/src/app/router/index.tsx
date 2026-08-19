@@ -1,8 +1,14 @@
-import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
-import { PlatformShell } from '../shell/PlatformShell';
-import { registerPageRoutes } from '../../shared/routing/route-registry';
-import type { PageAvailability } from '../shell/navigation-manifest';
-import { RouteCapabilityGuard } from './RouteCapabilityGuard';
+import {
+  Navigate,
+  createBrowserRouter,
+  type RouteObject,
+} from "react-router-dom";
+import { RuntimePlatformShell } from "../shell/RuntimePlatformShell";
+import { registerPageRoutes } from "../../shared/routing/route-registry";
+import type { PageAvailability } from "../shell/navigation-manifest";
+import { dataUploadRoutes } from "../shell/navigation-routes";
+import { RouteCapabilityGuard } from "./RouteCapabilityGuard";
+import { authRoutes } from "../../pages/auth/routes";
 
 type PageRouteModule = Record<string, unknown>;
 type OwnedRouteObject = RouteObject & {
@@ -19,58 +25,82 @@ type OwnedRouteObject = RouteObject & {
 // records below retain ownership/capability metadata and load pages on demand.
 const modules = import.meta.glob<PageRouteModule>(
   [
-    '/src/pages/*/routes.tsx',
-    '!/src/pages/p02-data-sources/routes.tsx',
-    '!/src/pages/p03-upload-jobs/routes.tsx',
-    '!/src/pages/p04-upload-detail/routes.tsx',
+    "/src/pages/*/routes.tsx",
+    "!/src/pages/p02-data-sources/routes.tsx",
+    "!/src/pages/p03-upload-jobs/routes.tsx",
+    "!/src/pages/p04-upload-detail/routes.tsx",
   ],
   { eager: true },
 );
 
 const lazyIngestPages: readonly {
-  readonly pageId: 'P02' | 'P03' | 'P04';
+  readonly pageId: "P02" | "P03" | "P04";
   readonly routes: readonly OwnedRouteObject[];
 }[] = [
   {
-    pageId: 'P02',
+    pageId: "P02",
     routes: [
       {
-        path: '/ingest/sources',
-        navigationOwnerGroupId: 'ingest',
-        navigationOwnerPageId: 'P02',
-        requiredCapabilities: ['ingest_source.read'],
+        path: "/ingest/sources",
+        navigationOwnerGroupId: "ingest",
+        navigationOwnerPageId: "P02",
+        requiredCapabilities: ["ingest_source.read"],
         lazy: async () => ({
-          Component: (await import('../../pages/p02-data-sources/page')).default,
+          Component: (await import("../../pages/p02-data-sources/page"))
+            .default,
         }),
       },
     ],
   },
   {
-    pageId: 'P03',
+    pageId: "P03",
     routes: [
       {
-        path: '/ingest/uploads',
-        navigationOwnerGroupId: 'ingest',
-        navigationOwnerPageId: 'P03',
-        requiredCapabilities: ['upload.read'],
-        defaultGroupLanding: true,
-        lazy: async () => ({
-          Component: (await import('../../pages/p03-upload-jobs/page')).default,
-        }),
-      },
-    ],
-  },
-  {
-    pageId: 'P04',
-    routes: [
-      {
-        path: '/ingest/uploads/:uploadId',
-        navigationOwnerGroupId: 'ingest',
-        navigationOwnerPageId: 'P03',
-        requiredCapabilities: ['upload.read'],
+        path: dataUploadRoutes.legacyIndex,
+        navigationOwnerGroupId: "ingest",
+        navigationOwnerPageId: "P03",
+        requiredCapabilities: ["upload.read"],
         hiddenFromNavigation: true,
         lazy: async () => ({
-          Component: (await import('../../pages/p04-upload-detail/page')).default,
+          Component: (await import("../shell/RouteCompatibility"))
+            .LegacyUploadIndexRedirect,
+        }),
+      },
+      {
+        path: dataUploadRoutes.newUpload,
+        navigationOwnerGroupId: "ingest",
+        navigationOwnerPageId: "P03",
+        requiredCapabilities: ["upload.read"],
+        defaultGroupLanding: true,
+        lazy: async () => ({
+          Component: (await import("../../pages/p03-upload-jobs/page")).default,
+        }),
+      },
+      {
+        path: dataUploadRoutes.records,
+        navigationOwnerGroupId: "ingest",
+        navigationOwnerPageId: "P03",
+        requiredCapabilities: ["upload.read"],
+        hiddenFromNavigation: true,
+        lazy: async () => ({
+          Component: (await import("../../pages/p03-upload-jobs/page")).default,
+        }),
+      },
+    ],
+  },
+  {
+    pageId: "P04",
+    routes: [
+      {
+        path: "/ingest/uploads/:uploadId",
+        navigationOwnerGroupId: "ingest",
+        navigationOwnerPageId: "P03",
+        requiredCapabilities: ["upload.read"],
+        hiddenFromNavigation: true,
+        lazy: async () => ({
+          Component: (
+            await import("../../pages/p04-upload-detail/formal-page")
+          ).default,
         }),
       },
     ],
@@ -78,7 +108,11 @@ const lazyIngestPages: readonly {
 ];
 
 function isRouteObject(value: unknown): value is RouteObject {
-  return typeof value === 'object' && value !== null && ('path' in value || 'index' in value);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    ("path" in value || "index" in value)
+  );
 }
 
 function isRouteArray(value: unknown): value is readonly RouteObject[] {
@@ -96,36 +130,43 @@ const availability: Record<string, boolean> = {};
 
 const pageReadCapability: Readonly<Record<string, string | null>> = {
   P01: null,
-  P02: 'ingest_source.read',
-  P03: 'upload.read',
-  P04: 'upload.read',
-  P05: 'dataset.read',
-  P06: 'dataset.read',
-  P07: 'dataset_version.read',
-  P08: 'annotation_task.read',
-  P09: 'manual_issue.read',
-  P10: 'cleaning.read',
-  P11: 'cleaning.read',
-  P12: 'storage.overview.read',
-  P13: 'storage.lifecycle.read',
-  P14: 'robot_model.read',
-  P15: 'robot.read',
-  P16: 'calibration.read',
-  P17: 'data_schema.read',
-  P18: 'access.read',
-  P19: 'audit.read',
+  P02: "ingest_source.read",
+  P03: "upload.read",
+  P04: "upload.read",
+  P05: "dataset.read",
+  P06: "dataset.read",
+  P07: "dataset_version.read",
+  P08: "annotation_task.read",
+  P09: "manual_issue.read",
+  P10: "cleaning.read",
+  P11: "cleaning.read",
+  P12: "storage.overview.read",
+  P13: "storage.lifecycle.read",
+  P14: "robot_model.read",
+  P15: "robot.read",
+  P16: "calibration.read",
+  P17: "data_schema.read",
+  P18: "access.read",
+  P19: "audit.read",
+  P20: "upload.read",
 };
 
-function routeCapabilities(pageId: string, route: RouteObject): readonly string[] {
+function routeCapabilities(
+  pageId: string,
+  route: RouteObject,
+): readonly string[] {
   const record = route as RouteObject & { requiredCapabilities?: unknown };
   if (
     Array.isArray(record.requiredCapabilities) &&
-    record.requiredCapabilities.every((value) => typeof value === 'string')
+    record.requiredCapabilities.every((value) => typeof value === "string")
   ) {
     return record.requiredCapabilities;
   }
-  if (typeof route.path === 'string' && route.path.includes('/episodes/:episodeId/view')) {
-    return ['episode.read'];
+  if (
+    typeof route.path === "string" &&
+    route.path.includes("/episodes/:episodeId/view")
+  ) {
+    return ["episode.read"];
   }
   const capability = pageReadCapability[pageId];
   return capability ? [capability] : [];
@@ -138,10 +179,13 @@ for (const [modulePath, routeModule] of Object.entries(modules)) {
   for (const exported of Object.values(routeModule)) {
     if (!isRouteArray(exported) || seen.has(exported)) continue;
     seen.add(exported);
-    const heavy = ['P08', 'P11', 'P14', 'P16'].includes(pageId);
+    const heavy = ["P08", "P11", "P14", "P16"].includes(pageId);
     const accepted = exported.filter((route) => {
       if (heavy && route.lazy === undefined) {
-        console.error('heavy_route_not_lazy', { pageId, path: route.path ?? '<index>' });
+        console.error("heavy_route_not_lazy", {
+          pageId,
+          path: route.path ?? "<index>",
+        });
         return false;
       }
       return true;
@@ -150,7 +194,11 @@ for (const [modulePath, routeModule] of Object.entries(modules)) {
     routeRecords.push(...accepted);
     guardedRouteRecords.push(
       ...accepted.map((route) => ({
-        element: <RouteCapabilityGuard requiredCapabilities={routeCapabilities(pageId, route)} />,
+        element: (
+          <RouteCapabilityGuard
+            requiredCapabilities={routeCapabilities(pageId, route)}
+          />
+        ),
         children: [route],
       })),
     );
@@ -167,7 +215,9 @@ for (const page of lazyIngestPages) {
   guardedRouteRecords.push(
     ...page.routes.map((route) => ({
       element: (
-        <RouteCapabilityGuard requiredCapabilities={routeCapabilities(page.pageId, route)} />
+        <RouteCapabilityGuard
+          requiredCapabilities={routeCapabilities(page.pageId, route)}
+        />
       ),
       children: [route],
     })),
@@ -183,18 +233,20 @@ export const aggregatedPageRoutes: readonly RouteObject[] = routeRecords;
 export const pageAvailability: PageAvailability = Object.freeze(availability);
 
 const firstRoute =
-  routeRecords.find((route) => typeof route.path === 'string')?.path ?? '/dashboard';
+  routeRecords.find((route) => typeof route.path === "string")?.path ??
+  "/dashboard";
 
 export function createPlatformRouter() {
   return createBrowserRouter([
+    ...authRoutes,
     {
-      path: '/',
-      element: <PlatformShell pageAvailability={pageAvailability} />,
+      path: "/",
+      element: <RuntimePlatformShell pageAvailability={pageAvailability} />,
       children: [
         { index: true, element: <Navigate replace to={firstRoute} /> },
         ...guardedRouteRecords,
         {
-          path: '*',
+          path: "*",
           element: (
             <section role="alert">
               <h1>页面不存在或尚未加载</h1>

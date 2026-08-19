@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from hc_data_platform.ingest.models import RolloutManifestV1
+from hc_data_platform.ingest.models import ManifestFileV1, RolloutManifestV1
 from hc_data_platform.ingest.ports import InMemoryObjectStorage
 from hc_data_platform.ingest.service import UploadSessionService
 
@@ -46,12 +46,25 @@ def test_50_concurrent_20gib_sessions_keep_unique_control_state_without_bodies()
             task_id="capacity",
             collection_job_id="concurrent-50",
             rollout_id=f"rollout-{index:04d}",
+            collection_session_id="capacity-session",
+            recording_request_id=f"request-{index:04d}",
+            data_package_id=f"package-{index:04d}",
             sequence_no=index + 1,
             robot_id="load-robot",
             start_time=started + timedelta(seconds=index),
             end_time=started + timedelta(seconds=index + 1),
             expected_topics=["/camera/front/image"],
             actual_topics=["/camera/front/image"],
+            cameras=[{"camera_id": "front", "topic": "/camera/front/image"}],
+            topics=[{"name": "/camera/front/image", "required": True}],
+            files=[
+                ManifestFileV1(
+                    path="recording.mcap",
+                    size=20 * 1024**3,
+                    sha256=f"{index + 1:064x}",
+                    crc64=index + 1,
+                )
+            ],
             file_size=20 * 1024**3,
             sha256=f"{index + 1:064x}",
             crc64=index + 1,

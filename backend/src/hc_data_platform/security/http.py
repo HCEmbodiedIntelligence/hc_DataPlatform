@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
@@ -12,8 +13,13 @@ from hc_data_platform.core.errors import problem
 from .auth import AuthContext, Permission
 from .scope import ScopeGuard
 
+_bearer_scheme = HTTPBearer(auto_error=False, scheme_name="bearerAuth")
 
-def require_auth_context(request: Request) -> AuthContext:
+
+def require_auth_context(
+    request: Request,
+    _: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+) -> AuthContext:
     auth = getattr(request.state, "auth_context", None)
     if not isinstance(auth, AuthContext):
         raise problem(
@@ -36,7 +42,7 @@ def authorize_scope(
 ) -> None:
     """Authorize and select the exact tenant scope used by downstream RLS adapters."""
 
-    auth.require_permission(permission)
+    auth.require_permission(permission, project_id)
     ScopeGuard.require(auth, project_id, region_code)
     select_request_scope(project_id, region_code)
 

@@ -1,7 +1,7 @@
-import { getRuntimeConfig } from '../config/runtime';
-import { makeScopeKey, type Scope } from '../../entities/scope';
-import { camelToSnake } from '../lib/case-convert';
-import { getShellState } from '../scope/shell-store';
+import { getRuntimeConfig } from "../config/runtime";
+import { makeScopeKey, type Scope } from "../../entities/scope";
+import { camelToSnake } from "../lib/case-convert";
+import { getShellState } from "../scope/shell-store";
 import {
   createDomainError,
   domainErrorCodeForStatus,
@@ -10,14 +10,24 @@ import {
   type DomainError,
   type DomainFieldError,
   type DomainOperationError,
-} from './domain-error';
-import { createManagedAbortController } from './transport-lifecycle';
+} from "./domain-error";
+import { createManagedAbortController } from "./transport-lifecycle";
 
-export type RequestMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
+export type RequestMethod =
+  | "GET"
+  | "POST"
+  | "PUT"
+  | "PATCH"
+  | "DELETE"
+  | "HEAD";
 
 /** Scalars accepted on the HTTP wire query string. buildQuery rejects anything else. */
 export type QueryScalar = string | number | boolean;
-export type QueryValue = QueryScalar | readonly QueryScalar[] | null | undefined;
+export type QueryValue =
+  | QueryScalar
+  | readonly QueryScalar[]
+  | null
+  | undefined;
 
 export type RequestOptions = {
   method: RequestMethod;
@@ -46,6 +56,7 @@ export type RequestOptions = {
 
 interface ErrorEnvelopeWire {
   error?: {
+    code?: unknown;
     message?: unknown;
     field_errors?: unknown;
     operation_errors?: unknown;
@@ -55,87 +66,150 @@ interface ErrorEnvelopeWire {
   };
 }
 
+type ErrorPayloadWire = Record<string, unknown>;
+
 function joinUrl(base: string, requestPath: string): string {
-  if (!base.trim()) throw new Error('VITE_API_BASE_URL must not be empty');
-  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
-  const normalizedPath = requestPath.startsWith('/') ? requestPath : `/${requestPath}`;
+  if (!base.trim()) throw new Error("VITE_API_BASE_URL must not be empty");
+  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
+  const normalizedPath = requestPath.startsWith("/")
+    ? requestPath
+    : `/${requestPath}`;
   return `${normalizedBase}${normalizedPath}`;
 }
 
-function buildQuery(query: RequestOptions['query']): string {
-  if (query === undefined) return '';
+function buildQuery(query: RequestOptions["query"]): string {
+  if (query === undefined) return "";
   const params = new URLSearchParams();
   for (const [camelKey, raw] of Object.entries(query)) {
     const values: readonly unknown[] = Array.isArray(raw) ? raw : [raw];
     for (const value of values) {
       if (value === null || value === undefined) continue;
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
         params.append(camelToSnake(camelKey), String(value));
       } else {
-        throw new TypeError(`Query parameter ${camelKey} must be a scalar or scalar array`);
+        throw new TypeError(
+          `Query parameter ${camelKey} must be a scalar or scalar array`,
+        );
       }
     }
   }
   const encoded = params.toString();
-  return encoded ? `?${encoded}` : '';
+  return encoded ? `?${encoded}` : "";
 }
 
-function asIssueArray<T>(value: unknown, mapper: (entry: Record<string, unknown>) => T): T[] {
+function asIssueArray<T>(
+  value: unknown,
+  mapper: (entry: Record<string, unknown>) => T,
+): T[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null) return [];
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+      return [];
     return [mapper(entry as Record<string, unknown>)];
   });
 }
 
-function text(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback;
+function nonEmptyText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
-const defaultAcceptLanguage = 'zh-CN';
+function text(value: unknown, fallback = ""): string {
+  return nonEmptyText(value) ?? fallback;
+}
+
+function asRecord(value: unknown): ErrorPayloadWire | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as ErrorPayloadWire)
+    : null;
+}
+
+const defaultAcceptLanguage = "zh-CN";
 
 function resolveAcceptLanguage(): string {
   const candidate = globalThis.navigator?.language;
-  return typeof candidate === 'string' && candidate.trim() ? candidate : defaultAcceptLanguage;
+  return typeof candidate === "string" && candidate.trim()
+    ? candidate
+    : defaultAcceptLanguage;
 }
 
-export function domainErrorFromResponse(status: number, raw: unknown): DomainError & Error {
-  const envelope =
-    typeof raw === 'object' && raw !== null ? (raw as ErrorEnvelopeWire).error : undefined;
-  const fieldErrors = asIssueArray<DomainFieldError>(envelope?.field_errors, (entry) => ({
-    path: text(entry.path, '/'),
-    code: text(entry.code, 'INVALID'),
-    message: text(entry.message, '字段值无效'),
-  }));
+export function domainErrorFromResponse(
+  status: number,
+  raw: unknown,
+): DomainError & Error {
+  const payload = asRecord(raw);
+  const envelope = asRecord((payload as ErrorEnvelopeWire | null)?.error);
+  const hasProblemDetailsField =
+    payload !== null &&
+    [
+      "type",
+      "title",
+      "status",
+      "detail",
+      "code",
+      "request_id",
+      "retryable",
+      "details",
+    ].some((key) => Object.hasOwn(payload, key));
+  const isLegacyEnvelope = envelope !== null && !hasProblemDetailsField;
+  const metadata = isLegacyEnvelope ? envelope : payload;
+  const structuredDetails = isLegacyEnvelope
+    ? envelope
+    : asRecord(payload?.details);
+  const fieldErrors = asIssueArray<DomainFieldError>(
+    structuredDetails?.field_errors,
+    (entry) => ({
+      path: text(entry.path, "/"),
+      code: text(entry.code, "INVALID"),
+      message: text(entry.message, "字段值无效"),
+    }),
+  );
   const operationErrors = asIssueArray<DomainOperationError>(
-    envelope?.operation_errors,
+    structuredDetails?.operation_errors,
     (entry) => {
       const operationId = text(entry.operation_id);
       return {
-        code: text(entry.code, 'OPERATION_FAILED'),
-        message: text(entry.message, '操作失败'),
+        code: text(entry.code, "OPERATION_FAILED"),
+        message: text(entry.message, "操作失败"),
         ...(operationId ? { operationId } : {}),
       };
     },
   );
-  const blockedReasons = asIssueArray<DomainBlockedReason>(envelope?.blocked_reasons, (entry) => ({
-    code: text(entry.code, 'BLOCKED'),
-    message: text(entry.message, '当前资源不可执行此操作'),
-  }));
+  const blockedReasons = asIssueArray<DomainBlockedReason>(
+    structuredDetails?.blocked_reasons,
+    (entry) => ({
+      code: text(entry.code, "BLOCKED"),
+      message: text(entry.message, "当前资源不可执行此操作"),
+    }),
+  );
+  const message = isLegacyEnvelope
+    ? nonEmptyText(metadata?.message)
+    : (nonEmptyText(payload?.detail) ?? nonEmptyText(payload?.title));
   return createDomainError({
     code: domainErrorCodeForStatus(status),
-    message: text(envelope?.message, '请求未成功完成'),
+    problemCode: nonEmptyText(metadata?.code),
+    message: message ?? "请求未成功完成",
     fieldErrors,
     operationErrors,
     blockedReasons,
-    requestId: typeof envelope?.request_id === 'string' ? envelope.request_id : null,
-    retryable: envelope?.retryable === true,
+    requestId: nonEmptyText(metadata?.request_id),
+    retryable: metadata?.retryable === true,
     httpStatus: status,
   });
 }
 
 async function readJson(response: Response): Promise<unknown> {
-  const textBody = await response.text();
+  let textBody: string;
+  try {
+    textBody = await response.text();
+  } catch {
+    return undefined;
+  }
   if (!textBody) return undefined;
   try {
     return JSON.parse(textBody) as unknown;
@@ -144,9 +218,12 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function scopeTransitionError(code: string, message: string): DomainError & Error {
+function scopeTransitionError(
+  code: string,
+  message: string,
+): DomainError & Error {
   return createDomainError({
-    code: 'PRECONDITION_FAILED',
+    code: "PRECONDITION_FAILED",
     message,
     fieldErrors: [],
     operationErrors: [],
@@ -160,26 +237,37 @@ function scopeTransitionError(code: string, message: string): DomainError & Erro
 export async function request<T>(opts: RequestOptions): Promise<T> {
   const config = getRuntimeConfig();
   const shell = getShellState();
-  if (shell.scopeChanging && opts.method !== 'GET' && opts.method !== 'HEAD') {
-    throw scopeTransitionError('SCOPE_SWITCH_IN_PROGRESS', '作用域切换期间禁止提交写请求');
+  if (shell.scopeChanging && opts.method !== "GET" && opts.method !== "HEAD") {
+    throw scopeTransitionError(
+      "SCOPE_SWITCH_IN_PROGRESS",
+      "作用域切换期间禁止提交写请求",
+    );
   }
   const requestScope = opts.scope ?? shell.scope;
-  const requestScopeKey = requestScope === null ? shell.scopeKey : makeScopeKey(requestScope);
+  const requestScopeKey =
+    requestScope === null ? shell.scopeKey : makeScopeKey(requestScope);
   if (opts.scope !== undefined && shell.scopeKey !== requestScopeKey) {
-    throw scopeTransitionError('SCOPE_CHANGED', 'Request scope no longer matches the active scope');
+    throw scopeTransitionError(
+      "SCOPE_CHANGED",
+      "Request scope no longer matches the active scope",
+    );
   }
   const headers = new Headers({
-    Accept: 'application/json',
-    'Accept-Language': resolveAcceptLanguage(),
-    'X-Client-Version': config.buildVersion,
+    Accept: "application/json",
+    "Accept-Language": resolveAcceptLanguage(),
+    "X-Client-Version": config.buildVersion,
   });
-  if (shell.sessionToken) headers.set('Authorization', `Bearer ${shell.sessionToken}`);
-  if (requestScope?.organizationId) headers.set('X-Organization-Id', requestScope.organizationId);
-  if (requestScope?.projectId) headers.set('X-Project-Id', requestScope.projectId);
-  if (requestScope?.regionCode) headers.set('X-Region-Code', requestScope.regionCode);
-  if (opts.idempotencyKey) headers.set('Idempotency-Key', opts.idempotencyKey);
-  if (opts.ifMatch) headers.set('If-Match', opts.ifMatch);
-  if (opts.body !== undefined) headers.set('Content-Type', 'application/json');
+  if (shell.sessionToken)
+    headers.set("Authorization", `Bearer ${shell.sessionToken}`);
+  if (requestScope?.organizationId)
+    headers.set("X-Organization-Id", requestScope.organizationId);
+  if (requestScope?.projectId)
+    headers.set("X-Project-Id", requestScope.projectId);
+  if (requestScope?.regionCode)
+    headers.set("X-Region-Code", requestScope.regionCode);
+  if (opts.idempotencyKey) headers.set("Idempotency-Key", opts.idempotencyKey);
+  if (opts.ifMatch) headers.set("If-Match", opts.ifMatch);
+  if (opts.body !== undefined) headers.set("Content-Type", "application/json");
 
   const { controller, release } = createManagedAbortController(opts.signal);
   try {
@@ -194,7 +282,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       },
     );
     if (getShellState().scopeKey !== requestScopeKey) {
-      throw scopeTransitionError('SCOPE_CHANGED', '请求所属作用域已失效');
+      throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
     }
     const raw = await readJson(response);
     if (!response.ok) throw domainErrorFromResponse(response.status, raw);
@@ -202,13 +290,13 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   } catch (error) {
     if (isDomainError(error)) throw error;
     throw createDomainError({
-      code: 'NETWORK_ERROR',
-      message: controller.signal.aborted ? '请求已取消' : '网络连接失败',
+      code: "NETWORK_ERROR",
+      message: controller.signal.aborted ? "请求已取消" : "网络连接失败",
       fieldErrors: [],
       operationErrors: [],
       blockedReasons: [],
       requestId: null,
-      retryable: !controller.signal.aborted && opts.method === 'GET',
+      retryable: !controller.signal.aborted && opts.method === "GET",
       httpStatus: null,
     });
   } finally {

@@ -104,8 +104,8 @@ describe('ClipTimeline', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '放大时间轴' }));
     expect(screen.getByRole('status', { name: '时间轴缩放' })).toHaveTextContent('2x');
-    expect(screen.getByText('阶段')).toBeInTheDocument();
-    expect(screen.getByText('动作')).toBeInTheDocument();
+    expect(screen.getAllByText('阶段')).toHaveLength(2);
+    expect(screen.getAllByText('动作')).toHaveLength(2);
     clock.dispose();
   });
 });

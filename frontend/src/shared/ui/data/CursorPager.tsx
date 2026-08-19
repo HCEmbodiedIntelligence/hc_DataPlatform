@@ -1,4 +1,5 @@
 import { Button } from 'antd';
+import styles from './CursorPager.module.css';
 
 export interface CursorPageInfo {
   startCursor: string | null;
@@ -34,7 +35,11 @@ export function CursorPager({
     pageInfo.hasNextPage && usableCursor(pageInfo.endCursor) ? pageInfo.endCursor : null;
 
   return (
-    <nav aria-label="游标分页" data-pagination-contract="after-before">
+    <nav
+      className={styles.pager}
+      aria-label="游标分页"
+      data-pagination-contract="after-before"
+    >
       <Button
         disabled={busy || previousCursor === null}
         onClick={() => {

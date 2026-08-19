@@ -1,6 +1,8 @@
 # Ordered, forward-only production migrations. Never reorder or edit an applied SQL file.
 security/001_core.sql
+security/002_access_control.sql
 ingest/001_ingest.sql
+ingest/002_package_manifest_uploads.sql
 workflow/001_jobs.sql
 workflow/002_job_recovery.sql
 verification/0001_verification_reports.sql
@@ -14,3 +16,14 @@ publishing/0001_publishing.sql
 verification/0003_tenant_report_identity.sql
 quality/0002_tenant_report_identity.sql
 alignment/0003_ready_attempt_immutable.sql
+collection_tasks/0001_collection_tasks.sql
+storage/0001_storage_governance.sql
+annotation/0002_tag_schema_revisions.sql
+dashboard/0001_dashboard_query_indexes.sql
+security/003_outbox_dispatch.sql
+ingest/003_automatic_workflow_trigger.sql
+annotation/0003_automatic_tasks.sql
+publishing/0002_rollout_publication_region_lineage.sql
+dashboard/0002_dashboard_business_feed_indexes.sql
+storage/0002_seal_inventory_snapshots.sql
+annotation/0004_backfill_task_base_step_count.sql

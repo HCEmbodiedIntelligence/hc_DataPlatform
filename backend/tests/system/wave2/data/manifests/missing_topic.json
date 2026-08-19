@@ -1,0 +1,54 @@
+{
+  "actual_topics": [
+    "/camera/front/image",
+    "/joint_states"
+  ],
+  "cameras": [
+    {
+      "camera_id": "front",
+      "topic": "/camera/front/image"
+    }
+  ],
+  "collection_job_id": "be22-missing-topic-job",
+  "collection_session_id": "be22-missing-topic-session",
+  "compression": "none",
+  "crc64": "8114767581016020315",
+  "data_package_id": "be22-missing-topic-package",
+  "end_time": "2023-11-14T22:13:21Z",
+  "expected_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action"
+  ],
+  "file_size": 3313,
+  "files": [
+    {
+      "crc64": "8114767581016020315",
+      "media_type": "application/octet-stream",
+      "path": "recording.mcap",
+      "role": "RAW_MCAP",
+      "sha256": "b1610fe6fd8e9c17386dd1a3d69fb98900bf90cd34f5008f964970026c1bbd40",
+      "size": 3313
+    }
+  ],
+  "project_id": "be22-template-project",
+  "recorder_version": "hc-be22-fixture/1",
+  "recording_request_id": "be22-missing-topic-request",
+  "robot_id": "be22-test-robot",
+  "rollout_id": "be22-missing-topic-rollout",
+  "schema_version": 1,
+  "sequence_no": 1,
+  "sha256": "b1610fe6fd8e9c17386dd1a3d69fb98900bf90cd34f5008f964970026c1bbd40",
+  "start_time": "2023-11-14T22:13:20Z",
+  "task_id": "be22-template-task",
+  "topics": [
+    {
+      "name": "/camera/front/image",
+      "required": true
+    },
+    {
+      "name": "/joint_states",
+      "required": true
+    }
+  ]
+}

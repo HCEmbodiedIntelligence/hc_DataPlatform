@@ -51,7 +51,9 @@ export async function createThreeRobotSceneRuntime(
   const camera = new PerspectiveCamera(45, 1, 0.01, 1_000);
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
-  controls.enableDamping = true;
+  // Demand rendering keeps an idle/hidden viewer from consuming a permanent
+  // animation frame. OrbitControls emits `change` while the user interacts.
+  controls.enableDamping = false;
   scene.add(new AmbientLight(0xffffff, 1.2));
   const keyLight = new DirectionalLight(0xffffff, 2.2);
   keyLight.position.set(3, 5, 4);
@@ -89,7 +91,15 @@ export async function createThreeRobotSceneRuntime(
   controls.update();
 
   let disposed = false;
-  let frame = 0;
+  let frame: number | null = null;
+  const render = () => {
+    frame = null;
+    if (!disposed) renderer.render(scene, camera);
+  };
+  const scheduleRender = () => {
+    if (disposed || frame !== null) return;
+    frame = requestAnimationFrame(render);
+  };
   const resize = () => {
     const width = Math.max(1, host.clientWidth);
     const height = Math.max(1, host.clientHeight);
@@ -97,24 +107,20 @@ export async function createThreeRobotSceneRuntime(
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    scheduleRender();
   };
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
   observer?.observe(host);
   resize();
 
-  const render = () => {
-    if (disposed) return;
-    controls.update();
-    renderer.render(scene, camera);
-    frame = requestAnimationFrame(render);
-  };
-  frame = requestAnimationFrame(render);
+  controls.addEventListener('change', scheduleRender);
+  scheduleRender();
 
   return {
     canvas,
     applyTime(ns) {
       canvas.dataset.timeNs = ns;
-      if (!disposed) renderer.render(scene, camera);
+      scheduleRender();
     },
     restoreContext() {
       if (disposed) return Promise.resolve(false);
@@ -130,8 +136,9 @@ export async function createThreeRobotSceneRuntime(
     dispose() {
       if (disposed) return;
       disposed = true;
-      cancelAnimationFrame(frame);
+      if (frame !== null) cancelAnimationFrame(frame);
       observer?.disconnect();
+      controls.removeEventListener('change', scheduleRender);
       controls.dispose();
       disposeObject(robot);
       renderer.renderLists.dispose();

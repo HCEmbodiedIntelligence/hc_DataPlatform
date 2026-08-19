@@ -13,12 +13,12 @@ const error = (status: number, code: string, requestId: string) => HttpResponse.
 
 function invalidRequest(request: Request, params: Readonly<Record<string, string | readonly string[] | undefined>>): Response | null {
   const projectId = typeof params.projectId === 'string' ? params.projectId : '';
-  const regionCode = typeof params.regionCode === 'string' ? params.regionCode : '';
+  const regionCode = new URL(request.url).searchParams.get('region_code') ?? '';
   const headers = request.headers;
   if (!headers.get('authorization')?.startsWith('Bearer ') || headers.get('x-organization-id') !== 'org_fx_01' || headers.get('x-project-id') !== projectId || headers.get('x-region-code') !== regionCode || !headers.get('x-client-version')) {
     return error(400, 'INVALID_HEADERS', 'req_fx_dashboard_headers');
   }
-  if (new URL(request.url).searchParams.has('region')) return error(400, 'INVALID_QUERY', 'req_fx_dashboard_region_query');
+  if (!regionCode) return error(400, 'INVALID_QUERY', 'req_fx_dashboard_region_query');
   return null;
 }
 
@@ -37,7 +37,7 @@ async function scenarioGate(endpoint: string): Promise<Response | null> {
 }
 
 export const dashboardHandlers = [
-  http.get('*/api/v1/projects/:projectId/regions/:regionCode/dashboard/activity', async ({ request, params }) => {
+  http.get('*/api/v1/projects/:projectId/dashboard/activity', async ({ request, params }) => {
     const invalid = invalidRequest(request, params); if (invalid) return invalid;
     const query = new URL(request.url).searchParams;
     if (!query.get('from') || !query.get('to') || !query.get('timezone') || query.get('from')! >= query.get('to')!) return error(422, 'INVALID_TIME_RANGE', 'req_fx_dashboard_activity_query');
@@ -45,26 +45,27 @@ export const dashboardHandlers = [
     if (getDashboardScenario() === 'empty' || getDashboardScenario() === 'filtered-empty') return HttpResponse.json(dashboardEmptyFixtures.activity);
     return HttpResponse.json(dashboardActivityFixture);
   }),
-  http.get('*/api/v1/projects/:projectId/regions/:regionCode/dashboard/snapshot', async ({ request, params }) => {
+  http.get('*/api/v1/projects/:projectId/dashboard/snapshot', async ({ request, params }) => {
     const invalid = invalidRequest(request, params); if (invalid) return invalid;
     const query = new URL(request.url).searchParams;
-    if (query.get('storage_months') !== '6' || !query.get('timezone')) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_snapshot_query');
+    if (!query.get('from') || !query.get('to') || !query.get('timezone')) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_snapshot_query');
     const gated = await scenarioGate('snapshot'); if (gated) return gated;
     if (getDashboardScenario() === 'empty') return HttpResponse.json(dashboardEmptyFixtures.snapshot);
     if (getDashboardScenario() === 'unknown-enum') return HttpResponse.json(dashboardUnknownFixtures.snapshot);
-    if (getDashboardScenario() === 'contract-mismatch') return HttpResponse.json({ ...dashboardSnapshotFixture, data: { ...dashboardSnapshotFixture.data, storage: { ...dashboardSnapshotFixture.data.storage, data_physical_bytes: 1500 } } });
+    if (getDashboardScenario() === 'contract-mismatch') return HttpResponse.json({ ...dashboardSnapshotFixture, project_id: 'wrong-project' });
     return HttpResponse.json(dashboardSnapshotFixture);
   }),
-  http.get('*/api/v1/projects/:projectId/regions/:regionCode/dashboard/coverage', async ({ request, params }) => {
+  http.get('*/api/v1/projects/:projectId/dashboard/coverage', async ({ request, params }) => {
     const invalid = invalidRequest(request, params); if (invalid) return invalid;
-    if ([...new URL(request.url).searchParams.keys()].length) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_coverage_query');
+    const query = new URL(request.url).searchParams;
+    if (!query.get('from') || !query.get('to') || !query.get('timezone')) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_coverage_query');
     const gated = await scenarioGate('coverage'); if (gated) return gated;
     return HttpResponse.json(getDashboardScenario() === 'empty' ? dashboardEmptyFixtures.coverage : dashboardCoverageFixture);
   }),
-  http.get('*/api/v1/projects/:projectId/regions/:regionCode/dashboard/pending-items', async ({ request, params }) => {
+  http.get('*/api/v1/projects/:projectId/dashboard/pending-items', async ({ request, params }) => {
     const invalid = invalidRequest(request, params); if (invalid) return invalid;
     const query = new URL(request.url).searchParams;
-    if (query.get('sort') !== 'priority:desc,updated_at:desc,item_id:desc' || !['5', '50'].includes(query.get('limit') ?? '') || (query.has('after') && query.has('before'))) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_pending_query');
+    if (!query.get('from') || !query.get('to') || !query.get('timezone') || !['5', '50'].includes(query.get('limit') ?? '')) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_pending_query');
     const gated = await scenarioGate('pending'); if (gated) return gated;
     if (getDashboardScenario() === 'empty') return HttpResponse.json(dashboardEmptyFixtures.pending);
     if (getDashboardScenario() === 'unknown-enum') return HttpResponse.json(dashboardUnknownFixtures.pending);

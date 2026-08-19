@@ -4,6 +4,8 @@ export interface PlaybackClock {
   readonly startNs: string;
   readonly endNs: string;
   currentNs(): string;
+  isPlaying(): boolean;
+  playbackRate(): number;
   subscribe(fn: (ns: string) => void): () => void;
   play(): void;
   pause(): void;
@@ -85,6 +87,8 @@ export function createPlaybackClock(opts: { startNs: string; endNs: string }): P
     startNs: start.toString(),
     endNs: end.toString(),
     currentNs: () => current.toString(),
+    isPlaying: () => playing,
+    playbackRate: () => rate,
     subscribe(fn) {
       if (disposed) return () => undefined;
       listeners.add(fn);

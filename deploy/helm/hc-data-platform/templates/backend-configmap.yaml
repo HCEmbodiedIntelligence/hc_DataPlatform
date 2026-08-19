@@ -14,6 +14,7 @@ data:
   HC_WORKFLOW_ACTIVITY_FACTORY: {{ . | quote }}
   {{- end }}
   HC_OBJECT_STORE_ENDPOINT: {{ .Values.backend.config.objectStoreEndpoint | quote }}
+  HC_OBJECT_STORE_PUBLIC_ENDPOINT: {{ required "backend.config.objectStorePublicEndpoint is required" .Values.backend.config.objectStorePublicEndpoint | quote }}
   HC_OBJECT_STORE_BUCKET: {{ .Values.backend.config.objectStoreBucket | quote }}
   HC_OBJECT_STORE_REGION: {{ .Values.backend.config.objectStoreRegion | quote }}
   HC_JWT_ISSUER: {{ .Values.backend.config.jwtIssuer | quote }}
@@ -22,6 +23,7 @@ data:
   HC_JWT_JWKS_URL: {{ required "config.jwtJwksUrl is required" .Values.backend.config.jwtJwksUrl | quote }}
   HC_READINESS_TIMEOUT_SECONDS: {{ .Values.backend.config.readinessTimeoutSeconds | quote }}
   HC_ENFORCE_SCHEMA_MIGRATIONS: {{ .Values.backend.config.enforceSchemaMigrations | quote }}
+  HC_API_DOCS_ENABLED: {{ .Values.backend.config.apiDocsEnabled | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.backend.config.otelExporterOtlpEndpoint | quote }}
   OTEL_TRACES_EXPORTER: otlp
   OTEL_METRICS_EXPORTER: otlp

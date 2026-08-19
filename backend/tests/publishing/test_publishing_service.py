@@ -369,6 +369,7 @@ def test_be09_adapter_reads_only_current_approved_revision_and_effective_restore
         dataset_id="dataset-a",
         dataset_version=1,
         rollout_id="rollout-a",
+        base_step_count=10,
     )
     annotator = _annotation_actor("alice", "annotator")
     annotations.claim("task-a", annotator)
@@ -602,6 +603,14 @@ def test_migration_enforces_append_only_publication_and_validated_promotion() ->
     assert "published_exports_immutable" in migration
     assert "published_exports_require_validated_attempt" in migration
     assert "export attempt must be validated before promotion" in migration
+
+    lineage = (
+        backend_root / "migrations" / "publishing" / "0002_rollout_publication_region_lineage.sql"
+    ).read_text(encoding="utf-8")
+    assert "rollout_publication_lineage_immutable" in lineage
+    assert "materialize_rollout_publication_lineage" in lineage
+    assert "dashboard_publication_lineage_summary" in lineage
+    assert "lineage_source IN ('FORWARD', 'BACKFILL')" in lineage
 
 
 @pytest.mark.integration

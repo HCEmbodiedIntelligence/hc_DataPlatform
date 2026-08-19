@@ -180,8 +180,8 @@ export const PROJECT_ROLE_CAPABILITIES: Readonly<Record<ProjectRoleId, readonly 
 export interface AuthorizationSnapshot {
   scopeKey: ScopeKey;
   roleVersion: string;
-  capabilities: readonly Capability[];
+  /** Runtime bootstrap capability keys. Older pages resolve explicit aliases at read time. */
+  capabilities: readonly string[];
   fetchedAt: string;
   expiresAt?: string;
 }
-

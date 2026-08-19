@@ -7,7 +7,7 @@ import {
   type StorageOverviewTab,
 } from '../../features/storage-overview/routing';
 
-const tabs = new Set<StorageOverviewTab>(['overview', 'objects', 'multipart', 'cost']);
+const tabs = new Set<StorageOverviewTab>(['overview', 'objects', 'multipart']);
 const months = new Set([3, 6, 12]);
 const limits = new Set([20, 50, 100]);
 const sorts = new Set<StorageOverviewSearch['sort']>(['physicalBytes:desc,objectId:desc', 'createdAt:desc,objectId:desc']);

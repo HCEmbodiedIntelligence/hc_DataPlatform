@@ -1,30 +1,28 @@
-import type { ColumnDef } from '@tanstack/react-table';
-import { useMemo } from 'react';
-import type { DashboardCoverage } from '../../../features/dashboard/types';
-import { DataTable } from '../../../shared/ui';
+import type { DashboardCoverage } from "../../../features/dashboard/types";
+import { StatusTag } from "../../../shared/ui";
+import { DashboardSectionNotice, sectionTone } from "./DashboardSectionNotice";
+import styles from "../styles.module.css";
 
-type CoverageCell = DashboardCoverage['cells'][number];
-
-export function DashboardCoverageTable({ coverage }: Readonly<{ coverage: DashboardCoverage }>) {
-  const columns = useMemo<readonly ColumnDef<CoverageCell, unknown>[]>(
-    () => [
-      { id: 'robotGroup', header: '机器人组', cell: ({ row }) => row.original.robotGroupId },
-      { id: 'task', header: '任务', cell: ({ row }) => row.original.taskId },
-      {
-        id: 'coverage',
-        header: '覆盖率',
-        cell: ({ row }) => row.original.ratio === null ? '无样本' : `${Math.round(row.original.ratio * 1_000) / 10}%`,
-      },
-    ],
-    [],
-  );
-
+export function DashboardCoverageTable({
+  coverage,
+}: Readonly<{ coverage: DashboardCoverage }>) {
   return (
-    <DataTable
-      data={coverage.cells}
-      columns={columns}
-      getRowId={(cell) => `${cell.robotGroupId}:${cell.taskId}`}
-      caption="机器人组与任务覆盖率"
-    />
+    <div className={styles.coverageState}>
+      <div>
+        <strong>采集覆盖率</strong>
+        <span>版本化计划与分母未完整前不计算数值</span>
+      </div>
+      <StatusTag
+        status={coverage.section.status}
+        label={coverage.section.status}
+        known
+        tone={sectionTone(coverage.section.status)}
+      />
+      <DashboardSectionNotice
+        section={coverage.section}
+        label="覆盖率"
+        compact
+      />
+    </div>
   );
 }

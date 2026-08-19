@@ -5,10 +5,13 @@ from dataclasses import dataclass
 from io import BytesIO
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
+from hc_data_platform.core.config import Settings
 from hc_data_platform.ingest.adapters import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.ingest.models import CompletedPart
 from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.runtime import _s3
 
 
 class MissingObject(Exception):
@@ -107,6 +110,84 @@ def test_s3_minio_adapter_binds_key_to_every_multipart_operation() -> None:
     assert client.complete_request["IfNoneMatch"] == "*"
     assert metadata.size == len(b"firstsecond")
     assert b"".join(adapter.read_chunks(key, chunk_size=3)) == b"firstsecond"
+
+
+class PublicPresignClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def generate_presigned_url(self, operation: str, **kwargs: Any) -> str:
+        self.calls.append((operation, kwargs))
+        return "http://127.0.0.1:9000/raw-bucket/redacted"
+
+
+def test_s3_adapter_uses_public_signer_only_for_part_authorization() -> None:
+    internal = FakeS3Client()
+    public = PublicPresignClient()
+    adapter = S3ObjectStorage(internal, "raw-bucket", presign_client=public)
+    key = "raw/v1/project=p/date=2026-08-19/recording.mcap"
+
+    upload_id = adapter.create_multipart(key)
+    signed = adapter.presign_part(key, upload_id, 1, 120)
+    internal.uploads[(key, upload_id)] = {1: b"browser-part"}
+    parts = adapter.list_parts(key, upload_id)
+    completed = adapter.complete_multipart(
+        key,
+        upload_id,
+        [CompletedPart(part_number=parts[0].part_number, etag=parts[0].etag)],
+    )
+
+    assert urlparse(signed).hostname == "127.0.0.1"
+    assert len(public.calls) == 1
+    operation, arguments = public.calls[0]
+    assert operation == "upload_part"
+    assert arguments["HttpMethod"] == "PUT"
+    assert arguments["Params"] == {
+        "Bucket": "raw-bucket",
+        "Key": key,
+        "UploadId": upload_id,
+        "PartNumber": 1,
+    }
+    assert internal.last_presign == {}
+    assert completed.size == len(b"browser-part")
+    assert adapter.head(key) == completed
+
+
+def test_runtime_builds_distinct_path_style_sigv4_internal_and_public_clients() -> None:
+    settings = Settings(
+        environment="test",
+        object_store_endpoint="http://minio:9000",
+        object_store_public_endpoint="http://127.0.0.1:9000",
+        object_store_bucket="hc-data-test",
+        object_store_access_key="test-access",
+        object_store_secret_key="test-secret-value",
+        _env_file=None,
+    )
+    internal, storage = _s3(settings)
+    signed = storage.presign_part(
+        "raw/v1/project=br04/date=2026-08-19/recording.mcap",
+        "redacted-upload-id",
+        7,
+        120,
+    )
+    parsed = urlparse(signed)
+    query = parse_qs(parsed.query)
+
+    assert internal.meta.endpoint_url == "http://minio:9000"
+    assert (parsed.scheme, parsed.hostname, parsed.port) == ("http", "127.0.0.1", 9000)
+    assert unquote(parsed.path) == (
+        "/hc-data-test/raw/v1/project=br04/date=2026-08-19/recording.mcap"
+    )
+    assert query["partNumber"] == ["7"]
+    assert query["uploadId"] == ["redacted-upload-id"]
+    assert {
+        "X-Amz-Algorithm",
+        "X-Amz-Credential",
+        "X-Amz-Date",
+        "X-Amz-Expires",
+        "X-Amz-Signature",
+        "X-Amz-SignedHeaders",
+    }.issubset(query)
 
 
 @dataclass

@@ -1,0 +1,69 @@
+{
+  "actual_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action",
+    "/camera/rear/image"
+  ],
+  "cameras": [
+    {
+      "camera_id": "front",
+      "topic": "/camera/front/image"
+    },
+    {
+      "camera_id": "rear",
+      "topic": "/camera/rear/image"
+    }
+  ],
+  "collection_job_id": "be22-multi-camera-job",
+  "collection_session_id": "be22-multi-camera-session",
+  "compression": "none",
+  "crc64": "5840098814895650135",
+  "data_package_id": "be22-multi-camera-package",
+  "end_time": "2023-11-14T22:13:21Z",
+  "expected_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action",
+    "/camera/rear/image"
+  ],
+  "file_size": 6302,
+  "files": [
+    {
+      "crc64": "5840098814895650135",
+      "media_type": "application/octet-stream",
+      "path": "recording.mcap",
+      "role": "RAW_MCAP",
+      "sha256": "5164b78197a7357151e335548ff2468c9f989d6565e18bb19bed3663cf227a0b",
+      "size": 6302
+    }
+  ],
+  "project_id": "be22-template-project",
+  "recorder_version": "hc-be22-fixture/1",
+  "recording_request_id": "be22-multi-camera-request",
+  "robot_id": "be22-test-robot",
+  "rollout_id": "be22-multi-camera-rollout",
+  "schema_version": 1,
+  "sequence_no": 1,
+  "sha256": "5164b78197a7357151e335548ff2468c9f989d6565e18bb19bed3663cf227a0b",
+  "start_time": "2023-11-14T22:13:20Z",
+  "task_id": "be22-template-task",
+  "topics": [
+    {
+      "name": "/camera/front/image",
+      "required": true
+    },
+    {
+      "name": "/joint_states",
+      "required": true
+    },
+    {
+      "name": "/action",
+      "required": true
+    },
+    {
+      "name": "/camera/rear/image",
+      "required": true
+    }
+  ]
+}

@@ -5,7 +5,109 @@ info:
 security:
   - bearerAuth: []
 paths:
+  /api/v1/projects/{project_id}/tag-schemas:
+    post:
+      operationId: createTagSchemaVersion
+      tags: [annotation]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateTagSchemaVersionRequest'}
+      responses:
+        '201':
+          description: A mutable draft version was created; its identity is immutable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TagSchemaVersion'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Publisher role or project scope is missing.}
+        '409': {description: The schema identity already contains different content.}
+        '422': {description: The hierarchy, constraint references, or request is invalid.}
+  /api/v1/projects/{project_id}/tag-schemas/{schema_id}/versions:
+    get:
+      operationId: listTagSchemaVersions
+      tags: [annotation]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: schema_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: All immutable versions of one project Tag Schema.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/TagSchemaVersion'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+  /api/v1/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}:
+    get:
+      operationId: getTagSchemaVersion
+      tags: [annotation]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: schema_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: version
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: One exact Tag Schema version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TagSchemaVersion'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The schema version does not exist.}
+  /api/v1/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}/publish:
+    post:
+      operationId: publishTagSchemaVersion
+      tags: [annotation]
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: schema_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: version
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: Published immutable version; replay returns the same resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TagSchemaVersion'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Publisher role or project scope is missing.}
+        '404': {description: The schema version does not exist.}
+        '409': {description: The schema changed concurrently.}
   /api/v1/projects/{project_id}/annotation-tasks:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: listAnnotationTasks
       tags: [annotation]
@@ -30,6 +132,9 @@ paths:
         '401': {description: A verified BE-02 context is missing.}
         '403': {description: Project scope or an annotation role is missing.}
   /api/v1/annotation-tasks/{task_id}:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getAnnotationTask
       tags: [annotation]
@@ -52,6 +157,9 @@ paths:
         '403': {description: Project scope or an annotation role is missing.}
         '404': {description: The task does not exist.}
   /api/v1/annotation-tasks/{task_id}/claim:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     post:
       operationId: claimAnnotationTask
       tags: [annotation]
@@ -75,6 +183,9 @@ paths:
         '404': {description: The task does not exist.}
         '409': {description: The task is claimed by another Annotator.}
   /api/v1/annotation-tasks/{task_id}/draft:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getAnnotationDraft
       tags: [annotation]
@@ -97,6 +208,9 @@ paths:
         '403': {description: The caller is not the scoped Annotator assignee.}
         '404': {description: The task does not exist.}
   /api/v1/annotation-tasks/{task_id}/current:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getAnnotationCurrent
       tags: [annotation]
@@ -119,6 +233,9 @@ paths:
         '403': {description: Project scope or an annotation role is missing.}
         '404': {description: The task does not exist.}
   /api/v1/annotation-tasks/{task_id}/revisions:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: listAnnotationRevisions
       tags: [annotation]
@@ -168,10 +285,12 @@ paths:
         '401': {description: A verified BE-02 context is missing.}
         '403': {description: The caller is not the scoped Annotator assignee.}
         '404': {description: The task does not exist.}
-        '409': {description: client_mutation_id or operation_id was reused differently.}
-        '412': {description: expected_revision or If-Match is stale.}
-        '422': {description: The range is empty or the request is malformed.}
+        '409': {description: The revision/ETag is stale or a mutation identifier was reused differently.}
+        '422': {description: A hierarchy, half-open boundary, attribute, conflict, relation, or schema check failed.}
   /api/v1/annotation-tasks/{task_id}/revisions/{revision}:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getAnnotationRevision
       tags: [annotation]
@@ -194,6 +313,9 @@ paths:
         '403': {description: Project scope or an annotation role is missing.}
         '404': {description: The task or revision does not exist.}
   /api/v1/annotation-tasks/{task_id}/submit:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     post:
       operationId: submitAnnotationRevision
       tags: [annotation]
@@ -206,27 +328,82 @@ paths:
           in: header
           required: true
           schema: {type: string, minLength: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
       requestBody:
         required: true
         content:
           application/json:
             schema: {$ref: '#/components/schemas/SubmitRequest'}
       responses:
-        '200':
-          description: Exact current revision submitted for review.
+        '201':
+          description: Immutable reviewable version, or an identical idempotent replay.
           headers:
             ETag:
               required: true
               schema: {type: string}
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/AnnotationTask'}
+              schema: {$ref: '#/components/schemas/AnnotationSubmission'}
         '401': {description: A verified BE-02 context is missing.}
         '403': {description: The caller is not the scoped Annotator assignee.}
         '404': {description: The task does not exist.}
-        '409': {description: The task cannot be submitted from its current state.}
-        '412': {description: expected_revision or If-Match is stale.}
+        '409': {description: State/revision/ETag is stale or Idempotency-Key was reused differently.}
+        '422': {description: A required review check failed.}
+  /api/v1/annotation-tasks/{task_id}/submissions:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
+    get:
+      operationId: listAnnotationSubmissions
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Immutable reviewable versions, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AnnotationSubmission'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task does not exist.}
+  /api/v1/annotation-tasks/{task_id}/submissions/{submission_id}:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
+    get:
+      operationId: getAnnotationSubmission
+      tags: [annotation]
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: submission_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: One immutable reviewable version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnnotationSubmission'}
+        '401': {description: A verified BE-02 context is missing.}
+        '403': {description: Project scope or an annotation role is missing.}
+        '404': {description: The task or submission does not exist.}
   /api/v1/annotation-tasks/{task_id}/reviews:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: listAnnotationReviews
       tags: [annotation]
@@ -274,11 +451,13 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AnnotationTask'}
         '401': {description: A verified BE-02 context is missing.}
-        '403': {description: Reviewer role/scope is missing or this is self-review.}
-        '404': {description: The task does not exist.}
-        '409': {description: Only a submitted revision may be reviewed.}
-        '412': {description: The review target or If-Match is stale.}
+        '403': {description: Reviewer role/scope is missing or configured policy denies self-review.}
+        '404': {description: The task or submission does not exist.}
+        '409': {description: Submission/ETag is stale, or OPEN-08 policy remains unconfigured.}
   /api/v1/annotation-tasks/{task_id}/history:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getAnnotationHistory
       tags: [annotation]
@@ -297,6 +476,9 @@ paths:
         '403': {description: Project scope or an annotation role is missing.}
         '404': {description: The task does not exist.}
   /api/v1/annotation-tasks/{task_id}/exclusions:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getEffectiveExclusions
       tags: [annotation]
@@ -321,6 +503,8 @@ paths:
         '403': {description: Project scope or an annotation role is missing.}
         '404': {description: The task or revision does not exist.}
   /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     get:
       operationId: getApprovedAnnotation
       tags: [annotation]
@@ -355,6 +539,9 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AutoAnnotationCapability'}
   /api/v1/annotation-tasks/{task_id}/auto-annotation:
+    parameters:
+      - {$ref: '#/components/parameters/AnnotationProject'}
+      - {$ref: '#/components/parameters/AnnotationRegion'}
     post:
       operationId: requestAutoAnnotation
       tags: [annotation]
@@ -367,29 +554,266 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [revision]
-              properties:
-                revision: {type: integer, minimum: 0}
+            schema: {$ref: '#/components/schemas/AutoAnnotationRequest'}
       responses:
         '501': {description: FEATURE_DISABLED; no task or fake result is created.}
         '401': {description: A verified BE-02 context is missing.}
         '403': {description: Project scope or an annotation role is missing.}
 components:
+  parameters:
+    AnnotationProject:
+      name: X-Project-ID
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+      description: Must select the exact project that owns the task.
+    AnnotationRegion:
+      name: X-Region-Code
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+      description: Must select the exact region that owns the task; project-wide scope is not a cross-region bypass.
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      bearerFormat: JWT or opaque platform session
   schemas:
+    AutoAnnotationRequest:
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        revision: {type: integer, minimum: 0}
     AnnotationStatus:
       type: string
       enum: [DRAFT, SUBMITTED, APPROVED, NEEDS_REVISION, REJECTED]
     ReviewDecision:
       type: string
       enum: [APPROVE, NEEDS_REVISION, REJECT]
+    RevisionOrigin:
+      type: string
+      enum: [ANNOTATION, LEGACY_CLEANING]
+    TagSchemaStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED]
+    AnnotationTaskKind:
+      type: string
+      enum: [TAGGING]
+    AnnotationTaskCreationSource:
+      type: string
+      enum: [LEGACY, SYSTEM_LANCE]
+    TagAttributeType:
+      type: string
+      enum: [STRING, INTEGER, NUMBER, BOOLEAN, ENUM]
+    ReviewCheckKind:
+      type: string
+      enum:
+        - HIERARCHY
+        - BOUNDARY
+        - REQUIRED_ATTRIBUTES
+        - MUTUAL_EXCLUSION
+        - OBJECT_RELATIONS
+        - SCHEMA_VERSION
+    ReviewCheckStatus:
+      type: string
+      enum: [PASS]
+    TagAttributeDefinition:
+      type: object
+      required: [key, display_name, value_type]
+      properties:
+        key: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z][A-Za-z0-9_.-]*$'}
+        display_name: {type: string, minLength: 1, maxLength: 256}
+        value_type: {$ref: '#/components/schemas/TagAttributeType'}
+        required: {type: boolean, default: false}
+        enum_values:
+          type: array
+          items: {type: string}
+          default: []
+    TagNodeDefinition:
+      type: object
+      description: One node in an unbounded-depth, single-parent hierarchy.
+      required: [tag_id, code, display_name]
+      properties:
+        tag_id: {type: string, minLength: 1, maxLength: 256}
+        code: {type: string, minLength: 1, maxLength: 256}
+        display_name: {type: string, minLength: 1, maxLength: 256}
+        parent_tag_id: {type: [string, 'null']}
+        attributes:
+          type: array
+          items: {$ref: '#/components/schemas/TagAttributeDefinition'}
+          default: []
+    MutualExclusionConstraint:
+      type: object
+      required: [constraint_id, tag_ids]
+      properties:
+        constraint_id: {type: string, minLength: 1, maxLength: 256}
+        tag_ids:
+          type: array
+          minItems: 2
+          items: {type: string}
+    ObjectRelationConstraint:
+      type: object
+      required: [relation_type, source_tag_ids, target_object_types]
+      properties:
+        relation_type: {type: string, minLength: 1, maxLength: 128}
+        source_tag_ids:
+          type: array
+          minItems: 1
+          items: {type: string}
+        target_object_types:
+          type: array
+          minItems: 1
+          items: {type: string}
+        required: {type: boolean, default: false}
+    TagSchemaDocument:
+      type: object
+      description: Immutable schema content; OPEN-07 leaves hierarchy depth unbounded.
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          items: {$ref: '#/components/schemas/TagNodeDefinition'}
+        mutual_exclusions:
+          type: array
+          items: {$ref: '#/components/schemas/MutualExclusionConstraint'}
+          default: []
+        object_relations:
+          type: array
+          items: {$ref: '#/components/schemas/ObjectRelationConstraint'}
+          default: []
+    TagSchemaTarget:
+      type: object
+      additionalProperties: false
+      required: [region_code, dataset_id, dataset_schema_snapshot_id]
+      properties:
+        region_code: {type: string, minLength: 1, maxLength: 128}
+        dataset_id: {type: string, minLength: 1, maxLength: 256}
+        dataset_schema_snapshot_id: {type: string, minLength: 1, maxLength: 256}
+        task_kind: {$ref: '#/components/schemas/AnnotationTaskKind'}
+    TagSchemaVersion:
+      type: object
+      required:
+        - schema_id
+        - project_id
+        - name
+        - version
+        - document
+        - content_hash
+        - created_by
+        - created_at
+      properties:
+        schema_id: {type: string, minLength: 1, maxLength: 256}
+        project_id: {type: string, minLength: 1}
+        name: {type: string, minLength: 1, maxLength: 256}
+        version: {type: integer, minimum: 1}
+        status: {$ref: '#/components/schemas/TagSchemaStatus'}
+        document: {$ref: '#/components/schemas/TagSchemaDocument'}
+        compatible_targets:
+          type: array
+          items: {$ref: '#/components/schemas/TagSchemaTarget'}
+          default: []
+        content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        created_by: {type: string, minLength: 1}
+        created_at: {type: string, format: date-time}
+        published_by: {type: [string, 'null']}
+        published_at: {type: [string, 'null'], format: date-time}
+    CreateTagSchemaVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [name, document]
+      properties:
+        schema_id: {type: [string, 'null'], minLength: 1, maxLength: 256}
+        version: {type: [integer, 'null'], minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 256}
+        document: {$ref: '#/components/schemas/TagSchemaDocument'}
+        compatible_targets:
+          type: array
+          items: {$ref: '#/components/schemas/TagSchemaTarget'}
+          default: []
+    TagObjectRef:
+      type: object
+      required: [object_id, object_type]
+      properties:
+        object_id: {type: string, minLength: 1, maxLength: 512}
+        object_type: {type: string, minLength: 1, maxLength: 128}
+    AnnotationObjectRelation:
+      type: object
+      required: [relation_type, target]
+      properties:
+        relation_type: {type: string, minLength: 1, maxLength: 128}
+        target: {$ref: '#/components/schemas/TagObjectRef'}
+    AnnotationTag:
+      type: object
+      description: One schema-pinned Tag instance over a half-open Lance interval.
+      required: [annotation_id, tag_id, path, start_step, end_step]
+      properties:
+        annotation_id: {type: string, minLength: 1, maxLength: 256}
+        tag_id: {type: string, minLength: 1, maxLength: 256}
+        path:
+          type: array
+          minItems: 1
+          items: {type: string}
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 1}
+        attributes:
+          type: object
+          additionalProperties: {type: [string, integer, number, boolean]}
+        subject:
+          oneOf:
+            - {$ref: '#/components/schemas/TagObjectRef'}
+            - {type: 'null'}
+        relations:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationObjectRelation'}
+          default: []
+    LegacyAuditReference:
+      type: object
+      required: [draft_id, source_revision, source_actor_id, source_created_at]
+      properties:
+        source_system: {type: string, const: P11_CLEANING, default: P11_CLEANING}
+        draft_id: {type: string, minLength: 1}
+        source_revision: {type: integer, minimum: 0}
+        source_actor_id: {type: string, minLength: 1}
+        source_created_at: {type: string, format: date-time}
+        source_audit_event_id: {type: [string, 'null']}
+        source_payload: {type: object, additionalProperties: true}
+    AnnotationReviewCheck:
+      type: object
+      required: [kind, evidence]
+      properties:
+        kind: {$ref: '#/components/schemas/ReviewCheckKind'}
+        status: {$ref: '#/components/schemas/ReviewCheckStatus'}
+        evidence: {type: string, minLength: 1, maxLength: 2000}
+    AnnotationSubmission:
+      type: object
+      description: Immutable reviewable version produced from one exact draft revision.
+      required:
+        - submission_id
+        - task_id
+        - revision
+        - submitted_by
+        - base_lance_version
+        - tag_schema_id
+        - tag_schema_version
+        - tag_schema_hash
+        - revision_content_hash
+        - checks
+        - created_at
+      properties:
+        submission_id: {type: string, minLength: 1}
+        task_id: {type: string, minLength: 1}
+        revision: {type: integer, minimum: 0}
+        submitted_by: {type: string, minLength: 1}
+        base_lance_version: {type: integer, minimum: 1}
+        tag_schema_id: {type: string, minLength: 1}
+        tag_schema_version: {type: integer, minimum: 1}
+        tag_schema_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        revision_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        checks:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationReviewCheck'}
+        created_at: {type: string, format: date-time}
     AnnotationTask:
       type: object
       additionalProperties: false
@@ -399,6 +823,9 @@ components:
         - project_id
         - dataset_id
         - dataset_version
+        - base_lance_version
+        - tag_schema_id
+        - tag_schema_version
         - rollout_id
         - current_revision
         - state_version
@@ -410,15 +837,24 @@ components:
         schema_version: {type: string, const: '1'}
         task_id: {type: string, minLength: 1}
         project_id: {type: string, minLength: 1}
+        region_code: {type: [string, 'null'], minLength: 1}
         dataset_id: {type: string, minLength: 1}
         dataset_version: {type: integer, minimum: 1}
+        base_lance_version: {type: integer, minimum: 1}
+        base_step_count: {type: [integer, 'null'], minimum: 1}
+        tag_schema_id: {type: string, minLength: 1}
+        tag_schema_version: {type: integer, minimum: 1}
         rollout_id: {type: string, minLength: 1}
+        task_kind: {$ref: '#/components/schemas/AnnotationTaskKind'}
+        creation_source: {$ref: '#/components/schemas/AnnotationTaskCreationSource'}
+        source_workflow_id: {type: [string, 'null'], minLength: 1}
         assignee_id: {type: [string, 'null']}
         current_revision: {type: integer, minimum: 0}
         state_version: {type: integer, minimum: 0}
         status: {$ref: '#/components/schemas/AnnotationStatus'}
         submitted_revision: {type: [integer, 'null'], minimum: 0}
         submitted_by: {type: [string, 'null']}
+        current_submission_id: {type: [string, 'null']}
         approved_revision: {type: [integer, 'null'], minimum: 0}
         approved_review_id: {type: [string, 'null']}
         etag: {type: string}
@@ -446,7 +882,13 @@ components:
         - parent_revision
         - author_id
         - client_mutation_id
+        - base_lance_version
+        - tag_schema_id
+        - tag_schema_version
+        - tags
         - operations
+        - origin
+        - content_hash
         - created_at
       properties:
         schema_version: {type: string, const: '1'}
@@ -455,9 +897,21 @@ components:
         parent_revision: {type: [integer, 'null'], minimum: 0}
         author_id: {type: string}
         client_mutation_id: {type: string}
+        base_lance_version: {type: integer, minimum: 1}
+        tag_schema_id: {type: string, minLength: 1}
+        tag_schema_version: {type: integer, minimum: 1}
+        tags:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationTag'}
         operations:
           type: array
           items: {$ref: '#/components/schemas/AnnotationOperation'}
+        origin: {$ref: '#/components/schemas/RevisionOrigin'}
+        legacy_audit:
+          oneOf:
+            - {$ref: '#/components/schemas/LegacyAuditReference'}
+            - {type: 'null'}
+        content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
         created_at: {type: string, format: date-time}
     AnnotationReview:
       type: object
@@ -465,19 +919,25 @@ components:
       required:
         - schema_version
         - review_id
+        - submission_id
         - task_id
         - revision
         - reviewer_id
         - decision
+        - checked_kinds
         - comment
         - created_at
       properties:
         schema_version: {type: string, const: '1'}
         review_id: {type: string}
+        submission_id: {type: string, minLength: 1}
         task_id: {type: string}
         revision: {type: integer, minimum: 0}
         reviewer_id: {type: string}
         decision: {$ref: '#/components/schemas/ReviewDecision'}
+        checked_kinds:
+          type: array
+          items: {$ref: '#/components/schemas/ReviewCheckKind'}
         comment: {type: string, maxLength: 10000}
         created_at: {type: string, format: date-time}
     ExclusionRange:
@@ -497,6 +957,10 @@ components:
         - revision
         - author_id
         - client_mutation_id
+        - base_lance_version
+        - tag_schema_id
+        - tag_schema_version
+        - tags
         - operations
         - effective_exclusions
         - etag
@@ -507,6 +971,13 @@ components:
         revision: {type: integer, minimum: 0}
         author_id: {type: string}
         client_mutation_id: {type: string}
+        base_lance_version: {type: integer, minimum: 1}
+        base_step_count: {type: [integer, 'null'], minimum: 1}
+        tag_schema_id: {type: string, minLength: 1}
+        tag_schema_version: {type: integer, minimum: 1}
+        tags:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationTag'}
         operations:
           type: array
           items: {$ref: '#/components/schemas/AnnotationOperation'}
@@ -534,6 +1005,7 @@ components:
         status: {$ref: '#/components/schemas/AnnotationStatus'}
         submitted_revision: {type: [integer, 'null'], minimum: 0}
         submitted_by: {type: [string, 'null']}
+        current_submission_id: {type: [string, 'null']}
         approved_revision: {type: [integer, 'null'], minimum: 0}
         approved_review_id: {type: [string, 'null']}
         etag: {type: string}
@@ -541,12 +1013,15 @@ components:
     AnnotationHistory:
       type: object
       additionalProperties: false
-      required: [task, revisions, reviews]
+      required: [task, revisions, submissions, reviews]
       properties:
         task: {$ref: '#/components/schemas/AnnotationTask'}
         revisions:
           type: array
           items: {$ref: '#/components/schemas/AnnotationRevision'}
+        submissions:
+          type: array
+          items: {$ref: '#/components/schemas/AnnotationSubmission'}
         reviews:
           type: array
           items: {$ref: '#/components/schemas/AnnotationReview'}
@@ -561,6 +1036,11 @@ components:
         - rollout_id
         - task_id
         - annotation_revision
+        - submission_id
+        - base_lance_version
+        - tag_schema_id
+        - tag_schema_version
+        - revision_content_hash
         - review_id
         - reviewer_id
         - excluded_ranges
@@ -573,6 +1053,11 @@ components:
         rollout_id: {type: string}
         task_id: {type: string}
         annotation_revision: {type: integer, minimum: 0}
+        submission_id: {type: string, minLength: 1}
+        base_lance_version: {type: integer, minimum: 1}
+        tag_schema_id: {type: string, minLength: 1}
+        tag_schema_version: {type: integer, minimum: 1}
+        revision_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
         review_id: {type: string}
         reviewer_id: {type: string}
         excluded_ranges:
@@ -586,6 +1071,9 @@ components:
       properties:
         expected_revision: {type: integer, minimum: 0}
         client_mutation_id: {type: string, minLength: 1, maxLength: 256}
+        tags:
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/AnnotationTag'}
         operations:
           type: array
           items: {$ref: '#/components/schemas/AnnotationOperation'}
@@ -601,6 +1089,7 @@ components:
       required: [revision, decision]
       properties:
         revision: {type: integer, minimum: 0}
+        submission_id: {type: [string, 'null'], minLength: 1}
         decision: {$ref: '#/components/schemas/ReviewDecision'}
         comment: {type: string, maxLength: 10000, default: ''}
     AutoAnnotationCapability:

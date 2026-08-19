@@ -4,6 +4,7 @@ import importlib
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from .models import CompletedPart
 from .ports import (
@@ -21,8 +22,9 @@ class S3ObjectStorage:
     deployments use their normal credential provider chain without importing boto3 in tests.
     """
 
-    def __init__(self, client: Any, bucket: str) -> None:
+    def __init__(self, client: Any, bucket: str, *, presign_client: Any | None = None) -> None:
         self._client = client
+        self._presign_client = presign_client or client
         self._bucket = bucket
 
     @classmethod
@@ -44,7 +46,7 @@ class S3ObjectStorage:
         expires_seconds: int,
     ) -> str:
         return str(
-            self._client.generate_presigned_url(
+            self._presign_client.generate_presigned_url(
                 "upload_part",
                 Params={
                     "Bucket": self._bucket,
@@ -113,6 +115,13 @@ class S3ObjectStorage:
             Key=key,
             UploadId=upload_id,
         )
+
+    def authorize_existing_object(self, uri: str, expected_key: str) -> ObjectMetadata:
+        key = _authorized_key(uri, scheme="s3", bucket=self._bucket, expected_key=expected_key)
+        metadata = self.head(key)
+        if metadata is None:
+            raise _object_reference_not_found()
+        return metadata
 
     def head(self, key: str) -> ObjectMetadata | None:
         try:
@@ -247,6 +256,23 @@ class OssObjectStorage:
     def abort_multipart(self, key: str, upload_id: str) -> None:
         self._bucket.abort_multipart_upload(key, upload_id)
 
+    def authorize_existing_object(self, uri: str, expected_key: str) -> ObjectMetadata:
+        bucket_name = str(
+            getattr(self._bucket, "bucket_name", None) or getattr(self._bucket, "name", None) or ""
+        )
+        if not bucket_name:
+            raise RuntimeError("OSS bucket adapter does not expose its bucket name")
+        key = _authorized_key(
+            uri,
+            scheme="oss",
+            bucket=bucket_name,
+            expected_key=expected_key,
+        )
+        metadata = self.head(key)
+        if metadata is None:
+            raise _object_reference_not_found()
+        return metadata
+
     def head(self, key: str) -> ObjectMetadata | None:
         try:
             result = self._bucket.get_object_meta(key)
@@ -337,6 +363,44 @@ def _precondition_failed(exc: Exception) -> bool:
             "PreconditionFailed",
         }
     return False
+
+
+def _authorized_key(uri: str, *, scheme: str, bucket: str, expected_key: str) -> str:
+    parsed = urlparse(uri)
+    key = unquote(parsed.path.lstrip("/"))
+    if (
+        parsed.scheme != scheme
+        or parsed.netloc != bucket
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or key != expected_key
+        or "\\" in key
+        or any(part in {"", ".", ".."} for part in key.split("/"))
+    ):
+        from hc_data_platform.core.errors import problem
+
+        raise problem(
+            status=422,
+            code="OBJECT_STORAGE_REFERENCE_INVALID",
+            title="Object storage reference is invalid",
+            detail=(
+                "Only an address in the configured bucket that exactly matches the "
+                "expected immutable Raw key can be registered."
+            ),
+        )
+    return key
+
+
+def _object_reference_not_found() -> Exception:
+    from hc_data_platform.core.errors import problem
+
+    return problem(
+        status=404,
+        code="OBJECT_STORAGE_OBJECT_NOT_FOUND",
+        title="Object storage object not found",
+        detail="The authorized object does not exist.",
+    )
 
 
 def _immutable_object_exists() -> Exception:

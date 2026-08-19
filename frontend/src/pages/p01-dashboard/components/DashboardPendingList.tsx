@@ -1,69 +1,107 @@
-import type { ColumnDef } from '@tanstack/react-table';
-import { Typography } from 'antd';
-import { useMemo } from 'react';
-import type { DashboardPendingItem } from '../../../features/dashboard/types';
-import { DataTable, StatusTag } from '../../../shared/ui';
-import styles from '../styles.module.css';
+import {
+  ArrowUpRight,
+  CloudUpload,
+  Send,
+  ShieldAlert,
+  Tags,
+  type LucideIcon,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import type {
+  DashboardPendingItem,
+  DashboardPendingKind,
+} from "../../../features/dashboard/types";
+import { StatusTag } from "../../../shared/ui";
+import styles from "../styles.module.css";
 
-export function DashboardPendingList({ items }: Readonly<{ items: readonly DashboardPendingItem[] }>) {
-  const columns = useMemo<readonly ColumnDef<DashboardPendingItem, unknown>[]>(
-    () => [
-      {
-        id: 'kind',
-        header: '类型',
-        size: 150,
-        cell: ({ row }) => row.original.wireType,
-      },
-      {
-        id: 'detail',
-        header: '详情',
-        size: 360,
-        cell: ({ row }) => (
-          <span className={styles.pendingDetail}>
-            <Typography.Text strong>{row.original.title}</Typography.Text>
-            {row.original.summary ? (
-              <Typography.Text type="secondary">{row.original.summary}</Typography.Text>
-            ) : null}
-          </span>
-        ),
-      },
-      {
-        id: 'status',
-        header: '状态',
-        cell: ({ row }) => (
-          <StatusTag
-            status={row.original.status}
-            label={row.original.status}
-            known={!row.original.hasUnknownEnum}
-            tone="warning"
-          />
-        ),
-      },
-      { id: 'priority', header: '优先级', cell: ({ row }) => row.original.priority },
-      {
-        id: 'updatedAt',
-        header: '更新时间',
-        cell: ({ row }) => <time dateTime={row.original.updatedAt}>{row.original.updatedAt}</time>,
-      },
-      {
-        id: 'target',
-        header: '目标',
-        cell: ({ row }) => row.original.clickable ? (
-          <Typography.Text type="secondary" title="目标页 builder 待 Owner 交付">
-            暂不可用
-          </Typography.Text>
-        ) : '—',
-      },
-    ],
-    [],
-  );
+const pendingPresentation: Readonly<
+  Record<
+    DashboardPendingKind,
+    Readonly<{
+      title: string;
+      action: string;
+      description: string;
+      Icon: LucideIcon;
+    }>
+  >
+> = {
+  UPLOAD_FAILED: {
+    title: "上传失败",
+    action: "查看上传记录",
+    description: "上传会话需要重试或排查失败分片",
+    Icon: CloudUpload,
+  },
+  QC_ANOMALY: {
+    title: "自动质检异常",
+    action: "查看 Raw 诊断",
+    description: "自动质检未通过的样本需要查看 Raw 证据",
+    Icon: ShieldAlert,
+  },
+  TAG_REVIEW_PENDING: {
+    title: "待审核",
+    action: "进入审核",
+    description: "Tag 修订已提交，等待有权限的审核人处理",
+    Icon: Tags,
+  },
+  PUBLICATION_PENDING: {
+    title: "待冻结发布",
+    action: "进入发布",
+    description: "审核已通过，等待冻结并进入发布流程",
+    Icon: Send,
+  },
+};
 
+function severityTone(severity: DashboardPendingItem["severity"]) {
+  return severity === "CRITICAL"
+    ? "danger"
+    : severity === "HIGH"
+      ? "warning"
+      : "neutral";
+}
+
+export function DashboardPendingList({
+  items,
+}: Readonly<{ items: readonly DashboardPendingItem[] }>) {
   return (
-    <DataTable
-      data={items}
-      columns={columns}
-      getRowId={(item) => item.itemId}
-      caption="待办事项"
-    />
+    <ul className={styles.pendingList} aria-label="授权范围内的待办事项">
+      {items.map((item) => {
+        const { title, action, description, Icon } =
+          pendingPresentation[item.kind];
+        return (
+          <li key={item.itemId}>
+            <span
+              className={styles.pendingIcon}
+              data-kind={item.kind}
+              aria-hidden="true"
+            >
+              <Icon size={21} strokeWidth={1.8} />
+            </span>
+            <div className={styles.pendingCopy}>
+              <div className={styles.pendingTitle}>
+                <strong>{title}</strong>
+                <StatusTag
+                  status={item.severity}
+                  label={item.severity}
+                  known
+                  tone={severityTone(item.severity)}
+                />
+              </div>
+              <span>{description}</span>
+              <small title={item.target.resource_id}>
+                {item.sourceState} · {item.target.resource_id}
+              </small>
+            </div>
+            {item.target.deep_link ? (
+              <Link className={styles.pendingAction} to={item.target.deep_link}>
+                {action}
+                <ArrowUpRight aria-hidden="true" size={14} />
+              </Link>
+            ) : (
+              <span className={styles.pendingUnavailable}>目标暂不可用</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

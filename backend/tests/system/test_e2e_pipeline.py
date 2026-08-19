@@ -143,12 +143,25 @@ def _manifest(body: bytes) -> RolloutManifestV1:
         task_id="collection-task",
         collection_job_id="collection-job",
         rollout_id=ROLLOUT_ID,
+        collection_session_id="collection-session",
+        recording_request_id="recording-request",
+        data_package_id="data-package",
         sequence_no=1,
         robot_id="robot-1",
         start_time=started,
         end_time=started + timedelta(seconds=1),
         expected_topics=sorted(TOPICS),
         actual_topics=sorted(TOPICS),
+        cameras=[{"camera_id": "front", "topic": "/camera/front/image"}],
+        topics=[{"name": topic, "required": True} for topic in sorted(TOPICS)],
+        files=[
+            {
+                "path": "recording.mcap",
+                "size": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "crc64": crc64_ecma(body),
+            }
+        ],
         file_size=len(body),
         sha256=hashlib.sha256(body).hexdigest(),
         crc64=crc64_ecma(body),
@@ -370,6 +383,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         dataset_id=DATASET_ID,
         dataset_version=version.version,
         rollout_id=ROLLOUT_ID,
+        base_step_count=30,
     )
     annotator = AnnotationActor(
         actor_id="alice",

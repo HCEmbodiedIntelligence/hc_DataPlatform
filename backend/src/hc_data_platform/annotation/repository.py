@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from threading import RLock
 
+from .models import AnnotationTaskKind, TagSchemaStatus, TagSchemaVersion
 from .ports import AnnotationAggregate
 
 
@@ -30,6 +31,10 @@ def validate_aggregate(aggregate: AnnotationAggregate) -> None:
         raise AnnotationRepositoryInvariantError("review belongs to another task")
     if any(mutation.task_id != task.task_id for mutation in aggregate.mutations):
         raise AnnotationRepositoryInvariantError("mutation belongs to another task")
+    if any(submission.task_id != task.task_id for submission in aggregate.submissions):
+        raise AnnotationRepositoryInvariantError("submission belongs to another task")
+    if any(mutation.task_id != task.task_id for mutation in aggregate.submission_mutations):
+        raise AnnotationRepositoryInvariantError("submission mutation belongs to another task")
 
     operation_ids = [
         operation.operation_id
@@ -44,6 +49,18 @@ def validate_aggregate(aggregate: AnnotationAggregate) -> None:
     mutation_ids = [mutation.client_mutation_id for mutation in aggregate.mutations]
     if len(mutation_ids) != len(set(mutation_ids)):
         raise AnnotationRepositoryInvariantError("client_mutation_id must be unique within a task")
+    submission_ids = [submission.submission_id for submission in aggregate.submissions]
+    if len(submission_ids) != len(set(submission_ids)):
+        raise AnnotationRepositoryInvariantError("submission_id must be unique")
+    submit_keys = [mutation.idempotency_key for mutation in aggregate.submission_mutations]
+    if len(submit_keys) != len(set(submit_keys)):
+        raise AnnotationRepositoryInvariantError("submit Idempotency-Key must be unique")
+    known_submissions = set(submission_ids)
+    if any(
+        mutation.submission_id not in known_submissions
+        for mutation in aggregate.submission_mutations
+    ):
+        raise AnnotationRepositoryInvariantError("submit mutation references an unknown submission")
 
 
 class InMemoryAnnotationRepository:
@@ -56,21 +73,31 @@ class InMemoryAnnotationRepository:
     def __init__(self) -> None:
         self._lock = RLock()
         self._aggregates: dict[str, AnnotationAggregate] = {}
-        self._rollouts: dict[tuple[str, str], str] = {}
+        self._targets: dict[tuple[str, str | None, str, int, int, str, str], str] = {}
+        self._schemas: dict[tuple[str, int], TagSchemaVersion] = {}
+        self._schema_bindings: dict[tuple[str, str, str, str, str], tuple[str, int]] = {}
 
     def create(self, aggregate: AnnotationAggregate) -> AnnotationAggregate:
         validate_aggregate(aggregate)
         task = aggregate.task
-        rollout_key = (task.project_id, task.rollout_id)
+        target_key = (
+            task.project_id,
+            task.region_code,
+            task.dataset_id,
+            task.dataset_version,
+            task.base_lance_version,
+            task.rollout_id,
+            task.task_kind.value,
+        )
         with self._lock:
             existing = self._aggregates.get(task.task_id)
             if existing is not None:
                 return existing
-            other_task_id = self._rollouts.get(rollout_key)
+            other_task_id = self._targets.get(target_key)
             if other_task_id is not None:
                 return self._aggregates[other_task_id]
             self._aggregates[task.task_id] = aggregate
-            self._rollouts[rollout_key] = task.task_id
+            self._targets[target_key] = task.task_id
             return aggregate
 
     def get(self, task_id: str) -> AnnotationAggregate | None:
@@ -79,8 +106,13 @@ class InMemoryAnnotationRepository:
 
     def find_by_rollout(self, *, project_id: str, rollout_id: str) -> AnnotationAggregate | None:
         with self._lock:
-            task_id = self._rollouts.get((project_id, rollout_id))
-            return None if task_id is None else self._aggregates[task_id]
+            matches = [
+                aggregate
+                for aggregate in self._aggregates.values()
+                if aggregate.task.project_id == project_id
+                and aggregate.task.rollout_id == rollout_id
+            ]
+            return None if not matches else sorted(matches, key=lambda item: item.task.task_id)[0]
 
     def list_for_project(self, project_id: str) -> tuple[AnnotationAggregate, ...]:
         with self._lock:
@@ -116,6 +148,108 @@ class InMemoryAnnotationRepository:
             self._aggregates[task_id] = aggregate
             return True
 
+    def create_tag_schema_version(self, schema: TagSchemaVersion) -> TagSchemaVersion:
+        key = (schema.schema_id, schema.version)
+        with self._lock:
+            existing = self._schemas.get(key)
+            if existing is not None:
+                return existing
+            versions = [
+                item.version
+                for item in self._schemas.values()
+                if item.schema_id == schema.schema_id
+            ]
+            if versions and schema.version != max(versions) + 1:
+                raise AnnotationRepositoryInvariantError("Tag Schema versions must be contiguous")
+            if not versions and schema.version != 1:
+                raise AnnotationRepositoryInvariantError("the first Tag Schema version must be 1")
+            self._schemas[key] = schema
+            return schema
+
+    def get_tag_schema_version(self, *, schema_id: str, version: int) -> TagSchemaVersion | None:
+        with self._lock:
+            return self._schemas.get((schema_id, version))
+
+    def list_tag_schema_versions(
+        self, *, project_id: str, schema_id: str
+    ) -> tuple[TagSchemaVersion, ...]:
+        with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        item
+                        for item in self._schemas.values()
+                        if item.project_id == project_id and item.schema_id == schema_id
+                    ),
+                    key=lambda item: item.version,
+                )
+            )
+
+    def publish_tag_schema_version(
+        self, draft: TagSchemaVersion, published: TagSchemaVersion
+    ) -> bool:
+        key = (draft.schema_id, draft.version)
+        with self._lock:
+            current = self._schemas.get(key)
+            if current != draft or current.status is not TagSchemaStatus.DRAFT:
+                return False
+            if (
+                published.schema_id != draft.schema_id
+                or published.version != draft.version
+                or published.document != draft.document
+                or published.content_hash != draft.content_hash
+                or published.compatible_targets != draft.compatible_targets
+            ):
+                raise AnnotationRepositoryInvariantError(
+                    "publishing cannot mutate Tag Schema content"
+                )
+            for target in published.compatible_targets:
+                binding = (
+                    published.project_id,
+                    target.region_code,
+                    target.dataset_id,
+                    target.dataset_schema_snapshot_id,
+                    target.task_kind.value,
+                )
+                owner = self._schema_bindings.get(binding)
+                if owner is not None and owner != key:
+                    raise AnnotationRepositoryInvariantError(
+                        "a Tag Schema target is already bound to another published version"
+                    )
+            self._schemas[key] = published
+            for target in published.compatible_targets:
+                self._schema_bindings[
+                    (
+                        published.project_id,
+                        target.region_code,
+                        target.dataset_id,
+                        target.dataset_schema_snapshot_id,
+                        target.task_kind.value,
+                    )
+                ] = key
+            return True
+
+    def resolve_published_schema(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        dataset_schema_snapshot_id: str,
+        task_kind: AnnotationTaskKind,
+    ) -> TagSchemaVersion | None:
+        with self._lock:
+            key = self._schema_bindings.get(
+                (
+                    project_id,
+                    region_code,
+                    dataset_id,
+                    dataset_schema_snapshot_id,
+                    task_kind.value,
+                )
+            )
+            return None if key is None else self._schemas[key]
+
     @staticmethod
     def _validate_append_only(
         existing: AnnotationAggregate, replacement: AnnotationAggregate
@@ -125,17 +259,33 @@ class InMemoryAnnotationRepository:
         old_identity = (
             old_task.task_id,
             old_task.project_id,
+            old_task.region_code,
             old_task.dataset_id,
             old_task.dataset_version,
+            old_task.base_lance_version,
+            old_task.base_step_count,
+            old_task.tag_schema_id,
+            old_task.tag_schema_version,
             old_task.rollout_id,
+            old_task.task_kind,
+            old_task.creation_source,
+            old_task.source_workflow_id,
             old_task.created_at,
         )
         new_identity = (
             new_task.task_id,
             new_task.project_id,
+            new_task.region_code,
             new_task.dataset_id,
             new_task.dataset_version,
+            new_task.base_lance_version,
+            new_task.base_step_count,
+            new_task.tag_schema_id,
+            new_task.tag_schema_version,
             new_task.rollout_id,
+            new_task.task_kind,
+            new_task.creation_source,
+            new_task.source_workflow_id,
             new_task.created_at,
         )
         if old_identity != new_identity:
@@ -146,12 +296,25 @@ class InMemoryAnnotationRepository:
             raise AnnotationRepositoryInvariantError("reviews are append-only")
         if replacement.mutations[: len(existing.mutations)] != existing.mutations:
             raise AnnotationRepositoryInvariantError("mutation records are append-only")
+        if replacement.submissions[: len(existing.submissions)] != existing.submissions:
+            raise AnnotationRepositoryInvariantError("submissions are append-only")
+        if (
+            replacement.submission_mutations[: len(existing.submission_mutations)]
+            != existing.submission_mutations
+        ):
+            raise AnnotationRepositoryInvariantError("submission mutations are append-only")
         if len(replacement.revisions) > len(existing.revisions) + 1:
             raise AnnotationRepositoryInvariantError("one transaction may append one revision")
         if len(replacement.reviews) > len(existing.reviews) + 1:
             raise AnnotationRepositoryInvariantError("one transaction may append one review")
         if len(replacement.mutations) > len(existing.mutations) + 1:
             raise AnnotationRepositoryInvariantError("one transaction may append one mutation")
+        if len(replacement.submissions) > len(existing.submissions) + 1:
+            raise AnnotationRepositoryInvariantError("one transaction may append one submission")
+        if len(replacement.submission_mutations) > len(existing.submission_mutations) + 1:
+            raise AnnotationRepositoryInvariantError(
+                "one transaction may append one submission mutation"
+            )
 
 
 class FakeAnnotationRepository(InMemoryAnnotationRepository):

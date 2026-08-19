@@ -234,7 +234,7 @@
 
 .selectedHeader {
   display: grid;
-  grid-template-columns: auto minmax(200px, 1fr) auto auto;
+  grid-template-columns: auto minmax(160px, 1fr) auto auto;
   gap: 14px;
   align-items: center;
   padding: 17px 18px;
@@ -292,8 +292,10 @@
 
 .selectedActions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .selectedFacts {
@@ -434,7 +436,7 @@
 .identity,
 .versionCell {
   gap: var(--hc-space-1, 4px);
-  min-width: 180px;
+  min-width: 0;
 }
 
 .identity strong,
@@ -525,7 +527,51 @@
 
 
   .selectedTimeline {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+    align-items: start;
+  }
+
+  .selectedTimeline span + span {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .datasetMetric {
+    min-height: 102px;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 8px;
+    padding: 14px 12px;
+  }
+
+  .datasetMetricIcon {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+
+  .datasetMetricIcon svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .datasetMetricCopy strong {
+    font-size: 20px;
+  }
+
+  .selectedFacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .versionFact {
+    grid-column: auto;
+  }
+
+  .selectedActions {
+    justify-content: flex-start;
   }
 }
 

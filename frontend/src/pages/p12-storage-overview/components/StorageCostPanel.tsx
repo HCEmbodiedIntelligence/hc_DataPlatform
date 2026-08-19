@@ -16,7 +16,7 @@ export function StorageCostPanel({ cost }: Readonly<{ cost: StorageCostBreakdown
         type="info"
         showIcon
         title="费用口径"
-        description="以上为服务端 minor-unit 事实，页面不从容量估算费用。"
+        description="以上金额来自服务端账单，页面不会根据容量自行估算费用。"
       />
     </Card>
   );

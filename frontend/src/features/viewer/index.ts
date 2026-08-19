@@ -6,3 +6,7 @@ export * from './ViewerCompositionResolver';
 export * from './types';
 export * from './runtime/ViewerResourceRegistry';
 export * from './runtime/signed-resource';
+export * from './workbench-contract';
+export * from './DataVisualizationWorkbench';
+export * from './raw-diagnostic-adapter';
+export * from './RawDiagnosticWorkbench';

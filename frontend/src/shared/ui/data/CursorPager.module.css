@@ -1,0 +1,35 @@
+.pager {
+  display: grid;
+  width: fit-content;
+  max-width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.pager span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .pager {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .pager span {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .pager button {
+    min-height: 42px;
+  }
+}

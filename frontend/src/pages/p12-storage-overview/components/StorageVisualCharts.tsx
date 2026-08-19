@@ -2,10 +2,11 @@ import { Activity, Layers3 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import type { StorageOverview } from '../../../features/storage-overview/types';
 import {
-  displayDecimalMetric,
+  displayByteMetric,
   formatByteString,
 } from '../../../features/storage-overview/metrics-contract';
 import type { Int64String } from '../../../shared/lib/bigint-string';
+import { objectRoleLabel, storageClassLabel } from '../display-labels';
 import styles from '../styles.module.css';
 
 const STORAGE_COLORS: Record<string, string> = {
@@ -58,15 +59,9 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
       return range;
     })
     .join(', ');
-  const logical =
-    overview.totals.logicalReferencedBytes.state === 'KNOWN'
-      ? formatByteString(overview.totals.logicalReferencedBytes.value)
-      : overview.totals.logicalReferencedBytes.state;
-  const actual =
-    overview.totals.actualOssPhysicalBytes.state === 'KNOWN'
-      ? formatByteString(overview.totals.actualOssPhysicalBytes.value)
-      : overview.totals.actualOssPhysicalBytes.state;
-  const reuse = displayDecimalMetric(overview.totals.reuseRate);
+  const totalCapacity = displayByteMetric(overview.totals.actualOssPhysicalBytes);
+  const rawCapacity = overview.roles.find((item) => item.role === 'SOURCE')?.physicalBytes;
+  const lanceCapacity = overview.roles.find((item) => item.role === 'DERIVED')?.physicalBytes;
 
   return (
     <section className={styles.storageVisualCharts} aria-label="存储概览图表">
@@ -77,12 +72,12 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
               <Activity size={19} strokeWidth={1.8} />
             </span>
             <div>
-              <span className={styles.storageChartEyebrow}>TREND</span>
+              <span className={styles.storageChartEyebrow}>容量趋势</span>
               <h2>最近容量趋势</h2>
               <p>服务端快照中的对象角色物理量</p>
             </div>
           </div>
-          <span className={styles.storageChartBadge}>TB</span>
+          <span className={styles.storageChartBadge}>容量</span>
         </header>
         <div
           className={styles.trendVisual}
@@ -119,7 +114,7 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
                   background: ['#5965d8', '#4d8fe8', '#9b72d8', '#f59e0b', '#7367d8'][index % 5],
                 }}
               />
-              {role.role}
+              {objectRoleLabel(role.role)}
             </span>
           ))}
         </footer>
@@ -132,12 +127,12 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
               <Layers3 size={19} strokeWidth={1.8} />
             </span>
             <div>
-              <span className={styles.storageChartEyebrow}>TIERING</span>
+              <span className={styles.storageChartEyebrow}>存储层级</span>
               <h2>存储层级分布</h2>
-              <p>同一 Inventory 快照</p>
+              <p>同一次对象盘点</p>
             </div>
           </div>
-          <span className={styles.storageChartBadge}>INVENTORY</span>
+          <span className={styles.storageChartBadge}>对象盘点</span>
         </header>
         <div className={styles.distributionVisual}>
           <div
@@ -155,7 +150,7 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
               <div key={item.storageClass}>
                 <dt>
                   <i style={{ background: STORAGE_COLORS[item.storageClass] ?? '#94a3b8' }} />
-                  {item.storageClass}
+                  {storageClassLabel(item.storageClass)}
                 </dt>
                 <dd>
                   {percent(item.physical, classTotal)}% · {formatCapacity(item.physical)}
@@ -166,16 +161,16 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
         </div>
         <dl className={styles.storageFacts}>
           <div>
-            <dt>逻辑数据量</dt>
-            <dd>{logical}</dd>
+            <dt>当前项目总储量</dt>
+            <dd>{totalCapacity}</dd>
           </div>
           <div>
-            <dt>物理存储</dt>
-            <dd>{actual}</dd>
+            <dt>原始 MCAP</dt>
+            <dd>{rawCapacity ? displayByteMetric(rawCapacity) : '未知'}</dd>
           </div>
           <div>
-            <dt>对象复用率</dt>
-            <dd>{reuse}</dd>
+            <dt>Lance 加工数据</dt>
+            <dd>{lanceCapacity ? displayByteMetric(lanceCapacity) : '未知'}</dd>
           </div>
         </dl>
       </article>

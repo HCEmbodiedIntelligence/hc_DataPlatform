@@ -571,7 +571,9 @@ class PostgresAdvisoryDatasetLock:
     def acquire(self, project_id: str, dataset_id: str) -> Iterator[None]:
         connection = self._connection_factory()
         cursor = connection.cursor()
-        lock_name = f"hc-lance-catalog\x00{project_id}\x00{dataset_id}"
+        # PostgreSQL text parameters reject NUL separators. Canonical JSON keeps
+        # the three lock components unambiguous and stable for hashtextextended().
+        lock_name = _dump_json(("hc-lance-catalog", project_id, dataset_id))
         acquired = False
         try:
             cursor.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", (lock_name,))

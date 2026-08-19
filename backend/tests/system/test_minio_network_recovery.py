@@ -14,7 +14,12 @@ from uuid import uuid4
 import pytest
 
 from hc_data_platform.ingest.adapters import S3ObjectStorage
-from hc_data_platform.ingest.models import CompletedPart, RolloutManifestV1, UploadStatus
+from hc_data_platform.ingest.models import (
+    CompletedPart,
+    ManifestFileV1,
+    RolloutManifestV1,
+    UploadStatus,
+)
 from hc_data_platform.ingest.ports import crc64_ecma
 from hc_data_platform.ingest.service import UploadSessionService
 
@@ -42,7 +47,7 @@ def test_minio_network_pause_recovers_one_raw_object_and_manifest() -> None:
             "docker",
             "inspect",
             "--format",
-            '{{ index .Config.Labels "hc.be12.disposable" }}',
+            '{{ index .Config.Labels "hc.test.disposable" }}',
             container,
         ],
         check=True,
@@ -82,12 +87,25 @@ def test_minio_network_pause_recovers_one_raw_object_and_manifest() -> None:
         task_id="network-fault",
         collection_job_id="minio-pause",
         rollout_id="rollout-1",
+        collection_session_id="network-session",
+        recording_request_id="network-request",
+        data_package_id=f"network-package-{suffix}",
         sequence_no=1,
         robot_id="be12",
         start_time=started,
         end_time=started + timedelta(seconds=1),
         expected_topics=[],
         actual_topics=[],
+        cameras=[],
+        topics=[],
+        files=[
+            ManifestFileV1(
+                path="recording.mcap",
+                size=len(body),
+                sha256=hashlib.sha256(body).hexdigest(),
+                crc64=crc64_ecma(body),
+            )
+        ],
         file_size=len(body),
         sha256=hashlib.sha256(body).hexdigest(),
         crc64=crc64_ecma(body),

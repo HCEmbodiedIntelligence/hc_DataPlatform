@@ -1,0 +1,455 @@
+openapi: 3.1.0
+info:
+  title: Storage Capacity and Lifecycle Policy API Fragment
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/projects/{project_id}/storage/capacity:
+    get:
+      operationId: getStorageCapacity
+      tags: [storage]
+      description: >-
+        Reports provider physical usage and the candidate mutually exclusive business
+        total together. The two totals are separate accounting views and must not be added.
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - name: snapshot_id
+          in: query
+          required: false
+          schema: {type: string, minLength: 1, maxLength: 256}
+      responses:
+        '200':
+          description: Reconciled physical and candidate business capacity facts.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CapacitySnapshot'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project read scope is required.}
+        '404': {description: No inventory snapshot exists in the selected scope.}
+  /api/v1/projects/{project_id}/storage/inventory:
+    get:
+      operationId: listStorageInventory
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - name: snapshot_id
+          in: query
+          required: false
+          schema: {type: string, minLength: 1, maxLength: 256}
+        - {$ref: '#/components/parameters/StorageCursor'}
+        - {$ref: '#/components/parameters/StorageLimit'}
+      responses:
+        '200':
+          description: Stable cursor page of provider physical instances.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CapacityInventoryPage'}
+        '400': {description: Cursor is malformed or belongs to another scope.}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project read scope is required.}
+        '404': {description: No inventory snapshot exists in the selected scope.}
+  /api/v1/projects/{project_id}/storage/lifecycle-policies:
+    get:
+      operationId: listLifecyclePolicies
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - {$ref: '#/components/parameters/StorageCursor'}
+        - {$ref: '#/components/parameters/StorageLimit'}
+      responses:
+        '200':
+          description: Project-scoped lifecycle policy page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecyclePolicyPage'}
+        '400': {description: Cursor is malformed or belongs to another scope.}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project read scope is required.}
+    post:
+      operationId: createLifecyclePolicy
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - {$ref: '#/components/parameters/StorageIdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateLifecyclePolicy'}
+      responses:
+        '201':
+          description: Policy created, or the identical idempotent request replayed.
+          headers:
+            ETag: {$ref: '#/components/headers/StorageETag'}
+            Idempotency-Replayed: {$ref: '#/components/headers/StorageIdempotencyReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecyclePolicy'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project administration permission is required.}
+        '409': {description: Policy name or idempotency key conflicts.}
+        '422': {description: Policy action or target violates the contract.}
+  /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}:
+    parameters:
+      - {$ref: '#/components/parameters/StorageProjectId'}
+      - {$ref: '#/components/parameters/StoragePolicyId'}
+    get:
+      operationId: getLifecyclePolicy
+      tags: [storage]
+      responses:
+        '200':
+          description: Current project-scoped lifecycle policy.
+          headers:
+            ETag: {$ref: '#/components/headers/StorageETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecyclePolicy'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project read scope is required.}
+        '404': {description: Policy does not exist in the selected scope.}
+    put:
+      operationId: updateLifecyclePolicy
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageIfMatch'}
+        - {$ref: '#/components/parameters/StorageIdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateLifecyclePolicy'}
+      responses:
+        '200':
+          description: Policy updated, or the identical idempotent request replayed.
+          headers:
+            ETag: {$ref: '#/components/headers/StorageETag'}
+            Idempotency-Replayed: {$ref: '#/components/headers/StorageIdempotencyReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecyclePolicy'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project administration permission is required.}
+        '404': {description: Policy does not exist in the selected scope.}
+        '409': {description: Policy name or enabled-policy target conflicts.}
+        '412': {description: If-Match is stale.}
+        '422': {description: Policy action or target violates the contract.}
+    delete:
+      operationId: deleteLifecyclePolicy
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageIfMatch'}
+        - {$ref: '#/components/parameters/StorageIdempotencyKey'}
+      responses:
+        '204':
+          description: Paused or draft policy deleted idempotently.
+          headers:
+            Idempotency-Replayed: {$ref: '#/components/headers/StorageIdempotencyReplayed'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project administration permission is required.}
+        '404': {description: Policy does not exist in the selected scope.}
+        '409': {description: Enabled policies must be paused before deletion.}
+        '412': {description: If-Match is stale.}
+  /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}/enable:
+    post:
+      operationId: enableLifecyclePolicy
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - {$ref: '#/components/parameters/StoragePolicyId'}
+        - {$ref: '#/components/parameters/StorageIfMatch'}
+        - {$ref: '#/components/parameters/StorageIdempotencyKey'}
+      responses:
+        '200':
+          description: Policy enabled after conflict and protection checks.
+          headers:
+            ETag: {$ref: '#/components/headers/StorageETag'}
+            Idempotency-Replayed: {$ref: '#/components/headers/StorageIdempotencyReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecyclePolicy'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project administration permission is required.}
+        '404': {description: Policy does not exist in the selected scope.}
+        '409': {description: Another enabled policy has the same target and priority.}
+        '412': {description: If-Match is stale.}
+  /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}/pause:
+    post:
+      operationId: pauseLifecyclePolicy
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - {$ref: '#/components/parameters/StoragePolicyId'}
+        - {$ref: '#/components/parameters/StorageIfMatch'}
+        - {$ref: '#/components/parameters/StorageIdempotencyKey'}
+      responses:
+        '200':
+          description: Policy paused, or the identical idempotent request replayed.
+          headers:
+            ETag: {$ref: '#/components/headers/StorageETag'}
+            Idempotency-Replayed: {$ref: '#/components/headers/StorageIdempotencyReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecyclePolicy'}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project administration permission is required.}
+        '404': {description: Policy does not exist in the selected scope.}
+        '412': {description: If-Match is stale.}
+  /api/v1/projects/{project_id}/storage/lifecycle-audit:
+    get:
+      operationId: listLifecycleAudit
+      tags: [storage]
+      parameters:
+        - {$ref: '#/components/parameters/StorageProjectId'}
+        - {$ref: '#/components/parameters/StorageCursor'}
+        - {$ref: '#/components/parameters/StorageLimit'}
+      responses:
+        '200':
+          description: Append-only lifecycle policy audit page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LifecycleAuditPage'}
+        '400': {description: Cursor is malformed or belongs to another scope.}
+        '401': {description: A verified identity is required.}
+        '403': {description: Project read scope is required.}
+components:
+  parameters:
+    StorageProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 256}
+    StoragePolicyId:
+      name: policy_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 256}
+    StorageCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string, maxLength: 16384}
+    StorageLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+    StorageIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 256}
+    StorageIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 256}
+  headers:
+    StorageETag:
+      required: true
+      schema: {type: string}
+    StorageIdempotencyReplayed:
+      required: true
+      schema: {type: string, enum: ['true', 'false']}
+  schemas:
+    BusinessCapacityCategory:
+      type: string
+      enum: [RAW, ANNOTATION_COMPLETE, PENDING_ANNOTATION, ISSUE_DATA]
+      description: The complete, fixed business-capacity category set.
+    InventoryDisposition:
+      type: string
+      enum: [PRIMARY, REPLICA, TEMPORARY]
+    ObjectRole:
+      type: string
+      enum: [RAW, MANIFEST, PUBLISHED_MANIFEST, REBUILDABLE_DERIVATIVE, OTHER]
+    CapacityInventoryFact:
+      type: object
+      additionalProperties: false
+      required:
+        - snapshot_id
+        - project_id
+        - physical_instance_id
+        - physical_bytes
+        - disposition
+        - object_role
+        - observed_at
+      properties:
+        snapshot_id: {type: string, minLength: 1, maxLength: 256}
+        project_id: {type: string, minLength: 1, maxLength: 256}
+        physical_instance_id: {type: string, minLength: 1, maxLength: 1024}
+        logical_object_id: {type: [string, 'null'], maxLength: 1024}
+        physical_bytes: {$ref: '#/components/schemas/StorageByteString'}
+        disposition: {$ref: '#/components/schemas/InventoryDisposition'}
+        business_category:
+          oneOf:
+            - {$ref: '#/components/schemas/BusinessCapacityCategory'}
+            - {type: 'null'}
+        object_role: {$ref: '#/components/schemas/ObjectRole'}
+        observed_at: {type: string, format: date-time}
+    CapacityInventoryPage:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, project_id, items, page_info]
+      properties:
+        snapshot_id: {type: string}
+        project_id: {type: string}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CapacityInventoryFact'}
+        page_info: {$ref: '#/components/schemas/PageInfo'}
+    CapacityCategoryTotal:
+      type: object
+      additionalProperties: false
+      required: [category, candidate_bytes, logical_object_count]
+      properties:
+        category: {$ref: '#/components/schemas/BusinessCapacityCategory'}
+        candidate_bytes: {$ref: '#/components/schemas/StorageByteString'}
+        logical_object_count: {type: integer, minimum: 0}
+    CapacityReconciliation:
+      type: object
+      additionalProperties: false
+      required:
+        - replica_overhead_bytes
+        - replica_instance_count
+        - temporary_bytes
+        - temporary_instance_count
+        - duplicate_inventory_rows_ignored
+        - formula
+        - balanced
+      properties:
+        replica_overhead_bytes: {$ref: '#/components/schemas/StorageByteString'}
+        replica_instance_count: {type: integer, minimum: 0}
+        temporary_bytes: {$ref: '#/components/schemas/StorageByteString'}
+        temporary_instance_count: {type: integer, minimum: 0}
+        duplicate_inventory_rows_ignored: {type: integer, minimum: 0}
+        formula:
+          type: string
+          const: >-
+            physical_total_bytes = candidate_business_total_bytes +
+            replica_overhead_bytes + temporary_bytes
+        balanced: {type: boolean}
+    CapacitySnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - snapshot_id
+        - project_id
+        - observed_at
+        - physical_total_bytes
+        - physical_instance_count
+        - candidate_business_total_bytes
+        - candidate_logical_object_count
+        - categories
+        - reconciliation
+      properties:
+        snapshot_id: {type: string}
+        project_id: {type: string}
+        observed_at: {type: string, format: date-time}
+        physical_total_bytes: {$ref: '#/components/schemas/StorageByteString'}
+        physical_instance_count: {type: integer, minimum: 0}
+        candidate_business_total_bytes: {$ref: '#/components/schemas/StorageByteString'}
+        candidate_logical_object_count: {type: integer, minimum: 0}
+        categories:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {$ref: '#/components/schemas/CapacityCategoryTotal'}
+        reconciliation: {$ref: '#/components/schemas/CapacityReconciliation'}
+    LifecyclePolicyAction:
+      type: string
+      enum: [RETAIN, REVIEW_EXPIRATION, CLEAN_REBUILDABLE_CACHE]
+    LifecyclePolicyState:
+      type: string
+      enum: [DRAFT, ENABLED, PAUSED]
+    CreateLifecyclePolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - business_category
+        - object_role
+        - action
+        - minimum_age_days
+        - priority
+      properties:
+        name: {type: string, minLength: 1, maxLength: 256}
+        business_category: {$ref: '#/components/schemas/BusinessCapacityCategory'}
+        object_role: {$ref: '#/components/schemas/ObjectRole'}
+        action: {$ref: '#/components/schemas/LifecyclePolicyAction'}
+        minimum_age_days: {type: integer, minimum: 0, maximum: 36500}
+        priority: {type: integer, minimum: 0, maximum: 10000}
+    UpdateLifecyclePolicy:
+      allOf:
+        - {$ref: '#/components/schemas/CreateLifecyclePolicy'}
+    LifecyclePolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - policy_id
+        - project_id
+        - name
+        - business_category
+        - object_role
+        - action
+        - minimum_age_days
+        - priority
+        - state
+        - version
+        - etag
+        - created_at
+        - updated_at
+      properties:
+        policy_id: {type: string, minLength: 1, maxLength: 256}
+        project_id: {type: string, minLength: 1, maxLength: 256}
+        name: {type: string, minLength: 1, maxLength: 256}
+        business_category: {$ref: '#/components/schemas/BusinessCapacityCategory'}
+        object_role: {$ref: '#/components/schemas/ObjectRole'}
+        action: {$ref: '#/components/schemas/LifecyclePolicyAction'}
+        minimum_age_days: {type: integer, minimum: 0, maximum: 36500}
+        priority: {type: integer, minimum: 0, maximum: 10000}
+        state: {$ref: '#/components/schemas/LifecyclePolicyState'}
+        version: {type: integer, minimum: 1}
+        etag: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    LifecyclePolicyPage:
+      type: object
+      additionalProperties: false
+      required: [project_id, items, page_info]
+      properties:
+        project_id: {type: string}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LifecyclePolicy'}
+        page_info: {$ref: '#/components/schemas/PageInfo'}
+    LifecycleAuditEvent:
+      type: object
+      additionalProperties: false
+      required: [audit_id, project_id, policy_id, actor_id, action, request_id, occurred_at]
+      properties:
+        audit_id: {type: string}
+        project_id: {type: string}
+        policy_id: {type: string}
+        actor_id: {type: string}
+        action: {type: string}
+        before_digest: {type: [string, 'null']}
+        after_digest: {type: [string, 'null']}
+        request_id: {type: string}
+        details:
+          type: object
+          additionalProperties:
+            type: [string, integer, boolean, 'null']
+        occurred_at: {type: string, format: date-time}
+    LifecycleAuditPage:
+      type: object
+      additionalProperties: false
+      required: [project_id, items, page_info]
+      properties:
+        project_id: {type: string}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LifecycleAuditEvent'}
+        page_info: {$ref: '#/components/schemas/PageInfo'}
+    StorageByteString:
+      type: string
+      pattern: '^(0|[1-9][0-9]*)$'

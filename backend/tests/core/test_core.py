@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY, Gauge
 from pydantic import ValidationError
+from starlette.responses import JSONResponse
 
 from hc_data_platform.core import health as health_module
 from hc_data_platform.core import migrations as migration_module
@@ -67,6 +70,21 @@ def _empty_package() -> ModuleType:
 
 def _settings() -> Settings:
     return Settings(environment="test", readiness_timeout_seconds=0.5, _env_file=None)
+
+
+def _production_settings(**updates: object) -> Settings:
+    return Settings(
+        environment="production",
+        runtime_backend="memory",
+        cursor_secret="production-cursor-secret",
+        object_store_secret_key="production-object-secret",
+        object_store_public_endpoint="https://uploads.example.com",
+        jwt_issuer="https://issuer.example/",
+        jwt_signing_key="production-jwt-signing-key",
+        enforce_schema_migrations=True,
+        _env_file=None,
+        **updates,
+    )
 
 
 def _probes(*, postgres_error: str | None = None) -> dict[str, FakeProbe]:
@@ -131,6 +149,8 @@ def test_invalid_configuration_is_rejected(monkeypatch: pytest.MonkeyPatch) -> N
         Settings(jwt_algorithms=["RS256", "RS256"], _env_file=None)
     with pytest.raises(ValidationError, match="query or fragment"):
         Settings(jwt_issuer="https://issuer.example/?tenant=one", _env_file=None)
+    with pytest.raises(ValidationError, match="HC_API_DOCS_ENABLED"):
+        _production_settings(api_docs_enabled=True)
 
 
 def test_untrusted_request_id_must_be_visible_ascii() -> None:
@@ -155,17 +175,19 @@ def test_liveness_does_not_run_readiness_probes() -> None:
         module_package=_empty_package(),
     )
 
+    request_id = "11111111-1111-4111-8111-111111111111"
     with TestClient(app) as client:
-        response = client.get("/health/live", headers={"X-Request-ID": "request-123"})
+        response = client.get("/health/live", headers={"X-Request-ID": request_id})
 
     assert response.status_code == 200
-    assert response.json() == {"status": "live", "environment": "test"}
-    assert response.headers["X-Request-ID"] == "request-123"
+    assert response.json() == {"status": "live"}
+    assert response.headers["X-Request-ID"] == request_id
     assert all(probe.calls == 0 for probe in probes.values())
 
 
-def test_readiness_probe_failure_returns_503_and_dependency_states() -> None:
-    probes = _probes(postgres_error="database unavailable")
+def test_readiness_probe_failure_returns_safe_problem_without_dependency_states() -> None:
+    sentinel = "postgresql://service:readiness-password@db.internal/platform"
+    probes = _probes(postgres_error=sentinel)
     app = create_app(
         settings=_settings(),
         readiness_probes=probes,
@@ -177,11 +199,11 @@ def test_readiness_probe_failure_returns_503_and_dependency_states() -> None:
 
     assert response.status_code == 503
     body = response.json()
-    assert body["status"] == "not_ready"
-    assert body["dependencies"]["postgresql"]["status"] == "not_ready"
-    assert body["dependencies"]["postgresql"]["detail"] == "database unavailable"
-    assert body["dependencies"]["temporal"]["status"] == "ready"
-    assert body["dependencies"]["object_storage"]["status"] == "ready"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert body["code"] == "HTTP_503"
+    assert body["detail"] == "The server could not complete the request."
+    assert "dependencies" not in body
+    assert sentinel not in response.text
 
 
 def test_readiness_returns_200_only_when_every_probe_is_ready() -> None:
@@ -196,13 +218,44 @@ def test_readiness_returns_200_only_when_every_probe_is_ready() -> None:
         response = client.get("/health/ready")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "ready"
-    assert set(response.json()["dependencies"]) == {
-        "postgresql",
-        "temporal",
-        "object_storage",
-    }
+    assert response.json() == {"status": "ready"}
     assert all(probe.calls == 1 for probe in probes.values())
+
+
+def test_production_docs_are_closed_and_test_profile_requires_explicit_enablement() -> None:
+    production = create_app(
+        settings=_production_settings(),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+    test_closed = create_app(
+        settings=_settings(),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+    test_open = create_app(
+        settings=Settings(
+            environment="test",
+            api_docs_enabled=True,
+            readiness_timeout_seconds=0.5,
+            _env_file=None,
+        ),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+
+    for application in (production, test_closed):
+        with TestClient(application) as client:
+            assert client.get("/docs").status_code == 404
+            assert client.get("/docs/oauth2-redirect").status_code == 404
+            assert client.get("/redoc").status_code == 404
+            assert client.get("/openapi.json").status_code == 404
+        assert "/health/live" in application.openapi()["paths"]
+
+    with TestClient(test_open) as client:
+        assert client.get("/docs").status_code == 200
+        assert client.get("/redoc").status_code == 200
+        assert client.get("/openapi.json").status_code == 200
 
 
 @pytest.mark.asyncio
@@ -287,13 +340,14 @@ def test_request_context_and_problem_details_are_bound_to_request() -> None:
             request_id=context.request_id,
         )
 
+    request_id = "22222222-2222-4222-8222-222222222222"
     with TestClient(app) as client:
-        response = client.get("/problem", headers={"X-Request-ID": "problem-request"})
+        response = client.get("/problem", headers={"X-Request-ID": request_id})
 
     assert response.status_code == 409
     assert response.headers["content-type"].startswith("application/problem+json")
-    assert response.headers["X-Request-ID"] == "problem-request"
-    assert response.json()["request_id"] == "problem-request"
+    assert response.headers["X-Request-ID"] == request_id
+    assert response.json()["request_id"] == request_id
     assert response.json()["instance"] == "/problem"
 
 
@@ -319,7 +373,9 @@ def test_anonymous_headers_cannot_select_database_scope() -> None:
     assert response.json() == {"project_id": None, "region_code": None}
 
 
-def test_framework_and_unexpected_errors_use_problem_details() -> None:
+def test_framework_and_unexpected_errors_use_problem_details(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     app = create_app(
         settings=_settings(),
         readiness_probes=_probes(),
@@ -334,22 +390,81 @@ def test_framework_and_unexpected_errors_use_problem_details() -> None:
     async def unexpected() -> None:
         raise RuntimeError("sensitive implementation detail")
 
+    @app.get("/http-500")
+    async def http_500() -> None:
+        raise HTTPException(
+            status_code=500,
+            detail="sensitive HTTP exception detail",
+            headers={"X-Sensitive-Internal": "must-not-escape"},
+        )
+
+    @app.get("/problem-503")
+    async def problem_503() -> None:
+        raise problem(
+            status=503,
+            code="DEPENDENCY_FAILED",
+            title="Dependency failed",
+            detail="postgresql://service:problem-password@db.internal/platform",
+            details={"object_key": "s3://private-bucket/raw/private.mcap"},
+        )
+
+    @app.get("/direct-599")
+    async def direct_599() -> JSONResponse:
+        return JSONResponse(
+            status_code=599,
+            content={"detail": "Traceback (most recent call last): private stack"},
+            headers={"X-Internal-DSN": "postgresql://service:header-password@db/platform"},
+        )
+
+    caplog.set_level(logging.ERROR, logger="hc_data_platform.core.app")
+    missing_request_id = "33333333-3333-4333-8333-333333333333"
+    failed_request_id = "44444444-4444-4444-8444-444444444444"
     with TestClient(app, raise_server_exceptions=False) as client:
-        missing = client.get("/missing", headers={"X-Request-ID": "missing-request"})
+        missing = client.get("/missing", headers={"X-Request-ID": missing_request_id})
         denied = client.get("/forbidden")
-        failed = client.get("/unexpected", headers={"X-Request-ID": "failed-request"})
+        failed = client.get("/unexpected", headers={"X-Request-ID": failed_request_id})
+        http_failed = client.get("/http-500")
+        dependency_failed = client.get("/problem-503")
+        direct_failed = client.get("/direct-599")
 
     assert missing.status_code == 404
     assert missing.headers["content-type"].startswith("application/problem+json")
     assert missing.json()["code"] == "HTTP_404"
-    assert missing.json()["request_id"] == "missing-request"
+    assert missing.json()["request_id"] == missing_request_id
     assert denied.status_code == 403
-    assert denied.json()["detail"] == "Access denied"
-    assert denied.headers["X-Denied"] == "1"
+    assert denied.json()["detail"] == "Forbidden"
+    assert "X-Denied" not in denied.headers
     assert failed.status_code == 500
     assert failed.json()["code"] == "INTERNAL_SERVER_ERROR"
-    assert failed.json()["request_id"] == "failed-request"
+    assert failed.json()["request_id"] == failed_request_id
     assert "sensitive" not in failed.text
+    assert http_failed.status_code == 500
+    assert http_failed.json()["detail"] == "The server could not complete the request."
+    assert "sensitive" not in http_failed.text.lower()
+    assert "X-Sensitive-Internal" not in http_failed.headers
+    assert dependency_failed.status_code == 503
+    assert dependency_failed.json()["code"] == "HTTP_503"
+    assert direct_failed.status_code == 500
+    assert direct_failed.json()["code"] == "INTERNAL_SERVER_ERROR"
+    for response in (dependency_failed, direct_failed):
+        assert response.headers["content-type"].startswith("application/problem+json")
+        assert "password" not in response.text
+        assert "private" not in response.text
+        assert "X-Internal-DSN" not in response.headers
+
+    safe_exception_types = {
+        "HTTPException",
+        "ProblemException",
+        "UnhandledException",
+        "UnsafeHTTPResponse",
+    }
+    failure_records = [record for record in caplog.records if record.msg == "request_failed"]
+    assert failure_records
+    assert all(record.exception_type in safe_exception_types for record in failure_records)
+    assert all(record.error_code == "INTERNAL_SERVER_ERROR" for record in failure_records)
+    assert all(not hasattr(record, "project_id") for record in failure_records)
+    assert "problem-password" not in caplog.text
+    assert "header-password" not in caplog.text
 
 
 def test_authentication_backend_failure_still_uses_problem_details() -> None:
@@ -360,16 +475,54 @@ def test_authentication_backend_failure_still_uses_problem_details() -> None:
         jwt_verifier=ExplodingVerifier(),  # type: ignore[arg-type]
     )
 
+    request_id = "55555555-5555-4555-8555-555555555555"
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.get(
             "/health/live",
-            headers={"Authorization": "Bearer opaque", "X-Request-ID": "auth-failure"},
+            headers={"Authorization": "Bearer opaque", "X-Request-ID": request_id},
         )
 
     assert response.status_code == 500
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["code"] == "INTERNAL_SERVER_ERROR"
-    assert response.json()["request_id"] == "auth-failure"
+    assert response.json()["request_id"] == request_id
+
+
+def test_validation_and_internal_metrics_do_not_expose_user_input_or_scope_labels() -> None:
+    app = create_app(
+        settings=_settings(),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+
+    @app.get("/validate")
+    async def validate(quantity: int) -> dict[str, int]:
+        return {"quantity": quantity}
+
+    metric = Gauge(
+        f"hc_br03_sensitive_metric_{uuid4().hex}",
+        "BR03 sensitive metric test",
+        ("project_id", "workflow_id"),
+    )
+    sentinel = "postgresql://service:validation-password@db.internal/platform"
+    metric.labels(project_id=sentinel, workflow_id="s3://private/raw/object.mcap").set(1)
+    try:
+        with TestClient(app) as client:
+            invalid = client.get("/validate", params={"quantity": sentinel})
+            metrics = client.get("/metrics")
+    finally:
+        REGISTRY.unregister(metric)
+
+    assert invalid.status_code == 422
+    assert invalid.json()["details"]["errors"] == [
+        {"type": "int_parsing", "loc": ["query"], "msg": "Invalid value"}
+    ]
+    assert sentinel not in invalid.text
+    assert metrics.status_code == 200
+    assert sentinel not in metrics.text
+    assert "project_id=" not in metrics.text
+    assert "workflow_id=" not in metrics.text
+    assert "python_info" in metrics.text
 
 
 def test_module_router_discovery_is_automatic_and_sorted(

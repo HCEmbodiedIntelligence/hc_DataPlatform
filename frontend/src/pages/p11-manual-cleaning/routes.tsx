@@ -1,24 +1,33 @@
-import type { RouteObject } from 'react-router-dom';
-import { registerPageRoutes } from '../../shared/routing/route-registry';
+import type { RouteObject } from "react-router-dom";
+import { registerPageRoutes } from "../../shared/routing/route-registry";
+
+const browserMockEnabled = import.meta.env.VITE_MOCK_MODE === "browser";
 
 type CleaningWorkbenchRoute = RouteObject & {
-  readonly navigationOwnerPageId: 'P10';
-  readonly navigationOwnerGroupId: 'manual';
-  readonly requiredCapabilities: readonly ['cleaning.read'];
+  readonly navigationOwnerPageId: "P08";
+  readonly navigationOwnerGroupId: "annotation";
+  readonly requiredCapabilities: readonly [];
   readonly hiddenFromNavigation: true;
 };
 
-export const routes: CleaningWorkbenchRoute[] = [{
-  path: '/manual/drafts/:draftId',
-  navigationOwnerPageId: 'P10',
-  navigationOwnerGroupId: 'manual',
-  requiredCapabilities: ['cleaning.read'],
-  hiddenFromNavigation: true,
-  lazy: async () => {
-    const module = await import('./page');
-    return { Component: module.ManualCleaningWorkbenchPage };
-  },
-}];
+export const routes: CleaningWorkbenchRoute[] = [
+  {
+    path: "/manual/drafts/:draftId",
+    navigationOwnerPageId: "P08",
+    navigationOwnerGroupId: "annotation",
+    requiredCapabilities: [],
+    hiddenFromNavigation: true,
+    lazy: async () => {
+      if (browserMockEnabled) {
+        const module = await import("./page");
+        return { Component: module.ManualCleaningWorkbenchPage };
+      }
 
-registerPageRoutes('P11', routes);
+      const module = await import("../../app/shell/RouteCompatibility");
+      return { Component: module.LegacyCleaningWorkbenchRedirect };
+    },
+  },
+];
+
+registerPageRoutes("P11", routes);
 export default routes;

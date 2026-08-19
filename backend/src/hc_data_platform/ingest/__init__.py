@@ -1,6 +1,10 @@
 """Immutable rollout ingestion and object-storage contracts."""
 
-from .adapters import OssObjectStorage, S3ObjectStorage
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
 from .models import (
     CollectionJob,
     CompletedPart,
@@ -11,9 +15,6 @@ from .models import (
     UploadPart,
     UploadSession,
 )
-from .persistence import IngestPersistencePort, InMemoryIngestPersistence
-from .ports import InMemoryObjectStorage, ObjectStoragePort
-from .service import UploadSessionService
 
 __all__ = [
     "CollectionJob",
@@ -32,3 +33,26 @@ __all__ = [
     "UploadSession",
     "UploadSessionService",
 ]
+
+_LAZY_EXPORTS = {
+    "InMemoryIngestPersistence": ("persistence", "InMemoryIngestPersistence"),
+    "IngestPersistencePort": ("persistence", "IngestPersistencePort"),
+    "InMemoryObjectStorage": ("ports", "InMemoryObjectStorage"),
+    "ObjectStoragePort": ("ports", "ObjectStoragePort"),
+    "OssObjectStorage": ("adapters", "OssObjectStorage"),
+    "S3ObjectStorage": ("adapters", "S3ObjectStorage"),
+    "UploadSessionService": ("service", "UploadSessionService"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Keep workflow model imports free of storage, auth, and SDK side effects."""
+
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(name)
+    module_name, attribute = target
+    module = import_module(f"{__name__}.{module_name}")
+    value = getattr(module, attribute)
+    globals()[name] = value
+    return value

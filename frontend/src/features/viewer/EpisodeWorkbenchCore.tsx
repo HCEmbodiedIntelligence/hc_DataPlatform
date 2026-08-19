@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, JSX, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  CSSProperties,
+  JSX,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+  RefObject,
+} from 'react';
+import { Pause, Play, RotateCcw, StepBack, StepForward } from 'lucide-react';
 import type { PlaybackClock } from './PlaybackClock';
 import { useClockText } from './PlaybackClock';
 import { resolveViewerComposition } from './ViewerCompositionResolver';
@@ -27,8 +35,22 @@ export interface EpisodeWorkbenchCoreProps {
   timelineSelection?: ViewerTimelineSelection;
   timelineTracks?: readonly ViewerTimelineTrack[];
   timelineDisabled?: boolean;
+  timelineVariant?: ViewerTimelineVariant;
+  timelineLabel?: string;
+  renderPanel?: ViewerPanelRenderer;
   onResourceError?: (e: DomainError, scope: 'video'|'curve'|'pointcloud'|'scene3d') => void;
 }
+
+export type ViewerTimelineVariant = 'filmstrip' | 'signals';
+
+export interface ViewerPanelRenderContext {
+  readonly panel: ViewerPanelSpec;
+  readonly stream: StreamDescriptor;
+  readonly clock: PlaybackClock;
+  readonly defaultPanel: ReactNode;
+}
+
+export type ViewerPanelRenderer = (context: ViewerPanelRenderContext) => ReactNode;
 
 export interface ViewerTimelineSelection {
   readonly startNs: string;
@@ -41,7 +63,7 @@ export interface ViewerTimelineSegment {
   readonly label: string;
   readonly startNs: string;
   readonly endNs?: string;
-  readonly tone?: 'phase' | 'action' | 'object' | 'event' | 'issue';
+  readonly tone?: 'phase' | 'action' | 'object' | 'event' | 'issue' | 'signal' | 'quality-pass';
 }
 
 export interface ViewerTimelineTrack {
@@ -79,11 +101,11 @@ function directSeek(clock: PlaybackClock, deltaNs: bigint): void {
   clock.seek((BigInt(clock.currentNs()) + deltaNs).toString());
 }
 
-function PlaybackControls({ clock }: { clock: PlaybackClock }): JSX.Element {
+export function ViewerPlaybackControls({ clock }: { clock: PlaybackClock }): JSX.Element {
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     const commands: Readonly<Record<string, () => void>> = {
-      ' ': () => clock.play(),
+      ' ': () => (clock.isPlaying() ? clock.pause() : clock.play()),
       k: () => clock.pause(),
       j: () => directSeek(clock, -1_000_000_000n),
       l: () => directSeek(clock, 1_000_000_000n),
@@ -96,11 +118,16 @@ function PlaybackControls({ clock }: { clock: PlaybackClock }): JSX.Element {
     if (command) { event.preventDefault(); command(); }
   };
   return (
-    <div className="viewer-playback-controls" aria-label="播放控制" onKeyDown={onKeyDown}>
-      <button type="button" onClick={() => clock.play()} aria-label="播放">▶</button>
-      <button type="button" onClick={() => clock.pause()} aria-label="暂停">Ⅱ</button>
-      <button type="button" onClick={() => directSeek(clock, -100_000_000n)} aria-label="后退 100 毫秒">−</button>
-      <button type="button" onClick={() => directSeek(clock, 100_000_000n)} aria-label="前进 100 毫秒">＋</button>
+    <div
+      className="viewer-playback-controls"
+      aria-label="播放控制；空格播放或暂停，J/L 前后跳转 1 秒"
+      onKeyDown={onKeyDown}
+      tabIndex={0}
+    >
+      <button type="button" onClick={() => clock.play()} aria-label="播放"><Play aria-hidden="true" size={15} /></button>
+      <button type="button" onClick={() => clock.pause()} aria-label="暂停"><Pause aria-hidden="true" size={15} /></button>
+      <button type="button" onClick={() => directSeek(clock, -100_000_000n)} aria-label="后退 100 毫秒"><StepBack aria-hidden="true" size={15} /></button>
+      <button type="button" onClick={() => directSeek(clock, 100_000_000n)} aria-label="前进 100 毫秒"><StepForward aria-hidden="true" size={15} /></button>
       <ClockReadout clock={clock} />
       {[0.5, 1, 2].map((rate) => <button type="button" key={rate} onClick={() => clock.setRate(rate)}>{rate}x</button>)}
     </div>
@@ -108,15 +135,25 @@ function PlaybackControls({ clock }: { clock: PlaybackClock }): JSX.Element {
 }
 
 function usePanelVisibility(ref: RefObject<HTMLElement | null>): boolean {
-  const [visible, setVisible] = useState(true);
+  const [intersecting, setIntersecting] = useState(() => typeof IntersectionObserver === 'undefined');
+  const [documentVisible, setDocumentVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
   useEffect(() => {
     const node = ref.current;
     if (!node || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry?.isIntersecting ?? false));
+    const observer = new IntersectionObserver(
+      ([entry]) => setIntersecting(entry?.isIntersecting ?? false),
+      { rootMargin: '120px 0px' },
+    );
     observer.observe(node);
     return () => observer.disconnect();
   }, [ref]);
-  return visible;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const update = () => setDocumentVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  return intersecting && documentVisible;
 }
 
 function mediaScope(kind: ViewerPanelSpec['kind']): ViewerResourceScope {
@@ -141,9 +178,16 @@ function StreamPanel({
   const videoRef = useRef<HTMLVideoElement>(null);
   const visible = usePanelVisibility(hostRef);
   const [error, setError] = useState<DomainError | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const onResourceErrorRef = useRef(onResourceError);
+
+  useEffect(() => {
+    onResourceErrorRef.current = onResourceError;
+  }, [onResourceError]);
 
   useEffect(() => {
     if (!visible || panel.state === 'missing' || panel.state === 'unsupported') return;
+    setError(null);
     const controller = new AbortController();
     const resources = new ViewerResourceRegistry();
     let generation = 0;
@@ -151,7 +195,7 @@ function StreamPanel({
     const fail = (cause: unknown) => {
       const domainError = asDomainError(cause, 'VIEWER_RESOURCE_ERROR');
       setError(domainError);
-      onResourceError?.(domainError, mediaScope(panel.kind));
+      onResourceErrorRef.current?.(domainError, mediaScope(panel.kind));
     };
 
     if (videoRef.current && stream.mediaSource) {
@@ -185,7 +229,7 @@ function StreamPanel({
         const duration = BigInt(clock.endNs) - start;
         const position = Number(((BigInt(ns) - start) * 10_000n) / duration) / 10_000;
         context.clearRect(0, 0, width, height);
-        context.strokeStyle = '#0f8f8b';
+        context.strokeStyle = getComputedStyle(canvas).getPropertyValue('--hc-color-primary').trim() || 'currentColor';
         context.beginPath();
         context.moveTo(position * width, 0);
         context.lineTo(position * width, height);
@@ -238,17 +282,42 @@ function StreamPanel({
       latestPayloadDispose?.();
       resources.dispose();
     };
-  }, [clock, onResourceError, panel.kind, panel.state, stream, visible]);
+  }, [clock, panel.kind, panel.state, retryKey, stream, visible]);
 
   const pending = panel.state === 'pending';
   const unavailable = panel.state === 'missing' || panel.state === 'unsupported';
   const mediaUnauthorized = (panel.kind === 'video' || panel.kind === 'depth') && !stream.mediaSource;
   return (
-    <article ref={hostRef} className="viewer-panel" data-panel-kind={panel.kind} aria-labelledby={`${panel.panelId}-title`}>
-      <header><h3 id={`${panel.panelId}-title`}>{panel.title}</h3><span>{panel.state}</span></header>
-      {error ? <div role="alert">资源加载失败：{error.message}</div> : null}
+    <article
+      ref={hostRef}
+      className="viewer-panel"
+      data-panel-kind={panel.kind}
+      data-panel-state={panel.state}
+      data-panel-visible={visible || undefined}
+      aria-labelledby={`${panel.panelId}-title`}
+    >
+      <header>
+        <h3 id={`${panel.panelId}-title`}>{panel.title}</h3>
+        <span>{panelStateLabel(panel.state)}</span>
+      </header>
+      {error ? (
+        <div className="viewer-panel__error" role="alert">
+          <span>资源加载失败：{error.message}。其他面板仍可使用。</span>
+          {error.retryable ? (
+            <button type="button" onClick={() => setRetryKey((current) => current + 1)}>
+              <RotateCcw aria-hidden="true" size={14} />
+              重试此面板
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {pending ? <div role="status">Preview 生成中，其他面板可继续使用。</div> : null}
-      {unavailable ? <div role="note">此 Stream 当前不支持：{stream.schema.id}@{stream.schema.version}</div> : null}
+      {unavailable ? (
+        <div className="viewer-panel__unavailable" role="note">
+          {panel.state === 'missing' ? 'Manifest 已声明此相机，但当前媒体流缺失。' : '此 Stream 当前不支持。'}
+          <code>{stream.schema.id}@{stream.schema.version}</code>
+        </div>
+      ) : null}
       {mediaUnauthorized && !unavailable ? (
         <div className="viewer-resource-unavailable" role="status">
           <span aria-hidden="true">!</span>
@@ -259,11 +328,27 @@ function StreamPanel({
       {(panel.kind === 'video' || panel.kind === 'depth') && !unavailable && !mediaUnauthorized
         ? <video ref={videoRef} muted playsInline preload="metadata" aria-label={`${panel.title} 媒体`} />
         : null}
-      {panel.kind !== 'video' && panel.kind !== 'depth' && !unavailable
-        ? <canvas ref={canvasRef} aria-label={`${panel.title} 可视化`} />
-        : null}
+      {panel.kind !== 'video' && panel.kind !== 'depth' && !unavailable ? (
+        <>
+          <canvas ref={canvasRef} aria-describedby={`${panel.panelId}-summary`} aria-label={`${panel.title} 可视化`} />
+          <p className="sr-only" id={`${panel.panelId}-summary`}>
+            {stream.accessibleSummary ?? `${panel.title} 与共享时间光标同步；精确值请查看时间轴文字摘要。`}
+          </p>
+        </>
+      ) : null}
     </article>
   );
+}
+
+function panelStateLabel(state: ViewerPanelSpec['state']): string {
+  const labels: Readonly<Record<ViewerPanelSpec['state'], string>> = {
+    ready: '流已就绪',
+    pending: '慢流加载中',
+    partial: '存在缺帧',
+    unsupported: '格式不支持',
+    missing: '流缺失',
+  };
+  return labels[state];
 }
 
 function RobotScenePanel({ scene }: { scene: NonNullable<EpisodeWorkbenchCoreProps['robotScene']> }): JSX.Element {
@@ -315,7 +400,7 @@ function timelinePercent(value: bigint, start: bigint, end: bigint): number {
   return Number(((clamped - start) * 100_000n) / (end - start)) / 1000;
 }
 
-function formatElapsedNs(value: bigint, origin: bigint): string {
+export function formatElapsedNs(value: bigint, origin: bigint): string {
   const elapsed = value > origin ? value - origin : 0n;
   const totalMs = elapsed / 1_000_000n;
   const minutes = totalMs / 60_000n;
@@ -324,18 +409,22 @@ function formatElapsedNs(value: bigint, origin: bigint): string {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
 }
 
-function ClipTimeline({
+export function SharedSignalTimeline({
   clock,
   disabled = false,
+  label = '共享视频时间轴与信号轨道',
   onRangeSelect,
   selection,
   tracks = [],
+  variant = 'filmstrip',
 }: {
   clock: PlaybackClock;
   disabled?: boolean;
+  label?: string;
   onRangeSelect?: (start: string, end: string) => void;
   selection?: ViewerTimelineSelection;
   tracks?: readonly ViewerTimelineTrack[];
+  variant?: ViewerTimelineVariant;
 }): JSX.Element {
   const boundsStart = BigInt(clock.startNs);
   const boundsEnd = BigInt(clock.endNs);
@@ -346,12 +435,12 @@ function ClipTimeline({
   const dragRef = useRef<TimelineDragState | null>(null);
   const [dragging, setDragging] = useState<TimelineDragMode | null>(null);
   const [zoom, setZoom] = useState(1);
-  const normalizeSelection = (next?: ViewerTimelineSelection): ViewerTimelineSelection | null => {
+  const normalizeSelection = useCallback((next?: ViewerTimelineSelection): ViewerTimelineSelection | null => {
     if (!next) return null;
     const start = clampNs(BigInt(next.startNs), boundsStart, boundsEnd - 1n);
     const end = clampNs(BigInt(next.endNs), start + 1n, boundsEnd);
     return { startNs: start.toString(), endNs: end.toString(), ...(next.label ? { label: next.label } : {}) };
-  };
+  }, [boundsEnd, boundsStart]);
   const [preview, setPreviewState] = useState<ViewerTimelineSelection | null>(() => normalizeSelection(selection));
   const previewRef = useRef<ViewerTimelineSelection | null>(preview);
   const rangeEditing = Boolean(onRangeSelect) && !disabled;
@@ -366,7 +455,7 @@ function ClipTimeline({
     const next = normalizeSelection(selection);
     previewRef.current = next;
     setPreviewState(next);
-  }, [selection?.endNs, selection?.label, selection?.startNs]);
+  }, [normalizeSelection, selection]);
 
   const nsFromClientX = (clientX: number): bigint => {
     const rect = filmstripRef.current?.getBoundingClientRect();
@@ -494,11 +583,22 @@ function ClipTimeline({
   const playheadStyle: CSSProperties = { left: `${timelinePercent(current, boundsStart, boundsEnd)}%` };
 
   return (
-    <section className="viewer-timeline" aria-label="视频剪辑时间轴" data-dragging={dragging ?? undefined}>
+    <section
+      className="viewer-timeline"
+      aria-label={label}
+      data-dragging={dragging ?? undefined}
+      data-variant={variant}
+    >
       <header className="viewer-timeline__toolbar">
         <div className="viewer-timeline__readout">
           <strong>{formatElapsedNs(current, boundsStart)}</strong>
-          <span>{preview ? `选区 ${formatElapsedNs(BigInt(preview.endNs) - BigInt(preview.startNs), 0n)}` : '拖拽画面条创建标注区间'}</span>
+          <span>
+            {preview
+              ? `选区 ${formatElapsedNs(BigInt(preview.endNs) - BigInt(preview.startNs), 0n)}`
+              : variant === 'signals'
+                ? '全部相机、关节、动作与质检共享此光标'
+                : '拖拽画面条创建标注区间'}
+          </span>
         </div>
         <div className="viewer-timeline__tools" aria-label="时间轴工具">
           <button type="button" disabled={!rangeEditing} onClick={() => setBoundaryAtPlayhead('start')}>设为入点</button>
@@ -519,10 +619,10 @@ function ClipTimeline({
           </div>
           <div
             ref={filmstripRef}
-            className="viewer-timeline__filmstrip"
+            className={variant === 'signals' ? 'viewer-timeline__filmstrip viewer-timeline__filmstrip--signals' : 'viewer-timeline__filmstrip'}
             role="slider"
             tabIndex={0}
-            aria-label="播放位置；拖拽可创建标注区间"
+            aria-label={variant === 'signals' ? '共享播放位置' : '播放位置；拖拽可创建标注区间'}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={timelinePercent(current, boundsStart, boundsEnd)}
@@ -544,9 +644,11 @@ function ClipTimeline({
             onPointerUp={finishDrag}
             onPointerCancel={cancelDrag}
           >
-            <div className="viewer-timeline__frames" aria-hidden="true">
-              {Array.from({ length: 16 }, (_, index) => <span key={index} />)}
-            </div>
+            {variant === 'filmstrip' ? (
+              <div className="viewer-timeline__frames" aria-hidden="true">
+                {Array.from({ length: 16 }, (_, index) => <span key={index} />)}
+              </div>
+            ) : <span className="viewer-timeline__scrub-line" aria-hidden="true" />}
             {preview && selectionStyle ? (
               <div className="viewer-timeline__selection" style={selectionStyle}>
                 <button
@@ -579,7 +681,7 @@ function ClipTimeline({
             <div className="viewer-timeline__playhead" style={playheadStyle} aria-hidden="true"><span /></div>
           </div>
           {tracks.length ? (
-            <div className="viewer-timeline__tracks" aria-label="多级标注轨道">
+            <div className="viewer-timeline__tracks" aria-label="同步信号轨道">
               {tracks.map((track) => (
                 <div className="viewer-timeline__track" key={track.id}>
                   <strong style={{ paddingLeft: `${10 + (track.level ?? 0) * 12}px` }}>{track.label}</strong>
@@ -597,15 +699,109 @@ function ClipTimeline({
                           title={segment.label}
                         >{isPoint ? <i aria-hidden="true" /> : null}{segment.label}</span>
                       );
-                    }) : <em>暂无标注</em>}
+                    }) : <em>当前时间范围无可用信号</em>}
                   </div>
                 </div>
               ))}
             </div>
           ) : null}
+          {variant === 'signals' ? (
+            <div className="viewer-timeline__cursor-layer" aria-hidden="true">
+              <div className="viewer-timeline__shared-playhead" style={playheadStyle}><span /></div>
+            </div>
+          ) : null}
+          <table className="sr-only">
+            <caption>{label}文字摘要</caption>
+            <thead><tr><th scope="col">轨道</th><th scope="col">区间与事件</th></tr></thead>
+            <tbody>
+              {tracks.map((track) => (
+                <tr key={track.id}>
+                  <th scope="row">{track.label}</th>
+                  <td>
+                    {track.segments.length
+                      ? track.segments.map((segment) => `${segment.label} ${formatElapsedNs(BigInt(segment.startNs), boundsStart)}${segment.endNs ? `–${formatElapsedNs(BigInt(segment.endNs), boundsStart)}` : ''}`).join('；')
+                      : '当前时间范围无可用信号'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-      <footer className="viewer-timeline__hint">拖拽空白处新建区间 · 拖动两侧手柄调整入点/出点 · 拖动选区中部整体移动</footer>
+      <footer className="viewer-timeline__hint">
+        {variant === 'signals'
+          ? '方向键微调 100 毫秒 · Home / End 跳转边界 · 只有一条视频播放时间轴'
+          : '拖拽空白处新建区间 · 拖动两侧手柄调整入点/出点 · 拖动选区中部整体移动'}
+      </footer>
+    </section>
+  );
+}
+
+export interface ViewerMediaSurfaceProps {
+  readonly clock: PlaybackClock;
+  readonly streams: readonly StreamDescriptor[];
+  readonly robotScene?: EpisodeWorkbenchCoreProps['robotScene'];
+  readonly overlays?: readonly OverlayRenderer[];
+  readonly renderPanel?: ViewerPanelRenderer;
+  readonly onResourceError?: EpisodeWorkbenchCoreProps['onResourceError'];
+  readonly emptyMessage?: string;
+}
+
+export function ViewerMediaSurface({
+  clock,
+  emptyMessage = 'Manifest 未发现相机。关节、动作与质检轨道仍可独立诊断。',
+  onResourceError,
+  overlays,
+  renderPanel,
+  robotScene,
+  streams,
+}: ViewerMediaSurfaceProps): JSX.Element {
+  const composition = useMemo(() => resolveViewerComposition(streams), [streams]);
+  const byId = useMemo(() => new Map(streams.map((stream) => [stream.id, stream])), [streams]);
+  const panelCount = composition.panels.length + (robotScene ? 1 : 0);
+  const cameraLayout = composition.panels.length === 0
+    ? 'empty'
+    : composition.panels.length === 1
+      ? 'single'
+      : composition.panels.length === 2
+        ? 'pair'
+        : composition.panels.length <= 4
+          ? 'quad'
+          : 'many';
+
+  return (
+    <section className="viewer-media-surface" aria-label="Manifest 相机视图" data-panel-count={panelCount}>
+      <div
+        className="viewer-media-grid"
+        data-camera-count={composition.panels.length}
+        data-camera-layout={cameraLayout}
+        tabIndex={0}
+      >
+        {composition.panels.map((panel) => {
+          const streamId = panel.streamIds[0];
+          const stream = streamId ? byId.get(streamId) : undefined;
+          if (!stream) return null;
+          const defaultPanel = (
+            <StreamPanel
+              clock={clock}
+              onResourceError={onResourceError}
+              panel={panel}
+              stream={stream}
+            />
+          );
+          return (
+            <div className="viewer-panel-slot" key={panel.panelId}>
+              {renderPanel ? renderPanel({ panel, stream, clock, defaultPanel }) : defaultPanel}
+            </div>
+          );
+        })}
+        {robotScene ? <RobotScenePanel scene={robotScene} /> : null}
+        {panelCount === 0 ? <div className="viewer-media-empty" role="status">{emptyMessage}</div> : null}
+      </div>
+      {composition.diagnostics.map((diagnostic) => (
+        <div role="alert" key={`${diagnostic.streamId}:${diagnostic.code}`}>{diagnostic.message}</div>
+      ))}
+      {overlays?.map((overlay) => <OverlayHost key={overlay.id} renderer={overlay} clock={clock} />)}
     </section>
   );
 }
@@ -616,14 +812,14 @@ export function EpisodeWorkbenchCore(p: EpisodeWorkbenchCoreProps): JSX.Element 
   return (
     <section className="episode-workbench-core" data-mode={p.mode} data-episode-id={p.episodeId}>
       <h2 className="sr-only">Episode {p.episodeId} Viewer</h2>
-      <div className="viewer-media-grid">
-        {composition.panels.map((panel) => {
-          const streamId = panel.streamIds[0];
-          const stream = streamId ? byId.get(streamId) : undefined;
-          return stream ? <StreamPanel key={panel.panelId} panel={panel} stream={stream} clock={p.clock} onResourceError={p.onResourceError} /> : null;
-        })}
-        {p.robotScene ? <RobotScenePanel scene={p.robotScene} /> : null}
-      </div>
+      <ViewerMediaSurface
+        clock={p.clock}
+        onResourceError={p.onResourceError}
+        overlays={p.overlays}
+        renderPanel={p.renderPanel}
+        robotScene={p.robotScene}
+        streams={p.streams}
+      />
       {composition.jointGroups.map((group) => {
         const stream = byId.get(group.streamId);
         return (
@@ -660,14 +856,14 @@ export function EpisodeWorkbenchCore(p: EpisodeWorkbenchCoreProps): JSX.Element 
           </section>
         );
       })}
-      {composition.diagnostics.map((diagnostic) => <div role="alert" key={`${diagnostic.streamId}:${diagnostic.code}`}>{diagnostic.message}</div>)}
-      {p.overlays?.map((overlay) => <OverlayHost key={overlay.id} renderer={overlay} clock={p.clock} />)}
-      <PlaybackControls clock={p.clock} />
-      <ClipTimeline
+      <ViewerPlaybackControls clock={p.clock} />
+      <SharedSignalTimeline
         clock={p.clock}
         disabled={p.timelineDisabled}
+        label={p.timelineLabel}
         selection={p.timelineSelection}
         tracks={p.timelineTracks}
+        variant={p.timelineVariant}
         onRangeSelect={p.onTimeRangeSelect}
       />
     </section>

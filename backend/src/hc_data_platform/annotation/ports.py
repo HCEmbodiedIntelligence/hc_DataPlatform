@@ -17,10 +17,16 @@ from .models import (
     AnnotationReview,
     AnnotationRevision,
     AnnotationStatus,
+    AnnotationSubmission,
+    AnnotationSubmissionMutationRecord,
+    AnnotationTag,
     AnnotationTask,
+    AnnotationTaskCreationSource,
+    AnnotationTaskKind,
     AutoAnnotationCapability,
     ExclusionRange,
     ReviewDecision,
+    TagSchemaVersion,
 )
 
 if TYPE_CHECKING:
@@ -39,14 +45,16 @@ class AnnotationAggregate:
     revisions: tuple[AnnotationRevision, ...]
     reviews: tuple[AnnotationReview, ...] = ()
     mutations: tuple[AnnotationMutationRecord, ...] = ()
+    submissions: tuple[AnnotationSubmission, ...] = ()
+    submission_mutations: tuple[AnnotationSubmissionMutationRecord, ...] = ()
 
 
 @runtime_checkable
 class AnnotationRepositoryPort(Protocol):
     """PostgreSQL-shaped persistence port with an atomic aggregate CAS.
 
-    Revision, operation, review, and mutation rows are append-only. Only the task's
-    current pointers are updated by ``compare_and_swap``.
+    Revision, operation, submission, review, and mutation rows are append-only. Only
+    the task's current pointers are updated by ``compare_and_swap``.
     """
 
     def create(self, aggregate: AnnotationAggregate) -> AnnotationAggregate: ...
@@ -65,6 +73,30 @@ class AnnotationRepositoryPort(Protocol):
         *,
         expected_state_version: int,
     ) -> bool: ...
+
+    def create_tag_schema_version(self, schema: TagSchemaVersion) -> TagSchemaVersion: ...
+
+    def get_tag_schema_version(
+        self, *, schema_id: str, version: int
+    ) -> TagSchemaVersion | None: ...
+
+    def list_tag_schema_versions(
+        self, *, project_id: str, schema_id: str
+    ) -> tuple[TagSchemaVersion, ...]: ...
+
+    def publish_tag_schema_version(
+        self, draft: TagSchemaVersion, published: TagSchemaVersion
+    ) -> bool: ...
+
+    def resolve_published_schema(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        dataset_schema_snapshot_id: str,
+        task_kind: AnnotationTaskKind,
+    ) -> TagSchemaVersion | None: ...
 
 
 @runtime_checkable
@@ -88,6 +120,14 @@ class AnnotationReadPort(Protocol):
     def list_reviews(self, task_id: str, actor: ActorContext) -> tuple[AnnotationReview, ...]: ...
 
     def get_history(self, task_id: str, actor: ActorContext) -> AnnotationHistory: ...
+
+    def get_submission(
+        self, task_id: str, submission_id: str, actor: ActorContext
+    ) -> AnnotationSubmission: ...
+
+    def list_submissions(
+        self, task_id: str, actor: ActorContext
+    ) -> tuple[AnnotationSubmission, ...]: ...
 
     def approved_snapshot(
         self, *, project_id: str, rollout_id: str, actor: ActorContext
@@ -121,6 +161,7 @@ class AnnotationWritePort(AnnotationReadPort, EffectiveExclusionPort, Protocol):
         actor: ActorContext,
         operations: Sequence[AnnotationOperation],
         *,
+        tags: Sequence[AnnotationTag] | None = None,
         expected_revision: int,
         if_match: str,
         client_mutation_id: str,
@@ -135,6 +176,16 @@ class AnnotationWritePort(AnnotationReadPort, EffectiveExclusionPort, Protocol):
         if_match: str,
     ) -> AnnotationTask: ...
 
+    def submit_for_review(
+        self,
+        task_id: str,
+        actor: ActorContext,
+        *,
+        expected_revision: int,
+        if_match: str,
+        idempotency_key: str,
+    ) -> AnnotationSubmission: ...
+
     def review(
         self,
         task_id: str,
@@ -143,6 +194,7 @@ class AnnotationWritePort(AnnotationReadPort, EffectiveExclusionPort, Protocol):
         *,
         revision: int,
         if_match: str,
+        submission_id: str | None = None,
         comment: str = "",
     ) -> AnnotationApprovedV1 | None: ...
 
@@ -159,6 +211,14 @@ class AnnotationTaskProvisioningPort(Protocol):
         dataset_id: str,
         dataset_version: int,
         rollout_id: str,
+        region_code: str | None = None,
+        task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING,
+        creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.LEGACY,
+        source_workflow_id: str | None = None,
+        base_lance_version: int | None = None,
+        base_step_count: int | None = None,
+        tag_schema_id: str = "legacy-flat",
+        tag_schema_version: int = 1,
     ) -> AnnotationTask: ...
 
 

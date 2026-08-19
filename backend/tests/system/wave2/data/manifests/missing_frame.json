@@ -1,0 +1,69 @@
+{
+  "actual_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action",
+    "/camera/rear/image"
+  ],
+  "cameras": [
+    {
+      "camera_id": "front",
+      "topic": "/camera/front/image"
+    },
+    {
+      "camera_id": "rear",
+      "topic": "/camera/rear/image"
+    }
+  ],
+  "collection_job_id": "be22-missing-frame-job",
+  "collection_session_id": "be22-missing-frame-session",
+  "compression": "none",
+  "crc64": "1519035706320994679",
+  "data_package_id": "be22-missing-frame-package",
+  "end_time": "2023-11-14T22:13:21Z",
+  "expected_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action",
+    "/camera/rear/image"
+  ],
+  "file_size": 6250,
+  "files": [
+    {
+      "crc64": "1519035706320994679",
+      "media_type": "application/octet-stream",
+      "path": "recording.mcap",
+      "role": "RAW_MCAP",
+      "sha256": "120d9a3cfe3131d7eb8af7df997837f007a8a6e55c68f98067b70b1eb95718ae",
+      "size": 6250
+    }
+  ],
+  "project_id": "be22-template-project",
+  "recorder_version": "hc-be22-fixture/1",
+  "recording_request_id": "be22-missing-frame-request",
+  "robot_id": "be22-test-robot",
+  "rollout_id": "be22-missing-frame-rollout",
+  "schema_version": 1,
+  "sequence_no": 1,
+  "sha256": "120d9a3cfe3131d7eb8af7df997837f007a8a6e55c68f98067b70b1eb95718ae",
+  "start_time": "2023-11-14T22:13:20Z",
+  "task_id": "be22-template-task",
+  "topics": [
+    {
+      "name": "/camera/front/image",
+      "required": true
+    },
+    {
+      "name": "/joint_states",
+      "required": true
+    },
+    {
+      "name": "/action",
+      "required": true
+    },
+    {
+      "name": "/camera/rear/image",
+      "required": true
+    }
+  ]
+}

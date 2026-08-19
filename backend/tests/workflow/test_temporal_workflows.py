@@ -25,7 +25,24 @@ from hc_data_platform.alignment.models import (
     TimedSampleV1,
 )
 from hc_data_platform.alignment.ports import FakeFragmentWriter
+from hc_data_platform.annotation.automation import (
+    AutomaticAnnotationTaskService,
+    InMemoryAutomaticAnnotationRepository,
+)
+from hc_data_platform.annotation.models import (
+    TagNodeDefinition,
+    TagSchemaDocument,
+    TagSchemaStatus,
+    TagSchemaTarget,
+    TagSchemaVersion,
+)
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.ingest.manifest import preflight_manifest
+from hc_data_platform.ingest.models import (
+    ManifestFileV1,
+    ManifestPreflightResultV1,
+    RolloutManifestV1,
+)
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogManifestV1,
 )
@@ -75,6 +92,7 @@ from hc_data_platform.workflow.models import (
     IngestRolloutWorkflowInput,
     JobRecord,
     JobStatus,
+    ManifestActivityInput,
     PreviewWorkflowInput,
     PublishDatasetWorkflowInput,
     PublishReconciliationWorkflowInput,
@@ -100,9 +118,11 @@ SHA = "a" * 64
 
 def _verification_report(
     status: VerificationStatus = VerificationStatus.VERIFIED,
+    *,
+    rollout_id: str = "r1",
 ) -> RawVerificationReportV1:
     return RawVerificationReportV1.build(
-        rollout_id="r1",
+        rollout_id=rollout_id,
         object_key="raw/r1.mcap",
         source_sha256=SHA,
         object_size=64,
@@ -125,10 +145,15 @@ def _quality_profile() -> QualityProfileV1:
     return QualityProfileV1(profile_id="qc-v1", required_topics=frozenset())
 
 
-def _quality_report(status: QualityStatus) -> QcReportV1:
-    profile = _quality_profile()
+def _quality_report(
+    status: QualityStatus,
+    *,
+    rollout_id: str = "r1",
+    profile: QualityProfileV1 | None = None,
+) -> QcReportV1:
+    profile = profile or _quality_profile()
     return QcReportV1.build(
-        rollout_id="r1",
+        rollout_id=rollout_id,
         source_sha256=SHA,
         profile_id=profile.profile_id,
         profile_version=profile.profile_version,
@@ -149,6 +174,61 @@ def _schema() -> DatasetSchemaSnapshot:
         schema_snapshot_id="schema-1",
         frequency_hz=30,
         fields={"x": "float64"},
+    )
+
+
+def _manifest_preflight(
+    rollout_id: str = "r1",
+    data_package_id: str | None = None,
+) -> ManifestPreflightResultV1:
+    package_id = data_package_id or f"package-{rollout_id}"
+    return preflight_manifest(
+        RolloutManifestV1(
+            project_id="p1",
+            task_id="task-1",
+            collection_job_id="job-1",
+            rollout_id=rollout_id,
+            collection_session_id="session-1",
+            recording_request_id=f"request-{rollout_id}",
+            data_package_id=package_id,
+            sequence_no=1 if rollout_id == "r1" else 2,
+            robot_id="robot-1",
+            start_time=datetime(2026, 8, 14, tzinfo=timezone.utc),
+            end_time=datetime(2026, 8, 14, 0, 0, 1, tzinfo=timezone.utc),
+            cameras=[],
+            topics=[],
+            expected_topics=["/camera/required"],
+            actual_topics=[],
+            files=[
+                ManifestFileV1(
+                    path="recording.mcap",
+                    size=64,
+                    sha256=SHA,
+                    crc64=0,
+                )
+            ],
+            file_size=64,
+            sha256=SHA,
+            crc64=0,
+            compression="none",
+            recorder_version="test-1.0",
+        )
+    )
+
+
+def _manifest_input(
+    rollout_id: str = "r1",
+    data_package_id: str | None = None,
+) -> ManifestActivityInput:
+    preflight = _manifest_preflight(rollout_id, data_package_id)
+    return ManifestActivityInput(
+        project_id="p1",
+        region_code="cn",
+        rollout_id=rollout_id,
+        data_package_id=preflight.identifiers.data_package_id,
+        manifest_key=f"raw/{rollout_id}/rollout_manifest.json",
+        manifest_fingerprint=preflight.manifest_fingerprint,
+        source_sha256=SHA,
     )
 
 
@@ -178,6 +258,7 @@ def _ingest_input() -> IngestRolloutWorkflowInput:
         region_code="cn",
         dataset_id="d1",
         rollout_id="r1",
+        manifest=_manifest_input(),
         verification=VerificationActivityInput(
             project_id="p1",
             region_code="cn",
@@ -223,6 +304,7 @@ class StaticVerifier:
     def __init__(self, status: VerificationStatus = VerificationStatus.VERIFIED) -> None:
         self.status = status
         self.calls = 0
+        self.last_required_topics: set[str] | None = None
 
     def verify(
         self,
@@ -233,9 +315,19 @@ class StaticVerifier:
         required_topics: set[str],
         known_optional_topics: set[str] | None = None,
     ) -> RawVerificationReportV1:
-        del rollout_id, object_key, source_sha256, required_topics, known_optional_topics
+        del object_key, source_sha256, known_optional_topics
         self.calls += 1
-        return _verification_report(self.status)
+        self.last_required_topics = required_topics
+        return _verification_report(self.status, rollout_id=rollout_id)
+
+
+class StaticManifestParser:
+    def parse(self, manifest_key: str) -> ManifestPreflightResultV1:
+        marker = "/rollout_manifest.json"
+        if not manifest_key.startswith("raw/") or not manifest_key.endswith(marker):
+            raise ValueError("unexpected manifest key")
+        rollout_id = manifest_key.removeprefix("raw/").removesuffix(marker)
+        return _manifest_preflight(rollout_id)
 
 
 class StaticQuality:
@@ -245,11 +337,10 @@ class StaticQuality:
         self.calls = 0
 
     def evaluate(self, data: QualityInputV1, profile: QualityProfileV1) -> QcReportV1:
-        del data, profile
         self.calls += 1
         if self.calls <= self.failures:
             raise OSError("temporary network failure")
-        return _quality_report(self.status)
+        return _quality_report(self.status, rollout_id=data.rollout_id, profile=profile)
 
 
 class Writers(FragmentWriterFactoryPort):
@@ -446,8 +537,45 @@ def _dependencies(
     catalog: InMemoryLanceCatalog,
 ) -> tuple[ActivityDependencies, Writers]:
     writers = Writers()
+    annotations = InMemoryAutomaticAnnotationRepository()
+    draft = TagSchemaVersion(
+        schema_id="tag-schema-1",
+        project_id="p1",
+        name="test schema",
+        version=1,
+        document=TagSchemaDocument(
+            nodes=(
+                TagNodeDefinition(
+                    tag_id="event",
+                    code="event",
+                    display_name="Event",
+                ),
+            )
+        ),
+        compatible_targets=(
+            TagSchemaTarget(
+                region_code="cn",
+                dataset_id="d1",
+                dataset_schema_snapshot_id="schema-1",
+            ),
+        ),
+        content_hash="e" * 64,
+        created_by="schema-author",
+    )
+    annotations.create_tag_schema_version(draft)
+    annotations.publish_tag_schema_version(
+        draft,
+        draft.model_copy(
+            update={
+                "status": TagSchemaStatus.PUBLISHED,
+                "published_by": "schema-publisher",
+                "published_at": datetime(2026, 8, 14, tzinfo=timezone.utc),
+            }
+        ),
+    )
     return (
         ActivityDependencies(
+            manifest_parser=StaticManifestParser(),
             verifier=verifier,
             quality=quality,
             alignment=AlignmentEngine(),
@@ -455,6 +583,7 @@ def _dependencies(
             catalog_fragments=CatalogAdapter(writers, _schema()),
             catalog=catalog,
             catalog_reconciler=catalog,
+            annotation_tasks=AutomaticAnnotationTaskService(annotations),
         ),
         writers,
     )
@@ -495,6 +624,7 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             assert result.result is not None
             assert result.result["training_eligible"] is True
             assert quality.calls == 3
+            assert verifier.last_required_topics == {"/camera/required"}
             assert writers.calls == 1
             assert len(catalog.list_versions("d1", project_id="p1")) == 1
 
@@ -515,6 +645,7 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             risk_input = _ingest_input().model_copy(update={"rollout_id": "r-risk"})
             risk_input = risk_input.model_copy(
                 update={
+                    "manifest": _manifest_input("r-risk"),
                     "verification": risk_input.verification.model_copy(
                         update={"rollout_id": "r-risk"}
                     ),
@@ -581,6 +712,46 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             assert risk_verifier.calls == 1
             recovered_job = await launcher.get(risk_id)
             assert recovered_job.status is JobStatus.QUALITY_RISK
+
+            # A human review cannot mutate the RISK result into PASS. Only a new
+            # automatic QC execution may open the alignment/Lance path.
+            with pytest.raises(ValidationError, match="AUTOMATIC"):
+                QualityActivityInput.model_validate(
+                    {
+                        **risk_input.quality.model_dump(mode="json"),
+                        "decision_source": "MANUAL",
+                    }
+                )
+            pass_quality = StaticQuality(QualityStatus.PASS)
+            pass_dependencies, pass_writers = _dependencies(
+                verifier=StaticVerifier(),
+                quality=pass_quality,
+                catalog=catalog,
+            )
+            configure_activity_dependencies(pass_dependencies)
+            new_pass_input = risk_input.model_copy(
+                update={
+                    "automatic_qc_run_id": "auto-pass-2",
+                    "alignment": risk_input.alignment.model_copy(
+                        update={
+                            "data": risk_input.alignment.data.model_copy(
+                                update={"attempt_id": "risk-auto-pass-attempt"}
+                            )
+                        }
+                    ),
+                }
+            )
+            pass_result = await environment.client.execute_workflow(
+                IngestRolloutWorkflow.run,
+                new_pass_input,
+                id=workflow_id("ingest-rollout", "p1", "r-risk/auto-pass-2"),
+                task_queue="workflow-tests",
+            )
+            assert pass_result.status is JobStatus.SUCCEEDED
+            assert pass_result.result is not None
+            assert pass_result.result["quality_decision_source"] == "AUTOMATIC"
+            assert pass_result.result["automatic_qc_run_id"] == "auto-pass-2"
+            assert pass_writers.calls == 1
     finally:
         await environment.shutdown()
 

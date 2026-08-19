@@ -26,6 +26,10 @@ TestResults.xml
 frontend/dist/
 frontend/node_modules/
 frontend/.env.local
+frontend/test-results/
+frontend/playwright-report/
+frontend/coverage/
+frontend/.vite/
 __pycache__/
 *.pyc
 /.ruff_cache/
@@ -37,3 +41,5 @@ release-values.yaml
 # Patch application leftovers
 *.orig
 *.rej
+# Generated first-wave gate logs and JUnit reports.
+artifacts/test-gates/

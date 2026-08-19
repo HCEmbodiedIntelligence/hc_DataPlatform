@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Protocol
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 from hc_data_platform.core.errors import problem
@@ -52,6 +53,8 @@ class ObjectStoragePort(Protocol):
     ) -> ObjectMetadata: ...
 
     def abort_multipart(self, key: str, upload_id: str) -> None: ...
+
+    def authorize_existing_object(self, uri: str, expected_key: str) -> ObjectMetadata: ...
 
     def head(self, key: str) -> ObjectMetadata | None: ...
 
@@ -172,6 +175,33 @@ class InMemoryObjectStorage:
             if upload is not None and upload.key != key:
                 raise KeyError(upload_id)
             self._uploads.pop(upload_id, None)
+
+    def authorize_existing_object(self, uri: str, expected_key: str) -> ObjectMetadata:
+        parsed = urlparse(uri)
+        key = unquote(parsed.path.lstrip("/"))
+        if (
+            parsed.scheme != "memory"
+            or parsed.netloc != "object"
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+            or key != expected_key
+        ):
+            raise problem(
+                status=422,
+                code="OBJECT_STORAGE_REFERENCE_INVALID",
+                title="Object storage reference is invalid",
+                detail="The reference must identify the expected immutable Raw object.",
+            )
+        metadata = self.head(key)
+        if metadata is None:
+            raise problem(
+                status=404,
+                code="OBJECT_STORAGE_OBJECT_NOT_FOUND",
+                title="Object storage object not found",
+                detail="The authorized object does not exist.",
+            )
+        return metadata
 
     def head(self, key: str) -> ObjectMetadata | None:
         body = self.objects.get(key)

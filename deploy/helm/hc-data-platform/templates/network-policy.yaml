@@ -39,4 +39,28 @@ spec:
           port: {{ .Values.frontend.port }}
         - protocol: TCP
           port: {{ .Values.backend.api.port }}
+{{- if .Values.backend.api.metrics.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hc-data-platform.fullname" . }}-allow-internal-metrics
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.monitoring.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.monitoring.podSelector | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.backend.api.port }}
+{{- end }}
 {{- end }}

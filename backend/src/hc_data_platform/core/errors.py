@@ -23,7 +23,9 @@ class ProblemDetails(BaseModel):
 
 class ProblemException(Exception):
     def __init__(self, problem: ProblemDetails) -> None:
-        super().__init__(problem.detail)
+        # Tracebacks and JUnit reporters render ``Exception.args``.  Keep the stable code
+        # there instead of a detail that may contain dependency or object-store context.
+        super().__init__(problem.code)
         self.problem = problem
 
 

@@ -1,0 +1,224 @@
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: var(--hc-radius-md, 12px);
+  background: var(--hc-color-surface, #fff);
+  box-shadow: var(--hc-shadow-sm);
+}
+
+.header {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 4px;
+}
+
+.heading,
+.titleLine {
+  min-width: 0;
+}
+
+.titleLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.titleLine h2 {
+  margin: 0;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 1.125rem;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.heading p {
+  margin: 2px 0 0;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.rail {
+  position: relative;
+  display: grid;
+  min-width: 920px;
+  grid-template-columns: repeat(8, minmax(102px, 1fr));
+  padding: 14px 18px 16px;
+  margin: 0;
+  list-style: none;
+}
+
+.rail::before {
+  position: absolute;
+  top: 63px;
+  right: 7.5%;
+  left: 7.5%;
+  height: 2px;
+  background: var(--hc-color-border, #d9ddea);
+  content: "";
+}
+
+.stage {
+  --stage-color: var(--hc-color-primary, #5965d8);
+
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  text-align: center;
+}
+
+.stage[data-stage="AUTO_QC"],
+.stage[data-stage="LANCE"],
+.stage[data-stage="PUBLISHED"] {
+  --stage-color: var(--hc-color-success, #2f7d66);
+}
+
+.stage[data-stage="ALIGNED_30_HZ"] {
+  --stage-color: var(--hc-color-info, #356ee8);
+}
+
+.stage[data-stage="ANNOTATION"],
+.stage[data-stage="REVIEW"] {
+  --stage-color: var(--hc-color-warning, #a86512);
+}
+
+.stageLabel {
+  min-height: 22px;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.stageIcon {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--stage-color);
+  border-radius: 50%;
+  color: var(--stage-color);
+  background: var(--hc-color-surface, #fff);
+  box-shadow: 0 0 0 5px var(--hc-color-surface, #fff);
+}
+
+.stage strong {
+  max-width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--stage-color);
+  font-family: var(--hc-font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 0.6875rem;
+  font-weight: 720;
+  letter-spacing: 0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stageFact,
+.stageMeta {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stageFact[data-tone="danger"] {
+  color: var(--hc-color-error, #b84646);
+  font-weight: 650;
+}
+
+.stageMeta {
+  font-variant-numeric: tabular-nums;
+}
+
+.qcAlert,
+.lineageWarning {
+  display: flex;
+  min-height: 38px;
+  gap: 9px;
+  align-items: center;
+  margin: 0 18px 12px;
+  padding: 7px 11px;
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-error, #b84646) 28%, white);
+  border-radius: 8px;
+  color: var(--hc-color-error, #b84646);
+  background: color-mix(in srgb, var(--hc-color-error, #b84646) 5%, white);
+  font-size: 0.75rem;
+}
+
+.qcAlert span {
+  min-width: 0;
+}
+
+.qcAlert a {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--hc-color-primary, #5965d8);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.qcAlert a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.qcAlert a:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--hc-color-focus, #8b96ff);
+  outline-offset: 3px;
+}
+
+.lineageWarning {
+  border-color: color-mix(in srgb, var(--hc-color-warning, #a86512) 30%, white);
+  color: var(--hc-color-warning, #a86512);
+  background: color-mix(in srgb, var(--hc-color-warning, #a86512) 6%, white);
+}
+
+.panel :global(.dashboard-section-notice-compact) {
+  margin: 0 18px 12px;
+}
+
+.panel :global(.dashboard-section-notice-compact .ant-alert-description) {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1180px) {
+  .rail {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    padding-inline: 14px;
+  }
+
+  .rail {
+    padding-inline: 14px;
+  }
+
+  .qcAlert,
+  .lineageWarning {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-inline: 14px;
+  }
+
+  .qcAlert a {
+    margin-left: 27px;
+  }
+}

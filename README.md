@@ -86,6 +86,12 @@ Compose 会生成并使用以下三个开发镜像：
 | API | `hc-data-platform-api:dev` | Uvicorn `--reload` |
 | Worker | `hc-data-platform-worker:dev` | `watchfiles` 检测 Python 文件并重启 Worker |
 
+开发 Compose 默认设置 `HC_FRONTEND_MOCK_MODE=browser`，因此尚未落地真实聚合合同的工作台也会展示完整 fixture 数据。需要让前端只访问当前真实 API、并对未实现能力保持降级时，可执行：
+
+```bash
+HC_FRONTEND_MOCK_MODE=off docker compose -f compose.dev.yaml up -d --no-build --no-deps --force-recreate frontend
+```
+
 源码已经通过 bind mount 放入容器，无需重新复制代码：
 
 - `./frontend` → Frontend 容器的 `/app`；`node_modules` 使用由开发镜像自动填充的独立匿名 volume，避免被宿主机目录覆盖。容器启动时不会重复执行 `pnpm install`。
@@ -104,6 +110,42 @@ docker compose -f compose.dev.yaml stop
 
 # 停止并移除容器和网络（保留数据库、对象存储的 named volume）
 docker compose -f compose.dev.yaml down
+```
+
+### Real API 模式与第一波门禁
+
+显式 Real API 模式使用叠加文件启动；该模式固定 `VITE_MOCK_MODE=off`，并要求迁移状态检查成功后才启动 API 和 Worker：
+
+```bash
+docker compose -f compose.dev.yaml -f compose.real-api.yaml up --build -d
+docker compose -f compose.dev.yaml -f compose.real-api.yaml ps
+```
+
+测试门禁使用独立的 Compose project、tmpfs PostgreSQL/MinIO、Temporal、正式 Worker 镜像和只读源码挂载，不复用开发数据。全新环境可直接运行；`migration`、`worker`、`integration`、`replay` 和 `security*` 每次都会先重置这个专用测试 project，再启动并检查所需依赖，因此这些命令不要并行执行：
+
+```bash
+python3 scripts/first_wave_gate.py static              # Compose/runtime OpenAPI/生成类型/typecheck/迁移静态合同
+python3 scripts/first_wave_gate.py migration           # 全新数据库与第一波已存在数据库升级/checksum
+python3 scripts/first_wave_gate.py worker              # 正式 Worker 启动、健康和 poller
+python3 scripts/first_wave_gate.py integration         # PostgreSQL/MinIO 外部依赖
+python3 scripts/first_wave_gate.py replay              # Temporal replay 与 Worker kill 恢复
+python3 scripts/first_wave_gate.py security             # IDOR/Scope/幂等/恶意 Manifest，严格发布门禁
+python3 scripts/first_wave_gate.py security-baseline    # 允许 XFAIL，仅用于记录基线
+python3 scripts/first_wave_gate.py regression           # 全量后端；任何 skip/XFAIL 都失败
+python3 scripts/first_wave_gate.py e2e                  # 当前明确返回 NOT RUN 和非零退出码
+python3 scripts/first_wave_gate.py artifact             # 全量 artifact 脱敏扫描；任一 finding 都失败
+```
+
+`security` 对 skip 和 XFAIL 都返回失败；缺少数据库、对象存储、Temporal 或浏览器等依赖不能算通过。第二波真实主链的 Playwright 占位命令也会因当前 skip 返回非零：
+
+```bash
+pnpm --dir frontend exec playwright test --config playwright.real-api.config.ts
+```
+
+日志和 JUnit 固定写入 `artifacts/test-gates/latest/`，Playwright trace、截图和视频写入 `artifacts/test-gates/latest/playwright/`。当前逐项结果与依赖见 `backend/tests/system/ACCEPTANCE-MATRIX.md`；合同冲突见 `backend/tests/gates/CONTRACT-CONFLICTS.md`。测试完成后可删除本门禁的容器、网络和临时数据：
+
+```bash
+docker compose -f compose.test.yaml down --volumes --remove-orphans
 ```
 
 ### 宿主机直接运行前端
@@ -176,14 +218,18 @@ pnpm build           # 类型检查并生成 production bundle
 
 ## API 类型生成
 
-已生成的类型位于 `frontend/src/shared/api/generated/`，包含 ingest、datasets、cleaning、storage、robotics、access、platform 和 annotation 八个域。生成输入不随本仓库分发；需要持有对应外部 OpenAPI 草案目录：
+正式平台类型位于 `frontend/src/shared/api/generated/platform.ts`。生成脚本先构造 production-composed
+`create_app(...).openapi()`，规范化并验证 runtime `$ref`，再调用仓库锁定的
+`openapi-typescript`；`backend/openapi.generated.yaml` 仍是 fragment 聚合/兼容性输入，不是类型生成的替代事实源。
 
 ```bash
 cd frontend
-OPENAPI_ROOT=/absolute/path/to/openapi-root pnpm gen:api
+pnpm gen:api
+pnpm gen:api --check
 ```
 
-生成脚本会覆盖相应生成文件并更新 `frontend/docs/frontend-scaffold-notes.md` 中的生成状态。不要直接编辑带有 `AUTO-GENERATED` 标记的文件。
+生成头同时记录 runtime OpenAPI 与 fragment aggregate 的 SHA-256。不要直接编辑带有
+`AUTO-GENERATED` 标记的文件；旧的分域生成文件只保留兼容用途，不代表当前 runtime 合同。
 
 ## 目录结构
 

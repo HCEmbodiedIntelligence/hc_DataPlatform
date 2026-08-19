@@ -1,7 +1,7 @@
-import { Drawer, Skeleton } from 'antd';
-import { useRef, type ReactNode, type RefObject } from 'react';
-import styles from './layout.module.css';
-import { useCompactLayout } from './responsive';
+import { Drawer, Skeleton } from "antd";
+import { useRef, type ReactNode, type RefObject } from "react";
+import styles from "./layout.module.css";
+import { useCompactLayout } from "./responsive";
 
 export interface EntityDrawerProps {
   open: boolean;
@@ -23,14 +23,18 @@ export function EntityDrawer({
   footer,
   extra,
   loading = false,
-  width = 440,
+  width = "clamp(440px, 34vw, 540px)",
   returnFocusRef,
 }: Readonly<EntityDrawerProps>) {
   const compact = useCompactLayout();
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
 
-  if (open && !wasOpenRef.current && document.activeElement instanceof HTMLElement) {
+  if (
+    open &&
+    !wasOpenRef.current &&
+    document.activeElement instanceof HTMLElement
+  ) {
     previousFocusRef.current = document.activeElement;
   }
   wasOpenRef.current = open;
@@ -41,7 +45,7 @@ export function EntityDrawer({
       title={title}
       open={open}
       onClose={onClose}
-      size={compact ? '100%' : width}
+      size={compact ? "100%" : width}
       footer={footer}
       extra={extra}
       keyboard
@@ -54,7 +58,11 @@ export function EntityDrawer({
         }
       }}
     >
-      {loading ? <Skeleton active paragraph={{ rows: 7 }} aria-label="详情加载中" /> : children}
+      {loading ? (
+        <Skeleton active paragraph={{ rows: 7 }} aria-label="详情加载中" />
+      ) : (
+        children
+      )}
     </Drawer>
   );
 }

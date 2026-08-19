@@ -1,5 +1,173 @@
 components:
+  headers:
+    AccessNoStore:
+      description: Authentication and authorization material must not be cached.
+      schema:
+        const: private, no-store
+        type: string
+    CollectionTaskETag:
+      required: true
+      schema:
+        type: string
+    CollectionTaskReplay:
+      required: true
+      schema:
+        enum:
+        - 'true'
+        - 'false'
+        type: string
+    DashboardNoStore:
+      required: true
+      schema:
+        const: no-store
+        type: string
+    StorageETag:
+      required: true
+      schema:
+        type: string
+    StorageIdempotencyReplayed:
+      required: true
+      schema:
+        enum:
+        - 'true'
+        - 'false'
+        type: string
   parameters:
+    AccessIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    AccessProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    AccessRequestId:
+      in: path
+      name: access_request_id
+      required: true
+      schema:
+        format: uuid
+        type: string
+    AnnotationProject:
+      description: Must select the exact project that owns the task.
+      in: header
+      name: X-Project-ID
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    AnnotationRegion:
+      description: Must select the exact region that owns the task; project-wide scope is not a cross-region
+        bypass.
+      in: header
+      name: X-Region-Code
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    CollectionTaskId:
+      in: path
+      name: collection_task_id
+      required: true
+      schema:
+        $ref: '#/components/schemas/CollectionTaskIdentifier'
+    CollectionTaskIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        maxLength: 255
+        minLength: 1
+        type: string
+    CollectionTaskIfMatch:
+      in: header
+      name: If-Match
+      required: true
+      schema:
+        maxLength: 128
+        minLength: 1
+        type: string
+    CollectionTaskProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        $ref: '#/components/schemas/CollectionTaskIdentifier'
+    CollectionTaskRegionCode:
+      description: Selects the exact authorized region whose package and QC facts are aggregated.
+      in: header
+      name: X-Region-Code
+      required: true
+      schema:
+        maxLength: 128
+        minLength: 1
+        pattern: ^[A-Za-z0-9._-]+$
+        type: string
+    DashboardCursor:
+      description: HMAC-protected cursor bound to principal, project, region, range, timezone, endpoint,
+        and the endpoint's complete stable source tuple. Cross-scope cursor reuse is rejected.
+      in: query
+      name: cursor
+      required: false
+      schema:
+        maxLength: 16384
+        minLength: 1
+        type: string
+    DashboardFrom:
+      description: Inclusive RFC 3339 instant with an explicit UTC offset.
+      in: query
+      name: from
+      required: true
+      schema:
+        format: date-time
+        type: string
+    DashboardLimit:
+      in: query
+      name: limit
+      required: false
+      schema:
+        default: 50
+        maximum: 100
+        minimum: 1
+        type: integer
+    DashboardProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        $ref: '#/components/schemas/DashboardIdentifier'
+    DashboardRegionCode:
+      description: Exact authorized region. Administrators are not aggregated across regions.
+      in: query
+      name: region_code
+      required: true
+      schema:
+        $ref: '#/components/schemas/DashboardIdentifier'
+    DashboardTimezone:
+      description: Explicit project IANA timezone. The UI defaults to 24 hours and may request 7 or 30
+        days; the service never reads a browser-local timezone.
+      in: query
+      name: timezone
+      required: true
+      schema:
+        maxLength: 64
+        minLength: 1
+        pattern: ^[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$
+        type: string
+    DashboardTo:
+      description: Exclusive RFC 3339 instant with an explicit UTC offset.
+      in: query
+      name: to
+      required: true
+      schema:
+        format: date-time
+        type: string
     DatasetId:
       in: path
       name: dataset_id
@@ -70,6 +238,54 @@ components:
       schema:
         minLength: 1
         type: string
+    StorageCursor:
+      in: query
+      name: cursor
+      required: false
+      schema:
+        maxLength: 16384
+        type: string
+    StorageIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        maxLength: 256
+        minLength: 1
+        type: string
+    StorageIfMatch:
+      in: header
+      name: If-Match
+      required: true
+      schema:
+        maxLength: 256
+        minLength: 1
+        type: string
+    StorageLimit:
+      in: query
+      name: limit
+      required: false
+      schema:
+        default: 50
+        maximum: 100
+        minimum: 1
+        type: integer
+    StoragePolicyId:
+      in: path
+      name: policy_id
+      required: true
+      schema:
+        maxLength: 256
+        minLength: 1
+        type: string
+    StorageProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        maxLength: 256
+        minLength: 1
+        type: string
     VerificationProjectId:
       in: path
       name: project_id
@@ -98,7 +314,271 @@ components:
       schema:
         minimum: 1
         type: integer
+  requestBodies:
+    AccessDecisionBody:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AccessDecisionCommand'
+      required: true
+    CapabilityRequestCreateBody:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CapabilityRequestCreate'
+      required: true
+    LoginCommandBody:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LoginCommand'
+      required: true
+    MembershipRequestCreateBody:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MembershipRequestCreate'
+      required: true
+    RegistrationCommandBody:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RegistrationCommand'
+      required: true
+  responses:
+    AccessConflict:
+      content:
+        application/problem+json:
+          example:
+            code: ACCESS_REQUEST_STATE_CONFLICT
+            detail: The transition is invalid from the current state.
+            request_id: req-409
+            retryable: false
+            status: 409
+            title: Access request state conflict
+            type: https://hc-data-platform.invalid/problems/access-request-state-conflict
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: State, concurrency, duplicate-pending, or idempotency conflict.
+    AccessForbidden:
+      content:
+        application/problem+json:
+          example:
+            code: PROJECT_SCOPE_DENIED
+            detail: The exact project scope is not granted.
+            request_id: req-403
+            retryable: false
+            status: 403
+            title: Project scope denied
+            type: https://hc-data-platform.invalid/problems/project-scope-denied
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: Exact project scope or project access-management capability is absent.
+    AccessTooManyRequests:
+      content:
+        application/problem+json:
+          example:
+            code: ABUSE_POLICY_LIMITED
+            detail: The externally configured abuse policy denied this request.
+            request_id: req-429
+            retryable: true
+            status: 429
+            title: Request rate limited
+            type: https://hc-data-platform.invalid/problems/abuse-policy-limited
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: An externally configured OPEN-02 abuse policy denied the request.
+    AccessUnauthorized:
+      content:
+        application/problem+json:
+          example:
+            code: AUTHENTICATION_REQUIRED
+            detail: A current Bearer session is required.
+            request_id: req-401
+            retryable: false
+            status: 401
+            title: Authentication required
+            type: https://hc-data-platform.invalid/problems/authentication-required
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: Authentication failed or a current session is required.
+    AccessUnprocessable:
+      content:
+        application/problem+json:
+          example:
+            code: REQUEST_VALIDATION_FAILED
+            detail: The request did not satisfy the API contract.
+            request_id: req-422
+            retryable: false
+            status: 422
+            title: Request validation failed
+            type: https://hc-data-platform.invalid/problems/request-validation-failed
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: The request violates the API contract.
+    CapabilityRequestCreated:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CapabilityRequest'
+      description: Pending project capability request created.
+    CapabilityRequestOk:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CapabilityRequest'
+      description: Current capability request representation.
+    DashboardForbidden:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: Exact project/region scope and dashboard.read capability are required.
+    DashboardInvalidCursor:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: Cursor is malformed or belongs to another principal or exact query scope.
+    DashboardInvalidQuery:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: Validation failed, timestamps lack offsets, timezone is invalid, from is not before
+        to, or the configured synchronous technical query budget was exceeded.
+    DashboardRateLimited:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: The deployment query-admission policy rejected this request.
+    DashboardUnauthorized:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+      description: A verified Bearer identity is required.
+    MembershipRequestCreated:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MembershipRequest'
+      description: Pending project membership request created.
+    MembershipRequestOk:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MembershipRequest'
+      description: Current membership request representation.
   schemas:
+    AccessAuditEvent:
+      additionalProperties: false
+      properties:
+        action:
+          minLength: 1
+          type: string
+        actor_id:
+          type:
+          - string
+          - 'null'
+        event_id:
+          format: uuid
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        outcome:
+          enum:
+          - SUCCEEDED
+          - DENIED
+          - FAILED
+          type: string
+        project_id:
+          type:
+          - string
+          - 'null'
+        request_id:
+          minLength: 1
+          type: string
+        resource_id:
+          minLength: 1
+          type: string
+        resource_type:
+          minLength: 1
+          type: string
+        safe_details:
+          additionalProperties: true
+          description: Allowlisted metadata only; credentials, tokens, and free-form reasons are absent.
+          type: object
+        scope_kind:
+          enum:
+          - PLATFORM
+          - PROJECT
+          type: string
+      required:
+      - event_id
+      - scope_kind
+      - action
+      - resource_type
+      - resource_id
+      - request_id
+      - outcome
+      - safe_details
+      - occurred_at
+      type: object
+    AccessAuditEventList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AccessAuditEvent'
+          type: array
+      required:
+      - items
+      type: object
+    AccessDecisionCommand:
+      additionalProperties: false
+      properties:
+        reason:
+          type:
+          - string
+          - 'null'
+      type: object
+    AccessRequestStatus:
+      enum:
+      - PENDING
+      - APPROVED
+      - REJECTED
+      - WITHDRAWN
+      - REVOKED
+      type: string
+    AccountPrincipal:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        principal_id:
+          format: uuid
+          type: string
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        username:
+          minLength: 1
+          type: string
+      required:
+      - principal_id
+      - username
+      - status
+      - created_at
+      type: object
+    AccountStatus:
+      description: Account lifecycle only; account approval/PENDING is not part of registration.
+      enum:
+      - ACTIVE
+      - DISABLED
+      type: string
     ActionQualityProfileV1:
       additionalProperties: false
       properties:
@@ -367,6 +847,9 @@ components:
         approved_at:
           format: date-time
           type: string
+        base_lance_version:
+          minimum: 1
+          type: integer
         dataset_id:
           type: string
         dataset_version:
@@ -382,11 +865,23 @@ components:
           type: string
         reviewer_id:
           type: string
+        revision_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
         rollout_id:
           type: string
         schema_version:
           const: '1'
           type: string
+        submission_id:
+          minLength: 1
+          type: string
+        tag_schema_id:
+          minLength: 1
+          type: string
+        tag_schema_version:
+          minimum: 1
+          type: integer
         task_id:
           type: string
       required:
@@ -397,6 +892,11 @@ components:
       - rollout_id
       - task_id
       - annotation_revision
+      - submission_id
+      - base_lance_version
+      - tag_schema_id
+      - tag_schema_version
+      - revision_content_hash
       - review_id
       - reviewer_id
       - excluded_ranges
@@ -417,6 +917,10 @@ components:
         current_revision:
           minimum: 0
           type: integer
+        current_submission_id:
+          type:
+          - string
+          - 'null'
         etag:
           type: string
         schema_version:
@@ -455,6 +959,14 @@ components:
       properties:
         author_id:
           type: string
+        base_lance_version:
+          minimum: 1
+          type: integer
+        base_step_count:
+          minimum: 1
+          type:
+          - integer
+          - 'null'
         client_mutation_id:
           type: string
         effective_exclusions:
@@ -473,6 +985,16 @@ components:
         schema_version:
           const: '1'
           type: string
+        tag_schema_id:
+          minLength: 1
+          type: string
+        tag_schema_version:
+          minimum: 1
+          type: integer
+        tags:
+          items:
+            $ref: '#/components/schemas/AnnotationTag'
+          type: array
         task_id:
           type: string
         updated_at:
@@ -484,6 +1006,10 @@ components:
       - revision
       - author_id
       - client_mutation_id
+      - base_lance_version
+      - tag_schema_id
+      - tag_schema_version
+      - tags
       - operations
       - effective_exclusions
       - etag
@@ -500,12 +1026,29 @@ components:
           items:
             $ref: '#/components/schemas/AnnotationRevision'
           type: array
+        submissions:
+          items:
+            $ref: '#/components/schemas/AnnotationSubmission'
+          type: array
         task:
           $ref: '#/components/schemas/AnnotationTask'
       required:
       - task
       - revisions
+      - submissions
       - reviews
+      type: object
+    AnnotationObjectRelation:
+      properties:
+        relation_type:
+          maxLength: 128
+          minLength: 1
+          type: string
+        target:
+          $ref: '#/components/schemas/TagObjectRef'
+      required:
+      - relation_type
+      - target
       type: object
     AnnotationOperation:
       additionalProperties: false
@@ -545,6 +1088,10 @@ components:
     AnnotationReview:
       additionalProperties: false
       properties:
+        checked_kinds:
+          items:
+            $ref: '#/components/schemas/ReviewCheckKind'
+          type: array
         comment:
           maxLength: 10000
           type: string
@@ -563,32 +1110,63 @@ components:
         schema_version:
           const: '1'
           type: string
+        submission_id:
+          minLength: 1
+          type: string
         task_id:
           type: string
       required:
       - schema_version
       - review_id
+      - submission_id
       - task_id
       - revision
       - reviewer_id
       - decision
+      - checked_kinds
       - comment
       - created_at
+      type: object
+    AnnotationReviewCheck:
+      properties:
+        evidence:
+          maxLength: 2000
+          minLength: 1
+          type: string
+        kind:
+          $ref: '#/components/schemas/ReviewCheckKind'
+        status:
+          $ref: '#/components/schemas/ReviewCheckStatus'
+      required:
+      - kind
+      - evidence
       type: object
     AnnotationRevision:
       additionalProperties: false
       properties:
         author_id:
           type: string
+        base_lance_version:
+          minimum: 1
+          type: integer
         client_mutation_id:
+          type: string
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
           type: string
         created_at:
           format: date-time
           type: string
+        legacy_audit:
+          oneOf:
+          - $ref: '#/components/schemas/LegacyAuditReference'
+          - type: 'null'
         operations:
           items:
             $ref: '#/components/schemas/AnnotationOperation'
           type: array
+        origin:
+          $ref: '#/components/schemas/RevisionOrigin'
         parent_revision:
           minimum: 0
           type:
@@ -600,6 +1178,16 @@ components:
         schema_version:
           const: '1'
           type: string
+        tag_schema_id:
+          minLength: 1
+          type: string
+        tag_schema_version:
+          minimum: 1
+          type: integer
+        tags:
+          items:
+            $ref: '#/components/schemas/AnnotationTag'
+          type: array
         task_id:
           type: string
       required:
@@ -609,7 +1197,13 @@ components:
       - parent_revision
       - author_id
       - client_mutation_id
+      - base_lance_version
+      - tag_schema_id
+      - tag_schema_version
+      - tags
       - operations
+      - origin
+      - content_hash
       - created_at
       type: object
     AnnotationStatus:
@@ -620,6 +1214,102 @@ components:
       - NEEDS_REVISION
       - REJECTED
       type: string
+    AnnotationSubmission:
+      description: Immutable reviewable version produced from one exact draft revision.
+      properties:
+        base_lance_version:
+          minimum: 1
+          type: integer
+        checks:
+          items:
+            $ref: '#/components/schemas/AnnotationReviewCheck'
+          type: array
+        created_at:
+          format: date-time
+          type: string
+        revision:
+          minimum: 0
+          type: integer
+        revision_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        submission_id:
+          minLength: 1
+          type: string
+        submitted_by:
+          minLength: 1
+          type: string
+        tag_schema_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        tag_schema_id:
+          minLength: 1
+          type: string
+        tag_schema_version:
+          minimum: 1
+          type: integer
+        task_id:
+          minLength: 1
+          type: string
+      required:
+      - submission_id
+      - task_id
+      - revision
+      - submitted_by
+      - base_lance_version
+      - tag_schema_id
+      - tag_schema_version
+      - tag_schema_hash
+      - revision_content_hash
+      - checks
+      - created_at
+      type: object
+    AnnotationTag:
+      description: One schema-pinned Tag instance over a half-open Lance interval.
+      properties:
+        annotation_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        attributes:
+          additionalProperties:
+            type:
+            - string
+            - integer
+            - number
+            - boolean
+          type: object
+        end_step:
+          minimum: 1
+          type: integer
+        path:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        relations:
+          default: []
+          items:
+            $ref: '#/components/schemas/AnnotationObjectRelation'
+          type: array
+        start_step:
+          minimum: 0
+          type: integer
+        subject:
+          oneOf:
+          - $ref: '#/components/schemas/TagObjectRef'
+          - type: 'null'
+        tag_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+      required:
+      - annotation_id
+      - tag_id
+      - path
+      - start_step
+      - end_step
+      type: object
     AnnotationTask:
       additionalProperties: false
       properties:
@@ -636,12 +1326,26 @@ components:
           type:
           - string
           - 'null'
+        base_lance_version:
+          minimum: 1
+          type: integer
+        base_step_count:
+          minimum: 1
+          type:
+          - integer
+          - 'null'
         created_at:
           format: date-time
           type: string
+        creation_source:
+          $ref: '#/components/schemas/AnnotationTaskCreationSource'
         current_revision:
           minimum: 0
           type: integer
+        current_submission_id:
+          type:
+          - string
+          - 'null'
         dataset_id:
           minLength: 1
           type: string
@@ -653,12 +1357,22 @@ components:
         project_id:
           minLength: 1
           type: string
+        region_code:
+          minLength: 1
+          type:
+          - string
+          - 'null'
         rollout_id:
           minLength: 1
           type: string
         schema_version:
           const: '1'
           type: string
+        source_workflow_id:
+          minLength: 1
+          type:
+          - string
+          - 'null'
         state_version:
           minimum: 0
           type: integer
@@ -673,9 +1387,17 @@ components:
           type:
           - integer
           - 'null'
+        tag_schema_id:
+          minLength: 1
+          type: string
+        tag_schema_version:
+          minimum: 1
+          type: integer
         task_id:
           minLength: 1
           type: string
+        task_kind:
+          $ref: '#/components/schemas/AnnotationTaskKind'
         updated_at:
           format: date-time
           type: string
@@ -685,6 +1407,9 @@ components:
       - project_id
       - dataset_id
       - dataset_version
+      - base_lance_version
+      - tag_schema_id
+      - tag_schema_version
       - rollout_id
       - current_revision
       - state_version
@@ -693,6 +1418,15 @@ components:
       - created_at
       - updated_at
       type: object
+    AnnotationTaskCreationSource:
+      enum:
+      - LEGACY
+      - SYSTEM_LANCE
+      type: string
+    AnnotationTaskKind:
+      enum:
+      - TAGGING
+      type: string
     AuditRecord:
       additionalProperties: false
       properties:
@@ -793,6 +1527,275 @@ components:
       - enabled
       - code
       type: object
+    AutoAnnotationRequest:
+      additionalProperties: false
+      properties:
+        revision:
+          minimum: 0
+          type: integer
+      required:
+      - revision
+      type: object
+    AvailableScope:
+      additionalProperties: false
+      properties:
+        capabilities:
+          description: Authoritative approved capability keys for this exact project; legacy roles are
+            compatibility projections only.
+          items:
+            minLength: 1
+            type: string
+          type: array
+          uniqueItems: true
+        project_id:
+          minLength: 1
+          type: string
+        project_wide:
+          type: boolean
+        region_codes:
+          items:
+            minLength: 1
+            type: string
+          type: array
+          uniqueItems: true
+      required:
+      - project_id
+      - region_codes
+      - project_wide
+      - capabilities
+      type: object
+    BusinessCapacityCategory:
+      description: The complete, fixed business-capacity category set.
+      enum:
+      - RAW
+      - ANNOTATION_COMPLETE
+      - PENDING_ANNOTATION
+      - ISSUE_DATA
+      type: string
+    CapabilityRequest:
+      additionalProperties: false
+      properties:
+        capability_keys:
+          items:
+            minLength: 1
+            type: string
+          minItems: 1
+          type: array
+          uniqueItems: true
+        created_at:
+          format: date-time
+          type: string
+        decided_by:
+          type:
+          - string
+          - 'null'
+        decision_reason:
+          type:
+          - string
+          - 'null'
+        project_id:
+          minLength: 1
+          type: string
+        reason:
+          type:
+          - string
+          - 'null'
+        request_id:
+          format: uuid
+          type: string
+        requester_id:
+          minLength: 1
+          type: string
+        revision:
+          minimum: 1
+          type: integer
+        status:
+          $ref: '#/components/schemas/AccessRequestStatus'
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - request_id
+      - project_id
+      - requester_id
+      - capability_keys
+      - status
+      - created_at
+      - updated_at
+      - revision
+      type: object
+    CapabilityRequestCreate:
+      additionalProperties: false
+      properties:
+        capability_keys:
+          items:
+            minLength: 1
+            type: string
+          minItems: 1
+          type: array
+          uniqueItems: true
+        reason:
+          type:
+          - string
+          - 'null'
+      required:
+      - capability_keys
+      type: object
+    CapabilityRequestList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CapabilityRequest'
+          type: array
+      required:
+      - items
+      type: object
+    CapacityCategoryTotal:
+      additionalProperties: false
+      properties:
+        candidate_bytes:
+          $ref: '#/components/schemas/StorageByteString'
+        category:
+          $ref: '#/components/schemas/BusinessCapacityCategory'
+        logical_object_count:
+          minimum: 0
+          type: integer
+      required:
+      - category
+      - candidate_bytes
+      - logical_object_count
+      type: object
+    CapacityInventoryFact:
+      additionalProperties: false
+      properties:
+        business_category:
+          oneOf:
+          - $ref: '#/components/schemas/BusinessCapacityCategory'
+          - type: 'null'
+        disposition:
+          $ref: '#/components/schemas/InventoryDisposition'
+        logical_object_id:
+          maxLength: 1024
+          type:
+          - string
+          - 'null'
+        object_role:
+          $ref: '#/components/schemas/ObjectRole'
+        observed_at:
+          format: date-time
+          type: string
+        physical_bytes:
+          $ref: '#/components/schemas/StorageByteString'
+        physical_instance_id:
+          maxLength: 1024
+          minLength: 1
+          type: string
+        project_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+      required:
+      - snapshot_id
+      - project_id
+      - physical_instance_id
+      - physical_bytes
+      - disposition
+      - object_role
+      - observed_at
+      type: object
+    CapacityInventoryPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CapacityInventoryFact'
+          type: array
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+        project_id:
+          type: string
+        snapshot_id:
+          type: string
+      required:
+      - snapshot_id
+      - project_id
+      - items
+      - page_info
+      type: object
+    CapacityReconciliation:
+      additionalProperties: false
+      properties:
+        balanced:
+          type: boolean
+        duplicate_inventory_rows_ignored:
+          minimum: 0
+          type: integer
+        formula:
+          const: physical_total_bytes = candidate_business_total_bytes + replica_overhead_bytes + temporary_bytes
+          type: string
+        replica_instance_count:
+          minimum: 0
+          type: integer
+        replica_overhead_bytes:
+          $ref: '#/components/schemas/StorageByteString'
+        temporary_bytes:
+          $ref: '#/components/schemas/StorageByteString'
+        temporary_instance_count:
+          minimum: 0
+          type: integer
+      required:
+      - replica_overhead_bytes
+      - replica_instance_count
+      - temporary_bytes
+      - temporary_instance_count
+      - duplicate_inventory_rows_ignored
+      - formula
+      - balanced
+      type: object
+    CapacitySnapshot:
+      additionalProperties: false
+      properties:
+        candidate_business_total_bytes:
+          $ref: '#/components/schemas/StorageByteString'
+        candidate_logical_object_count:
+          minimum: 0
+          type: integer
+        categories:
+          items:
+            $ref: '#/components/schemas/CapacityCategoryTotal'
+          maxItems: 4
+          minItems: 4
+          type: array
+        observed_at:
+          format: date-time
+          type: string
+        physical_instance_count:
+          minimum: 0
+          type: integer
+        physical_total_bytes:
+          $ref: '#/components/schemas/StorageByteString'
+        project_id:
+          type: string
+        reconciliation:
+          $ref: '#/components/schemas/CapacityReconciliation'
+        snapshot_id:
+          type: string
+      required:
+      - snapshot_id
+      - project_id
+      - observed_at
+      - physical_total_bytes
+      - physical_instance_count
+      - candidate_business_total_bytes
+      - candidate_logical_object_count
+      - categories
+      - reconciliation
+      type: object
     ChannelInventoryV1:
       additionalProperties: false
       properties:
@@ -814,6 +1817,170 @@ components:
       - topic
       - message_encoding
       type: object
+    CollectionTarget:
+      additionalProperties: false
+      properties:
+        duration_seconds:
+          type:
+          - number
+          - 'null'
+        package_count:
+          type:
+          - integer
+          - 'null'
+      type: object
+    CollectionTask:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          $ref: '#/components/schemas/CollectionTaskIdentifier'
+        description:
+          type: string
+        name:
+          type: string
+        project_id:
+          $ref: '#/components/schemas/CollectionTaskIdentifier'
+        quality_threshold:
+          maximum: 1
+          minimum: 0
+          type:
+          - number
+          - 'null'
+        scenario:
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          type: string
+        status:
+          $ref: '#/components/schemas/CollectionTaskStatus'
+        target:
+          oneOf:
+          - $ref: '#/components/schemas/CollectionTarget'
+          - type: 'null'
+        task_code:
+          pattern: ^[0-9]{8}$
+          type: string
+        type:
+          type: string
+      required:
+      - schema_version
+      - collection_task_id
+      - project_id
+      - task_code
+      - name
+      - type
+      - scenario
+      - description
+      - target
+      - quality_threshold
+      - status
+      type: object
+    CollectionTaskIdentifier:
+      maxLength: 128
+      minLength: 1
+      pattern: ^[A-Za-z0-9._-]+$
+      type: string
+    CollectionTaskPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CollectionTask'
+          type: array
+        next_cursor:
+          default: null
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      type: object
+    CollectionTaskProgress:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type: string
+        collection_task_id:
+          $ref: '#/components/schemas/CollectionTaskIdentifier'
+        observed_sources:
+          $ref: '#/components/schemas/ManifestObservedSources'
+        project_id:
+          $ref: '#/components/schemas/CollectionTaskIdentifier'
+        qc:
+          $ref: '#/components/schemas/CollectionTaskQcProgress'
+        received_package_count:
+          minimum: 0
+          type: integer
+        schema_version:
+          const: '1'
+          default: '1'
+          type: string
+        status:
+          $ref: '#/components/schemas/CollectionTaskStatus'
+      required:
+      - schema_version
+      - collection_task_id
+      - project_id
+      - status
+      - as_of
+      - received_package_count
+      - qc
+      - observed_sources
+      type: object
+    CollectionTaskQcProgress:
+      additionalProperties: false
+      properties:
+        evaluated_count:
+          minimum: 0
+          type: integer
+        pass_count:
+          minimum: 0
+          type: integer
+        pass_rate:
+          $ref: '#/components/schemas/CollectionTaskRatio'
+        pending_count:
+          minimum: 0
+          type: integer
+        reject_count:
+          minimum: 0
+          type: integer
+        risk_count:
+          minimum: 0
+          type: integer
+      required:
+      - evaluated_count
+      - pass_count
+      - risk_count
+      - reject_count
+      - pending_count
+      - pass_rate
+      type: object
+    CollectionTaskRatio:
+      additionalProperties: false
+      properties:
+        denominator:
+          minimum: 0
+          type: integer
+        numerator:
+          minimum: 0
+          type: integer
+        value:
+          maximum: 1
+          minimum: 0
+          type:
+          - number
+          - 'null'
+      required:
+      - numerator
+      - denominator
+      type: object
+    CollectionTaskStatus:
+      enum:
+      - ACTIVE
+      - CLOSED
+      type: string
     CompleteStepProfileV1:
       additionalProperties: false
       properties:
@@ -863,21 +2030,613 @@ components:
       - part_number
       - etag
       type: object
+    Crc64Decimal:
+      description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose uint64
+        precision.
+      maxLength: 20
+      pattern: ^(?:0|[1-9][0-9]{0,19})$
+      type: string
+    CreateCollectionTask:
+      additionalProperties: false
+      properties:
+        description:
+          default: ''
+          maxLength: 10000
+          type: string
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+        quality_threshold:
+          maximum: 1
+          minimum: 0
+          type:
+          - number
+          - 'null'
+        scenario:
+          maxLength: 200
+          minLength: 1
+          type: string
+        target:
+          oneOf:
+          - $ref: '#/components/schemas/CollectionTarget'
+          - type: 'null'
+        type:
+          maxLength: 100
+          minLength: 1
+          type: string
+      required:
+      - name
+      - type
+      - scenario
+      type: object
+    CreateLifecyclePolicy:
+      additionalProperties: false
+      properties:
+        action:
+          $ref: '#/components/schemas/LifecyclePolicyAction'
+        business_category:
+          $ref: '#/components/schemas/BusinessCapacityCategory'
+        minimum_age_days:
+          maximum: 36500
+          minimum: 0
+          type: integer
+        name:
+          maxLength: 256
+          minLength: 1
+          type: string
+        object_role:
+          $ref: '#/components/schemas/ObjectRole'
+        priority:
+          maximum: 10000
+          minimum: 0
+          type: integer
+      required:
+      - name
+      - business_category
+      - object_role
+      - action
+      - minimum_age_days
+      - priority
+      type: object
+    CreateTagSchemaVersionRequest:
+      additionalProperties: false
+      properties:
+        compatible_targets:
+          default: []
+          items:
+            $ref: '#/components/schemas/TagSchemaTarget'
+          type: array
+        document:
+          $ref: '#/components/schemas/TagSchemaDocument'
+        name:
+          maxLength: 256
+          minLength: 1
+          type: string
+        schema_id:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
+        version:
+          minimum: 1
+          type:
+          - integer
+          - 'null'
+      required:
+      - name
+      - document
+      type: object
     CreateUploadRequest:
       additionalProperties: false
       properties:
         manifest:
           $ref: '#/components/schemas/RolloutManifestV1'
+        object_storage_uri:
+          description: Exact canonical address authorized by the server's configured MinIO/S3/OSS adapter;
+            client credentials and signed query strings are rejected.
+          maxLength: 2048
+          minLength: 1
+          type:
+          - string
+          - 'null'
         part_numbers:
           items:
             maximum: 10000
             minimum: 1
             type: integer
-          maxItems: 10000
+          maxItems: 256
           type: array
           uniqueItems: true
       required:
       - manifest
+      type: object
+    DashboardActivityEvent:
+      additionalProperties: false
+      properties:
+        deduplication_key:
+          maxLength: 512
+          minLength: 1
+          type: string
+        event_id:
+          maxLength: 512
+          minLength: 1
+          type: string
+        event_type:
+          $ref: '#/components/schemas/DashboardActivityEventType'
+        occurred_at:
+          format: date-time
+          type: string
+        source_id:
+          maxLength: 512
+          minLength: 1
+          type: string
+        source_state:
+          maxLength: 64
+          minLength: 1
+          type: string
+        summary:
+          maxLength: 256
+          minLength: 1
+          type: string
+        target:
+          $ref: '#/components/schemas/DashboardTargetResource'
+        title:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+      - event_id
+      - event_type
+      - source_id
+      - deduplication_key
+      - occurred_at
+      - source_state
+      - title
+      - summary
+      - target
+      type: object
+    DashboardActivityEventType:
+      enum:
+      - UPLOAD_COMMITTED
+      - QC_COMPLETED
+      - TAG_REVIEW_DECIDED
+      - DATASET_PUBLISHED
+      type: string
+    DashboardActivityPage:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/DashboardSectionError'
+          - type: 'null'
+        items:
+          items:
+            $ref: '#/components/schemas/DashboardActivityEvent'
+          type: array
+        page_info:
+          oneOf:
+          - $ref: '#/components/schemas/PageInfo'
+          - type: 'null'
+        status:
+          $ref: '#/components/schemas/DashboardSectionStatus'
+      required:
+      - status
+      - as_of
+      - error
+      - page_info
+      - items
+      type: object
+    DashboardActivityResponse:
+      additionalProperties: false
+      properties:
+        activity:
+          $ref: '#/components/schemas/DashboardActivityPage'
+        as_of:
+          format: date-time
+          type: string
+        from:
+          format: date-time
+          type: string
+        project_id:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        region_code:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        schema_version:
+          const: '1'
+          type: string
+        timezone:
+          maxLength: 64
+          minLength: 1
+          type: string
+        to:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - project_id
+      - region_code
+      - from
+      - to
+      - timezone
+      - as_of
+      - activity
+      type: object
+    DashboardCoverageResponse:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type: string
+        coverage:
+          $ref: '#/components/schemas/DashboardSectionState'
+        from:
+          format: date-time
+          type: string
+        project_id:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        region_code:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        schema_version:
+          const: '1'
+          type: string
+        timezone:
+          maxLength: 64
+          minLength: 1
+          type: string
+        to:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - project_id
+      - region_code
+      - from
+      - to
+      - timezone
+      - as_of
+      - coverage
+      type: object
+    DashboardIdentifier:
+      maxLength: 128
+      minLength: 1
+      pattern: ^[A-Za-z0-9._-]+$
+      type: string
+    DashboardPendingItem:
+      additionalProperties: false
+      properties:
+        deduplication_key:
+          maxLength: 512
+          minLength: 1
+          type: string
+        item_type:
+          $ref: '#/components/schemas/DashboardPendingItemType'
+        opened_at:
+          format: date-time
+          type: string
+        severity:
+          $ref: '#/components/schemas/DashboardPendingSeverity'
+        source_id:
+          maxLength: 512
+          minLength: 1
+          type: string
+        source_state:
+          maxLength: 64
+          minLength: 1
+          type: string
+        target:
+          $ref: '#/components/schemas/DashboardTargetResource'
+      required:
+      - item_type
+      - source_id
+      - deduplication_key
+      - source_state
+      - severity
+      - opened_at
+      - target
+      type: object
+    DashboardPendingItemType:
+      enum:
+      - UPLOAD_FAILED
+      - QC_ANOMALY
+      - TAG_REVIEW_PENDING
+      - PUBLICATION_PENDING
+      type: string
+    DashboardPendingItemsPage:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        authorized_source_types:
+          items:
+            $ref: '#/components/schemas/DashboardPendingItemType'
+          type: array
+          uniqueItems: true
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/DashboardSectionError'
+          - type: 'null'
+        items:
+          items:
+            $ref: '#/components/schemas/DashboardPendingItem'
+          type: array
+        page_info:
+          oneOf:
+          - $ref: '#/components/schemas/PageInfo'
+          - type: 'null'
+        status:
+          $ref: '#/components/schemas/DashboardSectionStatus'
+      required:
+      - status
+      - as_of
+      - error
+      - page_info
+      - authorized_source_types
+      - items
+      type: object
+    DashboardPendingItemsResponse:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type: string
+        from:
+          format: date-time
+          type: string
+        pending_items:
+          $ref: '#/components/schemas/DashboardPendingItemsPage'
+        project_id:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        region_code:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        schema_version:
+          const: '1'
+          type: string
+        timezone:
+          maxLength: 64
+          minLength: 1
+          type: string
+        to:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - project_id
+      - region_code
+      - from
+      - to
+      - timezone
+      - as_of
+      - pending_items
+      type: object
+    DashboardPendingSeverity:
+      enum:
+      - CRITICAL
+      - HIGH
+      - MEDIUM
+      - LOW
+      type: string
+    DashboardPublishedRegionState:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/DashboardSectionError'
+          - type: 'null'
+        lineage_count:
+          description: Count of certain unique publication+rollout lineage facts.
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        publication_count:
+          description: Count of distinct certain publication identities in the exact scope.
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        status:
+          $ref: '#/components/schemas/DashboardSectionStatus'
+        unresolved_history_count:
+          description: Project/range historical rollout references not assigned to any region.
+          minimum: 0
+          type: integer
+      required:
+      - status
+      - as_of
+      - error
+      - lineage_count
+      - publication_count
+      - unresolved_history_count
+      type: object
+    DashboardResourceType:
+      enum:
+      - UPLOAD_SESSION
+      - ROLLOUT
+      - ANNOTATION_TASK
+      - DATASET_VERSION
+      type: string
+    DashboardSectionError:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          type: string
+        message:
+          maxLength: 500
+          minLength: 1
+          type: string
+        needs_product_confirmation:
+          default: false
+          type: boolean
+        retryable:
+          default: false
+          type: boolean
+      required:
+      - code
+      - message
+      - retryable
+      - needs_product_confirmation
+      type: object
+    DashboardSectionState:
+      additionalProperties: false
+      description: BLOCKED is not numeric zero. PARTIAL may include only explicitly identified factual
+        data.
+      properties:
+        as_of:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/DashboardSectionError'
+          - type: 'null'
+        status:
+          $ref: '#/components/schemas/DashboardSectionStatus'
+      required:
+      - status
+      - as_of
+      - error
+      type: object
+    DashboardSectionStatus:
+      enum:
+      - READY
+      - EMPTY
+      - PARTIAL
+      - STALE
+      - ERROR
+      - BLOCKED
+      type: string
+    DashboardSignalPipelineState:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/DashboardSectionError'
+          - type: 'null'
+        published_region:
+          $ref: '#/components/schemas/DashboardPublishedRegionState'
+        stages:
+          items: false
+          maxItems: 8
+          minItems: 8
+          prefixItems:
+          - const: COLLECTED
+          - const: RECEIVED
+          - const: AUTO_QC
+          - const: ALIGNED_30_HZ
+          - const: LANCE
+          - const: ANNOTATION
+          - const: REVIEW
+          - const: PUBLISHED
+          type: array
+        status:
+          $ref: '#/components/schemas/DashboardSectionStatus'
+      required:
+      - status
+      - as_of
+      - error
+      - stages
+      - published_region
+      type: object
+    DashboardSnapshotResponse:
+      additionalProperties: false
+      properties:
+        as_of:
+          format: date-time
+          type: string
+        from:
+          format: date-time
+          type: string
+        project_id:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        region_code:
+          $ref: '#/components/schemas/DashboardIdentifier'
+        schema_version:
+          const: '1'
+          type: string
+        sections:
+          $ref: '#/components/schemas/DashboardSnapshotSections'
+        timezone:
+          maxLength: 64
+          minLength: 1
+          type: string
+        to:
+          format: date-time
+          type: string
+      required:
+      - schema_version
+      - project_id
+      - region_code
+      - from
+      - to
+      - timezone
+      - as_of
+      - sections
+      type: object
+    DashboardSnapshotSections:
+      additionalProperties: false
+      description: Region storage is intentionally absent; capacity belongs to P12.
+      properties:
+        episodes:
+          $ref: '#/components/schemas/DashboardSectionState'
+        signal_pipeline:
+          $ref: '#/components/schemas/DashboardSignalPipelineState'
+        work:
+          $ref: '#/components/schemas/DashboardSectionState'
+      required:
+      - signal_pipeline
+      - episodes
+      - work
+      type: object
+    DashboardTargetResource:
+      additionalProperties: false
+      properties:
+        deep_link:
+          description: Relative link from a fixed upload, annotation, or dataset template.
+          maxLength: 1024
+          minLength: 1
+          type:
+          - string
+          - 'null'
+        resource_id:
+          maxLength: 512
+          minLength: 1
+          type: string
+        resource_type:
+          $ref: '#/components/schemas/DashboardResourceType'
+        resource_version:
+          maxLength: 512
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      required:
+      - resource_type
+      - resource_id
+      - resource_version
+      - deep_link
       type: object
     DatasetVersionRef:
       properties:
@@ -924,24 +2683,6 @@ components:
       - storage_commit_id
       - committed_rollouts
       - created_at
-      type: object
-    DependencyStatus:
-      properties:
-        detail:
-          type:
-          - string
-          - 'null'
-        latency_ms:
-          minimum: 0
-          type: number
-        status:
-          enum:
-          - ready
-          - not_ready
-          type: string
-      required:
-      - status
-      - latency_ms
       type: object
     DomainEventEnvelope:
       properties:
@@ -1138,6 +2879,22 @@ components:
       - row_count
       - media_type
       type: object
+    FailedPartV1:
+      additionalProperties: false
+      properties:
+        failure_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z0-9_]+$
+          type: string
+        part_number:
+          maximum: 10000
+          minimum: 1
+          type: integer
+      required:
+      - part_number
+      - failure_code
+      type: object
     FindingSeverity:
       enum:
       - warning
@@ -1213,6 +2970,45 @@ components:
       maxLength: 128
       minLength: 1
       pattern: ^[A-Za-z0-9._-]+$
+      type: string
+    IngestWorkflowLocator:
+      additionalProperties: false
+      properties:
+        attempts:
+          minimum: 0
+          type: integer
+        event_id:
+          format: uuid
+          type: string
+        last_error_code:
+          pattern: ^[A-Z0-9_]+$
+          type:
+          - string
+          - 'null'
+        status:
+          enum:
+          - PENDING
+          - DISPATCHED
+          - RETRY_WAIT
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        workflow_id:
+          minLength: 1
+          type: string
+      required:
+      - event_id
+      - workflow_id
+      - status
+      - attempts
+      - updated_at
+      type: object
+    InventoryDisposition:
+      enum:
+      - PRIMARY
+      - REPLICA
+      - TEMPORARY
       type: string
     JobListV1:
       properties:
@@ -1297,6 +3093,451 @@ components:
       - QUALITY_REJECTED
       - CANCELLED
       type: string
+    LegacyAuditReference:
+      properties:
+        draft_id:
+          minLength: 1
+          type: string
+        source_actor_id:
+          minLength: 1
+          type: string
+        source_audit_event_id:
+          type:
+          - string
+          - 'null'
+        source_created_at:
+          format: date-time
+          type: string
+        source_payload:
+          additionalProperties: true
+          type: object
+        source_revision:
+          minimum: 0
+          type: integer
+        source_system:
+          const: P11_CLEANING
+          default: P11_CLEANING
+          type: string
+      required:
+      - draft_id
+      - source_revision
+      - source_actor_id
+      - source_created_at
+      type: object
+    LifecycleAuditEvent:
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+        actor_id:
+          type: string
+        after_digest:
+          type:
+          - string
+          - 'null'
+        audit_id:
+          type: string
+        before_digest:
+          type:
+          - string
+          - 'null'
+        details:
+          additionalProperties:
+            type:
+            - string
+            - integer
+            - boolean
+            - 'null'
+          type: object
+        occurred_at:
+          format: date-time
+          type: string
+        policy_id:
+          type: string
+        project_id:
+          type: string
+        request_id:
+          type: string
+      required:
+      - audit_id
+      - project_id
+      - policy_id
+      - actor_id
+      - action
+      - request_id
+      - occurred_at
+      type: object
+    LifecycleAuditPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/LifecycleAuditEvent'
+          type: array
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+        project_id:
+          type: string
+      required:
+      - project_id
+      - items
+      - page_info
+      type: object
+    LifecyclePolicy:
+      additionalProperties: false
+      properties:
+        action:
+          $ref: '#/components/schemas/LifecyclePolicyAction'
+        business_category:
+          $ref: '#/components/schemas/BusinessCapacityCategory'
+        created_at:
+          format: date-time
+          type: string
+        etag:
+          type: string
+        minimum_age_days:
+          maximum: 36500
+          minimum: 0
+          type: integer
+        name:
+          maxLength: 256
+          minLength: 1
+          type: string
+        object_role:
+          $ref: '#/components/schemas/ObjectRole'
+        policy_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        priority:
+          maximum: 10000
+          minimum: 0
+          type: integer
+        project_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        state:
+          $ref: '#/components/schemas/LifecyclePolicyState'
+        updated_at:
+          format: date-time
+          type: string
+        version:
+          minimum: 1
+          type: integer
+      required:
+      - policy_id
+      - project_id
+      - name
+      - business_category
+      - object_role
+      - action
+      - minimum_age_days
+      - priority
+      - state
+      - version
+      - etag
+      - created_at
+      - updated_at
+      type: object
+    LifecyclePolicyAction:
+      enum:
+      - RETAIN
+      - REVIEW_EXPIRATION
+      - CLEAN_REBUILDABLE_CACHE
+      type: string
+    LifecyclePolicyPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/LifecyclePolicy'
+          type: array
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+        project_id:
+          type: string
+      required:
+      - project_id
+      - items
+      - page_info
+      type: object
+    LifecyclePolicyState:
+      enum:
+      - DRAFT
+      - ENABLED
+      - PAUSED
+      type: string
+    LoginCommand:
+      additionalProperties: false
+      properties:
+        password:
+          minLength: 1
+          type: string
+          writeOnly: true
+        username:
+          minLength: 1
+          type: string
+      required:
+      - username
+      - password
+      type: object
+    ManifestCameraV1:
+      additionalProperties: false
+      properties:
+        camera_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        encoding:
+          maxLength: 128
+          type:
+          - string
+          - 'null'
+        frame_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
+        topic:
+          $ref: '#/components/schemas/TopicName'
+      required:
+      - camera_id
+      - topic
+      type: object
+    ManifestDiscoveryV1:
+      additionalProperties: false
+      properties:
+        cameras:
+          items:
+            $ref: '#/components/schemas/ManifestCameraV1'
+          type: array
+        missing_expected_topics:
+          items:
+            $ref: '#/components/schemas/TopicName'
+          type: array
+        read_only:
+          const: true
+          type: boolean
+        source:
+          const: MANIFEST
+          type: string
+        topics:
+          items:
+            $ref: '#/components/schemas/ManifestTopicV1'
+          type: array
+      required:
+      - source
+      - read_only
+      - cameras
+      - topics
+      - missing_expected_topics
+      type: object
+    ManifestFileV1:
+      additionalProperties: false
+      properties:
+        crc64:
+          $ref: '#/components/schemas/Crc64Decimal'
+        media_type:
+          default: application/octet-stream
+          maxLength: 128
+          minLength: 1
+          type: string
+        path:
+          maxLength: 1024
+          minLength: 1
+          pattern: ^(?!/)(?!.*(?:^|/)\.\.(?:/|$))(?!.*\\).+$
+          type: string
+        role:
+          default: RAW_MCAP
+          enum:
+          - RAW_MCAP
+          - AUXILIARY
+          type: string
+        sha256:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        size:
+          maximum: 5497558138880
+          minimum: 1
+          type: integer
+      required:
+      - path
+      - size
+      - sha256
+      - crc64
+      - media_type
+      - role
+      type: object
+    ManifestIdentifiersV1:
+      additionalProperties: false
+      properties:
+        collection_session_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        pico_instance_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
+        recording_request_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        robot_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+      required:
+      - collection_session_id
+      - recording_request_id
+      - data_package_id
+      - robot_id
+      type: object
+    ManifestObservedSources:
+      additionalProperties: false
+      properties:
+        camera_ids:
+          items:
+            type: string
+          type: array
+        device_ids:
+          items:
+            type: string
+          type: array
+        topic_names:
+          items:
+            type: string
+          type: array
+      required:
+      - device_ids
+      - camera_ids
+      - topic_names
+      type: object
+    ManifestPreflightResultV1:
+      additionalProperties: false
+      properties:
+        discovery:
+          $ref: '#/components/schemas/ManifestDiscoveryV1'
+        files:
+          items:
+            $ref: '#/components/schemas/ManifestFileV1'
+          type: array
+        identifiers:
+          $ref: '#/components/schemas/ManifestIdentifiersV1'
+        manifest:
+          $ref: '#/components/schemas/RolloutManifestV1'
+        manifest_fingerprint:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        schema_version:
+          const: manifest-preflight/v1
+          type: string
+        time_range:
+          $ref: '#/components/schemas/ManifestTimeRangeV1'
+        total_file_size:
+          maximum: 5497558138880
+          minimum: 1
+          type: integer
+      required:
+      - schema_version
+      - manifest_fingerprint
+      - identifiers
+      - time_range
+      - files
+      - total_file_size
+      - discovery
+      - manifest
+      type: object
+    ManifestTimeRangeV1:
+      additionalProperties: false
+      properties:
+        end_time:
+          format: date-time
+          type: string
+        start_time:
+          format: date-time
+          type: string
+      required:
+      - start_time
+      - end_time
+      type: object
+    ManifestTopicV1:
+      additionalProperties: false
+      properties:
+        message_encoding:
+          maxLength: 128
+          type:
+          - string
+          - 'null'
+        name:
+          $ref: '#/components/schemas/TopicName'
+        required:
+          default: false
+          type: boolean
+        schema_name:
+          maxLength: 256
+          type:
+          - string
+          - 'null'
+      required:
+      - name
+      type: object
+    MembershipRequest:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        decided_by:
+          type:
+          - string
+          - 'null'
+        decision_reason:
+          type:
+          - string
+          - 'null'
+        project_id:
+          minLength: 1
+          type: string
+        reason:
+          type:
+          - string
+          - 'null'
+        request_id:
+          format: uuid
+          type: string
+        requester_id:
+          minLength: 1
+          type: string
+        revision:
+          minimum: 1
+          type: integer
+        status:
+          $ref: '#/components/schemas/AccessRequestStatus'
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - request_id
+      - project_id
+      - requester_id
+      - status
+      - created_at
+      - updated_at
+      - revision
+      type: object
+    MembershipRequestCreate:
+      additionalProperties: false
+      properties:
+        reason:
+          type:
+          - string
+          - 'null'
+      type: object
+    MembershipRequestList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MembershipRequest'
+          type: array
+      required:
+      - items
+      type: object
     ModalityKind:
       enum:
       - image
@@ -1335,6 +3576,53 @@ components:
       - kind
       - samples
       type: object
+    MutualExclusionConstraint:
+      properties:
+        constraint_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        tag_ids:
+          items:
+            type: string
+          minItems: 2
+          type: array
+      required:
+      - constraint_id
+      - tag_ids
+      type: object
+    ObjectRelationConstraint:
+      properties:
+        relation_type:
+          maxLength: 128
+          minLength: 1
+          type: string
+        required:
+          default: false
+          type: boolean
+        source_tag_ids:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        target_object_types:
+          items:
+            type: string
+          minItems: 1
+          type: array
+      required:
+      - relation_type
+      - source_tag_ids
+      - target_object_types
+      type: object
+    ObjectRole:
+      enum:
+      - RAW
+      - MANIFEST
+      - PUBLISHED_MANIFEST
+      - REBUILDABLE_DERIVATIVE
+      - OTHER
+      type: string
     OutboxEvent:
       additionalProperties: false
       properties:
@@ -1413,7 +3701,7 @@ components:
             maximum: 10000
             minimum: 1
             type: integer
-          maxItems: 10000
+          maxItems: 256
           minItems: 1
           type: array
           uniqueItems: true
@@ -1664,6 +3952,15 @@ components:
       - publisher
       - admin
       type: string
+    PublicReadinessReport:
+      additionalProperties: false
+      properties:
+        status:
+          const: ready
+          type: string
+      required:
+      - status
+      type: object
     PublishDatasetRequestV1:
       additionalProperties: false
       properties:
@@ -2114,6 +4411,8 @@ components:
         committed_at:
           format: date-time
           type: string
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
         event_type:
           const: rollout.raw_committed.v1
           type: string
@@ -2138,12 +4437,17 @@ components:
         sha256:
           pattern: ^[a-f0-9]{64}$
           type: string
+        workflow:
+          oneOf:
+          - $ref: '#/components/schemas/IngestWorkflowLocator'
+          - type: 'null'
       required:
       - event_type
       - schema_version
       - project_id
       - region_code
       - rollout_id
+      - data_package_id
       - object_key
       - manifest_key
       - sha256
@@ -2249,29 +4553,28 @@ components:
       - source_sha256
       - report_sha256
       type: object
-    ReadinessReport:
+    RegistrationCommand:
+      additionalProperties: false
       properties:
-        dependencies:
-          properties:
-            object_storage:
-              $ref: '#/components/schemas/DependencyStatus'
-            postgresql:
-              $ref: '#/components/schemas/DependencyStatus'
-            temporal:
-              $ref: '#/components/schemas/DependencyStatus'
-          required:
-          - postgresql
-          - temporal
-          - object_storage
-          type: object
-        status:
-          enum:
-          - ready
-          - not_ready
+        password:
+          minLength: 1
+          type: string
+          writeOnly: true
+        username:
+          minLength: 1
           type: string
       required:
-      - status
-      - dependencies
+      - username
+      - password
+      type: object
+    RegistrationResult:
+      additionalProperties: false
+      description: Directly loginable ACTIVE principal with no implicit project or capability.
+      properties:
+        principal:
+          $ref: '#/components/schemas/AccountPrincipal'
+      required:
+      - principal
       type: object
     RequestContext:
       properties:
@@ -2324,10 +4627,36 @@ components:
             maximum: 10000
             minimum: 1
             type: integer
-          maxItems: 10000
+          maxItems: 256
           type: array
           uniqueItems: true
       type: object
+    RetryFailedPartsRequest:
+      additionalProperties: false
+      properties:
+        failures:
+          items:
+            $ref: '#/components/schemas/FailedPartV1'
+          maxItems: 256
+          minItems: 1
+          type: array
+          x-sorted-by: part_number
+      required:
+      - failures
+      type: object
+    ReviewCheckKind:
+      enum:
+      - HIERARCHY
+      - BOUNDARY
+      - REQUIRED_ATTRIBUTES
+      - MUTUAL_EXCLUSION
+      - OBJECT_RELATIONS
+      - SCHEMA_VERSION
+      type: string
+    ReviewCheckStatus:
+      enum:
+      - PASS
+      type: string
     ReviewDecision:
       enum:
       - APPROVE
@@ -2346,10 +4675,20 @@ components:
         revision:
           minimum: 0
           type: integer
+        submission_id:
+          minLength: 1
+          type:
+          - string
+          - 'null'
       required:
       - revision
       - decision
       type: object
+    RevisionOrigin:
+      enum:
+      - ANNOTATION
+      - LEGACY_CLEANING
+      type: string
     RolloutLineage:
       properties:
         converter_version:
@@ -2397,30 +4736,58 @@ components:
       properties:
         actual_topics:
           items:
-            type: string
+            $ref: '#/components/schemas/TopicName'
+          maxItems: 2048
+          type: array
+        cameras:
+          items:
+            $ref: '#/components/schemas/ManifestCameraV1'
+          maxItems: 128
           type: array
         collection_job_id:
           $ref: '#/components/schemas/IngestIdentifier'
+        collection_session_id:
+          $ref: '#/components/schemas/IngestIdentifier'
         compression:
+          enum:
+          - none
+          - zstd
           type: string
         crc64:
-          maximum: 18446744073709551615
-          minimum: 0
-          type: integer
+          $ref: '#/components/schemas/Crc64Decimal'
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
         end_time:
           format: date-time
           type: string
         expected_topics:
           items:
-            type: string
+            $ref: '#/components/schemas/TopicName'
+          maxItems: 2048
           type: array
         file_size:
+          maximum: 5497558138880
           minimum: 1
           type: integer
+        files:
+          items:
+            $ref: '#/components/schemas/ManifestFileV1'
+          maxItems: 256
+          minItems: 1
+          type: array
+        pico_instance_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
         project_id:
           $ref: '#/components/schemas/IngestIdentifier'
         recorder_version:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._/+:-]*$
           type: string
+        recording_request_id:
+          $ref: '#/components/schemas/IngestIdentifier'
         robot_id:
           $ref: '#/components/schemas/IngestIdentifier'
         rollout_id:
@@ -2439,18 +4806,29 @@ components:
           type: string
         task_id:
           $ref: '#/components/schemas/IngestIdentifier'
+        topics:
+          items:
+            $ref: '#/components/schemas/ManifestTopicV1'
+          maxItems: 2048
+          type: array
       required:
       - schema_version
       - project_id
       - task_id
       - collection_job_id
       - rollout_id
+      - collection_session_id
+      - recording_request_id
+      - data_package_id
       - sequence_no
       - robot_id
       - start_time
       - end_time
+      - cameras
+      - topics
       - expected_topics
       - actual_topics
+      - files
       - file_size
       - sha256
       - crc64
@@ -2471,6 +4849,12 @@ components:
           items:
             $ref: '#/components/schemas/AnnotationOperation'
           type: array
+        tags:
+          items:
+            $ref: '#/components/schemas/AnnotationTag'
+          type:
+          - array
+          - 'null'
       required:
       - expected_revision
       - client_mutation_id
@@ -2514,8 +4898,58 @@ components:
       required:
       - project_id
       type: object
+    SessionBootstrap:
+      additionalProperties: false
+      properties:
+        available_scopes:
+          items:
+            $ref: '#/components/schemas/AvailableScope'
+          type: array
+        capability_revision:
+          minimum: 0
+          type: integer
+        principal:
+          $ref: '#/components/schemas/AccountPrincipal'
+      required:
+      - principal
+      - available_scopes
+      - capability_revision
+      type: object
+    SessionCreated:
+      additionalProperties: false
+      properties:
+        access_token:
+          minLength: 1
+          type: string
+        capability_revision:
+          minimum: 0
+          type: integer
+        principal:
+          $ref: '#/components/schemas/AccountPrincipal'
+        token_type:
+          const: Bearer
+          type: string
+      required:
+      - access_token
+      - token_type
+      - principal
+      - capability_revision
+      type: object
     Sha256:
       pattern: ^[0-9a-f]{64}$
+      type: string
+    SignalStage:
+      description: 'Ordered catalog: 采集、已接收、自动质检、30 Hz 对齐、Lance、数据标注、审核、已发布。 Cleaning is not a separate
+        signal stage.'
+      enum:
+      - COLLECTED
+      - RECEIVED
+      - AUTO_QC
+      - ALIGNED_30_HZ
+      - LANCE
+      - ANNOTATION
+      - REVIEW
+      - PUBLISHED
       type: string
     StepRecord:
       properties:
@@ -2594,6 +5028,9 @@ components:
       - end_step
       - steps
       type: object
+    StorageByteString:
+      pattern: ^(0|[1-9][0-9]*)$
+      type: string
     SubmitRequest:
       additionalProperties: false
       properties:
@@ -2602,6 +5039,183 @@ components:
           type: integer
       required:
       - expected_revision
+      type: object
+    TagAttributeDefinition:
+      properties:
+        display_name:
+          maxLength: 256
+          minLength: 1
+          type: string
+        enum_values:
+          default: []
+          items:
+            type: string
+          type: array
+        key:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z][A-Za-z0-9_.-]*$
+          type: string
+        required:
+          default: false
+          type: boolean
+        value_type:
+          $ref: '#/components/schemas/TagAttributeType'
+      required:
+      - key
+      - display_name
+      - value_type
+      type: object
+    TagAttributeType:
+      enum:
+      - STRING
+      - INTEGER
+      - NUMBER
+      - BOOLEAN
+      - ENUM
+      type: string
+    TagNodeDefinition:
+      description: One node in an unbounded-depth, single-parent hierarchy.
+      properties:
+        attributes:
+          default: []
+          items:
+            $ref: '#/components/schemas/TagAttributeDefinition'
+          type: array
+        code:
+          maxLength: 256
+          minLength: 1
+          type: string
+        display_name:
+          maxLength: 256
+          minLength: 1
+          type: string
+        parent_tag_id:
+          type:
+          - string
+          - 'null'
+        tag_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+      required:
+      - tag_id
+      - code
+      - display_name
+      type: object
+    TagObjectRef:
+      properties:
+        object_id:
+          maxLength: 512
+          minLength: 1
+          type: string
+        object_type:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+      - object_id
+      - object_type
+      type: object
+    TagSchemaDocument:
+      description: Immutable schema content; OPEN-07 leaves hierarchy depth unbounded.
+      properties:
+        mutual_exclusions:
+          default: []
+          items:
+            $ref: '#/components/schemas/MutualExclusionConstraint'
+          type: array
+        nodes:
+          items:
+            $ref: '#/components/schemas/TagNodeDefinition'
+          type: array
+        object_relations:
+          default: []
+          items:
+            $ref: '#/components/schemas/ObjectRelationConstraint'
+          type: array
+      required:
+      - nodes
+      type: object
+    TagSchemaStatus:
+      enum:
+      - DRAFT
+      - PUBLISHED
+      type: string
+    TagSchemaTarget:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        dataset_schema_snapshot_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          type: string
+        task_kind:
+          $ref: '#/components/schemas/AnnotationTaskKind'
+      required:
+      - region_code
+      - dataset_id
+      - dataset_schema_snapshot_id
+      type: object
+    TagSchemaVersion:
+      properties:
+        compatible_targets:
+          default: []
+          items:
+            $ref: '#/components/schemas/TagSchemaTarget'
+          type: array
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          minLength: 1
+          type: string
+        document:
+          $ref: '#/components/schemas/TagSchemaDocument'
+        name:
+          maxLength: 256
+          minLength: 1
+          type: string
+        project_id:
+          minLength: 1
+          type: string
+        published_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        published_by:
+          type:
+          - string
+          - 'null'
+        schema_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        status:
+          $ref: '#/components/schemas/TagSchemaStatus'
+        version:
+          minimum: 1
+          type: integer
+      required:
+      - schema_id
+      - project_id
+      - name
+      - version
+      - document
+      - content_hash
+      - created_by
+      - created_at
       type: object
     TimedSampleV1:
       additionalProperties: false
@@ -2703,6 +5317,11 @@ components:
       - decode_checked
       - decodable
       type: object
+    TopicName:
+      maxLength: 512
+      minLength: 1
+      pattern: ^/[A-Za-z0-9_./-]+$
+      type: string
     TopicTimingMetricsV1:
       additionalProperties: false
       properties:
@@ -2836,6 +5455,38 @@ components:
       - maximum_duplicate_timestamps_reject
       - maximum_backward_timestamps_reject
       type: object
+    UpdateCollectionTask:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 10000
+          type: string
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+        quality_threshold:
+          maximum: 1
+          minimum: 0
+          type:
+          - number
+          - 'null'
+        scenario:
+          maxLength: 200
+          minLength: 1
+          type: string
+        target:
+          oneOf:
+          - $ref: '#/components/schemas/CollectionTarget'
+          - type: 'null'
+        type:
+          maxLength: 100
+          minLength: 1
+          type: string
+      type: object
+    UpdateLifecyclePolicy:
+      allOf:
+      - $ref: '#/components/schemas/CreateLifecyclePolicy'
     UploadPart:
       properties:
         authorization_expires_at:
@@ -2844,12 +5495,14 @@ components:
           - string
           - 'null'
         crc64:
-          maximum: 18446744073709551615
-          minimum: 0
-          type:
-          - integer
-          - 'null'
+          anyOf:
+          - $ref: '#/components/schemas/Crc64Decimal'
+          - type: 'null'
         etag:
+          type:
+          - string
+          - 'null'
+        failure_code:
           type:
           - string
           - 'null'
@@ -2861,6 +5514,11 @@ components:
           $ref: '#/components/schemas/IngestIdentifier'
         region_code:
           $ref: '#/components/schemas/IngestIdentifier'
+        retry_count:
+          default: 0
+          maximum: 10
+          minimum: 0
+          type: integer
         session_id:
           format: uuid
           type: string
@@ -2873,6 +5531,7 @@ components:
           enum:
           - AUTHORIZED
           - UPLOADED
+          - FAILED
           type: string
         updated_at:
           format: date-time
@@ -2895,14 +5554,14 @@ components:
         created_at:
           format: date-time
           type: string
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
         etag:
           type:
           - string
           - 'null'
         expected_crc64:
-          maximum: 18446744073709551615
-          minimum: 0
-          type: integer
+          $ref: '#/components/schemas/Crc64Decimal'
         expected_sha256:
           pattern: ^[a-f0-9]{64}$
           type: string
@@ -2917,7 +5576,9 @@ components:
           pattern: ^[a-f0-9]{64}$
           type: string
         multipart_upload_id:
-          type: string
+          type:
+          - string
+          - 'null'
         object_key:
           pattern: ^raw/v1/
           type: string
@@ -2929,6 +5590,11 @@ components:
           $ref: '#/components/schemas/IngestIdentifier'
         session_id:
           format: uuid
+          type: string
+        source_type:
+          enum:
+          - BROWSER_MULTIPART
+          - OBJECT_STORAGE_REFERENCE
           type: string
         status:
           enum:
@@ -2943,13 +5609,18 @@ components:
         updated_at:
           format: date-time
           type: string
+        workflow:
+          oneOf:
+          - $ref: '#/components/schemas/IngestWorkflowLocator'
+          - type: 'null'
       required:
       - session_id
       - project_id
       - region_code
       - rollout_id
+      - data_package_id
       - object_key
-      - multipart_upload_id
+      - source_type
       - expected_sha256
       - expected_size
       - expected_crc64
@@ -2960,6 +5631,12 @@ components:
       type: object
     UploadSessionGrant:
       properties:
+        idempotency_outcome:
+          enum:
+          - CREATED
+          - RESUMED
+          - ALREADY_COMMITTED
+          type: string
         parts:
           items:
             $ref: '#/components/schemas/PartAuthorization'
@@ -2969,6 +5646,21 @@ components:
       required:
       - session
       - parts
+      - idempotency_outcome
+      type: object
+    UploadSessionListV1:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/UploadSession'
+          type: array
+        total:
+          minimum: 0
+          type: integer
+      required:
+      - items
+      - total
       type: object
     VerificationCode:
       enum:
@@ -3032,7 +5724,7 @@ components:
       type: string
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
+      bearerFormat: JWT or opaque platform session
       scheme: bearer
       type: http
 info:
@@ -3072,7 +5764,13 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
   /api/v1/annotation-tasks/{task_id}/auto-annotation:
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
     post:
       operationId: requestAutoAnnotation
       parameters:
@@ -3086,14 +5784,7 @@ paths:
         content:
           application/json:
             schema:
-              additionalProperties: false
-              properties:
-                revision:
-                  minimum: 0
-                  type: integer
-              required:
-              - revision
-              type: object
+              $ref: '#/components/schemas/AutoAnnotationRequest'
         required: true
       responses:
         '401':
@@ -3107,6 +5798,9 @@ paths:
       tags:
       - annotation
   /api/v1/annotation-tasks/{task_id}/claim:
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
     post:
       operationId: claimAnnotationTask
       parameters:
@@ -3172,6 +5866,9 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
   /api/v1/annotation-tasks/{task_id}/draft:
     get:
       operationId: getAnnotationDraft
@@ -3204,6 +5901,9 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
   /api/v1/annotation-tasks/{task_id}/exclusions:
     get:
       operationId: getEffectiveExclusions
@@ -3239,6 +5939,9 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
   /api/v1/annotation-tasks/{task_id}/history:
     get:
       operationId: getAnnotationHistory
@@ -3266,6 +5969,9 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
   /api/v1/annotation-tasks/{task_id}/reviews:
     get:
       operationId: listAnnotationReviews
@@ -3295,6 +6001,9 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
     post:
       operationId: reviewAnnotationRevision
       parameters:
@@ -3331,13 +6040,12 @@ paths:
         '401':
           description: A verified BE-02 context is missing.
         '403':
-          description: Reviewer role/scope is missing or this is self-review.
+          description: Reviewer role/scope is missing or configured policy denies self-review.
         '404':
-          description: The task does not exist.
+          description: The task or submission does not exist.
         '409':
-          description: Only a submitted revision may be reviewed.
-        '412':
-          description: The review target or If-Match is stale.
+          description: Submission/ETag is stale
+          or OPEN-08 policy remains unconfigured.: null
       security:
       - bearerAuth: []
       tags:
@@ -3371,6 +6079,9 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
     post:
       operationId: saveAnnotationDraft
       parameters:
@@ -3411,11 +6122,14 @@ paths:
         '404':
           description: The task does not exist.
         '409':
-          description: client_mutation_id or operation_id was reused differently.
-        '412':
-          description: expected_revision or If-Match is stale.
+          description: The revision/ETag is stale or a mutation identifier was reused differently.
         '422':
-          description: The range is empty or the request is malformed.
+          attribute: null
+          conflict: null
+          description: A hierarchy
+          half-open boundary: null
+          or schema check failed.: null
+          relation: null
       security:
       - bearerAuth: []
       tags:
@@ -3453,7 +6167,81 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
+  /api/v1/annotation-tasks/{task_id}/submissions:
+    get:
+      operationId: listAnnotationSubmissions
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AnnotationSubmission'
+                type: array
+          description: Immutable reviewable versions, oldest first.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
+  /api/v1/annotation-tasks/{task_id}/submissions/{submission_id}:
+    get:
+      operationId: getAnnotationSubmission
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: submission_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationSubmission'
+          description: One immutable reviewable version.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The task or submission does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
   /api/v1/annotation-tasks/{task_id}/submit:
+    parameters:
+    - $ref: '#/components/parameters/AnnotationProject'
+    - $ref: '#/components/parameters/AnnotationRegion'
     post:
       operationId: submitAnnotationRevision
       parameters:
@@ -3469,6 +6257,13 @@ paths:
         schema:
           minLength: 1
           type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          type: string
       requestBody:
         content:
           application/json:
@@ -3476,12 +6271,12 @@ paths:
               $ref: '#/components/schemas/SubmitRequest'
         required: true
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnnotationTask'
-          description: Exact current revision submitted for review.
+                $ref: '#/components/schemas/AnnotationSubmission'
+          description: Immutable reviewable version, or an identical idempotent replay.
           headers:
             ETag:
               required: true
@@ -3494,13 +6289,111 @@ paths:
         '404':
           description: The task does not exist.
         '409':
-          description: The task cannot be submitted from its current state.
-        '412':
-          description: expected_revision or If-Match is stale.
+          description: State/revision/ETag is stale or Idempotency-Key was reused differently.
+        '422':
+          description: A required review check failed.
       security:
       - bearerAuth: []
       tags:
       - annotation
+  /api/v1/auth/registrations:
+    post:
+      description: Creates an ACTIVE principal only. It does not create a project, membership, capability
+        grant, account approval request, or PENDING account state. OPEN-02 abuse controls are externally
+        configured; this contract fixes no thresholds.
+      operationId: registerAccount
+      requestBody:
+        $ref: '#/components/requestBodies/RegistrationCommandBody'
+      responses:
+        '201':
+          content:
+            application/json:
+              example:
+                principal:
+                  created_at: '2026-08-17T08:00:00Z'
+                  principal_id: 1d815948-e486-4ce6-9754-8f9571682c6a
+                  status: ACTIVE
+                  username: new-user
+              schema:
+                $ref: '#/components/schemas/RegistrationResult'
+          description: The ACTIVE empty account was created and can log in immediately.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/AccessNoStore'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security: []
+      summary: Register a directly loginable empty account.
+      tags:
+      - access
+  /api/v1/auth/session/bootstrap:
+    get:
+      description: Recomputes scopes and capabilities from active memberships and grants on every call,
+        and returns the current capability revision for client cache invalidation.
+      operationId: getSessionBootstrap
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionBootstrap'
+          description: Current principal, available scopes, and capability revision.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/AccessNoStore'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+      security:
+      - bearerAuth: []
+      summary: Resolve the current principal and effective access.
+      tags:
+      - access
+  /api/v1/auth/session:logout:
+    post:
+      operationId: logoutSession
+      responses:
+        '204':
+          description: Session is revoked or was already revoked.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/AccessNoStore'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+      security:
+      - bearerAuth: []
+      summary: Revoke the current opaque session.
+      tags:
+      - access
+  /api/v1/auth/sessions:
+    post:
+      description: OPEN-02 abuse controls are injected and this draft fixes no numeric policy.
+      operationId: createSession
+      requestBody:
+        $ref: '#/components/requestBodies/LoginCommandBody'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionCreated'
+          description: Opaque Bearer session created.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/AccessNoStore'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security: []
+      summary: Create a session for an ACTIVE account.
+      tags:
+      - access
   /api/v1/capabilities/auto-annotation:
     get:
       operationId: getAutoAnnotationCapability
@@ -3534,6 +6427,8 @@ paths:
           description: A frozen upstream snapshot is internally inconsistent.
         '422':
           description: The publication target or Lance version is invalid.
+      security:
+      - bearerAuth: []
       tags:
       - publishing
   /api/v1/datasets/publications:
@@ -3556,6 +6451,8 @@ paths:
           description: The version already exists with different frozen content.
         '422':
           description: No PASS + DERIVED_READY + APPROVED rollout is eligible.
+      security:
+      - bearerAuth: []
       tags:
       - publishing
   /api/v1/datasets/{dataset_id}/versions/{dataset_version}:
@@ -3579,6 +6476,8 @@ paths:
           description: Frozen publication manifest.
         '404':
           description: The immutable dataset version does not exist.
+      security:
+      - bearerAuth: []
       tags:
       - publishing
   /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports:
@@ -3606,6 +6505,8 @@ paths:
           or immutable promotion failed.: null
         '501':
           description: The requested exporter or optional data dependency is disabled.
+      security:
+      - bearerAuth: []
       tags:
       - publishing
   /api/v1/jobs:
@@ -3629,6 +6530,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/JobListV1'
           description: Durable workflow jobs ordered newest first
+      security:
+      - bearerAuth: []
       tags:
       - jobs
   /api/v1/jobs/{job_id}:
@@ -3649,6 +6552,8 @@ paths:
           description: Durable workflow job status reconstructed from Temporal history
         '404':
           description: Job not found
+      security:
+      - bearerAuth: []
       tags:
       - jobs
   /api/v1/jobs/{job_id}:cancel:
@@ -3669,6 +6574,8 @@ paths:
           description: Current terminal state or accepted cancellation state
         '404':
           description: Job not found
+      security:
+      - bearerAuth: []
       tags:
       - jobs
   /api/v1/previews/sessions:
@@ -3687,6 +6594,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/PreviewDescriptorV1'
           description: Preview generated or reused from the temporary cache
+      security:
+      - bearerAuth: []
       tags:
       - preview
   /api/v1/previews/sessions/{session_id}:
@@ -3705,8 +6614,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/PreviewDescriptorV1'
           description: Preview descriptor with a refreshed short-lived URL
+      security:
+      - bearerAuth: []
       tags:
       - preview
+  /api/v1/projects/{project_id}/access-audit-events:
+    get:
+      operationId: listAccessAuditEvents
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessAuditEventList'
+          description: Access events visible to an exact-project access manager.
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+      security:
+      - bearerAuth: []
+      summary: List the safe append-only access audit projection for a project.
+      tags:
+      - access
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
   /api/v1/projects/{project_id}/annotation-tasks:
     get:
       operationId: listAnnotationTasks
@@ -3739,6 +6673,536 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationRegion'
+  /api/v1/projects/{project_id}/capability-requests:
+    get:
+      operationId: listCapabilityRequests
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityRequestList'
+          description: Own requests, or the project queue for a scoped access manager.
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+      security:
+      - bearerAuth: []
+      summary: List visible capability requests in one exact project scope.
+      tags:
+      - access
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    post:
+      description: OPEN-03 is unresolved, so membership as a submission prerequisite is an injected admission
+        policy rather than a fixed rule. Approved capabilities are effective only while the requester
+        has an active membership in this exact project.
+      operationId: createCapabilityRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/CapabilityRequestCreateBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/CapabilityRequestCreated'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Request capabilities in a project.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:
+    get:
+      operationId: getCapabilityRequest
+      responses:
+        '200':
+          $ref: '#/components/responses/CapabilityRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+      security:
+      - bearerAuth: []
+      summary: Get one visible capability request.
+      tags:
+      - access
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:approve:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: approveCapabilityRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/CapabilityRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Approve a pending capability request.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:reject:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: rejectCapabilityRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/CapabilityRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Reject a pending capability request.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:revoke:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: revokeCapabilityRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/CapabilityRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Revoke the grants created by one approved capability request.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:withdraw:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: withdrawCapabilityRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/CapabilityRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Withdraw the caller's pending capability request.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/collection-tasks:
+    get:
+      operationId: listCollectionTasks
+      parameters:
+      - $ref: '#/components/parameters/CollectionTaskProjectId'
+      - in: query
+        name: status
+        required: false
+        schema:
+          $ref: '#/components/schemas/CollectionTaskStatus'
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          maxLength: 16384
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionTaskPage'
+          description: A stable cursor page inside exactly one project scope.
+        '400':
+          description: The cursor is invalid or belongs to another query.
+        '401':
+          description: A verified access token is required.
+        '403':
+          description: Project scope or read permission is missing.
+      security:
+      - bearerAuth: []
+      tags:
+      - collection-tasks
+    post:
+      operationId: createCollectionTask
+      parameters:
+      - $ref: '#/components/parameters/CollectionTaskProjectId'
+      - $ref: '#/components/parameters/CollectionTaskIdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollectionTask'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionTask'
+          description: An active task definition with a generated identity and task code.
+          headers:
+            ETag:
+              $ref: '#/components/headers/CollectionTaskETag'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/CollectionTaskReplay'
+            Location:
+              required: true
+              schema:
+                type: string
+        '401':
+          description: A verified access token is required.
+        '403':
+          description: Project scope or task-management permission is missing.
+        '409':
+          description: The idempotency key was reused with different content.
+        '422':
+          description: The request violates the task schema.
+      security:
+      - bearerAuth: []
+      tags:
+      - collection-tasks
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:
+    get:
+      operationId: getCollectionTask
+      parameters:
+      - $ref: '#/components/parameters/CollectionTaskProjectId'
+      - $ref: '#/components/parameters/CollectionTaskId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionTask'
+          description: The scoped task definition.
+          headers:
+            ETag:
+              $ref: '#/components/headers/CollectionTaskETag'
+        '401':
+          description: A verified access token is required.
+        '403':
+          description: Project scope or read permission is missing.
+        '404':
+          description: No task is visible under this project identity.
+      security:
+      - bearerAuth: []
+      tags:
+      - collection-tasks
+    patch:
+      operationId: updateCollectionTask
+      parameters:
+      - $ref: '#/components/parameters/CollectionTaskProjectId'
+      - $ref: '#/components/parameters/CollectionTaskId'
+      - $ref: '#/components/parameters/CollectionTaskIfMatch'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCollectionTask'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionTask'
+          description: The active definition after a compare-and-set update.
+          headers:
+            ETag:
+              $ref: '#/components/headers/CollectionTaskETag'
+        '401':
+          description: A verified access token is required.
+        '403':
+          description: Project scope or task-management permission is missing.
+        '404':
+          description: No task is visible under this project identity.
+        '409':
+          description: The task is closed and immutable.
+        '412':
+          description: If-Match does not identify the current definition version.
+        '422':
+          description: The patch is empty or violates the task schema.
+      security:
+      - bearerAuth: []
+      tags:
+      - collection-tasks
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}/progress:
+    get:
+      operationId: getCollectionTaskProgress
+      parameters:
+      - $ref: '#/components/parameters/CollectionTaskProjectId'
+      - $ref: '#/components/parameters/CollectionTaskId'
+      - $ref: '#/components/parameters/CollectionTaskRegionCode'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionTaskProgress'
+          description: Read-only progress from committed package and latest QC facts.
+        '401':
+          description: A verified access token is required.
+        '403':
+          description: Project scope or read permission is missing.
+        '404':
+          description: No task is visible under this project identity.
+      security:
+      - bearerAuth: []
+      tags:
+      - collection-tasks
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:close:
+    post:
+      operationId: closeCollectionTask
+      parameters:
+      - $ref: '#/components/parameters/CollectionTaskProjectId'
+      - $ref: '#/components/parameters/CollectionTaskId'
+      - $ref: '#/components/parameters/CollectionTaskIfMatch'
+      - $ref: '#/components/parameters/CollectionTaskIdempotencyKey'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionTask'
+          description: The closed task; an identical retry returns the same representation.
+          headers:
+            ETag:
+              $ref: '#/components/headers/CollectionTaskETag'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/CollectionTaskReplay'
+        '401':
+          description: A verified access token is required.
+        '403':
+          description: Project scope or task-management permission is missing.
+        '404':
+          description: No task is visible under this project identity.
+        '409':
+          description: The idempotency key was reused with different content.
+        '412':
+          description: If-Match does not identify the current active version.
+      security:
+      - bearerAuth: []
+      tags:
+      - collection-tasks
+  /api/v1/projects/{project_id}/dashboard/activity:
+    get:
+      description: Recent durable business events, not throughput buckets or byte trends. Every item has
+        a stable event ID, source ID, deduplication key, fact time, safe display text, target, and deterministic
+        descending ordering by occurred_at, event_type, and source_id.
+      operationId: getDashboardActivity
+      parameters:
+      - $ref: '#/components/parameters/DashboardProjectId'
+      - $ref: '#/components/parameters/DashboardRegionCode'
+      - $ref: '#/components/parameters/DashboardFrom'
+      - $ref: '#/components/parameters/DashboardTo'
+      - $ref: '#/components/parameters/DashboardTimezone'
+      - $ref: '#/components/parameters/DashboardCursor'
+      - $ref: '#/components/parameters/DashboardLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardActivityResponse'
+          description: Scope-bound recent business-event page; missing lineage is explicit PARTIAL.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/DashboardNoStore'
+        '400':
+          $ref: '#/components/responses/DashboardInvalidCursor'
+        '401':
+          $ref: '#/components/responses/DashboardUnauthorized'
+        '403':
+          $ref: '#/components/responses/DashboardForbidden'
+        '422':
+          $ref: '#/components/responses/DashboardInvalidQuery'
+        '429':
+          $ref: '#/components/responses/DashboardRateLimited'
+      security:
+      - bearerAuth: []
+      tags:
+      - dashboard
+  /api/v1/projects/{project_id}/dashboard/coverage:
+    get:
+      description: Always returns BLOCKED until a versioned collection plan, robot group, task catalog,
+        and denominator exist. Historical observations are not projected as a percentage.
+      operationId: getDashboardCoverage
+      parameters:
+      - $ref: '#/components/parameters/DashboardProjectId'
+      - $ref: '#/components/parameters/DashboardRegionCode'
+      - $ref: '#/components/parameters/DashboardFrom'
+      - $ref: '#/components/parameters/DashboardTo'
+      - $ref: '#/components/parameters/DashboardTimezone'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardCoverageResponse'
+          description: Explicit coverage blocker; no fabricated numeric zero or percentage.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/DashboardNoStore'
+        '401':
+          $ref: '#/components/responses/DashboardUnauthorized'
+        '403':
+          $ref: '#/components/responses/DashboardForbidden'
+        '422':
+          $ref: '#/components/responses/DashboardInvalidQuery'
+        '429':
+          $ref: '#/components/responses/DashboardRateLimited'
+      security:
+      - bearerAuth: []
+      tags:
+      - dashboard
+  /api/v1/projects/{project_id}/dashboard/pending-items:
+    get:
+      description: Current upload failures, QC anomalies, pending Tag reviews, and pending publications,
+        intersected with principal capabilities. Items are deduplicated and ordered by domain severity,
+        oldest opened_at, item_type, and source_id. No SLA duration is implied.
+      operationId: getDashboardPendingItems
+      parameters:
+      - $ref: '#/components/parameters/DashboardProjectId'
+      - $ref: '#/components/parameters/DashboardRegionCode'
+      - $ref: '#/components/parameters/DashboardFrom'
+      - $ref: '#/components/parameters/DashboardTo'
+      - $ref: '#/components/parameters/DashboardTimezone'
+      - $ref: '#/components/parameters/DashboardCursor'
+      - $ref: '#/components/parameters/DashboardLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardPendingItemsResponse'
+          description: Capability-intersected pending page with allowlisted relative deep links.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/DashboardNoStore'
+        '400':
+          $ref: '#/components/responses/DashboardInvalidCursor'
+        '401':
+          $ref: '#/components/responses/DashboardUnauthorized'
+        '403':
+          $ref: '#/components/responses/DashboardForbidden'
+        '422':
+          $ref: '#/components/responses/DashboardInvalidQuery'
+        '429':
+          $ref: '#/components/responses/DashboardRateLimited'
+      security:
+      - bearerAuth: []
+      tags:
+      - dashboard
+  /api/v1/projects/{project_id}/dashboard/snapshot:
+    get:
+      description: Returns one project and one exact region for the explicit half-open UTC range. The
+        published-region subsection counts only certain rollout-publication lineage. Episode, work, and
+        the remaining signal formulas stay BLOCKED. Region storage is not a P01 field.
+      operationId: getDashboardSnapshot
+      parameters:
+      - $ref: '#/components/parameters/DashboardProjectId'
+      - $ref: '#/components/parameters/DashboardRegionCode'
+      - $ref: '#/components/parameters/DashboardFrom'
+      - $ref: '#/components/parameters/DashboardTo'
+      - $ref: '#/components/parameters/DashboardTimezone'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSnapshotResponse'
+          description: Factual and explicitly blocked snapshot sections at one response read time.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/DashboardNoStore'
+        '401':
+          $ref: '#/components/responses/DashboardUnauthorized'
+        '403':
+          $ref: '#/components/responses/DashboardForbidden'
+        '422':
+          $ref: '#/components/responses/DashboardInvalidQuery'
+        '429':
+          $ref: '#/components/responses/DashboardRateLimited'
+      security:
+      - bearerAuth: []
+      tags:
+      - dashboard
   /api/v1/projects/{project_id}/datasets/{dataset_id}/reconciliation:
     post:
       operationId: reconcileLanceCatalog
@@ -3758,6 +7222,8 @@ paths:
           description: Receipt history is non-contiguous or conflicts with the catalog.
         '503':
           description: PostgreSQL indexing is still unavailable.
+      security:
+      - bearerAuth: []
       tags:
       - lance_catalog
   /api/v1/projects/{project_id}/datasets/{dataset_id}/rollouts/{rollout_id}/lineage:
@@ -3781,6 +7247,8 @@ paths:
           description: Source, converter, fragment, and Lance snapshot lineage.
         '404':
           description: Lineage was not found.
+      security:
+      - bearerAuth: []
       tags:
       - lance_catalog
   /api/v1/projects/{project_id}/datasets/{dataset_id}/rollouts/{rollout_id}/steps:
@@ -3819,6 +7287,8 @@ paths:
           description: Dataset
           or rollout was not found.: null
           version: null
+      security:
+      - bearerAuth: []
       tags:
       - lance_catalog
   /api/v1/projects/{project_id}/datasets/{dataset_id}/versions:
@@ -3836,6 +7306,8 @@ paths:
                   $ref: '#/components/schemas/DatasetVersionRef'
                 type: array
           description: Immutable logical dataset version snapshots.
+      security:
+      - bearerAuth: []
       tags:
       - lance_catalog
   /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version}:
@@ -3854,8 +7326,189 @@ paths:
           description: One immutable logical version pinned to a Lance snapshot.
         '404':
           description: Dataset or version was not found.
+      security:
+      - bearerAuth: []
       tags:
       - lance_catalog
+  /api/v1/projects/{project_id}/membership-requests:
+    get:
+      operationId: listMembershipRequests
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipRequestList'
+          description: Own requests, or the project queue for a scoped access manager.
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+      security:
+      - bearerAuth: []
+      summary: List visible membership requests in one exact project scope.
+      tags:
+      - access
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    post:
+      operationId: createMembershipRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/MembershipRequestCreateBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/MembershipRequestCreated'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Request membership in a project.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:
+    get:
+      operationId: getMembershipRequest
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+      security:
+      - bearerAuth: []
+      summary: Get one visible membership request.
+      tags:
+      - access
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:approve:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: approveMembershipRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Approve a pending membership request.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:reject:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: rejectMembershipRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Reject a pending membership request.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:revoke:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: revokeMembershipRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Revoke an approved membership and all effective project capabilities.
+      tags:
+      - access
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:withdraw:
+    parameters:
+    - $ref: '#/components/parameters/AccessProjectId'
+    - $ref: '#/components/parameters/AccessRequestId'
+    post:
+      operationId: withdrawMembershipRequest
+      parameters:
+      - $ref: '#/components/parameters/AccessIdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/AccessDecisionBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipRequestOk'
+        '401':
+          $ref: '#/components/responses/AccessUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccessForbidden'
+        '409':
+          $ref: '#/components/responses/AccessConflict'
+        '422':
+          $ref: '#/components/responses/AccessUnprocessable'
+        '429':
+          $ref: '#/components/responses/AccessTooManyRequests'
+      security:
+      - bearerAuth: []
+      summary: Withdraw the caller's pending membership request.
+      tags:
+      - access
   /api/v1/projects/{project_id}/quality-profiles:
     post:
       operationId: createQualityProfileVersion
@@ -3876,6 +7529,8 @@ paths:
           description: Immutable quality profile version created
         '409':
           description: The profile version already exists with different content
+      security:
+      - bearerAuth: []
       tags:
       - quality
   /api/v1/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}:
@@ -3894,6 +7549,8 @@ paths:
           description: Immutable quality profile version
         '404':
           description: Quality profile version not found
+      security:
+      - bearerAuth: []
       tags:
       - quality
   /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/alignment:
@@ -3924,6 +7581,8 @@ paths:
           description: Attempt-isolated aligned staging fragment metadata
         '404':
           description: No ready aligned fragment exists for this rollout
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/quality:
     get:
       operationId: getRolloutQuality
@@ -3940,6 +7599,8 @@ paths:
           description: Latest persisted quality summary and its immutable full report
         '404':
           description: No persisted quality report exists for the rollout
+      security:
+      - bearerAuth: []
       tags:
       - quality
   /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/raw-verification:
@@ -3958,12 +7619,15 @@ paths:
           description: Immutable MCAP verification report
         '404':
           description: No immutable verification report exists for the rollout
+      security:
+      - bearerAuth: []
       tags:
       - verification
-  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions:
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-manifests:preflight:
     post:
-      description: Creates or returns the one immutable multipart session for a rollout and SHA-256.
-      operationId: createUploadSession
+      description: Parses a bounded untrusted Manifest and returns read-only package identifiers, cameras,
+        topics, files, checksums, and missing expected topics without writing P20 task configuration.
+      operationId: preflightUploadManifest
       parameters:
       - &id001
         in: header
@@ -3990,6 +7654,105 @@ paths:
           minLength: 1
           pattern: ^[A-Za-z0-9._-]+$
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolloutManifestV1'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestPreflightResultV1'
+          description: Validated normalized Manifest discovery.
+        '401': &id004
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified AuthContext is absent.
+        '403': &id005
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Uploader role or project/region scope is denied.
+        '413': &id006
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: JSON request exceeds its bounded control-plane limit.
+        '415': &id007
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Content-Type is not application/json.
+        '422': &id011
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Request or raw-object integrity validation failed.
+      security:
+      - bearerAuth: []
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions:
+    get:
+      description: Lists persisted browser and object-reference upload sessions in one project and region.
+      operationId: listUploadSessions
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - in: query
+        name: status
+        schema:
+          enum:
+          - REGISTERED
+          - UPLOADING
+          - PAUSED
+          - MULTIPART_COMPLETED
+          - RAW_COMMITTED
+          - FAILED
+          - CANCELLED
+          type: string
+      - in: query
+        name: data_package_id
+        schema:
+          $ref: '#/components/schemas/IngestIdentifier'
+      - in: query
+        name: limit
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionListV1'
+          description: Upload sessions ordered by most recent update.
+        '401': *id004
+        '403': *id005
+      security:
+      - bearerAuth: []
+      tags:
+      - ingest
+    post:
+      description: Creates, resumes, or returns the immutable package upload; supports browser multipart
+        and an authorized canonical object-storage address.
+      operationId: createUploadSession
+      parameters:
+      - *id001
+      - *id002
+      - *id003
       - in: header
         name: Idempotency-Key
         required: true
@@ -4015,24 +7778,18 @@ paths:
               description: Signed URLs are never cached.
               schema:
                 type: string
-        '401':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: Verified AuthContext is absent.
-        '403':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: Uploader role or project/region scope is denied.
-        '409': &id006
+        '401': *id004
+        '403': *id005
+        '409': &id010
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Immutable identity, content, state, or multipart part conflict.
+        '413': *id006
+        '415': *id007
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:
@@ -4042,7 +7799,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - &id004
+      - &id008
         in: path
         name: session_id
         required: true
@@ -4056,12 +7813,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadSession'
           description: Persisted upload session.
-        '404': &id005
+        '404': &id009
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Session does not exist in the authorized scope.
+      security:
+      - bearerAuth: []
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/manifest:
+    get:
+      description: Returns the persisted read-only Manifest preflight and discovery facts for this package.
+      operationId: getUploadManifestDiscovery
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id008
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestPreflightResultV1'
+          description: Persisted normalized Manifest discovery.
+        '404': *id009
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts:
@@ -4072,7 +7852,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       responses:
         '200':
           content:
@@ -4082,7 +7862,9 @@ paths:
                   $ref: '#/components/schemas/UploadPart'
                 type: array
           description: Parts sorted by ascending part_number.
-        '404': *id005
+        '404': *id009
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:cancel:
@@ -4092,7 +7874,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       responses:
         '200':
           content:
@@ -4100,18 +7882,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadSession'
           description: Multipart state aborted and session cancelled.
-        '409': *id006
+        '409': *id010
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:commit-manifest:
     post:
-      description: Streams integrity checks, then writes the immutable manifest as the final commit marker.
+      description: Streams integrity checks, writes the immutable manifest commit marker, and atomically
+        persists the single recoverable ingest workflow trigger and audit fact. It never starts Temporal
+        before the database commit.
       operationId: commitRolloutManifest
       parameters:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       requestBody:
         content:
           application/json:
@@ -4124,14 +7910,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RawObjectCommittedV1'
-          description: Immutable raw object committed; same rollout and SHA retries return this resource.
-        '409': *id006
-        '422': &id007
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: Request or raw-object integrity validation failed.
+          description: Immutable raw object committed with its queryable deterministic workflow locator;
+            retries return the same resource and locator.
+        '409': *id010
+        '413': *id006
+        '415': *id007
+        '422': *id011
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:complete:
@@ -4142,7 +7928,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       requestBody:
         content:
           application/json:
@@ -4156,8 +7942,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadSession'
           description: Multipart object exists but is not committed until the manifest call succeeds.
-        '409': *id006
-        '422': *id007
+        '409': *id010
+        '413': *id006
+        '415': *id007
+        '422': *id011
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:pause:
@@ -4167,7 +7957,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       responses:
         '200':
           content:
@@ -4175,7 +7965,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadSession'
           description: Session paused without aborting uploaded parts.
-        '409': *id006
+        '409': *id010
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:renew:
@@ -4186,7 +7978,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       requestBody:
         content:
           application/json:
@@ -4207,8 +7999,12 @@ paths:
               description: Clients must not cache signed URLs.
               schema:
                 type: string
-        '409': *id006
-        '422': *id007
+        '409': *id010
+        '413': *id006
+        '415': *id007
+        '422': *id011
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:resume:
@@ -4218,7 +8014,7 @@ paths:
       - *id001
       - *id002
       - *id003
-      - *id004
+      - *id008
       requestBody:
         content:
           application/json:
@@ -4237,7 +8033,49 @@ paths:
               description: Signed URLs are never cached.
               schema:
                 type: string
-        '409': *id006
+        '409': *id010
+        '413': *id006
+        '415': *id007
+      security:
+      - bearerAuth: []
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:retry-parts:
+    post:
+      description: Records sorted failed parts, increments their bounded retry counters, and returns fresh
+        short-lived PUT authorizations.
+      operationId: retryFailedUploadParts
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id008
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryFailedPartsRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/PartAuthorization'
+                type: array
+          description: Fresh direct-upload part authorizations.
+          headers:
+            Cache-Control:
+              description: Clients must not cache signed URLs.
+              schema:
+                type: string
+        '409': *id010
+        '413': *id006
+        '415': *id007
+        '422': *id011
+      security:
+      - bearerAuth: []
       tags:
       - ingest
   /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:
@@ -4275,6 +8113,461 @@ paths:
       - bearerAuth: []
       tags:
       - annotation
+    parameters:
+    - $ref: '#/components/parameters/AnnotationRegion'
+  /api/v1/projects/{project_id}/storage/capacity:
+    get:
+      description: Reports provider physical usage and the candidate mutually exclusive business total
+        together. The two totals are separate accounting views and must not be added.
+      operationId: getStorageCapacity
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - in: query
+        name: snapshot_id
+        required: false
+        schema:
+          maxLength: 256
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapacitySnapshot'
+          description: Reconciled physical and candidate business capacity facts.
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project read scope is required.
+        '404':
+          description: No inventory snapshot exists in the selected scope.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/storage/inventory:
+    get:
+      operationId: listStorageInventory
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - in: query
+        name: snapshot_id
+        required: false
+        schema:
+          maxLength: 256
+          minLength: 1
+          type: string
+      - $ref: '#/components/parameters/StorageCursor'
+      - $ref: '#/components/parameters/StorageLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapacityInventoryPage'
+          description: Stable cursor page of provider physical instances.
+        '400':
+          description: Cursor is malformed or belongs to another scope.
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project read scope is required.
+        '404':
+          description: No inventory snapshot exists in the selected scope.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/storage/lifecycle-audit:
+    get:
+      operationId: listLifecycleAudit
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - $ref: '#/components/parameters/StorageCursor'
+      - $ref: '#/components/parameters/StorageLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleAuditPage'
+          description: Append-only lifecycle policy audit page.
+        '400':
+          description: Cursor is malformed or belongs to another scope.
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project read scope is required.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/storage/lifecycle-policies:
+    get:
+      operationId: listLifecyclePolicies
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - $ref: '#/components/parameters/StorageCursor'
+      - $ref: '#/components/parameters/StorageLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecyclePolicyPage'
+          description: Project-scoped lifecycle policy page.
+        '400':
+          description: Cursor is malformed or belongs to another scope.
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project read scope is required.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+    post:
+      operationId: createLifecyclePolicy
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - $ref: '#/components/parameters/StorageIdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLifecyclePolicy'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecyclePolicy'
+          description: Policy created, or the identical idempotent request replayed.
+          headers:
+            ETag:
+              $ref: '#/components/headers/StorageETag'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/StorageIdempotencyReplayed'
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project administration permission is required.
+        '409':
+          description: Policy name or idempotency key conflicts.
+        '422':
+          description: Policy action or target violates the contract.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}:
+    delete:
+      operationId: deleteLifecyclePolicy
+      parameters:
+      - $ref: '#/components/parameters/StorageIfMatch'
+      - $ref: '#/components/parameters/StorageIdempotencyKey'
+      responses:
+        '204':
+          description: Paused or draft policy deleted idempotently.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/StorageIdempotencyReplayed'
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project administration permission is required.
+        '404':
+          description: Policy does not exist in the selected scope.
+        '409':
+          description: Enabled policies must be paused before deletion.
+        '412':
+          description: If-Match is stale.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+    get:
+      operationId: getLifecyclePolicy
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecyclePolicy'
+          description: Current project-scoped lifecycle policy.
+          headers:
+            ETag:
+              $ref: '#/components/headers/StorageETag'
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project read scope is required.
+        '404':
+          description: Policy does not exist in the selected scope.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+    parameters:
+    - $ref: '#/components/parameters/StorageProjectId'
+    - $ref: '#/components/parameters/StoragePolicyId'
+    put:
+      operationId: updateLifecyclePolicy
+      parameters:
+      - $ref: '#/components/parameters/StorageIfMatch'
+      - $ref: '#/components/parameters/StorageIdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLifecyclePolicy'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecyclePolicy'
+          description: Policy updated, or the identical idempotent request replayed.
+          headers:
+            ETag:
+              $ref: '#/components/headers/StorageETag'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/StorageIdempotencyReplayed'
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project administration permission is required.
+        '404':
+          description: Policy does not exist in the selected scope.
+        '409':
+          description: Policy name or enabled-policy target conflicts.
+        '412':
+          description: If-Match is stale.
+        '422':
+          description: Policy action or target violates the contract.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}/enable:
+    post:
+      operationId: enableLifecyclePolicy
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - $ref: '#/components/parameters/StoragePolicyId'
+      - $ref: '#/components/parameters/StorageIfMatch'
+      - $ref: '#/components/parameters/StorageIdempotencyKey'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecyclePolicy'
+          description: Policy enabled after conflict and protection checks.
+          headers:
+            ETag:
+              $ref: '#/components/headers/StorageETag'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/StorageIdempotencyReplayed'
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project administration permission is required.
+        '404':
+          description: Policy does not exist in the selected scope.
+        '409':
+          description: Another enabled policy has the same target and priority.
+        '412':
+          description: If-Match is stale.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}/pause:
+    post:
+      operationId: pauseLifecyclePolicy
+      parameters:
+      - $ref: '#/components/parameters/StorageProjectId'
+      - $ref: '#/components/parameters/StoragePolicyId'
+      - $ref: '#/components/parameters/StorageIfMatch'
+      - $ref: '#/components/parameters/StorageIdempotencyKey'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecyclePolicy'
+          description: Policy paused, or the identical idempotent request replayed.
+          headers:
+            ETag:
+              $ref: '#/components/headers/StorageETag'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/StorageIdempotencyReplayed'
+        '401':
+          description: A verified identity is required.
+        '403':
+          description: Project administration permission is required.
+        '404':
+          description: Policy does not exist in the selected scope.
+        '412':
+          description: If-Match is stale.
+      security:
+      - bearerAuth: []
+      tags:
+      - storage
+  /api/v1/projects/{project_id}/tag-schemas:
+    post:
+      operationId: createTagSchemaVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagSchemaVersionRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSchemaVersion'
+          description: A mutable draft version was created; its identity is immutable.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Publisher role or project scope is missing.
+        '409':
+          description: The schema identity already contains different content.
+        '422':
+          constraint references: null
+          description: The hierarchy
+          or request is invalid.: null
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/tag-schemas/{schema_id}/versions:
+    get:
+      operationId: listTagSchemaVersions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: schema_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TagSchemaVersion'
+                type: array
+          description: All immutable versions of one project Tag Schema.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}:
+    get:
+      operationId: getTagSchemaVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: schema_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSchemaVersion'
+          description: One exact Tag Schema version.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Project scope or an annotation role is missing.
+        '404':
+          description: The schema version does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}/publish:
+    post:
+      operationId: publishTagSchemaVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: schema_id
+        required: true
+        schema:
+          minLength: 1
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSchemaVersion'
+          description: Published immutable version; replay returns the same resource.
+        '401':
+          description: A verified BE-02 context is missing.
+        '403':
+          description: Publisher role or project scope is missing.
+        '404':
+          description: The schema version does not exist.
+        '409':
+          description: The schema changed concurrently.
+      security:
+      - bearerAuth: []
+      tags:
+      - annotation
   /health/live:
     get:
       operationId: getLiveness
@@ -4283,15 +8576,13 @@ paths:
           content:
             application/json:
               schema:
+                additionalProperties: false
                 properties:
-                  environment:
-                    type: string
                   status:
                     const: live
                     type: string
                 required:
                 - status
-                - environment
                 type: object
           description: The API process is live; no dependency readiness is implied.
       tags:
@@ -4304,13 +8595,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReadinessReport'
+                $ref: '#/components/schemas/PublicReadinessReport'
           description: Every required dependency is ready.
         '503':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ReadinessReport'
+                $ref: '#/components/schemas/ProblemDetails'
           description: At least one required dependency is not ready.
       tags:
       - health

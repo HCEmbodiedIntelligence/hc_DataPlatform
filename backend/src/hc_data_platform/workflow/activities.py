@@ -15,6 +15,11 @@ from temporalio.exceptions import ApplicationError
 
 from hc_data_platform.alignment.models import AlignedFragmentManifestV1
 from hc_data_platform.alignment.ports import AlignmentPort, FragmentWriterPort
+from hc_data_platform.annotation.automation import (
+    AutomaticAnnotationBlocked,
+    AutomaticAnnotationRequest,
+)
+from hc_data_platform.annotation.models import AnnotationTask
 from hc_data_platform.core.context import (
     RequestContext,
     bind_request_context,
@@ -27,6 +32,7 @@ from hc_data_platform.core.observability import (
     WORKFLOW_FAILURES,
     locator_workflow_id,
 )
+from hc_data_platform.ingest.manifest import ManifestParserPort
 from hc_data_platform.lance_catalog.models import DatasetVersionRef
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.lance_catalog.service import (
@@ -48,6 +54,8 @@ from hc_data_platform.verification.ports import RawVerificationPort
 from .models import (
     AlignmentActivityInput,
     AlignmentActivityOutput,
+    AutomaticAnnotationActivityInput,
+    AutomaticAnnotationActivityOutput,
     CatalogCommitActivityInput,
     CatalogCommitActivityOutput,
     CatalogFragmentPayloadV1,
@@ -55,6 +63,8 @@ from .models import (
     CatalogReconciliationActivityOutput,
     ExportActivityInput,
     ExportActivityOutput,
+    ManifestActivityInput,
+    ManifestActivityOutput,
     PreviewActivityInput,
     PreviewActivityOutput,
     PublishActivityInput,
@@ -69,9 +79,11 @@ from .models import (
 from .names import (
     ALIGN_FRAGMENT_ACTIVITY,
     COMMIT_FRAGMENT_ACTIVITY,
+    CREATE_ANNOTATION_TASK_ACTIVITY,
     CREATE_PREVIEW_ACTIVITY,
     EVALUATE_QUALITY_ACTIVITY,
     EXPORT_DATASET_ACTIVITY,
+    PARSE_MANIFEST_ACTIVITY,
     PUBLISH_DATASET_ACTIVITY,
     RECONCILE_CATALOG_ACTIVITY,
     RECONCILE_PUBLICATION_ACTIVITY,
@@ -149,8 +161,13 @@ class AlignmentManifestPersistencePort(Protocol):
     ) -> None: ...
 
 
+class AutomaticAnnotationTaskPort(Protocol):
+    def ensure_task(self, request: AutomaticAnnotationRequest) -> AnnotationTask: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ActivityDependencies:
+    manifest_parser: ManifestParserPort | None = None
     verifier: RawVerificationPort | None = None
     quality: QualityEvaluationPort | None = None
     alignment: AlignmentPort | None = None
@@ -165,6 +182,7 @@ class ActivityDependencies:
     verification_reports: VerificationReportPersistencePort | None = None
     quality_reports: QualityReportPersistencePort | None = None
     alignment_manifests: AlignmentManifestPersistencePort | None = None
+    annotation_tasks: AutomaticAnnotationTaskPort | None = None
 
 
 class WorkflowPortNotConfigured(RuntimeError):
@@ -254,6 +272,12 @@ async def _invoke(stage: str, operation: Callable[[], _T]) -> _T:
         ) from exc
     except WorkflowPortNotConfigured as exc:
         raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
+    except AutomaticAnnotationBlocked as exc:
+        raise ApplicationError(
+            str(exc),
+            type=exc.code,
+            non_retryable=False,
+        ) from exc
     except (CatalogConflictError, SchemaIncompatibleError) as exc:
         raise ApplicationError(
             str(exc),
@@ -268,6 +292,28 @@ async def _invoke(stage: str, operation: Callable[[], _T]) -> _T:
         ) from exc
 
 
+@activity.defn(name=PARSE_MANIFEST_ACTIVITY)
+async def parse_manifest(request: ManifestActivityInput) -> ManifestActivityOutput:
+    def parse_and_validate() -> ManifestActivityOutput:
+        result = _require(
+            _dependencies.manifest_parser,
+            "ingest.ManifestParserPort",
+        ).parse(request.manifest_key)
+        manifest = result.manifest
+        if (
+            manifest.project_id != request.project_id
+            or manifest.rollout_id != request.rollout_id
+            or manifest.data_package_id != request.data_package_id
+            or manifest.sha256 != request.source_sha256
+            or result.manifest_fingerprint != request.manifest_fingerprint
+        ):
+            raise ValueError("Manifest immutable identity does not match workflow input")
+        return ManifestActivityOutput(preflight=result)
+
+    with _worker_scope(request.project_id, request.region_code, request.data_package_id):
+        return await _invoke("manifest", parse_and_validate)
+
+
 @activity.defn(name=VERIFY_RAW_ACTIVITY)
 async def verify_raw(request: VerificationActivityInput) -> VerificationActivityOutput:
     def verify_and_persist() -> RawVerificationReportV1:
@@ -278,6 +324,12 @@ async def verify_raw(request: VerificationActivityInput) -> VerificationActivity
             required_topics=set(request.required_topics),
             known_optional_topics=set(request.known_optional_topics),
         )
+        if (
+            report.rollout_id != request.rollout_id
+            or report.object_key != request.object_key
+            or report.source_sha256 != request.source_sha256
+        ):
+            raise ValueError("Raw verification report lineage does not match activity input")
         if _dependencies.verification_reports is not None:
             if request.project_id is None or request.region_code is None:
                 raise ValueError("verification persistence requires project_id and region_code")
@@ -299,6 +351,17 @@ async def evaluate_quality(request: QualityActivityInput) -> QualityActivityOutp
         report = _require(_dependencies.quality, "quality.QualityEvaluationPort").evaluate(
             request.data, request.profile
         )
+        if (
+            report.rollout_id != request.data.rollout_id
+            or report.source_sha256 != request.data.source_sha256
+            or report.profile_id != request.profile.profile_id
+            or report.profile_version != request.profile.profile_version
+            or report.profile_sha256 != request.profile.content_sha256()
+            or report.engine_version != request.profile.engine_version
+            or report.start_ns != request.data.start_ns
+            or report.end_ns != request.data.end_ns
+        ):
+            raise ValueError("Quality report lineage does not match activity input")
         if _dependencies.quality_reports is not None:
             if request.project_id is None or request.region_code is None:
                 raise ValueError("quality persistence requires project_id and region_code")
@@ -341,6 +404,13 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
         adapter = _require(_dependencies.catalog_fragments, "workflow.CatalogFragmentAdapterPort")
         writer = writers.create(request)
         manifest = alignment.align_to_writer(request.data, request.profile, writer)
+        if (
+            manifest.rollout_id != request.data.rollout_id
+            or manifest.source_sha256 != request.data.source_sha256
+            or manifest.attempt_id != request.data.attempt_id
+            or manifest.frequency_hz != request.profile.frequency_hz
+        ):
+            raise ValueError("Alignment manifest lineage does not match activity input")
         if _dependencies.alignment_manifests is not None:
             if request.region_code is None:
                 raise ValueError("alignment persistence requires region_code")
@@ -350,6 +420,16 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
                 manifest=manifest,
             )
         fragment = adapter.prepare(request, manifest)
+        catalog_manifest = fragment.manifest
+        if (
+            catalog_manifest.project_id != request.project_id
+            or catalog_manifest.dataset_id != request.dataset_id
+            or catalog_manifest.schema_snapshot_id != request.schema_snapshot_id
+            or catalog_manifest.rollout_id != request.data.rollout_id
+            or catalog_manifest.source_sha256 != request.data.source_sha256
+            or catalog_manifest.attempt_id != request.data.attempt_id
+        ):
+            raise ValueError("Catalog fragment lineage does not match activity input")
         return AlignmentActivityOutput(
             staged_manifest=manifest,
             catalog_fragment=fragment,
@@ -384,6 +464,34 @@ async def commit_fragment(request: CatalogCommitActivityInput) -> CatalogCommitA
     manifest = request.fragment.manifest
     with _worker_scope(manifest.project_id, None, manifest.dataset_id):
         return await _invoke("lance_commit", commit)
+
+
+@activity.defn(name=CREATE_ANNOTATION_TASK_ACTIVITY)
+async def create_annotation_task(
+    request: AutomaticAnnotationActivityInput,
+) -> AutomaticAnnotationActivityOutput:
+    def create() -> AutomaticAnnotationActivityOutput:
+        task = _require(
+            _dependencies.annotation_tasks,
+            "annotation.AutomaticAnnotationTaskService",
+        ).ensure_task(
+            AutomaticAnnotationRequest(
+                project_id=request.project_id,
+                region_code=request.region_code,
+                rollout_id=request.rollout_id,
+                dataset_id=request.dataset_id,
+                dataset_version=request.dataset_version,
+                lance_version=request.lance_version,
+                dataset_schema_snapshot_id=request.dataset_schema_snapshot_id,
+                base_step_count=request.base_step_count,
+                source_workflow_id=request.source_workflow_id,
+                task_kind=request.task_kind,
+            )
+        )
+        return AutomaticAnnotationActivityOutput(task_id=task.task_id)
+
+    with _worker_scope(request.project_id, request.region_code, request.rollout_id):
+        return await _invoke("annotation_task", create)
 
 
 @activity.defn(name=CREATE_PREVIEW_ACTIVITY)
@@ -483,10 +591,12 @@ async def reconcile_publication(
 
 
 ALL_ACTIVITIES = (
+    parse_manifest,
     verify_raw,
     evaluate_quality,
     align_fragment,
     commit_fragment,
+    create_annotation_task,
     create_preview,
     publish_dataset,
     export_dataset,

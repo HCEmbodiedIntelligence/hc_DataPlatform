@@ -4,6 +4,9 @@ import {
   asyncJobFixture,
   dataSourceFixture,
   dataSourcePageFixture,
+  formalManifestFixture,
+  formalQualityFixture,
+  formalUploadSessionFixture,
   ingestFixtureScope,
   internalUploadJobFixture,
   quarantinedUploadListFixture,
@@ -149,11 +152,21 @@ export const ingestHandlers = [
     const invalid = validateRead(request, params); if (invalid) return invalid;
     await scenarioDelay(); const failed = scenarioFailure('list'); if (failed) return failed;
     const scenario = getIngestScenario();
-    if (scenario === 'empty' || scenario === 'filtered-empty') return HttpResponse.json({ ...uploadListFixture, items: [] });
+    if (scenario === 'empty' || scenario === 'filtered-empty') return HttpResponse.json({ ...uploadListFixture, items: [], total: 0 });
     if (scenario === 'contract-mismatch') return HttpResponse.json({ ...uploadListFixture, security_token: 'fixture-only-leak' });
     if (scenario === 'unknown-enum') return HttpResponse.json({ ...uploadListFixture, items: [{ ...uploadingSessionFixture, lifecycle_status: 'FUTURE_TRANSFER' }] });
     const fixture = scenario === 'job-failed' ? quarantinedUploadListFixture : uploadListFixture;
-    return HttpResponse.json({ ...fixture, items: filterUploadSessions(request, fixture.items) });
+    const legacyItems = filterUploadSessions(request, fixture.items);
+    const items = legacyItems.map((legacy, index) => ({
+      ...legacy,
+      ...formalUploadSessionFixture,
+      session_id: index === 0
+        ? formalUploadSessionFixture.session_id
+        : `${formalUploadSessionFixture.session_id}-${index + 1}`,
+      status: scenario === 'job-failed' ? 'FAILED' : formalUploadSessionFixture.status,
+      failure_code: scenario === 'job-failed' ? 'QC_REJECTED' : null,
+    }));
+    return HttpResponse.json({ ...fixture, items, total: items.length });
   }),
   http.get(`${api}/upload-sessions:creation-options`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
@@ -177,6 +190,26 @@ export const ingestHandlers = [
     if (!fixture) return error(404, 'NOT_FOUND', uploadNotFoundMessage);
     if (getIngestScenario() === 'contract-mismatch') return HttpResponse.json({ ...fixture, signed_url: 'https://fixture.invalid/leak' });
     return HttpResponse.json(fixture);
+  }),
+  http.get(`${api}/upload-sessions/:uploadId/manifest`, ({ request, params }) => {
+    const invalid = validateRead(request, params); if (invalid) return invalid;
+    const failed = scenarioFailure('detail'); if (failed) return failed;
+    return HttpResponse.json(formalManifestFixture);
+  }),
+  http.get(`${api}/upload-sessions/:uploadId`, ({ request, params }) => {
+    const invalid = validateRead(request, params); if (invalid) return invalid;
+    const failed = scenarioFailure('detail'); if (failed) return failed;
+    return HttpResponse.json({
+      ...formalUploadSessionFixture,
+      session_id: String(params.uploadId),
+    }, { headers: { ETag: formalUploadSessionFixture.etag } });
+  }),
+  http.get(`${api}/rollouts/:rolloutId/quality`, ({ request, params }) => {
+    const invalid = validateRead(request, params); if (invalid) return invalid;
+    return HttpResponse.json({
+      ...formalQualityFixture,
+      rollout_id: String(params.rolloutId),
+    });
   }),
   http.get(`${api}/upload-sessions/:uploadId/objects`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;

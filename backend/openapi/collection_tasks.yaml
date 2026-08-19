@@ -1,0 +1,325 @@
+openapi: 3.1.0
+info:
+  title: Collection Tasks API Fragment
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/projects/{project_id}/collection-tasks:
+    post:
+      operationId: createCollectionTask
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - $ref: '#/components/parameters/CollectionTaskIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateCollectionTask'}
+      responses:
+        '201':
+          description: An active task definition with a generated identity and task code.
+          headers:
+            ETag: {$ref: '#/components/headers/CollectionTaskETag'}
+            Idempotency-Replayed: {$ref: '#/components/headers/CollectionTaskReplay'}
+            Location:
+              required: true
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTask'}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or task-management permission is missing.}
+        '409': {description: The idempotency key was reused with different content.}
+        '422': {description: The request violates the task schema.}
+    get:
+      operationId: listCollectionTasks
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - name: status
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/CollectionTaskStatus'}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string, minLength: 1, maxLength: 16384}
+      responses:
+        '200':
+          description: A stable cursor page inside exactly one project scope.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTaskPage'}
+        '400': {description: The cursor is invalid or belongs to another query.}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or read permission is missing.}
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:
+    get:
+      operationId: getCollectionTask
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - $ref: '#/components/parameters/CollectionTaskId'
+      responses:
+        '200':
+          description: The scoped task definition.
+          headers:
+            ETag: {$ref: '#/components/headers/CollectionTaskETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTask'}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or read permission is missing.}
+        '404': {description: No task is visible under this project identity.}
+    patch:
+      operationId: updateCollectionTask
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - $ref: '#/components/parameters/CollectionTaskId'
+        - $ref: '#/components/parameters/CollectionTaskIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateCollectionTask'}
+      responses:
+        '200':
+          description: The active definition after a compare-and-set update.
+          headers:
+            ETag: {$ref: '#/components/headers/CollectionTaskETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTask'}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or task-management permission is missing.}
+        '404': {description: No task is visible under this project identity.}
+        '409': {description: The task is closed and immutable.}
+        '412': {description: If-Match does not identify the current definition version.}
+        '422': {description: The patch is empty or violates the task schema.}
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:close:
+    post:
+      operationId: closeCollectionTask
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - $ref: '#/components/parameters/CollectionTaskId'
+        - $ref: '#/components/parameters/CollectionTaskIfMatch'
+        - $ref: '#/components/parameters/CollectionTaskIdempotencyKey'
+      responses:
+        '200':
+          description: The closed task; an identical retry returns the same representation.
+          headers:
+            ETag: {$ref: '#/components/headers/CollectionTaskETag'}
+            Idempotency-Replayed: {$ref: '#/components/headers/CollectionTaskReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTask'}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or task-management permission is missing.}
+        '404': {description: No task is visible under this project identity.}
+        '409': {description: The idempotency key was reused with different content.}
+        '412': {description: If-Match does not identify the current active version.}
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}/progress:
+    get:
+      operationId: getCollectionTaskProgress
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - $ref: '#/components/parameters/CollectionTaskId'
+        - $ref: '#/components/parameters/CollectionTaskRegionCode'
+      responses:
+        '200':
+          description: Read-only progress from committed package and latest QC facts.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTaskProgress'}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or read permission is missing.}
+        '404': {description: No task is visible under this project identity.}
+components:
+  parameters:
+    CollectionTaskProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+    CollectionTaskId:
+      name: collection_task_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+    CollectionTaskIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
+    CollectionTaskIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    CollectionTaskRegionCode:
+      name: X-Region-Code
+      in: header
+      required: true
+      description: Selects the exact authorized region whose package and QC facts are aggregated.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._-]+$'
+  headers:
+    CollectionTaskETag:
+      required: true
+      schema: {type: string}
+    CollectionTaskReplay:
+      required: true
+      schema: {type: string, enum: ['true', 'false']}
+  schemas:
+    CollectionTaskIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9._-]+$'
+    CollectionTaskStatus:
+      type: string
+      enum: [ACTIVE, CLOSED]
+    CollectionTarget:
+      type: object
+      additionalProperties: false
+      properties:
+        package_count: {type: [integer, 'null']}
+        duration_seconds: {type: [number, 'null']}
+    CreateCollectionTask:
+      type: object
+      additionalProperties: false
+      required: [name, type, scenario]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        type: {type: string, minLength: 1, maxLength: 100}
+        scenario: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000, default: ''}
+        target:
+          oneOf:
+            - {$ref: '#/components/schemas/CollectionTarget'}
+            - {type: 'null'}
+        quality_threshold: {type: [number, 'null'], minimum: 0, maximum: 1}
+    UpdateCollectionTask:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        type: {type: string, minLength: 1, maxLength: 100}
+        scenario: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000}
+        target:
+          oneOf:
+            - {$ref: '#/components/schemas/CollectionTarget'}
+            - {type: 'null'}
+        quality_threshold: {type: [number, 'null'], minimum: 0, maximum: 1}
+    CollectionTask:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - collection_task_id
+        - project_id
+        - task_code
+        - name
+        - type
+        - scenario
+        - description
+        - target
+        - quality_threshold
+        - status
+      properties:
+        schema_version: {type: string, const: '1', default: '1'}
+        collection_task_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        project_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        task_code: {type: string, pattern: '^[0-9]{8}$'}
+        name: {type: string}
+        type: {type: string}
+        scenario: {type: string}
+        description: {type: string}
+        target:
+          oneOf:
+            - {$ref: '#/components/schemas/CollectionTarget'}
+            - {type: 'null'}
+        quality_threshold: {type: [number, 'null'], minimum: 0, maximum: 1}
+        status: {$ref: '#/components/schemas/CollectionTaskStatus'}
+    CollectionTaskPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CollectionTask'}
+        next_cursor: {type: [string, 'null'], default: null}
+    CollectionTaskRatio:
+      type: object
+      additionalProperties: false
+      required: [numerator, denominator]
+      properties:
+        numerator: {type: integer, minimum: 0}
+        denominator: {type: integer, minimum: 0}
+        value: {type: [number, 'null'], minimum: 0, maximum: 1}
+    CollectionTaskQcProgress:
+      type: object
+      additionalProperties: false
+      required:
+        - evaluated_count
+        - pass_count
+        - risk_count
+        - reject_count
+        - pending_count
+        - pass_rate
+      properties:
+        evaluated_count: {type: integer, minimum: 0}
+        pass_count: {type: integer, minimum: 0}
+        risk_count: {type: integer, minimum: 0}
+        reject_count: {type: integer, minimum: 0}
+        pending_count: {type: integer, minimum: 0}
+        pass_rate: {$ref: '#/components/schemas/CollectionTaskRatio'}
+    CollectionTaskProgress:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - collection_task_id
+        - project_id
+        - status
+        - as_of
+        - received_package_count
+        - qc
+        - observed_sources
+      properties:
+        schema_version: {type: string, const: '1', default: '1'}
+        collection_task_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        project_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        status: {$ref: '#/components/schemas/CollectionTaskStatus'}
+        as_of: {type: string, format: date-time}
+        received_package_count: {type: integer, minimum: 0}
+        qc: {$ref: '#/components/schemas/CollectionTaskQcProgress'}
+        observed_sources: {$ref: '#/components/schemas/ManifestObservedSources'}
+    ManifestObservedSources:
+      type: object
+      additionalProperties: false
+      required: [device_ids, camera_ids, topic_names]
+      properties:
+        device_ids:
+          type: array
+          items: {type: string}
+        camera_ids:
+          type: array
+          items: {type: string}
+        topic_names:
+          type: array
+          items: {type: string}

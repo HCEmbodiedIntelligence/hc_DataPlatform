@@ -1,58 +1,60 @@
-import { Button, Select } from 'antd';
-import { RefreshCw } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Button, Select } from "antd";
+import { Clock3, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useDashboardActivity,
   useDashboardCoverage,
   useDashboardPending,
   useDashboardPendingPage,
   useDashboardSnapshot,
-} from '../../features/dashboard/api/queries';
+} from "../../features/dashboard/api/queries";
 import {
   DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
   type DashboardScope,
-} from '../../features/dashboard/types';
-import { isDomainError } from '../../shared/api/domain-error';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { useShellStore } from '../../shared/scope/shell-store';
+} from "../../features/dashboard/types";
+import { isDomainError } from "../../shared/api/domain-error";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   PageState,
   StandardPageScaffold,
-  type MetricState,
+  StatusTag,
   type PageStateKind,
-} from '../../shared/ui';
-import { DashboardCoverageTable } from './components/DashboardCoverageTable';
-import { DataLifecycleRail } from './components/DataLifecycleRail';
-import { DashboardPendingDrawer } from './components/DashboardPendingDrawer';
-import { DashboardPendingList } from './components/DashboardPendingList';
-import { DashboardSummaryStrip } from './components/DashboardSummaryStrip';
-import { dashboardQueryCodec, type DashboardRange } from './query-codec';
-import styles from './styles.module.css';
-
-const DashboardCharts = lazy(() => import('../../features/dashboard/dashboard-charts'));
+} from "../../shared/ui";
+import { AssetCapacityBoard } from "./components/AssetCapacityBoard";
+import { DashboardActivityList } from "./components/DashboardActivityList";
+import { DashboardCoverageTable } from "./components/DashboardCoverageTable";
+import { DashboardPendingDrawer } from "./components/DashboardPendingDrawer";
+import { DashboardPendingList } from "./components/DashboardPendingList";
+import {
+  DashboardSectionNotice,
+  sectionTone,
+} from "./components/DashboardSectionNotice";
+import { dashboardQueryCodec, type DashboardRange } from "./query-codec";
+import styles from "./styles.module.css";
 
 function stateFromError(error: unknown): PageStateKind {
-  if (!isDomainError(error)) return 'contract-mismatch';
+  if (!isDomainError(error)) return "contract-mismatch";
   switch (error.code) {
-    case 'FORBIDDEN':
-    case 'UNAUTHENTICATED':
-      return 'forbidden';
-    case 'NOT_FOUND':
-      return 'not-found';
-    case 'GONE':
-      return 'gone';
-    case 'VERSION_CONFLICT':
-    case 'PRECONDITION_FAILED':
-      return 'conflict';
-    case 'RATE_LIMITED':
-      return 'rate-limited';
-    case 'NETWORK_ERROR':
-      return 'offline';
-    case 'CONTRACT_MISMATCH':
-      return 'contract-mismatch';
+    case "FORBIDDEN":
+    case "UNAUTHENTICATED":
+      return "forbidden";
+    case "NOT_FOUND":
+      return "not-found";
+    case "GONE":
+      return "gone";
+    case "VERSION_CONFLICT":
+    case "PRECONDITION_FAILED":
+      return "conflict";
+    case "RATE_LIMITED":
+      return "rate-limited";
+    case "NETWORK_ERROR":
+      return "offline";
+    case "CONTRACT_MISMATCH":
+      return "contract-mismatch";
     default:
-      return 'error';
+      return "error";
   }
 }
 
@@ -60,31 +62,19 @@ function requestId(error: unknown): string | null {
   return isDomainError(error) ? error.requestId : null;
 }
 
-function stateTitle(state: PageStateKind): string | undefined {
-  return state === 'contract-mismatch' ? '服务端数据与页面合同不一致' : undefined;
-}
-
-function queryState(query: Readonly<{
-  data?: unknown;
-  isPending: boolean;
-  isFetching: boolean;
-  error: unknown;
-}>, empty = false): PageStateKind | 'ready' {
-  if (query.isPending && query.data === undefined) return 'loading';
+function queryState(
+  query: Readonly<{
+    data?: unknown;
+    isPending: boolean;
+    isFetching: boolean;
+    error: unknown;
+  }>,
+): PageStateKind | "ready" {
+  if (query.isPending && query.data === undefined) return "loading";
+  if (query.error && query.data !== undefined) return "partial";
   if (query.error) return stateFromError(query.error);
-  if (empty) return 'empty';
-  if (query.isFetching && query.data !== undefined) return 'refreshing';
-  return 'ready';
-}
-
-function metricState(query: Readonly<{
-  data?: unknown;
-  isPending: boolean;
-  error: unknown;
-}>): MetricState {
-  if (query.isPending && query.data === undefined) return 'loading';
-  if (query.error) return 'error';
-  return query.data === undefined ? 'unknown' : 'ready';
+  if (query.isFetching && query.data !== undefined) return "refreshing";
+  return "ready";
 }
 
 function rangeWindow(
@@ -93,61 +83,105 @@ function rangeWindow(
   to: string | undefined,
   anchor: Date,
 ) {
-  if (range === 'custom' && from && to) return { from, to };
-  const hours = range === '7d' ? 7 * 24 : range === '30d' ? 30 * 24 : 24;
+  if (range === "custom" && from && to) return { from, to };
+  const hours = range === "7d" ? 7 * 24 : range === "30d" ? 30 * 24 : 24;
   return {
     from: new Date(anchor.getTime() - hours * 60 * 60 * 1_000).toISOString(),
     to: anchor.toISOString(),
   };
 }
 
+function formatAsOf(value: string | undefined): string {
+  if (!value) return "数据时间待返回";
+  return `数据截至 ${new Intl.DateTimeFormat("zh-CN", {
+    timeZone: DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value))}`;
+}
+
+function fullDateTime(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(new Date(value));
+}
+
 function renderRegion(
-  state: PageStateKind | 'ready',
+  state: PageStateKind | "ready",
   label: string,
   error: unknown,
   content: ReactNode,
   onRetry: () => void,
 ): ReactNode {
-  if (state === 'ready') return content;
-  if (state === 'refreshing') {
-    return <PageState state="refreshing" label={label}>{content}</PageState>;
+  if (state === "ready") return content;
+  if (state === "refreshing") {
+    return (
+      <PageState state="refreshing" label={label}>
+        {content}
+      </PageState>
+    );
+  }
+  if (state === "partial") {
+    return (
+      <PageState
+        state="partial"
+        label={label}
+        description="刷新失败，当前保留上次成功返回的数据。"
+        onRetry={onRetry}
+      >
+        {content}
+      </PageState>
+    );
   }
   return (
-    <PageState
-      state={state}
-      label={label}
-      title={stateTitle(state)}
-      requestId={requestId(error)}
-      onRetry={state === 'empty' ? undefined : onRetry}
-    />
+    <div className={styles.regionState}>
+      <PageState
+        state={state}
+        label={label}
+        requestId={requestId(error)}
+        onRetry={state === "loading" ? undefined : onRetry}
+      />
+    </div>
   );
 }
 
 export function DashboardPage() {
   const shellScope = useShellStore((state) => state.scope);
   const scopeKey = useShellStore((state) => state.scopeKey);
-  const scope: DashboardScope | null = shellScope?.projectId && shellScope.regionCode
-    ? {
-        organizationId: shellScope.organizationId,
-        projectId: shellScope.projectId,
-        regionCode: shellScope.regionCode,
-        timezone: DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
-      }
-    : null;
+  const scope: DashboardScope | null =
+    shellScope?.projectId && shellScope.regionCode
+      ? {
+          organizationId: shellScope.organizationId,
+          projectId: shellScope.projectId,
+          regionCode: shellScope.regionCode,
+          timezone: DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
+        }
+      : null;
   const capabilities = useCapabilities();
+  const dashboardReadGranted = useShellStore((state) =>
+    new Set<string>(state.authorization?.capabilities ?? []).has(
+      "dashboard.read",
+    ),
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const search = dashboardQueryCodec.parse(searchParams);
   const [anchor, setAnchor] = useState(
     () => new Date(Math.floor(Date.now() / 1_000) * 1_000),
   );
-  const [coverageOpen, setCoverageOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
-  const [pendingCursor, setPendingCursor] = useState<Readonly<{
-    after?: string;
-    before?: string;
-  }>>({});
+  const [pendingCursor, setPendingCursor] = useState<
+    Readonly<{
+      after?: string;
+      before?: string;
+    }>
+  >({});
   const previousScopeKey = useRef(scopeKey);
   const scopeChanged = previousScopeKey.current !== scopeKey;
+
   useEffect(() => {
     if (previousScopeKey.current === scopeKey) return;
     previousScopeKey.current = scopeKey;
@@ -155,154 +189,190 @@ export function DashboardPage() {
     setPendingCursor({});
   }, [scopeKey]);
 
-  const mockDashboardReadEnabled = import.meta.env.VITE_MOCK_MODE === 'browser';
+  const browserFixtureEnabled =
+    import.meta.env.MODE !== "test" &&
+    import.meta.env.VITE_MOCK_MODE === "browser";
   const routeAllowed =
     !capabilities.loading &&
     !capabilities.failed &&
-    (capabilities.has('dashboard.read') || mockDashboardReadEnabled);
-  const dashboardReadEnabled = mockDashboardReadEnabled && routeAllowed;
+    (dashboardReadGranted || browserFixtureEnabled);
   const window = useMemo(
     () => rangeWindow(search.range, search.from, search.to, anchor),
     [anchor, search.from, search.range, search.to],
   );
-  const activity = useDashboardActivity(scope, window, dashboardReadEnabled);
-  const snapshot = useDashboardSnapshot(scope, dashboardReadEnabled);
-  const pending = useDashboardPending(scope, dashboardReadEnabled);
-  const coverage = useDashboardCoverage(scope, dashboardReadEnabled && coverageOpen);
+  const activity = useDashboardActivity(scope, window, routeAllowed);
+  const snapshot = useDashboardSnapshot(scope, window, routeAllowed);
+  const pending = useDashboardPending(scope, window, routeAllowed);
+  const coverage = useDashboardCoverage(scope, window, routeAllowed);
   const pendingPageInput = useMemo(
     () => ({ limit: 50 as const, ...pendingCursor }),
     [pendingCursor],
   );
   const pendingPage = useDashboardPendingPage(
     scope,
+    window,
     pendingPageInput,
-    dashboardReadEnabled && pendingOpen && !scopeChanged,
+    routeAllowed && pendingOpen && !scopeChanged,
   );
 
-  const header = {
-    title: '数据工作台',
-    description: '从原始数据、质量门禁、Lance 基线到发布版本的项目运营视图。',
-    breadcrumbs: [{ key: 'dashboard', label: '工作台' }],
-  } as const;
-
-  if (!mockDashboardReadEnabled) {
-    return (
-      <main className={styles.page} data-page-id="P01">
-        <StandardPageScaffold
-          header={header}
-          state={(
-            <section
-              className={styles.unavailable}
-              role="status"
-              aria-label="工作台聚合能力尚未开放"
-              data-dashboard-read-state="product-contract-undefined"
-            >
-              <PageState
-                state="feature-unavailable"
-                label="工作台聚合能力"
-                title="工作台聚合能力尚未开放"
-                description="活动、指标快照、覆盖率与待办聚合的产品合同尚未定义。真实 API 模式下不会请求这些接口，也不会展示模拟数据或占位指标。"
-              />
-            </section>
-          )}
-        />
-      </main>
-    );
-  }
-
-  const fatal = activity.error && snapshot.error && pending.error;
-  const pageState: PageStateKind | 'ready' = capabilities.loading
-    ? 'loading'
+  const queries = [activity, snapshot, pending, coverage] as const;
+  const fatal = queries.every(
+    (query) => query.error && query.data === undefined,
+  );
+  const pageState: PageStateKind | "ready" = capabilities.loading
+    ? "loading"
     : capabilities.failed || !routeAllowed
-      ? 'forbidden'
+      ? "forbidden"
       : !scope
-        ? 'feature-unavailable'
+        ? "feature-unavailable"
         : fatal
-          ? stateFromError(activity.error)
-          : 'ready';
-  const trendsState: PageStateKind | 'ready' = activity.error
-    ? stateFromError(activity.error)
-    : snapshot.error
-      ? stateFromError(snapshot.error)
-      : activity.isPending || snapshot.isPending
-        ? 'loading'
-        : activity.isFetching || snapshot.isFetching
-          ? 'refreshing'
-          : 'ready';
+          ? stateFromError(
+              activity.error ??
+                snapshot.error ??
+                pending.error ??
+                coverage.error,
+            )
+          : "ready";
+  const pendingState = queryState(pending);
+  const activityState = queryState(activity);
+  const snapshotState = queryState(snapshot);
   const coverageState = queryState(coverage);
-  const pendingState = queryState(pending, pending.data?.items.length === 0);
-  const pendingPageState = queryState(pendingPage, pendingPage.data?.items.length === 0);
+  const pendingPageState = queryState(pendingPage);
 
-  const coverageContent = !coverageOpen ? (
-    <Button onClick={() => setCoverageOpen(true)}>按需加载覆盖率矩阵</Button>
-  ) : renderRegion(
-    coverageState,
-    '覆盖率矩阵',
-    coverage.error,
-    coverage.data ? <DashboardCoverageTable coverage={coverage.data} /> : null,
-    () => void coverage.refetch(),
-  );
-  const charts = activity.data && snapshot.data ? (
-    <Suspense fallback={<PageState state="loading" label="图表模块" />}>
-      <DashboardCharts
-        activity={activity.data}
-        snapshot={snapshot.data}
-        coverage={coverageContent}
-      />
-    </Suspense>
-  ) : null;
   const pendingContent = pending.data ? (
-    <section className={`${styles.panel} ${styles.pendingPanel}`} aria-labelledby="dashboard-pending-title">
+    <section
+      className={`${styles.panel} ${styles.pendingPanel}`}
+      aria-labelledby="dashboard-pending-title"
+    >
       <div className={styles.panelHeading}>
-        <h2 id="dashboard-pending-title">待办与最近活动</h2>
-        {pending.data.totalCount > 5n ? (
-          <Button type="link" onClick={() => setPendingOpen(true)}>查看全部待办</Button>
-        ) : null}
+        <div>
+          <h2 id="dashboard-pending-title">我的待办</h2>
+          <p>仅展示当前能力与项目范围允许处理的事项</p>
+        </div>
+        <div className={styles.panelHeadingActions}>
+          <StatusTag
+            status={pending.data.section.status}
+            label={pending.data.section.status}
+            known
+            tone={sectionTone(pending.data.section.status)}
+          />
+          {pending.data.pageInfo?.hasNextPage ? (
+            <Button type="link" onClick={() => setPendingOpen(true)}>
+              查看全部
+            </Button>
+          ) : null}
+        </div>
       </div>
-      {pending.data.hasUnknownEnum ? <PageState state="unknown" label="待办未知状态" /> : null}
-      <DashboardPendingList items={pending.data.items} />
+      <DashboardSectionNotice
+        section={pending.data.section}
+        label="我的待办"
+        onRetry={() => void pending.refetch()}
+      />
+      {pending.data.items.length === 0 ? (
+        <div className={styles.compactState}>
+          <PageState state="empty" label="我的待办" title="当前时段暂无待办" />
+        </div>
+      ) : (
+        <DashboardPendingList items={pending.data.items} />
+      )}
+    </section>
+  ) : null;
+
+  const activityContent = activity.data ? (
+    <DashboardActivityList
+      activity={activity.data}
+      onRetry={() => void activity.refetch()}
+    />
+  ) : null;
+  const coverageContent = coverage.data ? (
+    <section
+      className={`${styles.panel} ${styles.coveragePanel}`}
+      aria-labelledby="dashboard-coverage-title"
+    >
+      <div className={styles.panelHeading}>
+        <div>
+          <h2 id="dashboard-coverage-title">局部状态</h2>
+          <p>未冻结口径不会显示伪造百分比</p>
+        </div>
+      </div>
+      <DashboardCoverageTable coverage={coverage.data} />
     </section>
   ) : null;
 
   const readyContent = (
     <div className={styles.contentStack}>
-      {snapshot.data?.hasUnknownEnum ? <PageState state="unknown" label="工作台未知状态" /> : null}
-      <DataLifecycleRail />
       {renderRegion(
-        trendsState,
-        '工作台趋势',
-        activity.error ?? snapshot.error,
-        charts,
-        () => void Promise.all([activity.refetch(), snapshot.refetch()]),
+        snapshotState,
+        "信号轨道",
+        snapshot.error,
+        snapshot.data ? (
+          <AssetCapacityBoard snapshot={snapshot.data} pending={pending.data} />
+        ) : null,
+        () => void snapshot.refetch(),
       )}
-      {renderRegion(
-        pendingState,
-        '待办与最近活动',
-        pending.error,
-        pendingContent,
-        () => void pending.refetch(),
-      )}
+      <div className={styles.lowerGrid}>
+        {renderRegion(
+          pendingState,
+          "我的待办",
+          pending.error,
+          pendingContent,
+          () => void pending.refetch(),
+        )}
+        <aside className={styles.sideColumn} aria-label="最近活动与局部状态">
+          {renderRegion(
+            activityState,
+            "最近活动",
+            activity.error,
+            activityContent,
+            () => void activity.refetch(),
+          )}
+          {renderRegion(
+            coverageState,
+            "覆盖率合同状态",
+            coverage.error,
+            coverageContent,
+            () => void coverage.refetch(),
+          )}
+        </aside>
+      </div>
     </div>
   );
 
-  const blockingState: PageStateKind = pageState === 'ready' ? 'error' : pageState;
+  const firstError = queries.find((query) => query.error)?.error;
+  const blockingState: PageStateKind =
+    pageState === "ready" ? "error" : pageState;
+  const asOf = snapshot.data?.asOf ?? activity.data?.asOf ?? pending.data?.asOf;
+  const refreshing = queries.some(
+    (query) => query.isFetching && query.data !== undefined,
+  );
 
   return (
     <main className={styles.page} data-page-id="P01">
       <StandardPageScaffold
         header={{
-          ...header,
+          title: "工作台",
+          breadcrumbs: [{ key: "dashboard", label: "工作台" }],
           actions: (
             <>
-              <label>
-                <span>时间范围</span>
+              <label className={styles.rangeControl}>
+                <Clock3 aria-hidden="true" size={16} />
+                <span className={styles.srOnly}>时间范围</span>
                 <Select
                   aria-label="时间范围"
                   value={search.range}
                   options={[
-                    { value: '24h', label: '最近 24 小时' },
-                    { value: '7d', label: '最近 7 天' },
-                    { value: '30d', label: '最近 30 天' },
+                    { value: "24h", label: "最近 24 小时" },
+                    { value: "7d", label: "最近 7 天" },
+                    { value: "30d", label: "最近 30 天" },
+                    ...(search.range === "custom"
+                      ? [
+                          {
+                            value: "custom",
+                            label: "自定义时段",
+                            disabled: true,
+                          },
+                        ]
+                      : []),
                   ]}
                   onChange={(range: DashboardRange) => {
                     setSearchParams(dashboardQueryCodec.build({ range }));
@@ -310,12 +380,23 @@ export function DashboardPage() {
                   }}
                 />
               </label>
+              {browserFixtureEnabled ? (
+                <span className={styles.fixtureBadge}>测试数据</span>
+              ) : null}
+              <time
+                className={styles.asOf}
+                dateTime={asOf}
+                title={fullDateTime(asOf)}
+              >
+                {formatAsOf(asOf)}
+              </time>
               <Button
                 icon={<RefreshCw aria-hidden="true" size={16} />}
                 aria-label="刷新工作台"
+                loading={refreshing}
                 onClick={() => {
                   setAnchor(new Date(Math.floor(Date.now() / 1_000) * 1_000));
-                  void Promise.all([activity.refetch(), snapshot.refetch(), pending.refetch()]);
+                  void Promise.all(queries.map((query) => query.refetch()));
                 }}
               >
                 刷新
@@ -323,27 +404,24 @@ export function DashboardPage() {
             </>
           ),
         }}
-        summary={pageState === 'ready' ? (
-          <DashboardSummaryStrip
-            activity={activity.data}
-            snapshot={snapshot.data}
-            activityState={metricState(activity)}
-            snapshotState={metricState(snapshot)}
-          />
-        ) : undefined}
-        state={pageState === 'ready' ? readyContent : (
-          <PageState
-            state={blockingState}
-            label="工作台"
-            title={stateTitle(blockingState)}
-            requestId={requestId(activity.error)}
-            onRetry={fatal ? () => void Promise.all([
-              activity.refetch(),
-              snapshot.refetch(),
-              pending.refetch(),
-            ]) : undefined}
-          />
-        )}
+        state={
+          pageState === "ready" ? (
+            readyContent
+          ) : (
+            <PageState
+              state={blockingState}
+              label="工作台"
+              layout="dashboard"
+              requestId={requestId(firstError)}
+              onRetry={
+                fatal
+                  ? () =>
+                      void Promise.all(queries.map((query) => query.refetch()))
+                  : undefined
+              }
+            />
+          )
+        }
       />
 
       <DashboardPendingDrawer
@@ -351,7 +429,9 @@ export function DashboardPage() {
         page={pendingPage.data}
         state={pendingPageState}
         requestId={requestId(pendingPage.error)}
-        onRetry={pendingPage.isError ? () => void pendingPage.refetch() : undefined}
+        onRetry={
+          pendingPage.isError ? () => void pendingPage.refetch() : undefined
+        }
         onCursorChange={setPendingCursor}
         onClose={() => setPendingOpen(false)}
       />

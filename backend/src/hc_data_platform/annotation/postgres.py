@@ -7,6 +7,7 @@ importing this module does not add a mandatory database dependency to unit tests
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol, cast
@@ -15,14 +16,28 @@ from .models import (
     AnnotationMutationRecord,
     AnnotationOperation,
     AnnotationReview,
+    AnnotationReviewCheck,
     AnnotationRevision,
     AnnotationStatus,
+    AnnotationSubmission,
+    AnnotationSubmissionMutationRecord,
+    AnnotationTag,
     AnnotationTask,
+    AnnotationTaskCreationSource,
+    AnnotationTaskKind,
+    LegacyAuditReference,
     OperationKind,
+    ReviewCheckKind,
     ReviewDecision,
+    RevisionOrigin,
+    TagSchemaDocument,
+    TagSchemaStatus,
+    TagSchemaTarget,
+    TagSchemaVersion,
 )
 from .ports import AnnotationAggregate
 from .repository import validate_aggregate
+from .validation import rehash_legacy_revisions
 
 
 class DbApiCursor(Protocol):
@@ -51,8 +66,11 @@ ConnectionFactory = Callable[[], DbApiConnection]
 
 
 _TASK_COLUMNS = """
-task_id, project_id, dataset_id, dataset_version, rollout_id, assignee_id,
+task_id, project_id, region_code, dataset_id, dataset_version, rollout_id, assignee_id,
+base_lance_version, base_step_count, tag_schema_id, tag_schema_version,
+task_kind, creation_source, source_workflow_id,
 current_revision, state_version, status, submitted_revision, submitted_by,
+current_submission_id,
 approved_revision, approved_review_id, etag, created_at, updated_at
 """.strip()
 
@@ -75,6 +93,45 @@ def _as_int(value: object) -> int:
     return int(cast(Any, value))
 
 
+def _as_json(value: object) -> Any:
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
+def require_repository_scope(
+    cursor: DbApiCursor,
+    *,
+    project_id: str,
+    region_code: str | None,
+) -> None:
+    """Reject writes when the selected DB scope is not the target scope.
+
+    RLS remains the database backstop, but an owner/superuser connection can bypass
+    RLS.  Repository writes therefore verify the selected scope explicitly too.
+    Project-wide legacy/schema rows intentionally omit ``region_code``; task rows do
+    not.
+    """
+
+    cursor.execute(
+        """
+        SELECT NULLIF(current_setting('app.project_id', true), '') = %s::text
+           AND (
+               %s::text IS NULL
+               OR NULLIF(current_setting('app.region_code', true), '') = %s::text
+           )
+        """,
+        (project_id, region_code, region_code),
+    )
+    raw = cursor.fetchone()
+    if isinstance(raw, Mapping):
+        allowed = bool(next(iter(raw.values()), False))
+    else:
+        allowed = raw is not None and bool(tuple(cast(Sequence[object], raw))[0])
+    if not allowed:
+        raise PermissionError("annotation repository scope mismatch")
+
+
 class PostgresAnnotationRepository:
     """PostgreSQL implementation with row locking and state-version CAS."""
 
@@ -89,29 +146,50 @@ class PostgresAnnotationRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            require_repository_scope(
+                cursor,
+                project_id=task.project_id,
+                region_code=task.region_code,
+            )
             cursor.execute(
                 """
                 INSERT INTO annotation.annotation_tasks (
-                    task_id, project_id, dataset_id, dataset_version, rollout_id,
-                    assignee_id, current_revision, state_version, status,
-                    submitted_revision, submitted_by, approved_revision,
+                    task_id, project_id, region_code, dataset_id, dataset_version, rollout_id,
+                    assignee_id, base_lance_version, base_step_count,
+                    tag_schema_id, tag_schema_version,
+                    task_kind, creation_source, source_workflow_id,
+                    current_revision, state_version, status,
+                    submitted_revision, submitted_by, current_submission_id, approved_revision,
                     approved_review_id, etag, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
                 ON CONFLICT DO NOTHING
                 RETURNING task_id
                 """,
                 (
                     task.task_id,
                     task.project_id,
+                    task.region_code,
                     task.dataset_id,
                     task.dataset_version,
                     task.rollout_id,
                     task.assignee_id,
+                    task.base_lance_version,
+                    task.base_step_count,
+                    task.tag_schema_id,
+                    task.tag_schema_version,
+                    task.task_kind.value,
+                    task.creation_source.value,
+                    task.source_workflow_id,
                     task.current_revision,
                     task.state_version,
                     task.status.value,
                     task.submitted_revision,
                     task.submitted_by,
+                    task.current_submission_id,
                     task.approved_revision,
                     task.approved_review_id,
                     task.etag,
@@ -139,7 +217,13 @@ class PostgresAnnotationRepository:
 
     def get(self, task_id: str) -> AnnotationAggregate | None:
         return self._load_one(
-            f"SELECT {_TASK_COLUMNS} FROM annotation.annotation_tasks WHERE task_id = %s",
+            f"""
+            SELECT {_TASK_COLUMNS}
+            FROM annotation.annotation_tasks
+            WHERE task_id = %s
+              AND project_id = NULLIF(current_setting('app.project_id', true), '')
+              AND region_code = NULLIF(current_setting('app.region_code', true), '')
+            """,
             (task_id,),
         )
 
@@ -149,6 +233,8 @@ class PostgresAnnotationRepository:
             SELECT {_TASK_COLUMNS}
             FROM annotation.annotation_tasks
             WHERE project_id = %s AND rollout_id = %s
+              AND project_id = NULLIF(current_setting('app.project_id', true), '')
+              AND region_code = NULLIF(current_setting('app.region_code', true), '')
             """,
             (project_id, rollout_id),
         )
@@ -162,6 +248,8 @@ class PostgresAnnotationRepository:
                 SELECT {_TASK_COLUMNS}
                 FROM annotation.annotation_tasks
                 WHERE project_id = %s
+                  AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND region_code = NULLIF(current_setting('app.region_code', true), '')
                 ORDER BY updated_at DESC, task_id DESC
                 """,
                 (project_id,),
@@ -171,6 +259,228 @@ class PostgresAnnotationRepository:
             cursor.close()
             connection.close()
         return tuple(self._load_related(self._task_from_row(row)) for row in task_rows)
+
+    def create_tag_schema_version(self, schema: TagSchemaVersion) -> TagSchemaVersion:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            require_repository_scope(cursor, project_id=schema.project_id, region_code=None)
+            cursor.execute(
+                """
+                INSERT INTO annotation.tag_schema_versions (
+                    schema_id, version, project_id, name, status, document,
+                    compatible_targets, content_hash, created_by, created_at,
+                    published_by, published_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb,
+                    %s, %s, %s, %s, %s
+                )
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    schema.schema_id,
+                    schema.version,
+                    schema.project_id,
+                    schema.name,
+                    schema.status.value,
+                    json.dumps(schema.document.model_dump(mode="json")),
+                    json.dumps(
+                        [target.model_dump(mode="json") for target in schema.compatible_targets]
+                    ),
+                    schema.content_hash,
+                    schema.created_by,
+                    schema.created_at,
+                    schema.published_by,
+                    schema.published_at,
+                ),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+        existing = self.get_tag_schema_version(schema_id=schema.schema_id, version=schema.version)
+        if existing is None:
+            raise RuntimeError("PostgreSQL did not return the Tag Schema version")
+        return existing
+
+    def get_tag_schema_version(self, *, schema_id: str, version: int) -> TagSchemaVersion | None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT schema_id, version, project_id, name, status, document,
+                       compatible_targets, content_hash, created_by, created_at,
+                       published_by, published_at
+                FROM annotation.tag_schema_versions
+                WHERE schema_id = %s AND version = %s
+                  AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                """,
+                (schema_id, version),
+            )
+            raw = cursor.fetchone()
+            return None if raw is None else self._schema_from_row(_row(cursor, raw))
+        finally:
+            cursor.close()
+            connection.close()
+
+    def list_tag_schema_versions(
+        self, *, project_id: str, schema_id: str
+    ) -> tuple[TagSchemaVersion, ...]:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT schema_id, version, project_id, name, status, document,
+                       compatible_targets, content_hash, created_by, created_at,
+                       published_by, published_at
+                FROM annotation.tag_schema_versions
+                WHERE project_id = %s AND schema_id = %s
+                  AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                ORDER BY version
+                """,
+                (project_id, schema_id),
+            )
+            return tuple(self._schema_from_row(row) for row in _rows(cursor, cursor.fetchall()))
+        finally:
+            cursor.close()
+            connection.close()
+
+    def publish_tag_schema_version(
+        self, draft: TagSchemaVersion, published: TagSchemaVersion
+    ) -> bool:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            require_repository_scope(cursor, project_id=draft.project_id, region_code=None)
+            cursor.execute(
+                """
+                UPDATE annotation.tag_schema_versions
+                SET status = 'PUBLISHED', published_by = %s, published_at = %s
+                WHERE schema_id = %s AND version = %s AND status = 'DRAFT'
+                  AND content_hash = %s
+                  AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                RETURNING schema_id
+                """,
+                (
+                    published.published_by,
+                    published.published_at,
+                    draft.schema_id,
+                    draft.version,
+                    draft.content_hash,
+                ),
+            )
+            changed = cursor.fetchone() is not None
+            if changed:
+                for target in published.compatible_targets:
+                    cursor.execute(
+                        """
+                        INSERT INTO annotation.tag_schema_bindings (
+                            project_id, region_code, dataset_id,
+                            dataset_schema_snapshot_id, task_kind,
+                            schema_id, schema_version, created_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (
+                            published.project_id,
+                            target.region_code,
+                            target.dataset_id,
+                            target.dataset_schema_snapshot_id,
+                            target.task_kind.value,
+                            published.schema_id,
+                            published.version,
+                            published.published_at,
+                        ),
+                    )
+                    cursor.execute(
+                        """
+                        SELECT schema_id, schema_version
+                        FROM annotation.tag_schema_bindings
+                        WHERE project_id = %s AND region_code = %s
+                          AND dataset_id = %s AND dataset_schema_snapshot_id = %s
+                          AND task_kind = %s
+                        """,
+                        (
+                            published.project_id,
+                            target.region_code,
+                            target.dataset_id,
+                            target.dataset_schema_snapshot_id,
+                            target.task_kind.value,
+                        ),
+                    )
+                    owner = cursor.fetchone()
+                    owner_identity = None
+                    if owner is not None:
+                        owner_row = _row(cursor, owner)
+                        owner_identity = (
+                            str(owner_row["schema_id"]),
+                            _as_int(owner_row["schema_version"]),
+                        )
+                    if owner_identity != (published.schema_id, published.version):
+                        raise ValueError(
+                            "a Tag Schema target is already bound to another published version"
+                        )
+            connection.commit()
+            return changed
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def resolve_published_schema(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        dataset_schema_snapshot_id: str,
+        task_kind: AnnotationTaskKind,
+    ) -> TagSchemaVersion | None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT schema.schema_id, schema.version, schema.project_id, schema.name,
+                       schema.status, schema.document, schema.compatible_targets,
+                       schema.content_hash, schema.created_by, schema.created_at,
+                       schema.published_by, schema.published_at
+                FROM annotation.tag_schema_bindings binding
+                JOIN annotation.tag_schema_versions schema
+                  ON schema.schema_id = binding.schema_id
+                 AND schema.version = binding.schema_version
+                 AND schema.project_id = binding.project_id
+                WHERE binding.project_id = %s AND binding.region_code = %s
+                  AND binding.dataset_id = %s
+                  AND binding.dataset_schema_snapshot_id = %s
+                  AND binding.task_kind = %s AND schema.status = 'PUBLISHED'
+                  AND binding.project_id = NULLIF(
+                      current_setting('app.project_id', true), ''
+                  )
+                  AND binding.region_code = NULLIF(
+                      current_setting('app.region_code', true), ''
+                  )
+                """,
+                (
+                    project_id,
+                    region_code,
+                    dataset_id,
+                    dataset_schema_snapshot_id,
+                    task_kind.value,
+                ),
+            )
+            raw = cursor.fetchone()
+            return None if raw is None else self._schema_from_row(_row(cursor, raw))
+        finally:
+            cursor.close()
+            connection.close()
 
     def compare_and_swap(
         self,
@@ -183,11 +493,18 @@ class PostgresAnnotationRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            require_repository_scope(
+                cursor,
+                project_id=task.project_id,
+                region_code=task.region_code,
+            )
             cursor.execute(
                 """
                 SELECT current_revision, state_version
                 FROM annotation.annotation_tasks
                 WHERE task_id = %s
+                  AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND region_code = NULLIF(current_setting('app.region_code', true), '')
                 FOR UPDATE
                 """,
                 (task.task_id,),
@@ -215,11 +532,14 @@ class PostgresAnnotationRepository:
                     status = %s,
                     submitted_revision = %s,
                     submitted_by = %s,
+                    current_submission_id = %s,
                     approved_revision = %s,
                     approved_review_id = %s,
                     etag = %s,
                     updated_at = %s
                 WHERE task_id = %s AND state_version = %s
+                  AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND region_code = NULLIF(current_setting('app.region_code', true), '')
                 RETURNING task_id
                 """,
                 (
@@ -229,6 +549,7 @@ class PostgresAnnotationRepository:
                     task.status.value,
                     task.submitted_revision,
                     task.submitted_by,
+                    task.current_submission_id,
                     task.approved_revision,
                     task.approved_review_id,
                     task.etag,
@@ -244,6 +565,8 @@ class PostgresAnnotationRepository:
                 self._insert_revision(cursor, aggregate.revisions[-1])
             self._insert_missing_reviews(cursor, aggregate.reviews)
             self._insert_missing_mutations(cursor, aggregate.mutations)
+            self._insert_missing_submissions(cursor, aggregate.submissions)
+            self._insert_missing_submission_mutations(cursor, aggregate.submission_mutations)
             connection.commit()
             return True
         except Exception:
@@ -269,10 +592,17 @@ class PostgresAnnotationRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            require_repository_scope(
+                cursor,
+                project_id=task.project_id,
+                region_code=task.region_code,
+            )
             cursor.execute(
                 """
                 SELECT task_id, revision, parent_revision, author_id,
-                       client_mutation_id, created_at
+                       client_mutation_id, base_lance_version, tag_schema_id,
+                       tag_schema_version, tags, origin, legacy_audit,
+                       content_hash, created_at
                 FROM annotation.annotation_revisions
                 WHERE task_id = %s
                 ORDER BY revision
@@ -293,7 +623,8 @@ class PostgresAnnotationRepository:
             operation_rows = _rows(cursor, cursor.fetchall())
             cursor.execute(
                 """
-                SELECT review_id, task_id, revision, reviewer_id, decision, comment, created_at
+                SELECT review_id, submission_id, task_id, revision, reviewer_id,
+                       decision, checked_kinds, comment, created_at
                 FROM annotation.annotation_reviews
                 WHERE task_id = %s
                 ORDER BY created_at, review_id
@@ -312,6 +643,29 @@ class PostgresAnnotationRepository:
                 (task.task_id,),
             )
             mutation_rows = _rows(cursor, cursor.fetchall())
+            cursor.execute(
+                """
+                SELECT submission_id, task_id, revision, submitted_by,
+                       base_lance_version, tag_schema_id, tag_schema_version,
+                       tag_schema_hash, revision_content_hash, checks, created_at
+                FROM annotation.annotation_submissions
+                WHERE task_id = %s
+                ORDER BY created_at, submission_id
+                """,
+                (task.task_id,),
+            )
+            submission_rows = _rows(cursor, cursor.fetchall())
+            cursor.execute(
+                """
+                SELECT task_id, idempotency_key, actor_id, request_fingerprint,
+                       submission_id, result_etag, created_at
+                FROM annotation.annotation_submission_mutations
+                WHERE task_id = %s
+                ORDER BY created_at, idempotency_key
+                """,
+                (task.task_id,),
+            )
+            submission_mutation_rows = _rows(cursor, cursor.fetchall())
         finally:
             cursor.close()
             connection.close()
@@ -329,27 +683,50 @@ class PostgresAnnotationRepository:
                     modality_scope="ALL_MODALITIES",
                 )
             )
-        revisions = tuple(
-            AnnotationRevision(
-                task_id=str(row["task_id"]),
-                revision=_as_int(row["revision"]),
-                parent_revision=(
-                    None if row["parent_revision"] is None else _as_int(row["parent_revision"])
-                ),
-                author_id=str(row["author_id"]),
-                client_mutation_id=str(row["client_mutation_id"]),
-                operations=tuple(operations.get(_as_int(row["revision"]), ())),
-                created_at=cast(datetime, row["created_at"]),
+        revisions = rehash_legacy_revisions(
+            tuple(
+                AnnotationRevision(
+                    task_id=str(row["task_id"]),
+                    revision=_as_int(row["revision"]),
+                    parent_revision=(
+                        None if row["parent_revision"] is None else _as_int(row["parent_revision"])
+                    ),
+                    author_id=str(row["author_id"]),
+                    client_mutation_id=str(row["client_mutation_id"]),
+                    base_lance_version=_as_int(row["base_lance_version"]),
+                    tag_schema_id=str(row["tag_schema_id"]),
+                    tag_schema_version=_as_int(row["tag_schema_version"]),
+                    tags=tuple(
+                        AnnotationTag.model_validate(item) for item in _as_json(row["tags"])
+                    ),
+                    operations=tuple(operations.get(_as_int(row["revision"]), ())),
+                    origin=RevisionOrigin(str(row["origin"])),
+                    legacy_audit=(
+                        None
+                        if row["legacy_audit"] is None
+                        else LegacyAuditReference.model_validate(_as_json(row["legacy_audit"]))
+                    ),
+                    content_hash=str(row["content_hash"]),
+                    created_at=cast(datetime, row["created_at"]),
+                )
+                for row in revision_rows
             )
-            for row in revision_rows
         )
         reviews = tuple(
             AnnotationReview(
                 review_id=str(row["review_id"]),
+                submission_id=(
+                    "legacy-submission"
+                    if row["submission_id"] is None
+                    else str(row["submission_id"])
+                ),
                 task_id=str(row["task_id"]),
                 revision=_as_int(row["revision"]),
                 reviewer_id=str(row["reviewer_id"]),
                 decision=ReviewDecision(str(row["decision"])),
+                checked_kinds=tuple(
+                    ReviewCheckKind(item) for item in _as_json(row["checked_kinds"])
+                ),
                 comment=str(row["comment"]),
                 created_at=cast(datetime, row["created_at"]),
             )
@@ -369,11 +746,43 @@ class PostgresAnnotationRepository:
             )
             for row in mutation_rows
         )
+        submissions = tuple(
+            AnnotationSubmission(
+                submission_id=str(row["submission_id"]),
+                task_id=str(row["task_id"]),
+                revision=_as_int(row["revision"]),
+                submitted_by=str(row["submitted_by"]),
+                base_lance_version=_as_int(row["base_lance_version"]),
+                tag_schema_id=str(row["tag_schema_id"]),
+                tag_schema_version=_as_int(row["tag_schema_version"]),
+                tag_schema_hash=str(row["tag_schema_hash"]),
+                revision_content_hash=str(row["revision_content_hash"]),
+                checks=tuple(
+                    AnnotationReviewCheck.model_validate(item) for item in _as_json(row["checks"])
+                ),
+                created_at=cast(datetime, row["created_at"]),
+            )
+            for row in submission_rows
+        )
+        submission_mutations = tuple(
+            AnnotationSubmissionMutationRecord(
+                task_id=str(row["task_id"]),
+                idempotency_key=str(row["idempotency_key"]),
+                actor_id=str(row["actor_id"]),
+                request_fingerprint=str(row["request_fingerprint"]),
+                submission_id=str(row["submission_id"]),
+                result_etag=str(row["result_etag"]),
+                created_at=cast(datetime, row["created_at"]),
+            )
+            for row in submission_mutation_rows
+        )
         aggregate = AnnotationAggregate(
             task=task,
             revisions=revisions,
             reviews=reviews,
             mutations=mutations,
+            submissions=submissions,
+            submission_mutations=submission_mutations,
         )
         validate_aggregate(aggregate)
         return aggregate
@@ -383,9 +792,21 @@ class PostgresAnnotationRepository:
         return AnnotationTask(
             task_id=str(row["task_id"]),
             project_id=str(row["project_id"]),
+            region_code=(None if row["region_code"] is None else str(row["region_code"])),
             dataset_id=str(row["dataset_id"]),
             dataset_version=_as_int(row["dataset_version"]),
+            base_lance_version=_as_int(row["base_lance_version"]),
+            base_step_count=(
+                None if row["base_step_count"] is None else _as_int(row["base_step_count"])
+            ),
+            tag_schema_id=str(row["tag_schema_id"]),
+            tag_schema_version=_as_int(row["tag_schema_version"]),
             rollout_id=str(row["rollout_id"]),
+            task_kind=AnnotationTaskKind(str(row["task_kind"])),
+            creation_source=AnnotationTaskCreationSource(str(row["creation_source"])),
+            source_workflow_id=(
+                None if row["source_workflow_id"] is None else str(row["source_workflow_id"])
+            ),
             assignee_id=None if row["assignee_id"] is None else str(row["assignee_id"]),
             current_revision=_as_int(row["current_revision"]),
             state_version=_as_int(row["state_version"]),
@@ -394,6 +815,9 @@ class PostgresAnnotationRepository:
                 None if row["submitted_revision"] is None else _as_int(row["submitted_revision"])
             ),
             submitted_by=(None if row["submitted_by"] is None else str(row["submitted_by"])),
+            current_submission_id=(
+                None if row["current_submission_id"] is None else str(row["current_submission_id"])
+            ),
             approved_revision=(
                 None if row["approved_revision"] is None else _as_int(row["approved_revision"])
             ),
@@ -411,8 +835,12 @@ class PostgresAnnotationRepository:
             """
             INSERT INTO annotation.annotation_revisions (
                 task_id, revision, parent_revision, author_id,
-                client_mutation_id, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+                client_mutation_id, base_lance_version, tag_schema_id,
+                tag_schema_version, tags, origin, legacy_audit, content_hash, created_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
+                %s, %s::jsonb, %s, %s
+            )
             """,
             (
                 revision.task_id,
@@ -420,6 +848,17 @@ class PostgresAnnotationRepository:
                 revision.parent_revision,
                 revision.author_id,
                 revision.client_mutation_id,
+                revision.base_lance_version,
+                revision.tag_schema_id,
+                revision.tag_schema_version,
+                json.dumps([tag.model_dump(mode="json") for tag in revision.tags]),
+                revision.origin.value,
+                (
+                    None
+                    if revision.legacy_audit is None
+                    else json.dumps(revision.legacy_audit.model_dump(mode="json"))
+                ),
+                revision.content_hash,
                 revision.created_at,
             ),
         )
@@ -442,6 +881,28 @@ class PostgresAnnotationRepository:
                     operation.reason,
                 ),
             )
+        if revision.legacy_audit is not None:
+            audit = revision.legacy_audit
+            cursor.execute(
+                """
+                INSERT INTO annotation.legacy_cleaning_migrations (
+                    source_draft_id, source_revision, source_audit_event_id,
+                    source_actor_id, source_created_at, target_task_id,
+                    target_revision, source_payload
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (source_draft_id, source_revision) DO NOTHING
+                """,
+                (
+                    audit.draft_id,
+                    audit.source_revision,
+                    audit.source_audit_event_id,
+                    audit.source_actor_id,
+                    audit.source_created_at,
+                    revision.task_id,
+                    revision.revision,
+                    json.dumps(audit.source_payload),
+                ),
+            )
 
     @staticmethod
     def _insert_missing_reviews(cursor: DbApiCursor, reviews: Sequence[AnnotationReview]) -> None:
@@ -449,20 +910,98 @@ class PostgresAnnotationRepository:
             cursor.execute(
                 """
                 INSERT INTO annotation.annotation_reviews (
-                    review_id, task_id, revision, reviewer_id, decision, comment, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    review_id, submission_id, task_id, revision, reviewer_id,
+                    decision, checked_kinds, comment, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
                 ON CONFLICT (review_id) DO NOTHING
                 """,
                 (
                     review.review_id,
+                    review.submission_id,
                     review.task_id,
                     review.revision,
                     review.reviewer_id,
                     review.decision.value,
+                    json.dumps([kind.value for kind in review.checked_kinds]),
                     review.comment,
                     review.created_at,
                 ),
             )
+
+    @staticmethod
+    def _insert_missing_submissions(
+        cursor: DbApiCursor, submissions: Sequence[AnnotationSubmission]
+    ) -> None:
+        for submission in submissions:
+            cursor.execute(
+                """
+                INSERT INTO annotation.annotation_submissions (
+                    submission_id, task_id, revision, submitted_by,
+                    base_lance_version, tag_schema_id, tag_schema_version,
+                    tag_schema_hash, revision_content_hash, checks, created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                )
+                ON CONFLICT (submission_id) DO NOTHING
+                """,
+                (
+                    submission.submission_id,
+                    submission.task_id,
+                    submission.revision,
+                    submission.submitted_by,
+                    submission.base_lance_version,
+                    submission.tag_schema_id,
+                    submission.tag_schema_version,
+                    submission.tag_schema_hash,
+                    submission.revision_content_hash,
+                    json.dumps([check.model_dump(mode="json") for check in submission.checks]),
+                    submission.created_at,
+                ),
+            )
+
+    @staticmethod
+    def _insert_missing_submission_mutations(
+        cursor: DbApiCursor,
+        mutations: Sequence[AnnotationSubmissionMutationRecord],
+    ) -> None:
+        for mutation in mutations:
+            cursor.execute(
+                """
+                INSERT INTO annotation.annotation_submission_mutations (
+                    task_id, idempotency_key, actor_id, request_fingerprint,
+                    submission_id, result_etag, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (task_id, idempotency_key) DO NOTHING
+                """,
+                (
+                    mutation.task_id,
+                    mutation.idempotency_key,
+                    mutation.actor_id,
+                    mutation.request_fingerprint,
+                    mutation.submission_id,
+                    mutation.result_etag,
+                    mutation.created_at,
+                ),
+            )
+
+    @staticmethod
+    def _schema_from_row(row: Mapping[str, object]) -> TagSchemaVersion:
+        return TagSchemaVersion(
+            schema_id=str(row["schema_id"]),
+            project_id=str(row["project_id"]),
+            name=str(row["name"]),
+            version=_as_int(row["version"]),
+            status=TagSchemaStatus(str(row["status"])),
+            document=TagSchemaDocument.model_validate(_as_json(row["document"])),
+            compatible_targets=tuple(
+                TagSchemaTarget.model_validate(item) for item in _as_json(row["compatible_targets"])
+            ),
+            content_hash=str(row["content_hash"]),
+            created_by=str(row["created_by"]),
+            created_at=cast(datetime, row["created_at"]),
+            published_by=(None if row["published_by"] is None else str(row["published_by"])),
+            published_at=cast(datetime | None, row["published_at"]),
+        )
 
     @staticmethod
     def _insert_missing_mutations(

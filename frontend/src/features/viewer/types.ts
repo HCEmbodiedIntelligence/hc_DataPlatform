@@ -79,6 +79,8 @@ export interface StreamDescriptor {
   readonly clockDomain?: { readonly id: string; readonly name: string };
   readonly calibrationSetId?: string;
   readonly availability: 'ready' | 'preview-generating' | 'partial' | 'unsupported' | 'missing';
+  /** A concise non-visual summary for Canvas/3D alternatives. */
+  readonly accessibleSummary?: string;
   readonly mediaSource?: ViewerMediaSource;
   readonly windowSource?: ViewerWindowSource;
 }

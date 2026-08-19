@@ -1,5 +1,653 @@
+paths:
+  /api/v1/auth/registrations:
+    post:
+      operationId: registerAccount
+      tags: [access]
+      summary: Register a directly loginable empty account.
+      description: >-
+        Creates an ACTIVE principal only. It does not create a project, membership,
+        capability grant, account approval request, or PENDING account state. OPEN-02 abuse
+        controls are externally configured; this contract fixes no thresholds.
+      security: []
+      requestBody: {$ref: "#/components/requestBodies/RegistrationCommandBody"}
+      responses:
+        "201":
+          description: The ACTIVE empty account was created and can log in immediately.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/AccessNoStore"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RegistrationResult"}
+              example:
+                principal:
+                  principal_id: 1d815948-e486-4ce6-9754-8f9571682c6a
+                  username: new-user
+                  status: ACTIVE
+                  created_at: "2026-08-17T08:00:00Z"
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/auth/sessions:
+    post:
+      operationId: createSession
+      tags: [access]
+      summary: Create a session for an ACTIVE account.
+      description: OPEN-02 abuse controls are injected and this draft fixes no numeric policy.
+      security: []
+      requestBody: {$ref: "#/components/requestBodies/LoginCommandBody"}
+      responses:
+        "201":
+          description: Opaque Bearer session created.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/AccessNoStore"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SessionCreated"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/auth/session/bootstrap:
+    get:
+      operationId: getSessionBootstrap
+      tags: [access]
+      summary: Resolve the current principal and effective access.
+      description: >-
+        Recomputes scopes and capabilities from active memberships and grants on every call,
+        and returns the current capability revision for client cache invalidation.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Current principal, available scopes, and capability revision.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/AccessNoStore"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SessionBootstrap"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+  /api/v1/auth/session:logout:
+    post:
+      operationId: logoutSession
+      tags: [access]
+      summary: Revoke the current opaque session.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Session is revoked or was already revoked.
+          headers:
+            Cache-Control: {$ref: "#/components/headers/AccessNoStore"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+  /api/v1/projects/{project_id}/membership-requests:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+    post:
+      operationId: createMembershipRequest
+      tags: [access]
+      summary: Request membership in a project.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/MembershipRequestCreateBody"}
+      responses:
+        "201": {$ref: "#/components/responses/MembershipRequestCreated"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+    get:
+      operationId: listMembershipRequests
+      tags: [access]
+      summary: List visible membership requests in one exact project scope.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Own requests, or the project queue for a scoped access manager.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MembershipRequestList"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    get:
+      operationId: getMembershipRequest
+      tags: [access]
+      summary: Get one visible membership request.
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/MembershipRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:approve:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: approveMembershipRequest
+      tags: [access]
+      summary: Approve a pending membership request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/MembershipRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:reject:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: rejectMembershipRequest
+      tags: [access]
+      summary: Reject a pending membership request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/MembershipRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:revoke:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: revokeMembershipRequest
+      tags: [access]
+      summary: Revoke an approved membership and all effective project capabilities.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/MembershipRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/membership-requests/{access_request_id}:withdraw:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: withdrawMembershipRequest
+      tags: [access]
+      summary: Withdraw the caller's pending membership request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/MembershipRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/capability-requests:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+    post:
+      operationId: createCapabilityRequest
+      tags: [access]
+      summary: Request capabilities in a project.
+      description: >-
+        OPEN-03 is unresolved, so membership as a submission prerequisite is an injected
+        admission policy rather than a fixed rule. Approved capabilities are effective only
+        while the requester has an active membership in this exact project.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/CapabilityRequestCreateBody"}
+      responses:
+        "201": {$ref: "#/components/responses/CapabilityRequestCreated"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+    get:
+      operationId: listCapabilityRequests
+      tags: [access]
+      summary: List visible capability requests in one exact project scope.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Own requests, or the project queue for a scoped access manager.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CapabilityRequestList"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    get:
+      operationId: getCapabilityRequest
+      tags: [access]
+      summary: Get one visible capability request.
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/CapabilityRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:approve:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: approveCapabilityRequest
+      tags: [access]
+      summary: Approve a pending capability request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/CapabilityRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:reject:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: rejectCapabilityRequest
+      tags: [access]
+      summary: Reject a pending capability request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/CapabilityRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:revoke:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: revokeCapabilityRequest
+      tags: [access]
+      summary: Revoke the grants created by one approved capability request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/CapabilityRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/capability-requests/{access_request_id}:withdraw:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: withdrawCapabilityRequest
+      tags: [access]
+      summary: Withdraw the caller's pending capability request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200": {$ref: "#/components/responses/CapabilityRequestOk"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/projects/{project_id}/access-audit-events:
+    parameters:
+      - {$ref: "#/components/parameters/AccessProjectId"}
+    get:
+      operationId: listAccessAuditEvents
+      tags: [access]
+      summary: List the safe append-only access audit projection for a project.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Access events visible to an exact-project access manager.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccessAuditEventList"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
 components:
+  headers:
+    AccessNoStore:
+      description: Authentication and authorization material must not be cached.
+      schema: {type: string, const: "private, no-store"}
+  parameters:
+    AccessProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+    AccessRequestId:
+      name: access_request_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AccessIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+  requestBodies:
+    RegistrationCommandBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/RegistrationCommand"}
+    LoginCommandBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LoginCommand"}
+    MembershipRequestCreateBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/MembershipRequestCreate"}
+    CapabilityRequestCreateBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CapabilityRequestCreate"}
+    AccessDecisionBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/AccessDecisionCommand"}
+  responses:
+    MembershipRequestCreated:
+      description: Pending project membership request created.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/MembershipRequest"}
+    MembershipRequestOk:
+      description: Current membership request representation.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/MembershipRequest"}
+    CapabilityRequestCreated:
+      description: Pending project capability request created.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CapabilityRequest"}
+    CapabilityRequestOk:
+      description: Current capability request representation.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CapabilityRequest"}
+    AccessUnauthorized:
+      description: Authentication failed or a current session is required.
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+          example:
+            type: https://hc-data-platform.invalid/problems/authentication-required
+            title: Authentication required
+            status: 401
+            detail: A current Bearer session is required.
+            code: AUTHENTICATION_REQUIRED
+            request_id: req-401
+            retryable: false
+    AccessForbidden:
+      description: Exact project scope or project access-management capability is absent.
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+          example:
+            type: https://hc-data-platform.invalid/problems/project-scope-denied
+            title: Project scope denied
+            status: 403
+            detail: The exact project scope is not granted.
+            code: PROJECT_SCOPE_DENIED
+            request_id: req-403
+            retryable: false
+    AccessConflict:
+      description: State, concurrency, duplicate-pending, or idempotency conflict.
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+          example:
+            type: https://hc-data-platform.invalid/problems/access-request-state-conflict
+            title: Access request state conflict
+            status: 409
+            detail: The transition is invalid from the current state.
+            code: ACCESS_REQUEST_STATE_CONFLICT
+            request_id: req-409
+            retryable: false
+    AccessUnprocessable:
+      description: The request violates the API contract.
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+          example:
+            type: https://hc-data-platform.invalid/problems/request-validation-failed
+            title: Request validation failed
+            status: 422
+            detail: The request did not satisfy the API contract.
+            code: REQUEST_VALIDATION_FAILED
+            request_id: req-422
+            retryable: false
+    AccessTooManyRequests:
+      description: An externally configured OPEN-02 abuse policy denied the request.
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+          example:
+            type: https://hc-data-platform.invalid/problems/abuse-policy-limited
+            title: Request rate limited
+            status: 429
+            detail: The externally configured abuse policy denied this request.
+            code: ABUSE_POLICY_LIMITED
+            request_id: req-429
+            retryable: true
   schemas:
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, DISABLED]
+      description: Account lifecycle only; account approval/PENDING is not part of registration.
+    AccessRequestStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, WITHDRAWN, REVOKED]
+    AccountPrincipal:
+      type: object
+      additionalProperties: false
+      required: [principal_id, username, status, created_at]
+      properties:
+        principal_id: {type: string, format: uuid}
+        username: {type: string, minLength: 1}
+        status: {$ref: "#/components/schemas/AccountStatus"}
+        created_at: {type: string, format: date-time}
+    RegistrationCommand:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 1}
+        password: {type: string, minLength: 1, writeOnly: true}
+    RegistrationResult:
+      type: object
+      additionalProperties: false
+      required: [principal]
+      description: Directly loginable ACTIVE principal with no implicit project or capability.
+      properties:
+        principal: {$ref: "#/components/schemas/AccountPrincipal"}
+    LoginCommand:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 1}
+        password: {type: string, minLength: 1, writeOnly: true}
+    SessionCreated:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, principal, capability_revision]
+      properties:
+        access_token: {type: string, minLength: 1}
+        token_type: {type: string, const: Bearer}
+        principal: {$ref: "#/components/schemas/AccountPrincipal"}
+        capability_revision: {type: integer, minimum: 0}
+    AvailableScope:
+      type: object
+      additionalProperties: false
+      required: [project_id, region_codes, project_wide, capabilities]
+      properties:
+        project_id: {type: string, minLength: 1}
+        region_codes:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        project_wide: {type: boolean}
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+          description: Authoritative approved capability keys for this exact project; legacy roles are compatibility projections only.
+    SessionBootstrap:
+      type: object
+      additionalProperties: false
+      required: [principal, available_scopes, capability_revision]
+      properties:
+        principal: {$ref: "#/components/schemas/AccountPrincipal"}
+        available_scopes:
+          type: array
+          items: {$ref: "#/components/schemas/AvailableScope"}
+        capability_revision: {type: integer, minimum: 0}
+    MembershipRequestCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: [string, "null"]}
+    CapabilityRequestCreate:
+      type: object
+      additionalProperties: false
+      required: [capability_keys]
+      properties:
+        capability_keys:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        reason: {type: [string, "null"]}
+    AccessDecisionCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: [string, "null"]}
+    MembershipRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, project_id, requester_id, status, created_at, updated_at, revision]
+      properties:
+        request_id: {type: string, format: uuid}
+        project_id: {type: string, minLength: 1}
+        requester_id: {type: string, minLength: 1}
+        status: {$ref: "#/components/schemas/AccessRequestStatus"}
+        reason: {type: [string, "null"]}
+        decided_by: {type: [string, "null"]}
+        decision_reason: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        revision: {type: integer, minimum: 1}
+    CapabilityRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [request_id, project_id, requester_id, capability_keys, status, created_at, updated_at, revision]
+      properties:
+        request_id: {type: string, format: uuid}
+        project_id: {type: string, minLength: 1}
+        requester_id: {type: string, minLength: 1}
+        capability_keys:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+        status: {$ref: "#/components/schemas/AccessRequestStatus"}
+        reason: {type: [string, "null"]}
+        decided_by: {type: [string, "null"]}
+        decision_reason: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        revision: {type: integer, minimum: 1}
+    MembershipRequestList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/MembershipRequest"}
+    CapabilityRequestList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/CapabilityRequest"}
+    AccessAuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [event_id, scope_kind, action, resource_type, resource_id, request_id, outcome, safe_details, occurred_at]
+      properties:
+        event_id: {type: string, format: uuid}
+        scope_kind: {type: string, enum: [PLATFORM, PROJECT]}
+        project_id: {type: [string, "null"]}
+        actor_id: {type: [string, "null"]}
+        action: {type: string, minLength: 1}
+        resource_type: {type: string, minLength: 1}
+        resource_id: {type: string, minLength: 1}
+        request_id: {type: string, minLength: 1}
+        outcome: {type: string, enum: [SUCCEEDED, DENIED, FAILED]}
+        safe_details:
+          type: object
+          additionalProperties: true
+          description: Allowlisted metadata only; credentials, tokens, and free-form reasons are absent.
+        occurred_at: {type: string, format: date-time}
+    AccessAuditEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AccessAuditEvent"}
     ProjectRole:
       type: string
       enum: [uploader, annotator, reviewer, publisher, admin]

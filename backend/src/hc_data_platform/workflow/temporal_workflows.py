@@ -18,11 +18,20 @@ from temporalio.exceptions import (
 from temporalio.workflow import ActivityCancellationType
 
 with workflow.unsafe.imports_passed_through():
+    from hc_data_platform.annotation.models import AnnotationSubmission
+    from hc_data_platform.annotation.validation import (
+        TagValidationIssue,
+        revision_content_hash,
+        validate_tag_revision,
+    )
     from hc_data_platform.quality.models import QualityStatus
     from hc_data_platform.verification.models import VerificationStatus
 
     from .models import (
         AlignmentActivityOutput,
+        AnnotationReviewPreparationWorkflowInput,
+        AutomaticAnnotationActivityInput,
+        AutomaticAnnotationActivityOutput,
         CatalogCommitActivityInput,
         CatalogCommitActivityOutput,
         CatalogReconciliationActivityInput,
@@ -35,6 +44,7 @@ with workflow.unsafe.imports_passed_through():
         IngestRolloutWorkflowInput,
         JobRecord,
         JobStatus,
+        ManifestActivityOutput,
         PreviewActivityInput,
         PreviewActivityOutput,
         PreviewWorkflowInput,
@@ -50,14 +60,17 @@ with workflow.unsafe.imports_passed_through():
     )
     from .names import (
         ALIGN_FRAGMENT_ACTIVITY,
+        ANNOTATION_REVIEW_PREPARATION_WORKFLOW,
         CATALOG_RECONCILIATION_WORKFLOW,
         COMMIT_FRAGMENT_ACTIVITY,
+        CREATE_ANNOTATION_TASK_ACTIVITY,
         CREATE_PREVIEW_ACTIVITY,
         DATASET_WRITER_WORKFLOW,
         EVALUATE_QUALITY_ACTIVITY,
         EXPORT_DATASET_ACTIVITY,
         EXPORT_WORKFLOW,
         INGEST_ROLLOUT_WORKFLOW,
+        PARSE_MANIFEST_ACTIVITY,
         PREVIEW_WORKFLOW,
         PUBLISH_DATASET_ACTIVITY,
         PUBLISH_DATASET_WORKFLOW,
@@ -222,10 +235,26 @@ class IngestRolloutWorkflow(_JobLifecycle):
             resource_id=request.rollout_id,
         )
         try:
+            self._stage("manifest")
+            parsed = await _execute_activity(
+                PARSE_MANIFEST_ACTIVITY,
+                request.manifest,
+                ManifestActivityOutput,
+                STANDARD_ACTIVITY,
+            )
+            manifest = parsed.preflight.manifest
             self._stage("verification")
+            verification_request = request.verification.model_copy(
+                update={
+                    "required_topics": frozenset(manifest.expected_topics),
+                    "known_optional_topics": frozenset(
+                        set(manifest.actual_topics) - set(manifest.expected_topics)
+                    ),
+                }
+            )
             verified = await _execute_activity(
                 VERIFY_RAW_ACTIVITY,
-                request.verification,
+                verification_request,
                 VerificationActivityOutput,
                 STANDARD_ACTIVITY,
             )
@@ -233,6 +262,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 return self._finish(
                     JobStatus.QUALITY_REJECTED,
                     result={
+                        "manifest": parsed.preflight.model_dump(mode="json"),
                         "verification": verified.report.model_dump(mode="json"),
                         "raw_preserved": True,
                         "training_eligible": False,
@@ -248,8 +278,11 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 STANDARD_ACTIVITY,
             )
             common_result = {
+                "manifest": parsed.preflight.model_dump(mode="json"),
                 "verification": verified.report.model_dump(mode="json"),
                 "quality": quality.report.model_dump(mode="json"),
+                "quality_decision_source": request.quality.decision_source,
+                "automatic_qc_run_id": request.automatic_qc_run_id,
                 "raw_preserved": True,
             }
             if quality.report.status is QualityStatus.REJECT:
@@ -306,6 +339,46 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     result={**common_result, "writer_job": writer.model_dump(mode="json")},
                     error_code=writer.error_code or "DATASET_WRITER_FAILED",
                 )
+            derived_payload = (writer.result or {}).get("derived_ready")
+            if not isinstance(derived_payload, dict):
+                raise ApplicationError(
+                    "dataset writer did not return an immutable DerivedReady event",
+                    type="VALIDATION_FAILED",
+                    non_retryable=True,
+                )
+            derived = CatalogCommitActivityOutput.model_validate(
+                {
+                    "version": (writer.result or {}).get("dataset_version"),
+                    "derived_ready": derived_payload,
+                }
+            ).derived_ready
+            if (
+                derived.project_id != request.project_id
+                or derived.dataset_id != request.dataset_id
+                or derived.rollout_id != request.rollout_id
+            ):
+                raise ApplicationError(
+                    "DerivedReady lineage does not match ingest workflow input",
+                    type="VALIDATION_FAILED",
+                    non_retryable=True,
+                )
+            self._stage("annotation_task")
+            annotation_task = await _execute_activity(
+                CREATE_ANNOTATION_TASK_ACTIVITY,
+                AutomaticAnnotationActivityInput(
+                    project_id=request.project_id,
+                    region_code=request.region_code,
+                    rollout_id=request.rollout_id,
+                    dataset_id=request.dataset_id,
+                    dataset_version=derived.dataset_version,
+                    lance_version=derived.lance_version,
+                    dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
+                    base_step_count=derived.step_count,
+                    source_workflow_id=workflow.info().workflow_id,
+                ),
+                AutomaticAnnotationActivityOutput,
+                STANDARD_ACTIVITY,
+            )
             return self._finish(
                 JobStatus.SUCCEEDED,
                 result={
@@ -313,13 +386,14 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "alignment": aligned.staged_manifest.model_dump(mode="json"),
                     "derived": (writer.result or {}).get("derived_ready"),
                     "dataset_version": (writer.result or {}).get("dataset_version"),
+                    "annotation_task": annotation_task.model_dump(mode="json"),
                     "training_eligible": True,
                 },
             )
         except (asyncio.CancelledError, CancelledError):
             self._cancelled()
             raise
-        except (ActivityError, ChildWorkflowError) as exc:
+        except (ActivityError, ChildWorkflowError, ApplicationError) as exc:
             return self._technical_failure(exc)
 
     @workflow.query(name="job")
@@ -544,6 +618,72 @@ class PublishReconciliationWorkflow(_JobLifecycle):
         return self._record()
 
 
+@workflow.defn(name=ANNOTATION_REVIEW_PREPARATION_WORKFLOW)
+class AnnotationReviewPreparationWorkflow(_JobLifecycle):
+    """Generate an immutable reviewable version from fully pinned annotation input."""
+
+    @workflow.run
+    async def run(self, request: AnnotationReviewPreparationWorkflowInput) -> JobRecord:
+        revision = request.revision
+        self._begin(
+            job_type=ANNOTATION_REVIEW_PREPARATION_WORKFLOW,
+            project_id=request.project_id,
+            resource_id=f"{revision.task_id}/{revision.revision}",
+        )
+        self._stage("review_checks")
+        try:
+            checks = validate_tag_revision(
+                schema=request.tag_schema,
+                base_step_count=request.base_step_count,
+                tags=revision.tags,
+                operations=request.cumulative_operations,
+            )
+        except TagValidationIssue as exc:
+            raise ApplicationError(
+                exc.message,
+                type="VALIDATION_FAILED",
+                non_retryable=True,
+            ) from exc
+        expected_hash = revision_content_hash(
+            base_lance_version=revision.base_lance_version,
+            tag_schema_id=revision.tag_schema_id,
+            tag_schema_version=revision.tag_schema_version,
+            tags=revision.tags,
+            operations=request.cumulative_operations,
+        )
+        if revision.content_hash != expected_hash:
+            raise ApplicationError(
+                "annotation revision content hash does not match the workflow snapshot",
+                type="VALIDATION_FAILED",
+                non_retryable=True,
+            )
+        # Normalize at the sandbox module boundary because replay may load the same
+        # frozen Pydantic model under distinct module identities.
+        submission = AnnotationSubmission.model_validate(
+            {
+                "submission_id": workflow.info().workflow_id,
+                "task_id": revision.task_id,
+                "revision": revision.revision,
+                "submitted_by": request.submitted_by,
+                "base_lance_version": revision.base_lance_version,
+                "tag_schema_id": request.tag_schema.schema_id,
+                "tag_schema_version": request.tag_schema.version,
+                "tag_schema_hash": request.tag_schema.content_hash,
+                "revision_content_hash": revision.content_hash,
+                "checks": [check.model_dump(mode="json") for check in checks],
+                "created_at": workflow.now(),
+            }
+        )
+        return self._finish(
+            JobStatus.SUCCEEDED,
+            result={"submission": submission.model_dump(mode="json")},
+        )
+
+    @workflow.query(name="job")
+    def job(self) -> JobRecord:
+        return self._record()
+
+
 ALL_WORKFLOWS = (
     IngestRolloutWorkflow,
     DatasetWriterWorkflow,
@@ -552,4 +692,5 @@ ALL_WORKFLOWS = (
     ExportWorkflow,
     CatalogReconciliationWorkflow,
     PublishReconciliationWorkflow,
+    AnnotationReviewPreparationWorkflow,
 )

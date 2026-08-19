@@ -7,6 +7,15 @@ import type { CursorPageVm, DatasetListItemVm } from '../../../features/datasets
 import { DataTable, StatusTag } from '../../../shared/ui';
 import styles from '../styles.module.css';
 
+const datasetActivityFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
 function actionAllowed(item: DatasetListItemVm, action: string): boolean {
   return item.allowedActions.some((candidate) => candidate.action === action && candidate.allowed);
 }
@@ -31,6 +40,7 @@ export function DatasetTable({
       {
         id: 'identity',
         header: '数据集',
+        size: 155,
         cell: ({ row }) => (
           <Button
             type="link"
@@ -48,6 +58,7 @@ export function DatasetTable({
       {
         id: 'currentVersion',
         header: '当前 Ready',
+        size: 165,
         cell: ({ row }) => {
           const current = row.original.currentVersion;
           if (!current) {
@@ -67,34 +78,50 @@ export function DatasetTable({
           );
         },
       },
-      { id: 'episodes', header: 'Episodes', cell: ({ row }) => row.original.episodeCount },
+      {
+        id: 'episodes',
+        header: 'Episodes',
+        size: 70,
+        meta: { responsive: ['md'] },
+        cell: ({ row }) => row.original.episodeCount,
+      },
       {
         id: 'pendingReview',
         header: '待复核',
+        size: 70,
+        meta: { responsive: ['lg'] },
         cell: ({ row }) => row.original.pendingReviewVersionCount,
       },
       {
         id: 'returned',
         header: '已退回',
+        size: 70,
+        meta: { responsive: ['lg'] },
         cell: ({ row }) => row.original.returnedVersionCount,
       },
       {
         id: 'drafts',
         header: '可处理草稿',
+        size: 86,
+        meta: { responsive: ['lg'] },
         cell: ({ row }) => row.original.actionableDraftCount,
       },
       {
         id: 'activityAt',
         header: '活动时间',
+        size: 170,
+        meta: { responsive: ['xl'] },
         cell: ({ row }) => (
           <time dateTime={row.original.datasetActivityAt}>
-            {new Date(row.original.datasetActivityAt).toLocaleString()}
+            {datasetActivityFormatter.format(new Date(row.original.datasetActivityAt))}
           </time>
         ),
       },
       {
         id: 'actions',
         header: '操作',
+        size: 165,
+        meta: { responsive: ['lg'] },
         cell: ({ row }) => (
           <Space size="small" wrap>
             <Button

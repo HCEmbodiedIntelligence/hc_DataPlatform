@@ -53,6 +53,44 @@ class PostgresPublishedManifestRepository:
                         title="Dataset version is immutable",
                         detail="A different manifest is already published under this version.",
                     )
+                cursor.execute(
+                    """
+                    SELECT to_regprocedure(
+                        'publishing.materialize_rollout_publication_lineage(text,text,text)'
+                    ) IS NOT NULL
+                    """
+                )
+                availability = cursor.fetchone()
+                if availability is None or not bool(availability[0]):
+                    raise problem(
+                        status=503,
+                        code="PUBLICATION_REGION_LINEAGE_UNAVAILABLE",
+                        title="Publication region lineage unavailable",
+                        detail="The rollout publication lineage migration is not available.",
+                        retryable=True,
+                    )
+                cursor.execute(
+                    """
+                    SELECT expected_count, resolved_count
+                    FROM publishing.materialize_rollout_publication_lineage(%s, %s, %s)
+                    """,
+                    (manifest.project_id, manifest.dataset_id, manifest.dataset_version),
+                )
+                lineage_counts = cursor.fetchone()
+                expected = len(manifest.rollouts)
+                if (
+                    lineage_counts is None
+                    or int(lineage_counts[0]) != expected
+                    or int(lineage_counts[1]) != expected
+                ):
+                    raise problem(
+                        status=409,
+                        code="PUBLICATION_REGION_LINEAGE_UNRESOLVED",
+                        title="Publication region lineage unresolved",
+                        detail=(
+                            "Every published rollout must resolve to one exact persisted region."
+                        ),
+                    )
             connection.commit()
             return existing
         except Exception:

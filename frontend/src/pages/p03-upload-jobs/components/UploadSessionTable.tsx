@@ -168,13 +168,14 @@ export function UploadSessionTable(props: {
     () => [
       {
         id: 'identity',
-        size: 160,
+        size: 145,
         header: '任务 ID',
         cell: ({ row }) => <UploadIdentityCell session={row.original} onFocus={onFocus} />,
       },
       {
         id: 'target',
-        size: 150,
+        size: 130,
+        meta: { responsive: ['sm'] },
         header: '数据集 / 数据源',
         cell: ({ row }) => (
           <Space orientation="vertical" size={0}>
@@ -185,43 +186,50 @@ export function UploadSessionTable(props: {
       },
       {
         id: 'format',
-        size: 90,
+        size: 80,
+        meta: { responsive: ['xl'] },
         header: '源格式',
         cell: ({ row }) => row.original.sourceFormat,
       },
       {
         id: 'objects',
-        size: 65,
+        size: 56,
+        meta: { responsive: ['lg'] },
         header: '文件数',
         cell: ({ row }) => row.original.progress.totalObjects,
       },
       {
         id: 'bytes',
-        size: 80,
+        size: 76,
+        meta: { responsive: ['md'] },
         header: '总大小',
         cell: ({ row }) => byteSize(row.original.progress.expectedBytes),
       },
       {
         id: 'progress',
-        size: 125,
+        size: 105,
+        meta: { responsive: ['sm'] },
         header: '进度',
         cell: ({ row }) => <UploadProgressCell session={row.original} />,
       },
       {
         id: 'throughput',
         size: 90,
+        meta: { responsive: ['xxl'] },
         header: '实时速度',
         cell: ({ row }) => (row.original.progress.throughputBytesPerSecond ? `${byteSize(row.original.progress.throughputBytesPerSecond)}/s` : '—'),
       },
       {
         id: 'eta',
-        size: 80,
+        size: 75,
+        meta: { responsive: ['lg'] },
         header: '预计剩余',
         cell: ({ row }) => duration(row.original.progress.estimatedRemainingSeconds),
       },
       {
         id: 'status',
-        size: 135,
+        size: 120,
+        meta: { responsive: ['md'] },
         header: '任务 / 校验状态',
         cell: ({ row }) => {
           const lifecycle = enumText(row.original.lifecycleStatus);
@@ -244,19 +252,22 @@ export function UploadSessionTable(props: {
       },
       {
         id: 'job',
-        size: 85,
+        size: 75,
+        meta: { responsive: ['xxl'] },
         header: '异步任务',
         cell: ({ row }) => (row.original.activeJobIds[0] ? <UploadJobStatus jobId={row.original.activeJobIds[0]} /> : '—'),
       },
       {
         id: 'creator',
-        size: 90,
+        size: 85,
+        meta: { responsive: ['xxl'] },
         header: '创建人',
         cell: ({ row }) => row.original.createdBy.displayName,
       },
       {
         id: 'actions',
-        size: 150,
+        size: 120,
+        meta: { responsive: ['lg'] },
         header: '操作',
         cell: ({ row }) => (
           <Space size={2} wrap>

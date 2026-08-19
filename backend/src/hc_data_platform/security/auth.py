@@ -9,6 +9,13 @@ import jwt
 
 from hc_data_platform.core.errors import problem
 
+from .capabilities import (
+    PERMISSION_CAPABILITIES,
+    capabilities_for_roles,
+    capabilities_from_legacy_roles,
+    legacy_roles_from_capabilities,
+)
+
 
 class Role(str, Enum):
     UPLOADER = "uploader"
@@ -29,14 +36,6 @@ class Permission(str, Enum):
 
 ALLOWED_ROLES = frozenset(role.value for role in Role)
 ALL_PERMISSIONS = frozenset(permission.value for permission in Permission)
-ROLE_PERMISSIONS: Mapping[str, frozenset[str]] = {
-    Role.UPLOADER.value: frozenset({Permission.READ.value, Permission.UPLOAD.value}),
-    Role.ANNOTATOR.value: frozenset({Permission.READ.value, Permission.ANNOTATE.value}),
-    Role.REVIEWER.value: frozenset({Permission.READ.value, Permission.REVIEW.value}),
-    Role.PUBLISHER.value: frozenset({Permission.READ.value, Permission.PUBLISH.value}),
-    Role.ADMIN.value: ALL_PERMISSIONS,
-}
-
 # PyJWT supports more algorithms than the platform should accept from configuration. This
 # list deliberately contains only algorithms that authenticate a signature.
 SIGNATURE_ALGORITHMS = frozenset(
@@ -84,6 +83,10 @@ class AuthContext:
     region_codes: frozenset[str]
     roles: frozenset[str]
     service_identity: bool = False
+    capabilities: frozenset[str] = frozenset()
+    capability_revision: int = 0
+    scope_pairs: frozenset[tuple[str, str | None]] = frozenset()
+    scoped_capabilities: frozenset[tuple[str, str]] = frozenset()
 
     def __post_init__(self) -> None:
         if not self.subject_id:
@@ -93,17 +96,59 @@ class AuthContext:
         unknown = self.roles - ALLOWED_ROLES
         if unknown:
             raise ValueError(f"unknown roles: {', '.join(sorted(unknown))}")
+        if self.capability_revision < 0:
+            raise ValueError("capability_revision must not be negative")
+        if any(not project_id or region_code == "" for project_id, region_code in self.scope_pairs):
+            raise ValueError("scope pairs must contain a project and an optional non-empty region")
+        if any(
+            not project_id or not capability for project_id, capability in self.scoped_capabilities
+        ):
+            raise ValueError("scoped capabilities must contain non-empty values")
+        pair_projects = {project_id for project_id, _ in self.scope_pairs}
+        pair_regions = {
+            region_code for _, region_code in self.scope_pairs if region_code is not None
+        }
+        if not pair_projects.issubset(self.project_ids):
+            raise ValueError("scope-pair projects must be present in project_ids")
+        if not pair_regions.issubset(self.region_codes):
+            raise ValueError("scope-pair regions must be present in region_codes")
+        if any(project_id not in self.project_ids for project_id, _ in self.scoped_capabilities):
+            raise ValueError("scoped capability projects must be present in project_ids")
 
     @property
     def permissions(self) -> frozenset[str]:
-        granted: set[str] = set()
-        for role in self.roles:
-            granted.update(ROLE_PERMISSIONS.get(role, ()))
-        return frozenset(granted)
+        effective = self.effective_capabilities()
+        return frozenset(
+            permission
+            for permission, accepted in PERMISSION_CAPABILITIES.items()
+            if effective.intersection(accepted)
+        )
 
-    def require_role(self, *allowed: str | Role) -> None:
+    def effective_capabilities(self, project_id: str | None = None) -> frozenset[str]:
+        """Resolve approved keys plus the one compatibility projection for legacy JWTs."""
+
+        scoped = (
+            frozenset(
+                capability
+                for project, capability in self.scoped_capabilities
+                if project == project_id
+            )
+            if project_id is not None
+            else frozenset()
+        )
+        return self.capabilities | scoped | capabilities_from_legacy_roles(self.roles)
+
+    def legacy_roles(self, project_id: str | None = None) -> frozenset[str]:
+        return legacy_roles_from_capabilities(self.effective_capabilities(project_id))
+
+    def require_role(self, *allowed: str | Role, project_id: str | None = None) -> None:
         normalized = frozenset(role.value if isinstance(role, Role) else role for role in allowed)
-        if not normalized or not self.roles.intersection(normalized):
+        required_capabilities = capabilities_for_roles(normalized)
+        if (
+            not normalized
+            or not required_capabilities
+            or not self.effective_capabilities(project_id).intersection(required_capabilities)
+        ):
             raise problem(
                 status=403,
                 code="ROLE_REQUIRED",
@@ -111,14 +156,31 @@ class AuthContext:
                 detail=f"One of these roles is required: {', '.join(sorted(normalized))}.",
             )
 
-    def require_permission(self, permission: str | Permission) -> None:
+    def require_permission(
+        self, permission: str | Permission, project_id: str | None = None
+    ) -> None:
         normalized = permission.value if isinstance(permission, Permission) else permission
-        if normalized not in ALL_PERMISSIONS or normalized not in self.permissions:
+        accepted = PERMISSION_CAPABILITIES.get(normalized, frozenset())
+        if normalized not in ALL_PERMISSIONS or not self.effective_capabilities(
+            project_id
+        ).intersection(accepted):
             raise problem(
                 status=403,
                 code="PERMISSION_REQUIRED",
                 title="Insufficient permission",
                 detail=f"The {normalized!r} permission is required.",
+            )
+
+    def has_capability(self, capability: str, project_id: str | None = None) -> bool:
+        return capability in self.effective_capabilities(project_id)
+
+    def require_capability(self, capability: str, project_id: str | None = None) -> None:
+        if not capability or not self.has_capability(capability, project_id):
+            raise problem(
+                status=403,
+                code="CAPABILITY_REQUIRED",
+                title="Insufficient capability",
+                detail="The current project scope does not grant the required capability.",
             )
 
     @classmethod
@@ -138,6 +200,11 @@ class AuthContext:
             region_codes=frozenset(region_codes),
             roles=frozenset(role.value if isinstance(role, Role) else role for role in roles),
             service_identity=True,
+            scope_pairs=frozenset(
+                (project_id, region_code)
+                for project_id in project_ids
+                for region_code in (tuple(region_codes) or (None,))
+            ),
         )
 
 
@@ -282,4 +349,18 @@ class JwtVerifier:
             region_codes=_claim_values(claims, "region_codes"),
             roles=roles,
             service_identity=service_identity,
+            capabilities=_claim_values(claims, "capabilities"),
+            capability_revision=_non_negative_int_claim(claims, "capability_revision"),
         )
+
+
+def _non_negative_int_claim(claims: Mapping[str, Any], name: str) -> int:
+    raw = claims.get(name, 0)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        raise problem(
+            status=401,
+            code="INVALID_ACCESS_TOKEN",
+            title="Invalid access token",
+            detail=f"The {name} claim must be a non-negative integer.",
+        )
+    return int(raw)

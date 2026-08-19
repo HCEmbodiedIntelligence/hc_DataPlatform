@@ -6,12 +6,21 @@ import {
   type ColumnFiltersState,
   type OnChangeFn,
   type Row,
+  type RowData,
   type RowSelectionState,
   type SortingState,
 } from '@tanstack/react-table';
 import { Table, type TableProps } from 'antd';
 import { useMemo, type ReactNode } from 'react';
 import { validateDataTableRows } from './row-contract';
+
+type ResponsiveBreakpoint = 'xxl' | 'xl' | 'lg' | 'md' | 'sm' | 'xs';
+
+declare module '@tanstack/react-table' {
+  interface ColumnMeta<TData extends RowData, TValue> {
+    responsive?: readonly ResponsiveBreakpoint[];
+  }
+}
 
 export type DataTableState = 'ready' | 'loading' | 'empty' | 'error';
 
@@ -110,6 +119,9 @@ export function DataTable<TData>({
       return {
         key: column.id,
         ...(column.columnDef.size === undefined ? {} : { width: column.columnDef.size }),
+        ...(column.columnDef.meta?.responsive
+          ? { responsive: [...column.columnDef.meta.responsive] }
+          : {}),
         title:
           header === undefined || header.isPlaceholder ? null : sortable ? (
             <button

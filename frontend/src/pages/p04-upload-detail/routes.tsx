@@ -1,6 +1,6 @@
 import type { RouteObject } from 'react-router-dom';
 import { registerPageRoutes } from '../../shared/routing/route-registry';
-import UploadDetailPage from './page';
+import FormalUploadDetailPage from './formal-page';
 
 type IngestRouteObject = RouteObject & {
   readonly navigationOwnerGroupId: 'ingest';
@@ -11,7 +11,7 @@ type IngestRouteObject = RouteObject & {
 
 const pageRoutes: readonly IngestRouteObject[] = [{
   path: '/ingest/uploads/:uploadId',
-  element: <UploadDetailPage />,
+  element: <FormalUploadDetailPage />,
   navigationOwnerGroupId: 'ingest',
   navigationOwnerPageId: 'P03',
   requiredCapabilities: ['upload.read'],

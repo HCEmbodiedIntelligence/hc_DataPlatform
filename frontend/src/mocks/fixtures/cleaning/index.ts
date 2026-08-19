@@ -1,7 +1,9 @@
+import { fixtureScope } from '../common/scope';
+
 export const cleaningFixtureScope = {
-  organization_id: 'org_fx_mc_01',
-  project_id: 'prj_fx_mc_01',
-  region_code: 'cn-shanghai-1',
+  organization_id: fixtureScope.organizationId,
+  project_id: fixtureScope.projectId!,
+  region_code: fixtureScope.regionCode!,
 } as const;
 
 export const cleaningFixtureIds = {

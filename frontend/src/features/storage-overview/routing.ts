@@ -1,6 +1,6 @@
 import type { StorageClass, StorageObjectRole } from '../../entities/storage-inventory';
 
-export type StorageOverviewTab = 'overview' | 'objects' | 'multipart' | 'cost';
+export type StorageOverviewTab = 'overview' | 'objects' | 'multipart';
 export type StorageOverviewSearch = Readonly<{
   tab: StorageOverviewTab;
   objectRole?: Exclude<StorageObjectRole, 'UNKNOWN'>;

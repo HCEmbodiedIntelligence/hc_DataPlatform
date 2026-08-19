@@ -13,9 +13,17 @@ from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.models import (
     CollectionJobStatus,
     CompletedPart,
+    FailedPartV1,
+    IdempotencyOutcome,
+    IngestTriggerStatus,
+    ManifestCameraV1,
+    ManifestFileV1,
+    ManifestTopicV1,
     RolloutManifestV1,
     RolloutStatus,
     UploadObjectStatus,
+    UploadPartStatus,
+    UploadSourceType,
     UploadStatus,
     manifest_object_key,
     raw_object_key,
@@ -39,20 +47,37 @@ def manifest_for(
     crc64: int | None = None,
 ) -> RolloutManifestV1:
     start = datetime(2026, 8, 14, 8, tzinfo=timezone.utc)
+    resolved_size = len(body) if file_size is None else file_size
+    resolved_sha = hashlib.sha256(body).hexdigest() if sha256 is None else sha256
+    resolved_crc = crc64_ecma(body) if crc64 is None else crc64
     return RolloutManifestV1(
         project_id="p1",
         task_id="t1",
         collection_job_id="j1",
         rollout_id=rollout_id,
+        collection_session_id="session1",
+        recording_request_id=f"request-{rollout_id}",
+        data_package_id=f"package-{rollout_id}",
+        pico_instance_id="pico1",
         sequence_no=1,
         robot_id="robot1",
         start_time=start,
         end_time=start + timedelta(seconds=1),
-        expected_topics=["camera"],
-        actual_topics=["camera"],
-        file_size=len(body) if file_size is None else file_size,
-        sha256=hashlib.sha256(body).hexdigest() if sha256 is None else sha256,
-        crc64=crc64_ecma(body) if crc64 is None else crc64,
+        cameras=[ManifestCameraV1(camera_id="front", topic="/camera")],
+        topics=[ManifestTopicV1(name="/camera", required=True)],
+        expected_topics=["/camera"],
+        actual_topics=["/camera"],
+        files=[
+            ManifestFileV1(
+                path="recording.mcap",
+                size=resolved_size,
+                sha256=resolved_sha,
+                crc64=resolved_crc,
+            )
+        ],
+        file_size=resolved_size,
+        sha256=resolved_sha,
+        crc64=resolved_crc,
         compression="zstd",
         recorder_version="1.0",
     )
@@ -98,6 +123,10 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     replay = service.commit_manifest(session_id=session.session_id, manifest=manifest)
 
     assert event == replay
+    assert event.workflow is not None
+    assert event.workflow.status is IngestTriggerStatus.PENDING
+    assert event.workflow.workflow_id == "ingest-rollout:v1:p1:cn-hz%2Fr1"
+    assert service.get_session(session.session_id).workflow == event.workflow
     assert service.get_session(session.session_id).status is UploadStatus.RAW_COMMITTED
     upload_object = persistence.get_upload_object(session.session_id)
     job = persistence.get_collection_job(manifest.project_id, manifest.collection_job_id)
@@ -139,6 +168,37 @@ def test_retry_reconciles_manifest_marker_after_persistence_crash() -> None:
 
     recovered = service.commit_manifest(session_id=session.session_id, manifest=manifest)
     assert recovered.manifest_key == marker_key
+    assert service.get_session(session.session_id).status is UploadStatus.RAW_COMMITTED
+
+
+def test_retry_reconciles_committed_event_after_status_update_crash() -> None:
+    class CrashAfterEventPersistence(InMemoryIngestPersistence):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_status_update = True
+
+        def save_session(self, session: Any) -> None:
+            if session.status is UploadStatus.RAW_COMMITTED and self.fail_status_update:
+                self.fail_status_update = False
+                raise RuntimeError("simulated worker crash after committed event")
+            super().save_session(session)
+
+    body = b"event-recovery"
+    manifest = manifest_for(body)
+    storage = InMemoryObjectStorage()
+    persistence = CrashAfterEventPersistence()
+    service = UploadSessionService(storage, persistence)
+    session, parts = upload_parts(service, storage, manifest, body)
+    service.complete_upload(session.session_id, parts)
+
+    with pytest.raises(RuntimeError, match="after committed event"):
+        service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    assert persistence.get_committed(manifest.project_id, manifest.rollout_id) is None
+    assert persistence.get_workflow_trigger(session.session_id) is None
+    assert service.get_session(session.session_id).status is UploadStatus.MULTIPART_COMPLETED
+
+    recovered = service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    assert recovered.data_package_id == manifest.data_package_id
     assert service.get_session(session.session_id).status is UploadStatus.RAW_COMMITTED
 
 
@@ -195,6 +255,85 @@ def test_authorization_renewal_is_short_lived_and_does_not_accept_bytes() -> Non
     renewed = service.renew_part_authorizations(grant.session.session_id, [2])
     assert renewed[0].part_number == 2
     assert not hasattr(service, "upload_bytes")
+
+
+def test_authorized_object_reference_uses_canonical_key_and_is_idempotent() -> None:
+    body = b"already-in-object-storage"
+    manifest = manifest_for(body)
+    storage = InMemoryObjectStorage()
+    key = raw_object_key(manifest)
+    storage.objects[key] = body
+    service = UploadSessionService(storage)
+
+    with pytest.raises(ProblemException) as rejected:
+        service.create_upload(
+            manifest=manifest,
+            region_code="cn-hz",
+            idempotency_key="bad-reference",
+            object_storage_uri=f"memory://object/{key}?client-secret=forbidden",
+        )
+    assert_problem(rejected, "OBJECT_STORAGE_REFERENCE_INVALID")
+
+    grant = service.create_upload(
+        manifest=manifest,
+        region_code="cn-hz",
+        idempotency_key="object-reference",
+        object_storage_uri=f"memory://object/{key}",
+    )
+    assert grant.idempotency_outcome is IdempotencyOutcome.CREATED
+    assert grant.parts == []
+    assert grant.session.source_type is UploadSourceType.OBJECT_STORAGE_REFERENCE
+    assert grant.session.multipart_upload_id is None
+    assert grant.session.status is UploadStatus.MULTIPART_COMPLETED
+    discovery = service.get_manifest_preflight(grant.session.session_id)
+    assert discovery.identifiers.data_package_id == manifest.data_package_id
+    assert discovery.discovery.read_only is True
+
+    service.commit_manifest(session_id=grant.session.session_id, manifest=manifest)
+    replay = service.create_upload(
+        manifest=manifest,
+        region_code="cn-hz",
+        idempotency_key="object-reference-replay",
+        object_storage_uri=f"memory://object/{key}",
+    )
+    assert replay.idempotency_outcome is IdempotencyOutcome.ALREADY_COMMITTED
+    assert replay.session.session_id == grant.session.session_id
+    with pytest.raises(ProblemException) as source_switch:
+        service.create_upload(
+            manifest=manifest,
+            region_code="cn-hz",
+            idempotency_key="forbidden-source-switch",
+        )
+    assert_problem(source_switch, "UPLOAD_SOURCE_CONFLICT")
+
+
+def test_failed_part_retry_is_bounded_and_success_clears_failure() -> None:
+    body = b"retry-body"
+    manifest = manifest_for(body)
+    storage = InMemoryObjectStorage()
+    service = UploadSessionService(storage, max_part_retries=2)
+    session = service.create_session(
+        manifest=manifest,
+        region_code="cn-hz",
+        idempotency_key="retry-create",
+    )
+    service.renew_part_authorizations(session.session_id, [1])
+
+    retry = service.retry_failed_parts(
+        session.session_id,
+        [FailedPartV1(part_number=1, failure_code="NETWORK_INTERRUPTED")],
+    )
+    assert retry[0].part_number == 1
+    failed = service.list_parts(session.session_id)[0]
+    assert failed.status is UploadPartStatus.AUTHORIZED
+    assert failed.retry_count == 1
+    assert failed.failure_code == "NETWORK_INTERRUPTED"
+
+    storage.upload_part(session.multipart_upload_id, 1, body, key=session.object_key)
+    uploaded = service.list_parts(session.session_id)[0]
+    assert uploaded.status is UploadPartStatus.UPLOADED
+    assert uploaded.retry_count == 1
+    assert uploaded.failure_code is None
 
 
 def test_complete_rejects_unsorted_missing_and_wrong_etag_parts() -> None:
@@ -287,11 +426,18 @@ def test_same_rollout_and_hash_reuses_resource_different_hash_conflicts() -> Non
         idempotency_key="first",
     )
     retry = service.create_session(
-        manifest=first.model_copy(update={"expected_topics": ["corrected-metadata"]}),
+        manifest=first,
         region_code="cn-hz",
         idempotency_key="retry",
     )
     assert retry.session_id == original.session_id
+    with pytest.raises(ProblemException) as changed:
+        service.create_session(
+            manifest=first.model_copy(update={"expected_topics": ["/camera/corrected"]}),
+            region_code="cn-hz",
+            idempotency_key="changed-manifest",
+        )
+    assert_problem(changed, "MANIFEST_CHANGED")
     assert retry.multipart_upload_id == original.multipart_upload_id
 
     with pytest.raises(ProblemException) as captured:
@@ -301,6 +447,38 @@ def test_same_rollout_and_hash_reuses_resource_different_hash_conflicts() -> Non
             idempotency_key="different",
         )
     assert_problem(captured, "ROLLOUT_CONTENT_CONFLICT")
+
+
+def test_same_sha_in_distinct_business_packages_is_retained_separately() -> None:
+    body = b"shared-content"
+    first_manifest = manifest_for(body, rollout_id="r1")
+    second_manifest = first_manifest.model_copy(
+        update={
+            "rollout_id": "r2",
+            "recording_request_id": "request-r2",
+            "data_package_id": "package-r2",
+            "sequence_no": 2,
+        }
+    )
+    storage = InMemoryObjectStorage()
+    service = UploadSessionService(storage)
+
+    first = service.create_session(
+        manifest=first_manifest,
+        region_code="cn-hz",
+        idempotency_key="package-1",
+    )
+    second = service.create_session(
+        manifest=second_manifest,
+        region_code="cn-hz",
+        idempotency_key="package-2",
+    )
+
+    assert first.session_id != second.session_id
+    assert first.expected_sha256 == second.expected_sha256
+    assert first.object_key != second.object_key
+    assert "package=package-r1" in first.object_key
+    assert "package=package-r2" in second.object_key
 
 
 def test_concurrent_same_rollout_and_hash_returns_one_persisted_session() -> None:

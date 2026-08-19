@@ -30,6 +30,7 @@ export function DataSourceTable(props: {
       {
         id: 'identity',
         header: '数据源',
+        size: 175,
         cell: ({ row }) => (
           <span className={styles.identity}>
             <strong>{row.original.name}</strong>
@@ -40,11 +41,14 @@ export function DataSourceTable(props: {
       {
         id: 'sourceType',
         header: '连接器',
+        size: 110,
         cell: ({ row }) => label(row.original.sourceType),
       },
       {
         id: 'connectivity',
         header: '连接状态',
+        size: 110,
+        meta: { responsive: ['sm'] },
         cell: ({ row }) => {
           const value = row.original.connectivity.state;
           return (
@@ -60,12 +64,16 @@ export function DataSourceTable(props: {
       {
         id: 'credential',
         header: '凭据',
+        size: 160,
+        meta: { responsive: ['lg'] },
         cell: ({ row }) =>
           credentialDisplay(row.original.credential.maskedHint, row.original.credential.configured),
       },
       {
         id: 'lastUpload',
         header: '最近上传',
+        size: 190,
+        meta: { responsive: ['xl'] },
         cell: ({ row }) =>
           row.original.lastUpload ? (
             <time dateTime={row.original.lastUpload.completedAt}>
@@ -78,6 +86,8 @@ export function DataSourceTable(props: {
       {
         id: 'actions',
         header: '操作',
+        size: 72,
+        meta: { responsive: ['md'] },
         cell: ({ row }) => (
           <Button
             type="link"
