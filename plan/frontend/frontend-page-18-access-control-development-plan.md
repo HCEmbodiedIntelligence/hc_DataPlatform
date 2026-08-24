@@ -22,10 +22,7 @@
 
 ## API 需求
 
-- 合同状态：读取为 `Mock-backed draft`；消费页：P18；任何权限写入均为候选能力并默认不可用。
-- `GET /projects/{projectId}/access/bootstrap`：响应 `roleVersion, capabilityCatalogVersion, policyRevision, projectPolicyEtag, summary, allowedActions, blockedReasons, scope, requestId`。角色 capability 对照来自前端固定目录版本，不从成员记录推测。
-- `GET /projects/{projectId}/members`：请求 `q, status, roleId, sort, after | before, limit`；响应 `items, pageInfo, snapshotAt, scope, requestId`，成员含 principal、状态、角色版本、`etag, allowedActions, blockedReasons`。
-- 候选 `POST /projects/{projectId}/access-changes`：仅可请求已确认预检产生的 `preflight_token`，带项目策略 `If-Match` 与 `Idempotency-Key`；响应新策略 revision、受影响范围及 `requestId`，成功后前端必须重新评估授权。
+- 合同状态：当前 P18 客户端以 membership/capability request 为边界；任何权限写入均由服务端确认并携带幂等键。
 - 分页使用单个不透明游标；错误覆盖 400、401/403、404/410、409/412、422、429、离线、角色目录版本漂移与 `CONTRACT_MISMATCH`。
 - 邀请、改角色、禁用成员及其预检整体为 `draft / user-confirmation-required`；当前无已确认端到端写合同，所有写入口必须 `feature-unavailable`，不得仅凭 Mock 宣称权限生效。
 

@@ -72,10 +72,7 @@
  M frontend/src/app/theme/component-theme.ts
  M frontend/src/app/theme/global.css
  M frontend/src/app/theme/tokens.ts
- M frontend/src/features/dashboard/dashboard-charts.module.css
- M frontend/src/features/dashboard/dashboard-charts.tsx
  M frontend/src/features/storage-overview/metrics-contract.ts
- M frontend/src/features/storage-overview/routing.ts
  M frontend/src/mocks/fixtures/cleaning/index.ts
  M frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx
  D frontend/src/pages/p01-dashboard/components/DataLifecycleRail.module.css
@@ -84,19 +81,14 @@
  M frontend/src/pages/p01-dashboard/styles.module.css
  M frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx
  M frontend/src/pages/p02-data-sources/styles.module.css
- M frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx
  M frontend/src/pages/p03-upload-jobs/styles.module.css
  M frontend/src/pages/p05-datasets/components/DatasetTable.tsx
  M frontend/src/pages/p05-datasets/styles.module.css
- M frontend/src/pages/p12-storage-overview/components/StorageCostPanel.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageInventoryTable.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageMultipartTable.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx
  M frontend/src/pages/p12-storage-overview/page.tsx
- M frontend/src/pages/p12-storage-overview/query-codec.ts
  M frontend/src/pages/p12-storage-overview/styles.module.css
  M frontend/src/shared/ui/data/CursorPager.tsx
  M frontend/src/shared/ui/data/DataTable.tsx
@@ -144,13 +136,11 @@ rg -n -i --glob 'frontend/**' --glob '!frontend/dist/**' --glob '!frontend/node_
 
 | 层 | 当前证据 | 结论 |
 |---|---|---|
-| 能力目录 | `frontend/src/entities/capability.ts:67`、`frontend/src/features/access/capability-catalog.generated.ts:68`、`frontend/src/shared/api/generated/access.ts:907` 有 `storage.cost.read` | P12 费用能力仍是授权面的一部分 |
-| 页面组件 | `frontend/src/pages/p12-storage-overview/components/StorageCostPanel.tsx:3-19` | 完整费用面板仍在仓库；当前页面未挂载不等于已删除 |
+| 能力目录 | `frontend/src/entities/capability.ts:67`、`frontend/src/shared/api/generated/access.ts:907` 有 `storage.cost.read` | P12 费用能力仍是授权面的一部分 |
 | 领域类型 | `frontend/src/features/storage-overview/types.ts:10-16,33-41,101-112` | `StorageMoney`、`billedBytes`、`monthlyCost`、`StorageCostBreakdown` 仍存在 |
 | 格式化合同 | `frontend/src/features/storage-overview/metrics-contract.ts:4-9,19-31,68-84` | 仍定义 money/currency 口径和格式化函数 |
 | Wire schema | `frontend/src/features/storage-overview/api/schemas.ts:22-48,76-84,213-235` | 总览和独立费用响应仍携带账单事实 |
 | Adapter | `frontend/src/features/storage-overview/api/adapter.ts:9-10,45-56,73-80,203-215` | Wire 到领域层的费用适配链完整存在 |
-| Client/query | `frontend/src/features/storage-overview/api/client.ts:6-7,56-67`、`frontend/src/features/storage-overview/api/queries.ts:4,27-35`、`frontend/src/features/storage-overview/api/query-keys.ts:33` | 独立费用请求、hook 和 cache key 仍存在 |
 | Mock | `frontend/src/mocks/fixtures/storage-overview/index.ts:3-7,16-19,38,75-77`、`frontend/src/mocks/handlers/storage-overview.handlers.ts:3,77-82`、`frontend/src/mocks/scenarios/storage-overview.ts:34-45` | fixture、handler、allowed action 和场景能力仍支持费用链 |
 | 生成 storage 合同 | `frontend/src/shared/api/generated/storage.ts:8-31,143-166,664,700-717,760-764,966-980,2028-2070` | 总览描述、DTO、endpoint 和 operation 仍包含费用 |
 | 生命周期生成合同 | `frontend/src/shared/api/generated/storage.ts:1153-1160,1277,1284,1354,1505-1506,1542,1569`、`frontend/src/features/lifecycle/api/index.ts:69-74` | P13 草案也混入节省/金额确认，偏离本稿范围 |
@@ -700,7 +690,7 @@ DDL 必须包含租户/项目 RLS 或等价强制作用域、不可变审计/模
 rg -n -i '(cost|fee|billing|price|budget|currency|money|billed|savings|费用|成本|账单|计费|价格|预算|金额|币种|月费)' \
   frontend/src/pages/p12-storage-overview frontend/src/features/storage-overview \
   frontend/src/mocks/{fixtures,handlers,scenarios}/storage-overview* \
-  frontend/src/entities/capability.ts frontend/src/features/access/capability-catalog.generated.ts \
+  frontend/src/entities/capability.ts \
   frontend/src/shared/api/generated/{access,storage}.ts
 
 # P13 禁止动作门禁；预期 P13 领域/API/页面/合同无业务删除或 Multipart 终止动作

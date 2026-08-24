@@ -174,8 +174,6 @@ headless 合同，也不是新增另一个公共表格 API。
 
 - 必须使用受控 `fileList`，以 `beforeUpload={() => false}` 阻止自动请求；不得设置
   `action`，不得提供发请求的 `customRequest`，不得把组件状态当上传队列。
-- 真实传输继续由 `MultipartController`、`BrowserMultipartOssPort`、授权 Vault 和
-  recovery descriptor 完成；选择器不得直接 `fetch`、刷新 STS 或 complete/abort。
 - 文件只在当前交互的内存中存活，取消、完成和卸载时清空；不写 Query Cache、URL、
   localStorage、遥测、通知或截图。
 - STS、签名 URL、Bucket、Object Key、Multipart UploadId、Secret、完整对象定位和

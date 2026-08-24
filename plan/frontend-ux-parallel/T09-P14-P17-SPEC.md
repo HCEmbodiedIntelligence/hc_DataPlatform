@@ -69,10 +69,7 @@ P14–P17 应组成一套“机器人资产护照与数据契约”管理面，�
  M frontend/src/app/theme/component-theme.ts
  M frontend/src/app/theme/global.css
  M frontend/src/app/theme/tokens.ts
- M frontend/src/features/dashboard/dashboard-charts.module.css
- M frontend/src/features/dashboard/dashboard-charts.tsx
  M frontend/src/features/storage-overview/metrics-contract.ts
- M frontend/src/features/storage-overview/routing.ts
  M frontend/src/mocks/fixtures/cleaning/index.ts
  M frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx
  D frontend/src/pages/p01-dashboard/components/DataLifecycleRail.module.css
@@ -81,19 +78,14 @@ P14–P17 应组成一套“机器人资产护照与数据契约”管理面，�
  M frontend/src/pages/p01-dashboard/styles.module.css
  M frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx
  M frontend/src/pages/p02-data-sources/styles.module.css
- M frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx
  M frontend/src/pages/p03-upload-jobs/styles.module.css
  M frontend/src/pages/p05-datasets/components/DatasetTable.tsx
  M frontend/src/pages/p05-datasets/styles.module.css
- M frontend/src/pages/p12-storage-overview/components/StorageCostPanel.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageInventoryTable.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageMultipartTable.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx
  M frontend/src/pages/p12-storage-overview/page.tsx
- M frontend/src/pages/p12-storage-overview/query-codec.ts
  M frontend/src/shared/ui/data/CursorPager.tsx
  M frontend/src/shared/ui/data/DataTable.tsx
  M frontend/src/shared/ui/styles.css

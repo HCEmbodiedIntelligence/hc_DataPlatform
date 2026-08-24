@@ -1,7 +1,6 @@
 export * from './PageHeader';
 export * from './StandardTable';
 export * from './FilterBar';
-export * from './CursorPager';
 export * from './StatusBadge';
 export * from './EmptyState';
 export * from './SkeletonBlock';
@@ -10,7 +9,6 @@ export * from './ForbiddenPanel';
 export * from './ConfirmDialog';
 export * from './SideDrawer';
 export * from './DetailTabs';
-export * from './MetricCard';
 export * from './RelativeTime';
 export * from './CopyableId';
 

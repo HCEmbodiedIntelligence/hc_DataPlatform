@@ -48,11 +48,11 @@ CI 可使用 `pnpm install --frozen-lockfile`。
 
 - `src/shared/api`：`request<T>(opts)`、`DomainError` / `isDomainError`、`makeQueryKey`、`normalizeFilters`、`parseWire`、`makePageSchema` 与作用域 transport/resource 清理注册。
 - `src/shared/auth`：`useCapabilities()`、`useAllowedActions(actions)`；未知能力、快照失败和 scope 不匹配均 fail closed。
-- `src/shared/jobs`：`useAsyncJob(jobId)`、`jobQueryKey(jobId)`、`GlobalJobCenter`、任务中心 store；查询与 SSE 按 `resourceVersion` 去重。
+- `src/shared/jobs`：`useAsyncJob(jobId)`、`jobQueryKey(jobId)`、任务中心 store；查询与 SSE 按 `resourceVersion` 去重。
 - `src/shared/routing`：`registerPageRoutes(pageId, routes)`、`defineQueryCodec(cfg)`、`safeReturnTo(raw)`。
 - `src/shared/telemetry`：`track(event)` 与 `configureTelemetrySink`；敏感字段在 sink 之前脱敏。
 - `src/shared/lib`：int64 十进制品牌字符串、安全 bigint 运算、半开时间范围、casing 转换与只读 `UNKNOWN` 枚举投影。
-- `src/shared/ui`：`PageHeader`、`StandardTable`、`FilterBar`、`CursorPager`、`StatusBadge`、`EmptyState`、`SkeletonBlock`、`ErrorPanel`、`ForbiddenPanel`、`ConfirmDialog`、`SideDrawer`、`DetailTabs`、`MetricCard`、`RelativeTime`、`CopyableId`。
+- `src/shared/ui`：`PageHeader`、`StandardTable`、`FilterBar`、`StatusBadge`、`EmptyState`、`SkeletonBlock`、`ErrorPanel`、`ForbiddenPanel`、`ConfirmDialog`、`SideDrawer`、`DetailTabs`、`RelativeTime`、`CopyableId`。
 - `src/entities`：公共 `Scope`、`ActorSummary`、76 项 canonical capability、34/19 两个非管理员角色 ceiling、142 项 canonical audit event 与 `AsyncJob` 类型。
 
 ## Mock handler 与场景注册

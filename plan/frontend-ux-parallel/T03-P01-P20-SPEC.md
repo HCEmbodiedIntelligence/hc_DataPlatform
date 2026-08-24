@@ -59,10 +59,7 @@ P20 是独立的“采集任务”域，不是 P03 上传记录的换名版本�
  M frontend/src/app/theme/component-theme.ts
  M frontend/src/app/theme/global.css
  M frontend/src/app/theme/tokens.ts
- M frontend/src/features/dashboard/dashboard-charts.module.css
- M frontend/src/features/dashboard/dashboard-charts.tsx
  M frontend/src/features/storage-overview/metrics-contract.ts
- M frontend/src/features/storage-overview/routing.ts
  M frontend/src/mocks/fixtures/cleaning/index.ts
  M frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx
  D frontend/src/pages/p01-dashboard/components/DataLifecycleRail.module.css
@@ -71,19 +68,14 @@ P20 是独立的“采集任务”域，不是 P03 上传记录的换名版本�
  M frontend/src/pages/p01-dashboard/styles.module.css
  M frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx
  M frontend/src/pages/p02-data-sources/styles.module.css
- M frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx
  M frontend/src/pages/p03-upload-jobs/styles.module.css
  M frontend/src/pages/p05-datasets/components/DatasetTable.tsx
  M frontend/src/pages/p05-datasets/styles.module.css
- M frontend/src/pages/p12-storage-overview/components/StorageCostPanel.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageInventoryTable.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageMultipartTable.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx
  M frontend/src/pages/p12-storage-overview/page.tsx
- M frontend/src/pages/p12-storage-overview/query-codec.ts
  M frontend/src/shared/ui/data/CursorPager.tsx
  M frontend/src/shared/ui/data/DataTable.tsx
  M frontend/src/shared/ui/styles.css
@@ -169,16 +161,10 @@ P20 是独立的“采集任务”域，不是 P03 上传记录的换名版本�
 
 | 现状 | 证据 | 问题 | 改版要求 |
 |---|---|---|---|
-| 六张等宽 KPI | `DashboardSummaryStrip.tsx:66-129`、`styles.module.css:27-43` | 采集接收、存储、质量、Episode、人工问题、清洗等异质指标被赋予相同视觉权重；1280 时仍密集 | 移除“六等分首屏”；改为一张处置摘要 + 非等权链路轨道 + 领域卡片 |
 | 首屏优先展示资产容量 | `page.tsx:267-290` | 回答“占了多少空间”多于“哪里停住、我要做什么” | 我的待办与链路阻塞优先；容量下沉到 P12 或次级上下文 |
-| 存储图、存储历史与 Episode 漏斗占据主图 | `dashboard-charts.tsx:289-362` | P01 变成存储仪表盘；Mock 的 uploaded→validated→viewable 被画成单调漏斗但不是已批准链路 | 只对真正顺序、同一 cohort 的阶段画轨道；非同分母数值并列而不连成漏斗 |
-| 图标题写死“24 小时” | `dashboard-charts.tsx:264-287` | 页面可切 7d/30d，但标题产生错误承诺 | 所有标题、bucket 与 as-of 由当前 URL 时间条件生成 |
 | 待办显示内部枚举与原始时间 | `DashboardPendingList.tsx:11-56` | 业务用户难理解，时间缺少统一时区格式 | 使用产品文案映射、`Intl`、相对时间 + 完整时间；未知枚举显式降级 |
 | 待办声称可点击但目标“暂不可用” | `DashboardPendingList.tsx:59-67` | 没有可执行下一步，破坏“我的待办”核心价值 | 只有稳定深链就显示动作；没有目标时显示阻塞原因且不伪装为链接 |
 | 覆盖表直接显示 robot/task ID | `DashboardCoverageTable.tsx:8-27` | 技术标识取代业务名称，分母来源不明 | 等批准 collection plan 与目录后才设计；名称为主、ID 次级、明确分母 |
-| BigInt 直接转 Number | `DashboardSummaryStrip.tsx:22-33`、`dashboard-charts.tsx:107-109,211-225` | 大数可能丢精度或溢出，图与文字不一致 | 先以 BigInt 安全缩放到显示单位，再转图表安全数值；保留精确表格 |
-| 一个 Effect 创建三张图 | `dashboard-charts.tsx:101-260` | activity 更新会重建 storage/history；依赖过宽 | 按数据域拆图与 Effect，窄化依赖，独立失败和刷新 |
-| ECharts 四个动态 import 串行 await | `dashboard-charts.tsx:112-116` | 形成不必要的加载瀑布 | 独立 import 并行；保留路由/重型图表懒加载 |
 
 当前测试只找到 `AssetCapacityBoard.test.tsx` 对 Mock fixture 与零值的组件测试；未找到 P01 真实模式、权限降级、四域部分失败、URL 时间范围或深链 E2E。后续验收不能用“组件能渲染 fixture”替代这些路径。
 
@@ -555,8 +541,8 @@ P20 的核心对象是“采集任务”，它应包含：
 
 ### 6.1 当前可复用事实
 
-- P03 当前路径 `/ingest/uploads`，需要 `upload.read`（`frontend/src/pages/p03-upload-jobs/routes.tsx:12-20`）。
-- P04 当前路径 `/ingest/uploads/:uploadId`，是 P03 导航所有的隐藏详情路由，也需要 `upload.read`（`frontend/src/pages/p04-upload-detail/routes.tsx:12-20`）。
+- P03 当前路径 `/ingest/uploads`，需要 `upload.read`（`frontend/src/app/router/index.tsx`）。
+- P04 当前路径 `/ingest/uploads/:uploadId`，是 P03 导航所有的隐藏详情路由，也需要 `upload.read`（`frontend/src/app/router/index.tsx`）。
 - 现有 Ingest builder 能安全构建 P03/P04，并支持 P04 的 `tab`、`objectId`、安全内部 `returnTo`；会过滤疑似敏感 query key（`frontend/src/features/ingest/routing.ts:8-27,34-74`）。
 - 当前 P03/P04 UploadSession 模型没有 `task_code`、`data_package_id`、`collection_session_id`，所以不能仅靠追加 query 就假设页面会过滤或展示这些关联。
 - P20 和 Raw 诊断的正式路径/builder 尚不存在。本文只定义上下文，不发明可实现 URL。
@@ -651,8 +637,6 @@ P20 的核心对象是“采集任务”，它应包含：
 | 中 | 抽屉分页标签直接显示快照原值 | `frontend/src/pages/p01-dashboard/components/DashboardPendingDrawer.tsx:41-46`；格式化时间/快照摘要，完整值按需展开 |
 | 高 | “可点击”目标实际渲染为“暂不可用”，没有可执行导航 | `frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx:59-67`；有稳定 target 才使用 Link/Button，无 target 显示阻塞原因且不可点击 |
 | 中 | 覆盖表展示原始 ID 和手写百分比 | `frontend/src/pages/p01-dashboard/components/DashboardCoverageTable.tsx:8-27`；业务名称为主、ID 次级；百分比用 `Intl.NumberFormat`，先批准 denominator |
-| 高 | 图标题固定为 24h，与 URL 的 7d/30d 选择冲突 | `frontend/src/features/dashboard/dashboard-charts.tsx:264-287`；标题由已解析时间窗生成，避免错误内容承诺 |
-| 中 | 多处图表文字仅 9–10px，1280 下可读性风险 | `frontend/src/features/dashboard/dashboard-charts.tsx:142-170,227-242`；优先降信息密度/换行，不继续缩小字号 |
 
 后续效果图/实现还必须遵守：
 
@@ -670,8 +654,6 @@ P20 的核心对象是“采集任务”，它应包含：
 |---|---|
 | 保留路由懒加载 | P01 已在 `routes.tsx:4-9` 使用 lazy；P20 和 Raw 重型工作台也应按路由拆包 |
 | 独立请求并发 | P01 的 activity/snapshot/pending 本身由独立 React Query 并发启动，应保留；刷新用 `Promise.all`，不能串行等待 |
-| 并行加载 ECharts 模块 | 当前 `dashboard-charts.tsx:112-116` 串行动态 import；改为并行 Promise，不制造 waterfall |
-| 按域拆分图表和 Effect | 当前一个 Effect 依赖 activity + snapshot 并创建三图（`:101-260`）；拆成稳定组件，让 activity 刷新不重建存储图 |
 | 窄化依赖 | Effect/selector 依赖稳定 primitive 或必要字段；派生状态直接 render 计算，不用同步 Effect |
 | 不在组件内定义组件类型 | 避免每次 render 产生新类型、丢焦点/滚动/内部状态 |
 | 安全处理 BigInt | 不把未缩放容量/计数直接 `Number()`；显示与图表共用安全归一化结果 |

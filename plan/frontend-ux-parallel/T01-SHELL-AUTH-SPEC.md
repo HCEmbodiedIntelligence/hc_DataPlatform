@@ -31,10 +31,7 @@
  M frontend/src/app/theme/component-theme.ts
  M frontend/src/app/theme/global.css
  M frontend/src/app/theme/tokens.ts
- M frontend/src/features/dashboard/dashboard-charts.module.css
- M frontend/src/features/dashboard/dashboard-charts.tsx
  M frontend/src/features/storage-overview/metrics-contract.ts
- M frontend/src/features/storage-overview/routing.ts
  M frontend/src/mocks/fixtures/cleaning/index.ts
  M frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx
  D frontend/src/pages/p01-dashboard/components/DataLifecycleRail.module.css
@@ -43,19 +40,14 @@
  M frontend/src/pages/p01-dashboard/styles.module.css
  M frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx
  M frontend/src/pages/p02-data-sources/styles.module.css
- M frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx
  M frontend/src/pages/p03-upload-jobs/styles.module.css
  M frontend/src/pages/p05-datasets/components/DatasetTable.tsx
  M frontend/src/pages/p05-datasets/styles.module.css
- M frontend/src/pages/p12-storage-overview/components/StorageCostPanel.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageInventoryTable.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageMultipartTable.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx
  M frontend/src/pages/p12-storage-overview/page.tsx
- M frontend/src/pages/p12-storage-overview/query-codec.ts
  M frontend/src/pages/p12-storage-overview/styles.module.css
  M frontend/src/shared/ui/data/CursorPager.tsx
  M frontend/src/shared/ui/data/DataTable.tsx
@@ -135,7 +127,6 @@ python3 /mnt/c/Users/28384/.agents/skills/ui-ux-pro-max/scripts/search.py \
 | Scope 切换落点 | `frontend/src/app/shell/PlatformShell.tsx:359-379` | 成功后总是取第一条可见导航，不保留原页面；失败只 Toast，没有专用恢复状态 |
 | 数据集上下文 | `frontend/src/app/shell/dataset-context.ts:10-69`；`frontend/src/app/shell/dataset-context.test.ts:8-45` | 数据集选择可写入 path/query 并清相关参数；测试只覆盖此局部，不覆盖项目切换 |
 | 全局搜索 | `frontend/src/app/shell/PlatformShell.tsx:438-455` | 控件像可用搜索且展示 `⌘ K`，实际只提示接口未开放，也没有快捷键监听 |
-| 任务中心 | `frontend/src/app/shell/PlatformShell.tsx:474-499`；`frontend/src/shared/jobs/GlobalJobCenter.tsx:15-30` | 能展示本地登记的异步任务；空态真实，但不是业务待办或通知中心 |
 | 通知中心 | `frontend/src/app/shell/PlatformShell.tsx:500-524` | 明确显示“未提供通知查询接口”，没有伪造通知数据；但顶栏图标仍像已开放能力 |
 | 账户与退出 | `frontend/src/app/shell/PlatformShell.tsx:525-543` | 菜单包含“账户设置/退出登录”，但没有 `onClick` 或路由，两个动作均不可用 |
 | 会话状态 | `frontend/src/shared/scope/shell-store.ts:27-47` | principal/token 只在内存；`clearSensitiveState` 只清 authorization，不能作为完整登出 |
@@ -155,7 +146,7 @@ python3 /mnt/c/Users/28384/.agents/skills/ui-ux-pro-max/scripts/search.py \
 | Logo CLS | `frontend/src/app/shell/PlatformShell.tsx:87-93`；`frontend/src/app/shell/PlatformShell.module.css:51-65` | CSS 预留容器，但 `<img>` 没有 `width`/`height` 属性；源图为 106×62 |
 | 触控尺寸 | `frontend/src/app/shell/PlatformShell.module.css:248-258,626-628`；`frontend/src/app/theme/tokens.ts:34-38` | 部分顶栏按钮 34–42 px；手机目标需统一至少 44×44 CSS px |
 | 主题一致性 | `frontend/src/app/theme/tokens.ts:1-20`；`design-system/hc-data-platform/MASTER.md:73-81` | 当前 success token 是蓝色，MASTER 目标为绿色语义；不能在效果图中让“信息/通过”同色 |
-| 共享组件重复 | `frontend/src/shared/ui/PageHeader.tsx:1-43` 与 `frontend/src/shared/ui/layout/PageHeader.tsx:1-74`；`frontend/src/shared/ui/MetricCard.tsx:1-19` 与 `frontend/src/shared/ui/state/MetricCard.tsx:1-85` | 两套同名组件会造成标题、状态和响应式合同漂移；实施前需选定迁移方向 |
+| 共享组件重复 | `frontend/src/shared/ui/PageHeader.tsx:1-43` 与 `frontend/src/shared/ui/layout/PageHeader.tsx:1-74` | 两套同名组件会造成标题、状态和响应式合同漂移；实施前需选定迁移方向 |
 | i18n 请求 | `frontend/src/shared/api/http-client.ts:95-100,171-179` | 已使用浏览器语言发送 `Accept-Language`；页面显示仍需统一 `Intl` 与显式时区 |
 | 现有相关测试 | `frontend/src/app/shell/dataset-context.test.ts:8-45`；`frontend/src/shared/ui/BreadcrumbNavigation.test.tsx:16-60`；`frontend/src/shared/api/http-client.test.ts:19-72` | 仅覆盖数据集 URL、面包屑与 scope header；没有 Shell、认证、导航、401、退出、项目切换或路由焦点测试 |
 
@@ -191,7 +182,7 @@ python3 /mnt/c/Users/28384/.agents/skills/ui-ux-pro-max/scripts/search.py \
 | P1 | 通用状态缺少 partial error、read-only、no project、session expired、service unavailable | 页面会各自发明文案/动作/播报；错误和权限含义混淆 | 使用第 8 节统一合同；全页与局部错误分开 |
 | P1 | 手机仍可进入所有业务路由，未限制复杂工作台 | “能打开”会被误认为“可完成任务”，形成横向滚动与误操作风险 | 手机只承接认证、待办、状态和明确的轻量审批；复杂工作台显示能力不可用说明 |
 | P2 | 1280 仍使用完整侧栏和大搜索控件 | 内容密集页可用宽度被压缩，主动作可能移出视口 | 1280 使用 64 px 可展开功能轨道；搜索降为图标/命令面板入口 |
-| P2 | 两套 PageHeader/MetricCard 与两套状态样式并存 | 焦点、标题、文案和响应式行为漂移 | 实施期建立一个迁移出口；本阶段只规定目标合同，不改代码 |
+| P2 | 两套 PageHeader 与两套状态样式并存 | 焦点、标题、文案和响应式行为漂移 | 实施期建立一个迁移出口；本阶段只规定目标合同，不改代码 |
 | P2 | Logo 缺少元素尺寸，手机图标按钮小于 44 px，焦点色单独对比不足 | CLS、触控和键盘可见性风险 | 后续补 intrinsic size；触控 44 px；深色实线焦点 + 浅色光晕 |
 
 ### 3.2 需要技术验证

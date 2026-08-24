@@ -63,8 +63,6 @@
 
 | 领域 | 当前可保留基础 | 已证实的缺口或错位 | 证据 |
 |---|---|---|---|
-| P18 页面 | 有路由懒加载、成员列表、URL 状态、游标、详情抽屉和 fail-closed 页面 Guard | 固定三角色、raw capability 矩阵、无注册审批、无真实项目 grant/revoke | frontend/src/pages/p18-access/page.tsx:73-108,126-140,174-237；frontend/src/features/access/capability-catalog.ts:3-51 |
-| P18 API/Mock | 有 bootstrap/members 的严格 Zod 校验和候选 commit hook | Mock 只有两个 GET；写 hook 没有预检或 UI；成员状态不含 PENDING/REJECTED | frontend/src/features/access/api/index.ts:13-29,43-55,95-151；frontend/src/mocks/handlers/access.handlers.ts:14-17 |
 | P19 页面 | 有 URL 筛选、稳定游标、列表/详情、未知枚举和多种失败态 | 原始 ISO/内部码直出；九项筛选过密；“不可篡改”无依据；导出只有禁用按钮 | frontend/src/pages/p19-audit/page.tsx:138-210,230-295,331-400 |
 | P19 API/Mock | 有 scope 响应校验、严格 schema、Mock 负向场景 | 仅 Mock GET；字段可见性仍由浏览器 capability 推导；详情缓存 5 分钟 | frontend/src/features/audit/api/client.ts:9-84；frontend/src/features/audit/field-visibility.ts:11-31；frontend/src/features/audit/api/queries.ts:7-20 |
 | 真实鉴权 | 后端校验 JWT 签名、issuer、audience、有效期和角色 allowlist | 前端无真实 session/bootstrap；后端角色是 uploader/annotator/reviewer/publisher/admin，与前端 capability 不同 | backend/src/hc_data_platform/security/auth.py:13-38,181-285；frontend/src/app/router/index.tsx:188-207 |

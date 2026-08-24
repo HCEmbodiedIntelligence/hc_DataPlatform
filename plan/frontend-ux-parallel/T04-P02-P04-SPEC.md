@@ -59,7 +59,7 @@
 
 | 页 | 证据 | 当前事实 | 判断 |
 |---|---|---|---|
-| P02 | `frontend/src/pages/p02-data-sources/routes.tsx:12-16`；`frontend/src/features/ingest/routing.ts:34-39` | 路由为 `/ingest/sources` | 已有前端路由 |
+| P02 | `frontend/src/app/router/index.tsx`；`frontend/src/features/ingest/routing.ts:34-39` | 路由为 `/ingest/sources` | 已有前端路由 |
 | P02 | `frontend/src/pages/p02-data-sources/query-codec.ts:3-15,27-55,70-100` | URL 状态含搜索、四类状态、排序、游标、每页、选中来源；source type 仅 `ROBOT/EDGE_AGENT/OSS_IMPORT` | 草案；缺工作站/离线导入的清晰业务分类 |
 | P02 | `frontend/src/pages/p02-data-sources/page.tsx:449-520` | 标题为“数据源”，描述为机器人/边缘代理/OSS；主区有总数、在线、验证字节、异常 | Mock 页面；“异常需要人工处理”不能被解释为人工改 QC |
 | P02 | `frontend/src/pages/p02-data-sources/page.tsx:523-629` | 7 个筛选同时平铺 | 与“常用 3–5 项、更多筛选”基线不符 |
@@ -68,26 +68,13 @@
 | P02 | `frontend/src/features/ingest/api/client.ts:54-69,102-132` | 前端请求 `data-sources/page`、详情与写操作 | 仅前端草案；真实 `backend/openapi/ingest.yaml` 无 data-source 路径 |
 | P02 | `frontend/src/mocks/handlers/ingest.handlers.ts:102-147` | MSW 提供列表、详情、创建、编辑、凭据、连接测试、启停 | Mock，不得称真实连接器 API |
 | P02 | `frontend/src/mocks/handlers/ingest.handlers.test.ts:1-60` | 唯一 ingest 测试只测 P03 列表状态筛选 | 未找到 P02 页面/组件/契约自动化测试 |
-| P03 | `frontend/src/pages/p03-upload-jobs/routes.tsx:13-18`；`frontend/src/features/ingest/routing.ts:40-45` | 路由 `/ingest/uploads` | 已有前端路由 |
+| P03 | `frontend/src/app/router/index.tsx`；`frontend/src/features/ingest/routing.ts:40-45` | 路由 `/ingest/uploads` | 已有前端路由 |
 | P03 | `frontend/src/pages/p03-upload-jobs/page.tsx:320-339` | 页面叫“上传任务”，主动作“新建上传” | 与目标“上传记录，不是采集任务”冲突 |
 | P03 | `frontend/src/pages/p03-upload-jobs/page.tsx:313-318,340-366` | KPI 由当前游标窗口现场求和，却有“上传中/已完成/流量”外观 | 必须标“当前窗口”，不能冒充全局统计；当前部分文案已标窗口 |
-| P03 | `frontend/src/pages/p03-upload-jobs/page.tsx:369-469`；`query-codec.ts:3-18,23-57` | 筛选只有 q、data source、生命周期、排序、每页；全部平铺 | 缺来源方式、P20 任务、`data_package_id`、幂等/失败阶段；需常用/高级分层 |
-| P03 | `frontend/src/pages/p03-upload-jobs/components/CreateUploadDialog.tsx:58-78,88-95` | 选文件后 180 ms 自动提交；默认来源/数据集代替显式确认 | 高风险；选文件不应等于提交，需明确检查页和提交按钮 |
-| P03 | `frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx:167-289` | 列为“任务 ID”、数据集/来源、格式、文件、字节、进度、速度、ETA、生命周期/校验、Job、创建人、动作 | 信息多但缺数据包、来源方式、分片失败/重试、幂等结果；“任务 ID”实为 uploadId |
-| P03 | `frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx:277-285` | 服务端草案 allowedAction 出现时仍给 disabled 暂停/重试 | 容易形成假能力；效果图应给可解释 feature-unavailable 或真实 server action |
-| P03 | `frontend/src/features/ingest/api/queries.ts:88-115`；`upload/use-upload-progress-stream.ts:19-105` | 列表对非终态 5 秒轮询、终态 30 秒；SSE 只触发 250 ms 合并失效，轮询仍为权威 | 草案有降级意识，但存在重复请求与事件风暴风险 |
-| P03 | `frontend/src/features/ingest/upload/multipart-runner.ts:57-123` | 浏览器 runner 支持已有分片对账、受控并发、单片重试、完成后 SHA | 前端实现能力；不证明页面真实 API 已接通，也没有 CRC64 结果 UI |
 | P03 | `frontend/src/mocks/handlers/ingest.handlers.ts:148-167,207-225` | MSW 有列表、creation-options、create、pause/cancel/retry | Mock 草案 |
 | P03 | `frontend/src/mocks/handlers/ingest.handlers.test.ts:34-59` | 只覆盖 uploading/failed 两组生命周期筛选 | 未覆盖上传进度、断网、分片重试、幂等、Manifest 或恢复 |
-| P04 | `frontend/src/pages/p04-upload-detail/routes.tsx:12-20`；`frontend/src/features/ingest/routing.ts:48-72` | 路由 `/ingest/uploads/:uploadId`，稳定参数仅 `uploadId` | 页面入口以执行 ID 定位；不得将其显示成 data package ID |
-| P04 | `frontend/src/pages/p04-upload-detail/query-codec.ts:3-17` | Tab 为 objects/parts/manifest/verification/events；URL 保留选中对象/游标 | 草案；缺显式标识关系与自动 QC 分区 |
-| P04 | `frontend/src/pages/p04-upload-detail/page.tsx:399-501` | 头部是 uploadId、数据集/来源/格式、整体/对象/Multipart 进度 | 缺五标识、幂等结论与完整信号轨道 |
-| P04 | `frontend/src/pages/p04-upload-detail/page.tsx:503-529` | 自定义 `tablist/tab`，无 roving tabindex/方向键处理；也没有“自动 QC”Tab | 可访问性和业务分层均需补 |
+| P04 | `frontend/src/app/router/index.tsx`；`frontend/src/features/ingest/routing.ts:48-72` | 路由 `/ingest/uploads/:uploadId`，稳定参数仅 `uploadId` | 页面入口以执行 ID 定位；不得将其显示成 data package ID |
 | P04 | `frontend/src/features/ingest/validation-pipeline.ts:3-30` | 前端阶段只有 Manifest schema、对象大小/SHA、适配器、数据集语义、原子可用提交 | 草案缺 CRC64、MCAP 结构/索引/Topic 和真实 QC 报告 |
-| P04 | `frontend/src/pages/p04-upload-detail/components/UploadManifestSummary.tsx:31-127` | 有 Manifest ID/revision/status/schema/hash/对象数/字节/提交人等 | 草案摘要；缺五标识、Topic、机器人记录器上下文 |
-| P04 | `frontend/src/pages/p04-upload-detail/components/UploadObjectsTable.tsx:11-79` | 对象表有 path、Multipart 状态/ETag、SHA、验证；明确 ETag 非内容摘要 | 没有 CRC64 与分片钻取；语义提醒正确 |
-| P04 | `frontend/src/pages/p04-upload-detail/page.tsx:607-648` | “审计摘要”明确提示不是 P19 正式审计投影 | 正确降级；仍需 P19 深链候选 |
-| P04 | `frontend/src/pages/p04-upload-detail/components/QuarantinePanel.tsx:23-27`；`DangerousUploadActionDialog.tsx:23-38`；`page.tsx:689-719` | 当前动作叫“复验并申请释放隔离”，确认原因也写释放 | 与本轮“QC 异常不得人工放行进入 Lance”发生高风险语义冲突；下一实现阶段必须移除“释放”措辞和人工处置路径 |
 | P04 | `frontend/src/features/ingest/api/queries.ts:146-161,209-242` | bootstrap 活跃时 5 秒轮询；事件无条件 5 秒轮询 | 详情页多查询叠加风险；事件只应在需要时或按状态更新 |
 | P04 | `frontend/src/mocks/handlers/ingest.handlers.ts:168-225` | MSW 提供 bootstrap、objects、verification-runs、events、retry | Mock，不是实际聚合详情 API |
 | P04 | `frontend/src/mocks/handlers/ingest.handlers.test.ts:1-60` | 无 P04 测试 | 未找到标识、Manifest、MCAP、QC、审计、Raw 跳转或错误态测试 |
@@ -432,14 +419,10 @@ P14/P15 自身仍是 Mock-backed draft，见其开发计划 `plan/frontend/front
 
 | 严重度 | file:line | 发现 | 后续要求 |
 |---|---|---|---|
-| 高 | `frontend/src/pages/p03-upload-jobs/components/CreateUploadDialog.tsx:65-78` | 选中文件后由 Effect 自动提交，用户没有清晰的最终提交意图与检查机会 | 去掉自动提交；展示来源、package/Manifest 摘要与明确“开始导入”按钮，提交后才禁用并显示进度 |
-| 高 | `frontend/src/pages/p04-upload-detail/page.tsx:507-529` | 手工 tablist 没有 roving `tabIndex`、左右/Home/End 键处理；所有 Tab 都进入常规 Tab 序列 | 使用 AntD Tabs 或实现完整键盘模式、焦点管理和稳定 `aria-controls` |
 | 中 | `frontend/src/pages/p02-data-sources/page.tsx:540-628`；`p03-upload-jobs/page.tsx:404-468` | 表单控件 JSX 没有稳定 `name`/autocomplete；AntD Select 嵌套 label 的最终可访问名称需用生成 DOM 验证 | 显式 label/id/name；搜索用合适 autocomplete，技术 ID 可 `off`；就地错误与帮助文本关联 |
 | 中 | `frontend/src/pages/p02-data-sources/page.tsx:544`；`p03-upload-jobs/page.tsx:408,422` | 输入 placeholder 未以省略号结束，且 P03 仍写“任务 ID” | 改为 `搜索来源名称或 ID…`、`搜索数据包、上传记录或机器人…` |
-| 中 | `frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx:73-84`；`p02-data-sources/page.tsx:710-725`；`p03-upload-jobs/components/UploadSessionTable.tsx:111-130,360-371`；`p04-upload-detail/components/UploadManifestSummary.tsx:98-105`；`UploadEventTimeline.tsx:18-24` | 多处直接展示 ISO 字符串 | 用 `Intl.DateTimeFormat` 显示业务时间，保留 `<time dateTime>`；完整 ISO 放技术详情 |
-| 中 | `frontend/src/pages/p04-upload-detail/page.tsx:450-457` | progressbar 只有 `aria-valuenow`，缺 min/max；未知进度与 0% 视觉相同 | 已知值补 `aria-valuemin=0/aria-valuemax=100`；未知时移除确定型进度并给 `aria-valuetext="正在计算"` |
+| 中 | `frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx:73-84`；`p02-data-sources/page.tsx:710-725` | 多处直接展示 ISO 字符串 | 用 `Intl.DateTimeFormat` 显示业务时间，保留 `<time dateTime>`；完整 ISO 放技术详情 |
 | 中 | `frontend/src/shared/ui/data/DataTable.tsx:119-151,186-197` | 有表内横向滚动，但 column adapter 不支持 fixed；P02/P03/P04 的关键首尾列会滚走 | 扩展共享 meta/adapter 后固定主标识与主动作；需共享组件 owner 审核 |
-| 低 | `frontend/src/pages/p04-upload-detail/components/UploadEventTimeline.tsx:18-30` | 事件类型、level 与 safe payload key 直接以内部英文/键名展示 | 默认翻译为业务摘要，技术展开保留原 code/key；未知值明确标“未知” |
 
 满足的现有点：交互主要使用 Button/链接语义；装饰图标普遍 `aria-hidden`；DataTable 有 caption/aria-busy/可访问选择标签与表内横向滚动，见 `frontend/src/shared/ui/data/DataTable.tsx:154-198`。列表窗口最大 50，当前无需为了 20/50 行强行虚拟化。
 
@@ -447,27 +430,23 @@ P14/P15 自身仍是 Mock-backed draft，见其开发计划 `plan/frontend/front
 
 ### 10.1 上传进度更新
 
-- 当前每个进度 cell 使用 `useThrottledValue` 限到 10 Hz（`UploadSessionTable.tsx:92-109`、`use-throttled-value.ts:3-20`）。最多 50 行时可能同时存在 50 组 timer/state commit；应先 profile，再选择“页面级事件聚合 + 只更新变化行”、外部 store 局部订阅或 requestAnimationFrame，而不是让整表随每片重渲染。
 - 文本进度 4–10 Hz 足够；传输层事件可更高频但不进入 React 树。进度 row/Cell 用稳定 props 与 memo，事件 Map/Set 放 ref；不要为每片创建 Toast 或 Query invalidation。
-- SHA 已被接口注释要求移出 render path（`multipart-runner.ts:7-10`）；实现需真正使用 Web Worker/增量读取，不能一次把大 MCAP 读入内存。
 - 同一行必须区分 `clientSentBytes` 与 `serverConfirmedBytes`；只以后者推进“云端接收”。大整数保持 decimal string/BigInt，格式化边界再转，禁止超出安全整数。
 
 ### 10.2 轮询与 SSE
 
-- 当前 SSE 每 250 ms 最多触发一次列表 query invalidation，而权威轮询仍每 5 秒执行（`use-upload-progress-stream.ts:19-105`、`queries.ts:88-115`）。高事件率会造成重复网络请求。候选策略：连接成功时由完整、带版本的事件合并 cache 或将 invalidation 合并到 1 秒；权威轮询降为 15–30 秒对账；SSE 断开才回 5 秒轮询。
 - SSE 必须保留 `event_id/resource_version` 去重与乱序拒绝；scope 切换清缓存；后端确认 Last-Event-ID/鉴权/代理超时合同后才启用。当前 3 次失败后永久停在 polling（`:93-100`），需要页面可见的降级状态和受控重连，而不是无限指数重试。
 - P04 当前 bootstrap 活跃 5 秒轮询 + events 5 秒轮询，未来还会加入 verification/QC。只为可见 Tab/活跃阶段订阅；终态停止高频；页面隐藏时降频；一次刷新并行发请求，避免串行瀑布。
 - SSE 不是成功依据；断连、重连或缺事件时以版本化快照对账，进度不允许回退。对账差异显示“状态已校正”，不可静默跳变。
 
 ### 10.3 长列表
 
-- P02/P03 query codec 限制 10/20/50（各自 `query-codec.ts:3-24`），保持服务端游标窗口时先不虚拟化，避免破坏表格语义和焦点。
+- P02 query codec 限制 10/20/50（`query-codec.ts:3-24`），保持服务端游标窗口时先不虚拟化，避免破坏表格语义和焦点。
 - 若以后允许 >50 条、展开分片上千行或 Topic inventory 很大，再对表体虚拟化；固定头/列、行高、键盘焦点、滚动恢复与 aria 行语义要一起验证。
 - 筛选/排序变更复位游标并写 URL；数据源和任务选项应有服务端搜索，不把完整机器人/任务目录塞进首包。
 
 ### 10.4 重型详情分包
 
-- 当前 P04 route 本身 lazy，但 `page.tsx` 静态导入全部详情组件；随着 Manifest JSON、分片表、MCAP inventory、QC 图表和 Raw 入口增长，会形成单个重包。
 - Vite 方案：`React.lazy(() => import('./tabs/McapTopicTab'))` 等静态可分析动态导入；概览/身份留首包，Manifest JSON viewer、MCAP、QC 图表、审计详情按 Tab 分包，在 hover/focus 或空闲时预取。每个 Tab 有 ErrorBoundary、固定骨架尺寸和重试。
 - 不引入 `next/dynamic`。避免把整个 shared UI/barrel 或 ECharts 带入概览；只有真正使用图表的 QC 明细包才载入图表库。并行拉 bootstrap/可见分区数据，避免 import 完成后再串行请求。
 
@@ -539,7 +518,6 @@ P14/P15 自身仍是 Mock-backed draft，见其开发计划 `plan/frontend/front
 
 - P03 文案从“上传任务/任务 ID/新建上传”改为“上传记录/上传记录 ID/发起导入”，并加 P20 边界说明。
 - P02/P03 将筛选重排为常用 + 更多筛选，保留现有 URL codec 行为。
-- 删除 CreateUploadDialog 的选文件自动提交，增加明确检查与提交动作。
 - P04 移除所有“申请释放隔离”文案与动作；技术重试只叫“重试失败阶段/重新运行自动校验”，且说明不会人工改变 QC 结果。
 - 用 `Intl` 格式化日期/字节/数字；完整 ISO/ID/hash 放技术详情；补 placeholder 省略号。
 - 修复 P04 Tab 键盘、progressbar ARIA、异步状态 `aria-live`，为长文本提供查看全文。
@@ -573,10 +551,7 @@ P14/P15 自身仍是 Mock-backed draft，见其开发计划 `plan/frontend/front
  M frontend/src/app/theme/component-theme.ts
  M frontend/src/app/theme/global.css
  M frontend/src/app/theme/tokens.ts
- M frontend/src/features/dashboard/dashboard-charts.module.css
- M frontend/src/features/dashboard/dashboard-charts.tsx
  M frontend/src/features/storage-overview/metrics-contract.ts
- M frontend/src/features/storage-overview/routing.ts
  M frontend/src/mocks/fixtures/cleaning/index.ts
  M frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx
  D frontend/src/pages/p01-dashboard/components/DataLifecycleRail.module.css
@@ -585,19 +560,14 @@ P14/P15 自身仍是 Mock-backed draft，见其开发计划 `plan/frontend/front
  M frontend/src/pages/p01-dashboard/styles.module.css
  M frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx
  M frontend/src/pages/p02-data-sources/styles.module.css
- M frontend/src/pages/p03-upload-jobs/components/UploadSessionTable.tsx
  M frontend/src/pages/p03-upload-jobs/styles.module.css
  M frontend/src/pages/p05-datasets/components/DatasetTable.tsx
  M frontend/src/pages/p05-datasets/styles.module.css
- M frontend/src/pages/p12-storage-overview/components/StorageCostPanel.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageInventoryTable.tsx
- M frontend/src/pages/p12-storage-overview/components/StorageMultipartTable.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx
  M frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx
  M frontend/src/pages/p12-storage-overview/page.tsx
- M frontend/src/pages/p12-storage-overview/query-codec.ts
  M frontend/src/pages/p12-storage-overview/styles.module.css
  M frontend/src/shared/ui/data/CursorPager.tsx
  M frontend/src/shared/ui/data/DataTable.tsx

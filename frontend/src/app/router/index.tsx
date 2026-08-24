@@ -19,19 +19,9 @@ type OwnedRouteObject = RouteObject & {
   readonly defaultGroupLanding?: boolean;
 };
 
-// P02–P04 route modules still expose static elements for their direct contract
-// tests. Exclude those modules from the runtime aggregator so their page code
-// is not pulled into the application entry chunk; the equivalent runtime
-// records below retain ownership/capability metadata and load pages on demand.
-const modules = import.meta.glob<PageRouteModule>(
-  [
-    "/src/pages/*/routes.tsx",
-    "!/src/pages/p02-data-sources/routes.tsx",
-    "!/src/pages/p03-upload-jobs/routes.tsx",
-    "!/src/pages/p04-upload-detail/routes.tsx",
-  ],
-  { eager: true },
-);
+const modules = import.meta.glob<PageRouteModule>("/src/pages/*/routes.tsx", {
+  eager: true,
+});
 
 const lazyIngestPages: readonly {
   readonly pageId: "P02" | "P03" | "P04";
