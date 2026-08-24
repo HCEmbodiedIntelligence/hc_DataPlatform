@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderHarness } from "../../app/providers";
 import {
@@ -34,6 +34,7 @@ const scope = {
 const task: CollectionTask = {
   schema_version: "1",
   collection_task_id: "task-1",
+  organization_id: scope.organizationId,
   project_id: scope.projectId,
   task_code: "00000001",
   name: "透明件抓取采集",
@@ -48,10 +49,14 @@ const task: CollectionTask = {
 const progress: CollectionTaskProgress = {
   schema_version: "1",
   collection_task_id: task.collection_task_id,
+  organization_id: scope.organizationId,
   project_id: scope.projectId,
   status: "ACTIVE",
   as_of: "2026-08-18T05:30:00Z",
   received_package_count: 8,
+  captured_duration_seconds: 600,
+  duration_observed_package_count: 8,
+  duration_unknown_package_count: 0,
   qc: {
     evaluated_count: 7,
     pass_count: 6,
@@ -59,6 +64,18 @@ const progress: CollectionTaskProgress = {
     reject_count: 0,
     pending_count: 1,
     pass_rate: { numerator: 6, denominator: 7, value: 6 / 7 },
+  },
+  attainment: {
+    status: "IN_PROGRESS",
+    package_count: {
+      actual: 8,
+      target: 20,
+      progress: 0.4,
+      status: "IN_PROGRESS",
+    },
+    duration_seconds: null,
+    quality_threshold: 0.9,
+    quality_status: "PENDING_QC",
   },
   observed_sources: {
     device_ids: [],
@@ -86,6 +103,8 @@ function makeGateway() {
       ...command,
     })),
     close: vi.fn(async () => ({ ...task, status: "CLOSED" as const })),
+    cancel: vi.fn(async () => ({ ...task, status: "CANCELLED" as const })),
+    reopen: vi.fn(async () => ({ ...task, status: "ACTIVE" as const })),
   } satisfies CollectionTaskGateway;
 }
 
@@ -96,12 +115,31 @@ function renderPage(
   return render(
     <ProviderHarness>
       <MemoryRouter initialEntries={["/collection-tasks"]}>
-        <CollectionTaskPage
-          {...(capabilityOverride === null ? {} : { capabilityOverride })}
-          gateway={gateway}
-        />
+        <Routes>
+          <Route
+            path="/collection-tasks"
+            element={
+              <CollectionTaskPage
+                {...(capabilityOverride === null ? {} : { capabilityOverride })}
+                gateway={gateway}
+              />
+            }
+          />
+          <Route path="*" element={null} />
+        </Routes>
+        <LocationProbe />
       </MemoryRouter>
     </ProviderHarness>,
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+    </output>
   );
 }
 
@@ -154,6 +192,42 @@ afterEach(() => {
 });
 
 describe("P20 collection tasks", () => {
+  it("opens the task-scoped dataset route from the identity link", async () => {
+    const user = userEvent.setup();
+    renderPage(makeGateway());
+
+    await screen.findByText("目标进行中");
+    const link = await screen.findByRole("link", {
+      name: `查看采集任务 ${task.name}（${task.task_code}）的数据`,
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      `/datasets?collectionTaskId=${task.collection_task_id}`,
+    );
+
+    await user.click(link);
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `/datasets?collectionTaskId=${task.collection_task_id}`,
+    );
+  });
+
+  it("does not navigate when task lifecycle or edit actions are clicked", async () => {
+    const user = userEvent.setup();
+    renderPage(makeGateway());
+
+    await screen.findByText(task.name);
+    await user.click(screen.getByRole("button", { name: "编辑任务" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/collection-tasks");
+    await user.click(screen.getByRole("button", { name: "关闭任务抽屉" }));
+
+    await user.click(screen.getByRole("button", { name: "关闭任务" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/collection-tasks");
+    await user.click(screen.getByRole("button", { name: /^取\s*消$/u }));
+
+    await user.click(screen.getByRole("button", { name: "取消任务" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/collection-tasks");
+  });
+
   it("creates once from the confirmed schema and renders no disabled fields", async () => {
     const user = userEvent.setup();
     const gateway = makeGateway();
@@ -277,6 +351,54 @@ describe("P20 collection tasks", () => {
       expect.stringMatching(/^close-/u),
     );
     expect(gateway.detail).toHaveBeenCalledTimes(3);
+  });
+
+  it("requires explicit confirmation to cancel and reopen without deriving status from progress", async () => {
+    const user = userEvent.setup();
+    const cancelGateway = makeGateway();
+    renderPage(cancelGateway);
+
+    await screen.findByText(task.name);
+    expect(screen.getByText("目标进行中")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "取消任务" }));
+    expect(
+      screen.getByText("取消采集任务").closest('[role="dialog"]'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认取消任务" }));
+    await waitFor(() => expect(cancelGateway.cancel).toHaveBeenCalledTimes(1));
+    expect(cancelGateway.cancel).toHaveBeenCalledWith(
+      scope,
+      task.collection_task_id,
+      '"v1"',
+      expect.stringMatching(/^cancel-/u),
+    );
+
+    const cancelledTask: CollectionTask = { ...task, status: "CANCELLED" };
+    const reopenGateway = makeGateway();
+    reopenGateway.list.mockResolvedValueOnce({
+      items: [cancelledTask],
+      next_cursor: null,
+    });
+    reopenGateway.detail.mockResolvedValueOnce({
+      task: cancelledTask,
+      etag: '"v2"',
+    });
+    cleanup();
+    renderPage(reopenGateway);
+
+    await screen.findByText("已取消");
+    await user.click(screen.getByRole("button", { name: "重新开启" }));
+    expect(
+      screen.getByText("重新开启采集任务").closest('[role="dialog"]'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认重新开启" }));
+    await waitFor(() => expect(reopenGateway.reopen).toHaveBeenCalledTimes(1));
+    expect(reopenGateway.reopen).toHaveBeenCalledWith(
+      scope,
+      task.collection_task_id,
+      '"v2"',
+      expect.stringMatching(/^reopen-/u),
+    );
   });
 
   it.each<{

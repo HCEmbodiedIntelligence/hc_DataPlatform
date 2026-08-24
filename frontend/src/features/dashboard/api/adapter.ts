@@ -1,13 +1,12 @@
 import type {
   DashboardActivity,
-  DashboardCoverage,
   DashboardPendingPage,
   DashboardSection,
   DashboardSnapshot,
+  DashboardSignalStage,
 } from '../types';
 import type {
   DashboardActivityWire,
-  DashboardCoverageWire,
   DashboardPendingPageWire,
   DashboardSnapshotWire,
 } from './schemas';
@@ -58,6 +57,9 @@ export function adaptDashboardActivity(wire: DashboardActivityWire): DashboardAc
 export function adaptDashboardSnapshot(wire: DashboardSnapshotWire): DashboardSnapshot {
   const pipeline = wire.sections.signal_pipeline;
   const published = pipeline.published_region;
+  const stageCounts = Object.fromEntries(
+    pipeline.stage_counts.map((item) => [item.stage, item.count]),
+  ) as Record<DashboardSignalStage, number>;
   return {
     from: wire.from,
     to: wire.to,
@@ -66,6 +68,7 @@ export function adaptDashboardSnapshot(wire: DashboardSnapshotWire): DashboardSn
     signalPipeline: {
       ...section(pipeline),
       stages: pipeline.stages,
+      stageCounts,
       publishedRegion: {
         ...section(published),
         lineageCount: published.lineage_count ?? null,
@@ -75,16 +78,6 @@ export function adaptDashboardSnapshot(wire: DashboardSnapshotWire): DashboardSn
     },
     episodes: section(wire.sections.episodes),
     work: section(wire.sections.work),
-  };
-}
-
-export function adaptDashboardCoverage(wire: DashboardCoverageWire): DashboardCoverage {
-  return {
-    from: wire.from,
-    to: wire.to,
-    timezone: wire.timezone,
-    asOf: wire.as_of,
-    section: section(wire.coverage),
   };
 }
 

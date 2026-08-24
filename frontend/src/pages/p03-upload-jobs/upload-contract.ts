@@ -16,6 +16,32 @@ export interface UploadPartPlan {
   readonly partNumbers: readonly number[];
 }
 
+export interface FolderUploadBundle {
+  /** Stable, non-secret selection identity used only in the browser queue. */
+  readonly id: string;
+  readonly manifestFile: File;
+  readonly rawFile: File;
+  readonly manifest: UploadManifest;
+  readonly relativeDirectory: string;
+}
+
+export interface FolderUploadDiscoveryFailure {
+  readonly relativePath: string;
+  readonly code:
+    | "MANIFEST_INVALID"
+    | "MANIFEST_AMBIGUOUS"
+    | "RAW_FILE_MISSING"
+    | "RAW_FILE_AMBIGUOUS"
+    | "RAW_FILE_PATH_INVALID"
+    | "DATA_PACKAGE_DUPLICATE";
+  readonly detail: string;
+}
+
+export interface FolderUploadDiscovery {
+  readonly bundles: readonly FolderUploadBundle[];
+  readonly failures: readonly FolderUploadDiscoveryFailure[];
+}
+
 export interface UploadProblemCopy {
   readonly title: string;
   readonly detail: string;
@@ -137,13 +163,15 @@ export async function parseManifestFile(file: File): Promise<UploadManifest> {
 }
 
 export function findManifestFile(files: readonly File[]): File | null {
-  const jsonFiles = files.filter((file) =>
-    file.name.toLowerCase().endsWith(".json"),
-  );
-  return (
-    jsonFiles.find((file) =>
-      /(^|[_-])(rollout[_-]?)?manifest/i.test(file.name),
-    ) ?? (jsonFiles.length === 1 ? (jsonFiles[0] ?? null) : null)
+  const manifestFiles = findManifestFiles(files);
+  return manifestFiles.length === 1 ? (manifestFiles[0] ?? null) : null;
+}
+
+export function findManifestFiles(files: readonly File[]): readonly File[] {
+  return files.filter(
+    (file) =>
+      file.name.toLowerCase().endsWith(".json") &&
+      /(?:^|[_-])(?:rollout[_-]?)?manifest(?:[_-]|\.|$)/iu.test(file.name),
   );
 }
 
@@ -160,6 +188,168 @@ export function findRawPackageFile(
       return relative === raw.path || file.name === expectedName;
     }) ?? null
   );
+}
+
+/**
+ * Return the browser-provided path relative to the selected directory.
+ *
+ * `webkitRelativePath` is a path *label*, never an OS path we can open.  It is
+ * still normalized and rejected if malformed so two nested packages with the
+ * same `recording.mcap` name cannot be accidentally paired across folders.
+ */
+export function selectedRelativePath(file: File): string | null {
+  const candidate = (file as File & { readonly webkitRelativePath?: string })
+    .webkitRelativePath;
+  return normalizeRelativePath(
+    candidate && candidate.length > 0 ? candidate : file.name,
+  );
+}
+
+/** Discover independent upload packages inside an arbitrarily nested folder. */
+export async function discoverFolderUploadBundles(
+  files: readonly File[],
+): Promise<FolderUploadDiscovery> {
+  const filesByPath = new Map<string, File>();
+  const manifestFiles: Array<{ file: File; path: string }> = [];
+  for (const file of files) {
+    const path = selectedRelativePath(file);
+    if (!path || filesByPath.has(path)) continue;
+    filesByPath.set(path, file);
+    if (findManifestFiles([file]).length === 1)
+      manifestFiles.push({ file, path });
+  }
+
+  const bundles: FolderUploadBundle[] = [];
+  const failures: FolderUploadDiscoveryFailure[] = [];
+  const packageIds = new Set<string>();
+  const ambiguousDirectories = new Set<string>();
+  const manifestCountByDirectory = new Map<string, number>();
+  for (const { path } of manifestFiles) {
+    const directory = directoryOf(path);
+    manifestCountByDirectory.set(
+      directory,
+      (manifestCountByDirectory.get(directory) ?? 0) + 1,
+    );
+  }
+  for (const [directory, count] of manifestCountByDirectory) {
+    if (count <= 1) continue;
+    ambiguousDirectories.add(directory);
+    failures.push({
+      relativePath: directory || ".",
+      code: "MANIFEST_AMBIGUOUS",
+      detail: `同一数据包目录中发现 ${count} 个 Manifest，无法确定上传声明。`,
+    });
+  }
+  const claimedRawPaths = new Set<string>();
+  for (const { file: manifestFile, path: manifestPath } of manifestFiles) {
+    if (ambiguousDirectories.has(directoryOf(manifestPath))) continue;
+    let manifest: UploadManifest;
+    try {
+      manifest = await parseManifestFile(manifestFile);
+    } catch (error) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "MANIFEST_INVALID",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Manifest 无法在浏览器中安全解析。",
+      });
+      continue;
+    }
+    if (packageIds.has(manifest.data_package_id)) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "DATA_PACKAGE_DUPLICATE",
+        detail: `数据包 ${manifest.data_package_id} 在所选目录中出现了多个 Manifest。`,
+      });
+      continue;
+    }
+    const rawDeclaration = manifest.files?.find(
+      (item) => item.role === "RAW_MCAP",
+    );
+    if (!rawDeclaration) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "RAW_FILE_MISSING",
+        detail: "Manifest 没有声明 RAW_MCAP 文件。",
+      });
+      continue;
+    }
+    const directory = directoryOf(manifestPath);
+    const rawPath = resolveBundlePath(directory, rawDeclaration.path);
+    if (!rawPath) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "RAW_FILE_PATH_INVALID",
+        detail: "Manifest 的 RAW_MCAP 路径不能离开 Manifest 所在目录。",
+      });
+      continue;
+    }
+    const rawFile = filesByPath.get(rawPath);
+    if (!rawFile) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "RAW_FILE_MISSING",
+        detail: `未在同一数据包目录中找到 ${rawDeclaration.path}。`,
+      });
+      continue;
+    }
+    if (claimedRawPaths.has(rawPath)) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "RAW_FILE_AMBIGUOUS",
+        detail: `RAW_MCAP ${rawDeclaration.path} 已被另一个 Manifest 引用。`,
+      });
+      continue;
+    }
+    if (
+      rawFile === manifestFile ||
+      rawFile.name.toLowerCase().endsWith(".json")
+    ) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "RAW_FILE_AMBIGUOUS",
+        detail: "Manifest 声明的 RAW_MCAP 与 Manifest 文件冲突。",
+      });
+      continue;
+    }
+    packageIds.add(manifest.data_package_id);
+    claimedRawPaths.add(rawPath);
+    bundles.push({
+      id: `${manifestPath}:${manifest.data_package_id}`,
+      manifestFile,
+      rawFile,
+      manifest,
+      relativeDirectory: directory,
+    });
+  }
+  return { bundles, failures };
+}
+
+function normalizeRelativePath(value: string): string | null {
+  const normalized = value.replaceAll("\\", "/").replace(/^\/+|\/+$/gu, "");
+  if (!normalized || normalized.includes("\0")) return null;
+  const segments = normalized.split("/");
+  if (
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  )
+    return null;
+  return segments.join("/");
+}
+
+function directoryOf(path: string): string {
+  const separator = path.lastIndexOf("/");
+  return separator === -1 ? "" : path.slice(0, separator);
+}
+
+function resolveBundlePath(
+  directory: string,
+  declaredPath: string,
+): string | null {
+  const normalizedDeclared = normalizeRelativePath(declaredPath);
+  if (!normalizedDeclared) return null;
+  return directory ? `${directory}/${normalizedDeclared}` : normalizedDeclared;
 }
 
 export function validateObjectStorageUri(value: string): string | null {

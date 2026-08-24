@@ -16,6 +16,11 @@ services:
 
   api:
     environment:
+      # Keep the real-browser overlay on the same isolated JWT contract as the
+      # Wave2 runner.  The browser harness deliberately issues only test JWTs.
+      HC_ENVIRONMENT: test
+      HC_JWT_ISSUER: https://be22.test.invalid/
+      HC_JWT_AUDIENCE: hc-data-platform
       # The API signs browser PUTs for the host-reachable endpoint while all
       # server-side S3 operations continue to use the base file's internal endpoint.
       HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
@@ -24,9 +29,25 @@ services:
         condition: service_completed_successfully
 
   worker:
+    environment:
+      HC_ENVIRONMENT: test
+      # The browser full-chain runner supplies one fresh, exact run id. Keep
+      # the durable outbox worker restricted to that exact organization/project/region;
+      # do not turn the test profile into a cross-project wildcard consumer.
+      HC_OUTBOX_SCOPES: >-
+        ["be22-${HC_REAL_API_E2E_RUN_ID:-unconfigured}-org/be22-${HC_REAL_API_E2E_RUN_ID:-unconfigured}-p1/be22-${HC_REAL_API_E2E_RUN_ID:-unconfigured}-cn"]
     depends_on:
       migration-check:
         condition: service_completed_successfully
+
+  gateway:
+    volumes:
+      # These two files are read only in the explicit real-browser profile.
+      # The zone is included by nginx at http level; the .inc is included only
+      # inside the public server before its general /api/ proxy location.
+      - ./deploy/compose/gateway.real-api-rate-limit.conf:/etc/nginx/conf.d/10-real-api-rate-limit.conf:ro
+      - ./deploy/compose/gateway.real-api-auth-rate-limit.inc:/etc/nginx/conf.d/real-api-location-auth-rate-limit.inc:ro
+      - ./deploy/compose/gateway.real-api-preview-media-rate-limit.inc:/etc/nginx/conf.d/real-api-location-preview-media-rate-limit.inc:ro
 
   frontend:
     environment:

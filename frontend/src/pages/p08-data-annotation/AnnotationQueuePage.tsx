@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw, ShieldCheck, Tags } from "lucide-react";
+import { History, RefreshCw, ShieldCheck, Tags } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { isDomainError } from "../../shared/api/domain-error";
@@ -247,6 +247,10 @@ function RuntimeAnnotationQueuePage({
         >
           <Tags aria-hidden="true" size={15} />
           数据标注
+        </Link>
+        <Link to={annotationRoutes.revisions.pattern}>
+          <History aria-hidden="true" size={15} />
+          数据修订
         </Link>
         <Link
           aria-current={mode === "tag-review" ? "page" : undefined}

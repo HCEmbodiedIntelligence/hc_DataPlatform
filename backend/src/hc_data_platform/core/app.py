@@ -17,9 +17,17 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 import hc_data_platform
+from hc_data_platform.security.abuse import InMemoryAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
+from hc_data_platform.security.admin_accounts import AdminAccountService
 from hc_data_platform.security.auth import AuthContext, JwtVerifier
+from hc_data_platform.security.challenge import challenge_verifier_from_settings
+from hc_data_platform.security.passwords import PasswordHasher, PasswordPolicy, ScryptParameters
+from hc_data_platform.security.recovery import (
+    AccountRecoveryService,
+    recovery_delivery_from_settings,
+)
 from hc_data_platform.security.scope import ScopeGuard
 
 from .config import Settings, get_settings
@@ -57,7 +65,7 @@ _FORBIDDEN_METRIC_LABEL = re.compile(
     r"dataset|profile|object|manifest|bucket|session|token|secret|key|dsn|url|uri)"
     r"(?:_[a-z0-9]+)*\s*="
 )
-_SAFE_HTTP_HEADERS = frozenset({"allow", "retry-after"})
+_SAFE_HTTP_HEADERS = frozenset({"allow"})
 _SAFE_EXCEPTION_TYPES = frozenset(
     {
         "AuthenticationDependencyError",
@@ -74,9 +82,14 @@ _PUBLIC_API_OPERATIONS = frozenset(
     {
         ("/api/v1/auth/registrations", "post"),
         ("/api/v1/auth/sessions", "post"),
+        ("/api/v1/auth/config", "get"),
+        ("/api/v1/auth/password-recovery-requests", "post"),
+        ("/api/v1/auth/password-recovery-confirmations", "post"),
         ("/api/v1/capabilities/auto-annotation", "get"),
+        ("/api/v1/previews/sessions/{session_id}/media/{asset_name}", "get"),
     }
 )
+_SESSION_LOGOUT_OPERATION = ("/api/v1/auth/session:logout", "POST")
 _OPERATION_ID_OVERRIDES = {
     ("/health/live", "get"): "getLiveness",
     ("/health/ready", "get"): "getReadiness",
@@ -97,9 +110,9 @@ _OPERATION_ID_OVERRIDES = {
         "post",
     ): "renewUploadPartAuthorizations",
     (
-        "/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version}",
+        "/api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions/{version}",
         "get",
-    ): "getDatasetVersionSnapshot",
+    ): "getLanceCatalogVersionSnapshot",
     ("/api/v1/datasets/publication-preflight", "post"): "preflightDatasetPublication",
     ("/api/v1/datasets/publications", "post"): "publishDatasetVersion",
     (
@@ -110,6 +123,22 @@ _OPERATION_ID_OVERRIDES = {
         "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports",
         "post",
     ): "exportPublishedDatasetVersion",
+    (
+        "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}",
+        "get",
+    ): "getPublishedDatasetExportJob",
+    (
+        "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:cancel",
+        "post",
+    ): "cancelPublishedDatasetExportJob",
+    (
+        "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:retry",
+        "post",
+    ): "retryPublishedDatasetExportJob",
+    (
+        "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}/download",
+        "get",
+    ): "authorizePublishedDatasetExportDownload",
     (
         "/api/v1/projects/{project_id}/quality-profiles",
         "post",
@@ -187,6 +216,7 @@ def _server_problem(
     request_id: str,
     instance: str | None = None,
     status: int = 500,
+    retry_after_seconds: int | None = None,
 ) -> ProblemDetails:
     try:
         normalized_status = status if status >= 500 else 500
@@ -204,15 +234,20 @@ def _server_problem(
         code=code,
         request_id=request_id,
         retryable=True,
+        retry_after_seconds=(retry_after_seconds if normalized_status == 503 else None),
     )
 
 
 def _safe_problem(problem: ProblemDetails) -> ProblemDetails:
-    if problem.status >= 500:
+    # 501 is an intentionally declared product boundary, not an unexpected
+    # server failure. Keep its sanitized contract code so clients can present
+    # the approved "feature unavailable" state without guessing from HTTP.
+    if problem.status >= 500 and problem.status != 501:
         return _server_problem(
             request_id=problem.request_id or str(uuid4()),
             instance=problem.instance,
             status=problem.status,
+            retry_after_seconds=problem.retry_after_seconds,
         )
     return problem.model_copy(
         update={
@@ -275,7 +310,38 @@ def _problem_response(problem: ProblemDetails) -> JSONResponse:
     )
     if problem.request_id is not None:
         response.headers["X-Request-ID"] = problem.request_id
+    if problem.retry_after_seconds is not None:
+        response.headers["Retry-After"] = str(problem.retry_after_seconds)
+    # Problems can contain scope-bound state (for example, whether a product
+    # capability is currently approved), so never permit an intermediary to
+    # reuse one across sessions.
+    response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def _safe_retry_after_seconds(value: object) -> int | None:
+    """Accept bounded RFC 9110 delay-seconds, never dates or signed/decimal values."""
+
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]{1,5}", value) is None:
+        return None
+    seconds = int(value)
+    return seconds if 1 <= seconds <= 86_400 else None
+
+
+def _is_declared_feature_unavailable(
+    request: Request,
+    response: Response,
+    *,
+    marker: object,
+) -> bool:
+    """Trust only a 501 sanitized by the registered ProblemException handler."""
+
+    content_type = response.headers.get("content-type", "").partition(";")[0].lower()
+    return (
+        getattr(request.state, "_declared_feature_unavailable_marker", None) is marker
+        and response.status_code == 501
+        and content_type == "application/problem+json"
+    )
 
 
 def _http_status_title(status: int) -> str:
@@ -510,6 +576,8 @@ def create_app(
     module_package: ModuleType = hc_data_platform,
     jwt_verifier: JwtVerifier | None = None,
     access_service: AccessService | None = None,
+    admin_account_service: AdminAccountService | None = None,
+    account_recovery_service: AccountRecoveryService | None = None,
 ) -> FastAPI:
     """Create an independently testable API application with injectable dependency probes."""
 
@@ -533,6 +601,8 @@ def create_app(
     verifier = jwt_verifier or _jwt_verifier_from_settings(resolved_settings)
     app.state.jwt_verifier = verifier
     resolved_access_service = access_service
+    resolved_admin_account_service = admin_account_service
+    resolved_recovery_service = account_recovery_service
     if resolved_settings.runtime_backend == "production" and module_package is hc_data_platform:
         from hc_data_platform.runtime import build_runtime, configure_api
 
@@ -540,9 +610,65 @@ def create_app(
         configure_api(runtime)
         app.state.runtime = runtime
         resolved_access_service = resolved_access_service or runtime.access
+        resolved_admin_account_service = resolved_admin_account_service or runtime.admin_accounts
+        resolved_recovery_service = resolved_recovery_service or runtime.recovery
+    composed_password_hasher = PasswordHasher(
+        ScryptParameters(
+            n=resolved_settings.password_scrypt_n,
+            r=resolved_settings.password_scrypt_r,
+            p=resolved_settings.password_scrypt_p,
+        )
+    )
+    composed_password_policy = PasswordPolicy(
+        min_length=resolved_settings.password_min_length,
+        max_length=resolved_settings.password_max_length,
+    )
+    composed_abuse_protection = None
+    if resolved_settings.auth_abuse_enabled:
+        hmac_secret = resolved_settings.auth_abuse_hmac_secret
+        if hmac_secret is None:  # Settings validates this invariant before composition.
+            raise RuntimeError("auth abuse HMAC secret is not configured")
+        composed_abuse_protection = InMemoryAbuseProtection(
+            hmac_secret=hmac_secret.get_secret_value(),
+            policy=policy_from_settings(resolved_settings),
+        )
+    composed_challenge_verifier = challenge_verifier_from_settings(resolved_settings)
     if resolved_access_service is None:
-        resolved_access_service = AccessService(InMemoryAccessRepository())
+        resolved_access_service = AccessService(
+            InMemoryAccessRepository(
+                session_idle_ttl_seconds=resolved_settings.session_idle_ttl_seconds,
+                session_absolute_ttl_seconds=resolved_settings.session_absolute_ttl_seconds,
+                session_touch_interval_seconds=resolved_settings.session_touch_interval_seconds,
+                max_active_sessions=resolved_settings.max_active_sessions,
+            ),
+            password_hasher=composed_password_hasher,
+            password_policy=composed_password_policy,
+            abuse_protection=composed_abuse_protection,
+            challenge_verifier=composed_challenge_verifier,
+        )
+    if resolved_recovery_service is None:
+        resolved_recovery_service = AccountRecoveryService(
+            resolved_access_service.repository,
+            delivery=recovery_delivery_from_settings(resolved_settings),
+            password_hasher=composed_password_hasher,
+            password_policy=composed_password_policy,
+            abuse_protection=composed_abuse_protection,
+            challenge_verifier=composed_challenge_verifier,
+            email_verification_ttl_seconds=(
+                resolved_settings.auth_recovery_email_verification_ttl_seconds
+            ),
+            password_recovery_ttl_seconds=resolved_settings.auth_recovery_token_ttl_seconds,
+        )
+    if resolved_admin_account_service is None:
+        resolved_admin_account_service = AdminAccountService(
+            resolved_access_service.repository,
+            password_hasher=composed_password_hasher,
+            password_policy=composed_password_policy,
+        )
     app.state.access_service = resolved_access_service
+    app.state.admin_account_service = resolved_admin_account_service
+    app.state.account_recovery_service = resolved_recovery_service
+    declared_feature_unavailable_marker = object()
 
     @app.middleware("http")
     async def request_context_middleware(
@@ -552,6 +678,7 @@ def create_app(
         request_id = _request_id(request)
         request.state.request_id = request_id
         request.state.auth_context = None
+        request.state._declared_feature_unavailable_marker = None
         try:
             auth = _authenticate_request(request, verifier, resolved_access_service)
             context = _request_context(request, request_id=request_id, auth=auth)
@@ -586,7 +713,21 @@ def create_app(
         token = bind_request_context(context)
         try:
             response = await call_next(request)
-            if response.status_code >= 500:
+            raw_retry_after = response.headers.get("Retry-After")
+            response_retry_after = (
+                _safe_retry_after_seconds(raw_retry_after)
+                if response.status_code in {429, 503}
+                else None
+            )
+            if raw_retry_after is not None:
+                del response.headers["Retry-After"]
+            if response_retry_after is not None:
+                response.headers["Retry-After"] = str(response_retry_after)
+            if response.status_code >= 500 and not _is_declared_feature_unavailable(
+                request,
+                response,
+                marker=declared_feature_unavailable_marker,
+            ):
                 _log_security_failure(
                     request,
                     request_id=context.request_id,
@@ -598,8 +739,11 @@ def create_app(
                         request_id=context.request_id,
                         instance=_safe_route_locator(request),
                         status=response.status_code,
+                        retry_after_seconds=response_retry_after,
                     )
                 )
+            if auth is not None and response.status_code >= 400:
+                response.headers["Cache-Control"] = "private, no-store"
             response.headers["X-Request-ID"] = context.request_id
             return response
         finally:
@@ -614,14 +758,17 @@ def create_app(
                 "instance": _safe_route_locator(request),
             }
         )
-        if problem.status >= 500:
+        if problem.status >= 500 and problem.status != 501:
             _log_security_failure(
                 request,
                 request_id=context.request_id,
                 error_code="INTERNAL_SERVER_ERROR",
                 exception_type="ProblemException",
             )
-        return _problem_response(problem)
+        safe_problem = _safe_problem(problem)
+        if safe_problem.status == 501:
+            request.state._declared_feature_unavailable_marker = declared_feature_unavailable_marker
+        return _problem_response(safe_problem)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(
@@ -638,6 +785,7 @@ def create_app(
                 instance=_safe_route_locator(request),
                 code="REQUEST_VALIDATION_FAILED",
                 request_id=context.request_id,
+                retryable=False,
                 details={"errors": _safe_validation_errors(exc)},
             )
         )
@@ -646,6 +794,13 @@ def create_app(
     async def handle_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         context = _request_context_from_state(request)
         status = exc.status_code if 400 <= exc.status_code <= 599 else 500
+        retry_after_header = next(
+            (value for name, value in (exc.headers or {}).items() if name.lower() == "retry-after"),
+            None,
+        )
+        retry_after_seconds = (
+            _safe_retry_after_seconds(retry_after_header) if status in {429, 503} else None
+        )
         if status >= 500:
             _log_security_failure(
                 request,
@@ -663,6 +818,8 @@ def create_app(
                 instance=_safe_route_locator(request),
                 code=f"HTTP_{status}",
                 request_id=context.request_id,
+                retryable=retry_after_seconds is not None,
+                retry_after_seconds=retry_after_seconds,
             )
         )
         if exc.headers is not None and status < 500:
@@ -671,8 +828,7 @@ def create_app(
                 safe_allow = normalized_name == "allow" and bool(
                     re.fullmatch(r"[A-Z]+(?:,\s*[A-Z]+)*", value)
                 )
-                safe_retry = normalized_name == "retry-after" and value.isdigit()
-                if normalized_name in _SAFE_HTTP_HEADERS and (safe_allow or safe_retry):
+                if normalized_name in _SAFE_HTTP_HEADERS and safe_allow:
                     response.headers[name] = value
         return response
 
@@ -762,6 +918,8 @@ def _authenticate_request(
     verifier: JwtVerifier | None,
     access_service: AccessService,
 ) -> AuthContext | None:
+    if (request.url.path, request.method.lower()) in _PUBLIC_API_OPERATIONS:
+        return None
     authorization = request.headers.get("Authorization")
     if authorization is None:
         return None
@@ -774,12 +932,21 @@ def _authenticate_request(
                 status=401,
                 detail="Authorization must contain one Bearer access token.",
                 code="INVALID_AUTHORIZATION_HEADER",
+                retryable=False,
             )
         )
     token = credentials.strip()
     if token.startswith(AccessService.TOKEN_PREFIX):
-        auth = access_service.authenticate_access_token(token)
+        auth = access_service.authenticate_access_token(
+            token,
+            request_id=str(request.state.request_id),
+        )
         if auth is None:
+            if (request.url.path, request.method.upper()) == _SESSION_LOGOUT_OPERATION:
+                # A retry after a successful logout must remain a non-enumerating 204.  Only
+                # this exact operation may receive a revoked opaque credential without an
+                # authenticated request context; its route still requires Bearer syntax.
+                return None
             raise ProblemException(
                 ProblemDetails(
                     type="https://hc-data-platform.invalid/problems/session-invalid",
@@ -787,6 +954,7 @@ def _authenticate_request(
                     status=401,
                     detail="The session is revoked or no longer valid.",
                     code="SESSION_INVALID",
+                    retryable=False,
                 )
             )
         return auth
@@ -810,20 +978,24 @@ def _request_context(
     request_id: str,
     auth: AuthContext | None,
 ) -> RequestContext:
+    organization_id = request.headers.get("X-Organization-Id")
     project_id = request.headers.get("X-Project-ID")
     region_code = request.headers.get("X-Region-Code")
     if auth is None:
+        organization_id = None
         project_id = None
         region_code = None
     elif project_id is not None:
-        ScopeGuard.require(auth, project_id, region_code)
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
     return RequestContext(
         request_id=request_id,
+        organization_id=organization_id,
         project_id=project_id,
         subject_id=None if auth is None else auth.subject_id,
         region_code=region_code,
         roles=frozenset() if auth is None else auth.roles,
         service_identity=False if auth is None else auth.service_identity,
+        platform_admin=False if auth is None else auth.is_platform_admin,
     )
 
 

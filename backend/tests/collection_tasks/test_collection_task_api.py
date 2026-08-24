@@ -13,13 +13,26 @@ from hc_data_platform.collection_tasks.service import CollectionTaskService
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.security.auth import AuthContext
 
+ORGANIZATION_ID = "org-a"
 
-def auth(role: str, *, projects: tuple[str, ...] = ("project-a",)) -> AuthContext:
+
+def auth(
+    role: str,
+    *,
+    projects: tuple[str, ...] = ("project-a",),
+    service_identity: bool = False,
+) -> AuthContext:
     return AuthContext(
         subject_id="user-1",
         project_ids=frozenset(projects),
         region_codes=frozenset({"cn-test"}),
         roles=frozenset({role}),
+        service_identity=service_identity,
+        organization_ids=frozenset({ORGANIZATION_ID}),
+        organization_scope_triples=frozenset(
+            (ORGANIZATION_ID, project_id, None) for project_id in projects
+        )
+        | frozenset((ORGANIZATION_ID, project_id, "cn-test") for project_id in projects),
     )
 
 
@@ -55,7 +68,7 @@ def api() -> Iterator[tuple[TestClient, dict[str, AuthContext | None]]]:
         )
 
     app.include_router(router)
-    with TestClient(app) as client:
+    with TestClient(app, headers={"X-Organization-Id": ORGANIZATION_ID}) as client:
         yield client, current
     configure_collection_tasks(CollectionTaskService())
 
@@ -72,6 +85,7 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
     client, _ = api
     created = create(client)
     assert created.status_code == 201
+    assert created.headers["Cache-Control"] == "no-store"
     assert created.headers["Idempotency-Replayed"] == "false"
     assert created.headers["ETag"] == '"v1"'
     task_id = created.json()["collection_task_id"]
@@ -80,15 +94,18 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
 
     replay = create(client)
     assert replay.status_code == 201
+    assert replay.headers["Cache-Control"] == "no-store"
     assert replay.json() == created.json()
     assert replay.headers["Idempotency-Replayed"] == "true"
 
     listed = client.get("/api/v1/projects/project-a/collection-tasks")
     assert listed.status_code == 200
+    assert listed.headers["Cache-Control"] == "no-store"
     assert [item["collection_task_id"] for item in listed.json()["items"]] == [task_id]
 
     detail = client.get(f"/api/v1/projects/project-a/collection-tasks/{task_id}")
     assert detail.status_code == 200
+    assert detail.headers["Cache-Control"] == "no-store"
     assert detail.headers["ETag"] == '"v1"'
 
     updated = client.patch(
@@ -97,6 +114,7 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
         headers={"If-Match": detail.headers["ETag"]},
     )
     assert updated.status_code == 200
+    assert updated.headers["Cache-Control"] == "no-store"
     assert updated.json()["description"] == "Updated"
     assert updated.headers["ETag"] == '"v2"'
 
@@ -105,6 +123,7 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
         headers={"X-Region-Code": "cn-test"},
     )
     assert progress.status_code == 200
+    assert progress.headers["Cache-Control"] == "no-store"
     assert progress.json()["received_package_count"] == 0
     assert progress.json()["qc"]["pass_rate"] == {
         "numerator": 0,
@@ -117,6 +136,7 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
         headers={"If-Match": updated.headers["ETag"], "Idempotency-Key": "close-1"},
     )
     assert closed.status_code == 200
+    assert closed.headers["Cache-Control"] == "no-store"
     assert closed.json()["status"] == "CLOSED"
     assert closed.headers["ETag"] == '"v3"'
 
@@ -129,6 +149,41 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
     assert rejected.json()["code"] == "COLLECTION_TASK_CLOSED"
 
 
+def test_cancel_and_reopen_are_explicit_cas_idempotent_lifecycle_operations(
+    api: tuple[TestClient, dict[str, Any]],
+) -> None:
+    client, _ = api
+    created = create(client)
+    task_id = created.json()["collection_task_id"]
+
+    cancelled = client.post(
+        f"/api/v1/projects/project-a/collection-tasks/{task_id}:cancel",
+        headers={"If-Match": created.headers["ETag"], "Idempotency-Key": "cancel-1"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.headers["Cache-Control"] == "no-store"
+    assert cancelled.headers["Idempotency-Replayed"] == "false"
+    assert cancelled.headers["ETag"] == '"v2"'
+    assert cancelled.json()["status"] == "CANCELLED"
+
+    cancel_replay = client.post(
+        f"/api/v1/projects/project-a/collection-tasks/{task_id}:cancel",
+        headers={"If-Match": created.headers["ETag"], "Idempotency-Key": "cancel-1"},
+    )
+    assert cancel_replay.status_code == 200
+    assert cancel_replay.headers["Idempotency-Replayed"] == "true"
+    assert cancel_replay.json() == cancelled.json()
+
+    reopened = client.post(
+        f"/api/v1/projects/project-a/collection-tasks/{task_id}:reopen",
+        headers={"If-Match": cancelled.headers["ETag"], "Idempotency-Key": "reopen-1"},
+    )
+    assert reopened.status_code == 200
+    assert reopened.headers["Cache-Control"] == "no-store"
+    assert reopened.headers["ETag"] == '"v3"'
+    assert reopened.json()["status"] == "ACTIVE"
+
+
 def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, Any]]) -> None:
     client, current = api
     created = create(client)
@@ -137,19 +192,27 @@ def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, 
     current["auth"] = auth("uploader", projects=("project-b",))
     denied_scope = client.get(f"/api/v1/projects/project-a/collection-tasks/{task_id}")
     assert denied_scope.status_code == 403
-    assert denied_scope.json()["code"] == "PROJECT_SCOPE_DENIED"
+    assert denied_scope.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
     hidden_identity = client.get(f"/api/v1/projects/project-b/collection-tasks/{task_id}")
     assert hidden_identity.status_code == 404
     assert hidden_identity.json()["code"] == "COLLECTION_TASK_NOT_FOUND"
 
     current["auth"] = auth("uploader")
+    wrong_organization = client.get(
+        f"/api/v1/projects/project-a/collection-tasks/{task_id}",
+        headers={"X-Organization-Id": "org-b"},
+    )
+    assert wrong_organization.status_code == 403
+    assert wrong_organization.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
+
+    current["auth"] = auth("uploader", service_identity=True)
     denied_region = client.get(
         f"/api/v1/projects/project-a/collection-tasks/{task_id}/progress",
         headers={"X-Region-Code": "cn-other"},
     )
     assert denied_region.status_code == 403
-    assert denied_region.json()["code"] == "REGION_SCOPE_DENIED"
+    assert denied_region.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
     current["auth"] = auth("annotator")
     readable = client.get("/api/v1/projects/project-a/collection-tasks")

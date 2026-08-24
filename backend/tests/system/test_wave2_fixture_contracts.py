@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -11,6 +12,7 @@ import yaml
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.manifest import parse_manifest_bytes
 from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.verification import McapRos2DecoderProbe
 from tests.system.wave2.cleanup import require_test_cleanup_profile
 from tests.system.wave2.fixture import (
     CleanupController,
@@ -69,8 +71,14 @@ def test_runtime_openapi_has_public_chain_contracts_and_exposes_known_provision_
         "/api/v1/auth/registrations": {"post"},
         "/api/v1/auth/sessions": {"post"},
         "/api/v1/auth/session/bootstrap": {"get"},
-        "/api/v1/projects/{project_id}/membership-requests": {"get", "post"},
-        "/api/v1/projects/{project_id}/capability-requests": {"get", "post"},
+        "/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests": {
+            "get",
+            "post",
+        },
+        "/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests": {
+            "get",
+            "post",
+        },
         "/api/v1/projects/{project_id}/collection-tasks": {"get", "post"},
         "/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:close": {"post"},
         "/api/v1/projects/{project_id}/regions/{region_code}/upload-manifests:preflight": {"post"},
@@ -98,10 +106,7 @@ def test_runtime_openapi_has_public_chain_contracts_and_exposes_known_provision_
         "patch",
         "trace",
     }
-    assert (
-        set(paths["/api/v1/projects/{project_id}/annotation-tasks"]) & http_methods
-        == {"get"}
-    )
+    assert set(paths["/api/v1/projects/{project_id}/annotation-tasks"]) & http_methods == {"get"}
     assert not any("start-ingest" in path or "ingest-workflow" in path for path in paths)
 
 
@@ -218,11 +223,40 @@ def test_mcap_corpus_contains_two_cameras_and_one_missing_frame() -> None:
     assert "/action" not in counts("missing_topic")
 
 
+def test_legal_mcap_ros2_channels_decode_with_the_production_decoder() -> None:
+    from mcap.reader import make_reader
+
+    decoder = McapRos2DecoderProbe()
+    decoded: dict[str, list[Any]] = {"/joint_states": [], "/action": []}
+
+    with (DATA_ROOT / scenario("legal").payload_path).open("rb") as stream:
+        for schema, channel, message in make_reader(stream).iter_messages():
+            if channel.topic not in decoded:
+                continue
+            assert schema is not None
+            decoded[channel.topic].append(
+                decoder.probe(
+                    message_encoding=channel.message_encoding,
+                    schema_encoding=schema.encoding,
+                    schema_name=schema.name,
+                    schema_data=schema.data,
+                    message_data=message.data,
+                )
+            )
+
+    assert [len(items) for items in decoded.values()] == [30, 30]
+    assert decoded["/joint_states"][0].position == [0.0, 0.0]
+    assert decoded["/joint_states"][-1].position == [0.29, -0.29]
+    assert decoded["/action"][0].value == [0.0, 1.0]
+    assert decoded["/action"][-1].value == [1.0, 0.0]
+
+
 def test_run_namespace_is_deterministic_but_separate_runs_never_collide() -> None:
     first = RunScope.create("run-01")
     assert first == RunScope.create("run-01")
     second = RunScope.create("run-02")
     assert first.project_id != second.project_id
+    assert first.organization_id != second.organization_id
     assert first.foreign_project_id != second.foreign_project_id
     assert first.admin_username != second.admin_username
     assert first.raw_prefix != second.raw_prefix

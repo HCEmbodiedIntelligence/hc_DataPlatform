@@ -1,6 +1,7 @@
 import { Alert, Badge, Button, Input, Pagination, Tabs } from "antd";
 import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { ReactNode } from "react";
 import { isDomainError } from "../../shared/api/domain-error";
 import {
   PageState,
@@ -27,9 +28,13 @@ export interface AccessApprovalViewProps {
   readonly membership: RequestCollectionState;
   readonly capability: RequestCollectionState;
   readonly canManage: boolean;
+  readonly canReadPlatformAccounts?: boolean;
+  readonly canReadProjectRequests?: boolean;
+  readonly userManagement?: ReactNode;
   readonly principalId: string | null;
   readonly decisionPending: boolean;
   readonly decisionError: unknown;
+  readonly decisionRequestId?: string;
   readonly decisionSuccessMessage?: string;
   readonly onDecisionSuccessDismiss: () => void;
   readonly onSearchChange: (patch: Partial<AccessSearch>) => void;
@@ -97,9 +102,12 @@ function matchesSearch(row: AccessRequestRow, search: AccessSearch): boolean {
 
 export function AccessApprovalView({
   canManage,
+  canReadPlatformAccounts = false,
+  canReadProjectRequests = true,
   capability,
   decisionError,
   decisionPending,
+  decisionRequestId,
   decisionSuccessMessage,
   membership,
   onDecision,
@@ -108,11 +116,15 @@ export function AccessApprovalView({
   onSearchChange,
   principalId,
   search,
+  userManagement,
 }: Readonly<AccessApprovalViewProps>) {
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
   const refreshButtonRef = useRef<HTMLButtonElement>(null);
   const successDismissRef = useRef<HTMLButtonElement>(null);
-  const operationalTab = search.tab;
+  const operationalTab: Exclude<AccessTab, "users"> =
+    search.tab === "capability-requests"
+      ? "capability-requests"
+      : "membership-requests";
   const active = search.tab === "capability-requests" ? capability : membership;
   const filteredRows = useMemo(
     () =>
@@ -141,6 +153,8 @@ export function AccessApprovalView({
     pageRows[0] ??
     null;
   const drawerOpen = search.drawer === "open" && selected !== null;
+  const selectedDecisionMatches =
+    selected !== null && selected.requestId === decisionRequestId;
 
   const restoreDrawerFocus = useCallback(() => {
     globalThis.requestAnimationFrame(() => {
@@ -174,82 +188,114 @@ export function AccessApprovalView({
   }, [closeDrawer, drawerOpen]);
 
   const tabs = [
-    {
-      key: "membership-requests",
-      label: tabLabel("项目加入申请", pendingCount(membership.rows)),
-    },
-    {
-      key: "capability-requests",
-      label: tabLabel("权限申请", pendingCount(capability.rows)),
-    },
+    ...(canReadPlatformAccounts
+      ? [
+          {
+            key: "users",
+            label: tabLabel("用户管理"),
+          },
+        ]
+      : []),
+    ...(canReadProjectRequests
+      ? [
+          {
+            key: "membership-requests",
+            label: tabLabel("项目加入申请", pendingCount(membership.rows)),
+          },
+          {
+            key: "capability-requests",
+            label: tabLabel("权限申请", pendingCount(capability.rows)),
+          },
+        ]
+      : []),
   ];
 
-  const filters = (
-    <div className={styles.filters} role="search" aria-label="申请筛选">
-      <label className={styles.filterField}>
-        <span>搜索申请</span>
-        <Input
-          name="access-request-search"
-          autoComplete="off"
-          prefix={<Search aria-hidden="true" size={15} />}
-          placeholder="申请人 ID、说明或 capability…"
-          value={search.q ?? ""}
-          allowClear
-          onChange={(event) =>
-            onSearchChange({ q: event.target.value || undefined, page: 1 })
-          }
-        />
-      </label>
-      <label className={styles.filterField}>
-        <span>状态</span>
-        <select
-          name="access-request-status"
-          value={search.status}
-          onChange={(event) =>
-            onSearchChange({
-              status: event.target.value as AccessSearch["status"],
-              page: 1,
-            })
-          }
+  const filters =
+    search.tab === "users" || !canReadProjectRequests ? null : (
+      <div className={styles.filters} role="search" aria-label="申请筛选">
+        <label className={styles.filterField}>
+          <span>搜索申请</span>
+          <Input
+            name="access-request-search"
+            autoComplete="off"
+            prefix={<Search aria-hidden="true" size={15} />}
+            placeholder="申请人 ID、说明或 capability…"
+            value={search.q ?? ""}
+            allowClear
+            onChange={(event) =>
+              onSearchChange({ q: event.target.value || undefined, page: 1 })
+            }
+          />
+        </label>
+        <label className={styles.filterField}>
+          <span>状态</span>
+          <select
+            name="access-request-status"
+            value={search.status}
+            onChange={(event) =>
+              onSearchChange({
+                status: event.target.value as AccessSearch["status"],
+                page: 1,
+              })
+            }
+          >
+            <option value="ALL">全部状态</option>
+            <option value="PENDING">待审批</option>
+            <option value="APPROVED">已批准</option>
+            <option value="REJECTED">已拒绝</option>
+            <option value="WITHDRAWN">已撤回</option>
+            <option value="REVOKED">已撤销</option>
+          </select>
+        </label>
+        <label className={styles.filterField}>
+          <span>排序</span>
+          <select
+            name="access-request-order"
+            value={search.order}
+            onChange={(event) =>
+              onSearchChange({
+                order: event.target.value as AccessSearch["order"],
+                page: 1,
+              })
+            }
+          >
+            <option value="recent">最近提交</option>
+            <option value="oldest">最早提交</option>
+          </select>
+        </label>
+        <Button
+          ref={refreshButtonRef}
+          className={styles.refreshButton}
+          icon={<RefreshCw aria-hidden="true" size={16} />}
+          loading={active.fetching}
+          onClick={() => onRefresh(operationalTab)}
         >
-          <option value="ALL">全部状态</option>
-          <option value="PENDING">待审批</option>
-          <option value="APPROVED">已批准</option>
-          <option value="REJECTED">已拒绝</option>
-          <option value="WITHDRAWN">已撤回</option>
-          <option value="REVOKED">已撤销</option>
-        </select>
-      </label>
-      <label className={styles.filterField}>
-        <span>排序</span>
-        <select
-          name="access-request-order"
-          value={search.order}
-          onChange={(event) =>
-            onSearchChange({
-              order: event.target.value as AccessSearch["order"],
-              page: 1,
-            })
-          }
-        >
-          <option value="recent">最近提交</option>
-          <option value="oldest">最早提交</option>
-        </select>
-      </label>
-      <Button
-        ref={refreshButtonRef}
-        className={styles.refreshButton}
-        icon={<RefreshCw aria-hidden="true" size={16} />}
-        loading={active.fetching}
-        onClick={() => onRefresh(operationalTab)}
-      >
-        刷新
-      </Button>
-    </div>
-  );
+          刷新
+        </Button>
+      </div>
+    );
 
   let content;
-  if (active.loading && active.rows.length === 0) {
+  if (search.tab === "users") {
+    content =
+      canReadPlatformAccounts && userManagement ? (
+        userManagement
+      ) : (
+        <PageState
+          state="forbidden"
+          label="用户管理"
+          description="当前会话没有平台用户查看权限。"
+        />
+      );
+  } else if (!canReadProjectRequests) {
+    content = (
+      <PageState
+        state="forbidden"
+        label="项目访问申请"
+        description="当前会话没有可用的项目作用域。"
+      />
+    );
+  } else if (active.loading && active.rows.length === 0) {
     content = <PageState state="loading" label="访问申请" layout="list" />;
   } else if (active.error && active.rows.length === 0) {
     content = (
@@ -357,9 +403,13 @@ export function AccessApprovalView({
             row={selected}
             canManage={canManage}
             principalId={principalId}
-            pending={decisionPending}
-            error={decisionSuccessMessage ? null : decisionError}
-            settled={Boolean(decisionSuccessMessage)}
+            pending={selectedDecisionMatches && decisionPending}
+            error={
+              selectedDecisionMatches && !decisionSuccessMessage
+                ? decisionError
+                : null
+            }
+            settled={selectedDecisionMatches && Boolean(decisionSuccessMessage)}
             onClose={closeDrawer}
             onReload={() => onRefresh(operationalTab)}
             onDecision={onDecision}
@@ -375,7 +425,7 @@ export function AccessApprovalView({
         header={{
           title: "账户与权限",
           description:
-            "在当前项目作用域审批加入项目和 capability 申请；注册账户不进入审批队列。",
+            "管理平台用户与账户安全，并在当前项目作用域处理加入项目和 capability 申请；注册账户不进入审批队列。",
           breadcrumbs: [
             { key: "security", label: "安全与审计" },
             { key: "access", label: "账户与权限" },
@@ -402,7 +452,7 @@ export function AccessApprovalView({
           </div>
         }
       >
-        {decisionSuccessMessage ? (
+        {search.tab !== "users" && decisionSuccessMessage ? (
           <Alert
             className={styles.decisionStatus}
             type="success"

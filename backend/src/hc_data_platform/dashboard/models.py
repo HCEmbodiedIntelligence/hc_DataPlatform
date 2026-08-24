@@ -144,14 +144,29 @@ class DashboardPublishedRegionState(DashboardSectionState):
         return self
 
 
+class DashboardSignalStageCount(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage: SignalStage
+    count: int = Field(ge=0)
+
+
 class DashboardSignalPipelineState(DashboardSectionState):
     stages: tuple[SignalStage, ...] = SIGNAL_STAGES
+    stage_counts: tuple[DashboardSignalStageCount, ...]
     published_region: DashboardPublishedRegionState
 
     @model_validator(mode="after")
     def validate_stages(self) -> DashboardSignalPipelineState:
         if self.stages != SIGNAL_STAGES:
             raise ValueError("the signal-stage catalog is fixed and ordered")
+        if tuple(item.stage for item in self.stage_counts) != SIGNAL_STAGES:
+            raise ValueError("signal-stage counts must cover the fixed catalog in order")
+        counts = tuple(item.count for item in self.stage_counts)
+        if self.status is DashboardSectionStatus.EMPTY and any(counts):
+            raise ValueError("empty signal pipelines require zero stage counts")
+        if self.status is DashboardSectionStatus.READY and not any(counts):
+            raise ValueError("ready signal pipelines require at least one factual stage count")
         return self
 
 

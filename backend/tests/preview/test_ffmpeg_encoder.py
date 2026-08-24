@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 from urllib.parse import unquote, urlparse
 
 import pytest
@@ -20,7 +21,7 @@ from hc_data_platform.preview.models import (
 from hc_data_platform.preview.service import preview_cache_key
 
 
-def preview_request() -> PreviewRequestV1:
+def preview_request(codec: Literal["h264", "vp9"] = "h264") -> PreviewRequestV1:
     return PreviewRequestV1(
         project_id="project-1",
         dataset_id="dataset-1",
@@ -31,6 +32,8 @@ def preview_request() -> PreviewRequestV1:
         view_mode=ViewMode.ORIGINAL,
         frequency_hz=4,
         encoding_profile=EncodingProfileV1(
+            name=f"{codec}-cmaf-preview-v1",
+            video_codec=codec,
             width=64,
             height=48,
             video_bitrate_kbps=128,
@@ -38,6 +41,38 @@ def preview_request() -> PreviewRequestV1:
             preset="ultrafast",
         ),
     )
+
+
+def test_vp9_profile_selects_the_runtime_encoder(tmp_path: Path) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str]) -> None:
+        commands.append(tuple(command))
+        if "-frames:v" not in command:
+            Path(command[-1]).write_text("#EXTM3U\n#EXT-X-ENDLIST\n", encoding="utf-8")
+
+    request = preview_request("vp9")
+    FFmpegHlsEncoder(tmp_path, runner=runner).encode(
+        cache_key=preview_cache_key(request),
+        request=request,
+        frames=(
+            RenderFrameV1(
+                playback_frame=0,
+                step_index=0,
+                timestamp_ns=0,
+                placeholder=PlaceholderDescriptorV1(
+                    invalid_reason="test placeholder",
+                    playback_frame=0,
+                    step_index=0,
+                ),
+            ),
+        ),
+    )
+
+    encode_command = commands[-1]
+    assert "libvpx-vp9" in encode_command
+    assert "-deadline" in encode_command
+    assert "libx264" not in encode_command
 
 
 def _ppm(path: Path, *, red: int, green: int, blue: int) -> None:
@@ -128,14 +163,17 @@ def test_embedded_lance_image_is_materialized_only_for_the_decode_call(tmp_path:
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="FFmpeg/FFprobe runtime dependency is unavailable",
 )
-def test_ffmpeg_generates_probeable_hls_with_cmaf_segments(tmp_path: Path) -> None:
+@pytest.mark.parametrize("codec", ["h264", "vp9"])
+def test_ffmpeg_generates_probeable_hls_with_cmaf_segments(
+    tmp_path: Path, codec: Literal["h264", "vp9"]
+) -> None:
     source_directory = tmp_path / "source"
     source_directory.mkdir()
     source_paths = [source_directory / f"frame-{index}.ppm" for index in range(6)]
     for index, source_path in enumerate(source_paths):
         _ppm(source_path, red=index * 30, green=40, blue=200 - index * 20)
 
-    request = preview_request()
+    request = preview_request(codec)
     cache_root = tmp_path / "cache"
     render_frames = list(_render_frames(source_paths[:5]))
     render_frames[2] = render_frames[2].model_copy(update={"excluded": True})
@@ -181,7 +219,7 @@ def test_ffmpeg_generates_probeable_hls_with_cmaf_segments(tmp_path: Path) -> No
         text=True,
     )
     stream = json.loads(probe.stdout)["streams"][0]
-    assert stream == {"codec_name": "h264", "width": 64, "height": 48}
+    assert stream == {"codec_name": codec, "width": 64, "height": 48}
 
 
 @pytest.mark.integration

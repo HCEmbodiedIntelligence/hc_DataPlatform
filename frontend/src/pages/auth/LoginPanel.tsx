@@ -1,15 +1,29 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Checkbox, Divider, Form, Input } from "antd";
+import { useEffect, useRef } from "react";
+import { Alert, Button, Divider, Form, Input } from "antd";
 import { KeyRound, ShieldCheck, UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
+import type { PublicAuthChallengeConfiguration } from "./api";
 import type { LoginValues } from "./use-login-flow";
 import { PasswordField } from "./PasswordField";
+import { TurnstileChallenge } from "./TurnstileChallenge";
 import styles from "./styles.module.css";
+
+const ignoreChallengeToken = (_token: string | null): void => undefined;
+const retryUnavailableChallenge = (): void => undefined;
 
 interface LoginPanelProps {
   readonly initialUsername?: string;
   readonly submitting: boolean;
   readonly error: string | null;
+  readonly challengeRequired?: boolean;
+  readonly challengeConfiguration?:
+    | PublicAuthChallengeConfiguration
+    | null
+    | undefined;
+  readonly challengeResponse?: string | null;
+  readonly challengeResetKey?: number;
+  readonly onChallengeResponse?: (token: string | null) => void;
+  readonly onRetryChallengeConfiguration?: () => void;
   readonly onSubmit: (values: LoginValues) => Promise<void> | void;
 }
 
@@ -17,10 +31,15 @@ export function LoginPanel({
   initialUsername,
   submitting,
   error,
+  challengeRequired = false,
+  challengeConfiguration = undefined,
+  challengeResponse = null,
+  challengeResetKey = 0,
+  onChallengeResponse = ignoreChallengeToken,
+  onRetryChallengeConfiguration = retryUnavailableChallenge,
   onSubmit,
 }: LoginPanelProps) {
   const [form] = Form.useForm<LoginValues>();
-  const [recoveryVisible, setRecoveryVisible] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,7 +65,10 @@ export function LoginPanel({
         layout="vertical"
         requiredMark={false}
         initialValues={{ username: initialUsername ?? "", password: "" }}
-        onFinish={onSubmit}
+        onFinish={(values) => {
+          if (challengeRequired && challengeResponse === null) return;
+          return onSubmit(values);
+        }}
         onFinishFailed={({ errorFields }) => {
           const first = errorFields[0]?.name;
           if (first) form.getFieldInstance(first)?.focus?.();
@@ -82,28 +104,40 @@ export function LoginPanel({
         />
 
         <div className={styles.formUtilities}>
-          <span title="当前会话合同不支持持久登录">
-            <Checkbox disabled>记住我（暂未开放）</Checkbox>
-          </span>
-          <Button
-            type="link"
-            className={styles.inlineAction}
-            onClick={() => setRecoveryVisible((current) => !current)}
-          >
+          <Link className={styles.inlineAction} to="/auth/recover-password">
             忘记密码？
-          </Button>
+          </Link>
         </div>
 
-        {recoveryVisible ? (
-          <Alert
-            className={styles.recoveryNotice}
-            type="info"
-            showIcon
-            title="当前未提供自助找回"
-            description="请联系平台管理员核验身份。页面不会要求邮箱、手机号或验证码。"
-            closable
-            onClose={() => setRecoveryVisible(false)}
-          />
+        {challengeRequired ? (
+          challengeConfiguration === undefined ? (
+            <Alert
+              className={styles.registrationNotice}
+              type="info"
+              showIcon
+              title="正在加载安全验证"
+              description="请稍候，验证组件加载完成后即可继续登录。"
+            />
+          ) : challengeConfiguration === null ? (
+            <Alert
+              className={styles.registrationNotice}
+              type="error"
+              showIcon
+              title="无法加载安全验证"
+              description="当前无法继续登录；请检查网络后重新加载验证组件。"
+              action={
+                <Button size="small" onClick={onRetryChallengeConfiguration}>
+                  重新加载
+                </Button>
+              }
+            />
+          ) : (
+            <TurnstileChallenge
+              configuration={challengeConfiguration}
+              resetKey={challengeResetKey}
+              onToken={onChallengeResponse}
+            />
+          )
         ) : null}
 
         <Button
@@ -112,7 +146,9 @@ export function LoginPanel({
           htmlType="submit"
           block
           loading={submitting}
-          disabled={submitting}
+          disabled={
+            submitting || (challengeRequired && challengeResponse === null)
+          }
         >
           {submitting ? "正在登录…" : "登录"}
         </Button>

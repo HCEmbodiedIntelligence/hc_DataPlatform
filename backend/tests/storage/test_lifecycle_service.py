@@ -31,6 +31,17 @@ def operator(project_id: str = "project-a") -> AuthContext:
     )
 
 
+def capability_actor(*capabilities: str, project_id: str = "project-a") -> AuthContext:
+    return AuthContext(
+        subject_id="storage-capability-actor",
+        project_ids=frozenset({project_id}),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset(capabilities),
+        scope_pairs=frozenset({(project_id, None)}),
+    )
+
+
 def command(
     *,
     name: str = "待标注保留复核",
@@ -227,7 +238,43 @@ def test_policy_conflict_etag_scope_and_protected_target_negative_cases() -> Non
         )
 
 
-def test_execution_guard_blocks_open_10_and_every_protected_object() -> None:
+def test_lifecycle_requires_precise_read_and_manage_capabilities() -> None:
+    target = service()
+    manager = capability_actor("storage.lifecycle.manage")
+    created = target.create_policy(
+        project_id="project-a",
+        command=command(),
+        actor=manager,
+        idempotency_key="capability-create",
+        request_id="capability-create",
+    )
+    assert created.policy is not None
+
+    readable = target.list_policies(
+        project_id="project-a",
+        actor=capability_actor("storage.lifecycle.read"),
+    )
+    assert [item.policy_id for item in readable.items] == [created.policy.policy_id]
+
+    with pytest.raises(ProblemException) as read_denied:
+        target.list_policies(
+            project_id="project-a",
+            actor=capability_actor("storage.overview.read"),
+        )
+    assert read_denied.value.problem.code == "CAPABILITY_REQUIRED"
+
+    with pytest.raises(ProblemException) as manage_denied:
+        target.create_policy(
+            project_id="project-a",
+            command=command(name="只读不能新建"),
+            actor=capability_actor("storage.lifecycle.read"),
+            idempotency_key="capability-read-only",
+            request_id="capability-read-only",
+        )
+    assert manage_denied.value.problem.code == "CAPABILITY_REQUIRED"
+
+
+def test_execution_guard_requires_bound_approval_and_blocks_every_protected_object() -> None:
     request = LifecycleExecutionRequest(
         execution_id="execution-1",
         project_id="project-a",
@@ -263,12 +310,12 @@ def test_execution_guard_blocks_open_10_and_every_protected_object() -> None:
     result = StorageGovernanceService.validate_execution(request)
 
     assert result.status == "BLOCKED"
-    assert "OPEN_10_PRODUCTION_EXECUTION_DISABLED" in result.blocked_reasons
+    assert "LIFECYCLE_APPROVAL_REQUIRED" in result.blocked_reasons
     assert "PROTECTED_OBJECT:raw-object" in result.blocked_reasons
     assert "PROTECTED_OBJECT:manifest-object" in result.blocked_reasons
     assert "PROTECTED_OBJECT:published-manifest-object" in result.blocked_reasons
 
-    approved_bit_cannot_override_open_10 = request.model_copy(
+    approval_bit_without_bound_evidence_is_rejected = request.model_copy(
         update={
             "production_execution_approved": True,
             "candidates": (
@@ -283,11 +330,18 @@ def test_execution_guard_blocks_open_10_and_every_protected_object() -> None:
         }
     )
     approved_result = StorageGovernanceService.validate_execution(
-        approved_bit_cannot_override_open_10
+        approval_bit_without_bound_evidence_is_rejected
     )
     assert approved_result.status == "BLOCKED"
-    assert approved_result.blocked_reasons == ("OPEN_10_PRODUCTION_EXECUTION_DISABLED",)
+    assert approved_result.blocked_reasons == ("LIFECYCLE_APPROVAL_REQUIRED",)
     assert result.processed_instance_ids == ()
+
+    bound_approval = approval_bit_without_bound_evidence_is_rejected.model_copy(
+        update={"approval_id": "approval-1", "plan_hash": "a" * 64}
+    )
+    validated = StorageGovernanceService.validate_execution(bound_approval)
+    assert validated.status == "VALIDATED"
+    assert validated.processed_instance_ids == ("rebuildable-cache",)
 
 
 def test_non_production_rebuildable_cache_can_pass_server_guard() -> None:

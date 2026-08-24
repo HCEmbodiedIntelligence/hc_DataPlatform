@@ -13,6 +13,7 @@ import {
 } from "../../features/viewer";
 import { AnnotationWorkbenchView } from "./AnnotationWorkbenchView";
 import type { AnnotationWorkbenchPermissions } from "./AnnotationWorkbenchView";
+import { RuntimeAutoAnnotationPanel } from "./RuntimeAutoAnnotationPanel";
 import {
   createRuntimeAnnotationCommands,
   loadRuntimeAnnotationBundle,
@@ -367,6 +368,13 @@ function RuntimeAnnotationTaskPage({
     setDirty(false);
     await query.refetch();
   };
+  const restoreRevision = async (targetRevision: number) => {
+    await commands.restoreRevision(bundle.task, targetRevision);
+    if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
+    setRecoveryTags(null);
+    setDirty(false);
+    await query.refetch();
+  };
   const submit = async () => {
     if (!bundle.draft) throw new Error("当前没有可提交的服务端草稿。");
     await commands.submit(bundle.task, bundle.draft.revision);
@@ -415,10 +423,35 @@ function RuntimeAnnotationTaskPage({
         : annotationRoutes.task.build({ taskId: bundle.task.task_id }),
     );
   };
+  const openRevisions = () => {
+    if (
+      dirty &&
+      !window.confirm(
+        "有尚未保存的 Tag 修改，确认查看数据修订并保留本会话恢复稿吗？",
+      )
+    )
+      return;
+    void navigate(annotationRoutes.revisions.pattern);
+  };
 
   return (
     <AnnotationWorkbenchView
+      key={bundle.task.task_id}
       bundle={bundle}
+      autoAnnotationPanel={
+        mode === "annotation" ? (
+          <RuntimeAutoAnnotationPanel
+            key={bundle.task.task_id}
+            canUse={permissions.canSave && capabilities.has("annotation.write")}
+            dirty={dirty}
+            scope={scope}
+            task={bundle.task}
+            onApplied={async () => {
+              await query.refetch();
+            }}
+          />
+        ) : undefined
+      }
       dirty={dirty}
       mode={mode}
       permissions={permissions}
@@ -436,6 +469,8 @@ function RuntimeAnnotationTaskPage({
         setRecoveryTags(null);
       }}
       onReview={review}
+      onOpenRevisions={openRevisions}
+      onRestoreRevision={restoreRevision}
       onSave={save}
       onSelectTask={selectTask}
       onSubmit={submit}

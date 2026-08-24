@@ -19,6 +19,7 @@ from hc_data_platform.annotation.models import (
     TagSchemaStatus,
     TagSchemaVersion,
 )
+from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -169,14 +170,47 @@ class ManifestActivityOutput(BaseModel):
     preflight: ManifestPreflightResultV1
 
 
+class IngestProjectionSourceV1(BaseModel):
+    """Compact immutable locator resolved inside Worker activities.
+
+    Raw observations never cross the Temporal history boundary.  Activities use
+    this locator to reload and validate the committed MCAP before evaluating QC or
+    writing aligned fragments.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    rollout_id: str = Field(min_length=1)
+    data_package_id: str = Field(min_length=1)
+    object_key: str = Field(min_length=1, max_length=2048)
+    manifest_key: str = Field(min_length=1, max_length=2048)
+    manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class QualityActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     project_id: str | None = Field(default=None, min_length=1)
     region_code: str | None = Field(default=None, min_length=1)
-    data: QualityInputV1
+    data: QualityInputV1 | None = None
+    source: IngestProjectionSourceV1 | None = None
     profile: QualityProfileV1
     decision_source: Literal["AUTOMATIC"] = "AUTOMATIC"
+
+    @model_validator(mode="after")
+    def exactly_one_data_source(self) -> QualityActivityInput:
+        if (self.data is None) == (self.source is None):
+            raise ValueError("quality input requires exactly one of data or source")
+        if self.source is not None and (
+            self.project_id != self.source.project_id or self.region_code != self.source.region_code
+        ):
+            raise ValueError("quality source scope must match the activity scope")
+        return self
 
 
 class QualityActivityOutput(BaseModel):
@@ -192,8 +226,19 @@ class AlignmentActivityInput(BaseModel):
     region_code: str | None = Field(default=None, min_length=1)
     dataset_id: str = Field(min_length=1)
     schema_snapshot_id: str = Field(min_length=1)
-    data: AlignmentInputV1
+    data: AlignmentInputV1 | None = None
+    source: IngestProjectionSourceV1 | None = None
     profile: AlignmentProfileV1
+
+    @model_validator(mode="after")
+    def exactly_one_data_source(self) -> AlignmentActivityInput:
+        if (self.data is None) == (self.source is None):
+            raise ValueError("alignment input requires exactly one of data or source")
+        if self.source is not None and (
+            self.project_id != self.source.project_id or self.region_code != self.source.region_code
+        ):
+            raise ValueError("alignment source scope must match the activity scope")
+        return self
 
 
 class CatalogFragmentPayloadV1(BaseModel):
@@ -210,6 +255,25 @@ class AlignmentActivityOutput(BaseModel):
 
     staged_manifest: StagedFragmentManifestV1
     catalog_fragment: CatalogFragmentPayloadV1
+    dataset_version: DatasetVersionRef | None = None
+    derived_ready: DerivedReadyV1 | None = None
+    viewer_target: DatasetIngestViewerTarget | None = None
+
+    @model_validator(mode="after")
+    def complete_inline_commit(self) -> AlignmentActivityOutput:
+        if (self.dataset_version is None) != (self.derived_ready is None):
+            raise ValueError("inline alignment commit must return both version results")
+        if self.dataset_version is not None and self.catalog_fragment.steps:
+            raise ValueError("inline alignment commit must not return Step payloads")
+        if self.viewer_target is not None:
+            if self.dataset_version is None or self.derived_ready is None:
+                raise ValueError("viewer target requires a complete inline Lance commit")
+            if (
+                self.viewer_target.dataset_id != self.dataset_version.dataset_id
+                or self.viewer_target.version_id != f"version_lance_{self.dataset_version.version}"
+            ):
+                raise ValueError("viewer target must match the immutable Dataset version")
+        return self
 
 
 class CatalogCommitActivityInput(BaseModel):
@@ -227,6 +291,27 @@ class CatalogCommitActivityOutput(BaseModel):
 
 class AutomaticAnnotationActivityInput(BaseModel):
     """Immutable Lance hand-off used only by the ingest workflow."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Optional only so an activity already scheduled by a pre-018 workflow can
+    # still be decoded during a rolling deployment. New workflows always carry
+    # the verified organization scope and the activity rejects a missing value.
+    organization_id: str | None = Field(default=None, min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    rollout_id: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    dataset_version: int = Field(ge=1)
+    lance_version: int = Field(ge=1)
+    dataset_schema_snapshot_id: str = Field(min_length=1)
+    base_step_count: int = Field(gt=0)
+    source_workflow_id: str = Field(min_length=1)
+    task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
+
+
+class LegacyAutomaticAnnotationActivityInput(BaseModel):
+    """Frozen wire shape for Temporal histories recorded before core/018."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -278,12 +363,54 @@ class ExportActivityInput(BaseModel):
 
     manifest: PublishedDatasetManifestV1
     format: ExportFormat
+    # A default keeps already-scheduled Temporal activity payloads decodable
+    # during the workflow-code rollout. New API launches always supply a
+    # server-derived idempotent attempt identity.
+    attempt_id: str = Field(default="legacy-export-attempt", min_length=1)
+
+
+class LegacyExportActivityInput(BaseModel):
+    """Frozen wire shape for pre-attempt-id Temporal activity histories."""
+
+    model_config = ConfigDict(frozen=True)
+
+    manifest: PublishedDatasetManifestV1
+    format: ExportFormat
 
 
 class ExportActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     result: ExportResultV1
+
+
+class ExportPreflightActivityInput(BaseModel):
+    """Validate immutable source facts before export materialization."""
+
+    model_config = ConfigDict(frozen=True)
+
+    manifest: PublishedDatasetManifestV1
+    format: ExportFormat
+
+
+class ExportPreflightActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    row_count: int = Field(ge=0)
+
+
+class ExportArtifactVerificationActivityInput(BaseModel):
+    """Internal-only result used to re-read and verify a promoted artifact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    result: ExportResultV1
+
+
+class ExportArtifactVerificationActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    verified: bool = True
 
 
 class CatalogReconciliationActivityInput(BaseModel):
@@ -314,6 +441,10 @@ class PublishReconciliationActivityOutput(BaseModel):
 class IngestRolloutWorkflowInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    # Historical Temporal histories predate organization-scoped core ledgers.
+    # The default preserves replay decoding; every new persisted ingest plan is
+    # required to set this verified organization identity.
+    organization_id: str | None = Field(default=None, min_length=1)
     project_id: str = Field(min_length=1)
     region_code: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
@@ -326,17 +457,21 @@ class IngestRolloutWorkflowInput(BaseModel):
 
     @model_validator(mode="after")
     def consistent_lineage(self) -> IngestRolloutWorkflowInput:
+        quality_lineage = self.quality.data or self.quality.source
+        alignment_lineage = self.alignment.data or self.alignment.source
+        if quality_lineage is None or alignment_lineage is None:
+            raise ValueError("ingest activity lineage is missing")
         rollout_ids = {
             self.rollout_id,
             self.manifest.rollout_id,
             self.verification.rollout_id,
-            self.quality.data.rollout_id,
-            self.alignment.data.rollout_id,
+            quality_lineage.rollout_id,
+            alignment_lineage.rollout_id,
         }
         source_hashes = {
             self.verification.source_sha256,
-            self.quality.data.source_sha256,
-            self.alignment.data.source_sha256,
+            quality_lineage.source_sha256,
+            alignment_lineage.source_sha256,
         }
         if len(rollout_ids) != 1:
             raise ValueError("all ingest activity inputs must reference the same rollout")
@@ -362,6 +497,19 @@ class IngestRolloutWorkflowInput(BaseModel):
             raise ValueError("all ingest activity region_codes must match workflow region_code")
         if self.alignment.dataset_id != self.dataset_id:
             raise ValueError("alignment dataset_id must match workflow dataset_id")
+        source_organizations = {
+            source.organization_id
+            for source in (self.quality.source, self.alignment.source)
+            if source is not None
+        }
+        if len(source_organizations) > 1:
+            raise ValueError("all ingest projection sources must match one organization_id")
+        if (
+            self.organization_id is not None
+            and source_organizations
+            and source_organizations != {self.organization_id}
+        ):
+            raise ValueError("ingest organization_id must match every projection source")
         return self
 
 
@@ -391,6 +539,9 @@ class ExportWorkflowInput(BaseModel):
 
     manifest: PublishedDatasetManifestV1
     format: ExportFormat
+    # See ExportActivityInput: preserve replay compatibility for historical
+    # workflow histories while all new public launches set this explicitly.
+    attempt_id: str = Field(default="legacy-export-attempt", min_length=1)
 
 
 class CatalogReconciliationWorkflowInput(BaseModel):

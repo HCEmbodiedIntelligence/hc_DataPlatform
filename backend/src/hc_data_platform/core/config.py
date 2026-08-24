@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOCAL_CURSOR_SECRET = "local-cursor-secret-change-me"
 _LOCAL_OBJECT_STORE_SECRET = "minio-local-only"
+_LOCAL_DATA_SOURCE_CREDENTIAL_KEY = "local-data-source-credential-key-change-me"
 
 
 class Settings(BaseSettings):
@@ -42,10 +43,19 @@ class Settings(BaseSettings):
         repr=False,
     )
     object_store_region: str = Field(default="us-east-1", min_length=1)
+    ingest_part_authorization_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
     preview_cache_root: str = "/tmp/hc-data/previews"
     artifact_prefix: str = "artifacts"
+    auto_annotation_provider_name: str = Field(default="vlm", min_length=1, max_length=128)
+    auto_annotation_provider_endpoint: str | None = None
+    auto_annotation_provider_models: tuple[str, ...] = ()
+    auto_annotation_provider_api_key: SecretStr | None = Field(default=None, repr=False)
+    auto_annotation_provider_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    auto_annotation_max_concurrent_jobs: int = Field(default=4, ge=1, le=1000)
+    auto_annotation_max_jobs_per_hour: int = Field(default=60, ge=1, le=100_000)
+    auto_annotation_daily_cost_limit_micros: int = Field(default=5_000_000, ge=1)
     mcap_decoder_factory: str | None = None
     jwt_issuer: str = "https://identity.example.invalid/"
     jwt_audience: str = Field(default="hc-data-platform", min_length=1)
@@ -53,6 +63,58 @@ class Settings(BaseSettings):
     jwt_jwks_url: str | None = None
     jwt_signing_key: SecretStr | None = Field(default=None, repr=False)
     cursor_secret: str = Field(default=_LOCAL_CURSOR_SECRET, min_length=16, repr=False)
+    data_source_credential_key: SecretStr = Field(
+        default=SecretStr(_LOCAL_DATA_SOURCE_CREDENTIAL_KEY),
+        min_length=24,
+        repr=False,
+    )
+    password_min_length: int = Field(default=6, ge=6, le=128)
+    password_max_length: int = Field(default=128, ge=64, le=128)
+    password_scrypt_n: int = Field(default=2**15, ge=2**14, le=2**18)
+    password_scrypt_r: int = Field(default=8, ge=1, le=32)
+    password_scrypt_p: int = Field(default=1, ge=1, le=8)
+    session_idle_ttl_seconds: int = Field(default=1_800, ge=1, le=31_536_000)
+    session_absolute_ttl_seconds: int = Field(default=86_400, ge=1, le=31_536_000)
+    session_touch_interval_seconds: int = Field(default=60, ge=1, le=31_536_000)
+    max_active_sessions: int = Field(default=5, ge=1, le=100)
+    auth_abuse_enabled: bool = False
+    auth_abuse_hmac_secret: SecretStr | None = Field(default=None, repr=False)
+    auth_client_ip_mode: Literal["peer", "trusted_proxy"] = "peer"
+    auth_trusted_proxy_cidrs: tuple[str, ...] = ()
+    auth_login_failure_window_seconds: int = Field(default=900, ge=1, le=86_400)
+    auth_login_challenge_after_failures: int = Field(default=3, ge=1, le=100)
+    auth_login_delay_after_failures: int = Field(default=5, ge=1, le=100)
+    auth_login_delay_initial_seconds: int = Field(default=30, ge=1, le=3_600)
+    auth_login_delay_max_seconds: int = Field(default=600, ge=1, le=86_400)
+    auth_login_lock_after_failures: int = Field(default=10, ge=1, le=100)
+    auth_login_lock_seconds: int = Field(default=3_600, ge=1, le=86_400)
+    auth_login_source_rate_limit: int = Field(default=30, ge=1, le=100_000)
+    auth_login_source_rate_window_seconds: int = Field(default=60, ge=1, le=86_400)
+    auth_login_subject_rate_limit: int = Field(default=20, ge=1, le=100_000)
+    auth_login_subject_rate_window_seconds: int = Field(default=900, ge=1, le=86_400)
+    auth_registration_source_rate_limit: int = Field(default=5, ge=1, le=100_000)
+    auth_registration_source_rate_window_seconds: int = Field(default=600, ge=1, le=86_400)
+    auth_registration_subject_rate_limit: int = Field(default=3, ge=1, le=100_000)
+    auth_registration_subject_rate_window_seconds: int = Field(default=3_600, ge=1, le=86_400)
+    auth_global_rate_limit: int = Field(default=1_000, ge=1, le=1_000_000)
+    auth_global_rate_window_seconds: int = Field(default=60, ge=1, le=86_400)
+    auth_challenge_provider: Literal["disabled", "turnstile"] = "disabled"
+    auth_turnstile_site_key: str | None = Field(default=None, min_length=1, max_length=256)
+    auth_turnstile_secret: SecretStr | None = Field(default=None, repr=False)
+    auth_turnstile_expected_hostnames: tuple[str, ...] = ()
+    auth_turnstile_connect_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    auth_turnstile_read_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    auth_recovery_enabled: bool = False
+    auth_recovery_email_verification_ttl_seconds: int = Field(default=600, ge=60, le=86_400)
+    auth_recovery_token_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+    auth_recovery_public_base_url: str | None = None
+    auth_recovery_email_from: str | None = None
+    auth_smtp_host: str | None = None
+    auth_smtp_port: int = Field(default=587, ge=1, le=65_535)
+    auth_smtp_username: str | None = None
+    auth_smtp_password: SecretStr | None = Field(default=None, repr=False)
+    auth_smtp_starttls: bool = True
+    auth_smtp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     enforce_schema_migrations: bool = False
     api_docs_enabled: bool = False
@@ -85,13 +147,13 @@ class Settings(BaseSettings):
         normalized = tuple(item.strip() for item in value)
         if any(
             not item
-            or item.count("/") != 1
-            or not all(part for part in item.split("/", maxsplit=1))
+            or item.count("/") != 2
+            or not all(part for part in item.split("/", maxsplit=2))
             for item in normalized
         ):
-            raise ValueError("must contain project_id/region_code scope pairs")
+            raise ValueError("must contain organization_id/project_id/region_code scope triples")
         if len(normalized) != len(set(normalized)):
-            raise ValueError("must not contain duplicate scope pairs")
+            raise ValueError("must not contain duplicate scope triples")
         return normalized
 
     @field_validator("object_store_endpoint", mode="before")
@@ -105,6 +167,27 @@ class Settings(BaseSettings):
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
         return _validated_object_store_endpoint(value)
+
+    @field_validator("auto_annotation_provider_endpoint", mode="before")
+    @classmethod
+    def normalize_optional_auto_annotation_endpoint(cls, value: object) -> object:
+        """Treat Compose's empty optional-provider value as not configured.
+
+        The provider remains deliberately unavailable until both endpoint and
+        models are configured; an empty environment value must not prevent an
+        unrelated worker (such as ingest) from starting.
+        """
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("auto_annotation_provider_api_key", mode="before")
+    @classmethod
+    def normalize_optional_auto_annotation_api_key(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("jwt_issuer")
     @classmethod
@@ -136,6 +219,84 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("auth_abuse_hmac_secret", mode="before")
+    @classmethod
+    def normalize_optional_auth_abuse_hmac_secret(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("auth_turnstile_site_key", mode="before")
+    @classmethod
+    def normalize_optional_turnstile_site_key(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("auth_turnstile_secret", mode="before")
+    @classmethod
+    def normalize_optional_turnstile_secret(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator(
+        "auth_recovery_public_base_url",
+        "auth_recovery_email_from",
+        "auth_smtp_host",
+        "auth_smtp_username",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_recovery_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("auth_smtp_password", mode="before")
+    @classmethod
+    def normalize_optional_smtp_password(cls, value: object) -> object:
+        if isinstance(value, str) and not value:
+            return None
+        return value
+
+    @field_validator("auth_turnstile_expected_hostnames")
+    @classmethod
+    def validate_turnstile_expected_hostnames(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for item in value:
+            hostname = item.strip().rstrip(".").lower()
+            parsed = urlparse(f"//{hostname}")
+            if (
+                not hostname
+                or parsed.hostname != hostname
+                or any(character.isspace() for character in hostname)
+                or "/" in hostname
+                or ":" in hostname
+                or hostname.count(".") < 1
+            ):
+                raise ValueError("must contain fully qualified hostnames without ports or paths")
+            normalized.append(hostname)
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("must not contain duplicate hostnames")
+        return tuple(normalized)
+
+    @field_validator("auth_trusted_proxy_cidrs")
+    @classmethod
+    def validate_auth_trusted_proxy_cidrs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for item in value:
+            try:
+                network = ipaddress.ip_network(item.strip(), strict=False)
+            except ValueError as exc:
+                raise ValueError("must contain valid IPv4 or IPv6 CIDR values") from exc
+            normalized.append(str(network))
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("must not contain duplicate CIDR values")
+        return tuple(normalized)
+
     @field_validator("jwt_algorithms")
     @classmethod
     def validate_jwt_algorithms(cls, value: list[str]) -> list[str]:
@@ -148,8 +309,113 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_local_secrets_outside_local_environments(self) -> Settings:
+        if self.password_min_length > self.password_max_length:
+            raise ValueError("HC_PASSWORD_MIN_LENGTH must not exceed HC_PASSWORD_MAX_LENGTH")
+        if self.password_scrypt_n & (self.password_scrypt_n - 1):
+            raise ValueError("HC_PASSWORD_SCRYPT_N must be a power of two")
+        estimated_scrypt_bytes = 128 * self.password_scrypt_n * self.password_scrypt_r
+        if estimated_scrypt_bytes > 1024 * 1024 * 1024:
+            raise ValueError("configured scrypt memory cost exceeds 1 GiB")
+        if self.session_touch_interval_seconds >= self.session_idle_ttl_seconds:
+            raise ValueError(
+                "HC_SESSION_TOUCH_INTERVAL_SECONDS must be less than HC_SESSION_IDLE_TTL_SECONDS"
+            )
+        if self.session_idle_ttl_seconds > self.session_absolute_ttl_seconds:
+            raise ValueError(
+                "HC_SESSION_IDLE_TTL_SECONDS must not exceed HC_SESSION_ABSOLUTE_TTL_SECONDS"
+            )
+        if not (
+            self.auth_login_challenge_after_failures
+            <= self.auth_login_delay_after_failures
+            <= self.auth_login_lock_after_failures
+        ):
+            raise ValueError(
+                "auth login challenge, delay, and lock thresholds must be nondecreasing"
+            )
+        if self.auth_login_delay_initial_seconds > self.auth_login_delay_max_seconds:
+            raise ValueError(
+                "HC_AUTH_LOGIN_DELAY_INITIAL_SECONDS must not exceed "
+                "HC_AUTH_LOGIN_DELAY_MAX_SECONDS"
+            )
+        if self.auth_abuse_enabled:
+            secret = self.auth_abuse_hmac_secret
+            if secret is None or len(secret.get_secret_value()) < 32:
+                raise ValueError(
+                    "HC_AUTH_ABUSE_HMAC_SECRET must contain at least 32 characters when "
+                    "HC_AUTH_ABUSE_ENABLED is true"
+                )
+            if self.auth_client_ip_mode == "trusted_proxy" and not self.auth_trusted_proxy_cidrs:
+                raise ValueError(
+                    "HC_AUTH_TRUSTED_PROXY_CIDRS is required in trusted_proxy client IP mode"
+                )
+        if self.auth_challenge_provider == "turnstile":
+            if not self.auth_abuse_enabled:
+                raise ValueError(
+                    "HC_AUTH_CHALLENGE_PROVIDER=turnstile requires HC_AUTH_ABUSE_ENABLED"
+                )
+            if self.auth_turnstile_site_key is None:
+                raise ValueError("HC_AUTH_TURNSTILE_SITE_KEY is required for Turnstile")
+            if self.auth_turnstile_secret is None:
+                raise ValueError("HC_AUTH_TURNSTILE_SECRET is required for Turnstile")
+            if not self.auth_turnstile_expected_hostnames:
+                raise ValueError("HC_AUTH_TURNSTILE_EXPECTED_HOSTNAMES is required for Turnstile")
+        if self.auth_recovery_enabled:
+            if self.auth_recovery_public_base_url is None:
+                raise ValueError(
+                    "HC_AUTH_RECOVERY_PUBLIC_BASE_URL is required when account recovery is enabled"
+                )
+            recovery_url = urlparse(self.auth_recovery_public_base_url)
+            if (
+                recovery_url.scheme not in {"http", "https"}
+                or not recovery_url.hostname
+                or recovery_url.username is not None
+                or recovery_url.password is not None
+                or recovery_url.query
+                or recovery_url.fragment
+            ):
+                raise ValueError("HC_AUTH_RECOVERY_PUBLIC_BASE_URL must be an absolute HTTP(S) URL")
+            if self.environment in {"staging", "production"} and recovery_url.scheme != "https":
+                raise ValueError(
+                    "HC_AUTH_RECOVERY_PUBLIC_BASE_URL must use HTTPS outside local/test"
+                )
+            if self.auth_recovery_email_from is None or "@" not in self.auth_recovery_email_from:
+                raise ValueError(
+                    "HC_AUTH_RECOVERY_EMAIL_FROM is required when account recovery is enabled"
+                )
+            if self.auth_smtp_host is None:
+                raise ValueError("HC_AUTH_SMTP_HOST is required when account recovery is enabled")
+            if (self.auth_smtp_username is None) != (self.auth_smtp_password is None):
+                raise ValueError(
+                    "HC_AUTH_SMTP_USERNAME and HC_AUTH_SMTP_PASSWORD must be configured together"
+                )
+            if self.environment in {"staging", "production"} and not self.auth_smtp_starttls:
+                raise ValueError("HC_AUTH_SMTP_STARTTLS must be enabled outside local/test")
         if self.object_store_public_endpoint is None and self.environment in {"local", "test"}:
             self.object_store_public_endpoint = self.object_store_endpoint
+
+        provider_endpoint = self.auto_annotation_provider_endpoint
+        if provider_endpoint is not None:
+            provider_url = urlparse(provider_endpoint)
+            if (
+                provider_url.scheme not in {"http", "https"}
+                or not provider_url.hostname
+                or provider_url.username is not None
+                or provider_url.password is not None
+                or provider_url.fragment
+                or not self.auto_annotation_provider_models
+            ):
+                raise ValueError(
+                    "HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT requires an absolute HTTP(S) URL "
+                    "and HC_AUTO_ANNOTATION_PROVIDER_MODELS"
+                )
+            if self.environment in {"staging", "production"} and provider_url.scheme != "https":
+                raise ValueError(
+                    "HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT must use HTTPS outside local/test"
+                )
+        elif self.auto_annotation_provider_models or self.auto_annotation_provider_api_key:
+            raise ValueError(
+                "automatic annotation models/API key require HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT"
+            )
 
         if self.environment in {"staging", "production"}:
             insecure: list[str] = []
@@ -160,6 +426,11 @@ class Settings(BaseSettings):
                 insecure.append("HC_OBJECT_STORE_PUBLIC_ENDPOINT")
             if self.cursor_secret == _LOCAL_CURSOR_SECRET:
                 insecure.append("HC_CURSOR_SECRET")
+            if (
+                self.data_source_credential_key.get_secret_value()
+                == _LOCAL_DATA_SOURCE_CREDENTIAL_KEY
+            ):
+                insecure.append("HC_DATA_SOURCE_CREDENTIAL_KEY")
             if self.object_store_secret_key == _LOCAL_OBJECT_STORE_SECRET:
                 insecure.append("HC_OBJECT_STORE_SECRET_KEY")
             issuer_host = urlparse(self.jwt_issuer).hostname or ""
@@ -171,6 +442,18 @@ class Settings(BaseSettings):
                 insecure.append("HC_JWT_JWKS_URL or HC_JWT_SIGNING_KEY")
             if self.api_docs_enabled:
                 insecure.append("HC_API_DOCS_ENABLED")
+            if not self.auth_abuse_enabled:
+                insecure.append("HC_AUTH_ABUSE_ENABLED")
+            if self.auth_abuse_hmac_secret is None:
+                insecure.append("HC_AUTH_ABUSE_HMAC_SECRET")
+            if self.auth_challenge_provider != "turnstile":
+                insecure.append("HC_AUTH_CHALLENGE_PROVIDER=turnstile")
+            if self.auth_turnstile_site_key is None:
+                insecure.append("HC_AUTH_TURNSTILE_SITE_KEY")
+            if self.auth_turnstile_secret is None:
+                insecure.append("HC_AUTH_TURNSTILE_SECRET")
+            if not self.auth_turnstile_expected_hostnames:
+                insecure.append("HC_AUTH_TURNSTILE_EXPECTED_HOSTNAMES")
             if insecure:
                 joined = ", ".join(insecure)
                 raise ValueError(f"insecure local values are forbidden: {joined}")

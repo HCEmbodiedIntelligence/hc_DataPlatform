@@ -19,9 +19,15 @@ from hc_data_platform.core import health as health_module
 from hc_data_platform.core import migrations as migration_module
 from hc_data_platform.core.app import _request_id, create_app
 from hc_data_platform.core.config import Settings
-from hc_data_platform.core.context import current_request_context
+from hc_data_platform.core.context import (
+    RequestContext,
+    bind_request_context,
+    current_request_context,
+    reset_request_context,
+    select_request_scope,
+)
 from hc_data_platform.core.discovery import discover_module_routers
-from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.core.errors import ProblemDetails, ProblemException, problem
 from hc_data_platform.core.etag import ETag, etag_matches, make_etag, require_if_match
 from hc_data_platform.core.health import DependencyStatus, PostgreSQLProbe
 from hc_data_platform.core.openapi import (
@@ -77,6 +83,13 @@ def _production_settings(**updates: object) -> Settings:
         environment="production",
         runtime_backend="memory",
         cursor_secret="production-cursor-secret",
+        data_source_credential_key="production-data-source-credential-key",
+        auth_abuse_enabled=True,
+        auth_abuse_hmac_secret="production-auth-abuse-hmac-secret-at-least-32",
+        auth_challenge_provider="turnstile",
+        auth_turnstile_site_key="production-turnstile-site-key",
+        auth_turnstile_secret="production-turnstile-secret-at-least-32",
+        auth_turnstile_expected_hostnames=("app.example.com",),
         object_store_secret_key="production-object-secret",
         object_store_public_endpoint="https://uploads.example.com",
         jwt_issuer="https://issuer.example/",
@@ -145,12 +158,84 @@ def test_invalid_configuration_is_rejected(monkeypatch: pytest.MonkeyPatch) -> N
     assert exact_issuer.jwt_algorithms == ["RS256"]
     assert exact_issuer.jwt_signing_key is None
 
+    unconfigured_auto_annotation = Settings(
+        auto_annotation_provider_endpoint="   ",
+        auto_annotation_provider_api_key="\t",
+        _env_file=None,
+    )
+    assert unconfigured_auto_annotation.auto_annotation_provider_endpoint is None
+    assert unconfigured_auto_annotation.auto_annotation_provider_api_key is None
+
     with pytest.raises(ValidationError, match="duplicate JWT algorithms"):
         Settings(jwt_algorithms=["RS256", "RS256"], _env_file=None)
     with pytest.raises(ValidationError, match="query or fragment"):
         Settings(jwt_issuer="https://issuer.example/?tenant=one", _env_file=None)
     with pytest.raises(ValidationError, match="HC_API_DOCS_ENABLED"):
         _production_settings(api_docs_enabled=True)
+
+
+def test_outbox_scopes_require_exact_organization_project_region_triples() -> None:
+    configured = Settings(
+        outbox_scopes=(
+            " organization-a/project-a/cn-east ",
+            "organization-b/project-b/cn-west",
+        ),
+        _env_file=None,
+    )
+    assert configured.outbox_scopes == (
+        "organization-a/project-a/cn-east",
+        "organization-b/project-b/cn-west",
+    )
+
+    for invalid in (
+        ("project-a/cn-east",),
+        ("organization-a/project-a/cn-east/extra",),
+        ("organization-a//cn-east",),
+    ):
+        with pytest.raises(ValidationError, match="scope triples"):
+            Settings(outbox_scopes=invalid, _env_file=None)
+
+    with pytest.raises(ValidationError, match="duplicate scope triples"):
+        Settings(
+            outbox_scopes=(
+                "organization-a/project-a/cn-east",
+                "organization-a/project-a/cn-east",
+            ),
+            _env_file=None,
+        )
+
+
+def test_account_recovery_configuration_is_complete_and_secure() -> None:
+    with pytest.raises(ValidationError, match="HC_AUTH_RECOVERY_PUBLIC_BASE_URL"):
+        Settings(auth_recovery_enabled=True, _env_file=None)
+
+    with pytest.raises(ValidationError, match="must use HTTPS"):
+        _production_settings(
+            auth_recovery_enabled=True,
+            auth_recovery_public_base_url="http://app.example.com",
+            auth_recovery_email_from="no-reply@example.com",
+            auth_smtp_host="smtp.example.com",
+        )
+
+    with pytest.raises(ValidationError, match="HC_AUTH_SMTP_STARTTLS"):
+        _production_settings(
+            auth_recovery_enabled=True,
+            auth_recovery_public_base_url="https://app.example.com",
+            auth_recovery_email_from="no-reply@example.com",
+            auth_smtp_host="smtp.example.com",
+            auth_smtp_starttls=False,
+        )
+
+    configured = _production_settings(
+        auth_recovery_enabled=True,
+        auth_recovery_public_base_url="https://app.example.com/",
+        auth_recovery_email_from="no-reply@example.com",
+        auth_smtp_host="smtp.example.com",
+        auth_smtp_username="mailer",
+        auth_smtp_password="smtp-password-from-secret-store",
+    )
+    assert configured.auth_recovery_enabled is True
+    assert configured.auth_recovery_token_ttl_seconds == 900
 
 
 def test_untrusted_request_id_must_be_visible_ascii() -> None:
@@ -373,6 +458,27 @@ def test_anonymous_headers_cannot_select_database_scope() -> None:
     assert response.json() == {"project_id": None, "region_code": None}
 
 
+def test_project_scope_reselection_preserves_verified_organization() -> None:
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a",
+            project_id="project-a",
+            region_code="cn-east",
+            subject_id="principal-a",
+            request_id="22222222-2222-4222-8222-222222222223",
+        )
+    )
+    try:
+        select_request_scope("project-a", "cn-north")
+        selected = current_request_context()
+        assert selected.organization_id == "organization-a"
+        assert selected.project_id == "project-a"
+        assert selected.region_code == "cn-north"
+        assert selected.subject_id == "principal-a"
+    finally:
+        reset_request_context(token)
+
+
 def test_framework_and_unexpected_errors_use_problem_details(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -405,7 +511,17 @@ def test_framework_and_unexpected_errors_use_problem_details(
             code="DEPENDENCY_FAILED",
             title="Dependency failed",
             detail="postgresql://service:problem-password@db.internal/platform",
+            retry_after_seconds=45,
             details={"object_key": "s3://private-bucket/raw/private.mcap"},
+        )
+
+    @app.get("/problem-501")
+    async def problem_501() -> None:
+        raise problem(
+            status=501,
+            code="FEATURE_UNAVAILABLE",
+            title="Feature unavailable",
+            detail="This operation is deliberately unavailable in the current contract.",
         )
 
     @app.get("/direct-599")
@@ -414,6 +530,15 @@ def test_framework_and_unexpected_errors_use_problem_details(
             status_code=599,
             content={"detail": "Traceback (most recent call last): private stack"},
             headers={"X-Internal-DSN": "postgresql://service:header-password@db/platform"},
+        )
+
+    @app.get("/direct-501")
+    async def direct_501() -> JSONResponse:
+        return JSONResponse(
+            status_code=501,
+            media_type="application/problem+json",
+            content={"detail": "postgresql://service:direct-501-secret@db/platform"},
+            headers={"X-Internal-DSN": "postgresql://service:direct-501-header@db/platform"},
         )
 
     caplog.set_level(logging.ERROR, logger="hc_data_platform.core.app")
@@ -425,7 +550,9 @@ def test_framework_and_unexpected_errors_use_problem_details(
         failed = client.get("/unexpected", headers={"X-Request-ID": failed_request_id})
         http_failed = client.get("/http-500")
         dependency_failed = client.get("/problem-503")
+        unavailable = client.get("/problem-501")
         direct_failed = client.get("/direct-599")
+        forged_unavailable = client.get("/direct-501")
 
     assert missing.status_code == 404
     assert missing.headers["content-type"].startswith("application/problem+json")
@@ -444,9 +571,20 @@ def test_framework_and_unexpected_errors_use_problem_details(
     assert "X-Sensitive-Internal" not in http_failed.headers
     assert dependency_failed.status_code == 503
     assert dependency_failed.json()["code"] == "HTTP_503"
+    assert dependency_failed.json()["retry_after_seconds"] == 45
+    assert dependency_failed.headers["Retry-After"] == "45"
+    assert unavailable.status_code == 501
+    assert unavailable.json()["code"] == "FEATURE_UNAVAILABLE"
+    assert unavailable.headers["cache-control"] == "no-store"
     assert direct_failed.status_code == 500
     assert direct_failed.json()["code"] == "INTERNAL_SERVER_ERROR"
-    for response in (dependency_failed, direct_failed):
+    assert forged_unavailable.status_code == 501
+    assert forged_unavailable.json()["code"] == "HTTP_501"
+    assert forged_unavailable.json()["detail"] == "The server could not complete the request."
+    assert "direct-501-secret" not in forged_unavailable.text
+    assert "direct-501-header" not in forged_unavailable.text
+    assert "X-Internal-DSN" not in forged_unavailable.headers
+    for response in (dependency_failed, direct_failed, forged_unavailable):
         assert response.headers["content-type"].startswith("application/problem+json")
         assert "password" not in response.text
         assert "private" not in response.text
@@ -465,6 +603,80 @@ def test_framework_and_unexpected_errors_use_problem_details(
     assert all(not hasattr(record, "project_id") for record in failure_records)
     assert "problem-password" not in caplog.text
     assert "header-password" not in caplog.text
+
+
+def test_retry_after_is_typed_bounded_and_sanitized() -> None:
+    base = {
+        "type": "https://hc-data-platform.invalid/problems/retry-later",
+        "title": "Retry later",
+        "detail": "The request can be retried later.",
+        "code": "RETRY_LATER",
+        "retryable": True,
+    }
+    for status in (429, 503):
+        assert ProblemDetails(status=status, retry_after_seconds=86_400, **base)
+    for status, retry_after_seconds in ((403, 30), (429, 0), (503, 86_401)):
+        with pytest.raises(ValidationError):
+            ProblemDetails(
+                status=status,
+                retry_after_seconds=retry_after_seconds,
+                **base,
+            )
+
+    app = create_app(
+        settings=_settings(),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+
+    @app.get("/limited")
+    async def limited() -> None:
+        raise HTTPException(status_code=429, headers={"retry-after": "00030"})
+
+    @app.get("/unavailable")
+    async def unavailable() -> None:
+        raise HTTPException(status_code=503, headers={"Retry-After": "86400"})
+
+    @app.get("/invalid-retry/{value}")
+    async def invalid_retry(value: str) -> None:
+        raise HTTPException(status_code=429, headers={"Retry-After": value})
+
+    @app.get("/wrong-status")
+    async def wrong_status() -> None:
+        raise HTTPException(status_code=403, headers={"Retry-After": "30"})
+
+    @app.get("/direct-limited")
+    async def direct_limited() -> JSONResponse:
+        return JSONResponse(status_code=429, content={}, headers={"Retry-After": "00030"})
+
+    @app.get("/direct-wrong-status")
+    async def direct_wrong_status() -> JSONResponse:
+        return JSONResponse(status_code=403, content={}, headers={"Retry-After": "30"})
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        limited_response = client.get("/limited")
+        unavailable_response = client.get("/unavailable")
+        invalid_responses = [
+            client.get(f"/invalid-retry/{value}")
+            for value in ("0", "86401", "+30", "30.5", "Wed, 21 Oct 2015")
+        ]
+        wrong_status_response = client.get("/wrong-status")
+        direct_limited_response = client.get("/direct-limited")
+        direct_wrong_status_response = client.get("/direct-wrong-status")
+
+    assert limited_response.headers["Retry-After"] == "30"
+    assert limited_response.json()["retry_after_seconds"] == 30
+    assert limited_response.json()["retryable"] is True
+    assert unavailable_response.headers["Retry-After"] == "86400"
+    assert unavailable_response.json()["retry_after_seconds"] == 86_400
+    assert direct_limited_response.headers["Retry-After"] == "30"
+    for response in (
+        *invalid_responses,
+        wrong_status_response,
+        direct_wrong_status_response,
+    ):
+        assert "Retry-After" not in response.headers
+        assert "retry_after_seconds" not in response.json()
 
 
 def test_authentication_backend_failure_still_uses_problem_details() -> None:

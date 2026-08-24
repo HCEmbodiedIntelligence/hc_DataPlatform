@@ -106,6 +106,7 @@ export function CredentialRotationDialog(props: {
       keyboard={!props.pending}
       mask={{ closable: false }}
       destroyOnHidden
+      zIndex={1100}
       afterOpenChange={(open) => {
         if (open) tokenRef.current?.focus();
       }}
@@ -134,6 +135,7 @@ export function CredentialRotationDialog(props: {
           <Input.Password
             ref={tokenRef}
             name="credentialToken"
+            aria-label="新 Token"
             required
             autoComplete="new-password"
             data-sensitive="credential"
@@ -142,7 +144,14 @@ export function CredentialRotationDialog(props: {
           />
         </Form.Item>
         <Form.Item label="轮换原因" required>
-          <Input.TextArea name="reason" required rows={3} maxLength={500} disabled={props.pending} />
+          <Input.TextArea
+            name="reason"
+            aria-label="轮换原因"
+            required
+            rows={3}
+            maxLength={500}
+            disabled={props.pending}
+          />
         </Form.Item>
         <Flex justify="end" gap="small" wrap="wrap">
           <Button disabled={props.pending} onClick={clearAndClose}>取消</Button>

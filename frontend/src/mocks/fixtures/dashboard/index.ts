@@ -43,26 +43,22 @@ export const dashboardSnapshotFixture = {
     signal_pipeline: {
       ...ready,
       stages: ['COLLECTED', 'RECEIVED', 'AUTO_QC', 'ALIGNED_30_HZ', 'LANCE', 'ANNOTATION', 'REVIEW', 'PUBLISHED'],
+      stage_counts: [
+        { stage: 'COLLECTED' as const, count: 1248 },
+        { stage: 'RECEIVED' as const, count: 1106 },
+        { stage: 'AUTO_QC' as const, count: 1062 },
+        { stage: 'ALIGNED_30_HZ' as const, count: 1030 },
+        { stage: 'LANCE' as const, count: 908 },
+        { stage: 'ANNOTATION' as const, count: 75 },
+        { stage: 'REVIEW' as const, count: 24 },
+        { stage: 'PUBLISHED' as const, count: 8 },
+      ],
       published_region: { ...ready, lineage_count: 8, publication_count: 3, unresolved_history_count: 0 },
     },
     episodes: ready,
     work: ready,
   },
 } satisfies components['schemas']['DashboardSnapshotResponse'];
-
-export const dashboardCoverageFixture = {
-  ...base,
-  coverage: {
-    status: 'BLOCKED' as const,
-    as_of: null,
-    error: {
-      code: 'COVERAGE_PRODUCT_DECISION_REQUIRED',
-      message: '覆盖率口径尚未确认',
-      retryable: false,
-      needs_product_confirmation: true,
-    },
-  },
-} satisfies components['schemas']['DashboardCoverageResponse'];
 
 const pendingItem = (
   item_type: components['schemas']['DashboardPendingItemType'],
@@ -102,13 +98,22 @@ export const dashboardEmptyFixtures = {
       signal_pipeline: {
         ...empty,
         stages: ['COLLECTED', 'RECEIVED', 'AUTO_QC', 'ALIGNED_30_HZ', 'LANCE', 'ANNOTATION', 'REVIEW', 'PUBLISHED'],
+        stage_counts: [
+          { stage: 'COLLECTED' as const, count: 0 },
+          { stage: 'RECEIVED' as const, count: 0 },
+          { stage: 'AUTO_QC' as const, count: 0 },
+          { stage: 'ALIGNED_30_HZ' as const, count: 0 },
+          { stage: 'LANCE' as const, count: 0 },
+          { stage: 'ANNOTATION' as const, count: 0 },
+          { stage: 'REVIEW' as const, count: 0 },
+          { stage: 'PUBLISHED' as const, count: 0 },
+        ],
         published_region: { ...empty, lineage_count: 0, publication_count: 0, unresolved_history_count: 0 },
       },
       episodes: empty,
       work: empty,
     },
   } satisfies components['schemas']['DashboardSnapshotResponse'],
-  coverage: dashboardCoverageFixture,
   pending: { ...base, pending_items: { ...empty, authorized_source_types: [], page_info: pageInfo, items: [] } } satisfies components['schemas']['DashboardPendingItemsResponse'],
 };
 

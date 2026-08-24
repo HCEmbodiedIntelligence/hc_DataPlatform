@@ -5,7 +5,8 @@ import {
   resetRuntimeConfigForTests,
 } from "../config/runtime";
 import { useShellStore } from "../scope/shell-store";
-import { request } from "./http-client";
+import { isSafeBearerToken, request } from "./http-client";
+import { cancelActiveTransports } from "./transport-lifecycle";
 import {
   createDomainError,
   isDomainError,
@@ -24,10 +25,16 @@ const otherScope: Scope = {
   regionCode: "region-b",
 };
 
-function problemResponse(body: unknown, status: number): Response {
+function problemResponse(
+  body: unknown,
+  status: number,
+  headers?: HeadersInit,
+): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("Content-Type", "application/problem+json");
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/problem+json" },
+    headers: responseHeaders,
   });
 }
 
@@ -41,7 +48,10 @@ function scopedRequest(
 ): Promise<unknown> {
   return request({
     method,
-    path: "/projects/project-a/resource",
+    path:
+      method === "GET"
+        ? "/projects/project-a/storage/capacity"
+        : "/projects/project-a/storage/lifecycle-policies",
     scope: activeScope,
     signal,
   });
@@ -87,6 +97,14 @@ describe("scoped HTTP requests", () => {
   beforeEach(configureTestRuntime);
 
   afterEach(resetTestRuntime);
+
+  it("accepts only bounded visible-ASCII bearer tokens", () => {
+    expect(isSafeBearerToken("!".repeat(4_096))).toBe(true);
+    expect(isSafeBearerToken("")).toBe(false);
+    expect(isSafeBearerToken("!".repeat(4_097))).toBe(false);
+    expect(isSafeBearerToken("contains space")).toBe(false);
+    expect(isSafeBearerToken("non-ascii-令牌")).toBe(false);
+  });
 
   it("uses the bound scope for all scope headers", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -154,11 +172,296 @@ describe("scoped HTTP requests", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("keeps session-scoped account requests independent from project changes", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      useShellStore.getState().setScope(otherScope);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      request({
+        method: "GET",
+        path: "/auth/session/bootstrap",
+        scopeMode: "session",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
+    expect(headers.get("X-Organization-Id")).toBeNull();
+    expect(headers.get("X-Project-Id")).toBeNull();
+    expect(headers.get("X-Region-Code")).toBeNull();
+  });
+
+  it("uses an explicit session bearer instead of shell state without tenant headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request({
+      method: "GET",
+      path: "/auth/session/bootstrap",
+      scopeMode: "session",
+      bearerToken: "issued-session-token",
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe("Bearer issued-session-token");
+    expect(headers.get("X-Organization-Id")).toBeNull();
+    expect(headers.get("X-Project-Id")).toBeNull();
+    expect(headers.get("X-Region-Code")).toBeNull();
+  });
+
+  it("rejects explicit bearers outside session mode or with unsafe characters", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      request({
+        method: "GET",
+        path: "/auth/config",
+        scopeMode: "public",
+        bearerToken: "issued-session-token",
+      }),
+    ).rejects.toThrow("Explicit bearer tokens require session scope mode");
+    await expect(
+      request({
+        method: "GET",
+        path: "/projects/project-a/storage/capacity",
+        scope: activeScope,
+        bearerToken: "issued-session-token",
+      }),
+    ).rejects.toThrow("Explicit bearer tokens require session scope mode");
+    await expect(
+      request({
+        method: "GET",
+        path: "/auth/session/bootstrap",
+        scopeMode: "session",
+        bearerToken: "unsafe token",
+      }),
+    ).rejects.toThrow("Explicit bearer tokens must contain visible ASCII only");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("honors caller aborts for explicit-token session bootstrap reads", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (_: string, init: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+      ),
+    );
+
+    const pending = request({
+      method: "GET",
+      path: "/auth/session/bootstrap",
+      scopeMode: "session",
+      bearerToken: "issued-session-token",
+      signal: controller.signal,
+    });
+    controller.abort("route-unmounted");
+
+    const error = await rejectedDomainError(pending);
+    expect(error).toMatchObject({
+      code: "NETWORK_ERROR",
+      message: "请求已取消",
+      retryable: false,
+    });
+  });
+
+  it("omits bearer and tenant scope headers for public discovery", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request({
+      method: "GET",
+      path: "/auth/config",
+      scopeMode: "public",
+      cache: "no-store",
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("X-Organization-Id")).toBeNull();
+    expect(headers.get("X-Project-Id")).toBeNull();
+    expect(headers.get("X-Region-Code")).toBeNull();
+    expect(init.cache).toBe("no-store");
+  });
+
+  it("sends a bounded public challenge response without bearer or tenant headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request({
+      method: "POST",
+      path: "/auth/sessions",
+      scopeMode: "public",
+      authChallengeResponse: "opaque-turnstile-response",
+      body: { username: "challenge-user", password: "independent-password" },
+    });
+
+    const headers = new Headers(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).headers,
+    );
+    expect(headers.get("X-Auth-Challenge-Response")).toBe(
+      "opaque-turnstile-response",
+    );
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("X-Organization-Id")).toBeNull();
+    expect(headers.get("X-Project-Id")).toBeNull();
+    expect(headers.get("X-Region-Code")).toBeNull();
+
+    await expect(
+      request({
+        method: "POST",
+        path: "/auth/sessions",
+        scopeMode: "session",
+        authChallengeResponse: "opaque-turnstile-response",
+      }),
+    ).rejects.toThrow(
+      "Authentication challenge responses require public scope mode",
+    );
+    await expect(
+      request({
+        method: "POST",
+        path: "/auth/sessions",
+        scopeMode: "public",
+        authChallengeResponse: "has space",
+      }),
+    ).rejects.toThrow(
+      "Authentication challenge responses must be visible ASCII",
+    );
+  });
+
+  it("cancels only active-scope requests during a project scope change", async () => {
+    const pending: Array<{
+      resolve: (response: Response) => void;
+      signal: AbortSignal;
+    }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (_: string, init: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const signal = init.signal as AbortSignal;
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+            pending.push({ resolve, signal });
+          }),
+      ),
+    );
+
+    const activeRequest = scopedRequest();
+    const publicRequest = request({
+      method: "GET",
+      path: "/auth/config",
+      scopeMode: "public",
+    });
+    const sessionRequest = request({
+      method: "GET",
+      path: "/auth/session/bootstrap",
+      scopeMode: "session",
+    });
+    expect(pending).toHaveLength(3);
+
+    await cancelActiveTransports();
+    expect(pending[0]?.signal.aborted).toBe(true);
+    expect(pending.slice(1).every(({ signal }) => !signal.aborted)).toBe(true);
+    const activeError = await rejectedDomainError(activeRequest);
+    expect(activeError).toMatchObject({
+      code: "NETWORK_ERROR",
+      retryable: false,
+    });
+    for (const { resolve } of pending.slice(1)) {
+      resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    await expect(Promise.all([publicRequest, sessionRequest])).resolves.toEqual(
+      [{ ok: true }, { ok: true }],
+    );
+  });
 });
 
 describe("HTTP response handling", () => {
   beforeEach(configureTestRuntime);
   afterEach(resetTestRuntime);
+
+  it("fails closed before fetch for an operation absent from the runtime OpenAPI", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      request({
+        method: "GET",
+        path: "/projects/project-a/draft-only-endpoint",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONTRACT_MISMATCH",
+      problemCode: "RUNTIME_OPERATION_UNDECLARED",
+      blockedReasons: [{ code: "RUNTIME_OPERATION_UNDECLARED" }],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows runtime routes with a parameter followed by an action suffix", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          request_id: "request-a",
+          project_id: activeScope.projectId,
+          status: "APPROVED",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      request({
+        method: "POST",
+        path: "/organizations/org-a/projects/project-a/membership-requests/request-a:approve",
+        scope: activeScope,
+        body: { reason: null },
+      }),
+    ).resolves.toMatchObject({ status: "APPROVED" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 
   it("parses RFC 9457 403 responses without replacing the frontend classification", async () => {
     stubResponse(
@@ -207,6 +510,36 @@ describe("HTTP response handling", () => {
       message: "Unauthorized",
       httpStatus: 401,
     });
+  });
+
+  it("parses and clamps only decimal Retry-After delay-seconds", async () => {
+    const cases = [
+      { status: 429, header: "30", body: 10, expected: 30 },
+      { status: 429, header: "99999999999999999999", expected: 86_400 },
+      { status: 503, header: "Wed, 21 Oct 2015 07:28:00 GMT", expected: null },
+      { status: 429, header: "30.5", expected: null },
+      { status: 429, header: "0", expected: null },
+      { status: 403, header: "30", expected: null },
+      { status: 503, body: 45, expected: 45 },
+      { status: 429, body: 90_000, expected: 86_400 },
+    ] as const;
+
+    for (const testCase of cases) {
+      stubResponse(
+        problemResponse(
+          {
+            title: "Retry later",
+            status: testCase.status,
+            code: "RETRY_LATER",
+            retry_after_seconds: "body" in testCase ? testCase.body : undefined,
+          },
+          testCase.status,
+          "header" in testCase ? { "Retry-After": testCase.header } : undefined,
+        ),
+      );
+      const error = await rejectedDomainError(scopedRequest());
+      expect(error.retryAfterSeconds).toBe(testCase.expected);
+    }
   });
 
   it("projects allowlisted field errors from RFC 9457 422 details", async () => {
@@ -544,6 +877,7 @@ describe("HTTP response handling", () => {
     });
 
     expect(error.problemCode).toBeNull();
+    expect(error.retryAfterSeconds).toBeNull();
     expect(isDomainError(error)).toBe(true);
   });
 });

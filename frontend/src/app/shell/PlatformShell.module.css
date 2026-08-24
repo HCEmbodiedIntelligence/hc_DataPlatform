@@ -189,6 +189,65 @@
   pointer-events: none;
 }
 
+.projectRequestFooter {
+  margin-top: 4px;
+  padding: 7px 6px 3px;
+  border-top: 1px solid var(--hc-color-border-subtle);
+}
+
+.projectRequestFooter :global(.ant-btn) {
+  min-height: 38px;
+  justify-content: flex-start;
+  color: var(--hc-color-primary);
+  font-weight: 650;
+}
+
+.projectRequestFooter :global(.ant-btn:hover) {
+  background: var(--hc-color-surface-tint) !important;
+  color: var(--hc-color-primary-hover) !important;
+}
+
+.projectRequestFooter :global(.ant-btn:focus-visible) {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: -2px;
+}
+
+.membershipRequestModal :global(.ant-modal-content) {
+  border: 1px solid var(--hc-color-border-subtle);
+  border-radius: var(--hc-radius-lg);
+  box-shadow: 0 28px 80px rgb(27 31 68 / 22%);
+}
+
+.membershipRequestIntro {
+  margin: 0 0 20px;
+  color: var(--hc-color-text-muted);
+  line-height: 1.7;
+}
+
+.membershipRequestModal :global(.ant-form-item-label > label) {
+  color: var(--hc-color-text);
+  font-weight: 650;
+}
+
+.membershipRequestModal :global(.ant-input[readonly]) {
+  background: var(--hc-color-surface-muted);
+  color: var(--hc-color-text-muted);
+}
+
+.membershipRequestFeedback {
+  margin-bottom: 20px;
+}
+
+.membershipRequestFeedback code {
+  overflow-wrap: anywhere;
+}
+
+.membershipRequestActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .globalSearch {
   display: inline-flex;
   width: 172px;
@@ -255,6 +314,28 @@
   background: var(--hc-color-surface-muted) !important;
   color: var(--hc-color-neutral) !important;
   opacity: 1 !important;
+}
+
+.notificationAction {
+  min-width: 76px;
+  height: 38px;
+  justify-content: flex-start !important;
+  gap: 8px;
+  color: var(--hc-color-text-muted) !important;
+}
+
+.notificationAction:hover {
+  background: var(--hc-color-surface-tint) !important;
+  color: var(--hc-color-primary-hover) !important;
+}
+
+.notificationAction :global(.ant-badge) {
+  display: inline-flex;
+  align-items: center;
+}
+
+.notificationAction :global(.ant-badge-count) {
+  box-shadow: 0 0 0 1px var(--hc-color-surface);
 }
 
 .accountButton {
@@ -473,6 +554,18 @@
   padding: 12px;
 }
 
+.notificationDrawerRoot :global(.ant-drawer-content) {
+  background: var(--hc-color-surface);
+}
+
+.notificationDrawerRoot :global(.ant-drawer-header) {
+  border-bottom-color: var(--hc-color-border);
+}
+
+.notificationDrawerRoot :global(.ant-drawer-body) {
+  padding: 16px 18px;
+}
+
 .mobileClose {
   display: flex;
   margin-left: auto;
@@ -572,7 +665,8 @@
   }
 
   .globalSearch,
-  .unavailableAction {
+  .unavailableAction,
+  .notificationAction {
     width: 40px;
     min-width: 40px;
     flex-basis: 40px;
@@ -581,7 +675,8 @@
   }
 
   .globalSearch > span:not(:global(.ant-btn-icon)),
-  .unavailableAction > span:not(:global(.ant-btn-icon)) {
+  .unavailableAction > span:not(:global(.ant-btn-icon)),
+  .notificationAction > span:not(:global(.ant-btn-icon)) {
     display: none;
   }
 }

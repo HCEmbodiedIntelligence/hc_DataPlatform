@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+)
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
@@ -56,12 +63,50 @@ class StepRecord(BaseModel):
     rollout_id: str = Field(min_length=1)
     step_index: int = Field(ge=0)
     timestamp_ns: int = Field(ge=0)
-    modalities: dict[str, Any] = Field(default_factory=dict)
+    modalities: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Logical modality values. Binary media payloads are never embedded in the "
+            "JSON step window; they are represented by a bounded metadata marker and "
+            "served through the authorized preview-media API."
+        ),
+    )
     source_timestamps_ns: dict[str, tuple[int, ...]] = Field(default_factory=dict)
     time_error_ns: dict[str, int | None] = Field(default_factory=dict)
     valid: dict[str, bool] = Field(default_factory=dict)
     repeated: dict[str, bool] = Field(default_factory=dict)
     sample_valid: bool = True
+
+    @field_serializer("timestamp_ns", when_used="json")
+    def serialize_timestamp_ns(self, value: int) -> str:
+        """Avoid corrupting nanosecond precision in JavaScript API consumers."""
+
+        return str(value)
+
+    @field_serializer("modalities", when_used="json")
+    def serialize_modalities(self, value: dict[str, Any]) -> dict[str, Any]:
+        """Keep step windows bounded and JSON-safe when rows contain real media bytes.
+
+        Lance retains the original bytes for lineage and deterministic processing.
+        The viewer obtains camera media from its separately authorized HLS/Range
+        transport, so duplicating an entire frame as base64 in every step response
+        would be both unsafe and prohibitively expensive for large rollouts.
+        """
+
+        def public_value(item: Any) -> Any:
+            if isinstance(item, (bytes, bytearray, memoryview)):
+                return {
+                    "$type": "binary",
+                    "byte_length": len(item),
+                    "transport": "preview_media",
+                }
+            if isinstance(item, dict):
+                return {str(key): public_value(child) for key, child in item.items()}
+            if isinstance(item, (list, tuple)):
+                return [public_value(child) for child in item]
+            return item
+
+        return {name: public_value(item) for name, item in value.items()}
 
     @field_validator("source_timestamps_ns", mode="before")
     @classmethod

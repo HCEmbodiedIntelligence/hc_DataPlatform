@@ -11,8 +11,10 @@ paths:
       tags: [dashboard]
       description: >-
         Returns one project and one exact region for the explicit half-open UTC range. The
-        published-region subsection counts only certain rollout-publication lineage. Episode,
-        work, and the remaining signal formulas stay BLOCKED. Region storage is not a P01 field.
+        Signal stages count unique cloud data packages reaching each durable project-region stage
+        in the selected half-open time window. The published-region subsection separately reports
+        certain rollout-publication lineage. Episode and work remain BLOCKED.
+        Region storage is not a P01 field.
       parameters:
         - {$ref: '#/components/parameters/DashboardProjectId'}
         - {$ref: '#/components/parameters/DashboardRegionCode'}
@@ -259,7 +261,7 @@ components:
     DashboardSignalPipelineState:
       type: object
       additionalProperties: false
-      required: [status, as_of, error, stages, published_region]
+      required: [status, as_of, error, stages, stage_counts, published_region]
       properties:
         status: {$ref: '#/components/schemas/DashboardSectionStatus'}
         as_of: {type: [string, 'null'], format: date-time}
@@ -281,7 +283,22 @@ components:
             - {const: REVIEW}
             - {const: PUBLISHED}
           items: false
+        stage_counts:
+          type: array
+          minItems: 8
+          maxItems: 8
+          description: >-
+            Per-stage unique cloud data-package counts for the exact project, region, and [from,to)
+            window. Counts are independent stage events, not percentages or a forced funnel.
+          items: {$ref: '#/components/schemas/DashboardSignalStageCount'}
         published_region: {$ref: '#/components/schemas/DashboardPublishedRegionState'}
+    DashboardSignalStageCount:
+      type: object
+      additionalProperties: false
+      required: [stage, count]
+      properties:
+        stage: {$ref: '#/components/schemas/SignalStage'}
+        count: {type: integer, minimum: 0}
     DashboardSnapshotSections:
       type: object
       additionalProperties: false

@@ -6,12 +6,21 @@ import type {
 import type { StatusTone } from "../../../shared/ui/state/contracts";
 
 const statusCopy: Readonly<Record<DashboardSectionStatus, string>> = {
-  READY: "数据已就绪",
-  EMPTY: "当前范围暂无数据",
-  PARTIAL: "仅展示已确认返回的数据",
-  STALE: "当前数据可能已过期",
-  ERROR: "此区域加载失败",
-  BLOCKED: "此区域被产品或事实合同阻断",
+  READY: "正常",
+  EMPTY: "暂无数据",
+  PARTIAL: "数据不完整",
+  STALE: "数据可能已过期",
+  ERROR: "加载失败",
+  BLOCKED: "暂时无法计算",
+};
+
+const blockerCopy: Readonly<Record<string, string>> = {
+  P01_SIGNAL_FORMULA_UNCONFIRMED:
+    "信号轨道的统计规则还没配置完成，因此暂时不能显示各阶段数量。",
+  P01_COVERAGE_DENOMINATOR_MISSING:
+    "缺少采集计划、机器人分组、任务目录或目标总量，因此暂时无法计算覆盖率。",
+  COVERAGE_PRODUCT_DECISION_REQUIRED:
+    "覆盖率的统计规则和目标总量还没配置完成，因此暂时无法计算。",
 };
 
 export function sectionTone(status: DashboardSectionStatus): StatusTone {
@@ -39,12 +48,14 @@ export function DashboardSectionNotice({
 }>) {
   if (section.status === "READY" || section.status === "EMPTY") return null;
   const isError = section.status === "ERROR";
-  const description = section.error?.message ?? statusCopy[section.status];
+  const description = section.error
+    ? (blockerCopy[section.error.code] ?? section.error.message)
+    : statusCopy[section.status];
   return (
     <Alert
       className={compact ? "dashboard-section-notice-compact" : undefined}
       data-dashboard-section-status={section.status}
-      title={`${label} · ${section.status}`}
+      title={`${label} · ${sectionLabel(section.status)}`}
       description={description}
       type={isError ? "error" : "warning"}
       showIcon

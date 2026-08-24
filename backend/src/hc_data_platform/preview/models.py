@@ -21,7 +21,7 @@ class EncodingProfileV1(BaseModel):
     name: str = Field(default="h264-cmaf-preview-v1", min_length=1)
     width: int = Field(default=1280, ge=16, le=4096)
     height: int = Field(default=720, ge=16, le=2160)
-    video_codec: Literal["h264"] = "h264"
+    video_codec: Literal["h264", "vp9"] = "h264"
     pixel_format: Literal["yuv420p"] = "yuv420p"
     video_bitrate_kbps: int = Field(default=2_000, ge=64, le=50_000)
     segment_duration_seconds: float = Field(default=2.0, ge=0.25, le=10)
@@ -38,7 +38,7 @@ class EncodingProfileV1(BaseModel):
     @model_validator(mode="after")
     def validate_dimensions(self) -> EncodingProfileV1:
         if self.width % 2 or self.height % 2:
-            raise ValueError("H.264 preview dimensions must be even")
+            raise ValueError("preview dimensions must be even")
         return self
 
 

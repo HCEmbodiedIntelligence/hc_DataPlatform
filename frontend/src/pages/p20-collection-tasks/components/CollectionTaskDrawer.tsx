@@ -219,7 +219,7 @@ export function CollectionTaskDrawer({
     (error.code === "VERSION_CONFLICT" || error.code === "PRECONDITION_FAILED");
 
   return (
-    <aside
+    <div
       aria-labelledby={headingId}
       aria-modal="false"
       className={styles.editorDrawer}
@@ -403,19 +403,45 @@ export function CollectionTaskDrawer({
             <fieldset className={styles.targetFieldset}>
               <legend>采集目标（可选）</legend>
               <div className={styles.targetGrid}>
-                <Form.Item label="数据包数量" name="packageCount">
+                <Form.Item
+                  label="数据包数量"
+                  name="packageCount"
+                  rules={[
+                    {
+                      validator: async (_, value: unknown) => {
+                        if (value == null || value === "") return;
+                        if (typeof value === "number" && value > 0) return;
+                        throw new Error("目标数据包数量必须大于 0。");
+                      },
+                    },
+                  ]}
+                >
                   <InputNumber
                     aria-label="目标数据包数量"
                     inputMode="numeric"
+                    min={1}
                     name="package_count"
                     placeholder="未设置…"
                     precision={0}
                   />
                 </Form.Item>
-                <Form.Item label="总时长（小时）" name="durationHours">
+                <Form.Item
+                  label="总时长（小时）"
+                  name="durationHours"
+                  rules={[
+                    {
+                      validator: async (_, value: unknown) => {
+                        if (value == null || value === "") return;
+                        if (typeof value === "number" && value > 0) return;
+                        throw new Error("目标总时长必须大于 0。");
+                      },
+                    },
+                  ]}
+                >
                   <InputNumber
                     aria-label="目标总时长（小时）"
                     inputMode="decimal"
+                    min={0.01}
                     name="duration_hours"
                     placeholder="未设置…"
                     precision={2}
@@ -423,7 +449,8 @@ export function CollectionTaskDrawer({
                 </Form.Item>
               </div>
               <span className={styles.fieldHint}>
-                目标策略尚未冻结；两项都可留空，达到目标不会自动关闭任务。
+                探索性任务可不设目标；已设置的目标必须大于
+                0。目标达成只反映进度事实，不会自动关闭任务。
               </span>
             </fieldset>
 
@@ -551,6 +578,6 @@ export function CollectionTaskDrawer({
       >
         <p>当前表单内容尚未保存，关闭后需要重新填写。</p>
       </Modal>
-    </aside>
+    </div>
   );
 }

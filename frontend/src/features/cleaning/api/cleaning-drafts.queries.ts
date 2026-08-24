@@ -82,7 +82,7 @@ export function useCleaningDraftSummary(search: CleaningDraftsSearch, allowed = 
       const raw = await request<unknown>({
         method: 'GET', path: `${root(scope.projectId!, scope.regionCode!)}:summary`,
         query: {
-          status: search.status, q: search.q, datasetId: search.datasetId,
+          scope: search.scope, status: search.status, q: search.q, datasetId: search.datasetId,
           baseVersionId: search.baseVersionId, episodeId: search.episodeId,
           robotId: search.robotId, creatorId: search.creatorId,
           updatedFrom: search.updatedFrom, updatedTo: search.updatedTo,

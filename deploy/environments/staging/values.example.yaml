@@ -24,3 +24,27 @@ backend:
     environment: staging
     serviceVersion: platform-v2026.08.17.1
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
+    outboxScopes: '["staging-organization/staging-project/staging-region"]'
+    # Internal/provider gateway credentials are referenced via
+    # backend.existingSecrets.application.autoAnnotationProviderApiKey.
+    autoAnnotationProviderEndpoint: https://annotation-gateway.staging.example.com/v1/annotate
+    autoAnnotationProviderModels: '["vlm-staging-v1"]'
+    sessionIdleTtlSeconds: "1800"
+    sessionAbsoluteTtlSeconds: "86400"
+    sessionTouchIntervalSeconds: "60"
+    maxActiveSessions: "5"
+    authAbuseEnabled: "true"
+    authClientIpMode: trusted_proxy
+    # Replace with the exact ingress/LB CIDRs that are allowed to set X-Forwarded-For.
+    authTrustedProxyCidrs: '["10.0.0.0/8"]'
+    authChallengeProvider: turnstile
+    # Replace with this deployment's public Turnstile site key and exact browser hostname.
+    authTurnstileSiteKey: replace-with-staging-turnstile-site-key
+    authTurnstileExpectedHostnames: '["data-platform.staging.example.com"]'
+    authTurnstileConnectTimeoutSeconds: "3"
+    authTurnstileReadTimeoutSeconds: "5"
+    authRecoveryEnabled: "true"
+    authRecoveryPublicBaseUrl: https://data-platform.staging.example.com
+    authRecoveryEmailFrom: no-reply@staging.example.com
+    authSmtpHost: smtp.staging.example.com
+    authSmtpUsername: hc-data-platform-staging

@@ -9,6 +9,7 @@ from hc_data_platform.lance_catalog.ports import FakeStepReader
 from hc_data_platform.preview.adapters import (
     AnnotationExclusionAdapter,
     LanceStepReaderAdapter,
+    S3ImageRefResolver,
 )
 
 
@@ -103,6 +104,117 @@ def test_lance_adapter_preserves_embedded_image_bytes_for_ffmpeg() -> None:
 
     assert frame.valid is True
     assert frame.image_ref == image
+
+
+def test_lance_adapter_turns_an_empty_corrupt_camera_sample_into_a_placeholder() -> None:
+    adapter = LanceStepReaderAdapter(
+        FakeStepReader(
+            "dataset-1",
+            3,
+            [
+                StepRecord(
+                    rollout_id="rollout-1",
+                    step_index=0,
+                    timestamp_ns=0,
+                    modalities={"camera.front": b""},
+                )
+            ],
+            project_id="project-1",
+        )
+    )
+
+    frame = adapter.read_steps(
+        project_id="project-1",
+        dataset_id="dataset-1",
+        rollout_id="rollout-1",
+        lance_version="3",
+        camera_id="front",
+        start_step=0,
+        end_step=1,
+    )[0]
+
+    assert frame.valid is False
+    assert frame.image_ref is None
+    assert frame.invalid_reason == "camera.front image reference is missing or unsupported"
+
+
+def test_s3_image_resolver_reads_only_the_configured_bucket_and_closes_response_body() -> None:
+    class Body:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def read(self, amount: int) -> bytes:
+            assert amount == 33
+            return b"image-bytes"
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Client:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+            self.body = Body()
+
+        def get_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
+            self.calls.append((Bucket, Key))
+            return {"ContentLength": 11, "Body": self.body}
+
+    client = Client()
+    resolver = S3ImageRefResolver(client, "hc-data", max_object_bytes=32)
+
+    assert resolver("s3://hc-data/cameras/front%20image.ppm") == b"image-bytes"
+    assert client.calls == [("hc-data", "cameras/front image.ppm")]
+    assert client.body.closed is True
+    assert resolver("s3://other-bucket/private.ppm") is None
+    assert resolver("s3://hc-data/private.ppm?version=1") is None
+    assert client.calls == [("hc-data", "cameras/front image.ppm")]
+
+
+def test_s3_image_resolver_rejects_oversized_or_unavailable_objects_as_explicit_placeholders() -> (
+    None
+):
+    class Body:
+        def read(self, _: int) -> bytes:
+            raise AssertionError("oversized response body must not be read")
+
+        def close(self) -> None:
+            raise AssertionError("body is not fetched for an oversized object")
+
+    class OversizedClient:
+        def get_object(self, **_: object) -> dict[str, object]:
+            return {"ContentLength": 33, "Body": Body()}
+
+    resolver = S3ImageRefResolver(OversizedClient(), "hc-data", max_object_bytes=32)
+    assert resolver("s3://hc-data/cameras/large.ppm") is None
+
+    adapter = LanceStepReaderAdapter(
+        FakeStepReader(
+            "dataset-1",
+            3,
+            [
+                StepRecord(
+                    rollout_id="rollout-1",
+                    step_index=0,
+                    timestamp_ns=0,
+                    modalities={"camera.front": "s3://hc-data/cameras/large.ppm"},
+                )
+            ],
+            project_id="project-1",
+        ),
+        image_ref_resolver=resolver,
+    )
+    frame = adapter.read_steps(
+        project_id="project-1",
+        dataset_id="dataset-1",
+        rollout_id="rollout-1",
+        lance_version="3",
+        camera_id="front",
+        start_step=0,
+        end_step=1,
+    )[0]
+
+    assert frame.valid is False
+    assert frame.invalid_reason == "camera.front image reference is missing or unsupported"
 
 
 def test_annotation_adapter_consumes_effective_exclusions_at_requested_revision() -> None:

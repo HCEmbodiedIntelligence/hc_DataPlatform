@@ -126,6 +126,26 @@ def test_minio_interruption_renewal_part_validation_completion_and_cancel() -> N
         assert completed.status is UploadStatus.MULTIPART_COMPLETED
         event = service.commit_manifest(session_id=session.session_id, manifest=manifest)
         assert client.head_object(Bucket=bucket, Key=event.manifest_key)["ContentLength"] > 0
+        raw_source = service.authorize_raw_media(
+            session_id=session.session_id,
+            actor_id="minio-integration",
+            request_id="minio-raw-media",
+        )
+        with urlopen(raw_source.download_url) as response:  # noqa: S310 - service signed the URL
+            assert response.headers["Cache-Control"] == "no-store"
+            assert response.read() == body
+        range_request = Request(
+            raw_source.download_url,
+            headers={"Range": "bytes=0-31"},
+            method="GET",
+        )
+        with urlopen(range_request) as response:  # noqa: S310 - service signed the URL
+            assert response.status == 206
+            assert response.headers["Cache-Control"] == "no-store"
+            assert response.headers["Content-Range"] == f"bytes 0-31/{len(body)}"
+            assert response.read() == body[:32]
+        assert raw_source.byte_length == len(body)
+        assert raw_source.sha256 == manifest.sha256
 
         referenced_body = b"registered-from-existing-minio-object"
         referenced_sha = hashlib.sha256(referenced_body).hexdigest()

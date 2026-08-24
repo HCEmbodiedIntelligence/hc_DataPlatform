@@ -9,6 +9,8 @@ data:
   HC_RUNTIME_BACKEND: production
   HC_API_PORT: {{ .Values.backend.api.port | quote }}
   HC_TEMPORAL_TARGET: {{ .Values.backend.config.temporalTarget | quote }}
+  HC_OUTBOX_SCOPES: {{ .Values.backend.config.outboxScopes | quote }}
+  HC_ARTIFACT_PREFIX: {{ .Values.backend.config.artifactPrefix | quote }}
   HC_TEMPORAL_TASK_QUEUE: {{ .Values.backend.worker.taskQueue | quote }}
   {{- with .Values.backend.config.workflowActivityFactory }}
   HC_WORKFLOW_ACTIVITY_FACTORY: {{ . | quote }}
@@ -17,11 +19,63 @@ data:
   HC_OBJECT_STORE_PUBLIC_ENDPOINT: {{ required "backend.config.objectStorePublicEndpoint is required" .Values.backend.config.objectStorePublicEndpoint | quote }}
   HC_OBJECT_STORE_BUCKET: {{ .Values.backend.config.objectStoreBucket | quote }}
   HC_OBJECT_STORE_REGION: {{ .Values.backend.config.objectStoreRegion | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_NAME: {{ .Values.backend.config.autoAnnotationProviderName | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: {{ .Values.backend.config.autoAnnotationProviderEndpoint | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_MODELS: {{ .Values.backend.config.autoAnnotationProviderModels | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_TIMEOUT_SECONDS: {{ .Values.backend.config.autoAnnotationProviderTimeoutSeconds | quote }}
+  HC_AUTO_ANNOTATION_MAX_CONCURRENT_JOBS: {{ .Values.backend.config.autoAnnotationMaxConcurrentJobs | quote }}
+  HC_AUTO_ANNOTATION_MAX_JOBS_PER_HOUR: {{ .Values.backend.config.autoAnnotationMaxJobsPerHour | quote }}
+  HC_AUTO_ANNOTATION_DAILY_COST_LIMIT_MICROS: {{ .Values.backend.config.autoAnnotationDailyCostLimitMicros | quote }}
+  HC_INGEST_PART_AUTHORIZATION_TTL_SECONDS: {{ .Values.backend.config.ingestPartAuthorizationTtlSeconds | quote }}
   HC_JWT_ISSUER: {{ .Values.backend.config.jwtIssuer | quote }}
   HC_JWT_AUDIENCE: {{ .Values.backend.config.jwtAudience | quote }}
   HC_JWT_ALGORITHMS: {{ .Values.backend.config.jwtAlgorithms | quote }}
   HC_JWT_JWKS_URL: {{ required "config.jwtJwksUrl is required" .Values.backend.config.jwtJwksUrl | quote }}
   HC_READINESS_TIMEOUT_SECONDS: {{ .Values.backend.config.readinessTimeoutSeconds | quote }}
+  HC_PASSWORD_MIN_LENGTH: {{ .Values.backend.config.passwordMinLength | quote }}
+  HC_PASSWORD_MAX_LENGTH: {{ .Values.backend.config.passwordMaxLength | quote }}
+  HC_PASSWORD_SCRYPT_N: {{ .Values.backend.config.passwordScryptN | quote }}
+  HC_PASSWORD_SCRYPT_R: {{ .Values.backend.config.passwordScryptR | quote }}
+  HC_PASSWORD_SCRYPT_P: {{ .Values.backend.config.passwordScryptP | quote }}
+  HC_SESSION_IDLE_TTL_SECONDS: {{ .Values.backend.config.sessionIdleTtlSeconds | quote }}
+  HC_SESSION_ABSOLUTE_TTL_SECONDS: {{ .Values.backend.config.sessionAbsoluteTtlSeconds | quote }}
+  HC_SESSION_TOUCH_INTERVAL_SECONDS: {{ .Values.backend.config.sessionTouchIntervalSeconds | quote }}
+  HC_MAX_ACTIVE_SESSIONS: {{ .Values.backend.config.maxActiveSessions | quote }}
+  HC_AUTH_ABUSE_ENABLED: {{ .Values.backend.config.authAbuseEnabled | quote }}
+  HC_AUTH_CLIENT_IP_MODE: {{ .Values.backend.config.authClientIpMode | quote }}
+  HC_AUTH_TRUSTED_PROXY_CIDRS: {{ required "backend.config.authTrustedProxyCidrs is required" .Values.backend.config.authTrustedProxyCidrs | quote }}
+  HC_AUTH_LOGIN_FAILURE_WINDOW_SECONDS: {{ .Values.backend.config.authLoginFailureWindowSeconds | quote }}
+  HC_AUTH_LOGIN_CHALLENGE_AFTER_FAILURES: {{ .Values.backend.config.authLoginChallengeAfterFailures | quote }}
+  HC_AUTH_LOGIN_DELAY_AFTER_FAILURES: {{ .Values.backend.config.authLoginDelayAfterFailures | quote }}
+  HC_AUTH_LOGIN_DELAY_INITIAL_SECONDS: {{ .Values.backend.config.authLoginDelayInitialSeconds | quote }}
+  HC_AUTH_LOGIN_DELAY_MAX_SECONDS: {{ .Values.backend.config.authLoginDelayMaxSeconds | quote }}
+  HC_AUTH_LOGIN_LOCK_AFTER_FAILURES: {{ .Values.backend.config.authLoginLockAfterFailures | quote }}
+  HC_AUTH_LOGIN_LOCK_SECONDS: {{ .Values.backend.config.authLoginLockSeconds | quote }}
+  HC_AUTH_LOGIN_SOURCE_RATE_LIMIT: {{ .Values.backend.config.authLoginSourceRateLimit | quote }}
+  HC_AUTH_LOGIN_SOURCE_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authLoginSourceRateWindowSeconds | quote }}
+  HC_AUTH_LOGIN_SUBJECT_RATE_LIMIT: {{ .Values.backend.config.authLoginSubjectRateLimit | quote }}
+  HC_AUTH_LOGIN_SUBJECT_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authLoginSubjectRateWindowSeconds | quote }}
+  HC_AUTH_REGISTRATION_SOURCE_RATE_LIMIT: {{ .Values.backend.config.authRegistrationSourceRateLimit | quote }}
+  HC_AUTH_REGISTRATION_SOURCE_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authRegistrationSourceRateWindowSeconds | quote }}
+  HC_AUTH_REGISTRATION_SUBJECT_RATE_LIMIT: {{ .Values.backend.config.authRegistrationSubjectRateLimit | quote }}
+  HC_AUTH_REGISTRATION_SUBJECT_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authRegistrationSubjectRateWindowSeconds | quote }}
+  HC_AUTH_GLOBAL_RATE_LIMIT: {{ .Values.backend.config.authGlobalRateLimit | quote }}
+  HC_AUTH_GLOBAL_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authGlobalRateWindowSeconds | quote }}
+  HC_AUTH_CHALLENGE_PROVIDER: {{ .Values.backend.config.authChallengeProvider | quote }}
+  HC_AUTH_TURNSTILE_SITE_KEY: {{ required "backend.config.authTurnstileSiteKey is required" .Values.backend.config.authTurnstileSiteKey | quote }}
+  HC_AUTH_TURNSTILE_EXPECTED_HOSTNAMES: {{ required "backend.config.authTurnstileExpectedHostnames is required" .Values.backend.config.authTurnstileExpectedHostnames | quote }}
+  HC_AUTH_TURNSTILE_CONNECT_TIMEOUT_SECONDS: {{ .Values.backend.config.authTurnstileConnectTimeoutSeconds | quote }}
+  HC_AUTH_TURNSTILE_READ_TIMEOUT_SECONDS: {{ .Values.backend.config.authTurnstileReadTimeoutSeconds | quote }}
+  HC_AUTH_RECOVERY_ENABLED: {{ .Values.backend.config.authRecoveryEnabled | quote }}
+  HC_AUTH_RECOVERY_EMAIL_VERIFICATION_TTL_SECONDS: {{ .Values.backend.config.authRecoveryEmailVerificationTtlSeconds | quote }}
+  HC_AUTH_RECOVERY_TOKEN_TTL_SECONDS: {{ .Values.backend.config.authRecoveryTokenTtlSeconds | quote }}
+  HC_AUTH_RECOVERY_PUBLIC_BASE_URL: {{ .Values.backend.config.authRecoveryPublicBaseUrl | quote }}
+  HC_AUTH_RECOVERY_EMAIL_FROM: {{ .Values.backend.config.authRecoveryEmailFrom | quote }}
+  HC_AUTH_SMTP_HOST: {{ .Values.backend.config.authSmtpHost | quote }}
+  HC_AUTH_SMTP_PORT: {{ .Values.backend.config.authSmtpPort | quote }}
+  HC_AUTH_SMTP_USERNAME: {{ .Values.backend.config.authSmtpUsername | quote }}
+  HC_AUTH_SMTP_STARTTLS: {{ .Values.backend.config.authSmtpStarttls | quote }}
+  HC_AUTH_SMTP_TIMEOUT_SECONDS: {{ .Values.backend.config.authSmtpTimeoutSeconds | quote }}
   HC_ENFORCE_SCHEMA_MIGRATIONS: {{ .Values.backend.config.enforceSchemaMigrations | quote }}
   HC_API_DOCS_ENABLED: {{ .Values.backend.config.apiDocsEnabled | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.backend.config.otelExporterOtlpEndpoint | quote }}

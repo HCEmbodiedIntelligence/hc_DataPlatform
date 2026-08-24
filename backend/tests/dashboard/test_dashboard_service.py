@@ -17,15 +17,19 @@ from hc_data_platform.dashboard.models import (
     DashboardSectionState,
     DashboardSectionStatus,
     DashboardSignalPipelineState,
+    DashboardSignalStageCount,
     SignalStage,
 )
 from hc_data_platform.dashboard.repository import (
+    CollectionObservationFact,
+    CommittedObjectFact,
     DashboardBusinessEventFact,
     DashboardPendingFact,
     DashboardScope,
     DashboardWindow,
     InMemoryDashboardRepository,
     PublicationLineageSummary,
+    SignalPipelineSummary,
 )
 from hc_data_platform.dashboard.service import (
     DashboardCursorCodec,
@@ -93,20 +97,33 @@ def common(actor: AuthContext) -> dict[str, object]:
     }
 
 
-def test_snapshot_removes_storage_and_blocks_unconfirmed_counts_and_missing_lineage() -> None:
-    repository = InMemoryDashboardRepository()
+def test_snapshot_counts_project_region_signal_stages_without_fabricating_a_funnel() -> None:
+    summary = SignalPipelineSummary(8, 7, 6, 5, 4, 3, 2, 1)
+    repository = InMemoryDashboardRepository(
+        signal_pipeline_summary=summary,
+        publication_summary=PublicationLineageSummary(
+            True,
+            lineage_count=1,
+            publication_count=1,
+            latest_published_at=NOW - timedelta(minutes=1),
+        ),
+    )
     service = DashboardService(repository, clock=lambda: NOW)
     snapshot = service.snapshot(**common(auth()))
 
     assert snapshot.as_of == NOW
     assert snapshot.sections.signal_pipeline.stages == SIGNAL_STAGES
-    assert snapshot.sections.signal_pipeline.status is DashboardSectionStatus.BLOCKED
+    assert snapshot.sections.signal_pipeline.status is DashboardSectionStatus.READY
+    assert snapshot.sections.signal_pipeline.error is None
+    assert tuple(
+        (item.stage, item.count) for item in snapshot.sections.signal_pipeline.stage_counts
+    ) == tuple(zip(SIGNAL_STAGES, summary.counts, strict=True))
     assert snapshot.sections.episodes.status is DashboardSectionStatus.BLOCKED
     assert snapshot.sections.work.status is DashboardSectionStatus.BLOCKED
     assert snapshot.sections.signal_pipeline.published_region.status is (
-        DashboardSectionStatus.BLOCKED
+        DashboardSectionStatus.READY
     )
-    assert snapshot.sections.signal_pipeline.published_region.lineage_count is None
+    assert snapshot.sections.signal_pipeline.published_region.lineage_count == 1
     assert "storage" not in snapshot.sections.model_dump()
     assert [record.endpoint for record in repository.audits] == ["snapshot"]
 
@@ -363,10 +380,37 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
 
 
 def test_coverage_is_always_blocked_without_versioned_denominator() -> None:
-    coverage = DashboardService(clock=lambda: NOW).coverage(**common(auth())).coverage
+    repository = InMemoryDashboardRepository(
+        committed_objects=(
+            CommittedObjectFact(
+                project_id="project-a",
+                region_code="cn-east",
+                rollout_id="rollout-a",
+                data_package_id="package-a",
+                file_size=1_024,
+                committed_at=NOW - timedelta(minutes=1),
+            ),
+        ),
+        collection_observations=(
+            CollectionObservationFact(
+                project_id="project-a",
+                region_code="cn-east",
+                rollout_id="rollout-a",
+                task_id="task-a",
+                robot_id="robot-a",
+                observed_at=NOW - timedelta(minutes=1),
+            ),
+        ),
+    )
+    coverage = DashboardService(repository, clock=lambda: NOW).coverage(
+        **common(auth())
+    ).coverage
     assert coverage.status is DashboardSectionStatus.BLOCKED
     assert coverage.error is not None
     assert coverage.error.code == "P01_COVERAGE_DENOMINATOR_MISSING"
+    assert coverage.error.message == (
+        "缺少采集计划、机器人分组、任务目录或目标总量，因此暂时无法计算覆盖率。"
+    )
     assert not hasattr(coverage, "percentage")
 
 
@@ -480,6 +524,10 @@ def test_section_invariants_and_stage_catalog_reject_ambiguous_states() -> None:
             status=DashboardSectionStatus.BLOCKED,
             error=DashboardSectionError(code="BLOCKED", message="blocked"),
             stages=(*SIGNAL_STAGES[:-1], SignalStage.ANNOTATION),
+            stage_counts=tuple(
+                DashboardSignalStageCount(stage=stage, count=0)
+                for stage in SIGNAL_STAGES
+            ),
             published_region=DashboardPublishedRegionState(
                 status=DashboardSectionStatus.EMPTY,
                 as_of=NOW,

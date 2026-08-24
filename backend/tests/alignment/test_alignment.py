@@ -17,6 +17,7 @@ from hc_data_platform.alignment import (
     ModalityStreamV1,
     TimedSampleV1,
 )
+from hc_data_platform.alignment.canonical import denormalize_from_json, normalize_for_json
 from hc_data_platform.alignment.models import AlignedRowV1
 
 SHA = "c" * 64
@@ -310,6 +311,15 @@ def test_arrow_writer_streams_an_attempt_isolated_deterministic_fragment(
         "valid": True,
         "value": {"$bytes_base64": "YmluYXJ5"},
     }
+    assert denormalize_from_json(second_modalities)["camera"]["value"] == b"binary"
+
+
+def test_canonical_binary_marker_round_trips_and_rejects_malformed_values() -> None:
+    value = {"camera": {"frames": [b"jpeg-a", b"jpeg-b"]}}
+
+    assert denormalize_from_json(normalize_for_json(value)) == value
+    with pytest.raises(ValueError):
+        denormalize_from_json({"$bytes_base64": "not-base64"})
 
 
 def test_arrow_write_failure_leaves_no_committed_fragment(tmp_path: Path) -> None:

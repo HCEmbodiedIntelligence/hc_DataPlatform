@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Sequence
 from typing import Any
+from uuid import UUID, uuid4
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 
 from .adapters import CatalogRolloutStateV1
@@ -91,6 +94,7 @@ class PostgresPublishedManifestRepository:
                             "Every published rollout must resolve to one exact persisted region."
                         ),
                     )
+                self._notify_dataset_owner(cursor, manifest)
             connection.commit()
             return existing
         except Exception:
@@ -122,6 +126,90 @@ class PostgresPublishedManifestRepository:
         if isinstance(value, str):
             return PublishedDatasetManifestV1.model_validate_json(value)
         return PublishedDatasetManifestV1.model_validate(value)
+
+    @staticmethod
+    def _notify_dataset_owner(cursor: Any, manifest: PublishedDatasetManifestV1) -> None:
+        """Persist the owner inbox fact in the publication transaction.
+
+        Publication can also be invoked by project-only automation against the lower-level
+        publishing contract.  Without an exact organization and region there is no safe way
+        to select one product dataset owner, so those invocations remain auditable but do not
+        manufacture an account notification.  Likewise, legacy non-UUID owner identifiers
+        are not guessed into account identities.
+        """
+
+        context = current_request_context()
+        if context.organization_id is None or context.region_code is None:
+            return
+        cursor.execute(
+            """
+            SELECT owner_id
+            FROM dataset_registry.datasets
+            WHERE organization_id = %s
+              AND project_id = %s
+              AND region_code = %s
+              AND dataset_id = %s
+            """,
+            (
+                context.organization_id,
+                manifest.project_id,
+                context.region_code,
+                manifest.dataset_id,
+            ),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return
+        try:
+            recipient_id = UUID(str(row[0]))
+        except ValueError:
+            return
+
+        resource_id = f"{manifest.dataset_id}:{manifest.dataset_version}"
+        if len(resource_id) > 512:
+            resource_id = f"sha256:{manifest.content_hash}"
+        event_identity = "\0".join(
+            (
+                manifest.project_id,
+                manifest.dataset_id,
+                manifest.dataset_version,
+                manifest.content_hash,
+            )
+        )
+        event_key = (
+            f"dataset-publication:v1:{hashlib.sha256(event_identity.encode('utf-8')).hexdigest()}"
+        )
+        cursor.execute("SELECT set_config('app.subject_id', %s, true)", (str(recipient_id),))
+        try:
+            cursor.execute(
+                """
+                INSERT INTO access_control.account_notifications (
+                    notification_id, recipient_id, kind, organization_id, project_id,
+                    access_request_id, resource_type, resource_id, event_key, state
+                ) VALUES (
+                    %s::uuid, %s::uuid, 'DATASET_VERSION_PUBLISHED', %s, %s,
+                    NULL, 'DATASET_VERSION', %s, %s, 'UNREAD'
+                )
+                ON CONFLICT (recipient_id, event_key) DO NOTHING
+                """,
+                (
+                    str(uuid4()),
+                    str(recipient_id),
+                    context.organization_id,
+                    manifest.project_id,
+                    resource_id,
+                    event_key,
+                ),
+            )
+        except Exception:
+            # PostgreSQL has aborted the transaction, so restoring session variables would
+            # only mask the notification failure.  The caller rolls manifest and lineage back.
+            raise
+        else:
+            cursor.execute(
+                "SELECT set_config('app.subject_id', %s, true)",
+                (context.subject_id or "",),
+            )
 
 
 class PostgresAnnotationTaskLocator:

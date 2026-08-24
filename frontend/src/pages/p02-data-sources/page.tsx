@@ -742,6 +742,7 @@ export default function DataSourcesPage() {
                   disabled={
                     !canManage ||
                     !editorInitial?.binding ||
+                    detail.isFetching ||
                     !detail.data.allowedActions.includes('EDIT_CONFIGURATION')
                   }
                   onClick={() => {
@@ -755,6 +756,7 @@ export default function DataSourcesPage() {
                   disabled={
                     !canManage ||
                     !canMutateDataSource(detail.data) ||
+                    detail.isFetching ||
                     !detail.data.allowedActions.includes('ROTATE_CREDENTIAL')
                   }
                   onClick={() => {
@@ -786,7 +788,12 @@ export default function DataSourcesPage() {
                           observed_credential_version: detail.data.credentialVersion,
                         },
                       },
-                      { onSuccess: (wire) => setConnectionJobId(wire.job.job_id) },
+                      {
+                        onSuccess: (wire) => {
+                          setConnectionJobId(wire.job.job_id);
+                          void detail.refetch();
+                        },
+                      },
                     );
                   }}
                 >
@@ -796,6 +803,7 @@ export default function DataSourcesPage() {
                   disabled={
                     !canManage ||
                     !canMutateDataSource(detail.data) ||
+                    detail.isFetching ||
                     !detail.data.allowedActions.includes(
                       detail.data.administrativeState === 'ENABLED' ? 'DISABLE' : 'ENABLE',
                     )

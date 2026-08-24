@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, cast
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 Identifier = Annotated[
     str,
@@ -26,6 +26,7 @@ def _omitted_text() -> str:
 class CollectionTaskStatus(str, Enum):
     ACTIVE = "ACTIVE"
     CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
 
 
 class QcOutcome(str, Enum):
@@ -39,14 +40,21 @@ class StrictModel(BaseModel):
 
 
 class CollectionTarget(StrictModel):
-    """Unconfirmed target dimensions remain independently optional.
+    """Optional, explicit task target with one or two independently measured dimensions.
 
-    OPEN-05 deliberately has no at-least-one validator and does not imply automatic
-    completion.  Either dimension can be omitted without the service inventing policy.
+    A task may intentionally have no target (for exploratory collection), but a supplied
+    target must contain at least one strictly-positive goal.  Attainment is a read-only
+    fact and never changes the task state by itself.
     """
 
-    package_count: int | None = None
-    duration_seconds: float | None = Field(default=None, allow_inf_nan=False)
+    package_count: int | None = Field(default=None, gt=0)
+    duration_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def has_a_goal(self) -> CollectionTarget:
+        if self.package_count is None and self.duration_seconds is None:
+            raise ValueError("a collection target must define package_count or duration_seconds")
+        return self
 
 
 class CreateCollectionTask(StrictModel):
@@ -72,6 +80,7 @@ class UpdateCollectionTask(StrictModel):
 class CollectionTask(StrictModel):
     schema_version: str = Field(default="1", pattern=r"^1$")
     collection_task_id: Identifier
+    organization_id: Identifier
     project_id: Identifier
     task_code: TaskCode
     name: str
@@ -94,6 +103,46 @@ class CollectionTaskRatio(StrictModel):
     value: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
+class CollectionTaskTargetMetricStatus(str, Enum):
+    IN_PROGRESS = "IN_PROGRESS"
+    MET = "MET"
+    EXCEEDED = "EXCEEDED"
+    UNKNOWN = "UNKNOWN"
+
+
+class CollectionTaskAttainmentStatus(str, Enum):
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    IN_PROGRESS = "IN_PROGRESS"
+    ATTAINED = "ATTAINED"
+    EXCEEDED = "EXCEEDED"
+
+
+class CollectionTaskQualityRequirementStatus(str, Enum):
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    PENDING_QC = "PENDING_QC"
+    NOT_MET = "NOT_MET"
+    MET = "MET"
+
+
+class CollectionTaskTargetMetric(StrictModel):
+    """One configured target with a fact-derived, non-clamped progress ratio."""
+
+    actual: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    target: float = Field(gt=0, allow_inf_nan=False)
+    progress: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    status: CollectionTaskTargetMetricStatus
+
+
+class CollectionTaskAttainment(StrictModel):
+    """Explicit attainment rules; never an automatic task-state transition."""
+
+    status: CollectionTaskAttainmentStatus
+    package_count: CollectionTaskTargetMetric | None = None
+    duration_seconds: CollectionTaskTargetMetric | None = None
+    quality_threshold: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    quality_status: CollectionTaskQualityRequirementStatus
+
+
 class CollectionTaskQcProgress(StrictModel):
     evaluated_count: int = Field(ge=0)
     pass_count: int = Field(ge=0)
@@ -114,17 +163,24 @@ class ManifestObservedSources(StrictModel):
 class CollectionTaskProgress(StrictModel):
     schema_version: str = Field(default="1", pattern=r"^1$")
     collection_task_id: Identifier
+    organization_id: Identifier
     project_id: Identifier
     status: CollectionTaskStatus
     as_of: datetime
     received_package_count: int = Field(ge=0)
+    captured_duration_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    duration_observed_package_count: int = Field(ge=0)
+    duration_unknown_package_count: int = Field(ge=0)
     qc: CollectionTaskQcProgress
+    attainment: CollectionTaskAttainment
     observed_sources: ManifestObservedSources
 
 
 class CollectionTaskRecord(StrictModel):
     collection_task_id: Identifier
+    organization_id: Identifier
     project_id: Identifier
+    created_by: Identifier | None = None
     task_code: TaskCode | None = None
     name: str
     type: str
@@ -143,6 +199,7 @@ class CollectionTaskRecord(StrictModel):
             raise RuntimeError("a persisted collection task must have a task code")
         return CollectionTask(
             collection_task_id=self.collection_task_id,
+            organization_id=self.organization_id,
             project_id=self.project_id,
             task_code=self.task_code,
             name=self.name,
@@ -161,6 +218,9 @@ class ProgressFacts(StrictModel):
     pass_count: int = Field(ge=0)
     risk_count: int = Field(ge=0)
     reject_count: int = Field(ge=0)
+    captured_duration_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    duration_observed_package_count: int = Field(default=0, ge=0)
+    duration_unknown_package_count: int = Field(default=0, ge=0)
     device_ids: tuple[str, ...] = ()
     camera_ids: tuple[str, ...] = ()
     topic_names: tuple[str, ...] = ()
@@ -172,3 +232,17 @@ class ProgressFacts(StrictModel):
     @property
     def pending_count(self) -> int:
         return self.received_package_count - self.evaluated_count
+
+    @model_validator(mode="after")
+    def consistent_duration_facts(self) -> ProgressFacts:
+        if self.duration_observed_package_count + self.duration_unknown_package_count != (
+            self.received_package_count
+        ):
+            raise ValueError("duration fact counts must partition received packages")
+        if self.duration_unknown_package_count and self.captured_duration_seconds is not None:
+            raise ValueError(
+                "captured duration is unknown while received package durations are missing"
+            )
+        if self.duration_observed_package_count == 0 and self.captured_duration_seconds is not None:
+            raise ValueError("captured duration requires at least one observed package duration")
+        return self

@@ -67,6 +67,18 @@ export interface CollectionTaskGateway {
     etag: string,
     idempotencyKey: string,
   ) => Promise<CollectionTask>;
+  cancel: (
+    scope: CollectionTaskScope,
+    collectionTaskId: string,
+    etag: string,
+    idempotencyKey: string,
+  ) => Promise<CollectionTask>;
+  reopen: (
+    scope: CollectionTaskScope,
+    collectionTaskId: string,
+    etag: string,
+    idempotencyKey: string,
+  ) => Promise<CollectionTask>;
 }
 
 function collectionTaskRoot(scope: CollectionTaskScope): string {
@@ -74,13 +86,18 @@ function collectionTaskRoot(scope: CollectionTaskScope): string {
 }
 
 function assertTaskScope(
-  task: Readonly<Pick<CollectionTask, "project_id">>,
+  task: Readonly<Pick<CollectionTask, "organization_id" | "project_id">>,
   scope: CollectionTaskScope,
 ): void {
-  if (task.project_id === scope.projectId) return;
+  if (
+    task.organization_id === scope.organizationId &&
+    task.project_id === scope.projectId
+  ) {
+    return;
+  }
   throw createDomainError({
     code: "CONTRACT_MISMATCH",
-    message: "采集任务响应与当前项目不匹配，页面已停止写入。",
+    message: "采集任务响应与当前组织或项目不匹配，页面已停止写入。",
     fieldErrors: [],
     operationErrors: [],
     blockedReasons: [],
@@ -223,6 +240,7 @@ export const collectionTaskGateway: CollectionTaskGateway = {
       ...(signal ? { signal } : {}),
     });
     if (
+      progress.organization_id !== scope.organizationId ||
       progress.project_id !== scope.projectId ||
       progress.collection_task_id !== collectionTaskId
     ) {
@@ -270,6 +288,30 @@ export const collectionTaskGateway: CollectionTaskGateway = {
     const task = await request<CollectionTask>({
       method: "POST",
       path: `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}:close`,
+      scope,
+      ifMatch: etag,
+      idempotencyKey,
+    });
+    assertTaskScope(task, scope);
+    return task;
+  },
+
+  async cancel(scope, collectionTaskId, etag, idempotencyKey) {
+    const task = await request<CollectionTask>({
+      method: "POST",
+      path: `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}:cancel`,
+      scope,
+      ifMatch: etag,
+      idempotencyKey,
+    });
+    assertTaskScope(task, scope);
+    return task;
+  },
+
+  async reopen(scope, collectionTaskId, etag, idempotencyKey) {
+    const task = await request<CollectionTask>({
+      method: "POST",
+      path: `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}:reopen`,
       scope,
       ifMatch: etag,
       idempotencyKey,

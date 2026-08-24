@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Alert } from "antd";
+import { lazy, Suspense, useState } from "react";
+import { Alert, Drawer } from "antd";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -12,6 +12,10 @@ import { EmptyAccountRequestPanel } from "./EmptyAccountRequestPanel";
 import { getSessionBootstrap, logoutSession } from "./api";
 import { authErrorMessage } from "./error-messages";
 import { installSessionBootstrap } from "./runtime-scope";
+
+const NotificationInbox = lazy(
+  () => import("../../features/notifications/NotificationInbox"),
+);
 
 const intentMessages: Readonly<Record<EmptyAccountIntent, string>> = {
   membership: "填写管理员提供的真实项目 ID，提交项目加入申请。",
@@ -39,6 +43,7 @@ export function EmptyAccountRoute() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshSuccess, setRefreshSuccess] = useState<string | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const intentValue = searchParams.get("intent");
   const intent = isIntent(intentValue) ? intentValue : null;
 
@@ -83,6 +88,14 @@ export function EmptyAccountRoute() {
         (count, scope) => count + scope.capabilities.length,
         0,
       );
+      if (
+        bootstrap.platform_capabilities?.includes("platform.admin") ||
+        bootstrap.platform_capabilities?.includes("platform.account.read") ||
+        bootstrap.platform_capabilities?.includes("platform.account.manage")
+      ) {
+        navigate("/settings/access?tab=users", { replace: true });
+        return;
+      }
       if (capabilityCount > 0) {
         navigate("/", { replace: true });
         return;
@@ -103,7 +116,12 @@ export function EmptyAccountRoute() {
   const notice = logoutError ? (
     <Alert type="error" showIcon title="退出未完成" description={logoutError} />
   ) : refreshError ? (
-    <Alert type="error" showIcon title="刷新未完成" description={refreshError} />
+    <Alert
+      type="error"
+      showIcon
+      title="刷新未完成"
+      description={refreshError}
+    />
   ) : refreshSuccess ? (
     <Alert
       type="success"
@@ -129,6 +147,7 @@ export function EmptyAccountRoute() {
           loggingOut={loggingOut}
           notice={notice}
           onIntent={selectIntent}
+          onNotifications={() => setNotificationsOpen(true)}
           onLogout={() => void logout()}
         />
       }
@@ -138,6 +157,18 @@ export function EmptyAccountRoute() {
         refreshing={refreshing}
         onRefresh={refreshAccess}
       />
+      <Drawer
+        destroyOnHidden
+        open={notificationsOpen}
+        placement="right"
+        size="min(448px, 100vw)"
+        title="通知"
+        onClose={() => setNotificationsOpen(false)}
+      >
+        <Suspense fallback={<span>加载通知…</span>}>
+          <NotificationInbox />
+        </Suspense>
+      </Drawer>
     </AuthLayout>
   );
 }

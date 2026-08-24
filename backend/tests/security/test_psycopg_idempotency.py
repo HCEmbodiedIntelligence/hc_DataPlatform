@@ -40,7 +40,7 @@ class _Cursor:
         normalized = " ".join(query.split())
         if normalized.startswith("INSERT INTO core.idempotency_records"):
             if self._state.row is None:
-                self._state.row = (str(params[4]), None, params[6])  # type: ignore[arg-type]
+                self._state.row = (str(params[5]), None, params[7])  # type: ignore[arg-type]
             return
         if normalized.startswith("SELECT request_fingerprint"):
             return
@@ -90,7 +90,13 @@ def test_psycopg_idempotency_persists_typed_replay_and_rejects_body_reuse() -> N
         return connection
 
     store = PsycopgIdempotencyStore(connect, response_decoder=Result.model_validate)
-    token = bind_request_context(RequestContext(project_id="project-a", region_code="cn-east"))
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a",
+            project_id="project-a",
+            region_code="cn-east",
+        )
+    )
     calls = 0
 
     def action() -> Result:
@@ -116,7 +122,9 @@ def test_psycopg_idempotency_persists_typed_replay_and_rejects_body_reuse() -> N
 
 def test_psycopg_idempotency_requires_selected_project_to_match_scope() -> None:
     store = PsycopgIdempotencyStore(lambda: Any)  # type: ignore[arg-type]
-    token = bind_request_context(RequestContext(project_id="project-a"))
+    token = bind_request_context(
+        RequestContext(organization_id="organization-a", project_id="project-a")
+    )
     try:
         with pytest.raises(ProblemException) as denied:
             store.execute(

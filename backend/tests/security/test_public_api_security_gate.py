@@ -17,9 +17,13 @@ from hc_data_platform.core.errors import problem
 HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete"})
 ANONYMOUS_OPERATIONS = frozenset(
     {
+        ("GET", "/api/v1/auth/config"),
         ("POST", "/api/v1/auth/registrations"),
         ("POST", "/api/v1/auth/sessions"),
+        ("POST", "/api/v1/auth/password-recovery-requests"),
+        ("POST", "/api/v1/auth/password-recovery-confirmations"),
         ("GET", "/api/v1/capabilities/auto-annotation"),
+        ("GET", "/api/v1/previews/sessions/{session_id}/media/{asset_name}"),
     }
 )
 PATH_VALUES = {

@@ -44,6 +44,13 @@ class PsycopgIdempotencyStore:
         if not scope or not key:
             raise ValueError("idempotency scope and key must not be empty")
         context = current_request_context()
+        if context.organization_id is None:
+            raise problem(
+                status=403,
+                code="IDEMPOTENCY_SCOPE_DENIED",
+                title="Idempotency scope denied",
+                detail="A verified organization scope is required for idempotent commands.",
+            )
         if context.project_id != scope:
             raise problem(
                 status=403,
@@ -55,17 +62,19 @@ class PsycopgIdempotencyStore:
         fingerprint = request_fingerprint(payload)
         now = datetime.now(timezone.utc)
         expires_at = now + self._ttl
-        identity = (scope, context.region_code or "", scope, key)
+        identity = (context.organization_id, scope, context.region_code or "", scope, key)
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     INSERT INTO core.idempotency_records (
-                        project_id, region_code, scope_key, idempotency_key,
+                        organization_id, project_id, region_code, scope_key, idempotency_key,
                         request_fingerprint, response_json, created_at, expires_at
-                    ) VALUES (%s, %s, %s, %s, %s, NULL, %s, %s)
-                    ON CONFLICT (project_id, region_code, scope_key, idempotency_key)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s)
+                    ON CONFLICT (
+                        organization_id, project_id, region_code, scope_key, idempotency_key
+                    )
                     DO NOTHING
                     """,
                     (*identity, fingerprint, now, expires_at),
@@ -74,7 +83,7 @@ class PsycopgIdempotencyStore:
                     """
                     SELECT request_fingerprint, response_json, expires_at
                     FROM core.idempotency_records
-                    WHERE project_id = %s AND region_code = %s
+                    WHERE organization_id = %s AND project_id = %s AND region_code = %s
                       AND scope_key = %s AND idempotency_key = %s
                     FOR UPDATE
                     """,
@@ -104,7 +113,7 @@ class PsycopgIdempotencyStore:
                         UPDATE core.idempotency_records
                         SET request_fingerprint = %s, response_json = NULL,
                             created_at = %s, expires_at = %s
-                        WHERE project_id = %s AND region_code = %s
+                        WHERE organization_id = %s AND project_id = %s AND region_code = %s
                           AND scope_key = %s AND idempotency_key = %s
                         """,
                         (fingerprint, now, expires_at, *identity),
@@ -116,7 +125,7 @@ class PsycopgIdempotencyStore:
                     """
                     UPDATE core.idempotency_records
                     SET response_json = %s::jsonb, expires_at = %s
-                    WHERE project_id = %s AND region_code = %s
+                    WHERE organization_id = %s AND project_id = %s AND region_code = %s
                       AND scope_key = %s AND idempotency_key = %s
                     """,
                     (encoded, expires_at, *identity),

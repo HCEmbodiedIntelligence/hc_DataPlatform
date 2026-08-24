@@ -70,15 +70,31 @@ export type RHFSelectProps<
   TName extends FieldPath<TFieldValues>,
   TValue = FieldPathValue<TFieldValues, TName>,
 > = ControlledFieldProps<TFieldValues, TName> &
-  Omit<SelectProps<TValue>, 'defaultValue' | 'id' | 'onBlur' | 'onChange' | 'value'>;
+  Omit<SelectProps<TValue>, 'defaultValue' | 'id' | 'onBlur' | 'onChange' | 'value'> & {
+    /** Keep an immutable value registered while its visual control is disabled. */
+    readonly preserveValueWhenDisabled?: boolean;
+  };
 
 export function RHFSelect<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
   TValue = FieldPathValue<TFieldValues, TName>,
->({ control, description, disabled, id: explicitId, label, name, ...selectProps }: RHFSelectProps<TFieldValues, TName, TValue>) {
+>({
+  control,
+  description,
+  disabled,
+  id: explicitId,
+  label,
+  name,
+  preserveValueWhenDisabled = false,
+  ...selectProps
+}: RHFSelectProps<TFieldValues, TName, TValue>) {
   const id = useFieldId(explicitId);
-  const { field, fieldState } = useController({ control, name, disabled });
+  const { field, fieldState } = useController({
+    control,
+    name,
+    disabled: disabled && !preserveValueWhenDisabled,
+  });
   return (
     <Form.Item
       htmlFor={id}

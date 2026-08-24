@@ -3,9 +3,9 @@ info:
   title: Lance Catalog API Fragment
   version: 1.0.0
 paths:
-  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions:
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions:
     get:
-      operationId: listDatasetVersions
+      operationId: listLanceCatalogVersions
       tags: [lance_catalog]
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -19,9 +19,9 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/DatasetVersionRef'
-  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version}:
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions/{version}:
     get:
-      operationId: getDatasetVersionSnapshot
+      operationId: getLanceCatalogVersionSnapshot
       tags: [lance_catalog]
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -168,8 +168,14 @@ components:
       properties:
         rollout_id: {type: string}
         step_index: {type: integer, minimum: 0}
-        timestamp_ns: {type: integer, minimum: 0}
-        modalities: {type: object, additionalProperties: true}
+        timestamp_ns: {type: string, pattern: '^(0|[1-9][0-9]*)$'}
+        modalities:
+          type: object
+          description: >-
+            Logical modality values. Binary media is not embedded or base64 encoded;
+            it is represented as {$type: binary, byte_length, transport:
+            preview_media} and fetched through the authorized preview-media API.
+          additionalProperties: true
         source_timestamps_ns:
           type: object
           additionalProperties:

@@ -11,9 +11,17 @@ export interface DetailTabsProps {
   activeTab: string;
   onChange: (tabId: string) => void;
   label?: string;
+  /** Supply only when each referenced tabpanel is present in the DOM. */
+  panelIdForTab?: (tabId: string) => string | undefined;
 }
 
-export function DetailTabs({ tabs, activeTab, onChange, label = '详情标签页' }: DetailTabsProps) {
+export function DetailTabs({
+  tabs,
+  activeTab,
+  onChange,
+  label = '详情标签页',
+  panelIdForTab,
+}: DetailTabsProps) {
   const refs = useRef(new Map<string, HTMLButtonElement>());
   const enabledTabs = tabs.filter((tab) => !tab.disabled);
   const focusableTab = enabledTabs.some((tab) => tab.id === activeTab)
@@ -36,31 +44,34 @@ export function DetailTabs({ tabs, activeTab, onChange, label = '详情标签页
   };
   return (
     <div className="detail-tabs" role="tablist" aria-label={label}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          ref={(node) => {
-            if (node) refs.current.set(tab.id, node);
-            else refs.current.delete(tab.id);
-          }}
-          type="button"
-          role="tab"
-          id={`tab-${tab.id}`}
-          aria-selected={activeTab === tab.id}
-          aria-controls={`tabpanel-${tab.id}`}
-          tabIndex={focusableTab === tab.id ? 0 : -1}
-          disabled={tab.disabled}
-          onClick={() => onChange(tab.id)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowRight') { event.preventDefault(); move(tab.id, 1); }
-            if (event.key === 'ArrowLeft') { event.preventDefault(); move(tab.id, -1); }
-            if (event.key === 'Home') { event.preventDefault(); moveToEdge(false); }
-            if (event.key === 'End') { event.preventDefault(); moveToEdge(true); }
-          }}
-        >
-          {tab.label}
-        </button>
-      ))}
+      {tabs.map((tab) => {
+        const panelId = panelIdForTab?.(tab.id);
+        return (
+          <button
+            key={tab.id}
+            ref={(node) => {
+              if (node) refs.current.set(tab.id, node);
+              else refs.current.delete(tab.id);
+            }}
+            type="button"
+            role="tab"
+            id={`tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            {...(panelId ? { 'aria-controls': panelId } : {})}
+            tabIndex={focusableTab === tab.id ? 0 : -1}
+            disabled={tab.disabled}
+            onClick={() => onChange(tab.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight') { event.preventDefault(); move(tab.id, 1); }
+              if (event.key === 'ArrowLeft') { event.preventDefault(); move(tab.id, -1); }
+              if (event.key === 'Home') { event.preventDefault(); moveToEdge(false); }
+              if (event.key === 'End') { event.preventDefault(); moveToEdge(true); }
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

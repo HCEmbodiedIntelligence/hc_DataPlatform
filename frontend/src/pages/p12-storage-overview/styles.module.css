@@ -8,23 +8,23 @@
   background: transparent;
 }
 
-.page :global([data-layout='standard-page']) {
+.page :global([data-layout="standard-page"]) {
   gap: 22px;
 }
 
-.page :global([class*='pageTitle']) {
+.page :global([class*="pageTitle"]) {
   margin-top: 4px;
   font-size: clamp(2rem, 1.65rem + 0.9vw, 2.6rem);
   font-weight: 760;
   line-height: 1.12;
 }
 
-.page :global([class*='pageDescription']) {
+.page :global([class*="pageDescription"]) {
   margin-top: 5px;
   font-size: 13px;
 }
 
-.page :global([class*='summaryRegion']) {
+.page :global([class*="summaryRegion"]) {
   display: block;
 }
 
@@ -112,7 +112,7 @@
   left: 0;
   height: 3px;
   background: linear-gradient(90deg, #5965d8, #7593ef 68%, #b596f7);
-  content: '';
+  content: "";
 }
 
 .storageMetricIcon {
@@ -202,13 +202,13 @@
   padding: 0 2px;
 }
 
-.page :global(.detail-tabs [role='tab']) {
+.page :global(.detail-tabs [role="tab"]) {
   min-height: 32px;
   padding: 4px 10px;
   font-size: 13px;
 }
 
-.page :global([class*='contentRegion']) {
+.page :global([class*="contentRegion"]) {
   padding: 0;
   overflow: hidden;
   border-radius: var(--hc-radius-xl, 20px);
@@ -246,7 +246,7 @@
   left: 0;
   height: 3px;
   background: linear-gradient(90deg, #5965d8, #7593ef 62%, #b596f7);
-  content: '';
+  content: "";
 }
 
 .storageChartHeader {
@@ -446,7 +446,7 @@
   border: 1px solid #edf0f6;
   border-radius: 50%;
   background: #fff;
-  content: '';
+  content: "";
 }
 
 .storageDonut span {
@@ -662,29 +662,22 @@
   }
 }
 
-/* E10 capacity + lifecycle governance composition. Legacy classes above remain for
-   the original P12 leaf components, but the combined page only consumes this block. */
 .page {
+  width: 100%;
+  max-width: none;
   min-width: 0;
   min-height: 0;
   padding: 0;
-  margin: 0 auto;
+  margin: 0;
 }
 
-.governanceGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+.capacityPane {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--hc-color-border-subtle);
   border-radius: var(--hc-radius-md);
   background: var(--hc-color-surface);
   box-shadow: var(--hc-shadow-sm);
-}
-
-.capacityPane {
-  min-width: 0;
-  background: var(--hc-color-surface);
 }
 
 .paneHeader {
@@ -697,7 +690,7 @@
   border-bottom: 1px solid var(--hc-color-border-subtle);
 }
 
-.paneHeader h2,
+.paneHeader h1,
 .paneHeader p,
 .cardHeading h3,
 .cardHeading p,
@@ -707,7 +700,8 @@
   margin: 0;
 }
 
-.paneHeader h2 {
+.paneHeader h1 {
+  margin: 0;
   font-size: 20px;
   font-weight: 680;
   line-height: 1.25;
@@ -807,7 +801,7 @@
   place-items: center;
 }
 
-.capacityDonut[data-empty='true'] {
+.capacityDonut[data-empty="true"] {
   background: var(--hc-color-border-subtle);
 }
 
@@ -816,7 +810,7 @@
   height: 86px;
   border-radius: 50%;
   background: var(--hc-color-surface);
-  content: '';
+  content: "";
   grid-area: 1 / 1;
 }
 
@@ -922,19 +916,19 @@
   background: var(--hc-color-neutral);
 }
 
-.categoryLegend li[data-category='RAW'] .categoryLabel i {
+.categoryLegend li[data-category="RAW"] .categoryLabel i {
   background: var(--hc-color-info);
 }
 
-.categoryLegend li[data-category='ANNOTATION_COMPLETE'] .categoryLabel i {
+.categoryLegend li[data-category="ANNOTATION_COMPLETE"] .categoryLabel i {
   background: var(--hc-color-success);
 }
 
-.categoryLegend li[data-category='PENDING_ANNOTATION'] .categoryLabel i {
+.categoryLegend li[data-category="PENDING_ANNOTATION"] .categoryLabel i {
   background: var(--hc-color-primary);
 }
 
-.categoryLegend li[data-category='ISSUE_DATA'] .categoryLabel i {
+.categoryLegend li[data-category="ISSUE_DATA"] .categoryLabel i {
   background: var(--hc-color-warning);
 }
 
@@ -954,7 +948,9 @@
 
 .reconciliation {
   display: grid;
-  grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr) auto minmax(68px, 1fr) auto minmax(68px, 1fr);
+  grid-template-columns:
+    minmax(72px, 1fr) auto minmax(72px, 1fr) auto minmax(68px, 1fr)
+    auto minmax(68px, 1fr);
   gap: 5px;
   align-items: center;
   padding: var(--hc-space-2) var(--hc-space-3);
@@ -1015,49 +1011,65 @@
 }
 
 .trendPlot {
-  position: relative;
-  height: 70px;
-  margin: 0 var(--hc-space-3);
-  background:
-    linear-gradient(var(--hc-color-border-subtle) 1px, transparent 1px);
-  background-size: 100% 23px;
+  display: flex;
+  height: 132px;
+  gap: var(--hc-space-1);
+  align-items: end;
+  padding: var(--hc-space-2) var(--hc-space-3) var(--hc-space-3);
+  margin: 0;
+  list-style: none;
+  background: linear-gradient(
+    var(--hc-color-border-subtle) 1px,
+    transparent 1px
+  );
+  background-size: 100% 32px;
 }
 
-.trendLine {
-  position: absolute;
-  right: 16px;
-  bottom: 23px;
-  left: 8px;
-  height: 1px;
-  border-top: 1px dashed var(--hc-color-border);
+.trendPlot .trendColumn {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-rows: auto minmax(38px, 1fr) auto;
+  gap: 3px;
+  align-items: end;
+  min-width: 0;
+  height: 100%;
 }
 
-.trendPoint {
-  position: absolute;
-  right: 16px;
-  bottom: 19px;
-  width: 9px;
-  height: 9px;
-  border: 2px solid var(--hc-color-surface);
-  border-radius: 50%;
-  background: var(--hc-color-signal);
-  box-shadow: 0 0 0 1px var(--hc-color-signal);
-}
-
-.trendStart,
-.trendEnd {
-  position: absolute;
-  bottom: 2px;
+.trendPlot .trendColumn strong {
+  overflow: hidden;
   color: var(--hc-color-text-muted);
   font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.trendStart {
-  left: 8px;
+.trendPlot .trendBar {
+  display: block;
+  width: min(100%, 26px);
+  min-height: 8px;
+  align-self: end;
+  justify-self: center;
+  border-radius: 4px 4px 1px 1px;
+  background: linear-gradient(
+    180deg,
+    var(--hc-color-signal) 0%,
+    var(--hc-color-primary) 100%
+  );
+  box-shadow: none;
 }
 
-.trendEnd {
-  right: 6px;
+.trendPlot .trendColumn time {
+  position: static;
+  overflow: hidden;
+  width: 100%;
+  color: var(--hc-color-text-muted);
+  font-size: 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trendSummary {
@@ -1101,6 +1113,36 @@
   overflow-wrap: anywhere;
   color: var(--hc-color-text);
   white-space: normal;
+}
+
+.projectSelector {
+  width: min(320px, 48%);
+}
+
+.cellStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+.cellStack > * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.cellStack code,
+.cellStack small {
+  color: var(--hc-color-text-muted);
+  font-size: 10px;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  padding-top: var(--hc-space-2);
 }
 
 .pageFootnote {
@@ -1162,12 +1204,6 @@
   }
 }
 
-@media (max-width: 1024px) {
-  .governanceGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 @media (max-width: 768px) {
   .page {
     width: 100%;
@@ -1202,5 +1238,9 @@
 
   .reconciliation > small {
     grid-column: 1 / -1;
+  }
+
+  .projectSelector {
+    width: 100%;
   }
 }

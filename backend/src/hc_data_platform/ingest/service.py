@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from threading import RLock
 from uuid import NAMESPACE_URL, uuid5
 
 from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.core.pagination import CursorCodec
 from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdempotencyStore
 from hc_data_platform.workflow.models import WorkflowKind, workflow_id
 
@@ -19,8 +20,11 @@ from .models import (
     IdempotencyOutcome,
     IngestTriggerStatus,
     IngestWorkflowLocator,
+    ManifestDiscoveryV1,
     ManifestPreflightResultV1,
     PartAuthorization,
+    RawMediaAccessAuditEvent,
+    RawMediaSourceV1,
     RawObjectCommittedV1,
     Rollout,
     RolloutManifestV1,
@@ -41,6 +45,8 @@ from .models import (
 from .persistence import IngestPersistencePort, InMemoryIngestPersistence
 from .ports import ObjectMetadata, ObjectStoragePort, crc64_ecma, normalize_etag
 
+_SESSION_CURSOR_VERSION = 1
+
 
 class UploadSessionService:
     def __init__(
@@ -50,11 +56,15 @@ class UploadSessionService:
         idempotency: IdempotencyStore | None = None,
         *,
         authorization_ttl_seconds: int = 900,
+        raw_media_authorization_ttl_seconds: int = 900,
         max_authorizations_per_request: int = 256,
         max_part_retries: int = 5,
+        cursor_secret: str = "ingest-session-local-cursor-secret",
     ) -> None:
         if not 1 <= authorization_ttl_seconds <= 3600:
             raise ValueError("part authorization TTL must be between 1 and 3600 seconds")
+        if not 1 <= raw_media_authorization_ttl_seconds <= 3600:
+            raise ValueError("raw media authorization TTL must be between 1 and 3600 seconds")
         if not 1 <= max_authorizations_per_request <= 1000:
             raise ValueError("authorization batch size must be between 1 and 1000")
         if not 1 <= max_part_retries <= 10:
@@ -66,8 +76,10 @@ class UploadSessionService:
             idempotency or persistence_idempotency or InMemoryIdempotencyStore()
         )
         self.authorization_ttl_seconds = authorization_ttl_seconds
+        self.raw_media_authorization_ttl_seconds = raw_media_authorization_ttl_seconds
         self.max_authorizations_per_request = max_authorizations_per_request
         self.max_part_retries = max_part_retries
+        self._cursor = CursorCodec(cursor_secret)
         self._lock = RLock()
 
     def create_session(
@@ -759,6 +771,81 @@ class UploadSessionService:
             )
         return result
 
+    def get_manifest_discovery_for_rollout(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        rollout_id: str,
+    ) -> ManifestDiscoveryV1:
+        """Expose persisted Manifest discovery without disclosing upload-session details."""
+
+        session = self.persistence.find_session(project_id, rollout_id)
+        if session is None or session.region_code != region_code:
+            raise problem(
+                status=404,
+                code="UPLOAD_SESSION_NOT_FOUND",
+                title="Upload session not found",
+                detail="No upload session exists for this rollout in the selected Region.",
+            )
+        return self.get_manifest_preflight(session.session_id).discovery
+
+    def authorize_raw_media(
+        self,
+        *,
+        session_id: str,
+        actor_id: str,
+        request_id: str,
+    ) -> RawMediaSourceV1:
+        """Issue an audited, short-lived read handle only for a committed Raw capture."""
+
+        session = self.get_session(session_id)
+        committed = self.persistence.get_committed(session.project_id, session.rollout_id)
+        if (
+            session.status is not UploadStatus.RAW_COMMITTED
+            or committed is None
+            or committed.region_code != session.region_code
+            or committed.object_key != session.object_key
+            or committed.sha256 != session.expected_sha256
+        ):
+            raise problem(
+                status=409,
+                code="RAW_MEDIA_NOT_COMMITTED",
+                title="Raw media is not committed",
+                detail="The Raw capture must be committed before it can be inspected.",
+            )
+        metadata = self.storage.head(session.object_key)
+        if metadata is None or metadata.size != committed.file_size:
+            raise problem(
+                status=409,
+                code="RAW_MEDIA_NOT_AVAILABLE",
+                title="Raw media is unavailable",
+                detail="The committed Raw capture is not available from object storage.",
+            )
+        expires_at = utc_now() + timedelta(seconds=self.raw_media_authorization_ttl_seconds)
+        download_url = self.storage.presign_read(
+            session.object_key,
+            self.raw_media_authorization_ttl_seconds,
+        )
+        self.persistence.record_raw_media_access(
+            RawMediaAccessAuditEvent(
+                project_id=session.project_id,
+                region_code=session.region_code,
+                actor_id=actor_id,
+                request_id=request_id,
+                session_id=session.session_id,
+                rollout_id=session.rollout_id,
+                byte_length=committed.file_size,
+                occurred_at=utc_now(),
+            )
+        )
+        return RawMediaSourceV1(
+            download_url=download_url,
+            expires_at=expires_at,
+            byte_length=committed.file_size,
+            sha256=committed.sha256,
+        )
+
     def list_sessions(
         self,
         project_id: str,
@@ -766,16 +853,93 @@ class UploadSessionService:
         *,
         status: UploadStatus | None = None,
         data_package_id: str | None = None,
+        cursor: str | None = None,
         limit: int = 50,
     ) -> UploadSessionListV1:
+        after = self._decode_session_cursor(
+            cursor,
+            project_id=project_id,
+            region_code=region_code,
+            status=status,
+            data_package_id=data_package_id,
+        )
         rows = self.persistence.list_sessions(
             project_id,
             region_code,
             status=None if status is None else status.value,
             data_package_id=data_package_id,
-            limit=limit,
+            after=after,
+            limit=limit + 1,
         )
-        return UploadSessionListV1(items=tuple(rows), total=len(rows))
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        next_cursor = None
+        if has_more and page:
+            last = page[-1]
+            next_cursor = self._cursor.encode(
+                {
+                    "v": _SESSION_CURSOR_VERSION,
+                    "project_id": project_id,
+                    "region_code": region_code,
+                    "status": None if status is None else status.value,
+                    "data_package_id": data_package_id,
+                    "updated_at": last.updated_at.isoformat(),
+                    "session_id": last.session_id,
+                }
+            )
+        return UploadSessionListV1(items=tuple(page), total=len(page), next_cursor=next_cursor)
+
+    def _decode_session_cursor(
+        self,
+        cursor: str | None,
+        *,
+        project_id: str,
+        region_code: str,
+        status: UploadStatus | None,
+        data_package_id: str | None,
+    ) -> tuple[datetime, str] | None:
+        if cursor is None:
+            return None
+        payload = self._cursor.decode(cursor)
+        if (
+            payload.get("v") != _SESSION_CURSOR_VERSION
+            or payload.get("project_id") != project_id
+            or payload.get("region_code") != region_code
+            or payload.get("status") != (None if status is None else status.value)
+            or payload.get("data_package_id") != data_package_id
+        ):
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not match this upload-session query.",
+            )
+        updated_at = payload.get("updated_at")
+        session_id = payload.get("session_id")
+        if not isinstance(updated_at, str) or not isinstance(session_id, str):
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not contain an upload-session position.",
+            )
+        try:
+            parsed_updated_at = datetime.fromisoformat(updated_at)
+        except ValueError as exc:
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not contain a valid upload-session timestamp.",
+            ) from exc
+        if parsed_updated_at.tzinfo is None or not session_id:
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not contain a valid upload-session position.",
+            )
+        return parsed_updated_at, session_id
 
     def _persist_new_upload(
         self,

@@ -16,6 +16,37 @@ from .scope import ScopeGuard
 _bearer_scheme = HTTPBearer(auto_error=False, scheme_name="bearerAuth")
 
 
+def require_presented_bearer_token(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+) -> str:
+    """Require a Bearer credential without requiring the session to remain active.
+
+    Session revocation must be safely repeatable.  The request middleware still verifies an
+    active session on the first call, while the exact logout route accepts the same now-revoked
+    opaque credential on retries without revealing whether it existed.
+    """
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise problem(
+            status=401,
+            code="AUTHENTICATION_REQUIRED",
+            title="Authentication required",
+            detail="A Bearer session token is required.",
+        )
+    token = credentials.credentials.strip()
+    if not token:
+        raise problem(
+            status=401,
+            code="AUTHENTICATION_REQUIRED",
+            title="Authentication required",
+            detail="A Bearer session token is required.",
+        )
+    return token
+
+
+PresentedBearerToken = Annotated[str, Depends(require_presented_bearer_token)]
+
+
 def require_auth_context(
     request: Request,
     _: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
@@ -39,13 +70,19 @@ def authorize_scope(
     project_id: str,
     permission: Permission,
     region_code: str | None = None,
+    organization_id: str | None = None,
 ) -> None:
     """Authorize and select the exact tenant scope used by downstream RLS adapters."""
 
-    auth.require_permission(permission, project_id)
-    ScopeGuard.require(auth, project_id, region_code)
-    select_request_scope(project_id, region_code)
+    auth.require_permission(permission, project_id, organization_id)
+    ScopeGuard.require(auth, project_id, region_code, organization_id)
+    select_request_scope(project_id, region_code, organization_id=organization_id)
 
 
-def authorize_read(auth: AuthContext, project_id: str, region_code: str | None = None) -> None:
-    authorize_scope(auth, project_id, Permission.READ, region_code)
+def authorize_read(
+    auth: AuthContext,
+    project_id: str,
+    region_code: str | None = None,
+    organization_id: str | None = None,
+) -> None:
+    authorize_scope(auth, project_id, Permission.READ, region_code, organization_id)

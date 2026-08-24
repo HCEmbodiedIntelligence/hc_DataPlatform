@@ -42,10 +42,14 @@ function readGuard(request: Request, params: Readonly<Record<string, string | re
   return validScope(params) ?? (!request.headers.get('X-Client-Version') ? problem(400, 'MISSING_HEADER', '缺少 X-Client-Version') : null);
 }
 
-function writeGuard(request: Request, params: Readonly<Record<string, string | readonly string[] | undefined>>): Response | null {
+function writeGuard(
+  request: Request,
+  params: Readonly<Record<string, string | readonly string[] | undefined>>,
+  requireIfMatch = true,
+): Response | null {
   return readGuard(request, params)
     ?? (!request.headers.get('Idempotency-Key') && request.method !== 'PUT' ? problem(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key') : null)
-    ?? (!request.headers.get('If-Match') ? problem(428, 'PRECONDITION_REQUIRED', '缺少 If-Match') : null);
+    ?? (requireIfMatch && !request.headers.get('If-Match') ? problem(428, 'PRECONDITION_REQUIRED', '缺少 If-Match') : null);
 }
 
 async function scenarioGate(kind: 'list' | 'detail' | 'summary' | 'bootstrap'): Promise<Response | null> {
@@ -75,6 +79,45 @@ function detailForScenario(draftId: string) {
 }
 
 const handlers = [
+  http.post(issueRoot, async ({ request, params }) => {
+    const invalid = writeGuard(request, params, false); if (invalid) return invalid;
+    const body = await request.json() as Record<string, unknown>;
+    const fields = [
+      'origin_dataset_version_id', 'episode_id', 'episode_revision_id', 'episode_stream_id',
+      'start_ns', 'end_ns', 'issue_type', 'severity', 'note',
+    ];
+    if (fields.some((field) => typeof body[field] !== 'string')) {
+      return problem(422, 'VALIDATION_FAILED', 'ManualIssue 创建字段无效');
+    }
+    if (!/^(0|[1-9][0-9]*)$/.test(String(body.start_ns))
+      || !/^(0|[1-9][0-9]*)$/.test(String(body.end_ns))
+      || BigInt(String(body.start_ns)) >= BigInt(String(body.end_ns))) {
+      return problem(422, 'VALIDATION_FAILED', 'ManualIssue 范围无效');
+    }
+    return HttpResponse.json(makeManualIssueEnvelope({
+      ...cleaningManualIssues.open,
+      id: 'issue_fx_mc_created_01',
+      etag: '"issue_fx_mc_created_01:v1"',
+      origin_dataset_version_id: body.origin_dataset_version_id,
+      episode_id: body.episode_id,
+      episode_revision_id: body.episode_revision_id,
+      episode_stream_id: body.episode_stream_id,
+      start_ns: body.start_ns,
+      end_ns: body.end_ns,
+      issue_type: body.issue_type,
+      severity: body.severity,
+      note: body.note,
+      status: 'OPEN',
+      assignee: null,
+      related_drafts: [],
+      resolution_version: null,
+      resolution_note: null,
+      resolved_at: null,
+      resolved_by: null,
+      allowed_actions: ['VIEW_EPISODE', 'TRIAGE', 'CREATE_DRAFT'],
+      blocked_reasons: [],
+    }), { status: 201 });
+  }),
   http.get(`${issueRoot}:page`, async ({ request, params }) => {
     const invalid = readGuard(request, params); if (invalid) return invalid;
     const gate = await scenarioGate('summary'); if (gate) return gate;

@@ -110,6 +110,14 @@ def test_s3_minio_adapter_binds_key_to_every_multipart_operation() -> None:
     assert client.complete_request["IfNoneMatch"] == "*"
     assert metadata.size == len(b"firstsecond")
     assert b"".join(adapter.read_chunks(key, chunk_size=3)) == b"firstsecond"
+    assert adapter.presign_read(key, 120).startswith("https://")
+    assert client.last_presign["operation"] == "get_object"
+    assert client.last_presign["HttpMethod"] == "GET"
+    assert client.last_presign["Params"] == {
+        "Bucket": "raw-bucket",
+        "Key": key,
+        "ResponseCacheControl": "no-store",
+    }
 
 
 class PublicPresignClient:
@@ -121,7 +129,7 @@ class PublicPresignClient:
         return "http://127.0.0.1:9000/raw-bucket/redacted"
 
 
-def test_s3_adapter_uses_public_signer_only_for_part_authorization() -> None:
+def test_s3_adapter_uses_public_signer_for_part_and_raw_read_authorizations() -> None:
     internal = FakeS3Client()
     public = PublicPresignClient()
     adapter = S3ObjectStorage(internal, "raw-bucket", presign_client=public)
@@ -138,7 +146,9 @@ def test_s3_adapter_uses_public_signer_only_for_part_authorization() -> None:
     )
 
     assert urlparse(signed).hostname == "127.0.0.1"
-    assert len(public.calls) == 1
+    raw_signed = adapter.presign_read(key, 120)
+    assert urlparse(raw_signed).hostname == "127.0.0.1"
+    assert len(public.calls) == 2
     operation, arguments = public.calls[0]
     assert operation == "upload_part"
     assert arguments["HttpMethod"] == "PUT"
@@ -147,6 +157,14 @@ def test_s3_adapter_uses_public_signer_only_for_part_authorization() -> None:
         "Key": key,
         "UploadId": upload_id,
         "PartNumber": 1,
+    }
+    raw_operation, raw_arguments = public.calls[1]
+    assert raw_operation == "get_object"
+    assert raw_arguments["HttpMethod"] == "GET"
+    assert raw_arguments["Params"] == {
+        "Bucket": "raw-bucket",
+        "Key": key,
+        "ResponseCacheControl": "no-store",
     }
     assert internal.last_presign == {}
     assert completed.size == len(b"browser-part")
@@ -163,7 +181,7 @@ def test_runtime_builds_distinct_path_style_sigv4_internal_and_public_clients() 
         object_store_secret_key="test-secret-value",
         _env_file=None,
     )
-    internal, storage = _s3(settings)
+    internal, public, storage = _s3(settings)
     signed = storage.presign_part(
         "raw/v1/project=br04/date=2026-08-19/recording.mcap",
         "redacted-upload-id",
@@ -174,6 +192,7 @@ def test_runtime_builds_distinct_path_style_sigv4_internal_and_public_clients() 
     query = parse_qs(parsed.query)
 
     assert internal.meta.endpoint_url == "http://minio:9000"
+    assert public.meta.endpoint_url == "http://127.0.0.1:9000"
     assert (parsed.scheme, parsed.hostname, parsed.port) == ("http", "127.0.0.1", 9000)
     assert unquote(parsed.path) == (
         "/hc-data-test/raw/v1/project=br04/date=2026-08-19/recording.mcap"
@@ -188,6 +207,18 @@ def test_runtime_builds_distinct_path_style_sigv4_internal_and_public_clients() 
         "X-Amz-Signature",
         "X-Amz-SignedHeaders",
     }.issubset(query)
+    raw_read = storage.presign_read(
+        "raw/v1/project=br04/date=2026-08-19/recording.mcap",
+        120,
+    )
+    raw_read_parsed = urlparse(raw_read)
+    assert (raw_read_parsed.scheme, raw_read_parsed.hostname, raw_read_parsed.port) == (
+        "http",
+        "127.0.0.1",
+        9000,
+    )
+    assert unquote(raw_read_parsed.path).endswith("/recording.mcap")
+    assert "partNumber" not in parse_qs(raw_read_parsed.query)
 
 
 @dataclass
@@ -294,3 +325,10 @@ def test_oss_adapter_exposes_server_crc64_and_uses_persisted_key() -> None:
     assert bucket.completion_headers == {"x-oss-forbid-overwrite": "true"}
     assert metadata.crc64 == crc64_ecma(b"firstsecond")
     assert b"".join(adapter.read_chunks(key, chunk_size=2)) == b"firstsecond"
+    assert adapter.presign_read(key, 120).startswith("https://")
+    assert bucket.signed == {
+        "method": "GET",
+        "key": key,
+        "expires": 120,
+        "params": {"response-cache-control": "no-store"},
+    }

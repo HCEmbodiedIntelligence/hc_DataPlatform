@@ -254,6 +254,7 @@ def _ingest_input() -> IngestRolloutWorkflowInput:
         },
     )
     return IngestRolloutWorkflowInput(
+        organization_id="organization-a",
         project_id="p1",
         region_code="cn",
         dataset_id="d1",
@@ -508,11 +509,22 @@ class StaticPreview:
 
 
 class StaticExporter:
+    def preflight(
+        self,
+        manifest: PublishedDatasetManifestV1,
+        *,
+        format: ExportFormat,
+    ) -> int:
+        assert current_request_context().project_id == manifest.project_id
+        assert format is ExportFormat.LANCE_SNAPSHOT
+        return 0
+
     def export(
         self,
         manifest: PublishedDatasetManifestV1,
         *,
         format: ExportFormat,
+        attempt_id: str,
     ) -> ExportResultV1:
         assert current_request_context().project_id == manifest.project_id
         return ExportResultV1(
@@ -521,13 +533,17 @@ class StaticExporter:
             dataset_id=manifest.dataset_id,
             dataset_version=manifest.dataset_version,
             manifest_content_hash=manifest.content_hash,
-            attempt_id="export-attempt-v1",
+            attempt_id=attempt_id,
             artifact_uri="exports/d1/v1/artifact.json",
             download_uri="https://download.invalid/artifact.json",
             artifact_content_hash="1" * 64,
             row_count=0,
             media_type="application/json",
         )
+
+    def verify_artifact(self, result: ExportResultV1) -> None:
+        assert current_request_context().project_id == result.project_id
+        assert result.artifact_content_hash == "1" * 64
 
 
 def _dependencies(
@@ -916,6 +932,7 @@ async def test_temporal_commit_retries_without_duplicate_version_and_reconciles(
                 ExportWorkflowInput(
                     manifest=PublishedDatasetManifestV1.model_validate(manifest_payload),
                     format=ExportFormat.LANCE_SNAPSHOT,
+                    attempt_id="export-attempt-1",
                 ),
                 id=workflow_id("export", "p1", "d1/v1/lance"),
                 task_queue="workflow-tests",
@@ -923,6 +940,7 @@ async def test_temporal_commit_retries_without_duplicate_version_and_reconciles(
             assert preview_job.status is JobStatus.SUCCEEDED
             assert publish_job.status is JobStatus.SUCCEEDED
             assert export_job.status is JobStatus.SUCCEEDED
+            assert export_job.stage == "completed"
     finally:
         await environment.shutdown()
 

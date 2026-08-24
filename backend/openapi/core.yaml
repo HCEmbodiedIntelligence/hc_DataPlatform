@@ -58,9 +58,10 @@ components:
         end_cursor: {type: [string, "null"]}
     ProblemDetails:
       type: object
+      additionalProperties: false
       required: [type, title, status, detail, code, retryable]
       properties:
-        type: {type: string, default: "about:blank"}
+        type: {type: string}
         title: {type: string}
         status: {type: integer, minimum: 400, maximum: 599}
         detail: {type: string}
@@ -68,6 +69,11 @@ components:
         code: {type: string}
         request_id: {type: [string, "null"]}
         retryable: {type: boolean}
+        retry_after_seconds:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 86400
+          description: Present only for HTTP 429 or 503; mirrors bounded Retry-After delay-seconds.
         details: {type: object, additionalProperties: true}
     PublicReadinessReport:
       type: object

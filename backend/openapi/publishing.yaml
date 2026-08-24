@@ -58,19 +58,98 @@ paths:
       parameters:
         - $ref: '#/components/parameters/PublishingDatasetId'
         - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingIdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema: {$ref: '#/components/schemas/ExportDatasetRequestV1'}
       responses:
-        '201':
-          description: Validated promoted export with download authorization.
+        '202':
+          description: Durable export workflow accepted or idempotently replayed.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Location:
+              description: Canonical export-job status resource.
+              schema: {type: string, minLength: 1}
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/ExportResultV1'}
-        '409': {description: Source coverage, native reload, or immutable promotion failed.}
-        '501': {description: The requested exporter or optional data dependency is disabled.}
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The immutable dataset version does not exist.}
+        '409': {description: An existing durable export result or immutable source is inconsistent.}
+        '422': {description: Invalid export request.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:
+    get:
+      operationId: getPublishedDatasetExportJob
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: Current durable export status, with no physical locator or download grant.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+        '409': {description: The workflow result is malformed or mismatched.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:cancel:
+    post:
+      operationId: cancelPublishedDatasetExportJob
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: Cancellation requested, or the existing terminal job returned idempotently.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:retry:
+    post:
+      operationId: retryPublishedDatasetExportJob
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+        - $ref: '#/components/parameters/PublishingIdempotencyKey'
+      responses:
+        '202':
+          description: A durable retry workflow accepted or idempotently replayed.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+        '409': {description: Only failed or cancelled jobs can be retried.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}/download:
+    get:
+      operationId: authorizePublishedDatasetExportDownload
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: A freshly minted short-lived download authorization, audited at issuance.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportDownloadAuthorizationV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+        '409': {description: Export is not complete or its promoted artifact failed integrity checks.}
 components:
   parameters:
     PublishingDatasetId:
@@ -83,6 +162,25 @@ components:
       name: dataset_version
       required: true
       schema: {type: string, minLength: 1}
+    PublishingExportJobId:
+      in: path
+      name: job_id
+      required: true
+      schema: {type: string, minLength: 1}
+    PublishingProjectId:
+      in: query
+      name: project_id
+      required: true
+      schema: {type: string, minLength: 1}
+    PublishingIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
+  headers:
+    NoStore:
+      description: Response may contain workflow state or a bearer capability and must not be stored.
+      schema: {type: string, const: no-store}
   schemas:
     PublishDatasetRequestV1:
       type: object
@@ -213,8 +311,10 @@ components:
       properties:
         project_id: {type: string, minLength: 1}
         format: {type: string, enum: [lance_snapshot, lerobot_v3]}
-        attempt_id: {type: [string, 'null'], minLength: 1}
-    ExportResultV1:
+    ExportJobStatus:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+    ExportJobResultV1:
       type: object
       additionalProperties: false
       required:
@@ -224,20 +324,76 @@ components:
         - dataset_version
         - manifest_content_hash
         - attempt_id
-        - artifact_uri
-        - download_uri
         - artifact_content_hash
         - row_count
         - media_type
       properties:
         format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        project_id: {type: string, minLength: 1}
+        dataset_id: {type: string, minLength: 1}
+        dataset_version: {type: string, minLength: 1}
+        manifest_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        attempt_id: {type: string, minLength: 1}
+        artifact_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        row_count: {type: integer, minimum: 0}
+        media_type: {type: string, minLength: 1}
+    ExportJobProgressV1:
+      type: object
+      additionalProperties: false
+      required: [phase, completed_phases, total_phases]
+      properties:
+        phase: {type: string, minLength: 1}
+        completed_phases: {type: integer, minimum: 0}
+        total_phases: {type: integer, minimum: 1}
+    ExportJobV1:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - project_id
+        - dataset_id
+        - dataset_version
+        - format
+        - attempt_id
+        - status
+        - stage
+        - progress
+        - cancellation_requested
+        - created_at
+        - updated_at
+      properties:
+        job_id: {type: string, minLength: 1}
         project_id: {type: string}
         dataset_id: {type: string}
         dataset_version: {type: string}
-        manifest_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
         attempt_id: {type: string, minLength: 1}
-        artifact_uri: {type: string}
-        download_uri: {type: string}
+        status: {$ref: '#/components/schemas/ExportJobStatus'}
+        stage: {type: string, minLength: 1}
+        progress: {$ref: '#/components/schemas/ExportJobProgressV1'}
+        cancellation_requested: {type: boolean}
+        result:
+          anyOf:
+            - {$ref: '#/components/schemas/ExportJobResultV1'}
+            - {type: 'null'}
+        error_code: {type: [string, 'null']}
+        error_message: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ExportDownloadAuthorizationV1:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - format
+        - download_url
+        - expires_at
+        - artifact_content_hash
+        - media_type
+      properties:
+        job_id: {type: string, minLength: 1}
+        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        download_url: {type: string, minLength: 1}
+        expires_at: {type: string, format: date-time}
         artifact_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
-        row_count: {type: integer, minimum: 0}
-        media_type: {type: string}
+        media_type: {type: string, minLength: 1}

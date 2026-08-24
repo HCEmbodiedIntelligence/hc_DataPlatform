@@ -14,7 +14,28 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
 - pending-items V1 只有上传失败、QC 异常、待 Tag 审核、待发布四类，并与 principal capability
   取交集。
 - P01 正式 snapshot 不含 storage；区域容量只属于 P12。
-- signal 的其余计数身份、episode/work 状态集合和 freshness SLO 未冻结，继续 `BLOCKED`。
+- signal 按项目、区域和显式时间窗口计算云端数据包到达各阶段的去重数量；
+  episode/work 状态集合和 freshness SLO 仍未冻结，继续 `BLOCKED`。
+
+## Signal 云端阶段计数
+
+每个阶段都在当前 `organization_id + project_id + region_code + [from,to)` 范围内，按
+`data_package_id` 去重。阶段时间分别取对应云端持久化事实的发生时间，因此这些数量是独立的
+窗口事件计数，不是百分比，也不强制伪装成单调递减漏斗。
+
+| 阶段 | 云端事实源 | 阶段时间 |
+| --- | --- | --- |
+| `COLLECTED` | `ingest.rollouts` | `created_at` |
+| `RECEIVED` | `ingest.rollout_objects` | `committed_at` |
+| `AUTO_QC` | immutable `qc_reports` | `created_at` |
+| `ALIGNED_30_HZ` | `aligned_fragment_attempts(status=READY)` | `updated_at` |
+| `LANCE` | `lance_rollout_lineage` | `created_at` |
+| `ANNOTATION` | `annotation.annotation_tasks` | `created_at` |
+| `REVIEW` | `annotation.annotation_reviews` | `created_at` |
+| `PUBLISHED` | `publishing.rollout_publication_lineage` | `published_at` |
+
+`COLLECTED` 表示数据包已在云端登记为 rollout，不是设备端未上传的本地 SAVED 回执。
+当窗口内八个阶段都为零时 signal 是 `EMPTY`；任一阶段有真实事实时是 `READY`。
 
 ## Activity 真实事件目录
 

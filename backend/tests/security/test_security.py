@@ -12,7 +12,10 @@ from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import AuditRecord, canonical_hash
 from hc_data_platform.security.auth import AuthContext, JwtVerifier, Permission, Role
-from hc_data_platform.security.capabilities import legacy_roles_from_capabilities
+from hc_data_platform.security.capabilities import (
+    CAPABILITY_PLATFORM_ADMIN,
+    legacy_roles_from_capabilities,
+)
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
 from hc_data_platform.security.scope import (
     InMemoryScopedRepository,
@@ -70,6 +73,74 @@ def test_jwt_verifier_accepts_all_required_claims() -> None:
     assert context.project_ids == frozenset({"p1"})
     assert context.region_codes == frozenset({"cn-hz"})
     assert context.roles == frozenset({"uploader"})
+
+
+def test_jwt_verifier_accepts_exact_organization_scopes_without_cross_organization_bleed() -> None:
+    context = _verifier().verify(
+        _token(
+            project_ids=[],
+            region_codes=[],
+            roles=[],
+            organization_scopes=[
+                {
+                    "organization_id": "org-a",
+                    "project_id": "project-a",
+                    "region_code": None,
+                    "capabilities": ["project.access.manage"],
+                },
+                {
+                    "organization_id": "org-b",
+                    "project_id": "project-a",
+                    "region_code": "cn-shanghai",
+                    "capabilities": ["datasets.read"],
+                },
+            ],
+        )
+    )
+
+    ScopeGuard.require(context, "project-a", organization_id="org-a")
+    ScopeGuard.require(
+        context,
+        "project-a",
+        "cn-shanghai",
+        organization_id="org-b",
+    )
+    context.require_capability("project.access.manage", "project-a", organization_id="org-a")
+    context.require_capability("datasets.read", "project-a", organization_id="org-b")
+    _assert_problem(
+        "CAPABILITY_REQUIRED",
+        lambda: context.require_capability(
+            "project.access.manage", "project-a", organization_id="org-b"
+        ),
+    )
+    _assert_problem(
+        "CAPABILITY_REQUIRED",
+        lambda: context.require_capability("datasets.read", "project-a", organization_id="org-a"),
+    )
+
+
+@pytest.mark.parametrize(
+    "organization_scopes",
+    [
+        "org-a/project-a",
+        [{"organization_id": "org-a", "project_id": "project-a"}],
+        [
+            {
+                "organization_id": "org-a",
+                "project_id": "project-a",
+                "region_code": None,
+                "capabilities": [""],
+            }
+        ],
+    ],
+)
+def test_jwt_verifier_rejects_malformed_organization_scopes(
+    organization_scopes: object,
+) -> None:
+    _assert_problem(
+        "INVALID_ACCESS_TOKEN",
+        lambda: _verifier().verify(_token(organization_scopes=organization_scopes)),
+    )
 
 
 @pytest.mark.parametrize(
@@ -145,6 +216,115 @@ def test_approved_capability_is_authoritative_and_never_bleeds_across_projects()
 
 def test_read_capability_does_not_activate_a_legacy_write_role() -> None:
     assert legacy_roles_from_capabilities({"datasets.read"}) == frozenset()
+
+
+def test_current_and_legacy_upload_and_access_capability_names_are_compatible() -> None:
+    current_uploader = AuthContext(
+        "current-uploader",
+        frozenset({"p1"}),
+        frozenset({"cn"}),
+        frozenset(),
+        scoped_capabilities=frozenset({("p1", "upload.manage")}),
+    )
+    current_uploader.require_role(Role.UPLOADER, project_id="p1")
+    current_uploader.require_capability("ingest.upload", "p1")
+    current_uploader.require_capability("collection.upload", "p1")
+
+    legacy_uploader = AuthContext(
+        "legacy-uploader",
+        frozenset({"p1"}),
+        frozenset({"cn"}),
+        frozenset(),
+        scoped_capabilities=frozenset({("p1", "ingest.upload")}),
+    )
+    legacy_uploader.require_capability("upload.manage", "p1")
+    legacy_uploader.require_capability("upload.read", "p1")
+
+    current_project_admin = AuthContext(
+        "current-project-admin",
+        frozenset({"p1"}),
+        frozenset(),
+        frozenset(),
+        scoped_capabilities=frozenset({("p1", "access.manage")}),
+    )
+    current_project_admin.require_role(Role.ADMIN, project_id="p1")
+    current_project_admin.require_capability("project.access.manage", "p1")
+    assert not current_project_admin.has_capability("platform.account.manage", "p1")
+
+
+def test_upload_read_does_not_activate_upload_write_authority() -> None:
+    reader = AuthContext(
+        "upload-reader",
+        frozenset({"p1"}),
+        frozenset({"cn"}),
+        frozenset(),
+        scoped_capabilities=frozenset({("p1", "upload.read")}),
+    )
+    reader.require_capability("upload.read", "p1")
+    _assert_problem("ROLE_REQUIRED", lambda: reader.require_role(Role.UPLOADER, project_id="p1"))
+    _assert_problem("CAPABILITY_REQUIRED", lambda: reader.require_capability("upload.manage", "p1"))
+
+
+def test_platform_admin_has_every_business_operation_across_existing_scopes_only() -> None:
+    platform_admin = AuthContext(
+        subject_id="platform-admin",
+        organization_ids=frozenset({"org-a", "org-b"}),
+        project_ids=frozenset({"project-a", "project-b"}),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
+        organization_scope_triples=frozenset(
+            {("org-a", "project-a", None), ("org-b", "project-b", None)}
+        ),
+    )
+
+    for organization_id, project_id, region_code in (
+        ("org-a", "project-a", "cn-hz"),
+        ("org-b", "project-b", "eu-central"),
+    ):
+        ScopeGuard.require(platform_admin, project_id, region_code, organization_id)
+        for role in Role:
+            platform_admin.require_role(
+                role, project_id=project_id, organization_id=organization_id
+            )
+        for permission in Permission:
+            platform_admin.require_permission(
+                permission, project_id=project_id, organization_id=organization_id
+            )
+        for capability in (
+            "upload.manage",
+            "annotation.edit",
+            "annotation.review",
+            "dataset_version.publish",
+            "access.manage",
+            "storage.lifecycle.execute",
+            "robot.update",
+            "data_schema.publish",
+            "audit.export",
+            "future.business.operation",
+        ):
+            assert platform_admin.has_capability(capability, project_id, organization_id)
+
+    effective = platform_admin.effective_capabilities("project-a", "org-a")
+    assert {"upload.manage", "annotation.review", "dataset_version.publish", "audit.read"} <= set(
+        effective
+    )
+    _assert_problem(
+        "PROJECT_NOT_FOUND",
+        lambda: ScopeGuard.require(platform_admin, "missing-project", "cn-hz", "org-a"),
+    )
+
+    unverified_directory_claim = AuthContext(
+        subject_id="platform-admin",
+        project_ids=frozenset({"invented-project"}),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
+    )
+    _assert_problem(
+        "PROJECT_NOT_FOUND",
+        lambda: ScopeGuard.require(unverified_directory_claim, "invented-project"),
+    )
 
 
 def test_scope_repository_denies_cross_project_and_region_reads_and_writes() -> None:

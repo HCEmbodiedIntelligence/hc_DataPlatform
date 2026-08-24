@@ -16,7 +16,11 @@ import type {
   DashboardSnapshot,
 } from "../../../features/dashboard/types";
 import { StatusTag } from "../../../shared/ui";
-import { DashboardSectionNotice, sectionTone } from "./DashboardSectionNotice";
+import {
+  DashboardSectionNotice,
+  sectionLabel,
+  sectionTone,
+} from "./DashboardSectionNotice";
 import styles from "./AssetCapacityBoard.module.css";
 
 const stagePresentation: Readonly<
@@ -29,15 +33,17 @@ const stagePresentation: Readonly<
     }>
   >
 > = {
-  COLLECTED: { label: "采集", eyebrow: "SAVED", Icon: Camera },
-  RECEIVED: { label: "已接收", eyebrow: "RECEIVED", Icon: CloudDownload },
-  AUTO_QC: { label: "自动质检", eyebrow: "AUTO QC", Icon: ShieldCheck },
-  ALIGNED_30_HZ: { label: "30 Hz 对齐", eyebrow: "ALIGNED", Icon: Activity },
-  LANCE: { label: "Lance", eyebrow: "LANCE", Icon: Database },
-  ANNOTATION: { label: "数据标注", eyebrow: "ANNOTATION", Icon: Tags },
-  REVIEW: { label: "审核", eyebrow: "REVIEW", Icon: UserRoundCheck },
-  PUBLISHED: { label: "已发布", eyebrow: "PUBLISHED", Icon: Send },
+  COLLECTED: { label: "采集", eyebrow: "已采集", Icon: Camera },
+  RECEIVED: { label: "接收", eyebrow: "已接收", Icon: CloudDownload },
+  AUTO_QC: { label: "质检", eyebrow: "自动质检", Icon: ShieldCheck },
+  ALIGNED_30_HZ: { label: "30 Hz 对齐", eyebrow: "已对齐", Icon: Activity },
+  LANCE: { label: "数据入库", eyebrow: "已入库", Icon: Database },
+  ANNOTATION: { label: "数据标注", eyebrow: "标注", Icon: Tags },
+  REVIEW: { label: "人工审核", eyebrow: "审核", Icon: UserRoundCheck },
+  PUBLISHED: { label: "发布", eyebrow: "已发布", Icon: Send },
 };
+
+const signalCountFormatter = new Intl.NumberFormat("zh-CN");
 
 export function AssetCapacityBoard({
   snapshot,
@@ -64,12 +70,12 @@ export function AssetCapacityBoard({
             <h2 id="signal-pipeline-title">信号轨道</h2>
             <StatusTag
               status={snapshot.signalPipeline.status}
-              label={snapshot.signalPipeline.status}
+              label={sectionLabel(snapshot.signalPipeline.status)}
               known
               tone={sectionTone(snapshot.signalPipeline.status)}
             />
           </div>
-          <p>实时数据流转概览 · SAVED 与云端已接收分别表达</p>
+          <p>实时数据从采集、接收到发布的流转概览</p>
         </div>
       </header>
 
@@ -77,7 +83,7 @@ export function AssetCapacityBoard({
         {snapshot.signalPipeline.stages.map((stage) => {
           const { label, eyebrow, Icon } = stagePresentation[stage];
           const isPublished = stage === "PUBLISHED";
-          const section = isPublished ? publication : snapshot.signalPipeline;
+          const count = snapshot.signalPipeline.stageCounts[stage];
           return (
             <li key={stage} className={styles.stage} data-stage={stage}>
               <span className={styles.stageLabel}>{label}</span>
@@ -85,18 +91,14 @@ export function AssetCapacityBoard({
                 <Icon size={20} strokeWidth={1.8} />
               </span>
               <strong>{eyebrow}</strong>
+              <span className={styles.stageFact}>
+                {signalCountFormatter.format(count)} 个数据包
+              </span>
               {stage === "AUTO_QC" && qcAnomalies.length > 0 ? (
-                <span className={styles.stageFact} data-tone="danger">
+                <span className={styles.stageMeta} data-tone="danger">
                   当前窗口异常 {qcAnomalies.length}
                 </span>
-              ) : isPublished && publication.publicationCount !== null ? (
-                <span className={styles.stageFact}>
-                  已发布 {publication.publicationCount}
-                </span>
-              ) : (
-                <span className={styles.stageFact}>{section.status}</span>
-              )}
-              {isPublished && publication.lineageCount !== null ? (
+              ) : isPublished && publication.lineageCount !== null ? (
                 <span className={styles.stageMeta}>
                   血缘 {publication.lineageCount}
                 </span>

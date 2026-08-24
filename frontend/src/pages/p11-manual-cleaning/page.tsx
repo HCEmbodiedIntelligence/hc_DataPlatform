@@ -719,7 +719,7 @@ function WorkbenchContent({
         open={commitOpen}
         title="确认提交清洗 Draft"
         resourceId={model.draft.id}
-        description="Commit 会创建不可变输出并启动物化；服务端完成前不乐观推进 Draft 或 Version 状态。"
+        description="Commit 会记录待物化的不可变输出；物化状态以服务端返回为准，且不会乐观推进 Draft 或 Version 状态。"
         impact={[
           `输出 ${model.summary.outputSegmentCount} 个 Revision 段，Output 时长 ${model.summary.outputDurationNs} ns`,
           `新增派生字节 ${model.summary.newDerivedBytes}，复用源字节 ${model.summary.reusedSourceBytes}`,

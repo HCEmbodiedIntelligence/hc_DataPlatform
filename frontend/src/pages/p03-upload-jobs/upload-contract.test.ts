@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { createDomainError } from "../../shared/api/domain-error";
 import {
+  discoverFolderUploadBundles,
   MAX_MANIFEST_BYTES,
   MAX_PACKAGE_BYTES,
   parseManifestFile,
@@ -11,6 +12,54 @@ import {
   uploadProblemCopy,
   validateObjectStorageUri,
 } from "./upload-contract";
+
+function folderFile(
+  contents: BlobPart[],
+  name: string,
+  relativePath: string,
+  options?: FilePropertyBag,
+): File {
+  const file = new File(contents, name, options);
+  Object.defineProperty(file, "webkitRelativePath", {
+    configurable: true,
+    value: relativePath,
+  });
+  return file;
+}
+
+function folderManifest(dataPackageId: string, rawPath = "recording.mcap") {
+  return JSON.stringify({
+    project_id: "project-folder",
+    task_id: "task-folder",
+    collection_job_id: "job-folder",
+    rollout_id: `rollout-${dataPackageId}`,
+    collection_session_id: `session-${dataPackageId}`,
+    recording_request_id: `request-${dataPackageId}`,
+    data_package_id: dataPackageId,
+    sequence_no: 1,
+    robot_id: "robot-folder",
+    start_time: "2026-08-21T00:00:00Z",
+    end_time: "2026-08-21T00:00:01Z",
+    expected_topics: [],
+    actual_topics: [],
+    cameras: [],
+    topics: [],
+    files: [
+      {
+        path: rawPath,
+        size: 1,
+        sha256: "a".repeat(64),
+        crc64: "1",
+        role: "RAW_MCAP",
+      },
+    ],
+    file_size: 1,
+    sha256: "a".repeat(64),
+    crc64: "1",
+    compression: "none",
+    recorder_version: "folder-test",
+  });
+}
 
 describe("P03 formal upload contract helpers", () => {
   it("plans every supported package into bounded multipart numbers", () => {
@@ -75,6 +124,26 @@ describe("P03 formal upload contract helpers", () => {
     });
   });
 
+  it("keeps every checked-in generated CRC64 field string-typed", async () => {
+    type LegacyManifest =
+      import("../../shared/api/generated/storage").components["schemas"]["RolloutManifestV1"];
+    type LegacyPart =
+      import("../../shared/api/generated/storage").components["schemas"]["UploadPart"];
+    type LegacySession =
+      import("../../shared/api/generated/storage").components["schemas"]["UploadSession"];
+
+    const manifest: LegacyManifest["crc64"] = "18446744073709551615";
+    const part: Exclude<LegacyPart["crc64"], null | undefined> =
+      "18446744073709551615";
+    const session: LegacySession["expected_crc64"] = "18446744073709551615";
+
+    expect([manifest, part, session]).toEqual([
+      "18446744073709551615",
+      "18446744073709551615",
+      "18446744073709551615",
+    ]);
+  });
+
   it("does not accept object addresses carrying credentials or signed queries", () => {
     expect(
       validateObjectStorageUri(
@@ -90,6 +159,89 @@ describe("P03 formal upload contract helpers", () => {
     expect(
       validateObjectStorageUri("oss://bucket/raw.mcap?Signature=secret"),
     ).toContain("签名参数");
+  });
+
+  it("discovers independent packages in arbitrarily nested folders without cross-pairing names", async () => {
+    const result = await discoverFolderUploadBundles([
+      folderFile(
+        [folderManifest("package-a")],
+        "rollout_manifest.json",
+        "factory/shift-1/robot-a/rollout_manifest.json",
+        { type: "application/json" },
+      ),
+      folderFile(
+        ["a"],
+        "recording.mcap",
+        "factory/shift-1/robot-a/recording.mcap",
+      ),
+      folderFile(
+        [folderManifest("package-b", "captures/recording.mcap")],
+        "rollout_manifest.json",
+        "factory/shift-2/robot-b/meta/rollout_manifest.json",
+        { type: "application/json" },
+      ),
+      folderFile(
+        ["b"],
+        "recording.mcap",
+        "factory/shift-2/robot-b/meta/captures/recording.mcap",
+      ),
+    ]);
+
+    expect(result.failures).toEqual([]);
+    expect(result.bundles).toHaveLength(2);
+    expect(result.bundles.map((bundle) => bundle.relativeDirectory)).toEqual([
+      "factory/shift-1/robot-a",
+      "factory/shift-2/robot-b/meta",
+    ]);
+    expect(
+      result.bundles.map((bundle) => bundle.rawFile.webkitRelativePath),
+    ).toEqual([
+      "factory/shift-1/robot-a/recording.mcap",
+      "factory/shift-2/robot-b/meta/captures/recording.mcap",
+    ]);
+  });
+
+  it("never uses an identically named raw file from another nested package", async () => {
+    const result = await discoverFolderUploadBundles([
+      folderFile(
+        [folderManifest("package-a")],
+        "rollout_manifest.json",
+        "factory/a/rollout_manifest.json",
+      ),
+      folderFile(
+        ["other package"],
+        "recording.mcap",
+        "factory/b/recording.mcap",
+      ),
+    ]);
+
+    expect(result.bundles).toEqual([]);
+    expect(result.failures).toEqual([
+      expect.objectContaining({
+        relativePath: "factory/a/rollout_manifest.json",
+        code: "RAW_FILE_MISSING",
+      }),
+    ]);
+  });
+
+  it("rejects an attempted parent-directory RAW_MCAP declaration before pairing files", async () => {
+    const result = await discoverFolderUploadBundles([
+      folderFile(
+        [folderManifest("package-a", "../other/recording.mcap")],
+        "rollout_manifest.json",
+        "factory/a/rollout_manifest.json",
+      ),
+      folderFile(
+        ["not eligible"],
+        "recording.mcap",
+        "factory/other/recording.mcap",
+      ),
+    ]);
+
+    expect(result.bundles).toEqual([]);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ code: "RAW_FILE_PATH_INVALID" }),
+    ]);
   });
 
   it.each([

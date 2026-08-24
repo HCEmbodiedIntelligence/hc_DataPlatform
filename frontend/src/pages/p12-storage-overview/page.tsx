@@ -1,9 +1,13 @@
-import { Button } from "antd";
+import { Button, Select } from "antd";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Database, RefreshCw, TrendingUp } from "lucide-react";
-import { useMemo, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
+  useCapacityPortfolio,
+  useCapacityHistory,
   useCapacitySnapshot,
+  type CapacityPortfolio,
+  type CapacityHistory,
   type CapacityScope,
 } from "../../features/storage-overview/capacity-api";
 import { isDomainError } from "../../shared/api/domain-error";
@@ -16,7 +20,7 @@ import {
   StatusTag,
   type PageStateKind,
 } from "../../shared/ui";
-import { LifecyclePane } from "../p13-storage-lifecycle/page";
+import { ManagedStorageObjectsPanel } from "./components/ManagedStorageObjectsPanel";
 import styles from "./styles.module.css";
 
 type BusinessCapacityCategory =
@@ -244,9 +248,41 @@ export function CapacityOverview({
   );
 }
 
+function signedCapacity(value: string): string {
+  const bytes = BigInt(value);
+  return `${bytes > 0n ? "+" : bytes < 0n ? "−" : ""}${formatCapacityBytes(
+    bytes < 0n ? (-bytes).toString() : value,
+  )}`;
+}
+
+function trendHeight(value: string, largest: bigint): CSSProperties {
+  if (largest === 0n) return { height: "8%" };
+  const percent = Number((BigInt(value) * 100n) / largest);
+  return { height: `${Math.max(percent, 8)}%` };
+}
+
 export function CapacityTrend({
-  snapshot,
-}: Readonly<{ snapshot: CapacitySnapshot }>) {
+  history,
+  days,
+  isPending,
+  error,
+  onRetry,
+  onRangeChange,
+}: Readonly<{
+  history: CapacityHistory | undefined;
+  days: 7 | 30;
+  isPending: boolean;
+  error: unknown;
+  onRetry: () => void;
+  onRangeChange: (days: 7 | 30) => void;
+}>) {
+  const largest = history?.items.reduce(
+    (current, item) =>
+      BigInt(item.candidate_business_total_bytes) > current
+        ? BigInt(item.candidate_business_total_bytes)
+        : current,
+    0n,
+  );
   return (
     <figure
       className={styles.trendCard}
@@ -256,31 +292,94 @@ export function CapacityTrend({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-trend-title">增长趋势</h3>
-          <p>近 30 天 · 单位：IEC 字节</p>
+          <p>按 UTC 日保留当天最新快照 · 单位：IEC 字节</p>
         </div>
-        <span className={styles.unavailableBadge}>历史序列未开放</span>
+        <div
+          className={styles.trendRange}
+          role="group"
+          aria-label="容量趋势范围"
+        >
+          <Button
+            size="small"
+            type={days === 7 ? "primary" : "default"}
+            onClick={() => onRangeChange(7)}
+          >
+            近 7 天
+          </Button>
+          <Button
+            size="small"
+            type={days === 30 ? "primary" : "default"}
+            onClick={() => onRangeChange(30)}
+          >
+            近 30 天
+          </Button>
+        </div>
       </div>
-      <div className={styles.trendPlot} aria-hidden="true">
-        <span className={styles.trendStart}>30 天前</span>
-        <span className={styles.trendLine} />
-        <span className={styles.trendPoint} />
-        <span className={styles.trendEnd}>当前快照</span>
-      </div>
-      <figcaption id="capacity-trend-summary" className={styles.trendSummary}>
-        <TrendingUp aria-hidden="true" size={15} />
-        <span>
-          正式 API 仅返回当前快照，不能计算增长率。当前业务口径为
-          <strong>
-            {" "}
-            {formatCapacityBytes(snapshot.candidate_business_total_bytes)}
-          </strong>
-          ， 截至{" "}
-          <time dateTime={snapshot.observed_at}>
-            {new Date(snapshot.observed_at).toLocaleString("zh-CN")}
-          </time>
-          。
-        </span>
-      </figcaption>
+      {isPending ? (
+        <PageState state="loading" label="容量趋势" />
+      ) : error ? (
+        <PageState
+          state={stateFromError(error)}
+          label="容量趋势"
+          requestId={requestId(error)}
+          onRetry={onRetry}
+        />
+      ) : !history?.items.length ? (
+        <PageState
+          state="empty"
+          label="容量趋势"
+          description="所选时间范围内没有已封存的容量快照。"
+        />
+      ) : (
+        <>
+          <ol className={styles.trendPlot} aria-label={`近 ${days} 天容量快照`}>
+            {history.items.map((item) => (
+              <li key={item.snapshot_id} className={styles.trendColumn}>
+                <strong>
+                  {formatCapacityBytes(item.candidate_business_total_bytes)}
+                </strong>
+                <span
+                  className={styles.trendBar}
+                  style={trendHeight(
+                    item.candidate_business_total_bytes,
+                    largest ?? 0n,
+                  )}
+                  aria-hidden="true"
+                />
+                <time dateTime={item.observed_at}>
+                  {new Date(item.observed_at).toLocaleDateString("zh-CN", {
+                    month: "numeric",
+                    day: "numeric",
+                  })}
+                </time>
+              </li>
+            ))}
+          </ol>
+          <figcaption
+            id="capacity-trend-summary"
+            className={styles.trendSummary}
+          >
+            <TrendingUp aria-hidden="true" size={15} />
+            <span>
+              {history.growth ? (
+                <>
+                  候选业务口径变化
+                  <strong>
+                    {signedCapacity(history.growth.candidate_change_bytes)}
+                  </strong>
+                  ，平均
+                  <strong>
+                    {signedCapacity(history.growth.candidate_bytes_per_day)}/日
+                  </strong>
+                  。
+                </>
+              ) : (
+                "仅有一个可用快照，尚无法计算增长率。"
+              )}
+            </span>
+          </figcaption>
+        </>
+      )}
     </figure>
   );
 }
@@ -357,22 +456,62 @@ const projectColumns: readonly ColumnDef<ProjectCapacityRow, unknown>[] = [
 ];
 
 export function ProjectCapacityTable({
+  portfolio,
   snapshot,
-}: Readonly<{ snapshot: CapacitySnapshot }>) {
-  const row = useMemo<ProjectCapacityRow>(
-    () => ({
-      projectId: snapshot.project_id,
-      physical: snapshot.physical_total_bytes,
-      candidate: snapshot.candidate_business_total_bytes,
-      categories: Object.fromEntries(
-        snapshot.categories.map((entry) => [
-          entry.category,
-          entry.candidate_bytes,
-        ]),
-      ) as Readonly<Record<BusinessCapacityCategory, string>>,
-      balanced: snapshot.reconciliation.balanced,
-    }),
-    [snapshot],
+  projectOptions = [],
+  selectedProjectIds = snapshot ? [snapshot.project_id] : [],
+  onProjectsChange = () => undefined,
+  loading = false,
+}: Readonly<{
+  portfolio?: CapacityPortfolio;
+  snapshot?: CapacitySnapshot;
+  projectOptions?: readonly { value: string; label: string }[];
+  selectedProjectIds?: readonly string[];
+  onProjectsChange?: (projectIds: string[]) => void;
+  loading?: boolean;
+}>) {
+  const resolvedPortfolio = useMemo<CapacityPortfolio | undefined>(
+    () =>
+      portfolio ??
+      (snapshot
+        ? {
+            project_ids: [snapshot.project_id],
+            physical_total_bytes: snapshot.physical_total_bytes,
+            candidate_business_total_bytes:
+              snapshot.candidate_business_total_bytes,
+            categories: snapshot.categories,
+            items: [
+              {
+                project_id: snapshot.project_id,
+                snapshot_id: snapshot.snapshot_id,
+                observed_at: snapshot.observed_at,
+                physical_total_bytes: snapshot.physical_total_bytes,
+                candidate_business_total_bytes:
+                  snapshot.candidate_business_total_bytes,
+                categories: snapshot.categories,
+                balanced: snapshot.reconciliation.balanced,
+              },
+            ],
+          }
+        : undefined),
+    [portfolio, snapshot],
+  );
+  const rows = useMemo<readonly ProjectCapacityRow[]>(
+    () =>
+      (resolvedPortfolio?.items ?? []).map((item) => ({
+        projectId: item.project_id,
+        physical: item.physical_total_bytes,
+        candidate: item.candidate_business_total_bytes,
+        categories: Object.fromEntries(
+          categoryOrder.map((category) => [
+            category,
+            item.categories.find((entry) => entry.category === category)
+              ?.candidate_bytes ?? "0",
+          ]),
+        ) as Readonly<Record<BusinessCapacityCategory, string>>,
+        balanced: item.balanced,
+      })),
+    [resolvedPortfolio?.items],
   );
 
   return (
@@ -383,16 +522,41 @@ export function ProjectCapacityTable({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-project-title">项目容量明细</h3>
-          <p>当前授权项目 · 表格内横向滚动</p>
+          <p>
+            已选 {selectedProjectIds.length} 个授权项目 · 汇总业务口径{" "}
+            {resolvedPortfolio
+              ? formatCapacityBytes(
+                  resolvedPortfolio.candidate_business_total_bytes,
+                )
+              : "—"}
+          </p>
         </div>
-        <span className={styles.unavailableBadge}>跨项目汇总未开放</span>
+        <Select
+          mode="multiple"
+          size="small"
+          maxTagCount="responsive"
+          aria-label="选择容量汇总项目"
+          value={[...selectedProjectIds]}
+          options={[...projectOptions]}
+          loading={loading}
+          className={styles.projectSelector}
+          onChange={onProjectsChange}
+        />
       </div>
-      <DataTable
-        data={[row]}
-        columns={projectColumns}
-        getRowId={(item) => item.projectId}
-        caption="当前项目容量明细"
-      />
+      {rows.length ? (
+        <DataTable
+          data={rows}
+          columns={projectColumns}
+          getRowId={(item) => item.projectId}
+          caption="授权项目容量明细"
+        />
+      ) : (
+        <PageState
+          state={loading ? "loading" : "empty"}
+          label="跨项目容量汇总"
+          description="所选项目还没有已封存的容量快照。"
+        />
+      )}
     </section>
   );
 }
@@ -423,11 +587,56 @@ export function CapacitySnapshotMeta({
 
 export function CapacityPane() {
   const shellScope = useShellStore((state) => state.scope);
+  const sessionScopes = useShellStore((state) => state.sessionScopes);
   const scope = shellScope?.projectId ? (shellScope as CapacityScope) : null;
   const projectId = scope?.projectId ?? null;
   const capabilities = useCapabilities();
   const canRead = capabilities.has("storage.overview.read");
+  const [trendDays, setTrendDays] = useState<7 | 30>(30);
+  const availableProjectIds = useMemo(() => {
+    const projectIds = sessionScopes
+      .filter(
+        (grant) =>
+          grant.organizationId === scope?.organizationId &&
+          (grant.capabilities.includes("storage.overview.read") ||
+            grant.capabilities.includes("project.access.manage")),
+      )
+      .map((grant) => grant.projectId);
+    if (projectId && !projectIds.includes(projectId))
+      projectIds.unshift(projectId);
+    return [...new Set(projectIds)];
+  }, [projectId, scope?.organizationId, sessionScopes]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<
+    readonly string[]
+  >(() => (projectId ? [projectId] : []));
+  useEffect(() => {
+    if (!projectId) {
+      setSelectedProjectIds([]);
+      return;
+    }
+    setSelectedProjectIds((current) => {
+      const retained = current.filter((candidate) =>
+        availableProjectIds.includes(candidate),
+      );
+      return retained.includes(projectId) ? retained : [projectId, ...retained];
+    });
+  }, [availableProjectIds, projectId]);
+  const [trendAnchor, setTrendAnchor] = useState(() =>
+    new Date().toISOString(),
+  );
+  const trendWindow = useMemo(() => {
+    const end = new Date(trendAnchor);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - trendDays);
+    return { from: start.toISOString(), to: end.toISOString() };
+  }, [trendAnchor, trendDays]);
   const capacity = useCapacitySnapshot(scope, canRead);
+  const history = useCapacityHistory(scope, trendWindow, canRead);
+  const portfolio = useCapacityPortfolio(
+    scope,
+    selectedProjectIds,
+    canRead && selectedProjectIds.length > 0,
+  );
   const pageState: PageStateKind | "ready" = capabilities.loading
     ? "loading"
     : capabilities.failed || !canRead
@@ -446,8 +655,31 @@ export function CapacityPane() {
     pageState === "ready" && capacity.data ? (
       <div className={styles.capacityBody}>
         <CapacityOverview snapshot={capacity.data} />
-        <CapacityTrend snapshot={capacity.data} />
-        <ProjectCapacityTable snapshot={capacity.data} />
+        <CapacityTrend
+          history={history.data}
+          days={trendDays}
+          isPending={history.isPending}
+          error={history.error}
+          onRetry={() => void history.refetch()}
+          onRangeChange={(days) => {
+            setTrendDays(days);
+            setTrendAnchor(new Date().toISOString());
+          }}
+        />
+        <ProjectCapacityTable
+          portfolio={portfolio.data}
+          projectOptions={availableProjectIds.map((value) => ({
+            value,
+            label: value,
+          }))}
+          selectedProjectIds={selectedProjectIds}
+          loading={portfolio.isFetching}
+          onProjectsChange={(next) => {
+            if (projectId && next.includes(projectId) && next.length > 0)
+              setSelectedProjectIds(next);
+          }}
+        />
+        <ManagedStorageObjectsPanel scope={scope} enabled={canRead} />
       </div>
     ) : (
       <PageState
@@ -465,7 +697,7 @@ export function CapacityPane() {
     >
       <header className={styles.paneHeader}>
         <div>
-          <h2 id="capacity-pane-title">容量管理</h2>
+          <h1 id="capacity-pane-title">容量管理</h1>
           <p>按业务状态核对所选项目的对象存储容量</p>
         </div>
         <div className={styles.capacityHeaderActions}>
@@ -481,8 +713,11 @@ export function CapacityPane() {
             icon={<RefreshCw aria-hidden="true" size={15} />}
             aria-label="刷新容量快照"
             disabled={!canRead || !projectId}
-            loading={capacity.isFetching}
-            onClick={() => void capacity.refetch()}
+            loading={capacity.isFetching || history.isFetching}
+            onClick={() => {
+              setTrendAnchor(new Date().toISOString());
+              void capacity.refetch();
+            }}
           />
         </div>
       </header>
@@ -499,12 +734,8 @@ export function CapacityPane() {
 
 export function StorageOverviewPage() {
   return (
-    <div className={styles.page} data-page-id="P12-P13">
-      <h1 className={styles.srOnly}>容量与生命周期治理</h1>
-      <div className={styles.governanceGrid}>
-        <CapacityPane />
-        <LifecyclePane />
-      </div>
+    <div className={styles.page} data-page-id="P12">
+      <CapacityPane />
       <p className={styles.pageFootnote}>
         <Database aria-hidden="true" size={13} />
         页面只消费当前作用域的正式存储合同；真实 API 失败会保留错误状态，不回退

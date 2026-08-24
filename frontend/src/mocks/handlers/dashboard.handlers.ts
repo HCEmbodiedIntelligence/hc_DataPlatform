@@ -1,7 +1,6 @@
 import { delay, http, HttpResponse } from 'msw';
 import {
   dashboardActivityFixture,
-  dashboardCoverageFixture,
   dashboardEmptyFixtures,
   dashboardPendingFixture,
   dashboardSnapshotFixture,
@@ -30,7 +29,6 @@ async function scenarioGate(endpoint: string): Promise<Response | null> {
   if (scenario === 'gone') return error(410, 'SCOPE_GONE', `req_fx_dashboard_${endpoint}_410`);
   if (scenario === 'conflict' && endpoint === 'pending') return error(409, 'CURSOR_SNAPSHOT_EXPIRED', 'req_fx_dashboard_pending_409');
   if (scenario === 'fatal-error') return error(503, 'DASHBOARD_UNAVAILABLE', `req_fx_dashboard_${endpoint}_503`);
-  if (scenario === 'partial-error' && endpoint === 'coverage') return error(503, 'DASHBOARD_COVERAGE_UNAVAILABLE', 'req_fx_dashboard_coverage_503');
   if (scenario === 'rate-limited' && endpoint === 'activity') return HttpResponse.json({ error: { code: 'RATE_LIMITED', message: 'rate limited', field_errors: [], operation_errors: [], blocked_reasons: [], request_id: 'req_fx_dashboard_429', retryable: true } }, { status: 429, headers: { 'Retry-After': '3' } });
   if (dashboardOfflineShouldFail()) return HttpResponse.error();
   return null;
@@ -54,13 +52,6 @@ export const dashboardHandlers = [
     if (getDashboardScenario() === 'unknown-enum') return HttpResponse.json(dashboardUnknownFixtures.snapshot);
     if (getDashboardScenario() === 'contract-mismatch') return HttpResponse.json({ ...dashboardSnapshotFixture, project_id: 'wrong-project' });
     return HttpResponse.json(dashboardSnapshotFixture);
-  }),
-  http.get('*/api/v1/projects/:projectId/dashboard/coverage', async ({ request, params }) => {
-    const invalid = invalidRequest(request, params); if (invalid) return invalid;
-    const query = new URL(request.url).searchParams;
-    if (!query.get('from') || !query.get('to') || !query.get('timezone')) return error(422, 'INVALID_QUERY', 'req_fx_dashboard_coverage_query');
-    const gated = await scenarioGate('coverage'); if (gated) return gated;
-    return HttpResponse.json(getDashboardScenario() === 'empty' ? dashboardEmptyFixtures.coverage : dashboardCoverageFixture);
   }),
   http.get('*/api/v1/projects/:projectId/dashboard/pending-items', async ({ request, params }) => {
     const invalid = invalidRequest(request, params); if (invalid) return invalid;

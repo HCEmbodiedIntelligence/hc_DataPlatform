@@ -21,11 +21,13 @@ import {
   HardDrive,
   House,
   ListChecks,
+  LogOut,
   MapPin,
   Menu as MenuIcon,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Search,
   Settings,
   ShieldAlert,
@@ -37,6 +39,7 @@ import {
 import {
   Alert,
   Avatar,
+  Badge,
   Button,
   Drawer,
   Dropdown,
@@ -46,6 +49,7 @@ import {
   Select,
   Space,
   type MenuProps,
+  type RefSelectProps,
 } from "antd";
 import {
   Link,
@@ -71,9 +75,17 @@ import hangchaLogo from "../../assets/hangcha-logo.png";
 import styles from "./PlatformShell.module.css";
 import { ShellLoadingPage } from "./ShellLoadingPage";
 import { datasetContextKind } from "./dataset-context";
+import ProjectMembershipRequestDialog from "./ProjectMembershipRequestDialog";
+import { useUnreadNotificationCount } from "../../features/notifications/api";
 
 const { Content, Header, Sider } = Layout;
 const DatasetContextSelector = lazy(() => import("./DatasetContextSelector"));
+const NotificationInbox = lazy(
+  () => import("../../features/notifications/NotificationInbox"),
+);
+const GlobalRobotSearchDialog = lazy(
+  () => import("../../features/global-search/GlobalRobotSearchDialog"),
+);
 
 export interface ScopeOption extends Scope {
   organizationName: string;
@@ -90,6 +102,8 @@ export interface PlatformShellProps {
     signal: AbortSignal,
   ) => Promise<AuthorizationSnapshot>;
   navigationReloader?: (scope: Scope, signal: AbortSignal) => Promise<void>;
+  logoutPending?: boolean;
+  onLogout?: () => void;
 }
 
 type ShellViewportMode = "desktop" | "compact" | "mobile";
@@ -287,6 +301,10 @@ interface ScopeSelectorsProps {
   disabled: boolean;
   scope: Scope | null;
   scopeOptions: readonly ScopeOption[];
+  onRequestMembership: (
+    organizationId: string,
+    restoreFocus: () => void,
+  ) => void;
   onSelect: (scope: Scope) => void;
 }
 
@@ -300,13 +318,22 @@ function toScope(option: ScopeOption): Scope {
   };
 }
 
+function projectOptionKey(
+  scope: Pick<Scope, "organizationId" | "projectId">,
+): string {
+  return JSON.stringify([scope.organizationId, scope.projectId]);
+}
+
 function ScopeSelectors({
   disabled,
   scope,
   scopeOptions,
+  onRequestMembership,
   onSelect,
 }: ScopeSelectorsProps) {
   const [manualRegion, setManualRegion] = useState(scope?.regionCode ?? "");
+  const [projectSelectOpen, setProjectSelectOpen] = useState(false);
+  const projectSelectRef = useRef<RefSelectProps>(null);
   useEffect(
     () => setManualRegion(scope?.regionCode ?? ""),
     [scope?.regionCode],
@@ -314,29 +341,24 @@ function ScopeSelectors({
   const selectedOption = scopeOptions.find(
     (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
   );
-  const projectOptions = [
+  const projectCandidates = [
     ...new Map(
       scopeOptions.flatMap((option) =>
         option.projectId === undefined
           ? []
-          : [
-              [
-                option.projectId,
-                {
-                  value: option.projectId,
-                  label: option.projectName ?? option.projectId,
-                },
-              ] as const,
-            ],
+          : [[projectOptionKey(option), option] as const],
       ),
     ).values(),
   ];
-  if (
-    scope?.projectId &&
-    !projectOptions.some((option) => option.value === scope.projectId)
-  ) {
-    projectOptions.push({ value: scope.projectId, label: scope.projectId });
-  }
+  const projectOptions = projectCandidates.map((option) => ({
+    value: projectOptionKey(option),
+    label: `${option.organizationName} / ${option.projectName ?? option.projectId}`,
+  }));
+  const selectedProject = projectCandidates.find(
+    (option) =>
+      option.organizationId === scope?.organizationId &&
+      option.projectId === scope?.projectId,
+  );
   const regionCandidates = scopeOptions.filter(
     (option) =>
       option.organizationId === scope?.organizationId &&
@@ -358,14 +380,23 @@ function ScopeSelectors({
     scope?.projectId !== undefined &&
     scopeOptions.some(
       (option) =>
-        option.projectId === scope.projectId && option.projectWide === true,
+        option.organizationId === scope.organizationId &&
+        option.projectId === scope.projectId &&
+        option.projectWide === true,
     );
   const applyManualRegion = () => {
     const regionCode = manualRegion.trim();
     if (!scope || !regionCode || regionCode === scope.regionCode) return;
     onSelect({ ...scope, regionCode });
   };
+  const requestMembership = () => {
+    if (selectedProject === undefined) return;
+    onRequestMembership(selectedProject.organizationId, () =>
+      projectSelectRef.current?.focus(),
+    );
+  };
   if (
+    acceptsManualRegion &&
     scope?.regionCode &&
     !regionOptions.some((option) => option.value === scope.regionCode)
   ) {
@@ -383,26 +414,59 @@ function ScopeSelectors({
         />
         <span className={styles.srOnly}>当前项目</span>
         <Select
+          ref={projectSelectRef}
           aria-label="当前项目"
           disabled={disabled}
           loading={disabled && scope !== null}
           optionFilterProp="label"
           options={projectOptions}
+          open={projectSelectOpen}
           placeholder="请选择项目"
+          popupRender={(menu) => (
+            <>
+              {menu}
+              <div
+                className={styles.projectRequestFooter}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              >
+                <Button
+                  block
+                  disabled={selectedProject === undefined}
+                  icon={<Plus aria-hidden="true" size={16} />}
+                  type="text"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setProjectSelectOpen(false);
+                    globalThis.setTimeout(requestMembership, 0);
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                >
+                  申请加入其他项目
+                </Button>
+              </div>
+            </>
+          )}
           showSearch
-          value={scope?.projectId}
-          onChange={(projectId: string) => {
+          virtual={false}
+          value={
+            selectedProject ? projectOptionKey(selectedProject) : undefined
+          }
+          onOpenChange={setProjectSelectOpen}
+          onChange={(selectedProjectKey: string) => {
             const candidate =
               scopeOptions.find(
                 (option) =>
-                  option.organizationId === scope?.organizationId &&
-                  option.projectId === projectId &&
+                  projectOptionKey(option) === selectedProjectKey &&
                   option.regionCode === scope?.regionCode,
               ) ??
               scopeOptions.find(
-                (option) =>
-                  option.organizationId === scope?.organizationId &&
-                  option.projectId === projectId,
+                (option) => projectOptionKey(option) === selectedProjectKey,
               );
             if (candidate !== undefined) onSelect(toScope(candidate));
           }}
@@ -460,28 +524,37 @@ export function PlatformShell({
   pageAvailability = noPages,
   authorizationLoader,
   navigationReloader,
+  logoutPending = false,
+  onLogout,
 }: PlatformShellProps) {
   const storedPrincipal = useShellStore((state) => state.principal);
   const storedScope = useShellStore((state) => state.scope);
   const authorization = useShellStore((state) => state.authorization);
+  const platformCapabilities = useShellStore(
+    (state) => state.platformCapabilities,
+  );
   const scopeChanging = useShellStore((state) => state.scopeChanging);
-  const {
-    has: hasCapability,
-    loading: capabilitiesLoading,
-    failed: capabilitiesFailed,
-  } = useCapabilities();
+  const { loading: capabilitiesLoading, failed: capabilitiesFailed } =
+    useCapabilities();
   const { switchScope } = useScope();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const viewportMode = useShellViewportMode();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [membershipRequest, setMembershipRequest] = useState<{
+    readonly open: boolean;
+    readonly organizationId: string;
+  }>({ open: false, organizationId: "" });
   const [navigationCollapsed, setNavigationCollapsed] = useState(
     readNavigationCollapsedPreference,
   );
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
   const previousPathnameRef = useRef(location.pathname);
+  const restoreMembershipRequestFocusRef = useRef<(() => void) | null>(null);
   const principal = e02VisualFixtureEnabled
     ? e02VisualPrincipal
     : storedPrincipal;
@@ -489,20 +562,36 @@ export function PlatformShell({
   const availableScopeOptions = e02VisualFixtureEnabled
     ? e02VisualScopeOptions
     : scopeOptions;
+  const unreadNotifications = useUnreadNotificationCount();
 
   const desktopNavigationCollapsed =
     viewportMode === "desktop" && navigationCollapsed;
   const shellNavigationCollapsed =
     viewportMode === "compact" || desktopNavigationCollapsed;
-  const grantedCapabilities = useMemo(
-    () =>
+  const grantedCapabilities = useMemo(() => {
+    const expanded = new Set(
       expandGrantedCapabilities(
         capabilitiesLoading || capabilitiesFailed
           ? []
           : (authorization?.capabilities ?? []),
       ),
-    [authorization, capabilitiesFailed, capabilitiesLoading, hasCapability],
-  );
+    );
+    if (
+      platformCapabilities.includes("platform.account.read") ||
+      platformCapabilities.includes("platform.account.manage")
+    ) {
+      expanded.add("access.read");
+    }
+    if (platformCapabilities.includes("platform.account.manage")) {
+      expanded.add("access.manage");
+    }
+    return expanded;
+  }, [
+    authorization,
+    capabilitiesFailed,
+    capabilitiesLoading,
+    platformCapabilities,
+  ]);
   const visibleManifest = useMemo(
     () =>
       e02VisualFixtureEnabled
@@ -533,6 +622,17 @@ export function PlatformShell({
     );
     return () => globalThis.clearTimeout(timer);
   }, [mobileOpen]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k")
+        return;
+      event.preventDefault();
+      setGlobalSearchOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const closeMobileNavigation = () => {
     setMobileOpen(false);
@@ -578,6 +678,10 @@ export function PlatformShell({
       }
       scope={scope}
       scopeOptions={availableScopeOptions}
+      onRequestMembership={(organizationId, restoreFocus) => {
+        restoreMembershipRequestFocusRef.current = restoreFocus;
+        setMembershipRequest({ open: true, organizationId });
+      }}
       onSelect={(next) => void selectScope(next)}
     />
   );
@@ -637,26 +741,42 @@ export function PlatformShell({
 
         {viewportMode !== "mobile" ? (
           <Button
-            aria-label="全局搜索尚未开放"
+            aria-expanded={globalSearchOpen}
+            aria-haspopup="dialog"
+            aria-label="全局搜索"
             className={styles.globalSearch}
-            disabled
             icon={<Search aria-hidden="true" size={17} strokeWidth={1.8} />}
             type="text"
+            onClick={() => setGlobalSearchOpen(true)}
           >
-            <span>搜索尚未开放</span>
+            <span>搜索机器人</span>
           </Button>
         ) : null}
 
         <Space className={styles.headerActions} size={4}>
           {viewportMode !== "mobile" ? (
             <Button
-              aria-label="通知尚未开放"
-              className={styles.unavailableAction}
-              disabled
-              icon={<Bell aria-hidden="true" size={18} strokeWidth={1.8} />}
+              aria-expanded={notificationsOpen}
+              aria-haspopup="dialog"
+              aria-label={
+                unreadNotifications.data && unreadNotifications.data > 0
+                  ? `通知，${unreadNotifications.data} 条未读`
+                  : "通知"
+              }
+              className={styles.notificationAction}
+              icon={
+                <Badge
+                  count={unreadNotifications.data}
+                  overflowCount={99}
+                  size="small"
+                >
+                  <Bell aria-hidden="true" size={18} strokeWidth={1.8} />
+                </Badge>
+              }
               type="text"
+              onClick={() => setNotificationsOpen(true)}
             >
-              <span>通知尚未开放</span>
+              <span>通知</span>
             </Button>
           ) : null}
           <Dropdown
@@ -664,16 +784,20 @@ export function PlatformShell({
               items: [
                 {
                   key: "settings",
-                  label: "账户设置（尚未开放）",
+                  label: <Link to="/account/settings">账户设置</Link>,
                   icon: <Settings aria-hidden="true" />,
-                  disabled: true,
                 },
-                {
-                  key: "logout",
-                  label: "退出登录（尚未接入）",
-                  icon: <UserRound aria-hidden="true" />,
-                  disabled: true,
-                },
+                ...(onLogout
+                  ? [
+                      {
+                        key: "logout",
+                        label: logoutPending ? "正在退出…" : "退出登录",
+                        icon: <LogOut aria-hidden="true" />,
+                        disabled: logoutPending,
+                        onClick: onLogout,
+                      },
+                    ]
+                  : []),
               ],
             }}
             placement="bottomRight"
@@ -748,7 +872,7 @@ export function PlatformShell({
           role="main"
           tabIndex={-1}
         >
-          {capabilitiesFailed && !e02VisualFixtureEnabled ? (
+          {scope !== null && capabilitiesFailed && !e02VisualFixtureEnabled ? (
             <Alert
               className={styles.authorizationWarning}
               role="alert"
@@ -804,6 +928,46 @@ export function PlatformShell({
           onNavigate={closeMobileNavigation}
         />
       </Drawer>
+
+      <Drawer
+        destroyOnHidden
+        open={notificationsOpen}
+        placement="right"
+        rootClassName={styles.notificationDrawerRoot}
+        size="min(448px, 100vw)"
+        title="通知"
+        onClose={() => setNotificationsOpen(false)}
+      >
+        <Suspense
+          fallback={<span className={styles.contextLoading}>加载通知…</span>}
+        >
+          <NotificationInbox />
+        </Suspense>
+      </Drawer>
+
+      {globalSearchOpen ? (
+        <Suspense fallback={null}>
+          <GlobalRobotSearchDialog
+            open={globalSearchOpen}
+            onClose={() => setGlobalSearchOpen(false)}
+          />
+        </Suspense>
+      ) : null}
+
+      {membershipRequest.open ? (
+        <ProjectMembershipRequestDialog
+          afterClose={() => undefined}
+          open
+          organizationId={membershipRequest.organizationId}
+          onClose={() => {
+            setMembershipRequest((current) => ({ ...current, open: false }));
+            globalThis.setTimeout(() => {
+              restoreMembershipRequestFocusRef.current?.();
+              restoreMembershipRequestFocusRef.current = null;
+            }, 0);
+          }}
+        />
+      ) : null}
     </Layout>
   );
 }

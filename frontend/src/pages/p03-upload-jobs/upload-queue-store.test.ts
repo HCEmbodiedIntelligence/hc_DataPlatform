@@ -18,6 +18,7 @@ const formal = vi.hoisted(() => ({
   listParts: vi.fn(),
   listSessions: vi.fn(),
   pause: vi.fn(),
+  preflight: vi.fn(),
   renew: vi.fn(),
   resume: vi.fn(),
   retryParts: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("./formal-client", async (importOriginal) => {
     listFormalUploadParts: formal.listParts,
     listFormalUploadSessions: formal.listSessions,
     pauseFormalUpload: formal.pause,
+    preflightUploadManifest: formal.preflight,
     renewFormalUploadParts: formal.renew,
     resumeFormalUpload: formal.resume,
     retryFormalUploadParts: formal.retryParts,
@@ -43,11 +45,21 @@ vi.mock("./formal-client", async (importOriginal) => {
 });
 
 import {
+  MAX_CONCURRENT_PART_UPLOADS,
+  MAX_IN_FLIGHT_PART_BYTES,
   PART_TRANSFER_TIMEOUT_MS,
+  PRESIGNED_URL_SETTLE_MARGIN_MS,
+  SLOW_LINK_BYTES_PER_SECOND,
+  partUploadConcurrency,
+  partTransferTimeoutMs,
   resetUploadQueueStoreForTests,
   useUploadQueueStore,
 } from "./upload-queue-store";
-import { MIN_MULTIPART_BYTES } from "./upload-contract";
+import {
+  MAX_PACKAGE_BYTES,
+  MIN_MULTIPART_BYTES,
+  planUploadParts,
+} from "./upload-contract";
 
 const scope = {
   organizationId: "org-e05",
@@ -336,11 +348,267 @@ beforeEach(() => {
   formal.pause.mockResolvedValue({ ...session, status: "PAUSED" });
   formal.renew.mockResolvedValue([authorization]);
   formal.retryParts.mockResolvedValue([authorization]);
+  formal.preflight.mockImplementation((_scope, receivedManifest) =>
+    Promise.resolve({
+      ...preflight,
+      identifiers: {
+        ...preflight.identifiers,
+        data_package_id: receivedManifest.data_package_id,
+      },
+      files: [...receivedManifest.files],
+      total_file_size: receivedManifest.file_size,
+      manifest: receivedManifest,
+    }),
+  );
 });
 
 afterEach(() => resetUploadQueueStoreForTests());
 
 describe("P03 resumable upload queue", () => {
+  function folderBundle(dataPackageId: string) {
+    const bundledManifest = {
+      ...manifest,
+      data_package_id: dataPackageId,
+      rollout_id: `rollout-${dataPackageId}`,
+    };
+    const manifestFile = new File(
+      [JSON.stringify(bundledManifest)],
+      "rollout_manifest.json",
+      { type: "application/json" },
+    );
+    const rawFile = new File([new Uint8Array(totalBytes)], "recording.mcap", {
+      type: "application/octet-stream",
+    });
+    Object.defineProperty(manifestFile, "webkitRelativePath", {
+      value: `factory/2026-08-21/${dataPackageId}/rollout_manifest.json`,
+    });
+    Object.defineProperty(rawFile, "webkitRelativePath", {
+      value: `factory/2026-08-21/${dataPackageId}/recording.mcap`,
+    });
+    return {
+      id: `factory/${dataPackageId}`,
+      manifestFile,
+      rawFile,
+      manifest: bundledManifest,
+      relativeDirectory: `factory/2026-08-21/${dataPackageId}`,
+    };
+  }
+
+  it("creates a real waiting session before any object bytes are transferred", async () => {
+    const itemId = await useUploadQueueStore.getState().prepare(startInput());
+
+    expect(formal.create).toHaveBeenCalledTimes(1);
+    expect(formal.listParts).not.toHaveBeenCalled();
+    expect(useUploadQueueStore.getState().items).toEqual([
+      expect.objectContaining({
+        id: itemId,
+        sessionId: session.session_id,
+        transferStatus: "waiting",
+        uploadedBytes: 0,
+      }),
+    ]);
+
+    formal.listParts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([uploadedPart]);
+    await useUploadQueueStore.getState().beginPrepared(itemId);
+
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      transferStatus: "committed",
+      uploadedBytes: totalBytes,
+    });
+  });
+
+  it("uploads a nested-folder batch sequentially with one stable idempotency key per package", async () => {
+    const bundles = [folderBundle("folder-a"), folderBundle("folder-b")];
+    formal.listParts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([uploadedPart])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([uploadedPart]);
+
+    await useUploadQueueStore.getState().startFolderBatch({ scope, bundles });
+
+    expect(formal.preflight).toHaveBeenCalledTimes(2);
+    expect(formal.create).toHaveBeenCalledTimes(2);
+    expect(formal.create.mock.calls.map((call) => call[2])).toEqual([
+      expect.stringContaining("folder-import:folder-a:"),
+      expect.stringContaining("folder-import:folder-b:"),
+    ]);
+    expect(useUploadQueueStore.getState().folderBatch).toMatchObject({
+      total: 2,
+      completed: 2,
+      failed: 0,
+      status: "completed",
+    });
+    expect(
+      useUploadQueueStore.getState().items.map((item) => item.dataPackageId),
+    ).toEqual(["folder-b", "folder-a"]);
+    expect(
+      useUploadQueueStore
+        .getState()
+        .items.every((item) => item.transferStatus === "committed"),
+    ).toBe(true);
+  });
+
+  it("continues with later packages when one folder Manifest fails server preflight", async () => {
+    const bundles = [
+      folderBundle("folder-invalid"),
+      folderBundle("folder-valid"),
+    ];
+    formal.preflight
+      .mockRejectedValueOnce(new Error("server preflight rejected package"))
+      .mockImplementationOnce((_scope, receivedManifest) =>
+        Promise.resolve({
+          ...preflight,
+          identifiers: {
+            ...preflight.identifiers,
+            data_package_id: receivedManifest.data_package_id,
+          },
+          files: [...receivedManifest.files],
+          total_file_size: receivedManifest.file_size,
+          manifest: receivedManifest,
+        }),
+      );
+    formal.listParts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([uploadedPart]);
+
+    await useUploadQueueStore.getState().startFolderBatch({ scope, bundles });
+
+    expect(formal.create).toHaveBeenCalledTimes(1);
+    expect(useUploadQueueStore.getState().folderBatch).toMatchObject({
+      total: 2,
+      completed: 2,
+      failed: 1,
+      status: "completed",
+    });
+    expect(
+      useUploadQueueStore
+        .getState()
+        .items.find((item) => item.dataPackageId === "folder-invalid"),
+    ).toMatchObject({ transferStatus: "failed" });
+    expect(
+      useUploadQueueStore
+        .getState()
+        .items.find((item) => item.dataPackageId === "folder-valid"),
+    ).toMatchObject({ transferStatus: "committed" });
+  });
+
+  it("keeps a selected folder batch pending offline and starts it automatically once connected", async () => {
+    Object.defineProperty(globalThis.navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    const bundles = [folderBundle("folder-after-network")];
+
+    await useUploadQueueStore.getState().startFolderBatch({ scope, bundles });
+    expect(useUploadQueueStore.getState().folderBatch).toMatchObject({
+      status: "offline",
+      completed: 0,
+    });
+    expect(formal.preflight).not.toHaveBeenCalled();
+
+    Object.defineProperty(globalThis.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    formal.listParts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([uploadedPart]);
+    useUploadQueueStore.getState().handleOnline();
+
+    await vi.waitFor(() =>
+      expect(useUploadQueueStore.getState().folderBatch).toMatchObject({
+        status: "completed",
+        completed: 1,
+      }),
+    );
+  });
+
+  it("reattaches every recovered package from one selected nested folder without creating duplicate sessions", async () => {
+    formal.listSessions.mockResolvedValue({
+      items: [{ ...session, status: "UPLOADING" }],
+      total: 1,
+    });
+    formal.getManifest.mockResolvedValue(preflight);
+    formal.listParts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([uploadedPart]);
+
+    await useUploadQueueStore.getState().recover(scope);
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      transferStatus: "needs-file",
+      dataPackageId: manifest.data_package_id,
+    });
+
+    await useUploadQueueStore.getState().startFolderBatch({
+      scope,
+      bundles: [folderBundle(manifest.data_package_id)],
+    });
+
+    expect(formal.preflight).not.toHaveBeenCalled();
+    expect(formal.create).not.toHaveBeenCalled();
+    expect(useUploadQueueStore.getState().folderBatch).toMatchObject({
+      total: 1,
+      completed: 1,
+      failed: 0,
+      status: "completed",
+    });
+    expect(useUploadQueueStore.getState().items).toHaveLength(1);
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      transferStatus: "committed",
+      dataPackageId: manifest.data_package_id,
+    });
+  });
+
+  it("uses eight bounded workers for small multipart parts and protects the in-flight byte budget", () => {
+    expect(
+      partUploadConcurrency(
+        { partSize: 16 * 1024 ** 2, partCount: 20, partNumbers: [] },
+        20,
+      ),
+    ).toBe(MAX_CONCURRENT_PART_UPLOADS);
+    expect(
+      partUploadConcurrency(
+        {
+          partSize: MAX_IN_FLIGHT_PART_BYTES + 1,
+          partCount: 2,
+          partNumbers: [],
+        },
+        2,
+      ),
+    ).toBe(1);
+  });
+
+  it("scales a legal TiB part timeout without exceeding its presigned URL window", () => {
+    const nowMs = Date.parse("2030-01-01T00:00:00Z");
+    const maximum = planUploadParts(MAX_PACKAGE_BYTES);
+    const largeAuthorization = {
+      ...authorization,
+      expires_at: new Date(nowMs + 15 * 60_000).toISOString(),
+    };
+    const expectedLargePartTimeout =
+      Math.ceil((maximum.partSize / SLOW_LINK_BYTES_PER_SECOND) * 1_000) +
+      PRESIGNED_URL_SETTLE_MARGIN_MS;
+
+    expect(
+      partTransferTimeoutMs(maximum.partSize, largeAuthorization, nowMs),
+    ).toBe(expectedLargePartTimeout);
+    expect(expectedLargePartTimeout).toBeGreaterThan(PART_TRANSFER_TIMEOUT_MS);
+    expect(
+      partTransferTimeoutMs(
+        maximum.partSize,
+        {
+          ...largeAuthorization,
+          expires_at: new Date(nowMs + 90_000).toISOString(),
+        },
+        nowMs,
+      ),
+    ).toBe(90_000 - PRESIGNED_URL_SETTLE_MARGIN_MS);
+  });
+
   it("stops an in-flight transfer offline and reconciles confirmed parts when the network returns", async () => {
     formal.listParts
       .mockImplementationOnce((_scope, _sessionId, signal) =>
@@ -609,5 +877,65 @@ describe("P03 resumable upload queue", () => {
     expect(useUploadQueueStore.getState().items[0]!.transferStatus).toBe(
       "committed",
     );
+  });
+
+  it("walks every signed recovery page sequentially instead of truncating a large folder at 100 sessions", async () => {
+    const nextCursor = "signed-upload-session-cursor-page-2";
+    const secondSession = {
+      ...session,
+      session_id: "upload-session-page-2",
+      rollout_id: "rollout-page-2",
+      data_package_id: "package-page-2",
+    };
+    formal.listSessions
+      .mockResolvedValueOnce({
+        items: [session],
+        total: 1,
+        next_cursor: nextCursor,
+      })
+      .mockResolvedValueOnce({
+        items: [secondSession],
+        total: 1,
+        next_cursor: null,
+      });
+    formal.getManifest.mockResolvedValue(preflight);
+    formal.listParts.mockResolvedValue([]);
+
+    await useUploadQueueStore.getState().recover(scope);
+
+    expect(formal.listSessions).toHaveBeenNthCalledWith(1, scope, {
+      limit: 100,
+      cursor: undefined,
+    });
+    expect(formal.listSessions).toHaveBeenNthCalledWith(2, scope, {
+      limit: 100,
+      cursor: nextCursor,
+    });
+    expect(
+      useUploadQueueStore.getState().items.map((item) => item.dataPackageId),
+    ).toEqual([manifest.data_package_id, secondSession.data_package_id]);
+  });
+
+  it("keeps a visible recovery failure until a later retry succeeds", async () => {
+    formal.listSessions.mockRejectedValueOnce(new Error("gateway unavailable"));
+
+    await useUploadQueueStore.getState().recover(scope);
+    expect(useUploadQueueStore.getState()).toMatchObject({
+      recovering: false,
+      recoveryProblem: {
+        title: "上传操作未完成",
+      },
+    });
+
+    formal.listSessions.mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      next_cursor: null,
+    });
+    await useUploadQueueStore.getState().recover(scope);
+    expect(useUploadQueueStore.getState()).toMatchObject({
+      recovering: false,
+      recoveryProblem: null,
+    });
   });
 });

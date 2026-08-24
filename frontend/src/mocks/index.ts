@@ -14,6 +14,7 @@ function installBrowserFixtureSessionScope(): void {
   shell.setSessionScopes(
     [
       {
+        organizationId: shell.scope.organizationId,
         projectId: shell.scope.projectId,
         regionCodes: shell.scope.regionCode ? [shell.scope.regionCode] : [],
         projectWide: !shell.scope.regionCode,

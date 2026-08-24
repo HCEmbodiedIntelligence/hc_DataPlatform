@@ -9,6 +9,8 @@ describe("P18 access query codec", () => {
           ["tab", "capability-requests"],
           ["q", " publish "],
           ["status", "APPROVED"],
+          ["accountState", "DISABLED"],
+          ["accountRole", "PLATFORM_ADMIN"],
           ["order", "oldest"],
           ["page", "3"],
           ["pageSize", "20"],
@@ -20,6 +22,8 @@ describe("P18 access query codec", () => {
       tab: "capability-requests",
       q: "publish",
       status: "APPROVED",
+      accountState: "DISABLED",
+      accountRole: "PLATFORM_ADMIN",
       order: "oldest",
       page: 3,
       pageSize: 20,
@@ -36,6 +40,8 @@ describe("P18 access query codec", () => {
     ).toEqual({
       tab: "membership-requests",
       status: "ALL",
+      accountState: "ALL",
+      accountRole: "ALL",
       order: "recent",
       page: 1,
       pageSize: 10,
@@ -49,10 +55,14 @@ describe("P18 access query codec", () => {
         accessQueryCodec.build({
           tab: "capability-requests",
           status: "REVOKED",
+          accountState: "ACTIVE",
+          accountRole: "USER",
           page: 2,
           drawer: "closed",
         }),
       ),
-    ).toBe("tab=capability-requests&status=REVOKED&page=2&drawer=closed");
+    ).toBe(
+      "tab=capability-requests&status=REVOKED&accountState=ACTIVE&accountRole=USER&page=2&drawer=closed",
+    );
   });
 });

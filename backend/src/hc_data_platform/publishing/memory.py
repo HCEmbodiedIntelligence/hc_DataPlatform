@@ -194,7 +194,7 @@ class InMemoryArtifactSink:
 
 # Keep the dependency-free deterministic reference exporters. Native storage
 # implementations live in ``publishing.exporters``.
-from .exporters import _collect_and_validate, _publish_validated  # noqa: E402
+from .exporters import _publish_validated, collect_and_validate_export_steps  # noqa: E402
 
 
 class InMemoryLanceSnapshotExporter:
@@ -210,8 +210,17 @@ class InMemoryLanceSnapshotExporter:
         sink: ArtifactSinkPort,
         attempt_id: str,
     ) -> ExportResultV1:
-        steps = _collect_and_validate(manifest, source)
-        artifact_uri = f"exports/{manifest.dataset_version}/{self.format.value}/artifact.json"
+        steps = collect_and_validate_export_steps(manifest, source)
+        artifact_uri = "/".join(
+            (
+                "exports",
+                quote(manifest.project_id, safe=""),
+                quote(manifest.dataset_id, safe=""),
+                quote(manifest.dataset_version, safe=""),
+                self.format.value,
+                "artifact.json",
+            )
+        )
 
         def build() -> bytes:
             return canonical_json_bytes(
@@ -268,8 +277,17 @@ class InMemoryLeRobotV3Exporter:
         sink: ArtifactSinkPort,
         attempt_id: str,
     ) -> ExportResultV1:
-        steps = _collect_and_validate(manifest, source)
-        artifact_uri = f"exports/{manifest.dataset_version}/{self.format.value}/artifact.json"
+        steps = collect_and_validate_export_steps(manifest, source)
+        artifact_uri = "/".join(
+            (
+                "exports",
+                quote(manifest.project_id, safe=""),
+                quote(manifest.dataset_id, safe=""),
+                quote(manifest.dataset_version, safe=""),
+                self.format.value,
+                "artifact.json",
+            )
+        )
         expected_episodes = [
             {
                 "episode_id": rollout.rollout_id,

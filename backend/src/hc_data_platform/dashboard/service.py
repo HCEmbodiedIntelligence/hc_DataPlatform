@@ -22,6 +22,7 @@ from hc_data_platform.security.capabilities import (
 
 from .models import (
     PENDING_ITEM_TYPES,
+    SIGNAL_STAGES,
     DashboardActivityEvent,
     DashboardActivityEventType,
     DashboardActivityPage,
@@ -37,6 +38,7 @@ from .models import (
     DashboardSectionState,
     DashboardSectionStatus,
     DashboardSignalPipelineState,
+    DashboardSignalStageCount,
     DashboardSnapshotResponse,
     DashboardSnapshotSections,
     DashboardTargetResource,
@@ -105,7 +107,7 @@ class AllowDashboardQueries:
 _BLOCKERS: dict[DashboardSectionKey, tuple[str, str]] = {
     DashboardSectionKey.SIGNAL_PIPELINE: (
         "P01_SIGNAL_FORMULA_UNCONFIRMED",
-        "Signal-stage counting identities and qualifying states are not fully defined.",
+        "信号轨道的统计规则还没配置完成，因此暂时不能显示各阶段数量。",
     ),
     DashboardSectionKey.EPISODES: (
         "P01_EPISODE_DEFINITION_UNCONFIRMED",
@@ -117,7 +119,7 @@ _BLOCKERS: dict[DashboardSectionKey, tuple[str, str]] = {
     ),
     DashboardSectionKey.COVERAGE: (
         "P01_COVERAGE_DENOMINATOR_MISSING",
-        "No versioned collection plan, robot group, task catalog, or denominator exists.",
+        "缺少采集计划、机器人分组、任务目录或目标总量，因此暂时无法计算覆盖率。",
     ),
     DashboardSectionKey.ACTIVITY: (
         "DASHBOARD_ACTIVITY_SOURCE_PARTIAL",
@@ -334,7 +336,19 @@ class DashboardService:
             ),
             now,
         )
-        signal = blocked_state(DashboardSectionKey.SIGNAL_PIPELINE)
+        signal_summary = self._repository.signal_pipeline_summary(
+            auth=auth,
+            scope=query.scope,
+            window=query.window,
+        )
+        signal = DashboardSectionState(
+            status=(
+                DashboardSectionStatus.READY
+                if any(signal_summary.counts)
+                else DashboardSectionStatus.EMPTY
+            ),
+            as_of=now,
+        )
         episodes = blocked_state(DashboardSectionKey.EPISODES)
         work = blocked_state(DashboardSectionKey.WORK)
         response = DashboardSnapshotResponse.model_validate(
@@ -343,6 +357,14 @@ class DashboardService:
                 "sections": DashboardSnapshotSections(
                     signal_pipeline=DashboardSignalPipelineState(
                         **signal.model_dump(),
+                        stage_counts=tuple(
+                            DashboardSignalStageCount(stage=stage, count=count)
+                            for stage, count in zip(
+                                SIGNAL_STAGES,
+                                signal_summary.counts,
+                                strict=True,
+                            )
+                        ),
                         published_region=published,
                     ),
                     episodes=episodes,

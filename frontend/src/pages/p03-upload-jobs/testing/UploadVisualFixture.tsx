@@ -49,6 +49,7 @@ export function mountUploadVisualFixture(
   shell.setSessionScopes(
     [
       {
+        organizationId: visualScope.organizationId,
         projectId: visualScope.projectId,
         regionCodes: [visualScope.regionCode],
         projectWide: false,
@@ -57,28 +58,6 @@ export function mountUploadVisualFixture(
     ],
     1,
   );
-  const pausedUpload: UploadQueueItem = {
-    id: "upload_session_e05_paused",
-    scopeKey: `${visualScope.organizationId}/${visualScope.projectId}/${visualScope.regionCode}`,
-    sessionId: "upload_session_e05_paused",
-    sourceType: "BROWSER_MULTIPART",
-    fileName: "rollout_037.mcap",
-    dataPackageId: "pkg_hc_20260818_037",
-    totalBytes: 60 * 1024 * 1024,
-    uploadedBytes: 20 * 1024 * 1024,
-    completedParts: 4,
-    totalParts: 12,
-    speedBytesPerSecond: null,
-    remainingSeconds: null,
-    transferStatus: "paused",
-    serverStatus: "PAUSED",
-    failedParts: [],
-    failedPartTransfers: [],
-    failureCode: null,
-    failureMessage: null,
-    requestId: null,
-    createdAt: "2026-08-18T04:02:00Z",
-  };
   const timeoutBytes = 5 * 1024 * 1024;
   const timeoutManifest = {
     schema_version: 1,
@@ -161,13 +140,14 @@ export function mountUploadVisualFixture(
     requestId: null,
     createdAt: "2026-08-18T04:12:20Z",
   };
-  const visualItem =
-    options.scenario === "timeout" ? timeoutUpload : pausedUpload;
-  useUploadQueueStore.setState({
-    scopeKey: visualItem.scopeKey,
-    recovering: false,
-    items: [visualItem],
-  });
+  const visualItem = options.scenario === "timeout" ? timeoutUpload : null;
+  if (visualItem) {
+    useUploadQueueStore.setState({
+      scopeKey: visualItem.scopeKey,
+      recovering: false,
+      items: [visualItem],
+    });
+  }
   if (options.scenario === "timeout") {
     seedUploadRuntimeForTests(timeoutUpload.id, {
       scope: visualScope,

@@ -18,7 +18,7 @@ export const CLEANING_PREVIEW_STATUSES = [
 ] as const;
 export type CleaningPreviewStatus = (typeof CLEANING_PREVIEW_STATUSES)[number];
 
-export const CLEANING_COMMIT_STATUSES = ['NONE', 'QUEUED', 'SUCCEEDED', 'FAILED'] as const;
+export const CLEANING_COMMIT_STATUSES = ['NONE', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED'] as const;
 export type CleaningCommitStatus = (typeof CLEANING_COMMIT_STATUSES)[number];
 
 export const CLEANING_OUTPUT_VERSION_STATUSES = ['REVIEWING', 'READY', 'RETURNED'] as const;

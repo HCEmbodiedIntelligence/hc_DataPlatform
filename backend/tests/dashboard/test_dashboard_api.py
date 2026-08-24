@@ -99,10 +99,10 @@ def test_four_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[An
         assert body["from"] == "2026-08-17T08:00:00Z"
         if endpoint == "snapshot":
             assert "storage" not in body[section]
-            assert body[section]["signal_pipeline"]["status"] == "BLOCKED"
+            assert body[section]["signal_pipeline"]["status"] == "EMPTY"
             assert body[section]["episodes"]["status"] == "BLOCKED"
             assert body[section]["work"]["status"] == "BLOCKED"
-            assert body[section]["signal_pipeline"]["published_region"]["status"] == ("BLOCKED")
+            assert body[section]["signal_pipeline"]["published_region"]["status"] == "EMPTY"
             assert body[section]["signal_pipeline"]["stages"] == [
                 "COLLECTED",
                 "RECEIVED",
@@ -112,6 +112,10 @@ def test_four_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[An
                 "ANNOTATION",
                 "REVIEW",
                 "PUBLISHED",
+            ]
+            assert body[section]["signal_pipeline"]["stage_counts"] == [
+                {"stage": stage, "count": 0}
+                for stage in body[section]["signal_pipeline"]["stages"]
             ]
         elif endpoint == "coverage":
             assert body[section]["status"] == "BLOCKED"

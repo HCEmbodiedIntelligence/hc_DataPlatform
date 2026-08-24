@@ -13,9 +13,11 @@ function assertScopePart(value: string, name: string): void {
 }
 
 export function makeScopeKey(scope: Scope): ScopeKey {
-  // Runtime SessionBootstrap currently has no organization field. An empty
-  // organization is therefore an absent dimension, not a fabricated identity.
-  if (scope.organizationId.trim()) assertScopePart(scope.organizationId, 'organizationId');
+  if (scope.projectId !== undefined) {
+    assertScopePart(scope.organizationId, 'organizationId');
+  } else if (scope.organizationId.trim()) {
+    assertScopePart(scope.organizationId, 'organizationId');
+  }
   if (scope.projectId !== undefined) assertScopePart(scope.projectId, 'projectId');
   if (scope.regionCode !== undefined) assertScopePart(scope.regionCode, 'regionCode');
   return [scope.organizationId.trim() || '-', scope.projectId ?? '-', scope.regionCode ?? '-'].join('/') as ScopeKey;

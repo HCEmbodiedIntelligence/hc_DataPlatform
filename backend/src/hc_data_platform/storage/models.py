@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from hc_data_platform.core.pagination import PageInfo
 
 ByteString = Annotated[str, Field(pattern=r"^(0|[1-9][0-9]*)$")]
+SignedByteString = Annotated[str, Field(pattern=r"^-?(0|[1-9][0-9]*)$")]
 
 
 class BusinessCapacityCategory(str, Enum):
@@ -127,6 +128,100 @@ class CapacitySnapshot(BaseModel):
         return self
 
 
+class CapacityHistoryPoint(BaseModel):
+    """The latest immutable capacity fact for one UTC calendar day."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    snapshot_id: str = Field(min_length=1, max_length=256)
+    observed_at: datetime
+    physical_total_bytes: ByteString
+    candidate_business_total_bytes: ByteString
+
+    @model_validator(mode="after")
+    def validate_observed_at(self) -> CapacityHistoryPoint:
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must include a timezone")
+        return self
+
+
+class CapacityGrowth(BaseModel):
+    """Exact integer trend over a bounded window, never a client-side estimate."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    from_snapshot_id: str = Field(min_length=1, max_length=256)
+    from_observed_at: datetime
+    to_snapshot_id: str = Field(min_length=1, max_length=256)
+    to_observed_at: datetime
+    candidate_change_bytes: SignedByteString
+    elapsed_seconds: int = Field(ge=1)
+    candidate_bytes_per_day: SignedByteString
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> CapacityGrowth:
+        if self.from_observed_at.tzinfo is None or self.to_observed_at.tzinfo is None:
+            raise ValueError("growth timestamps must include a timezone")
+        if self.to_observed_at <= self.from_observed_at:
+            raise ValueError("growth interval must be positive")
+        return self
+
+
+class CapacityHistory(BaseModel):
+    """Bounded project-scoped daily history and an exact business-capacity trend."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str = Field(min_length=1, max_length=256)
+    window_start: datetime
+    window_end: datetime
+    items: tuple[CapacityHistoryPoint, ...] = Field(max_length=31)
+    growth: CapacityGrowth | None
+
+    @model_validator(mode="after")
+    def validate_window(self) -> CapacityHistory:
+        if self.window_start.tzinfo is None or self.window_end.tzinfo is None:
+            raise ValueError("history window timestamps must include a timezone")
+        if self.window_start > self.window_end:
+            raise ValueError("history window start must not exceed end")
+        if self.items != tuple(
+            sorted(self.items, key=lambda item: (item.observed_at, item.snapshot_id))
+        ):
+            raise ValueError("history points must be chronological")
+        dates = tuple(item.observed_at.astimezone(timezone.utc).date() for item in self.items)
+        if len(dates) != len(set(dates)):
+            raise ValueError("history must contain at most one capacity fact per UTC day")
+        if len(self.items) < 2:
+            if self.growth is not None:
+                raise ValueError("single-point history must not provide growth")
+            return self
+        if self.growth is None:
+            raise ValueError("multi-point history must provide exact growth")
+        first = self.items[0]
+        last = self.items[-1]
+        if (
+            self.growth.from_snapshot_id != first.snapshot_id
+            or self.growth.from_observed_at != first.observed_at
+            or self.growth.to_snapshot_id != last.snapshot_id
+            or self.growth.to_observed_at != last.observed_at
+        ):
+            raise ValueError("growth endpoints must match history endpoints")
+        elapsed_seconds = int((last.observed_at - first.observed_at).total_seconds())
+        if self.growth.elapsed_seconds != elapsed_seconds:
+            raise ValueError("growth elapsed seconds must match history endpoints")
+        candidate_change = int(last.candidate_business_total_bytes) - int(
+            first.candidate_business_total_bytes
+        )
+        if int(self.growth.candidate_change_bytes) != candidate_change:
+            raise ValueError("growth change must match history endpoints")
+        expected_per_day = abs(candidate_change) * 86_400 // elapsed_seconds
+        if candidate_change < 0:
+            expected_per_day = -expected_per_day
+        if int(self.growth.candidate_bytes_per_day) != expected_per_day:
+            raise ValueError("growth daily rate must match history endpoints")
+        return self
+
+
 class CapacityInventoryPage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -137,15 +232,25 @@ class CapacityInventoryPage(BaseModel):
 
 
 class LifecyclePolicyAction(str, Enum):
-    """V1 policy actions; physical cleanup is restricted to rebuildable cache objects."""
+    """Lifecycle actions with explicit physical-safety semantics."""
 
     RETAIN = "RETAIN"
     REVIEW_EXPIRATION = "REVIEW_EXPIRATION"
+    ARCHIVE = "ARCHIVE"
+    TRANSITION_TO_COLD = "TRANSITION_TO_COLD"
     CLEAN_REBUILDABLE_CACHE = "CLEAN_REBUILDABLE_CACHE"
 
     @property
     def dangerous(self) -> bool:
         return self is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
+
+    @property
+    def physical(self) -> bool:
+        return self in {
+            LifecyclePolicyAction.ARCHIVE,
+            LifecyclePolicyAction.TRANSITION_TO_COLD,
+            LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE,
+        }
 
 
 class LifecyclePolicyState(str, Enum):
@@ -268,18 +373,25 @@ class LifecycleExecutionCandidate(BaseModel):
     rebuild_source_id: str | None = None
     active_reference_count: int = Field(default=0, ge=0)
     protection_verified: bool
+    retention_active: bool = False
+    legal_hold: bool = False
+    governance_hold: bool = False
 
 
 class LifecycleExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     execution_id: str
+    organization_id: str | None = Field(default=None, min_length=1, max_length=256)
     project_id: str
+    region_code: str | None = Field(default=None, min_length=1, max_length=256)
     policy_id: str
     policy_version: int = Field(ge=1)
     action: LifecyclePolicyAction
     production: bool = True
     production_execution_approved: bool = False
+    approval_id: str | None = Field(default=None, min_length=1, max_length=256)
+    plan_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     batch_size: int = Field(default=100, ge=1, le=1000)
     candidates: tuple[LifecycleExecutionCandidate, ...]
 
@@ -300,21 +412,38 @@ def evaluate_execution_protection(
     """Pure, deterministic protection gate shared by HTTP services and Workers."""
 
     blocked: list[str] = []
-    # OPEN-10 is unresolved. No in-process approval bit can enable production work;
-    # changing this requires a separately reviewed contract and persistence migration.
-    if request.production:
-        blocked.append("OPEN_10_PRODUCTION_EXECUTION_DISABLED")
-    if request.action is not LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE:
+    if request.production and (
+        not request.production_execution_approved
+        or request.approval_id is None
+        or request.plan_hash is None
+    ):
+        blocked.append("LIFECYCLE_APPROVAL_REQUIRED")
+    if not request.action.physical:
         blocked.append("NO_PHYSICAL_ACTION_FOR_POLICY")
     for candidate in request.candidates:
-        if candidate.object_role.protected:
+        if (
+            request.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
+            and candidate.object_role.protected
+        ):
             blocked.append(f"PROTECTED_OBJECT:{candidate.physical_instance_id}")
-        if candidate.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE:
+        if (
+            request.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
+            and candidate.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE
+        ):
             blocked.append(f"NOT_REBUILDABLE:{candidate.physical_instance_id}")
-        if candidate.rebuild_source_id is None:
+        if (
+            request.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
+            and candidate.rebuild_source_id is None
+        ):
             blocked.append(f"REBUILD_SOURCE_MISSING:{candidate.physical_instance_id}")
         if candidate.active_reference_count:
             blocked.append(f"ACTIVE_REFERENCE:{candidate.physical_instance_id}")
+        if candidate.retention_active:
+            blocked.append(f"RETENTION_ACTIVE:{candidate.physical_instance_id}")
+        if candidate.legal_hold:
+            blocked.append(f"LEGAL_HOLD:{candidate.physical_instance_id}")
+        if candidate.governance_hold:
+            blocked.append(f"GOVERNANCE_HOLD:{candidate.physical_instance_id}")
         if not candidate.protection_verified:
             blocked.append(f"PROTECTION_UNVERIFIED:{candidate.physical_instance_id}")
     if blocked:
@@ -336,13 +465,18 @@ class LifecycleBatchCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     execution_id: str
+    organization_id: str | None = None
     project_id: str
+    region_code: str | None = None
     policy_id: str
     policy_version: int = Field(ge=1)
     action: LifecyclePolicyAction
     production: bool
     production_execution_approved: bool
+    approval_id: str | None = None
+    plan_hash: str | None = None
     batch_index: int = Field(ge=0)
+    final_batch: bool = False
     candidates: tuple[LifecycleExecutionCandidate, ...]
 
 
@@ -353,3 +487,390 @@ class LifecycleBatchResult(BaseModel):
     batch_index: int = Field(ge=0)
     processed_instance_ids: tuple[str, ...]
     replayed: bool = False
+
+
+class StorageObjectStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    TRASHED = "TRASHED"
+    ARCHIVED = "ARCHIVED"
+    TRANSITIONING = "TRANSITIONING"
+    FAILED = "FAILED"
+
+
+class StorageTier(str, Enum):
+    HOT = "HOT"
+    COLD = "COLD"
+    ARCHIVE = "ARCHIVE"
+
+
+class StorageObjectAction(str, Enum):
+    DOWNLOAD = "DOWNLOAD"
+    TRASH = "TRASH"
+    RESTORE = "RESTORE"
+    ARCHIVE = "ARCHIVE"
+    TRANSITION_TO_COLD = "TRANSITION_TO_COLD"
+    PURGE = "PURGE"
+
+
+class StorageObjectOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation_id: str
+    project_id: str
+    object_id: str | None = None
+    multipart_id: str | None = None
+    action: str
+    status: str = Field(pattern=r"^(PENDING|RUNNING|SUCCEEDED|FAILED)$")
+    idempotency_key: str
+    request_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    actor_id: str
+    request_id: str
+    attempt: int = Field(ge=0)
+    error_code: str | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+class ManagedStorageObject(BaseModel):
+    """Public object fact. Physical bucket/key locators never cross this boundary."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    object_id: str = Field(min_length=1, max_length=256)
+    project_id: str = Field(min_length=1, max_length=256)
+    display_key: str = Field(min_length=1, max_length=512)
+    physical_bytes: ByteString
+    checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    business_category: BusinessCapacityCategory
+    object_role: ObjectRole
+    storage_tier: StorageTier
+    status: StorageObjectStatus
+    active_reference_count: int = Field(ge=0)
+    retention_until: datetime | None = None
+    legal_hold: bool = False
+    governance_hold: bool = False
+    rebuild_source_id: str | None = Field(default=None, max_length=1024)
+    recoverable_until: datetime | None = None
+    version: int = Field(ge=1)
+    etag: str = Field(min_length=1, max_length=256)
+    allowed_actions: tuple[StorageObjectAction, ...] = ()
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_times(self) -> ManagedStorageObject:
+        values = (self.created_at, self.updated_at, self.retention_until, self.recoverable_until)
+        if any(value is not None and value.tzinfo is None for value in values):
+            raise ValueError("storage object timestamps must include a timezone")
+        if self.status is StorageObjectStatus.TRASHED and self.recoverable_until is None:
+            raise ValueError("trashed objects require a recoverable-until timestamp")
+        if self.status is not StorageObjectStatus.TRASHED and self.recoverable_until is not None:
+            raise ValueError("only trashed objects expose a recoverable-until timestamp")
+        return self
+
+
+class ManagedStorageObjectRecord(ManagedStorageObject):
+    """Internal durable object identity including the provider locator."""
+
+    object_key: str = Field(min_length=1, max_length=2048)
+    original_object_key: str = Field(min_length=1, max_length=2048)
+
+    def public(self, *, now: datetime) -> ManagedStorageObject:
+        actions: list[StorageObjectAction] = []
+        protected = (
+            self.active_reference_count > 0
+            or self.legal_hold
+            or self.governance_hold
+            or (self.retention_until is not None and self.retention_until > now)
+        )
+        if self.status is StorageObjectStatus.ACTIVE:
+            actions.append(StorageObjectAction.DOWNLOAD)
+            if not protected:
+                actions.extend(
+                    (
+                        StorageObjectAction.ARCHIVE,
+                        StorageObjectAction.TRANSITION_TO_COLD,
+                    )
+                )
+                if not self.object_role.protected:
+                    actions.append(StorageObjectAction.TRASH)
+        elif self.status in {StorageObjectStatus.TRASHED, StorageObjectStatus.ARCHIVED}:
+            actions.append(StorageObjectAction.RESTORE)
+        return ManagedStorageObject.model_validate(
+            {
+                **self.model_dump(exclude={"object_key", "original_object_key"}),
+                "allowed_actions": actions,
+            }
+        )
+
+
+class ManagedStorageObjectPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str
+    items: tuple[ManagedStorageObject, ...]
+    page_info: PageInfo
+
+
+class StorageObjectDownloadGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    object_id: str
+    url: str = Field(min_length=1, max_length=8192)
+    expires_at: datetime
+    physical_bytes: ByteString
+    checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class TrashStorageObjectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=512)
+    recoverable_days: int = Field(default=30, ge=1, le=365)
+
+
+class RestoreStorageObjectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=512)
+
+
+class TransitionStorageObjectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: LifecyclePolicyAction
+    reason: str = Field(min_length=3, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_action(self) -> TransitionStorageObjectRequest:
+        if self.action not in {
+            LifecyclePolicyAction.ARCHIVE,
+            LifecyclePolicyAction.TRANSITION_TO_COLD,
+        }:
+            raise ValueError("object transition must archive or move to the cold tier")
+        return self
+
+
+class ManagedMultipartUpload(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    multipart_id: str = Field(min_length=1, max_length=256)
+    project_id: str = Field(min_length=1, max_length=256)
+    display_key: str = Field(min_length=1, max_length=512)
+    received_bytes: ByteString
+    part_count: int = Field(ge=0)
+    status: str = Field(pattern=r"^(ACTIVE|ABORTING|ABORTED|COMPLETED|FAILED)$")
+    started_at: datetime
+    updated_at: datetime
+    version: int = Field(ge=1)
+    etag: str
+
+
+class ManagedMultipartUploadRecord(ManagedMultipartUpload):
+    object_key: str = Field(min_length=1, max_length=2048)
+    upload_id: str = Field(min_length=1, max_length=1024)
+
+    def public(self) -> ManagedMultipartUpload:
+        return ManagedMultipartUpload.model_validate(
+            self.model_dump(exclude={"object_key", "upload_id"})
+        )
+
+
+class AbortMultipartUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=512)
+
+
+class LifecycleExecutionStatus(str, Enum):
+    DRY_RUN = "DRY_RUN"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    APPROVED = "APPROVED"
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    BLOCKED = "BLOCKED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class LifecycleExecutionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    object_id: str
+    physical_instance_id: str
+    status: str = Field(pattern=r"^(PENDING|PROCESSED|BLOCKED|FAILED)$")
+    attempt: int = Field(ge=0)
+    blocked_reasons: tuple[str, ...] = ()
+    last_error_code: str | None = None
+
+
+class LifecycleExecution(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    execution_id: str
+    project_id: str
+    policy_id: str
+    policy_version: int = Field(ge=1)
+    action: LifecyclePolicyAction
+    status: LifecycleExecutionStatus
+    dry_run: bool
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approval_id: str | None = None
+    requested_by: str
+    approved_by: str | None = None
+    total_items: int = Field(ge=0)
+    processed_items: int = Field(ge=0)
+    blocked_items: int = Field(ge=0)
+    failed_items: int = Field(ge=0)
+    next_batch: int = Field(ge=0)
+    items: tuple[LifecycleExecutionItem, ...] = ()
+    created_at: datetime
+    updated_at: datetime
+
+
+class LifecycleDryRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: str = Field(min_length=1, max_length=256)
+    policy_etag: str = Field(min_length=1, max_length=256)
+    limit: int = Field(default=1000, ge=1, le=1000)
+
+
+class ApproveLifecycleExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    justification: str = Field(min_length=8, max_length=1024)
+
+
+class StartLifecycleExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approval_id: str = Field(min_length=1, max_length=256)
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CancelLifecycleExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=8, max_length=1024)
+
+
+class RetryLifecycleExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(min_length=8, max_length=1024)
+
+
+class LifecycleExecutionLog(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sequence: int = Field(ge=1)
+    project_id: str
+    execution_id: str
+    level: str = Field(pattern=r"^(INFO|WARNING|ERROR)$")
+    event: str
+    details: dict[str, str | int | bool | None] = Field(default_factory=dict)
+    occurred_at: datetime
+
+
+class LifecycleExecutionLogPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str
+    execution_id: str
+    items: tuple[LifecycleExecutionLog, ...]
+    page_info: PageInfo
+
+
+class LifecycleSchedule(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schedule_id: str = Field(min_length=1, max_length=256)
+    project_id: str = Field(min_length=1, max_length=256)
+    policy_id: str = Field(min_length=1, max_length=256)
+    interval_seconds: int = Field(ge=300, le=2_678_400)
+    enabled: bool
+    next_run_at: datetime
+    last_execution_id: str | None = None
+    version: int = Field(ge=1)
+    etag: str
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_timestamps(self) -> LifecycleSchedule:
+        if any(
+            value.tzinfo is None for value in (self.next_run_at, self.created_at, self.updated_at)
+        ):
+            raise ValueError("lifecycle schedule timestamps must include a timezone")
+        return self
+
+
+class CreateLifecycleScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: str = Field(min_length=1, max_length=256)
+    interval_seconds: int = Field(ge=300, le=2_678_400)
+    first_run_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_first_run(self) -> CreateLifecycleScheduleRequest:
+        if self.first_run_at is not None and self.first_run_at.tzinfo is None:
+            raise ValueError("first_run_at must include a timezone")
+        return self
+
+
+class UpdateLifecycleScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interval_seconds: int | None = Field(default=None, ge=300, le=2_678_400)
+    next_run_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> UpdateLifecycleScheduleRequest:
+        if self.interval_seconds is None and self.next_run_at is None:
+            raise ValueError("at least one lifecycle schedule field is required")
+        if self.next_run_at is not None and self.next_run_at.tzinfo is None:
+            raise ValueError("next_run_at must include a timezone")
+        return self
+
+
+class LifecycleSchedulePage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str
+    items: tuple[LifecycleSchedule, ...]
+    page_info: PageInfo
+
+
+class LifecycleExecutionPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str
+    items: tuple[LifecycleExecution, ...]
+    page_info: PageInfo
+
+
+class ProjectCapacitySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str
+    snapshot_id: str
+    observed_at: datetime
+    physical_total_bytes: ByteString
+    candidate_business_total_bytes: ByteString
+    categories: tuple[CapacityCategoryTotal, ...]
+    balanced: bool
+
+
+class CapacityPortfolio(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_ids: tuple[str, ...]
+    physical_total_bytes: ByteString
+    candidate_business_total_bytes: ByteString
+    categories: tuple[CapacityCategoryTotal, ...]
+    items: tuple[ProjectCapacitySummary, ...]

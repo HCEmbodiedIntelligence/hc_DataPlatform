@@ -144,3 +144,16 @@ def test_gate_runner_redacts_before_write_and_scans_after_every_gate() -> None:
     assert "except BaseException as exc" in main_function
     assert 'if gate != "artifact"' in main_function
     assert "artifact_gate()" in main_function
+
+
+def test_gate_runner_checks_formal_runtime_semantics() -> None:
+    runner = (Path(__file__).resolve().parents[3] / "scripts/first_wave_gate.py").read_text(
+        encoding="utf-8"
+    )
+
+    static_gate = runner.split("def static_gate()", maxsplit=1)[1].split(
+        "def _reset_postgres", maxsplit=1
+    )[0]
+    assert '"--runtime"' not in static_gate
+    assert "assert committed == formal" in static_gate
+    assert "check_formal_runtime_contract(formal, runtime)" in static_gate

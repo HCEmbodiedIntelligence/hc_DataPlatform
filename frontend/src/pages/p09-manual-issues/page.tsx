@@ -374,10 +374,10 @@ export function ManualIssuesPage() {
             }, { onSuccess: () => setDialog(null) });
           }}>
             <Typography.Paragraph>稳定 Issue ID：<Typography.Text code>{dialog.issue.id}</Typography.Text></Typography.Paragraph>
-            <Form.Item label="严重度"><Select value={severity} onChange={setSeverity} options={(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const).map((value) => ({ value, label: value }))} /></Form.Item>
-            <Form.Item label="负责人 ID"><Input value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} /></Form.Item>
+            <Form.Item label="严重度"><Select aria-label="严重度" value={severity} onChange={setSeverity} options={(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const).map((value) => ({ value, label: value }))} /></Form.Item>
+            <Form.Item label="负责人 ID"><Input aria-label="负责人 ID" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} /></Form.Item>
             <Form.Item label={dialog.issue.status.kind === 'known' && dialog.issue.status.value === 'IN_PROGRESS' ? '退回待处理队列原因' : '分诊原因'} required>
-              <Input.TextArea rows={4} value={reason} onChange={(event) => setReason(event.target.value)} />
+              <Input.TextArea aria-label={dialog.issue.status.kind === 'known' && dialog.issue.status.value === 'IN_PROGRESS' ? '退回待处理队列原因' : '分诊原因'} rows={4} value={reason} onChange={(event) => setReason(event.target.value)} />
             </Form.Item>
             {triage.error ? <Alert type="error" showIcon title={isDomainError(triage.error) ? triage.error.message : '分诊失败；输入已保留。'} /> : null}
             <Space className={styles.modalActions}><Button disabled={triage.isPending} onClick={() => setDialog(null)}>取消</Button><Button type="primary" htmlType="submit" loading={triage.isPending} disabled={!reason.trim()}>确认分诊</Button></Space>
@@ -391,8 +391,8 @@ export function ManualIssuesPage() {
             resolve.mutate({ manualIssueId: dialog.issue.id, expectedVersion: dialog.issue.etag, idempotencyKey: mutationKey(), resolutionVersionId, resolutionNote }, { onSuccess: () => setDialog(null) });
           }}>
             <Typography.Paragraph>稳定 Issue ID：<Typography.Text code>{dialog.issue.id}</Typography.Text></Typography.Paragraph>
-            <Form.Item label="解决 Version ID" required><Input value={resolutionVersionId} onChange={(event) => setResolutionVersionId(event.target.value)} /></Form.Item>
-            <Form.Item label="解决说明" required><Input.TextArea rows={4} value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} /></Form.Item>
+            <Form.Item label="解决 Version ID" required><Input aria-label="解决 Version ID" value={resolutionVersionId} onChange={(event) => setResolutionVersionId(event.target.value)} /></Form.Item>
+            <Form.Item label="解决说明" required><Input.TextArea aria-label="解决说明" rows={4} value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} /></Form.Item>
             {resolve.error ? <Alert type="error" showIcon title={isDomainError(resolve.error) ? resolve.error.message : '解决命令失败；输入已保留。'} /> : null}
             <Space className={styles.modalActions}><Button disabled={resolve.isPending} onClick={() => setDialog(null)}>取消</Button><Button danger type="primary" htmlType="submit" loading={resolve.isPending} disabled={!resolutionVersionId.trim() || !resolutionNote.trim()}>确认解决</Button></Space>
           </Form>

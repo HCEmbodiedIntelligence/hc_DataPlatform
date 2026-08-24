@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
+from hc_data_platform.core.pagination import PageInfo
+
 if TYPE_CHECKING:
     from hc_data_platform.security import AuthContext
 
@@ -31,6 +33,7 @@ class OperationKind(str, Enum):
 
 class RevisionOrigin(str, Enum):
     ANNOTATION = "ANNOTATION"
+    ANNOTATION_RESTORE = "ANNOTATION_RESTORE"
     LEGACY_CLEANING = "LEGACY_CLEANING"
 
 
@@ -514,6 +517,58 @@ class AnnotationTask(BaseModel):
         return self
 
 
+class AnnotationRevisionThreadRevision(BaseModel):
+    """The immutable revision fact displayed in a scoped revision index.
+
+    The index deliberately exposes only revision metadata.  Tags and operations stay
+    behind the existing per-task revision endpoint so a list request cannot turn into
+    an unbounded document download.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    revision: int = Field(ge=0)
+    origin: RevisionOrigin
+    author_id: str = Field(min_length=1)
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime
+
+
+class AnnotationRevisionThread(BaseModel):
+    """One current annotation workflow thread in the project/region revision index."""
+
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    dataset_version: int = Field(ge=1)
+    rollout_id: str = Field(min_length=1)
+    status: AnnotationStatus
+    latest_revision: AnnotationRevisionThreadRevision
+    submitted_revision: int | None = Field(default=None, ge=0)
+    current_submission_id: str | None = Field(default=None, min_length=1)
+    approved_revision: int | None = Field(default=None, ge=0)
+    approved_review_id: str | None = Field(default=None, min_length=1)
+    # A public legacy-draft mapping is nullable for native tasks.  When present,
+    # it is read from a LEGACY_CLEANING revision already owned by this exact
+    # task/project/region, never inferred from the globally ambiguous legacy
+    # migration table's source key.
+    legacy_draft_id: str | None = Field(default=None, min_length=1)
+    updated_at: datetime
+
+
+class AnnotationRevisionThreadPage(BaseModel):
+    """Cursor page for the `/annotations/revisions` information-architecture entry."""
+
+    model_config = ConfigDict(frozen=True)
+
+    items: tuple[AnnotationRevisionThread, ...]
+    page_info: PageInfo
+    snapshot_at: datetime
+
+
 class AnnotationDraft(BaseModel):
     """Current editable read model backed by an immutable revision."""
 
@@ -618,8 +673,19 @@ class AnnotationSubmissionMutationRecord(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class AutoAnnotationCapability(BaseModel):
-    model_config = ConfigDict(frozen=True)
+class AutoAnnotationProviderDescriptor(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    enabled: Literal[False] = False
-    code: Literal["FEATURE_DISABLED"] = "FEATURE_DISABLED"
+    provider: str = Field(min_length=1, max_length=128)
+    models: tuple[str, ...] = Field(min_length=1, max_length=100)
+
+
+class AutoAnnotationCapability(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool
+    code: Literal["PROVIDER_UNAVAILABLE"] | None = None
+    providers: tuple[AutoAnnotationProviderDescriptor, ...] = ()
+    max_concurrent_jobs_per_project: int = Field(default=0, ge=0, le=1000)
+    max_jobs_per_hour: int = Field(default=0, ge=0, le=100_000)
+    daily_cost_limit_micros: int = Field(default=0, ge=0)

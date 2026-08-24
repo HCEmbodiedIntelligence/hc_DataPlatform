@@ -1,0 +1,6232 @@
+components:
+  schemas:
+    CreateDatasetCommand:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 4096
+          title: Description
+          type: string
+        labels:
+          default: []
+          items:
+            type: string
+          maxItems: 64
+          title: Labels
+          type: array
+        name:
+          maxLength: 256
+          minLength: 1
+          title: Name
+          type: string
+      required:
+      - name
+      - description
+      title: CreateDatasetCommand
+      type: object
+    DatasetPageActor:
+      additionalProperties: false
+      properties:
+        display_name:
+          maxLength: 256
+          minLength: 1
+          title: Display Name
+          type: string
+        id:
+          maxLength: 256
+          minLength: 1
+          title: Id
+          type: string
+      required:
+      - id
+      - display_name
+      title: DatasetPageActor
+      type: object
+    DatasetPageAllowedAction:
+      additionalProperties: false
+      properties:
+        action:
+          maxLength: 128
+          minLength: 1
+          title: Action
+          type: string
+        allowed:
+          title: Allowed
+          type: boolean
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageBlockedReason'
+          title: Blocked Reasons
+          type: array
+      required:
+      - action
+      - allowed
+      title: DatasetPageAllowedAction
+      type: object
+    DatasetPageApproveReviewCommand:
+      additionalProperties: false
+      properties:
+        expected_status:
+          const: REVIEWING
+          title: Expected Status
+          type: string
+        review_token:
+          maxLength: 2048
+          minLength: 32
+          title: Review Token
+          type: string
+      required:
+      - expected_status
+      - review_token
+      title: DatasetPageApproveReviewCommand
+      type: object
+    DatasetPageApproveReviewOutputVersion:
+      additionalProperties: false
+      properties:
+        id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        status:
+          const: REVIEWING
+          default: REVIEWING
+          title: Status
+          type: string
+        version_token:
+          maxLength: 256
+          minLength: 16
+          title: Version Token
+          type: string
+      required:
+      - id
+      - version_token
+      title: DatasetPageApproveReviewOutputVersion
+      type: object
+    DatasetPageApproveReviewResult:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        job:
+          $ref: '#/components/schemas/DatasetPageAsyncJob'
+        output_version:
+          $ref: '#/components/schemas/DatasetPageApproveReviewOutputVersion'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        review_decision:
+          $ref: '#/components/schemas/DatasetPageReviewDecision'
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+      required:
+      - review_decision
+      - output_version
+      - job
+      - scope
+      - request_id
+      title: DatasetPageApproveReviewResult
+      type: object
+    DatasetPageAsyncJob:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
+        job_id:
+          maxLength: 256
+          minLength: 1
+          title: Job Id
+          type: string
+        job_type:
+          maxLength: 128
+          minLength: 1
+          title: Job Type
+          type: string
+        progress:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Progress
+        resource_id:
+          maxLength: 256
+          minLength: 1
+          title: Resource Id
+          type: string
+        resource_type:
+          maxLength: 128
+          minLength: 1
+          title: Resource Type
+          type: string
+        resource_version:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Resource Version
+          type: string
+        result_ref:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Result Ref
+        status:
+          enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - job_id
+      - job_type
+      - status
+      - resource_type
+      - resource_id
+      - created_at
+      - updated_at
+      - resource_version
+      title: DatasetPageAsyncJob
+      type: object
+    DatasetPageBlockedReason:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        message:
+          maxLength: 1000
+          minLength: 1
+          title: Message
+          type: string
+      required:
+      - code
+      - message
+      title: DatasetPageBlockedReason
+      type: object
+    DatasetPageBootstrapData:
+      additionalProperties: false
+      properties:
+        current_ready_version:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetPageCurrentReadyVersion'
+          - type: 'null'
+        dataset:
+          $ref: '#/components/schemas/DatasetPageDataset'
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        suggested_version_id:
+          anyOf:
+          - pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Suggested Version Id
+        summary:
+          $ref: '#/components/schemas/DatasetPageDetailSummary'
+      required:
+      - scope
+      - dataset
+      - summary
+      title: DatasetPageBootstrapData
+      type: object
+    DatasetPageBootstrapEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageBootstrapData'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageBootstrapEnvelope
+      type: object
+    DatasetPageCapabilities:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            type: string
+          title: Allowed Actions
+          type: array
+        authorization_revision:
+          maxLength: 128
+          minLength: 1
+          title: Authorization Revision
+          type: string
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageBlockedReason'
+          title: Blocked Reasons
+          type: array
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+      required:
+      - scope
+      - authorization_revision
+      title: DatasetPageCapabilities
+      type: object
+    DatasetPageCapabilitiesEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageCapabilities'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageCapabilitiesEnvelope
+      type: object
+    DatasetPageContentReference:
+      additionalProperties: false
+      properties:
+        reference_id:
+          maxLength: 256
+          minLength: 1
+          title: Reference Id
+          type: string
+        reference_type:
+          maxLength: 128
+          minLength: 1
+          title: Reference Type
+          type: string
+        reference_version:
+          maxLength: 256
+          minLength: 1
+          title: Reference Version
+          type: string
+        sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Sha256
+          type: string
+      required:
+      - reference_type
+      - reference_id
+      - reference_version
+      - sha256
+      title: DatasetPageContentReference
+      type: object
+    DatasetPageContentSnapshot:
+      additionalProperties: false
+      properties:
+        calibration_refs:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageContentReference'
+          title: Calibration Refs
+          type: array
+        content_snapshot_hash:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Content Snapshot Hash
+          type: string
+        content_snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Content Snapshot Id
+          type: string
+        revision_refs:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageRevisionSnapshotReference'
+          title: Revision Refs
+          type: array
+        robot_model_refs:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageContentReference'
+          title: Robot Model Refs
+          type: array
+        schema_ref:
+          $ref: '#/components/schemas/DatasetPageContentReference'
+        source_manifest_refs:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageContentReference'
+          title: Source Manifest Refs
+          type: array
+      required:
+      - content_snapshot_id
+      - content_snapshot_hash
+      - schema_ref
+      title: DatasetPageContentSnapshot
+      type: object
+    DatasetPageCurrentReadyVersion:
+      additionalProperties: false
+      properties:
+        display_version:
+          maxLength: 64
+          minLength: 1
+          title: Display Version
+          type: string
+        kind:
+          maxLength: 64
+          minLength: 1
+          title: Kind
+          type: string
+        manifest_sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Manifest Sha256
+          type: string
+        published_at:
+          format: date-time
+          title: Published At
+          type: string
+        status:
+          const: READY
+          default: READY
+          title: Status
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - version_id
+      - display_version
+      - kind
+      - published_at
+      - manifest_sha256
+      title: DatasetPageCurrentReadyVersion
+      type: object
+    DatasetPageDataset:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          items:
+            $ref: '#/components/schemas/DatasetPageAllowedAction'
+          title: Allowed Actions
+          type: array
+        availability:
+          maxLength: 64
+          minLength: 1
+          title: Availability
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        description:
+          maxLength: 4096
+          title: Description
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        labels:
+          default: []
+          items:
+            type: string
+          title: Labels
+          type: array
+        name:
+          maxLength: 256
+          minLength: 1
+          title: Name
+          type: string
+        owner:
+          $ref: '#/components/schemas/DatasetPageActor'
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - name
+      - description
+      - availability
+      - owner
+      - created_at
+      - updated_at
+      - etag
+      - allowed_actions
+      title: DatasetPageDataset
+      type: object
+    DatasetPageDatasetEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageDataset'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageDatasetEnvelope
+      type: object
+    DatasetPageDeletionAsyncImpact:
+      additionalProperties: false
+      properties:
+        dependent_projection_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Dependent Projection Count
+          type: string
+        estimated_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Estimated Bytes
+          type: string
+        object_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Object Count
+          type: string
+        requires_async_job:
+          const: true
+          default: true
+          title: Requires Async Job
+          type: boolean
+      required:
+      - object_count
+      - estimated_bytes
+      - dependent_projection_count
+      title: DatasetPageDeletionAsyncImpact
+      type: object
+    DatasetPageDeletionCheck:
+      additionalProperties: false
+      properties:
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageBlockedReason'
+          title: Blocked Reasons
+          type: array
+        check_type:
+          enum:
+          - ACTIVE_REFERENCES
+          - RETENTION
+          - LEGAL_HOLD
+          - PERMISSION
+          - CONCURRENT_JOBS
+          - CURRENT_READY
+          - AUDIT_PROTECTION
+          title: Check Type
+          type: string
+        observed_policy_version:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Observed Policy Version
+        passed:
+          title: Passed
+          type: boolean
+        retained_until:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Retained Until
+      required:
+      - check_type
+      - passed
+      title: DatasetPageDeletionCheck
+      type: object
+    DatasetPageDeletionPreflight:
+      additionalProperties: false
+      properties:
+        async_impact:
+          $ref: '#/components/schemas/DatasetPageDeletionAsyncImpact'
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageBlockedReason'
+          title: Blocked Reasons
+          type: array
+        capability_status:
+          const: RESERVED_CONDITIONAL
+          default: RESERVED_CONDITIONAL
+          title: Capability Status
+          type: string
+        checks:
+          items:
+            $ref: '#/components/schemas/DatasetPageDeletionCheck'
+          maxItems: 7
+          minItems: 7
+          title: Checks
+          type: array
+        domain_clear:
+          title: Domain Clear
+          type: boolean
+        executable:
+          const: false
+          default: false
+          title: Executable
+          type: boolean
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        preflight_token:
+          maxLength: 2048
+          minLength: 32
+          title: Preflight Token
+          type: string
+        resource_id:
+          maxLength: 256
+          minLength: 1
+          title: Resource Id
+          type: string
+        resource_type:
+          enum:
+          - DATASET
+          - DATASET_VERSION
+          title: Resource Type
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+      required:
+      - scope
+      - resource_type
+      - resource_id
+      - domain_clear
+      - preflight_token
+      - expires_at
+      - checks
+      - async_impact
+      title: DatasetPageDeletionPreflight
+      type: object
+    DatasetPageDeletionPreflightCommand:
+      additionalProperties: false
+      properties:
+        expected_etag:
+          maxLength: 256
+          minLength: 3
+          title: Expected Etag
+          type: string
+        intent:
+          const: DELETE
+          title: Intent
+          type: string
+        reason:
+          maxLength: 4096
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - intent
+      - reason
+      - expected_etag
+      title: DatasetPageDeletionPreflightCommand
+      type: object
+    DatasetPageDetailSummary:
+      additionalProperties: false
+      properties:
+        actionable_draft_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Actionable Draft Count
+          type: string
+        actual_oss_bytes:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Actual Oss Bytes
+        calculated_at:
+          format: date-time
+          title: Calculated At
+          type: string
+        calculation_state:
+          enum:
+          - CALCULATING
+          - PARTIAL
+          - SETTLED
+          - FAILED
+          title: Calculation State
+          type: string
+        effective_duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Effective Duration Ns
+          type: string
+        episode_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Episode Count
+          type: string
+        pending_review_version_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Pending Review Version Count
+          type: string
+        required_physical_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Required Physical Bytes
+          type: string
+        returned_version_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Returned Version Count
+          type: string
+        source_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Source Bytes
+          type: string
+      required:
+      - episode_count
+      - effective_duration_ns
+      - source_bytes
+      - required_physical_bytes
+      - pending_review_version_count
+      - returned_version_count
+      - actionable_draft_count
+      - calculated_at
+      - calculation_state
+      title: DatasetPageDetailSummary
+      type: object
+    DatasetPageDiffJobCommand:
+      additionalProperties: false
+      properties:
+        compare_to:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Compare To
+          type: string
+        snapshot_token:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      required:
+      - compare_to
+      - snapshot_token
+      title: DatasetPageDiffJobCommand
+      type: object
+    DatasetPageEpisodeDataBinding:
+      additionalProperties: false
+      description: 'Immutable logical lineage for a non-camera Viewer stream.
+
+
+        This is intentionally narrower than a Lance row: it carries the committed
+
+        catalog version, rollout, modality name and declared value shape, never a
+
+        physical table/object location or arbitrary expression.  The browser can
+
+        therefore request only the bounded step interval promised by its immutable
+
+        episode revision.'
+      properties:
+        end_step:
+          exclusiveMinimum: 0.0
+          maximum: 9007199254740991.0
+          title: End Step
+          type: integer
+        lance_version:
+          minimum: 1.0
+          title: Lance Version
+          type: integer
+        modality_key:
+          maxLength: 512
+          minLength: 1
+          title: Modality Key
+          type: string
+        rollout_id:
+          maxLength: 256
+          minLength: 1
+          title: Rollout Id
+          type: string
+        start_step:
+          maximum: 9007199254740991.0
+          minimum: 0.0
+          title: Start Step
+          type: integer
+        value_kind:
+          enum:
+          - SCALAR
+          - VECTOR
+          - POINTCLOUD_XYZ
+          - EVENT
+          title: Value Kind
+          type: string
+      required:
+      - rollout_id
+      - lance_version
+      - modality_key
+      - value_kind
+      - start_step
+      - end_step
+      title: DatasetPageEpisodeDataBinding
+      type: object
+    DatasetPageEpisodeListEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageEpisodeListItem'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageEpisodeListEnvelope
+      type: object
+    DatasetPageEpisodeListItem:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        included:
+          title: Included
+          type: boolean
+        review_finding_count:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Review Finding Count
+        review_status:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Review Status
+        robot_id:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Robot Id
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        selected_revision:
+          $ref: '#/components/schemas/DatasetPageRevisionSnapshotReference'
+        success_state:
+          maxLength: 64
+          minLength: 1
+          title: Success State
+          type: string
+        task:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Task
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - episode_id
+      - selected_revision
+      - included
+      - success_state
+      title: DatasetPageEpisodeListItem
+      type: object
+    DatasetPageEpisodePreviewBinding:
+      additionalProperties: false
+      description: 'Immutable, safe link from one collection stream to aligned preview data.
+
+
+        A dataset-page revision deliberately never stores a physical Lance URI, object
+
+        key, credential, or signed media URL.  This binding carries only the logical
+
+        lineage the browser needs to ask the preview service for a short-lived HLS
+
+        capability.  It is optional so historic revisions remain readable, but a
+
+        camera stream is *not* browser-playable unless its projection supplies one.'
+      properties:
+        annotation_revision:
+          minimum: 0.0
+          title: Annotation Revision
+          type: integer
+        camera_id:
+          maxLength: 256
+          minLength: 1
+          title: Camera Id
+          type: string
+        end_step:
+          exclusiveMinimum: 0.0
+          maximum: 9007199254740991.0
+          title: End Step
+          type: integer
+        frequency_hz:
+          exclusiveMinimum: 0.0
+          maximum: 240.0
+          title: Frequency Hz
+          type: number
+        lance_version:
+          minimum: 1.0
+          title: Lance Version
+          type: integer
+        rollout_id:
+          maxLength: 256
+          minLength: 1
+          title: Rollout Id
+          type: string
+        start_step:
+          maximum: 9007199254740991.0
+          minimum: 0.0
+          title: Start Step
+          type: integer
+      required:
+      - rollout_id
+      - lance_version
+      - annotation_revision
+      - camera_id
+      - frequency_hz
+      - start_step
+      - end_step
+      title: DatasetPageEpisodePreviewBinding
+      type: object
+    DatasetPageEpisodeRevision:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Content Sha256
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Duration Ns
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        ordinal:
+          minimum: 0.0
+          title: Ordinal
+          type: integer
+        revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Revision Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        started_at_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Started At Ns
+          type: string
+        streams:
+          items:
+            $ref: '#/components/schemas/DatasetPageEpisodeStream'
+          minItems: 1
+          title: Streams
+          type: array
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - episode_id
+      - revision_id
+      - ordinal
+      - content_sha256
+      - started_at_ns
+      - duration_ns
+      - streams
+      title: DatasetPageEpisodeRevision
+      type: object
+    DatasetPageEpisodeRevisionEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageEpisodeRevision'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageEpisodeRevisionEnvelope
+      type: object
+    DatasetPageEpisodeRevisionHistoryEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageEpisodeRevisionHistoryItem'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageEpisodeRevisionHistoryEnvelope
+      type: object
+    DatasetPageEpisodeRevisionHistoryItem:
+      additionalProperties: false
+      description: 'One immutable Episode selection as it appeared in a Dataset version.
+
+
+        A revision is never overwritten. Restoring a historical selection must
+
+        therefore create a later candidate version; this read model lets a caller
+
+        inspect the exact historical version before initiating that workflow.'
+      properties:
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        display_version:
+          maxLength: 64
+          minLength: 1
+          title: Display Version
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        selected_revision:
+          $ref: '#/components/schemas/DatasetPageRevisionSnapshotReference'
+        version_created_at:
+          format: date-time
+          title: Version Created At
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+        version_kind:
+          enum:
+          - RAW
+          - CLEANED
+          title: Version Kind
+          type: string
+        version_published_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Version Published At
+        version_status:
+          enum:
+          - REVIEWING
+          - RETURNED
+          - READY
+          title: Version Status
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - episode_id
+      - version_id
+      - display_version
+      - version_kind
+      - version_status
+      - version_created_at
+      - selected_revision
+      title: DatasetPageEpisodeRevisionHistoryItem
+      type: object
+    DatasetPageEpisodeStream:
+      additionalProperties: false
+      properties:
+        channel_path:
+          maxLength: 512
+          minLength: 1
+          title: Channel Path
+          type: string
+        data_binding:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetPageEpisodeDataBinding'
+          - type: 'null'
+        episode_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Stream Id
+          type: string
+        kind:
+          maxLength: 64
+          minLength: 1
+          title: Kind
+          type: string
+        preview_binding:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetPageEpisodePreviewBinding'
+          - type: 'null'
+        t_end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: T End Ns
+          type: string
+        t_start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: T Start Ns
+          type: string
+      required:
+      - episode_stream_id
+      - channel_path
+      - kind
+      - t_start_ns
+      - t_end_ns
+      title: DatasetPageEpisodeStream
+      type: object
+    DatasetPageFacetValue:
+      additionalProperties: false
+      properties:
+        count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Count
+          type: string
+        value:
+          maxLength: 256
+          minLength: 1
+          title: Value
+          type: string
+      required:
+      - value
+      - count
+      title: DatasetPageFacetValue
+      type: object
+    DatasetPageFacets:
+      additionalProperties: false
+      properties:
+        asset_states:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Asset States
+          type: array
+        channels:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Channels
+          type: array
+        normalized_filters:
+          additionalProperties: true
+          title: Normalized Filters
+          type: object
+        robot_models:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Robot Models
+          type: array
+        robots:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Robots
+          type: array
+        scenes:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Scenes
+          type: array
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        storage_classes:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Storage Classes
+          type: array
+        tasks:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Tasks
+          type: array
+      required:
+      - scope
+      - normalized_filters
+      title: DatasetPageFacets
+      type: object
+    DatasetPageFacetsEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageFacets'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageFacetsEnvelope
+      type: object
+    DatasetPageInfo:
+      additionalProperties: false
+      properties:
+        after:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: After
+        before:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Before
+        has_next:
+          title: Has Next
+          type: boolean
+        has_previous:
+          title: Has Previous
+          type: boolean
+        limit:
+          anyOf:
+          - maximum: 500.0
+            minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Limit
+        total_count:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Total Count
+      required:
+      - has_next
+      - has_previous
+      title: DatasetPageInfo
+      type: object
+    DatasetPageJobAccepted:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        job:
+          $ref: '#/components/schemas/DatasetPageAsyncJob'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+      required:
+      - job
+      - scope
+      - request_id
+      title: DatasetPageJobAccepted
+      type: object
+    DatasetPageListEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageListItem'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageListEnvelope
+      type: object
+    DatasetPageListItem:
+      additionalProperties: false
+      properties:
+        actionable_draft_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Actionable Draft Count
+          type: string
+        allowed_actions:
+          items:
+            $ref: '#/components/schemas/DatasetPageAllowedAction'
+          title: Allowed Actions
+          type: array
+        current_version:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetPageCurrentReadyVersion'
+          - type: 'null'
+        dataset_activity_at:
+          format: date-time
+          title: Dataset Activity At
+          type: string
+        dataset_created_at:
+          format: date-time
+          title: Dataset Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        episode_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Episode Count
+          type: string
+        name:
+          maxLength: 256
+          minLength: 1
+          title: Name
+          type: string
+        pending_review_version_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Pending Review Version Count
+          type: string
+        returned_version_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Returned Version Count
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+      required:
+      - scope
+      - dataset_id
+      - name
+      - dataset_created_at
+      - dataset_activity_at
+      - episode_count
+      - pending_review_version_count
+      - returned_version_count
+      - actionable_draft_count
+      - allowed_actions
+      title: DatasetPageListItem
+      type: object
+    DatasetPageManifestEntry:
+      additionalProperties: false
+      properties:
+        entry_id:
+          maxLength: 256
+          minLength: 1
+          title: Entry Id
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Revision Id
+          type: string
+        role:
+          enum:
+          - SOURCE
+          - REVISION
+          - INDEX
+          - METADATA
+          title: Role
+          type: string
+        safe_locator:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Safe Locator
+        sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Size Bytes
+          type: string
+      required:
+      - entry_id
+      - episode_id
+      - revision_id
+      - role
+      - size_bytes
+      - sha256
+      title: DatasetPageManifestEntry
+      type: object
+    DatasetPageManifestSummary:
+      additionalProperties: false
+      properties:
+        canonicalization:
+          maxLength: 256
+          minLength: 1
+          title: Canonicalization
+          type: string
+        entry_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Entry Count
+          type: string
+        format_version:
+          maxLength: 128
+          minLength: 1
+          title: Format Version
+          type: string
+        manifest_id:
+          maxLength: 256
+          minLength: 1
+          title: Manifest Id
+          type: string
+        sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Sha256
+          type: string
+      required:
+      - manifest_id
+      - format_version
+      - canonicalization
+      - sha256
+      - entry_count
+      title: DatasetPageManifestSummary
+      type: object
+    DatasetPageMeta:
+      additionalProperties: false
+      properties:
+        as_of:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: As Of
+        correlation_id:
+          maxLength: 128
+          minLength: 1
+          title: Correlation Id
+          type: string
+        event_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Event Cursor
+        generated_at:
+          format: date-time
+          title: Generated At
+          type: string
+        projection_version:
+          default: p05-dataset-registry/v1
+          title: Projection Version
+          type: string
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        trace_id:
+          maxLength: 128
+          minLength: 1
+          title: Trace Id
+          type: string
+      required:
+      - request_id
+      - trace_id
+      - correlation_id
+      - generated_at
+      title: DatasetPageMeta
+      type: object
+    DatasetPageOperationalInventoryEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageOperationalInventoryItem'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageOperationalInventoryEnvelope
+      type: object
+    DatasetPageOperationalInventoryItem:
+      additionalProperties: false
+      properties:
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        inventory_id:
+          maxLength: 128
+          minLength: 1
+          title: Inventory Id
+          type: string
+        job_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Job Id
+        kind:
+          enum:
+          - PREVIEW
+          - EXPORT
+          - MATERIALIZATION
+          title: Kind
+          type: string
+        operational_revision:
+          maxLength: 256
+          minLength: 1
+          title: Operational Revision
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        size_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Size Bytes
+          type: string
+        status:
+          enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - EXPIRED
+          - STALE
+          title: Status
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - inventory_id
+      - kind
+      - operational_revision
+      - status
+      - size_bytes
+      - created_at
+      title: DatasetPageOperationalInventoryItem
+      type: object
+    DatasetPageReadyVersion:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageAllowedAction'
+          title: Allowed Actions
+          type: array
+        approved_review_decision_id:
+          anyOf:
+          - pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Approved Review Decision Id
+        content_snapshot:
+          $ref: '#/components/schemas/DatasetPageContentSnapshot'
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        display_version:
+          maxLength: 64
+          minLength: 1
+          title: Display Version
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        kind:
+          enum:
+          - RAW
+          - CLEANED
+          title: Kind
+          type: string
+        manifest:
+          $ref: '#/components/schemas/DatasetPageManifestSummary'
+        published_at:
+          format: date-time
+          title: Published At
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        status:
+          const: READY
+          default: READY
+          title: Status
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+        version_token:
+          maxLength: 256
+          minLength: 16
+          title: Version Token
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - display_version
+      - kind
+      - created_at
+      - etag
+      - version_token
+      - published_at
+      - content_snapshot
+      - manifest
+      title: DatasetPageReadyVersion
+      type: object
+    DatasetPageRequiredStorageEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageRequiredStorageItem'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageRequiredStorageEnvelope
+      type: object
+    DatasetPageRequiredStorageItem:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        object_id:
+          maxLength: 128
+          minLength: 1
+          title: Object Id
+          type: string
+        protection:
+          enum:
+          - NONE
+          - RETENTION
+          - LEGAL_HOLD
+          - IMMUTABLE
+          - UNKNOWN
+          title: Protection
+          type: string
+        reuse:
+          enum:
+          - NEW
+          - REUSED
+          - SHARED
+          - UNKNOWN
+          title: Reuse
+          type: string
+        role:
+          enum:
+          - SOURCE
+          - REVISION
+          - INDEX
+          - METADATA
+          - PREVIEW
+          - EXPORT
+          title: Role
+          type: string
+        safe_locator:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Safe Locator
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        size_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Size Bytes
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - object_id
+      - role
+      - size_bytes
+      - reuse
+      - protection
+      title: DatasetPageRequiredStorageItem
+      type: object
+    DatasetPageReturnReviewCommand:
+      additionalProperties: false
+      properties:
+        expected_status:
+          const: REVIEWING
+          title: Expected Status
+          type: string
+        finding_catalog_version:
+          maxLength: 128
+          minLength: 1
+          title: Finding Catalog Version
+          type: string
+        findings:
+          items:
+            $ref: '#/components/schemas/DatasetPageReturnReviewFindingCommand'
+          maxItems: 500
+          minItems: 1
+          title: Findings
+          type: array
+        review_token:
+          maxLength: 2048
+          minLength: 32
+          title: Review Token
+          type: string
+      required:
+      - expected_status
+      - review_token
+      - finding_catalog_version
+      - findings
+      title: DatasetPageReturnReviewCommand
+      type: object
+    DatasetPageReturnReviewData:
+      additionalProperties: false
+      properties:
+        findings:
+          items:
+            $ref: '#/components/schemas/DatasetPageReviewFinding'
+          minItems: 1
+          title: Findings
+          type: array
+        output_version:
+          $ref: '#/components/schemas/DatasetPageReturnReviewOutputVersion'
+        returned_from_review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Review Decision Id
+          type: string
+        returned_from_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Version Id
+          type: string
+        review_decision:
+          $ref: '#/components/schemas/DatasetPageReviewDecision'
+        review_finding_ids:
+          items:
+            pattern: ^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          minItems: 1
+          title: Review Finding Ids
+          type: array
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        successor_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Successor Draft Id
+          type: string
+        supersedes_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Supersedes Draft Id
+          type: string
+      required:
+      - scope
+      - review_decision
+      - findings
+      - review_finding_ids
+      - output_version
+      - successor_draft_id
+      - supersedes_draft_id
+      - returned_from_version_id
+      - returned_from_review_decision_id
+      title: DatasetPageReturnReviewData
+      type: object
+    DatasetPageReturnReviewEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageReturnReviewData'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageReturnReviewEnvelope
+      type: object
+    DatasetPageReturnReviewFindingCommand:
+      additionalProperties: false
+      properties:
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Stream Id
+          type: string
+        finding_type:
+          maxLength: 96
+          pattern: ^[A-Z][A-Z0-9_:-]*$
+          title: Finding Type
+          type: string
+        note:
+          maxLength: 8192
+          minLength: 1
+          title: Note
+          type: string
+        output_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Revision Id
+          type: string
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+      required:
+      - output_revision_id
+      - episode_stream_id
+      - start_ns
+      - end_ns
+      - finding_type
+      - severity
+      - note
+      title: DatasetPageReturnReviewFindingCommand
+      type: object
+    DatasetPageReturnReviewOutputVersion:
+      additionalProperties: false
+      properties:
+        id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        status:
+          const: RETURNED
+          default: RETURNED
+          title: Status
+          type: string
+        version_token:
+          maxLength: 256
+          minLength: 16
+          title: Version Token
+          type: string
+      required:
+      - id
+      - version_token
+      title: DatasetPageReturnReviewOutputVersion
+      type: object
+    DatasetPageReturnedVersion:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageAllowedAction'
+          title: Allowed Actions
+          type: array
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        display_version:
+          maxLength: 64
+          minLength: 1
+          title: Display Version
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        kind:
+          enum:
+          - RAW
+          - CLEANED
+          title: Kind
+          type: string
+        returned_from_review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Review Decision Id
+          type: string
+        returned_from_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Version Id
+          type: string
+        review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Review Decision Id
+          type: string
+        review_finding_ids:
+          items:
+            pattern: ^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          minItems: 1
+          title: Review Finding Ids
+          type: array
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        source_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Source Draft Id
+          type: string
+        status:
+          const: RETURNED
+          default: RETURNED
+          title: Status
+          type: string
+        successor_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Successor Draft Id
+          type: string
+        supersedes_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Supersedes Draft Id
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+        version_token:
+          maxLength: 256
+          minLength: 16
+          title: Version Token
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - display_version
+      - kind
+      - created_at
+      - etag
+      - version_token
+      - source_draft_id
+      - review_decision_id
+      - review_finding_ids
+      - successor_draft_id
+      - supersedes_draft_id
+      - returned_from_version_id
+      - returned_from_review_decision_id
+      title: DatasetPageReturnedVersion
+      type: object
+    DatasetPageReviewCheckTarget:
+      additionalProperties: false
+      properties:
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        output_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Revision Id
+          type: string
+        streams:
+          items:
+            $ref: '#/components/schemas/DatasetPageEpisodeStream'
+          minItems: 1
+          title: Streams
+          type: array
+      required:
+      - output_revision_id
+      - episode_id
+      - streams
+      title: DatasetPageReviewCheckTarget
+      type: object
+    DatasetPageReviewChecksCommand:
+      additionalProperties: false
+      properties:
+        expected_status:
+          const: REVIEWING
+          title: Expected Status
+          type: string
+      required:
+      - expected_status
+      title: DatasetPageReviewChecksCommand
+      type: object
+    DatasetPageReviewChecksData:
+      additionalProperties: false
+      properties:
+        blockers:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageBlockedReason'
+          title: Blockers
+          type: array
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        eligible_targets:
+          items:
+            $ref: '#/components/schemas/DatasetPageReviewCheckTarget'
+          minItems: 1
+          title: Eligible Targets
+          type: array
+        expected_status:
+          const: REVIEWING
+          default: REVIEWING
+          title: Expected Status
+          type: string
+        finding_catalog:
+          $ref: '#/components/schemas/DatasetPageReviewFindingCatalog'
+        output_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Version Id
+          type: string
+        review_token:
+          maxLength: 2048
+          minLength: 32
+          title: Review Token
+          type: string
+        review_token_expires_at:
+          format: date-time
+          title: Review Token Expires At
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        source_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Source Draft Id
+          type: string
+        version_token:
+          maxLength: 256
+          minLength: 16
+          title: Version Token
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - output_version_id
+      - source_draft_id
+      - review_token
+      - review_token_expires_at
+      - version_token
+      - finding_catalog
+      - eligible_targets
+      title: DatasetPageReviewChecksData
+      type: object
+    DatasetPageReviewChecksEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageReviewChecksData'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageReviewChecksEnvelope
+      type: object
+    DatasetPageReviewDecision:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        decision:
+          enum:
+          - APPROVED
+          - RETURNED
+          title: Decision
+          type: string
+        id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        immutable:
+          const: true
+          default: true
+          title: Immutable
+          type: boolean
+        output_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Version Id
+          type: string
+      required:
+      - id
+      - output_version_id
+      - decision
+      - created_at
+      title: DatasetPageReviewDecision
+      type: object
+    DatasetPageReviewFinding:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Stream Id
+          type: string
+        finding_type:
+          maxLength: 96
+          pattern: ^[A-Z][A-Z0-9_:-]*$
+          title: Finding Type
+          type: string
+        id:
+          pattern: ^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        immutable:
+          const: true
+          default: true
+          title: Immutable
+          type: boolean
+        note:
+          maxLength: 8192
+          minLength: 1
+          title: Note
+          type: string
+        output_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Revision Id
+          type: string
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+      required:
+      - id
+      - output_revision_id
+      - episode_stream_id
+      - start_ns
+      - end_ns
+      - finding_type
+      - severity
+      - note
+      - created_at
+      title: DatasetPageReviewFinding
+      type: object
+    DatasetPageReviewFindingCatalog:
+      additionalProperties: false
+      properties:
+        finding_types:
+          items:
+            $ref: '#/components/schemas/DatasetPageReviewFindingType'
+          minItems: 1
+          title: Finding Types
+          type: array
+        note_max_length:
+          exclusiveMinimum: 0.0
+          title: Note Max Length
+          type: integer
+        note_min_length:
+          exclusiveMinimum: 0.0
+          title: Note Min Length
+          type: integer
+        severities:
+          items:
+            $ref: '#/components/schemas/DatasetPageReviewSeverity'
+          minItems: 1
+          title: Severities
+          type: array
+        version:
+          maxLength: 128
+          minLength: 1
+          title: Version
+          type: string
+      required:
+      - version
+      - finding_types
+      - severities
+      - note_min_length
+      - note_max_length
+      title: DatasetPageReviewFindingCatalog
+      type: object
+    DatasetPageReviewFindingType:
+      additionalProperties: false
+      properties:
+        allowed_severities:
+          items:
+            enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+            - CRITICAL
+            type: string
+          minItems: 1
+          title: Allowed Severities
+          type: array
+        code:
+          maxLength: 96
+          pattern: ^[A-Z][A-Z0-9_:-]*$
+          title: Code
+          type: string
+        label:
+          maxLength: 256
+          minLength: 1
+          title: Label
+          type: string
+      required:
+      - code
+      - label
+      - allowed_severities
+      title: DatasetPageReviewFindingType
+      type: object
+    DatasetPageReviewSeverity:
+      additionalProperties: false
+      properties:
+        code:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Code
+          type: string
+        label:
+          maxLength: 256
+          minLength: 1
+          title: Label
+          type: string
+        rank:
+          exclusiveMinimum: 0.0
+          title: Rank
+          type: integer
+      required:
+      - code
+      - label
+      - rank
+      title: DatasetPageReviewSeverity
+      type: object
+    DatasetPageReviewingVersion:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageAllowedAction'
+          title: Allowed Actions
+          type: array
+        approved_review_decision_id:
+          anyOf:
+          - pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Approved Review Decision Id
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        delivery_status:
+          maxLength: 64
+          minLength: 1
+          title: Delivery Status
+          type: string
+        display_version:
+          maxLength: 64
+          minLength: 1
+          title: Display Version
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        kind:
+          enum:
+          - RAW
+          - CLEANED
+          title: Kind
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        source_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Source Draft Id
+          type: string
+        status:
+          const: REVIEWING
+          default: REVIEWING
+          title: Status
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+        version_token:
+          maxLength: 256
+          minLength: 16
+          title: Version Token
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - display_version
+      - kind
+      - created_at
+      - etag
+      - version_token
+      - source_draft_id
+      - delivery_status
+      title: DatasetPageReviewingVersion
+      type: object
+    DatasetPageRevisionSnapshotReference:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Content Sha256
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        ordinal:
+          minimum: 0.0
+          title: Ordinal
+          type: integer
+        revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Revision Id
+          type: string
+      required:
+      - episode_id
+      - revision_id
+      - ordinal
+      - content_sha256
+      title: DatasetPageRevisionSnapshotReference
+      type: object
+    DatasetPageScope:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          title: Organization Id
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 64
+          minLength: 1
+          title: Region Code
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - region_code
+      title: DatasetPageScope
+      type: object
+    DatasetPageSourceProvenance:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        provenance_id:
+          maxLength: 128
+          minLength: 1
+          title: Provenance Id
+          type: string
+        registered_at:
+          format: date-time
+          title: Registered At
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        source_display_name:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Source Display Name
+        source_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Source Id
+        source_manifest_id:
+          maxLength: 128
+          minLength: 1
+          title: Source Manifest Id
+          type: string
+        source_manifest_sha256:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Source Manifest Sha256
+          type: string
+        upload_id:
+          maxLength: 128
+          minLength: 1
+          title: Upload Id
+          type: string
+        verified_object_set_hash:
+          pattern: ^[a-fA-F0-9]{64}$
+          title: Verified Object Set Hash
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - provenance_id
+      - upload_id
+      - source_manifest_id
+      - source_manifest_sha256
+      - verified_object_set_hash
+      - registered_at
+      title: DatasetPageSourceProvenance
+      type: object
+    DatasetPageSourceProvenanceListEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageSourceProvenance'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageSourceProvenanceListEnvelope
+      type: object
+    DatasetPageSummary:
+      additionalProperties: false
+      properties:
+        actionable_draft_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Actionable Draft Count
+          type: string
+        dataset_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Dataset Count
+          type: string
+        episode_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Episode Count
+          type: string
+        normalized_filters:
+          additionalProperties: true
+          title: Normalized Filters
+          type: object
+        pending_review_version_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Pending Review Version Count
+          type: string
+        returned_version_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Returned Version Count
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+      required:
+      - scope
+      - dataset_count
+      - episode_count
+      - pending_review_version_count
+      - returned_version_count
+      - actionable_draft_count
+      - normalized_filters
+      title: DatasetPageSummary
+      type: object
+    DatasetPageSummaryEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageSummary'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageSummaryEnvelope
+      type: object
+    DatasetPageVersionBootstrapData:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        operational_revision:
+          maxLength: 256
+          minLength: 1
+          title: Operational Revision
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_token:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+        version:
+          discriminator:
+            mapping:
+              READY: '#/components/schemas/DatasetPageReadyVersion'
+              RETURNED: '#/components/schemas/DatasetPageReturnedVersion'
+              REVIEWING: '#/components/schemas/DatasetPageReviewingVersion'
+            propertyName: status
+          oneOf:
+          - $ref: '#/components/schemas/DatasetPageReviewingVersion'
+          - $ref: '#/components/schemas/DatasetPageReturnedVersion'
+          - $ref: '#/components/schemas/DatasetPageReadyVersion'
+          title: Version
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - snapshot_token
+      - operational_revision
+      - version
+      title: DatasetPageVersionBootstrapData
+      type: object
+    DatasetPageVersionBootstrapEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageVersionBootstrapData'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageVersionBootstrapEnvelope
+      type: object
+    DatasetPageVersionCapacityEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageVersionCapacityFacts'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageVersionCapacityEnvelope
+      type: object
+    DatasetPageVersionCapacityFacts:
+      additionalProperties: false
+      properties:
+        actual_oss_bytes:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Actual Oss Bytes
+        basis_revision:
+          maxLength: 256
+          minLength: 1
+          title: Basis Revision
+          type: string
+        calculated_at:
+          format: date-time
+          title: Calculated At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        required_physical_bytes:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Required Physical Bytes
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        source_bytes:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Source Bytes
+        state:
+          enum:
+          - CALCULATING
+          - PARTIAL
+          - SETTLED
+          - FAILED
+          title: State
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - state
+      - calculated_at
+      - basis_revision
+      title: DatasetPageVersionCapacityFacts
+      type: object
+    DatasetPageVersionListEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            discriminator:
+              mapping:
+                READY: '#/components/schemas/DatasetPageReadyVersion'
+                RETURNED: '#/components/schemas/DatasetPageReturnedVersion'
+                REVIEWING: '#/components/schemas/DatasetPageReviewingVersion'
+              propertyName: status
+            oneOf:
+            - $ref: '#/components/schemas/DatasetPageReviewingVersion'
+            - $ref: '#/components/schemas/DatasetPageReturnedVersion'
+            - $ref: '#/components/schemas/DatasetPageReadyVersion'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      title: DatasetPageVersionListEnvelope
+      type: object
+    DatasetPageVersionManifestEnvelope:
+      additionalProperties: false
+      properties:
+        content_snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Content Snapshot Id
+          type: string
+        contract_version:
+          const: dataset-version-review.v1alpha1
+          default: dataset-version-review.v1alpha1
+          title: Contract Version
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DatasetPageManifestEntry'
+          title: Items
+          type: array
+        manifest:
+          $ref: '#/components/schemas/DatasetPageManifestSummary'
+        page_info:
+          $ref: '#/components/schemas/DatasetPageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+        snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Snapshot Id
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - snapshot_id
+      - scope
+      - request_id
+      - dataset_id
+      - version_id
+      - content_snapshot_id
+      - manifest
+      title: DatasetPageVersionManifestEnvelope
+      type: object
+    DatasetPageVersionSchema:
+      additionalProperties: false
+      properties:
+        channel_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Channel Count
+          type: string
+        channels:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageVersionSchemaChannel'
+          title: Channels
+          type: array
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        schema_snapshot:
+          $ref: '#/components/schemas/DatasetPageContentReference'
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        snapshot_token:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - snapshot_token
+      - schema_snapshot
+      - channel_count
+      title: DatasetPageVersionSchema
+      type: object
+    DatasetPageVersionSchemaChannel:
+      additionalProperties: false
+      properties:
+        channel_id:
+          maxLength: 128
+          minLength: 1
+          title: Channel Id
+          type: string
+        data_type:
+          maxLength: 128
+          minLength: 1
+          title: Data Type
+          type: string
+        name:
+          maxLength: 256
+          minLength: 1
+          title: Name
+          type: string
+        unit:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Unit
+      required:
+      - channel_id
+      - name
+      - data_type
+      title: DatasetPageVersionSchemaChannel
+      type: object
+    DatasetPageVersionSchemaEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageVersionSchema'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageVersionSchemaEnvelope
+      type: object
+    DatasetPageVersionSchemaSummary:
+      additionalProperties: false
+      properties:
+        channel_count:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Channel Count
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        schema_snapshot:
+          $ref: '#/components/schemas/DatasetPageContentReference'
+        scope:
+          $ref: '#/components/schemas/DatasetPageScope'
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - scope
+      - dataset_id
+      - version_id
+      - schema_snapshot
+      title: DatasetPageVersionSchemaSummary
+      type: object
+    DatasetPageVersionSchemaSummaryEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/DatasetPageVersionSchemaSummary'
+        meta:
+          $ref: '#/components/schemas/DatasetPageMeta'
+      required:
+      - data
+      - meta
+      title: DatasetPageVersionSchemaSummaryEnvelope
+      type: object
+info:
+  title: HC P05 dataset-page contract
+  version: '2026-08-19'
+openapi: 3.1.0
+paths:
+  /api/v1/projects/{project_id}/datasets:
+    get:
+      operationId: listDatasets
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: robot_model_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Model Id
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: query
+        name: task
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Task
+      - in: query
+        name: scene
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Scene
+      - in: query
+        name: asset_state
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Asset State
+      - in: query
+        name: storage_class
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Storage Class
+      - in: query
+        name: channels
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Channels
+      - in: query
+        name: channel_match
+        required: false
+        schema:
+          default: all
+          enum:
+          - all
+          - any
+          title: Channel Match
+          type: string
+      - in: query
+        name: created_from
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Created From
+      - in: query
+        name: created_to
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Created To
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: activity_at:desc,dataset_id:desc
+          enum:
+          - activity_at:desc,dataset_id:desc
+          - created_at:desc,dataset_id:desc
+          - name:asc,dataset_id:asc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageListEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Datasets
+      tags:
+      - datasets
+    post:
+      operationId: createDataset
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDatasetCommand'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageDatasetEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Dataset
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/bootstrap:
+    get:
+      operationId: getDatasetBootstrap
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageBootstrapEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Dataset Bootstrap
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/deletion-checks:
+    post:
+      operationId: preflightDatasetDeletion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetPageDeletionPreflightCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageDeletionPreflight'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Preflight Dataset Deletion
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/episodes/{episode_id}/revision-history:
+    get:
+      operationId: listEpisodeRevisionHistory
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 50
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageEpisodeRevisionHistoryEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Episode Revision History
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions:
+    get:
+      operationId: listDatasetVersions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: version_kind
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Version Kind
+      - in: query
+        name: version_status
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Version Status
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: created_at:desc,version_id:desc
+          enum:
+          - created_at:desc,version_id:desc
+          - created_at:asc,version_id:asc
+          - display_version:desc,version_id:desc
+          - display_version:asc,version_id:asc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 50
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageVersionListEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Dataset Versions
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/bootstrap:
+    get:
+      operationId: getDatasetVersionBootstrap
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageVersionBootstrapEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Dataset Version Bootstrap
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/capacity-facts:
+    get:
+      operationId: getDatasetVersionCapacityFacts
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageVersionCapacityEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Dataset Version Capacity Facts
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/deletion-checks:
+    post:
+      operationId: preflightVersionDeletion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetPageDeletionPreflightCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageDeletionPreflight'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Preflight Version Deletion
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/diff-jobs:
+    post:
+      operationId: createVersionDiffJob
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetPageDiffJobCommand'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageJobAccepted'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Version Diff Job
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}:
+    get:
+      operationId: getEpisodeRevision
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageEpisodeRevisionEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Episode Revision
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/episodes:
+    get:
+      operationId: listVersionEpisodes
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 2048
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: Snapshot Token
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: task
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Task
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: query
+        name: success_state
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Success State
+      - in: query
+        name: started_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Started From
+      - in: query
+        name: started_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Started To
+      - in: query
+        name: included
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Included
+      - in: query
+        name: review_status
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Review Status
+      - in: query
+        name: has_finding
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Has Finding
+      - in: query
+        name: change_type
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Change Type
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: ordinal:asc,episode_id:asc
+          enum:
+          - ordinal:asc,episode_id:asc
+          - started_at_ns:desc,episode_id:desc
+          - started_at_ns:asc,episode_id:asc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageEpisodeListEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Version Episodes
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/manifest:
+    get:
+      operationId: getVersionManifest
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageVersionManifestEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Version Manifest
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/operational-inventory:
+    get:
+      operationId: listOperationalInventory
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: operational_revision
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Operational Revision
+          type: string
+      - in: query
+        name: sort
+        required: false
+        schema:
+          const: created_at:desc,inventory_id:desc
+          default: created_at:desc,inventory_id:desc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageOperationalInventoryEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Operational Inventory
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/required-storage:
+    get:
+      operationId: listRequiredStorage
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: query
+        name: sort
+        required: false
+        schema:
+          const: role:asc,object_id:asc
+          default: role:asc,object_id:asc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageRequiredStorageEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Required Storage
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/review-checks:
+    post:
+      operationId: runVersionReviewChecks
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetPageReviewChecksCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageReviewChecksEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Run Version Review Checks
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/schema:
+    get:
+      operationId: getVersionSchema
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageVersionSchemaEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Version Schema
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/schema-summary:
+    get:
+      operationId: getDatasetVersionSchemaSummary
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageVersionSchemaSummaryEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Dataset Version Schema Summary
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/source-provenance:
+    get:
+      operationId: listDatasetVersionSourceProvenance
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: source_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Source Id
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: registered_at:desc,provenance_id:desc
+          enum:
+          - registered_at:desc,provenance_id:desc
+          - registered_at:asc,provenance_id:asc
+          - source_display_name:asc,provenance_id:asc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 50
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageSourceProvenanceListEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Dataset Version Source Provenance
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}:approve:
+    post:
+      operationId: approveVersionReview
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetPageApproveReviewCommand'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageApproveReviewResult'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Approve Version Review
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}:return:
+    post:
+      operationId: returnVersionReview
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetPageReturnReviewCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageReturnReviewEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Return Version Review
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets:facets:
+    get:
+      operationId: getDatasetFacets
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: robot_model_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Model Id
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: query
+        name: task
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Task
+      - in: query
+        name: scene
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Scene
+      - in: query
+        name: asset_state
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Asset State
+      - in: query
+        name: storage_class
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Storage Class
+      - in: query
+        name: channels
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Channels
+      - in: query
+        name: channel_match
+        required: false
+        schema:
+          default: all
+          enum:
+          - all
+          - any
+          title: Channel Match
+          type: string
+      - in: query
+        name: created_from
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Created From
+      - in: query
+        name: created_to
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Created To
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageFacetsEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Dataset Facets
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets:page-capabilities:
+    get:
+      operationId: getDatasetsPageCapabilities
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageCapabilitiesEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Page Capabilities
+      tags:
+      - datasets
+  /api/v1/projects/{project_id}/datasets:summary:
+    get:
+      operationId: getDatasetSummary
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: robot_model_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Model Id
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: query
+        name: task
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Task
+      - in: query
+        name: scene
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Scene
+      - in: query
+        name: asset_state
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Asset State
+      - in: query
+        name: storage_class
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Storage Class
+      - in: query
+        name: channels
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Channels
+      - in: query
+        name: channel_match
+        required: false
+        schema:
+          default: all
+          enum:
+          - all
+          - any
+          title: Channel Match
+          type: string
+      - in: query
+        name: created_from
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Created From
+      - in: query
+        name: created_to
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Created To
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetPageSummaryEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The dataset-page request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Dataset Summary
+      tags:
+      - datasets

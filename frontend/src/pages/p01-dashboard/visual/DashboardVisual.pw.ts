@@ -1,22 +1,27 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { assertNoSeriousOrCriticalAxe } from "../../../../e2e/visual-support/axe";
 
 const artifactDirectory = path.resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture/E03"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-      ? "../artifacts/visual/e01-e10/FE12-final/E03"
-      : "../artifacts/visual/e01-e10/E03",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture/E03"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture/E03"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+        ? "../artifacts/visual/e01-e10/FE12-final/E03"
+        : "../artifacts/visual/e01-e10/E03",
 );
 const repairArtifactDirectory = path.resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-      ? "../artifacts/visual/e01-e10/FE12-final"
-      : "../artifacts/visual/e01-e10/FE11-repair",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+        ? "../artifacts/visual/e01-e10/FE12-final"
+        : "../artifacts/visual/e01-e10/FE11-repair",
 );
 
 test.beforeAll(() => {
@@ -99,8 +104,8 @@ for (const viewport of viewports) {
       name: "采集到发布的固定八阶段",
     });
     await expect(rail.getByRole("listitem")).toHaveCount(8);
-    await expect(page.getByText("SAVED", { exact: true })).toBeVisible();
-    await expect(page.getByText("RECEIVED", { exact: true })).toBeVisible();
+    await expect(page.getByText("已采集", { exact: true })).toBeVisible();
+    await expect(page.getByText("已接收", { exact: true })).toBeVisible();
     await expect(rail.getByText("30 Hz 对齐", { exact: true })).toBeVisible();
     await expect(rail.getByText("数据标注", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: /进入发布/ })).toBeVisible();
@@ -110,7 +115,7 @@ for (const viewport of viewports) {
       const pending = document.querySelector(
         '[aria-labelledby="dashboard-pending-title"]',
       );
-      const side = document.querySelector('[aria-label="最近活动与局部状态"]');
+      const side = document.querySelector('[aria-label="最近活动"]');
       const rail = document.querySelector(
         '[aria-label="采集到发布的固定八阶段"]',
       );
@@ -134,6 +139,10 @@ for (const viewport of viewports) {
     expect(geometry.pendingWidth / geometry.sideWidth).toBeGreaterThan(1.55);
     expect(geometry.pendingWidth / geometry.sideWidth).toBeLessThan(2.3);
     expect(geometry.railOverflow).toBeLessThanOrEqual(1);
+    await expect(page.getByRole("heading", { name: "局部状态" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByText("采集覆盖率", { exact: true })).toHaveCount(0);
 
     const publishLink = page.getByRole("link", { name: /进入发布/ });
     await publishLink.focus();
@@ -169,6 +178,11 @@ for (const viewport of viewports) {
         .map((element) => element.outerHTML),
     );
     expect(unnamedInteractiveNodes).toEqual([]);
+    await assertNoSeriousOrCriticalAxe(
+      page,
+      path.join(artifactDirectory, `axe-${viewport.name}.json`),
+      "#main-content",
+    );
 
     await page.screenshot({
       path: path.join(artifactDirectory, `${viewport.name}.png`),
@@ -211,24 +225,6 @@ for (const viewport of viewports) {
     }
   });
 }
-
-test("E03 transport failure degrades only the coverage region", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/dashboard?mockScenario=dashboard:partial-error", {
-    waitUntil: "domcontentloaded",
-  });
-
-  await expect(page.getByRole("heading", { name: "信号轨道" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "我的待办" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "最近活动" })).toBeVisible();
-  await expect(page.getByText("此区域暂时不可用")).toBeVisible({
-    timeout: 15_000,
-  });
-  await expect(page.getByText("req_fx_dashboard_coverage_503")).toBeVisible();
-  await expect(page.getByRole("link", { name: /进入发布/ })).toBeVisible();
-});
 
 test("E03 empty state keeps the same information architecture", async ({
   page,

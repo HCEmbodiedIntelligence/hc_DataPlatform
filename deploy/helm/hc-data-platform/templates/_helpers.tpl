@@ -59,6 +59,13 @@ hc-data-platform.io/release-id: {{ .Values.global.releaseId | quote }}
 {{- end }}
 
 {{- define "hc-data-platform.backendSecretEnv" -}}
+{{- with .Values.backend.existingSecrets.application.autoAnnotationProviderApiKey }}
+- name: HC_AUTO_ANNOTATION_PROVIDER_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "backend.existingSecrets.application.name is required" $.Values.backend.existingSecrets.application.name | quote }}
+      key: {{ . | quote }}
+{{- end }}
 - name: HC_POSTGRES_DSN
   valueFrom:
     secretKeyRef:
@@ -79,4 +86,26 @@ hc-data-platform.io/release-id: {{ .Values.global.releaseId | quote }}
     secretKeyRef:
       name: {{ required "backend.existingSecrets.application.name is required" .Values.backend.existingSecrets.application.name | quote }}
       key: {{ required "backend.existingSecrets.application.cursorSecretKey is required" .Values.backend.existingSecrets.application.cursorSecretKey | quote }}
+- name: HC_DATA_SOURCE_CREDENTIAL_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "backend.existingSecrets.application.name is required" .Values.backend.existingSecrets.application.name | quote }}
+      key: {{ required "backend.existingSecrets.application.dataSourceCredentialKeyKey is required" .Values.backend.existingSecrets.application.dataSourceCredentialKeyKey | quote }}
+- name: HC_AUTH_ABUSE_HMAC_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "backend.existingSecrets.application.name is required" .Values.backend.existingSecrets.application.name | quote }}
+      key: {{ required "backend.existingSecrets.application.authAbuseHmacSecretKey is required" .Values.backend.existingSecrets.application.authAbuseHmacSecretKey | quote }}
+- name: HC_AUTH_TURNSTILE_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "backend.existingSecrets.application.name is required" .Values.backend.existingSecrets.application.name | quote }}
+      key: {{ required "backend.existingSecrets.application.authTurnstileSecretKey is required" .Values.backend.existingSecrets.application.authTurnstileSecretKey | quote }}
+{{ if and (eq (toString .Values.backend.config.authRecoveryEnabled) "true") .Values.backend.config.authSmtpUsername }}
+- name: HC_AUTH_SMTP_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "backend.existingSecrets.application.name is required" .Values.backend.existingSecrets.application.name | quote }}
+      key: {{ required "backend.existingSecrets.application.authSmtpPasswordKey is required" .Values.backend.existingSecrets.application.authSmtpPasswordKey | quote }}
+{{ end }}
 {{- end }}

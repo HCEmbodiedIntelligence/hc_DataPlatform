@@ -7,11 +7,15 @@ contract test can prove that checked-in bytes are reproducible.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import json
 import struct
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from hc_data_platform.ingest.ports import crc64_ecma
 
@@ -26,6 +30,36 @@ BASE_TOPICS = (
     (3, "/action", "hc_msgs/Action", "float64[] value"),
 )
 REAR_CAMERA = (4, "/camera/rear/image", "sensor_msgs/Image", "uint8[] data")
+
+
+def _is_camera_topic(topic: str) -> bool:
+    return topic.startswith("/camera/")
+
+
+def _schema_name(topic: str) -> str:
+    return next(item[2] for item in BASE_TOPICS + (REAR_CAMERA,) if item[1] == topic)
+
+
+def _camera_message(topic: str, sequence: int) -> bytes:
+    output = io.BytesIO()
+    base = 48 if "front" in topic else 144
+    Image.new(
+        "RGB",
+        (32, 24),
+        color=((base + sequence * 3) % 256, (base + sequence * 5) % 256, base),
+    ).save(output, format="JPEG", quality=88)
+    encoded = output.getvalue()
+    return json.dumps(
+        {
+            "encoding": "jpeg",
+            "width": 32,
+            "height": 24,
+            "jpeg_sha256": hashlib.sha256(encoded).hexdigest(),
+            "data_base64": base64.b64encode(encoded).decode("ascii"),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def _string(value: str) -> bytes:
@@ -48,6 +82,28 @@ def _message(channel_id: int, sequence: int, timestamp_ns: int, payload: bytes) 
     )
 
 
+def _ros2_cdr_sequence(field_values: tuple[float, ...]) -> bytes:
+    """Encode one little-endian ROS 2 CDR ``float64[]`` field.
+
+    The four-byte XCDR1 encapsulation is followed by the sequence length and
+    naturally eight-byte-aligned float64 values. Keeping the fixture generator
+    independent from a ROS installation makes these exact bytes reproducible,
+    while the production verifier still decodes them with mcap-ros2-support.
+    """
+
+    return b"\x00\x01\x00\x00" + struct.pack(
+        f"<I4x{len(field_values)}d", len(field_values), *field_values
+    )
+
+
+def _ros2_message(topic: str, sequence: int) -> bytes:
+    if topic == "/joint_states":
+        return _ros2_cdr_sequence((sequence / 100.0, -sequence / 100.0))
+    if topic == "/action":
+        return _ros2_cdr_sequence((sequence / 29.0, 1.0 - sequence / 29.0))
+    raise ValueError(f"no deterministic ROS 2 fixture encoder for {topic}")
+
+
 def _mcap(
     *,
     multi_camera: bool = False,
@@ -58,12 +114,13 @@ def _mcap(
     selected = tuple(topic for topic in topics if topic[1] not in omitted_topics)
     records = [_record(0x01, _string("ros2") + _string("hc-be22-fixture/1"))]
     for schema_id, _topic, schema_name, schema_text in selected:
+        schema_encoding = "jsonschema" if _is_camera_topic(_topic) else "ros2msg"
         records.append(
             _record(
                 0x03,
                 struct.pack("<H", schema_id)
                 + _string(schema_name)
-                + _string("ros2msg")
+                + _string(schema_encoding)
                 + _byte_array(schema_text.encode("utf-8")),
             )
         )
@@ -73,7 +130,7 @@ def _mcap(
                 0x04,
                 struct.pack("<HH", channel_id, channel_id)
                 + _string(topic)
-                + _string("cdr")
+                + _string("json" if _is_camera_topic(topic) else "cdr")
                 + struct.pack("<I", 0),
             )
         )
@@ -87,7 +144,9 @@ def _mcap(
                     channel_id,
                     sequence,
                     timestamp_ns,
-                    f"{topic}:{sequence:02d}".encode(),
+                    _camera_message(topic, sequence)
+                    if _is_camera_topic(topic)
+                    else _ros2_message(topic, sequence),
                 )
             )
     records.extend(
@@ -121,9 +180,18 @@ def _manifest(
         "robot_id": "be22-test-robot",
         "start_time": "2023-11-14T22:13:20Z",
         "end_time": "2023-11-14T22:13:21Z",
-        "cameras": [{"camera_id": camera_id, "topic": topic} for camera_id, topic in cameras],
+        "cameras": [
+            {"camera_id": camera_id, "topic": topic, "encoding": "jpeg"}
+            for camera_id, topic in cameras
+        ],
         "topics": [
-            {"name": topic, "required": topic in expected_topics} for topic in actual_topics
+            {
+                "name": topic,
+                "required": topic in expected_topics,
+                "message_encoding": "json" if _is_camera_topic(topic) else "cdr",
+                "schema_name": _schema_name(topic),
+            }
+            for topic in actual_topics
         ],
         "expected_topics": list(expected_topics),
         "actual_topics": list(actual_topics),

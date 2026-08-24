@@ -56,6 +56,8 @@ const riskyCapability: AccessRequestRow = {
 const defaultSearch: AccessSearch = {
   tab: "membership-requests",
   status: "ALL",
+  accountState: "ALL",
+  accountRole: "ALL",
   order: "recent",
   page: 1,
   pageSize: 10,
@@ -101,6 +103,7 @@ function renderView(overrides: Partial<AccessApprovalViewProps> = {}) {
     principalId: "admin-1",
     decisionPending: false,
     decisionError: null,
+    decisionRequestId: pendingMembership.requestId,
     onDecisionSuccessDismiss: vi.fn(),
     onSearchChange: vi.fn(),
     onRefresh: vi.fn(),
@@ -180,12 +183,11 @@ describe("P18 E09 access approval view", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows high-impact facts without collecting a password or one-time code", () => {
+  it("shows high-impact facts without inventing a reauthentication input", () => {
     renderView({ search: { ...defaultSearch, tab: "capability-requests" } });
 
     expect(screen.getByText("请求包含高影响能力")).toBeVisible();
-    expect(screen.getByText("再认证合同尚未开放")).toBeVisible();
-    expect(screen.getByText(/不会采集密码或动态码/u)).toBeVisible();
+    expect(screen.queryByText(/尚未开放/u)).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText(/密码|动态码|验证码/u),
     ).not.toBeInTheDocument();
@@ -230,6 +232,7 @@ describe("P18 E09 access approval view", () => {
 
   it("disables the stale projection after a confirmed decision to prevent duplicate approval", () => {
     const { props } = renderView({
+      decisionRequestId: pendingMembership.requestId,
       decisionSuccessMessage: "批准已由服务端确认。",
     });
 
@@ -248,6 +251,18 @@ describe("P18 E09 access approval view", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭成功提示" }));
     expect(props.onDecisionSuccessDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("does not let a previous request success disable a newly opened request", () => {
+    renderView({
+      decisionRequestId: "previous-request",
+      decisionSuccessMessage: "批准已由服务端确认。",
+    });
+
+    expect(
+      screen.getByRole("button", { name: "批准申请", pressed: true }),
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "提交批准申请" })).toBeEnabled();
   });
 
   it("keeps the polite page status after refetch removes the selected row and drawer", () => {
@@ -286,13 +301,13 @@ describe("P18 E09 access approval view", () => {
     expect(screen.queryByText("ACCESS_409")).not.toBeInTheDocument();
   });
 
-  it("keeps a real high-impact 403 and request ID as the reauthentication failure result", () => {
+  it("keeps a real high-impact 403 and request ID as the decision failure result", () => {
     renderView({
       search: { ...defaultSearch, tab: "capability-requests" },
       decisionError: domainError(403),
+      decisionRequestId: riskyCapability.requestId,
     });
 
-    expect(screen.getByText("再认证合同尚未开放")).toBeVisible();
     expect(screen.getByText("访问申请操作失败 403")).toBeVisible();
     expect(screen.getByText("ACCESS_403")).toBeVisible();
     expect(screen.getByText("request-403")).toBeVisible();

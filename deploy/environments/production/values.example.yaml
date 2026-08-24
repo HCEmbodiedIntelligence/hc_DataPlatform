@@ -34,6 +34,31 @@ backend:
     environment: production
     serviceVersion: platform-v2026.08.17.1
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
+    # Replace with the exact organization/project/region triples consumed by this worker pool.
+    outboxScopes: '["production-organization/production-project/production-region"]'
+    # Internal/provider gateway credentials are referenced via
+    # backend.existingSecrets.application.autoAnnotationProviderApiKey.
+    autoAnnotationProviderEndpoint: https://annotation-gateway.example.com/v1/annotate
+    autoAnnotationProviderModels: '["vlm-production-v1"]'
+    sessionIdleTtlSeconds: "1800"
+    sessionAbsoluteTtlSeconds: "86400"
+    sessionTouchIntervalSeconds: "60"
+    maxActiveSessions: "5"
+    authAbuseEnabled: "true"
+    authClientIpMode: trusted_proxy
+    # Replace with the exact ingress/LB CIDRs that are allowed to set X-Forwarded-For.
+    authTrustedProxyCidrs: '["10.0.0.0/8"]'
+    authChallengeProvider: turnstile
+    # Replace with this deployment's public Turnstile site key and exact browser hostname.
+    authTurnstileSiteKey: replace-with-production-turnstile-site-key
+    authTurnstileExpectedHostnames: '["data-platform.example.com"]'
+    authTurnstileConnectTimeoutSeconds: "3"
+    authTurnstileReadTimeoutSeconds: "5"
+    authRecoveryEnabled: "true"
+    authRecoveryPublicBaseUrl: https://data-platform.example.com
+    authRecoveryEmailFrom: no-reply@example.com
+    authSmtpHost: smtp.example.com
+    authSmtpUsername: hc-data-platform-production
     # Replace with the real browser-reachable HTTPS S3 endpoint. Infrastructure must
     # separately configure the bucket's exact platform-origin CORS allowlist.
     objectStorePublicEndpoint: https://uploads.example.com

@@ -23,6 +23,7 @@ const scope = {
 } as const;
 const pendingMembership: MembershipRequest = {
   request_id: "membership-pending",
+  organization_id: scope.organizationId,
   project_id: scope.projectId,
   requester_id: "contractor-17",
   status: "PENDING",
@@ -93,6 +94,7 @@ beforeEach(() => {
     },
     authorizationLoading: false,
     authorizationFailed: false,
+    platformCapabilities: [],
   });
 });
 
@@ -102,6 +104,63 @@ afterEach(() => {
 });
 
 describe("P18 page-owned decision feedback", () => {
+  it("does not issue account or approval requests without either read grant", () => {
+    useShellStore.setState({
+      scope: null,
+      authorization: null,
+      platformCapabilities: [],
+    });
+
+    renderPage();
+
+    expect(screen.getByRole("alert", { name: "账户与权限" })).toHaveAttribute(
+      "data-page-state",
+      "forbidden",
+    );
+    expect(
+      screen.getByText("当前身份没有项目审批读取权限或平台账号读取权限。"),
+    ).toBeVisible();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it("opens only global user management for a platform administrator without project scope", async () => {
+    requestMock.mockResolvedValue({
+      items: [],
+      page: 1,
+      page_size: 10,
+      total: 0,
+    });
+    useShellStore.setState({
+      scope: null,
+      authorization: null,
+      platformCapabilities: [
+        "platform.account.read",
+        "platform.account.manage",
+      ],
+    });
+
+    renderPage();
+
+    await screen.findByRole("region", { name: "平台用户管理" });
+    expect(screen.getByRole("tab", { name: "用户管理" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      screen.queryByRole("tab", { name: /项目加入申请/u }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /权限申请/u }),
+    ).not.toBeInTheDocument();
+    expect(requestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/platform/accounts",
+        scopeMode: "session",
+      }),
+    );
+  });
+
   it("keeps a polite dismissible success after the successful mutation refetch removes the selected row and drawer", async () => {
     const user = userEvent.setup();
     let membershipRows: MembershipRequest[] = [pendingMembership];

@@ -1,34 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button } from "antd";
-import { ArrowUp, FileJson2, ShieldCheck, Wifi, WifiOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Modal } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { dataUploadRoutes } from "../../app/shell/navigation-routes";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { PageState, UiPageHeader } from "../../shared/ui";
-import { ManifestPreflightPanel } from "./components/ManifestPreflightPanel";
+import { UploadConfirmationDialog } from "./components/UploadConfirmationDialog";
 import {
   UploadMethodPanel,
+  type BrowserSelectionMode,
   type UploadSourceChoice,
 } from "./components/UploadMethodPanel";
+import { UploadPrecheckPanel } from "./components/UploadPrecheckPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
 import { UploadRecordsPanel } from "./components/UploadRecordsPanel";
 import {
   listFormalUploadSessions,
   preflightUploadManifest,
-  type ManifestPreflight,
   type UploadStatus,
 } from "./formal-client";
 import styles from "./styles.module.css";
 import {
-  findManifestFile,
-  findRawPackageFile,
-  parseManifestFile,
-  uploadProblemCopy,
-  validateObjectStorageUri,
-  type UploadProblemCopy,
-} from "./upload-contract";
+  inspectLocalUploadSelection,
+  type LocalUploadSelection,
+  type ServerCheckedUploadUnit,
+  type UploadFlowState,
+} from "./upload-flow";
+import { uploadProblemCopy } from "./upload-contract";
 import { useUploadQueueStore } from "./upload-queue-store";
 
 function useNetworkStatus(): boolean {
@@ -48,6 +47,32 @@ function useNetworkStatus(): boolean {
   return online;
 }
 
+function queueFlowPhase(
+  items: ReturnType<typeof useUploadQueueStore.getState>["items"],
+): "queue_ready" | "uploading" | "completed" | null {
+  if (items.length === 0) return null;
+  if (
+    items.every((item) =>
+      ["committed", "cancelled"].includes(item.transferStatus),
+    )
+  )
+    return "completed";
+  if (
+    items.some((item) =>
+      ["waiting", "preparing", "uploading", "pausing", "finalizing"].includes(
+        item.transferStatus,
+      ),
+    )
+  )
+    return "uploading";
+  return "queue_ready";
+}
+
+function folderNameFromFiles(files: readonly File[]): string {
+  const path = files[0]?.webkitRelativePath;
+  return path?.split("/")[0] || "所选文件";
+}
+
 export default function UploadJobsPage() {
   const scopeSnapshot = useIngestScope();
   const scope = useMemo(
@@ -63,27 +88,30 @@ export default function UploadJobsPage() {
   const navigate = useNavigate();
   const newUploadTabRef = useRef<HTMLAnchorElement>(null);
   const recordsTabRef = useRef<HTMLAnchorElement>(null);
+  const localInspectionNonce = useRef(0);
   const activeTab =
     location.pathname === dataUploadRoutes.records ? "records" : "new";
   const online = useNetworkStatus();
+
   const [sourceType, setSourceType] =
     useState<UploadSourceChoice>("BROWSER_MULTIPART");
+  const [browserSelectionMode, setBrowserSelectionMode] =
+    useState<BrowserSelectionMode>("folder");
   const [files, setFiles] = useState<readonly File[]>([]);
   const [objectStorageUri, setObjectStorageUri] = useState("");
-  const [preflight, setPreflight] = useState<ManifestPreflight | null>(null);
-  const [preflightStatus, setPreflightStatus] = useState<
-    "idle" | "loading" | "ready" | "error"
-  >("idle");
-  const [preflightProblem, setPreflightProblem] =
-    useState<UploadProblemCopy | null>(null);
-  const [preflightNonce, setPreflightNonce] = useState(0);
+  const [flow, setFlow] = useState<UploadFlowState>({ phase: "idle" });
   const [packageFilter, setPackageFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<UploadStatus>();
 
   const queueItems = useUploadQueueStore((state) => state.items);
   const recovering = useUploadQueueStore((state) => state.recovering);
+  const recoveryProblem = useUploadQueueStore((state) => state.recoveryProblem);
   const recoverQueue = useUploadQueueStore((state) => state.recover);
-  const startUpload = useUploadQueueStore((state) => state.start);
+  const prepareUpload = useUploadQueueStore((state) => state.prepare);
+  const beginPreparedUpload = useUploadQueueStore(
+    (state) => state.beginPrepared,
+  );
+  const folderBatch = useUploadQueueStore((state) => state.folderBatch);
   const pauseUpload = useUploadQueueStore((state) => state.pause);
   const resumeUpload = useUploadQueueStore((state) => state.resume);
   const retryFailedParts = useUploadQueueStore(
@@ -94,61 +122,42 @@ export default function UploadJobsPage() {
   );
   const cancelUpload = useUploadQueueStore((state) => state.cancel);
   const clearSettled = useUploadQueueStore((state) => state.clearSettled);
-  const canRead = capabilities.has("upload.read");
-  const canManage = capabilities.has("upload.manage");
+  const isProjectAdmin = capabilities.has("project.access.manage");
+  const canRead = capabilities.has("upload.read") || isProjectAdmin;
+  const canManage = capabilities.has("upload.manage") || isProjectAdmin;
 
   useEffect(() => {
     if (scope && canRead) void recoverQueue(scope);
   }, [canRead, recoverQueue, scope]);
 
   useEffect(() => {
-    if (!scope || files.length === 0) {
-      setPreflight(null);
-      setPreflightProblem(null);
-      setPreflightStatus("idle");
+    if (
+      flow.phase === "folder_selected" ||
+      flow.phase === "confirming" ||
+      flow.phase === "prechecking" ||
+      flow.phase === "precheck_failed"
+    )
       return;
-    }
-    const controller = new AbortController();
-    const manifestFile = findManifestFile(files);
-    setPreflight(null);
-    setPreflightProblem(null);
-    setPreflightStatus("loading");
-    void (async () => {
-      try {
-        if (!manifestFile) throw new Error("MANIFEST_FILE_MISSING");
-        const manifest = await parseManifestFile(manifestFile);
-        const result = await preflightUploadManifest(
-          scope,
-          manifest,
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        setPreflight(result);
-        setPreflightStatus("ready");
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        const normalized =
-          error instanceof Error && error.message === "MANIFEST_FILE_MISSING"
-            ? uploadProblemCopy({})
-            : uploadProblemCopy(error);
-        setPreflightProblem(
-          error instanceof Error && error.message === "MANIFEST_FILE_MISSING"
-            ? {
-                title: "未发现 Manifest",
-                detail:
-                  "所选数据包中没有可识别的 .json Manifest；请选择 Manifest 与 RAW_MCAP。",
-                requestId: null,
-                retryable: false,
-                status: 422,
-                problemCode: "MANIFEST_FILE_MISSING",
-              }
-            : normalized,
-        );
-        setPreflightStatus("error");
-      }
-    })();
-    return () => controller.abort();
-  }, [files, preflightNonce, scope]);
+    const next = queueFlowPhase(queueItems);
+    if (next && next !== flow.phase) setFlow({ phase: next });
+    if (!next && flow.phase !== "idle" && !recoveryProblem)
+      setFlow({ phase: "idle" });
+  }, [flow.phase, queueItems, recoveryProblem]);
+
+  useEffect(() => {
+    const hasActiveBrowserTransfer = queueItems.some(
+      (item) =>
+        item.sourceType === "BROWSER_MULTIPART" &&
+        ["uploading", "pausing", "finalizing"].includes(item.transferStatus),
+    );
+    if (!hasActiveBrowserTransfer) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [queueItems]);
 
   const records = useQuery({
     queryKey: [
@@ -174,32 +183,189 @@ export default function UploadJobsPage() {
     },
   });
 
-  const objectUriError =
-    sourceType === "OBJECT_STORAGE_REFERENCE"
-      ? validateObjectStorageUri(objectStorageUri)
-      : null;
-  const rawPackageFile = useMemo(
-    () =>
-      preflight && sourceType === "BROWSER_MULTIPART"
-        ? findRawPackageFile(files, preflight.manifest)
-        : null,
-    [files, preflight, sourceType],
+  const resetSelection = useCallback(() => {
+    localInspectionNonce.current += 1;
+    setFiles([]);
+    setFlow({ phase: "idle" });
+  }, []);
+
+  const abandonPreparedItems = useCallback(
+    async (itemIds: readonly string[]) => {
+      await Promise.allSettled(itemIds.map((itemId) => cancelUpload(itemId)));
+      clearSettled();
+      resetSelection();
+    },
+    [cancelUpload, clearSettled, resetSelection],
   );
-  const localSizeMatches =
-    !rawPackageFile ||
-    !preflight ||
-    rawPackageFile.size === preflight.manifest.file_size;
-  const startBlockedReason = !online
-    ? "网络未连接"
-    : !canManage
-      ? "当前授权只有查看权限"
-      : preflightStatus !== "ready" || !preflight
-        ? "请先通过 Manifest 预检"
-        : sourceType === "BROWSER_MULTIPART" && !rawPackageFile
-          ? "未找到 Manifest 声明的 RAW_MCAP"
-          : !localSizeMatches
-            ? "本地文件大小与 Manifest 不一致"
-            : objectUriError;
+
+  const confirmResetSelection = useCallback(
+    (itemIds: readonly string[] = []) => {
+      if (itemIds.length === 0) {
+        resetSelection();
+        return;
+      }
+      Modal.confirm({
+        title: "取消已创建的上传任务？",
+        content:
+          "平台已创建部分上传任务，但尚未开始传输。返回重新选择将调用服务端取消接口并中止这些任务，且不能直接恢复。",
+        okText: "取消任务并重新选择",
+        cancelText: "继续处理",
+        okButtonProps: { danger: true },
+        onOk: () => abandonPreparedItems(itemIds),
+      });
+    },
+    [abandonPreparedItems, resetSelection],
+  );
+
+  const inspectFiles = useCallback(
+    async (nextFiles: readonly File[], mode: BrowserSelectionMode) => {
+      const nonce = ++localInspectionNonce.current;
+      setBrowserSelectionMode(mode);
+      setFiles(nextFiles);
+      if (nextFiles.length === 0) {
+        setFlow({ phase: "idle" });
+        return;
+      }
+      setFlow({
+        phase: "folder_selected",
+        folderName: folderNameFromFiles(nextFiles),
+      });
+      const selection = await inspectLocalUploadSelection({
+        sourceType,
+        browserSelectionMode: mode,
+        files: nextFiles,
+        objectStorageUri,
+      });
+      if (localInspectionNonce.current !== nonce) return;
+      setFlow({ phase: "confirming", selection });
+    },
+    [objectStorageUri, sourceType],
+  );
+
+  const changeSourceType = useCallback((value: UploadSourceChoice) => {
+    localInspectionNonce.current += 1;
+    setSourceType(value);
+    setBrowserSelectionMode(
+      value === "BROWSER_MULTIPART" ? "folder" : "package",
+    );
+    setFiles([]);
+    setFlow({ phase: "idle" });
+  }, []);
+
+  const performServerPrecheck = useCallback(
+    async (
+      selection: LocalUploadSelection,
+      previouslyPreparedItemIds: readonly string[] = [],
+    ) => {
+      if (!scope || !canManage || !online || selection.problems.length > 0)
+        return;
+      setFlow({
+        phase: "folder_selected",
+        folderName: selection.folderName,
+      });
+      const confirmedSelection = await inspectLocalUploadSelection({
+        sourceType: selection.sourceType,
+        browserSelectionMode: selection.browserSelectionMode,
+        files: selection.files,
+        objectStorageUri: selection.objectStorageUri,
+      });
+      if (
+        confirmedSelection.problems.length > 0 ||
+        confirmedSelection.units.length === 0
+      ) {
+        setFlow({
+          phase: "confirming",
+          selection: confirmedSelection,
+          preparedItemIds: previouslyPreparedItemIds,
+        });
+        return;
+      }
+      setFlow({
+        phase: "prechecking",
+        selection: confirmedSelection,
+        stage: "submitting_manifest",
+        completedUnits: 0,
+      });
+      const checked: ServerCheckedUploadUnit[] = [];
+      const preparedIds = [...previouslyPreparedItemIds];
+      try {
+        for (const local of confirmedSelection.units) {
+          setFlow({
+            phase: "prechecking",
+            selection: confirmedSelection,
+            stage: "validating_manifest",
+            completedUnits: checked.length,
+          });
+          const preflight = await preflightUploadManifest(
+            scope,
+            local.manifest,
+          );
+          checked.push({ local, preflight });
+          setFlow({
+            phase: "prechecking",
+            selection: confirmedSelection,
+            stage: "validating_manifest",
+            completedUnits: checked.length,
+          });
+        }
+
+        for (const [unitIndex, unit] of checked.entries()) {
+          setFlow({
+            phase: "prechecking",
+            selection: confirmedSelection,
+            stage: "creating_queue",
+            completedUnits: unitIndex,
+          });
+          const itemId = await prepareUpload({
+            scope,
+            preflight: unit.preflight,
+            sourceType: confirmedSelection.sourceType,
+            files: unit.local.rawFile
+              ? [unit.local.manifestFile, unit.local.rawFile]
+              : [unit.local.manifestFile],
+            objectStorageUri: confirmedSelection.objectStorageUri,
+            idempotencyKey: `confirmed-upload:${unit.preflight.manifest_fingerprint}`,
+            deferPartAuthorization: true,
+          });
+          if (!preparedIds.includes(itemId)) preparedIds.push(itemId);
+          setFlow({
+            phase: "prechecking",
+            selection: confirmedSelection,
+            stage: "creating_queue",
+            completedUnits: unitIndex + 1,
+          });
+        }
+
+        setFiles([]);
+        setFlow({ phase: "queue_ready" });
+        void (async () => {
+          for (const itemId of preparedIds) {
+            await beginPreparedUpload(itemId);
+          }
+        })();
+      } catch (error) {
+        const problem = uploadProblemCopy(error);
+        setFlow({
+          phase: "precheck_failed",
+          selection: confirmedSelection,
+          problem,
+          preparedItemIds: preparedIds,
+        });
+      }
+    },
+    [beginPreparedUpload, canManage, online, prepareUpload, scope],
+  );
+
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLAnchorElement>,
+    target: string,
+    targetRef: React.RefObject<HTMLAnchorElement | null>,
+  ) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    void navigate(target);
+    queueMicrotask(() => targetRef.current?.focus());
+  };
 
   if (!scope) {
     return (
@@ -227,37 +393,25 @@ export default function UploadJobsPage() {
     );
   }
 
-  const changeSourceType = (value: UploadSourceChoice) => {
-    setSourceType(value);
-    setFiles([]);
-    setPreflight(null);
-    setPreflightProblem(null);
-    setPreflightStatus("idle");
-  };
-
-  const beginUpload = () => {
-    if (!preflight || startBlockedReason) return;
-    void startUpload({ scope, preflight, sourceType, files, objectStorageUri });
-    setFiles([]);
-    setPreflight(null);
-    setPreflightProblem(null);
-    setPreflightStatus("idle");
-    if (sourceType === "OBJECT_STORAGE_REFERENCE") setObjectStorageUri("");
-  };
-
-  const handleTabKeyDown = (
-    event: React.KeyboardEvent<HTMLAnchorElement>,
-    target: string,
-    targetRef: React.RefObject<HTMLAnchorElement | null>,
-  ) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    void navigate(target);
-    queueMicrotask(() => targetRef.current?.focus());
-  };
+  const recoveryFailureVisible =
+    flow.phase === "idle" && recoveryProblem !== null;
+  const selectionVisible =
+    !recoveryFailureVisible &&
+    (flow.phase === "idle" ||
+      flow.phase === "folder_selected" ||
+      flow.phase === "confirming");
+  const precheckVisible =
+    flow.phase === "prechecking" || flow.phase === "precheck_failed";
+  const queueVisible =
+    flow.phase === "queue_ready" ||
+    flow.phase === "uploading" ||
+    flow.phase === "completed" ||
+    recoveryFailureVisible;
+  const failedPrecheckItemIds =
+    flow.phase === "precheck_failed" ? flow.preparedItemIds : [];
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-upload-flow={flow.phase}>
       <UiPageHeader
         title="数据上传"
         breadcrumbs={[
@@ -302,117 +456,93 @@ export default function UploadJobsPage() {
           role="tabpanel"
           aria-label="新建上传"
         >
-          {!canManage ? (
+          {!canManage && selectionVisible ? (
             <Alert
               type="warning"
               showIcon
-              title="当前为只读模式"
-              description="可以查看 Manifest 预检结构和上传记录，但当前授权不能创建、暂停、恢复、重试或取消上传。"
+              title="当前账号缺少上传权限"
+              description="你仍可选择文件夹并查看本地识别结果，但“确认上传”会保持禁用，不会创建任务或执行服务端预检。"
             />
           ) : null}
-          <div className={styles.uploadWorkspace}>
-            <UploadMethodPanel
-              sourceType={sourceType}
-              files={files}
-              objectStorageUri={objectStorageUri}
-              projectId={scope.projectId}
-              regionCode={scope.regionCode}
-              preflight={preflight}
-              disabled={!canManage}
-              onSourceTypeChange={changeSourceType}
-              onFilesChange={setFiles}
-              onObjectStorageUriChange={setObjectStorageUri}
-            />
-            <ManifestPreflightPanel
-              status={preflightStatus}
-              preflight={preflight}
-              problem={preflightProblem}
-              onRetry={() => setPreflightNonce((value) => value + 1)}
-            />
-            <UploadQueuePanel
-              items={queueItems}
-              recovering={recovering}
-              canManage={canManage}
-              onPause={(id) => void pauseUpload(id)}
-              onResume={(id) => void resumeUpload(id)}
-              onRetry={(id) => void retryFailedParts(id)}
-              onCancel={(id) => void cancelUpload(id)}
-              onReattach={(id, file) => void reattachAndResume(id, file)}
-              onClearSettled={clearSettled}
-            />
-          </div>
 
-          <section
-            className={styles.securityNotice}
-            aria-labelledby="upload-security-heading"
-          >
-            <header>
-              <ShieldCheck size={17} aria-hidden="true" />
-              <h2 id="upload-security-heading">
-                安全与操作提示 <small>（公网环境）</small>
-              </h2>
-            </header>
-            <div>
-              <article>
-                <strong>完整性</strong>
-                <span>
-                  Manifest 预检只验证声明；提交时服务端再核验 SHA-256、CRC64
-                  与对象大小。
-                </span>
-              </article>
-              <article>
-                <strong>大小限制</strong>
-                <span>
-                  Manifest ≤ 1 MiB；单包与文件声明合计 ≤ 5 TiB；最多 10,000
-                  个分片。
-                </span>
-              </article>
-              <article>
-                <strong>支持格式</strong>
-                <span>
-                  V1 要求且仅允许 1 个 RAW_MCAP；Manifest 最多 256
-                  个文件声明、128 路相机。
-                </span>
-              </article>
-              <article>
-                <strong>敏感信息与审计</strong>
-                <span>
-                  禁止上传凭据、密钥或个人隐私；预检、暂停、恢复、取消和提交均记录请求事实。
-                </span>
-              </article>
-            </div>
-          </section>
-
-          <footer className={styles.uploadActions}>
-            <div>
-              <span
-                className={
-                  online ? styles.networkOnline : styles.networkOffline
+          {selectionVisible ? (
+            <div className={styles.serialWorkspace}>
+              <UploadMethodPanel
+                sourceType={sourceType}
+                browserSelectionMode={browserSelectionMode}
+                files={files}
+                objectStorageUri={objectStorageUri}
+                disabled={flow.phase === "folder_selected"}
+                localChecking={flow.phase === "folder_selected"}
+                onSourceTypeChange={changeSourceType}
+                onFilesChange={(nextFiles, mode) =>
+                  void inspectFiles(nextFiles, mode)
                 }
-              >
-                {online ? (
-                  <Wifi size={13} aria-hidden="true" />
-                ) : (
-                  <WifiOff size={13} aria-hidden="true" />
-                )}
-                {online ? "公网连接可用" : "网络已断开"}
-              </span>
-              <FileJson2 size={14} aria-hidden="true" />
-              <span>
-                {startBlockedReason ??
-                  `预检已通过：${preflight?.identifiers.data_package_id}`}
-              </span>
+                onObjectStorageUriChange={setObjectStorageUri}
+              />
+              <div className={styles.idleQueueHint} aria-live="polite">
+                <strong>上传队列为空</strong>
+                <span>确认上传并通过服务端预检后，队列才会开始处理。</span>
+              </div>
+              {flow.phase === "confirming" ? (
+                <UploadConfirmationDialog
+                  open
+                  selection={flow.selection}
+                  scope={scope}
+                  canManage={canManage}
+                  online={online}
+                  onCancel={() => confirmResetSelection(flow.preparedItemIds)}
+                  onConfirm={() =>
+                    void performServerPrecheck(
+                      flow.selection,
+                      flow.preparedItemIds,
+                    )
+                  }
+                />
+              ) : null}
             </div>
-            <Button onClick={clearSettled}>清理已完成</Button>
-            <Button
-              type="primary"
-              icon={<ArrowUp size={15} />}
-              disabled={Boolean(startBlockedReason)}
-              onClick={beginUpload}
-            >
-              开始上传
-            </Button>
-          </footer>
+          ) : null}
+
+          {precheckVisible ? (
+            <div className={styles.serialWorkspace}>
+              <UploadPrecheckPanel
+                state={flow}
+                onRetry={() =>
+                  void performServerPrecheck(
+                    flow.selection,
+                    failedPrecheckItemIds,
+                  )
+                }
+                onModify={() =>
+                  setFlow({
+                    phase: "confirming",
+                    selection: flow.selection,
+                    preparedItemIds: failedPrecheckItemIds,
+                  })
+                }
+                onBack={() => confirmResetSelection(failedPrecheckItemIds)}
+              />
+            </div>
+          ) : null}
+
+          {queueVisible && !precheckVisible && !selectionVisible ? (
+            <div className={styles.serialWorkspace}>
+              <UploadQueuePanel
+                items={queueItems}
+                recovering={recovering}
+                recoveryProblem={recoveryProblem}
+                folderBatch={folderBatch}
+                canManage={canManage}
+                onPause={(id) => void pauseUpload(id)}
+                onResume={(id) => void resumeUpload(id)}
+                onRetry={(id) => void retryFailedParts(id)}
+                onCancel={(id) => void cancelUpload(id)}
+                onReattach={(id, file) => void reattachAndResume(id, file)}
+                onClearSettled={clearSettled}
+                onRecover={() => void recoverQueue(scope)}
+              />
+            </div>
+          ) : null}
         </section>
       ) : (
         <section

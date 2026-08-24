@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     --extra workflow \
     --extra storage \
     --extra data
-RUN /opt/venv/bin/python -c "import lance, mcap, pyarrow"
+RUN /opt/venv/bin/python -c "import lance, mcap, mcap_ros2.decoder, pyarrow"
 
 FROM dependencies AS api-dev-builder
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     --extra workflow \
     --extra storage \
     --extra data
-RUN /opt/venv/bin/python -c "import lance, mcap, pyarrow, watchfiles"
+RUN /opt/venv/bin/python -c "import lance, mcap, mcap_ros2.decoder, pyarrow, watchfiles"
 
 FROM ${PYTHON_IMAGE} AS runtime-base
 
@@ -73,6 +73,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 RUN ffmpeg -hide_banner -encoders 2>&1 | grep --quiet libx264 \
+    && ffmpeg -hide_banner -encoders 2>&1 | grep --quiet libvpx-vp9 \
     && ffmpeg -hide_banner -muxers 2>&1 | grep --quiet hls \
     && ffprobe -version >/dev/null
 USER 65532:65532
@@ -85,7 +86,7 @@ HEALTHCHECK --interval=10s --timeout=7s --start-period=30s --retries=6 \
     CMD ["python", "-m", "hc_data_platform.workflow.healthcheck", "--timeout", "5"]
 CMD ["hc-data-worker"]
 
-FROM runtime-base AS api
+FROM runtime-media AS api
 COPY --from=api-builder /opt/venv /opt/venv
 COPY migrations /app/migrations
 LABEL org.opencontainers.image.component="api"
@@ -94,7 +95,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2)"]
 CMD ["uvicorn", "hc_data_platform.core.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 
-FROM runtime-base AS api-dev
+FROM runtime-media AS api-dev
 ENV PYTHONPATH=/app/src
 COPY --from=api-dev-builder /opt/venv /opt/venv
 COPY src /app/src

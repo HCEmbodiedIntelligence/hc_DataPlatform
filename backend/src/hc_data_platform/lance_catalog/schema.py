@@ -46,9 +46,17 @@ _PRIMITIVE_TYPES = {
     "large_string": "large_string",
     "binary": "binary",
     "large_binary": "large_binary",
+    # Decoder outputs are bounded JSON values whose concrete ROS/message shape
+    # is not necessarily known when the immutable Dataset schema is registered.
+    # Store the canonical JSON text in Lance and recover the typed JSON value at
+    # the catalog boundary; this avoids both unsafe object locators and a fake
+    # all-string public contract.
+    "json": "string",
     "date32": "date32",
     "date64": "date64",
 }
+
+JSON_MODALITIES_METADATA_KEY = b"hc.schema.json_modalities"
 
 _PRIMITIVE_CANONICAL = {
     name: "bool" if name in {"bool", "boolean"} else "string" if name == "utf8" else name
@@ -272,9 +280,10 @@ def compile_arrow_schema(snapshot: DatasetSchemaSnapshot) -> ArrowSchema:
             "schema snapshot fingerprint does not match its canonical fields"
         )
     arrow = _arrow()
+    canonical_fields = canonical_schema_spec(snapshot.fields)
     modality_fields = [
         arrow.field(name, _parse_arrow_type(type_name, arrow), nullable=True)
-        for name, type_name in canonical_schema_spec(snapshot.fields)
+        for name, type_name in canonical_fields
     ]
     nullable_ints = [
         arrow.field(item.name, arrow.int64(), nullable=True) for item in modality_fields
@@ -290,6 +299,10 @@ def compile_arrow_schema(snapshot: DatasetSchemaSnapshot) -> ArrowSchema:
         b"hc.schema.compiler": b"hc-arrow-schema/v1",
         b"hc.schema.fingerprint": snapshot.fingerprint.encode(),
         b"hc.schema.snapshot_id": snapshot.schema_snapshot_id.encode(),
+        JSON_MODALITIES_METADATA_KEY: json.dumps(
+            [name for name, type_name in canonical_fields if type_name == "json"],
+            separators=(",", ":"),
+        ).encode(),
     }
     schema = arrow.schema(
         [

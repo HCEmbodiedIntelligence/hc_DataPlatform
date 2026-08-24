@@ -15,6 +15,7 @@ import type { DatasetDetailTab } from '../../features/datasets/routing';
 const VERSION_ID = /^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
 const EPISODE_ID = /^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
 const STREAM_ID = /^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
+const COLLECTION_TASK_ID = /^[A-Za-z0-9._-]{1,128}$/;
 const DATASET_DETAIL_PATH = /^\/datasets\/dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
 const VERSION_DETAIL_PATH =
   /^\/datasets\/dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}\/versions\/version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
@@ -24,6 +25,7 @@ const LIMITS = ['10', '20', '50'] as const;
 export type DatasetDetailSearch = Readonly<{
   tab: DatasetDetailTab;
   versionId?: DatasetVersionId;
+  collectionTaskId?: string;
   episodeId?: EpisodeId;
   sourceId?: string;
   q?: string;
@@ -56,19 +58,21 @@ function parseDetail(input: string | URLSearchParams): DatasetDetailSearch {
   const startedTo = cleanText(params.get('startedTo'), 40);
   const timeRange = startedFrom && startedTo ? { startedFrom, startedTo } : {};
   const limit = enumValue(params.get('limit'), LIMITS);
+  const collectionTaskId = cleanId(params.get('collectionTaskId'), COLLECTION_TASK_ID);
   const common = {
     tab,
     versionId,
+    collectionTaskId,
     ...cursor,
     limit: limit ? (Number(limit) as 10 | 20 | 50) : 20,
-    returnTo: safeInternalReturnTo(params.get('returnTo'), ['/datasets']),
+    returnTo: safeInternalReturnTo(params.get('returnTo'), ['/datasets', '/collection-tasks']),
   };
   if (tab === 'episodes') {
     return {
       ...common,
       episodeId: cleanId(params.get('episodeId'), EPISODE_ID) as EpisodeId | undefined,
       q: cleanText(params.get('q'), 200),
-      task: cleanText(params.get('task'), 128),
+      task: collectionTaskId ? undefined : cleanText(params.get('task'), 128),
       robotId: cleanText(params.get('robotId'), 128),
       successState: enumValue(params.get('successState'), [
         'succeeded',
@@ -121,6 +125,8 @@ function buildDetail(input: DatasetDetailChanges): URLSearchParams {
   const tab = input.tab ?? 'overview';
   if (tab !== 'overview') params.set('tab', tab);
   if (input.versionId) params.set('versionId', input.versionId);
+  const collectionTaskId = cleanId(input.collectionTaskId, COLLECTION_TASK_ID);
+  if (collectionTaskId) params.set('collectionTaskId', collectionTaskId);
   const allowedByTab: Readonly<Record<DatasetDetailTab, readonly (keyof DatasetDetailSearch)[]>> = {
     overview: [],
     episodes: [
@@ -140,12 +146,13 @@ function buildDetail(input: DatasetDetailChanges): URLSearchParams {
   };
   for (const key of allowedByTab[tab]) {
     const value = input[key];
+    if (key === 'task' && collectionTaskId) continue;
     if (typeof value === 'string' && value) params.set(key, value);
   }
   if (input.after && !input.before) params.set('after', input.after);
   if (input.before && !input.after) params.set('before', input.before);
   if (input.limit && input.limit !== 20) params.set('limit', String(input.limit));
-  const returnTo = safeInternalReturnTo(input.returnTo, ['/datasets']);
+  const returnTo = safeInternalReturnTo(input.returnTo, ['/datasets', '/collection-tasks']);
   if (returnTo) params.set('returnTo', returnTo);
   return new URLSearchParams(parseDetail(params).tab === tab ? params : '');
 }
@@ -153,6 +160,7 @@ function buildDetail(input: DatasetDetailChanges): URLSearchParams {
 const DIMENSIONS: readonly (keyof DatasetDetailSearch)[] = [
   'tab',
   'versionId',
+  'collectionTaskId',
   'q',
   'task',
   'robotId',

@@ -39,6 +39,7 @@ export function mountAnnotationQueueVisualFixture(
   shell.setSessionScopes(
     [
       {
+        organizationId: visualScope.organizationId,
         projectId: visualScope.projectId,
         regionCodes: [visualScope.regionCode],
         projectWide: false,

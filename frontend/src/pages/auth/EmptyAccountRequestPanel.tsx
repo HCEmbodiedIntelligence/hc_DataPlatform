@@ -38,6 +38,7 @@ export function EmptyAccountRequestPanel({
   refreshing,
   onRefresh,
 }: EmptyAccountRequestPanelProps) {
+  const [organizationId, setOrganizationId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [reason, setReason] = useState("");
   const [capabilityText, setCapabilityText] = useState("");
@@ -52,7 +53,14 @@ export function EmptyAccountRequestPanel({
     () => parseCapabilities(capabilityText),
     [capabilityText],
   );
+  const normalizedOrganizationId = organizationId.trim();
   const normalizedProjectId = projectId.trim();
+  const organizationError =
+    normalizedOrganizationId && normalizedOrganizationId.length <= 256
+      ? null
+      : organizationId
+        ? "组织 ID 不能超过 256 个字符。"
+        : "请输入管理员提供的真实组织 ID。";
   const projectError =
     normalizedProjectId && normalizedProjectId.length <= 256
       ? null
@@ -69,6 +77,7 @@ export function EmptyAccountRequestPanel({
       submitting ||
       !intent ||
       intent === "history" ||
+      organizationError ||
       projectError ||
       capabilityError
     ) {
@@ -80,6 +89,7 @@ export function EmptyAccountRequestPanel({
     try {
       if (intent === "membership") {
         const result = await requestProjectMembership(
+          normalizedOrganizationId,
           normalizedProjectId,
           reason.trim() || null,
           submissionKey.current,
@@ -87,6 +97,7 @@ export function EmptyAccountRequestPanel({
         setSuccess({ kind: "membership", requestId: result.request_id });
       } else {
         const result = await requestProjectCapabilities(
+          normalizedOrganizationId,
           normalizedProjectId,
           capabilities,
           reason.trim() || null,
@@ -123,7 +134,7 @@ export function EmptyAccountRequestPanel({
       {intent === null ? (
         <div className={styles.emptyRequestGuide}>
           <p>从右侧选择“申请加入项目”或“申请权限”。</p>
-          <p>项目 ID 必须由项目管理员提供，本页不会展示或猜测可加入项目。</p>
+          <p>组织与项目 ID 必须由项目管理员提供，本页不会展示或猜测可加入项目。</p>
         </div>
       ) : intent === "history" ? (
         <div className={styles.emptyRequestGuide}>
@@ -146,6 +157,20 @@ export function EmptyAccountRequestPanel({
             void submit();
           }}
         >
+          <label htmlFor="empty-request-organization-id">
+            <span>组织 ID</span>
+            <Input
+              autoComplete="off"
+              id="empty-request-organization-id"
+              maxLength={256}
+              name="organization-id"
+              placeholder="由项目管理员提供"
+              spellCheck={false}
+              value={organizationId}
+              onChange={(event) => setOrganizationId(event.target.value)}
+            />
+            {organizationId && organizationError ? <small role="alert">{organizationError}</small> : null}
+          </label>
           <label htmlFor="empty-request-project-id">
             <span>项目 ID</span>
             <Input
@@ -213,7 +238,7 @@ export function EmptyAccountRequestPanel({
               htmlType="submit"
               type="primary"
               icon={<Send aria-hidden="true" size={16} />}
-              disabled={Boolean(projectError || capabilityError)}
+              disabled={Boolean(organizationError || projectError || capabilityError)}
               loading={submitting}
             >
               {intent === "membership" ? "提交加入申请" : "提交权限申请"}

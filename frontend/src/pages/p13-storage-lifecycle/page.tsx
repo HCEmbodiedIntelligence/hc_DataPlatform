@@ -41,6 +41,7 @@ import {
   type StorageLifecycleSearch,
 } from "./query-codec";
 import styles from "./styles.module.css";
+import { LifecycleExecutionPanel } from "./LifecycleExecutionPanel";
 
 type LifecyclePolicy = components["schemas"]["LifecyclePolicy"];
 type LifecycleAuditEvent = components["schemas"]["LifecycleAuditEvent"];
@@ -66,6 +67,8 @@ const roleLabels: Record<ObjectRole, string> = {
 const actionLabels: Record<LifecyclePolicyAction, string> = {
   RETAIN: "保留",
   REVIEW_EXPIRATION: "到期复核",
+  ARCHIVE: "归档",
+  TRANSITION_TO_COLD: "迁移到冷存储",
   CLEAN_REBUILDABLE_CACHE: "清理可重建缓存",
 };
 
@@ -221,7 +224,7 @@ export function LifecycleProtectionSummary() {
       <div className={styles.protectionHeading}>
         <ShieldCheck aria-hidden="true" size={17} />
         <h3 id="lifecycle-protection-title">保护状态</h3>
-        <span>生产物理执行保持关闭</span>
+        <span>生产执行需独立审批</span>
       </div>
       <div className={styles.protectionItems}>
         {protectedObjects.map((item) => (
@@ -235,7 +238,9 @@ export function LifecycleProtectionSummary() {
         ))}
       </div>
       <p className={styles.protectionNote}>
-        正式合同不提供影响模拟或生产物理执行路径；清理动作仅允许指向已验证可重建的衍生缓存。
+        所有物理动作先生成不可变
+        dry-run；申请人不能审批自己的计划。执行前和每个批次都会重新检查引用、保留期、Legal
+        Hold 与 Governance Hold。
       </p>
     </section>
   );
@@ -740,7 +745,7 @@ export function LifecyclePane() {
     >
       <header className={styles.paneHeader}>
         <div>
-          <h2 id="lifecycle-pane-title">生命周期策略</h2>
+          <h1 id="lifecycle-pane-title">生命周期策略</h1>
           <p>配置规则、核对保护对象并追踪每次变更</p>
         </div>
         <div className={styles.headerActions}>
@@ -825,6 +830,11 @@ export function LifecyclePane() {
             />
           ) : null}
         </section>
+
+        <LifecycleExecutionPanel
+          policies={policies.data?.items ?? []}
+          enabled={gateState === null}
+        />
 
         <section
           className={styles.dataSection}
@@ -1005,5 +1015,13 @@ export function LifecyclePane() {
   );
 }
 
-export const Component = LifecyclePane;
-export default LifecyclePane;
+export function LifecyclePage() {
+  return (
+    <div className={styles.page} data-page-id="P13">
+      <LifecyclePane />
+    </div>
+  );
+}
+
+export const Component = LifecyclePage;
+export default LifecyclePage;

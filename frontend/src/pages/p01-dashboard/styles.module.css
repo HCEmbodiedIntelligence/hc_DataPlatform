@@ -17,11 +17,14 @@
   box-shadow: none;
 }
 
-.contentStack,
-.sideColumn {
+.contentStack {
   display: grid;
   min-width: 0;
   gap: 12px;
+}
+
+.sideColumn {
+  min-width: 0;
 }
 
 .lowerGrid {
@@ -30,10 +33,6 @@
   grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
   gap: 12px;
   align-items: start;
-}
-
-.sideColumn {
-  align-content: start;
 }
 
 .panel {
@@ -276,50 +275,6 @@
 .activityList small {
   color: var(--hc-color-text-muted, #676b80);
   font-size: 0.625rem;
-}
-
-.coveragePanel {
-  min-height: 110px;
-}
-
-.coverageState {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 8px 10px;
-  align-items: center;
-  padding: 11px 13px;
-}
-
-.coverageState > div:first-child {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.coverageState strong {
-  font-size: 0.75rem;
-}
-
-.coverageState span {
-  color: var(--hc-color-text-muted, #676b80);
-  font-size: 0.6875rem;
-}
-
-.coverageState :global(.dashboard-section-notice-compact) {
-  grid-column: 1 / -1;
-}
-
-.coverageState :global(.dashboard-section-notice-compact.ant-alert) {
-  padding: 7px 10px;
-}
-
-.coverageState :global(.dashboard-section-notice-compact .ant-alert-title) {
-  font-size: 0.75rem;
-}
-
-.coverageState
-  :global(.dashboard-section-notice-compact .ant-alert-description) {
-  font-size: 0.6875rem;
 }
 
 .panel > :global(.ant-alert) {

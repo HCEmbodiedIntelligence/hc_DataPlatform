@@ -1,8 +1,6 @@
 import type { RouteObject } from "react-router-dom";
 import { registerPageRoutes } from "../../shared/routing/route-registry";
 
-const browserMockEnabled = import.meta.env.VITE_MOCK_MODE === "browser";
-
 type CleaningWorkbenchRoute = RouteObject & {
   readonly navigationOwnerPageId: "P08";
   readonly navigationOwnerGroupId: "annotation";
@@ -17,15 +15,10 @@ export const routes: CleaningWorkbenchRoute[] = [
     navigationOwnerGroupId: "annotation",
     requiredCapabilities: [],
     hiddenFromNavigation: true,
-    lazy: async () => {
-      if (browserMockEnabled) {
-        const module = await import("./page");
-        return { Component: module.ManualCleaningWorkbenchPage };
-      }
-
-      const module = await import("../../app/shell/RouteCompatibility");
-      return { Component: module.LegacyCleaningWorkbenchRedirect };
-    },
+    lazy: async () => ({
+      Component: (await import("../../app/shell/RouteCompatibility"))
+        .LegacyCleaningWorkbenchRedirect,
+    }),
   },
 ];
 

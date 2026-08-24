@@ -54,6 +54,11 @@ class PostgresS3CleanupBackend:
 
                 statements: tuple[tuple[str, str, tuple[Any, ...]], ...] = (
                     (
+                        "annotation.auto_annotation_jobs",
+                        "DELETE FROM annotation.auto_annotation_jobs WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
                         "annotation.annotation_task_triggers",
                         "DELETE FROM annotation.annotation_task_triggers "
                         "WHERE project_id = ANY(%s)",
@@ -121,6 +126,106 @@ class PostgresS3CleanupBackend:
                     (
                         "annotation.tag_schema_versions",
                         "DELETE FROM annotation.tag_schema_versions WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_review_findings",
+                        "DELETE FROM dataset_registry.dataset_version_review_findings "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_successor_drafts",
+                        "DELETE FROM dataset_registry.dataset_version_successor_drafts "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_review_decisions",
+                        "DELETE FROM dataset_registry.dataset_version_review_decisions "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_async_jobs",
+                        "DELETE FROM dataset_registry.dataset_version_async_jobs "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_operational_inventory",
+                        "DELETE FROM dataset_registry.dataset_version_operational_inventory "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_required_storage",
+                        "DELETE FROM dataset_registry.dataset_version_required_storage "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_manifest_entries",
+                        "DELETE FROM dataset_registry.dataset_version_manifest_entries "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_schema_details",
+                        "DELETE FROM dataset_registry.dataset_version_schema_details "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_episode_revisions",
+                        "DELETE FROM dataset_registry.dataset_version_episode_revisions "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_content_projections",
+                        "DELETE FROM dataset_registry.dataset_version_content_projections "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_episodes",
+                        "DELETE FROM dataset_registry.dataset_version_episodes "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_capacity_facts",
+                        "DELETE FROM dataset_registry.dataset_version_capacity_facts "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_source_provenance",
+                        "DELETE FROM dataset_registry.dataset_version_source_provenance "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_version_schema_summaries",
+                        "DELETE FROM dataset_registry.dataset_version_schema_summaries "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_detail_facts",
+                        "DELETE FROM dataset_registry.dataset_detail_facts "
+                        "WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.dataset_versions",
+                        "DELETE FROM dataset_registry.dataset_versions WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "dataset_registry.datasets",
+                        "DELETE FROM dataset_registry.datasets WHERE project_id = ANY(%s)",
                         (list(projects),),
                     ),
                     (
@@ -238,6 +343,23 @@ class PostgresS3CleanupBackend:
                         "DELETE FROM core.outbox_events WHERE project_id = ANY(%s)",
                         (list(projects),),
                     ),
+                    # Cleanup deliberately runs with replication triggers disabled so
+                    # immutable-domain guards cannot strand a disposable test run.
+                    # Referential cascades are disabled by the same setting, therefore
+                    # remove the audit chain explicitly before its source events and
+                    # reset its head. Otherwise a repeated deterministic run collides
+                    # with orphaned audit IDs and retains a hash pointing at deleted
+                    # entries.
+                    (
+                        "core.audit_integrity_entries",
+                        "DELETE FROM core.audit_integrity_entries WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "core.audit_integrity_heads",
+                        "DELETE FROM core.audit_integrity_heads WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
                     (
                         "core.audit_events",
                         "DELETE FROM core.audit_events WHERE project_id = ANY(%s)",
@@ -246,6 +368,12 @@ class PostgresS3CleanupBackend:
                     (
                         "core.idempotency_records",
                         "DELETE FROM core.idempotency_records WHERE project_id = ANY(%s)",
+                        (list(projects),),
+                    ),
+                    (
+                        "access_control.account_notifications",
+                        "DELETE FROM access_control.account_notifications "
+                        "WHERE project_id = ANY(%s)",
                         (list(projects),),
                     ),
                     (
@@ -274,9 +402,18 @@ class PostgresS3CleanupBackend:
                         (list(projects),),
                     ),
                 )
-                for name, sql, parameters in statements:
-                    result = connection.execute(sql, parameters)
-                    counts[name] = max(result.rowcount, 0)
+                for project_id in projects:
+                    connection.execute(
+                        "SELECT set_config('app.organization_id', %s, true)",
+                        (scope.organization_id,),
+                    )
+                    connection.execute(
+                        "SELECT set_config('app.project_id', %s, true)",
+                        (project_id,),
+                    )
+                    for name, sql, _parameters in statements:
+                        result = connection.execute(sql, ([project_id],))
+                        counts[name] = counts.get(name, 0) + max(result.rowcount, 0)
 
                 if principals:
                     principal_list = list(principals)
@@ -302,6 +439,24 @@ class PostgresS3CleanupBackend:
                             ([str(principal) for principal in principal_list],),
                         )
                         counts[name] = max(result.rowcount, 0)
+
+                deleted_projects = 0
+                for project_id in projects:
+                    connection.execute(
+                        "SELECT set_config('app.organization_id', %s, true)",
+                        (scope.organization_id,),
+                    )
+                    connection.execute(
+                        "SELECT set_config('app.project_id', %s, true)",
+                        (project_id,),
+                    )
+                    result = connection.execute(
+                        "DELETE FROM registry.organization_projects "
+                        "WHERE organization_id = %s AND project_id = %s",
+                        (scope.organization_id, project_id),
+                    )
+                    deleted_projects += max(result.rowcount, 0)
+                counts["registry.organization_projects"] = deleted_projects
         finally:
             connection.close()
         return counts

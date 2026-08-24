@@ -12,6 +12,12 @@
   绝不能使用 PostgreSQL 超级用户，因为 PostgreSQL 会有意让超级用户绕过 RLS。
 - Worker 使用 `AuthContext.service(...)` 和 `PostgresScopedUnitOfWork.for_worker(...)`。
   服务身份必须包含 Worker 所选择的确切项目和区域；即使是 `admin` 服务角色，也不能绕过作用域限制。
+- `PLATFORM_ADMIN` 平台角色持有全局 `platform.admin`。该标记由 `AuthContext` 中央解释为
+  所有平台与业务 capability，并允许人类平台管理员访问项目目录中的全部组织/项目/区域，
+  无需 membership。项目角色 `admin` 仍是项目级角色，绝不包含平台账号管理权限。
+- `platform.admin` 不能作为项目 capability 申请。平台会话 bootstrap 直接从
+  `registry.organization_projects` 生成平台管理员的 `available_scopes`，因此不存在的项目仍
+  返回 404，超级管理员不是任意租户 ID 绕过。
 - 在调用 `await uow.commit()` 前完成业务写入，并调用 `uow.audit.append(...)` 和
   `uow.outbox.stage(...)`。工作单元会在同一个事务中插入这三项内容。未提交便退出上下文时，
   所有操作都会回滚。
@@ -29,8 +35,10 @@
 的表安装并强制启用策略。模块迁移执行器也可以在创建项目表后立即调用
 `SELECT core.apply_project_rls('schema.table'::regclass)`。
 
-缺少 `app.project_id` 时，RLS 会拒绝访问。对于包含区域的行，`app.region_code` 也是必需的。
-设置这两个值的受支持方式是使用 `PostgresScopedUnitOfWork`。
+缺少 `app.project_id` 时，RLS 会拒绝普通主体访问。对于包含区域的行，`app.region_code` 也是
+必需的。平台管理员在 API 完成真实项目校验后，由连接工厂额外设置
+`app.platform_admin=true`，RLS 才取消 membership/scope 行过滤。普通调用方不能自行选择该
+值；设置这些变量的受支持方式仍是请求连接工厂或 `PostgresScopedUnitOfWork`。
 
 ## 验证
 

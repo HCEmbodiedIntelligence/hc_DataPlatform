@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 from .models import (
@@ -53,4 +54,35 @@ class PreviewCachePort(Protocol):
 
 
 class UrlSignerPort(Protocol):
-    def sign(self, artifact_uri: str, *, expires_at: datetime) -> str: ...
+    """Issue and verify a capability URL for one preview asset.
+
+    Media requests originate from an HLS player rather than the API client, so they
+    cannot rely on a bearer header.  The capability must consequently bind the
+    preview session, committed artifact, requested asset and expiry together.
+    """
+
+    def sign(
+        self,
+        *,
+        session_id: str,
+        artifact_uri: str,
+        asset_name: str,
+        expires_at: datetime,
+    ) -> str: ...
+
+    def verify(
+        self,
+        *,
+        session_id: str,
+        artifact_uri: str,
+        asset_name: str,
+        expires: int,
+        signature: str,
+        now: datetime,
+    ) -> bool: ...
+
+
+class PreviewMediaReaderPort(Protocol):
+    """Resolve a committed preview asset without exposing a filesystem path to clients."""
+
+    def resolve(self, record: PreviewCacheRecordV1, *, asset_name: str) -> Path: ...

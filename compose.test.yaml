@@ -133,7 +133,7 @@ services:
       HC_POSTGRES_DSN: postgresql+asyncpg://hc:hc-test-only@postgres:5432/hc_data
       HC_TEMPORAL_TARGET: temporal:7233
       HC_TEMPORAL_TASK_QUEUE: hc-data-pipeline-test
-      HC_OUTBOX_SCOPES: '["be22-be24-proof-a-p1/be22-be24-proof-a-cn","be22-be24-proof-b-p1/be22-be24-proof-b-cn"]'
+      HC_OUTBOX_SCOPES: '["be22-be24-proof-a-org/be22-be24-proof-a-p1/be22-be24-proof-a-cn","be22-be24-proof-b-org/be22-be24-proof-b-p1/be22-be24-proof-b-cn"]'
       HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:activity_dependencies
       HC_OBJECT_STORE_ENDPOINT: http://minio:9000
       HC_OBJECT_STORE_BUCKET: hc-data-test
@@ -141,6 +141,8 @@ services:
       HC_OBJECT_STORE_SECRET_KEY: minio-test-only
       HC_OBJECT_STORE_REGION: us-east-1
       HC_CURSOR_SECRET: test-cursor-secret-not-for-production
+      HC_DATA_SOURCE_CREDENTIAL_KEY: test-data-source-credential-key-not-production
+      HC_AUTH_ABUSE_ENABLED: "false"
       HC_MCAP_DECODER_FACTORY: tests.system.wave2.decoder:factory
       PYTHONPATH: /test-suite
     depends_on:
@@ -176,6 +178,12 @@ services:
       HC_JWT_ALGORITHMS: '["HS256"]'
       HC_JWT_SIGNING_KEY: be22-compose-signing-key-ephemeral-only
       HC_CURSOR_SECRET: test-cursor-secret-not-for-production
+      HC_DATA_SOURCE_CREDENTIAL_KEY: test-data-source-credential-key-not-production
+      HC_SESSION_IDLE_TTL_SECONDS: "1800"
+      HC_SESSION_ABSOLUTE_TTL_SECONDS: "86400"
+      HC_SESSION_TOUCH_INTERVAL_SECONDS: "60"
+      HC_MAX_ACTIVE_SESSIONS: "5"
+      HC_AUTH_ABUSE_ENABLED: "false"
       HC_ENFORCE_SCHEMA_MIGRATIONS: "true"
       HC_API_DOCS_ENABLED: "false"
     depends_on:
@@ -208,7 +216,9 @@ services:
     build:
       context: backend
       target: api-dev
-    working_dir: /app
+    # Mount the repository at its real shape: system/security contracts read
+    # sibling deploy/, frontend/, and scripts/ files in addition to backend/.
+    working_dir: /workspace/backend
     user: "${HC_GATE_UID:-1000}:${HC_GATE_GID:-1000}"
     environment:
       HC_ENVIRONMENT: test
@@ -227,7 +237,7 @@ services:
       HC_OBJECT_STORE_SECRET_KEY: minio-test-only
       HC_OBJECT_STORE_REGION: us-east-1
       HC_CURSOR_SECRET: test-cursor-secret-not-for-production
-      HC_MIGRATIONS_DIR: /app/migrations
+      HC_MIGRATIONS_DIR: /workspace/backend/migrations
     depends_on:
       temporal:
         condition: service_healthy
@@ -236,7 +246,7 @@ services:
       migration-check:
         condition: service_completed_successfully
     volumes:
-      - ./backend:/app:ro
+      - ./:/workspace:ro
       - ./artifacts/test-gates:/artifacts
     command: [python, -c, "print('gate dependencies ready')"]
 

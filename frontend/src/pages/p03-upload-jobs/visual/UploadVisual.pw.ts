@@ -8,15 +8,17 @@ interface AxeResult {
 
 const artifactRoot = resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture/E05"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe15"
-      ? "../artifacts/visual/e01-e10/FE15-fixes/E05"
-      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe13"
-        ? "../artifacts/visual/e01-e10/FE13-fixes/E05"
-        : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-          ? "../artifacts/visual/e01-e10/FE12-final/E05"
-          : "../artifacts/visual/e01-e10/E05",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture/E05"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture/E05"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe15"
+        ? "../artifacts/visual/e01-e10/FE15-fixes/E05"
+        : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe13"
+          ? "../artifacts/visual/e01-e10/FE13-fixes/E05"
+          : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+            ? "../artifacts/visual/e01-e10/FE12-final/E05"
+            : "../artifacts/visual/e01-e10/E05",
 );
 const projectId = "project_e02_visual";
 const regionCode = "cn-east-01";
@@ -217,7 +219,7 @@ function partFixture(partNumber: number) {
 
 async function mockFormalUploadApi(
   page: Page,
-  scenario: "reference" | "timeout",
+  _scenario: "reference" | "timeout",
 ): Promise<void> {
   const resourceRoot = `/api/v1/projects/${projectId}/regions/${regionCode}`;
   let timeoutUploaded = false;
@@ -236,8 +238,8 @@ async function mockFormalUploadApi(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          items: scenario === "timeout" ? [] : [session],
-          total: scenario === "timeout" ? 0 : 1,
+          items: [],
+          total: 0,
         }),
       });
       return;
@@ -405,9 +407,9 @@ async function mountPage(
     page.getByRole("heading", { level: 1, name: "数据上传" }),
   ).toBeVisible();
   await expect(
-    page.getByText(scenario === "timeout" ? "传输失败" : "传输已暂停", {
-      exact: true,
-    }),
+    scenario === "timeout"
+      ? page.getByText("传输失败", { exact: true })
+      : page.getByRole("heading", { name: "选择采集文件夹" }),
   ).toBeVisible();
 }
 
@@ -431,28 +433,18 @@ async function selectValidPackage(page: Page): Promise<void> {
       buffer: Buffer.alloc(rawSize, 7),
     },
   ]);
-  await expect(page.getByText("预检通过")).toBeVisible();
-  await expect(page.getByRole("button", { name: "开始上传" })).toBeEnabled();
+  await expect(page.getByRole("dialog", { name: "确认上传" })).toBeVisible();
+  await expect(page.getByText("浏览器本地检查")).toBeVisible();
+  await expect(page.getByRole("button", { name: "确认上传" })).toBeEnabled();
 }
 
 async function expectLayout(page: Page): Promise<void> {
-  const panels = await Promise.all([
-    page
-      .locator('section[aria-labelledby="upload-method-heading"]')
-      .boundingBox(),
-    page
-      .locator('section[aria-labelledby="manifest-preflight-heading"]')
-      .boundingBox(),
-    page
-      .locator('section[aria-labelledby="upload-queue-heading"]')
-      .boundingBox(),
-  ]);
-  expect(panels.every(Boolean)).toBe(true);
-  const widths = panels.map((panel) => panel?.width ?? 0);
-  const total = widths.reduce((sum, width) => sum + width, 0);
-  [0.25, 0.5, 0.25].forEach((ratio, index) => {
-    expect(Math.abs((widths[index] ?? 0) / total - ratio)).toBeLessThan(0.035);
-  });
+  const mountedStages = await page
+    .locator(
+      'section[aria-labelledby="upload-method-heading"], section[aria-labelledby="upload-precheck-heading"], section[aria-labelledby="upload-queue-heading"]',
+    )
+    .count();
+  expect(mountedStages).toBe(1);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
   );
@@ -488,9 +480,10 @@ test("E05 reference layout at 1440x900 and 1280x800", async ({ page }) => {
   await mountPage(page);
   await selectValidPackage(page);
   await expectLayout(page);
-  await expect(page.getByText("来源：Manifest · 只读")).toBeVisible();
   await expect(
-    page.getByText("上传传输已暂停；采集任务状态没有改变。"),
+    page.getByText(
+      "尚未创建服务端任务，也没有执行平台预检或上传任何文件。",
+    ),
   ).toBeVisible();
   const newUploadTab = page.getByRole("tab", { name: "新建上传" });
   await newUploadTab.focus();
@@ -546,9 +539,9 @@ test("E05 empty Manifest is explicit and leaves submission closed", async ({
       buffer: Buffer.alloc(16, 1),
     },
   ]);
-  await expect(page.getByText("未发现可用 Manifest")).toBeVisible();
+  await expect(page.getByText("本地检查未通过")).toBeVisible();
   await expect(page.getByText("MANIFEST_EMPTY")).toBeVisible();
-  await expect(page.getByRole("button", { name: "开始上传" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "确认上传" })).toBeDisabled();
   await page.screenshot({
     path: resolve(artifactRoot, "1440x900-empty-manifest.png"),
     animations: "disabled",
@@ -566,6 +559,7 @@ test("E05 form semantics, keyboard focus, long URI and axe", async ({
     "browser-upload-package",
   );
 
+  await page.getByText("其他上传方式").click();
   await page.getByRole("radio", { name: /授权对象地址/u }).click();
   const uri = page.getByLabel("已授权对象地址");
   await expect(uri).toHaveAttribute("name", "object-storage-uri");

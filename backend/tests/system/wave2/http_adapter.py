@@ -72,7 +72,15 @@ class Wave2TestJwtIssuer:
                 "roles": [],
                 "project_ids": [scope.project_id],
                 "region_codes": [scope.region_code],
-                "capabilities": list(capabilities),
+                "capabilities": [],
+                "organization_scopes": [
+                    {
+                        "organization_id": scope.organization_id,
+                        "project_id": scope.project_id,
+                        "region_code": None,
+                        "capabilities": list(capabilities),
+                    }
+                ],
                 "capability_revision": 0,
                 "service_identity": False,
             },
@@ -204,7 +212,8 @@ class HttpMainChainAdapter:
         for identity in ("admin", "contractor"):
             requested = self._request(
                 "POST",
-                f"/api/v1/projects/{scope.project_id}/membership-requests",
+                f"/api/v1/organizations/{scope.organization_id}/projects/"
+                f"{scope.project_id}/membership-requests",
                 expected={201},
                 token=self._sessions[identity],
                 headers={"Idempotency-Key": f"{scope.run_id}-{identity}-membership"},
@@ -213,7 +222,8 @@ class HttpMainChainAdapter:
             request_id = str(requested.body["request_id"])
             approved = self._request(
                 "POST",
-                f"/api/v1/projects/{scope.project_id}/membership-requests/{request_id}:approve",
+                f"/api/v1/organizations/{scope.organization_id}/projects/"
+                f"{scope.project_id}/membership-requests/{request_id}:approve",
                 expected={200},
                 token=access_admin,
                 headers={"Idempotency-Key": f"{scope.run_id}-{identity}-membership-approve"},
@@ -231,7 +241,8 @@ class HttpMainChainAdapter:
         for identity, capability_keys in requested_capabilities.items():
             capability = self._request(
                 "POST",
-                f"/api/v1/projects/{scope.project_id}/capability-requests",
+                f"/api/v1/organizations/{scope.organization_id}/projects/"
+                f"{scope.project_id}/capability-requests",
                 expected={201},
                 token=self._sessions[identity],
                 headers={"Idempotency-Key": f"{scope.run_id}-{identity}-capabilities"},
@@ -243,7 +254,8 @@ class HttpMainChainAdapter:
             capability_id = str(capability.body["request_id"])
             approved_capability = self._request(
                 "POST",
-                f"/api/v1/projects/{scope.project_id}/capability-requests/{capability_id}:approve",
+                f"/api/v1/organizations/{scope.organization_id}/projects/"
+                f"{scope.project_id}/capability-requests/{capability_id}:approve",
                 expected={200},
                 token=access_admin,
                 headers={"Idempotency-Key": f"{scope.run_id}-{identity}-capabilities-approve"},

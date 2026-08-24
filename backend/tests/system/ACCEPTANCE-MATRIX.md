@@ -77,3 +77,21 @@ concurrently changing source tree audited above.
 | Normal repository `pytest` command | `.venv/bin/pytest -q` | PARTIAL; 262 passed, 6 skipped, 1 explicit capacity XFAIL in 63.81 s |
 
 BE-12 cannot be marked complete while any row is `XFAIL`, `PARTIAL`, `NOT RUN`, or `FAIL`.
+
+## 2026-08-20 final P01–P20 acceptance reconciliation
+
+The tables above preserve the historical BE-12 gap audit. They are not the current status of the user-approved P01–P20 functional acceptance scope. Current execution uses the finalized shared worktree and isolated real dependencies:
+
+| Current final gate | Result |
+| --- | --- |
+| Runtime OpenAPI/client and static backend/frontend gates | PASS |
+| P01–P20 real browser API suites | PASS: 35 cases, all `VITE_MOCK_MODE=off`, no MSW/route-interception transport |
+| Auth register/login empty-account regression | PASS |
+| P18/P20 cross-page upload smoke and second cleanup | PASS |
+| Whole backend suite | PASS: 606 passed, `--fail-on-skipped` |
+| Current local kind current-image/chart migration + readiness | PASS |
+| Current local kind actual upgrade then rollback | PASS: Helm revisions 1 → 2 → 3, final revision rolled back to 1 and all deployments Ready |
+| PostgreSQL + object-store backup/restore consistency drill | PASS; restored reference/object SHA-256 matched and temporary resources were removed |
+| Real external-auth 429 edge | PASS: opt-in gateway policy returned 429 after normal 201 authentication |
+
+The only intentionally non-PASS row is capacity gate `BE12-008`: `PRODUCTION PERFORMANCE USER-WAIVED; EXECUTION NOT RUN`. It must not be converted into a production capacity claim. Historical `PARTIAL`/`NOT RUN` language above is superseded for this final functional scope, not erased as audit history.

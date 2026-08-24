@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
@@ -25,11 +26,13 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
     psycopg_connection_factory,
 )
 from hc_data_platform.core.errors import ProblemException  # noqa: E402
+from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
 from hc_data_platform.dashboard.models import (  # noqa: E402
     DashboardPendingItemType,
     DashboardSectionStatus,
 )
 from hc_data_platform.dashboard.postgres import (  # noqa: E402
+    SIGNAL_PIPELINE_QUERY,
     PostgresDashboardRepository,
     _activity_query,
     _pending_query,
@@ -50,9 +53,12 @@ from hc_data_platform.security.capabilities import (  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
-BACKEND = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 8, 18, 8, tzinfo=timezone.utc)
 START = NOW - timedelta(hours=24)
+
+
+def organization_for(project_id: str) -> str:
+    return f"dashboard-organization-{project_id}"
 
 
 def source_dsn() -> str:
@@ -60,6 +66,15 @@ def source_dsn() -> str:
     if not value:
         pytest.skip("HC_TEST_POSTGRES_DSN is not set")
     return normalize_postgres_dsn(value)
+
+
+def migration_uri(base_dsn: str, database_name: str) -> str:
+    """Keep asyncpg on the same isolated database used by psycopg fixtures."""
+
+    parsed = urlsplit(base_dsn)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise ValueError("HC_TEST_POSTGRES_DSN must use a PostgreSQL URI for migrations")
+    return parsed._replace(path=f"/{quote(database_name, safe='')}").geturl()
 
 
 @pytest.fixture(scope="module")
@@ -74,19 +89,11 @@ def isolated_dsn() -> str:
             pytest.skip("HC_TEST_POSTGRES_DSN role cannot create an isolated database")
     dsn = make_conninfo(**{**parameters, "dbname": database_name})
     try:
-        for relative in (
-            "migrations/security/001_core.sql",
-            "migrations/ingest/001_ingest.sql",
-            "migrations/ingest/002_package_manifest_uploads.sql",
-            "migrations/quality/0001_quality_reports.sql",
-            "migrations/annotation/0001_annotation.sql",
-            "migrations/publishing/0001_publishing.sql",
-            "migrations/publishing/0002_rollout_publication_region_lineage.sql",
-            "migrations/dashboard/0001_dashboard_query_indexes.sql",
-            "migrations/dashboard/0002_dashboard_business_feed_indexes.sql",
-        ):
-            with psycopg.connect(dsn, autocommit=True) as connection:
-                connection.execute((BACKEND / relative).read_text(encoding="utf-8"))
+        # The production dashboard is composed over the complete schema, not
+        # just the tables that existed when the dashboard module was created.
+        # Applying the manifest catches later source-table constraints before
+        # this integration fixture can claim a production-compatible result.
+        asyncio.run(apply_migrations(migration_uri(base_dsn, database_name)))
         seed_scope(dsn, "project-a", "cn-east", "a")
         seed_scope(dsn, "project-a", "cn-west", "west")
         seed_scope(dsn, "project-b", "cn-east", "other")
@@ -122,6 +129,7 @@ def actor(
 def request_scope(project_id: str, region_code: str) -> Any:
     token = bind_request_context(
         RequestContext(
+            organization_id=organization_for(project_id),
             project_id=project_id,
             region_code=region_code,
             subject_id="dashboard-postgres-principal",
@@ -243,16 +251,18 @@ def seed_annotation(
         INSERT INTO annotation.annotation_tasks (
             task_id, project_id, dataset_id, dataset_version, assignee_id,
             current_revision, state_version, status, submitted_revision, submitted_by,
-            approved_revision, approved_review_id, etag, rollout_id, created_at, updated_at
-        ) VALUES (%s, %s, %s, 1, NULL, 0, 0, 'DRAFT', NULL, NULL, NULL, NULL, %s, %s, %s, %s)
+            approved_revision, approved_review_id, etag, rollout_id, created_at, updated_at,
+            base_lance_version
+        ) VALUES (%s, %s, %s, 1, NULL, 0, 0, 'DRAFT', NULL, NULL, NULL, NULL, %s, %s, %s, %s, 1)
         """,
         (task_id, project_id, f"dataset-{suffix}", f"etag-{suffix}", rollout_id, at, at),
     )
     connection.execute(
         """
         INSERT INTO annotation.annotation_revisions (
-            task_id, revision, parent_revision, author_id, client_mutation_id, created_at
-        ) VALUES (%s, 0, NULL, 'author', %s, %s)
+            task_id, revision, parent_revision, author_id, client_mutation_id, created_at,
+            base_lance_version
+        ) VALUES (%s, 0, NULL, 'author', %s, %s, 1)
         """,
         (task_id, f"mutation-{suffix}", at),
     )
@@ -292,11 +302,19 @@ def seed_scope(dsn: str, project_id: str, region_code: str, prefix: str) -> None
     with psycopg.connect(dsn) as connection:
         connection.execute(
             """
-            SELECT set_config('app.project_id', %s, false),
+            INSERT INTO registry.organization_projects (organization_id, project_id)
+            VALUES (%s, %s) ON CONFLICT DO NOTHING
+            """,
+            (organization_for(project_id), project_id),
+        )
+        connection.execute(
+            """
+            SELECT set_config('app.organization_id', %s, false),
+                   set_config('app.project_id', %s, false),
                    set_config('app.region_code', %s, false),
                    set_config('app.subject_id', 'dashboard-seed', false)
             """,
-            (project_id, region_code),
+            (organization_for(project_id), project_id, region_code),
         )
         failed_rollout, _ = seed_rollout(
             connection,
@@ -514,6 +532,16 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
         assert not any("published" in item.source_id for item in pending)
 
         snapshot = service.snapshot(**common)
+        assert [item.count for item in snapshot.sections.signal_pipeline.stage_counts] == [
+            5,
+            1,
+            1,
+            0,
+            0,
+            3,
+            2,
+            1,
+        ]
         published = snapshot.sections.signal_pipeline.published_region
         assert published.status is DashboardSectionStatus.READY
         assert published.lineage_count == 1
@@ -611,12 +639,18 @@ def test_postgres_explain_business_feeds_keep_scope_range_order_and_limit(
     with psycopg.connect(isolated_dsn) as connection:
         connection.execute(
             """
-            SELECT set_config('app.project_id', 'project-a', false),
+            SELECT set_config('app.organization_id', %s, false),
+                   set_config('app.project_id', 'project-a', false),
                    set_config('app.region_code', 'cn-east', false),
                    set_config('app.subject_id', 'dashboard-postgres-principal', false),
                    set_config('enable_seqscan', 'off', false)
-            """
+            """,
+            (organization_for("project-a"),),
         )
+        signal_plan = connection.execute(
+            "EXPLAIN (FORMAT JSON) " + SIGNAL_PIPELINE_QUERY,
+            scope_params,
+        ).fetchone()
         activity_plan = connection.execute(
             "EXPLAIN (FORMAT JSON) " + _activity_query(True),
             (*scope_params, None, None, None, None, 101),
@@ -634,11 +668,14 @@ def test_postgres_explain_business_feeds_keep_scope_range_order_and_limit(
             ),
         ).fetchone()
 
+    assert signal_plan is not None
     assert activity_plan is not None
     assert pending_plan is not None
+    signal_json = json.dumps(signal_plan[0], sort_keys=True)
     activity_json = json.dumps(activity_plan[0], sort_keys=True)
     pending_json = json.dumps(pending_plan[0], sort_keys=True)
     assert '"Node Type": "Limit"' in activity_json
     assert '"Node Type": "Limit"' in pending_json
+    assert "dashboard_rollouts_scope_created_idx" in signal_json
     assert "dashboard_rollout_objects_scope_committed_idx" in activity_json
     assert "dashboard_quality_pending_scope_idx" in pending_json

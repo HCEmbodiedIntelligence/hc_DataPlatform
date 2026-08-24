@@ -9,8 +9,11 @@ from fastapi.testclient import TestClient
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException
+from hc_data_platform.lance_catalog.audit import InMemoryLanceCatalogAuditRecorder
+from hc_data_platform.lance_catalog.models import StepRecord, StepWindow
 from hc_data_platform.lance_catalog.router import (
     configure_lance_catalog,
+    configure_lance_catalog_audit_recorder,
 )
 from hc_data_platform.lance_catalog.router import (
     router as lance_catalog_router,
@@ -132,3 +135,63 @@ def test_lance_reconciliation_selects_rls_scope_after_admin_authorization(
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_lance_step_window_is_scoped_audited_and_preserves_nanosecond_precision(
+    protected_api: tuple[TestClient, dict[str, AuthContext | None]],
+) -> None:
+    class ScopedCatalog:
+        def read_steps(
+            self,
+            dataset_id: str,
+            rollout_id: str,
+            start_step: int,
+            end_step: int,
+            *,
+            version: int | None = None,
+            project_id: str | None = None,
+        ) -> StepWindow:
+            assert (dataset_id, rollout_id, start_step, end_step, version, project_id) == (
+                "dataset-a",
+                "rollout-a",
+                0,
+                1,
+                7,
+                "project-a",
+            )
+            return StepWindow(
+                project_id="project-a",
+                dataset_id="dataset-a",
+                dataset_version=7,
+                rollout_id="rollout-a",
+                start_step=0,
+                end_step=1,
+                steps=(
+                    StepRecord(
+                        rollout_id="rollout-a",
+                        step_index=0,
+                        timestamp_ns=9_007_199_254_740_993,
+                        modalities={"joint.position": [0.25]},
+                    ),
+                ),
+            )
+
+    audit = InMemoryLanceCatalogAuditRecorder()
+    client, current = protected_api
+    configure_lance_catalog(ScopedCatalog())  # type: ignore[arg-type]
+    configure_lance_catalog_audit_recorder(audit)
+    current["auth"] = _auth("annotator")
+
+    response = client.get(
+        "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-a/steps",
+        params={"start_step": 0, "end_step": 1, "version": 7},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["steps"][0]["timestamp_ns"] == "9007199254740993"
+    assert len(audit.events) == 1
+    event = audit.events[0]
+    assert event.actor_id == "router-test"
+    assert event.request_id
+    assert event.returned_step_count == 1
+    assert event.start_step == 0 and event.end_step == 1

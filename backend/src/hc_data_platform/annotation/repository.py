@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from threading import RLock
 
-from .models import AnnotationTaskKind, TagSchemaStatus, TagSchemaVersion
+from .models import (
+    AnnotationRevisionThread,
+    AnnotationRevisionThreadRevision,
+    AnnotationStatus,
+    AnnotationTaskKind,
+    RevisionOrigin,
+    TagSchemaStatus,
+    TagSchemaVersion,
+)
 from .ports import AnnotationAggregate
 
 
@@ -76,6 +85,7 @@ class InMemoryAnnotationRepository:
         self._targets: dict[tuple[str, str | None, str, int, int, str, str], str] = {}
         self._schemas: dict[tuple[str, int], TagSchemaVersion] = {}
         self._schema_bindings: dict[tuple[str, str, str, str, str], tuple[str, int]] = {}
+        self.revision_thread_list_audits: list[dict[str, object]] = []
 
     def create(self, aggregate: AnnotationAggregate) -> AnnotationAggregate:
         validate_aggregate(aggregate)
@@ -126,6 +136,81 @@ class InMemoryAnnotationRepository:
                     key=lambda aggregate: (aggregate.task.updated_at, aggregate.task.task_id),
                     reverse=True,
                 )
+            )
+
+    def list_revision_threads(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        status: AnnotationStatus | None,
+        origin: RevisionOrigin | None,
+        legacy_draft_id: str | None,
+        snapshot_at: datetime,
+        after_updated_at: datetime | None,
+        after_task_id: str | None,
+        limit: int,
+    ) -> tuple[AnnotationRevisionThread, ...]:
+        with self._lock:
+            records = [
+                aggregate
+                for aggregate in self._aggregates.values()
+                if aggregate.task.project_id == project_id
+                and aggregate.task.region_code == region_code
+                and aggregate.task.updated_at <= snapshot_at
+                and (status is None or aggregate.task.status is status)
+                and (origin is None or aggregate.revisions[-1].origin is origin)
+            ]
+            if legacy_draft_id is None:
+                threads = [_revision_thread(aggregate) for aggregate in records]
+            else:
+                threads = [
+                    _revision_thread(aggregate, legacy_draft_id=legacy_draft_id)
+                    for aggregate in records
+                    if any(
+                        revision.origin is RevisionOrigin.LEGACY_CLEANING
+                        and revision.legacy_audit is not None
+                        and revision.legacy_audit.draft_id == legacy_draft_id
+                        for revision in aggregate.revisions
+                    )
+                ]
+            threads.sort(
+                key=lambda thread: (thread.updated_at, thread.task_id),
+                reverse=True,
+            )
+            if after_updated_at is not None and after_task_id is not None:
+                threads = [
+                    thread
+                    for thread in threads
+                    if (thread.updated_at, thread.task_id) < (after_updated_at, after_task_id)
+                ]
+            return tuple(threads[:limit])
+
+    def append_revision_thread_list_audit(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        actor_id: str,
+        request_id: str,
+        status: AnnotationStatus | None,
+        origin: RevisionOrigin | None,
+        legacy_draft_id: str | None,
+        limit: int,
+    ) -> None:
+        with self._lock:
+            self.revision_thread_list_audits.append(
+                {
+                    "project_id": project_id,
+                    "region_code": region_code,
+                    "actor_id": actor_id,
+                    "request_id": request_id,
+                    "action": "annotation.revision_thread.listed",
+                    "status": None if status is None else status.value,
+                    "origin": None if origin is None else origin.value,
+                    "legacy_draft_filter": legacy_draft_id is not None,
+                    "limit": limit,
+                }
             )
 
     def compare_and_swap(
@@ -319,3 +404,52 @@ class InMemoryAnnotationRepository:
 
 class FakeAnnotationRepository(InMemoryAnnotationRepository):
     """Explicit test-fake spelling used by persistence contract tests."""
+
+
+def _revision_thread(
+    aggregate: AnnotationAggregate,
+    *,
+    legacy_draft_id: str | None = None,
+) -> AnnotationRevisionThread:
+    task = aggregate.task
+    latest = aggregate.revisions[-1]
+    legacy_revision = next(
+        (
+            revision
+            for revision in reversed(aggregate.revisions)
+            if revision.origin is RevisionOrigin.LEGACY_CLEANING
+            and revision.legacy_audit is not None
+            and (legacy_draft_id is None or revision.legacy_audit.draft_id == legacy_draft_id)
+        ),
+        None,
+    )
+    if task.region_code is None:
+        raise AnnotationRepositoryInvariantError(
+            "a scoped revision thread requires a non-null task region"
+        )
+    return AnnotationRevisionThread(
+        task_id=task.task_id,
+        project_id=task.project_id,
+        region_code=task.region_code,
+        dataset_id=task.dataset_id,
+        dataset_version=task.dataset_version,
+        rollout_id=task.rollout_id,
+        status=task.status,
+        latest_revision=AnnotationRevisionThreadRevision(
+            revision=latest.revision,
+            origin=latest.origin,
+            author_id=latest.author_id,
+            content_hash=latest.content_hash,
+            created_at=latest.created_at,
+        ),
+        submitted_revision=task.submitted_revision,
+        current_submission_id=task.current_submission_id,
+        approved_revision=task.approved_revision,
+        approved_review_id=task.approved_review_id,
+        legacy_draft_id=(
+            None
+            if legacy_revision is None or legacy_revision.legacy_audit is None
+            else legacy_revision.legacy_audit.draft_id
+        ),
+        updated_at=task.updated_at,
+    )

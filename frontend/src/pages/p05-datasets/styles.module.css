@@ -8,18 +8,18 @@
   background: transparent;
 }
 
-.page :global([data-layout='standard-page']) {
+.page :global([data-layout="standard-page"]) {
   gap: 22px;
 }
 
-.page :global([class*='pageTitle']) {
+.page :global([class*="pageTitle"]) {
   margin-top: 4px;
   font-size: clamp(2rem, 1.65rem + 0.9vw, 2.6rem);
   font-weight: 760;
   line-height: 1.12;
 }
 
-.page :global([class*='pageDescription']) {
+.page :global([class*="pageDescription"]) {
   margin-top: 5px;
   font-size: 13px;
 }
@@ -29,20 +29,20 @@
   gap: 14px;
 }
 
-.page :global([class*='filterToolbar']) {
+.page :global([class*="filterToolbar"]) {
   padding: 16px;
   border-radius: var(--hc-radius-lg, 16px);
   box-shadow: var(--hc-shadow-sm);
 }
 
-.page :global([class*='filterForm']) {
+.page :global([class*="filterForm"]) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
 }
 
-.page :global([class*='filterFields']) {
+.page :global([class*="filterFields"]) {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 9px 10px;
@@ -153,7 +153,7 @@
   margin-top: 2px;
 }
 
-.page :global([class*='contentRegion']) {
+.page :global([class*="contentRegion"]) {
   padding: 0;
   overflow: hidden;
   border-radius: var(--hc-radius-xl, 20px);
@@ -188,14 +188,32 @@
   background: #f2f3ff;
 }
 
-.page :global(.hc-data-table .ant-table-tbody > tr:has([data-row-selected='true']) > td) {
+.page
+  :global(
+    .hc-data-table .ant-table-tbody > tr:has([data-row-selected="true"]) > td
+  ) {
   border-top: 1px solid #8b96ff;
   border-bottom-color: #8b96ff;
   background: #f1f2ff;
 }
 
 .page
-  :global(.hc-data-table .ant-table-tbody > tr:has([data-row-selected='true']) > td:first-child) {
+  :global(
+    .hc-data-table
+      .ant-table-tbody
+      > tr:has([data-row-selected="true"])
+      .ant-btn-link
+  ) {
+  color: var(--hc-color-info-text, #1e4e9b);
+}
+
+.page
+  :global(
+    .hc-data-table
+      .ant-table-tbody
+      > tr:has([data-row-selected="true"])
+      > td:first-child
+  ) {
   border-left: 2px solid #5965d8;
 }
 
@@ -213,6 +231,39 @@
   border-radius: var(--hc-radius-xl, 20px);
   background: #fff;
   box-shadow: var(--hc-shadow-md);
+}
+
+.taskDatasetWorkspace {
+  display: grid;
+  gap: 18px;
+}
+
+.taskDatasetSection {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d9ddea;
+  border-radius: var(--hc-radius-xl, 20px);
+  background: #fff;
+  box-shadow: var(--hc-shadow-md);
+}
+
+.taskDatasetHeader {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e3e6f0;
+  background: linear-gradient(155deg, #fff 0%, #f8f9fd 100%);
+}
+
+.taskDatasetHeader :global(.ant-typography) {
+  margin: 0;
+}
+
+.taskDatasetHeader h2:global(.ant-typography) {
+  margin-bottom: 4px;
+  font-size: 17px;
 }
 
 .datasetWorkspace :global(.ant-table-container) {
@@ -329,12 +380,12 @@
   place-items: center;
 }
 
-.selectedFact[data-tone='success'] .selectedFactIcon {
+.selectedFact[data-tone="success"] .selectedFactIcon {
   color: #3377e7;
   background: rgb(51 119 231 / 10%);
 }
 
-.selectedFact[data-tone='warning'] .selectedFactIcon {
+.selectedFact[data-tone="warning"] .selectedFactIcon {
   color: #b26b00;
   background: rgb(178 107 0 / 10%);
 }
@@ -389,7 +440,7 @@
   border-left: 1px solid #d9ddea;
 }
 
-.inspectButton[aria-pressed='true'] {
+.inspectButton[aria-pressed="true"] {
   color: #4c57c6;
   border-radius: 10px;
   background: #e8eaff;
@@ -429,8 +480,13 @@
 .identityButton {
   height: auto;
   padding: 0;
+  color: var(--hc-color-info-text, #1e4e9b);
   text-align: start;
   white-space: normal;
+}
+
+.page .inspectButton:global(.ant-btn) {
+  color: var(--hc-color-info-text, #1e4e9b);
 }
 
 .identity,
@@ -482,7 +538,7 @@
     padding: var(--hc-space-4, 16px);
   }
 
-  .page :global([class*='filterFields']) {
+  .page :global([class*="filterFields"]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -525,7 +581,6 @@
     grid-column: 1 / -1;
   }
 
-
   .selectedTimeline {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -536,6 +591,11 @@
   .selectedTimeline span + span {
     padding-left: 0;
     border-left: 0;
+  }
+
+  .taskDatasetHeader {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

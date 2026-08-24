@@ -1,11 +1,11 @@
-import type { z } from 'zod';
-import type { DatasetId } from '../../../entities/dataset';
-import type { DatasetVersionId } from '../../../entities/dataset-version';
-import type { EpisodeId, EpisodeRevisionId } from '../../../entities/episode';
-import { createDomainError } from '../../../shared/api/domain-error';
-import { request, type QueryValue } from '../../../shared/api/http-client';
-import { parseWire } from '../../../shared/api/validate';
-import { getShellState } from '../../../shared/scope/shell-store';
+import type { z } from "zod";
+import type { DatasetId } from "../../../entities/dataset";
+import type { DatasetVersionId } from "../../../entities/dataset-version";
+import type { EpisodeId, EpisodeRevisionId } from "../../../entities/episode";
+import { createDomainError } from "../../../shared/api/domain-error";
+import { request, type QueryValue } from "../../../shared/api/http-client";
+import { parseWire } from "../../../shared/api/validate";
+import { getShellState } from "../../../shared/scope/shell-store";
 import {
   adaptApproveReviewResult,
   adaptDatasetBootstrap,
@@ -15,6 +15,7 @@ import {
   adaptDatasetsPageCapabilities,
   adaptDatasetVersionCapacity,
   adaptDatasetVersionSchemaSummary,
+  adaptEpisodeRevisionHistoryPage,
   adaptEpisodePage,
   adaptOperationalInventoryPage,
   adaptRequiredStoragePage,
@@ -23,7 +24,7 @@ import {
   adaptVersionBootstrap,
   adaptVersionPage,
   adaptVersionSchema,
-} from './adapters';
+} from "./adapters";
 import {
   CONTRACT_VERSION,
   approveReviewCommandWireSchema,
@@ -39,6 +40,7 @@ import {
   datasetVersionSchemaSummaryWireSchema,
   deletionPreflightWireSchema,
   episodePageEnvelopeWireSchema,
+  episodeRevisionHistoryWireSchema,
   episodeRevisionWireSchema,
   jobAcceptedWireSchema,
   operationalInventoryPageWireSchema,
@@ -54,9 +56,10 @@ import {
   type ApproveReviewCommandWire,
   type CreateDatasetRequestWire,
   type ReturnReviewCommandWire,
-} from './wire-schemas';
+} from "./wire-schemas";
 
 export type DatasetListApiFilters = Readonly<{
+  collectionTaskId?: string;
   q?: string;
   robotModelId?: string;
   robotId?: string;
@@ -65,10 +68,10 @@ export type DatasetListApiFilters = Readonly<{
   assetState?: string;
   storageClass?: string;
   channels?: readonly string[];
-  channelMatch?: 'all' | 'any';
+  channelMatch?: "all" | "any";
   datasetCreatedFrom?: string;
   datasetCreatedTo?: string;
-  sort?: 'activityDesc' | 'createdDesc' | 'nameAsc';
+  sort?: "activityDesc" | "createdDesc" | "nameAsc";
   after?: string;
   before?: string;
   limit?: 20 | 50 | 100;
@@ -76,8 +79,8 @@ export type DatasetListApiFilters = Readonly<{
 
 export type VersionListApiFilters = Readonly<{
   q?: string;
-  versionKind?: 'raw' | 'cleaned';
-  versionStatus?: 'reviewing' | 'returned' | 'ready';
+  versionKind?: "raw" | "cleaned";
+  versionStatus?: "reviewing" | "returned" | "ready";
   sort?: string;
   after?: string;
   before?: string;
@@ -86,6 +89,7 @@ export type VersionListApiFilters = Readonly<{
 
 export type EpisodeListApiFilters = Readonly<{
   snapshotToken?: string;
+  collectionTaskId?: string;
   q?: string;
   task?: string;
   robotId?: string;
@@ -102,31 +106,37 @@ export type EpisodeListApiFilters = Readonly<{
   limit?: 10 | 20 | 50 | 100;
 }>;
 
+export type EpisodeRevisionHistoryApiFilters = Readonly<{
+  after?: string;
+  before?: string;
+  limit?: 10 | 20 | 50;
+}>;
+
 const datasetSort = {
-  activityDesc: 'activity_at:desc,dataset_id:desc',
-  createdDesc: 'created_at:desc,dataset_id:desc',
-  nameAsc: 'name:asc,dataset_id:asc',
+  activityDesc: "activity_at:desc,dataset_id:desc",
+  createdDesc: "created_at:desc,dataset_id:desc",
+  nameAsc: "name:asc,dataset_id:asc",
 } as const;
 
 const versionSort: Readonly<Record<string, string>> = {
-  'created-desc': 'created_at:desc,version_id:desc',
-  'created-asc': 'created_at:asc,version_id:asc',
-  'version-desc': 'display_version:desc,version_id:desc',
-  'version-asc': 'display_version:asc,version_id:asc',
+  "created-desc": "created_at:desc,version_id:desc",
+  "created-asc": "created_at:asc,version_id:asc",
+  "version-desc": "display_version:desc,version_id:desc",
+  "version-asc": "display_version:asc,version_id:asc",
 };
 
 const episodeSort: Readonly<Record<string, string>> = {
-  'ordinal-asc': 'ordinal:asc,episode_id:asc',
-  'started-desc': 'started_at_ns:desc,episode_id:desc',
-  'started-asc': 'started_at_ns:asc,episode_id:asc',
+  "ordinal-asc": "ordinal:asc,episode_id:asc",
+  "started-desc": "started_at_ns:desc,episode_id:desc",
+  "started-asc": "started_at_ns:asc,episode_id:asc",
 };
 
 function projectId(): string {
   const value = getShellState().scope?.projectId;
   if (value) return value;
   throw createDomainError({
-    code: 'FORBIDDEN',
-    message: '请先选择项目范围',
+    code: "FORBIDDEN",
+    message: "请先选择项目范围",
     fieldErrors: [],
     operationErrors: [],
     blockedReasons: [],
@@ -141,16 +151,17 @@ function projectPath(suffix: string): string {
 }
 
 function requestId(raw: unknown): string | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  if ('request_id' in raw && typeof raw.request_id === 'string') return raw.request_id;
+  if (typeof raw !== "object" || raw === null) return null;
+  if ("request_id" in raw && typeof raw.request_id === "string")
+    return raw.request_id;
   if (
-    'meta' in raw &&
-    typeof raw.meta === 'object' &&
+    "meta" in raw &&
+    typeof raw.meta === "object" &&
     raw.meta !== null &&
-    'request_id' in raw.meta
+    "request_id" in raw.meta
   ) {
     const value = raw.meta.request_id;
-    return typeof value === 'string' ? value : null;
+    return typeof value === "string" ? value : null;
   }
   return null;
 }
@@ -162,12 +173,16 @@ function parse<T>(schema: z.ZodType<T>, raw: unknown, endpoint: string): T {
     requestId: requestId(raw),
   });
   const record =
-    typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
   const data =
-    record && typeof record.data === 'object' && record.data !== null
+    record && typeof record.data === "object" && record.data !== null
       ? (record.data as Record<string, unknown>)
       : null;
-  const scope = (record?.scope ?? data?.scope) as Record<string, unknown> | undefined;
+  const scope = (record?.scope ?? data?.scope) as
+    | Record<string, unknown>
+    | undefined;
   const expected = getShellState().scope;
   if (
     expected &&
@@ -177,7 +192,7 @@ function parse<T>(schema: z.ZodType<T>, raw: unknown, endpoint: string): T {
       scope.region_code !== expected.regionCode)
   ) {
     throw createDomainError({
-      code: 'CONTRACT_MISMATCH',
+      code: "CONTRACT_MISMATCH",
       message: `响应 Scope 与当前授权范围不一致: ${endpoint}`,
       fieldErrors: [],
       operationErrors: [],
@@ -190,9 +205,12 @@ function parse<T>(schema: z.ZodType<T>, raw: unknown, endpoint: string): T {
   return parsed;
 }
 
-function contractMismatch(message: string, requestIdValue: string | null = null): never {
+function contractMismatch(
+  message: string,
+  requestIdValue: string | null = null,
+): never {
   throw createDomainError({
-    code: 'CONTRACT_MISMATCH',
+    code: "CONTRACT_MISMATCH",
     message,
     fieldErrors: [],
     operationErrors: [],
@@ -212,7 +230,7 @@ function assertPathIdentity(
 ): void {
   if (actualDatasetId === datasetId && actualVersionId === versionId) return;
   throw createDomainError({
-    code: 'CONTRACT_MISMATCH',
+    code: "CONTRACT_MISMATCH",
     message: `响应资源身份与固定 Path 不一致: ${endpoint}`,
     fieldErrors: [],
     operationErrors: [],
@@ -230,7 +248,7 @@ function aggregateQuery(
     q: filters.q,
     robotModelId: filters.robotModelId,
     robotId: filters.robotId,
-    task: filters.task,
+    task: filters.collectionTaskId ?? filters.task,
     scene: filters.scene,
     assetState: filters.assetState,
     storageClass: filters.storageClass,
@@ -246,60 +264,80 @@ function listQuery(
 ): Record<string, QueryValue | readonly QueryValue[]> {
   return {
     ...aggregateQuery(filters),
-    sort: datasetSort[filters.sort ?? 'activityDesc'],
+    sort: datasetSort[filters.sort ?? "activityDesc"],
     after: filters.after,
     before: filters.before,
     limit: filters.limit ?? 20,
   };
 }
 
-export async function fetchDatasets(filters: DatasetListApiFilters, signal?: AbortSignal) {
-  const endpoint = projectPath('/datasets');
+export async function fetchDatasets(
+  filters: DatasetListApiFilters,
+  signal?: AbortSignal,
+) {
+  const endpoint = projectPath("/datasets");
   const raw = await request<unknown>({
-    method: 'GET',
+    method: "GET",
     path: endpoint,
     query: listQuery(filters),
     signal,
   });
-  return adaptDatasetListEnvelope(parse(datasetListEnvelopeWireSchema, raw, endpoint));
+  return adaptDatasetListEnvelope(
+    parse(datasetListEnvelopeWireSchema, raw, endpoint),
+  );
 }
 
 export async function fetchDatasetsPageCapabilities(signal?: AbortSignal) {
-  const endpoint = projectPath('/datasets:page-capabilities');
-  const raw = await request<unknown>({ method: 'GET', path: endpoint, signal });
+  const endpoint = projectPath("/datasets:page-capabilities");
+  const raw = await request<unknown>({ method: "GET", path: endpoint, signal });
   return adaptDatasetsPageCapabilities(
     parse(datasetsPageCapabilitiesEnvelopeWireSchema, raw, endpoint).data,
   );
 }
 
-export async function fetchDatasetSummary(filters: DatasetListApiFilters, signal?: AbortSignal) {
-  const endpoint = projectPath('/datasets:summary');
+export async function fetchDatasetSummary(
+  filters: DatasetListApiFilters,
+  signal?: AbortSignal,
+) {
+  const endpoint = projectPath("/datasets:summary");
   const raw = await request<unknown>({
-    method: 'GET',
+    method: "GET",
     path: endpoint,
     query: aggregateQuery(filters),
     signal,
   });
-  return adaptDatasetSummary(parse(datasetSummaryEnvelopeWireSchema, raw, endpoint).data);
+  return adaptDatasetSummary(
+    parse(datasetSummaryEnvelopeWireSchema, raw, endpoint).data,
+  );
 }
 
-export async function fetchDatasetFacets(filters: DatasetListApiFilters, signal?: AbortSignal) {
-  const endpoint = projectPath('/datasets:facets');
+export async function fetchDatasetFacets(
+  filters: DatasetListApiFilters,
+  signal?: AbortSignal,
+) {
+  const endpoint = projectPath("/datasets:facets");
   const raw = await request<unknown>({
-    method: 'GET',
+    method: "GET",
     path: endpoint,
     query: aggregateQuery(filters),
     signal,
   });
-  return adaptDatasetFacets(parse(datasetFacetsEnvelopeWireSchema, raw, endpoint).data);
+  return adaptDatasetFacets(
+    parse(datasetFacetsEnvelopeWireSchema, raw, endpoint).data,
+  );
 }
 
-export async function fetchDatasetBootstrap(datasetId: DatasetId, signal?: AbortSignal) {
-  const endpoint = projectPath(`/datasets/${encodeURIComponent(datasetId)}/bootstrap`);
-  const raw = await request<unknown>({ method: 'GET', path: endpoint, signal });
+export async function fetchDatasetBootstrap(
+  datasetId: DatasetId,
+  signal?: AbortSignal,
+) {
+  const endpoint = projectPath(
+    `/datasets/${encodeURIComponent(datasetId)}/bootstrap`,
+  );
+  const raw = await request<unknown>({ method: "GET", path: endpoint, signal });
   const parsed = parse(datasetBootstrapWireSchema, raw, endpoint).data;
   if (parsed.dataset.dataset_id !== datasetId) {
-    contractMismatch('Dataset Bootstrap 身份与固定 Path 不一致');
+    contractMismatch("Dataset Bootstrap 身份与固定 Path 不一致");
   }
   return adaptDatasetBootstrap(parsed);
 }
@@ -309,16 +347,18 @@ export async function fetchDatasetVersions(
   filters: VersionListApiFilters,
   signal?: AbortSignal,
 ) {
-  const endpoint = projectPath(`/datasets/${encodeURIComponent(datasetId)}/versions`);
+  const endpoint = projectPath(
+    `/datasets/${encodeURIComponent(datasetId)}/versions`,
+  );
   const raw = await request<unknown>({
-    method: 'GET',
+    method: "GET",
     path: endpoint,
     signal,
     query: {
       q: filters.q,
       versionKind: filters.versionKind?.toUpperCase(),
       versionStatus: filters.versionStatus?.toUpperCase(),
-      sort: versionSort[filters.sort ?? 'created-desc'],
+      sort: versionSort[filters.sort ?? "created-desc"],
       after: filters.after,
       before: filters.before,
       limit: filters.limit ?? 20,
@@ -327,7 +367,10 @@ export async function fetchDatasetVersions(
   const parsed = parse(versionPageEnvelopeWireSchema, raw, endpoint);
   parsed.items.forEach((item) => {
     if (item.dataset_id !== datasetId) {
-      contractMismatch('Version 列表包含其他 Dataset 的资源', parsed.request_id);
+      contractMismatch(
+        "Version 列表包含其他 Dataset 的资源",
+        parsed.request_id,
+      );
     }
   });
   return adaptVersionPage(parsed);
@@ -343,10 +386,16 @@ export async function fetchDatasetVersionSchemaSummary(
   );
   const parsed = parse(
     datasetVersionSchemaSummaryWireSchema,
-    await request<unknown>({ method: 'GET', path: endpoint, signal }),
+    await request<unknown>({ method: "GET", path: endpoint, signal }),
     endpoint,
   ).data;
-  assertPathIdentity(parsed.dataset_id, parsed.version_id, datasetId, versionId, endpoint);
+  assertPathIdentity(
+    parsed.dataset_id,
+    parsed.version_id,
+    datasetId,
+    versionId,
+    endpoint,
+  );
   return adaptDatasetVersionSchemaSummary(parsed);
 }
 
@@ -367,18 +416,18 @@ export async function fetchDatasetVersionSourceProvenance(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}/source-provenance`,
   );
   const sort: Readonly<Record<string, string>> = {
-    'registered-desc': 'registered_at:desc,provenance_id:desc',
-    'registered-asc': 'registered_at:asc,provenance_id:asc',
-    'source-name-asc': 'source_display_name:asc,provenance_id:asc',
+    "registered-desc": "registered_at:desc,provenance_id:desc",
+    "registered-asc": "registered_at:asc,provenance_id:asc",
+    "source-name-asc": "source_display_name:asc,provenance_id:asc",
   };
   const parsed = parse(
     sourceProvenancePageWireSchema,
     await request<unknown>({
-      method: 'GET',
+      method: "GET",
       path: endpoint,
       query: {
         ...filters,
-        sort: sort[filters.sort ?? 'registered-desc'],
+        sort: sort[filters.sort ?? "registered-desc"],
         limit: filters.limit ?? 20,
       },
       signal,
@@ -386,7 +435,13 @@ export async function fetchDatasetVersionSourceProvenance(
     endpoint,
   );
   parsed.items.forEach((item) =>
-    assertPathIdentity(item.dataset_id, item.version_id, datasetId, versionId, endpoint),
+    assertPathIdentity(
+      item.dataset_id,
+      item.version_id,
+      datasetId,
+      versionId,
+      endpoint,
+    ),
   );
   return adaptSourceProvenancePage(parsed);
 }
@@ -401,10 +456,16 @@ export async function fetchDatasetVersionCapacity(
   );
   const parsed = parse(
     datasetVersionCapacityWireSchema,
-    await request<unknown>({ method: 'GET', path: endpoint, signal }),
+    await request<unknown>({ method: "GET", path: endpoint, signal }),
     endpoint,
   ).data;
-  assertPathIdentity(parsed.dataset_id, parsed.version_id, datasetId, versionId, endpoint);
+  assertPathIdentity(
+    parsed.dataset_id,
+    parsed.version_id,
+    datasetId,
+    versionId,
+    endpoint,
+  );
   return adaptDatasetVersionCapacity(parsed);
 }
 
@@ -418,13 +479,13 @@ export async function fetchVersionEpisodes(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}/episodes`,
   );
   const raw = await request<unknown>({
-    method: 'GET',
+    method: "GET",
     path: endpoint,
     signal,
     query: {
       snapshotToken: filters.snapshotToken,
       q: filters.q,
-      task: filters.task,
+      task: filters.collectionTaskId ?? filters.task,
       robotId: filters.robotId,
       successState: filters.successState?.toUpperCase(),
       startedFrom: filters.startedFrom,
@@ -433,7 +494,7 @@ export async function fetchVersionEpisodes(
       reviewStatus: filters.reviewStatus,
       hasFinding: filters.hasFinding,
       changeType: filters.changeType,
-      sort: episodeSort[filters.sort ?? 'ordinal-asc'] ?? filters.sort,
+      sort: episodeSort[filters.sort ?? "ordinal-asc"] ?? filters.sort,
       after: filters.after,
       before: filters.before,
       limit: filters.limit ?? 20,
@@ -441,7 +502,13 @@ export async function fetchVersionEpisodes(
   });
   const parsed = parse(episodePageEnvelopeWireSchema, raw, endpoint);
   parsed.items.forEach((item) => {
-    assertPathIdentity(item.dataset_id, item.version_id, datasetId, versionId, endpoint);
+    assertPathIdentity(
+      item.dataset_id,
+      item.version_id,
+      datasetId,
+      versionId,
+      endpoint,
+    );
   });
   return adaptEpisodePage(parsed);
 }
@@ -454,9 +521,15 @@ export async function fetchVersionBootstrap(
   const endpoint = projectPath(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}/bootstrap`,
   );
-  const raw = await request<unknown>({ method: 'GET', path: endpoint, signal });
+  const raw = await request<unknown>({ method: "GET", path: endpoint, signal });
   const parsed = parse(versionBootstrapWireSchema, raw, endpoint).data;
-  assertPathIdentity(parsed.dataset_id, parsed.version_id, datasetId, versionId, endpoint);
+  assertPathIdentity(
+    parsed.dataset_id,
+    parsed.version_id,
+    datasetId,
+    versionId,
+    endpoint,
+  );
   return adaptVersionBootstrap(parsed);
 }
 
@@ -471,17 +544,54 @@ export async function fetchEpisodeRevision(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}/episode-revisions/${encodeURIComponent(revisionId)}`,
   );
   const raw = await request<unknown>({
-    method: 'GET',
+    method: "GET",
     path: endpoint,
     query: { snapshotToken },
     signal,
   });
   const parsed = parse(episodeRevisionWireSchema, raw, endpoint).data;
-  assertPathIdentity(parsed.dataset_id, parsed.version_id, datasetId, versionId, endpoint);
+  assertPathIdentity(
+    parsed.dataset_id,
+    parsed.version_id,
+    datasetId,
+    versionId,
+    endpoint,
+  );
   if (parsed.revision_id !== revisionId) {
-    contractMismatch('Episode Revision 身份与固定 Path 不一致');
+    contractMismatch("Episode Revision 身份与固定 Path 不一致");
   }
   return parsed;
+}
+
+export async function fetchEpisodeRevisionHistory(
+  datasetId: DatasetId,
+  episodeId: EpisodeId,
+  filters: EpisodeRevisionHistoryApiFilters,
+  signal?: AbortSignal,
+) {
+  const endpoint = projectPath(
+    `/datasets/${encodeURIComponent(datasetId)}/episodes/${encodeURIComponent(episodeId)}/revision-history`,
+  );
+  const raw = await request<unknown>({
+    method: "GET",
+    path: endpoint,
+    query: {
+      after: filters.after,
+      before: filters.before,
+      limit: filters.limit ?? 20,
+    },
+    signal,
+  });
+  const parsed = parse(episodeRevisionHistoryWireSchema, raw, endpoint);
+  parsed.items.forEach((item) => {
+    if (item.dataset_id !== datasetId || item.episode_id !== episodeId) {
+      contractMismatch(
+        "Episode 历史包含其他 Dataset 或 Episode 的修订",
+        parsed.request_id,
+      );
+    }
+  });
+  return adaptEpisodeRevisionHistoryPage(parsed);
 }
 
 export async function fetchVersionManifest(
@@ -493,9 +603,20 @@ export async function fetchVersionManifest(
   const endpoint = projectPath(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}/manifest`,
   );
-  const raw = await request<unknown>({ method: 'GET', path: endpoint, query: cursors, signal });
+  const raw = await request<unknown>({
+    method: "GET",
+    path: endpoint,
+    query: cursors,
+    signal,
+  });
   const parsed = parse(versionManifestWireSchema, raw, endpoint);
-  assertPathIdentity(parsed.dataset_id, parsed.version_id, datasetId, versionId, endpoint);
+  assertPathIdentity(
+    parsed.dataset_id,
+    parsed.version_id,
+    datasetId,
+    versionId,
+    endpoint,
+  );
   return parsed;
 }
 
@@ -510,12 +631,23 @@ export async function fetchVersionSchema(
   );
   const parsed = parse(
     versionSchemaWireSchema,
-    await request<unknown>({ method: 'GET', path: endpoint, query: { snapshotToken }, signal }),
+    await request<unknown>({
+      method: "GET",
+      path: endpoint,
+      query: { snapshotToken },
+      signal,
+    }),
     endpoint,
   ).data;
-  assertPathIdentity(parsed.dataset_id, parsed.version_id, datasetId, versionId, endpoint);
+  assertPathIdentity(
+    parsed.dataset_id,
+    parsed.version_id,
+    datasetId,
+    versionId,
+    endpoint,
+  );
   if (parsed.snapshot_token !== snapshotToken)
-    contractMismatch('Version Schema snapshot token 不一致');
+    contractMismatch("Version Schema snapshot token 不一致");
   return adaptVersionSchema(parsed);
 }
 
@@ -532,15 +664,21 @@ export async function fetchRequiredStorage(
   const parsed = parse(
     requiredStoragePageWireSchema,
     await request<unknown>({
-      method: 'GET',
+      method: "GET",
       path: endpoint,
-      query: { snapshotToken, ...cursors, sort: 'role:asc,object_id:asc' },
+      query: { snapshotToken, ...cursors, sort: "role:asc,object_id:asc" },
       signal,
     }),
     endpoint,
   );
   parsed.items.forEach((item) =>
-    assertPathIdentity(item.dataset_id, item.version_id, datasetId, versionId, endpoint),
+    assertPathIdentity(
+      item.dataset_id,
+      item.version_id,
+      datasetId,
+      versionId,
+      endpoint,
+    ),
   );
   return adaptRequiredStoragePage(parsed);
 }
@@ -558,25 +696,43 @@ export async function fetchOperationalInventory(
   const parsed = parse(
     operationalInventoryPageWireSchema,
     await request<unknown>({
-      method: 'GET',
+      method: "GET",
       path: endpoint,
-      query: { operationalRevision, ...cursors, sort: 'created_at:desc,inventory_id:desc' },
+      query: {
+        operationalRevision,
+        ...cursors,
+        sort: "created_at:desc,inventory_id:desc",
+      },
       signal,
     }),
     endpoint,
   );
   parsed.items.forEach((item) => {
-    assertPathIdentity(item.dataset_id, item.version_id, datasetId, versionId, endpoint);
+    assertPathIdentity(
+      item.dataset_id,
+      item.version_id,
+      datasetId,
+      versionId,
+      endpoint,
+    );
     if (item.operational_revision !== operationalRevision)
-      contractMismatch('运营库存 revision 不一致', parsed.request_id);
+      contractMismatch("运营库存 revision 不一致", parsed.request_id);
   });
   return adaptOperationalInventoryPage(parsed);
 }
 
-export async function createDataset(input: CreateDatasetRequestWire, idempotencyKey: string) {
+export async function createDataset(
+  input: CreateDatasetRequestWire,
+  idempotencyKey: string,
+) {
   const body = createDatasetRequestWireSchema.parse(input);
-  const endpoint = projectPath('/datasets');
-  const raw = await request<unknown>({ method: 'POST', path: endpoint, body, idempotencyKey });
+  const endpoint = projectPath("/datasets");
+  const raw = await request<unknown>({
+    method: "POST",
+    path: endpoint,
+    body,
+    idempotencyKey,
+  });
   return parse(datasetEnvelopeWireSchema, raw, endpoint).data;
 }
 
@@ -589,14 +745,17 @@ export async function runReviewChecks(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}/review-checks`,
   );
   const raw = await request<unknown>({
-    method: 'POST',
+    method: "POST",
     path: endpoint,
     ifMatch: etag,
-    body: { expected_status: 'REVIEWING' },
+    body: { expected_status: "REVIEWING" },
   });
   const parsed = parse(reviewChecksWireSchema, raw, endpoint).data;
-  if (parsed.dataset_id !== datasetId || parsed.output_version_id !== versionId) {
-    contractMismatch('Review Checks 身份与固定 Path 不一致');
+  if (
+    parsed.dataset_id !== datasetId ||
+    parsed.output_version_id !== versionId
+  ) {
+    contractMismatch("Review Checks 身份与固定 Path 不一致");
   }
   return parsed;
 }
@@ -613,7 +772,7 @@ export async function approveVersionReview(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}:approve`,
   );
   const raw = await request<unknown>({
-    method: 'POST',
+    method: "POST",
     path: endpoint,
     body,
     ifMatch: etag,
@@ -621,7 +780,7 @@ export async function approveVersionReview(
   });
   const parsed = parse(approveReviewResultWireSchema, raw, endpoint);
   if (parsed.output_version.id !== versionId) {
-    contractMismatch('Approve 响应指向了其他 Version', parsed.request_id);
+    contractMismatch("Approve 响应指向了其他 Version", parsed.request_id);
   }
   return adaptApproveReviewResult(parsed);
 }
@@ -639,7 +798,7 @@ export async function returnVersionReview(
     `/datasets/${encodeURIComponent(datasetId)}/versions/${encodeURIComponent(versionId)}:return`,
   );
   const raw = await request<unknown>({
-    method: 'POST',
+    method: "POST",
     path: endpoint,
     body,
     ifMatch: etag,
@@ -650,7 +809,7 @@ export async function returnVersionReview(
     parsed.output_version.id !== versionId ||
     parsed.supersedes_draft_id !== expectedSourceDraftId
   ) {
-    contractMismatch('Return 响应的 Version 或前序 Draft lineage 不一致');
+    contractMismatch("Return 响应的 Version 或前序 Draft lineage 不一致");
   }
   const matchesRequest =
     parsed.findings.length === body.findings.length &&
@@ -667,7 +826,8 @@ export async function returnVersionReview(
         finding.note === requested.note
       );
     });
-  if (!matchesRequest) contractMismatch('Return 响应 Findings 与已确认命令不一致');
+  if (!matchesRequest)
+    contractMismatch("Return 响应 Findings 与已确认命令不一致");
   return adaptReturnReviewResult(parsed);
 }
 
@@ -683,11 +843,11 @@ export async function preflightDeletion(input: {
     : `/datasets/${encodeURIComponent(input.datasetId)}/deletion-checks`;
   const endpoint = projectPath(suffix);
   const raw = await request<unknown>({
-    method: 'POST',
+    method: "POST",
     path: endpoint,
     ifMatch: input.etag,
     idempotencyKey: input.idempotencyKey,
-    body: { intent: 'DELETE', reason: input.reason, expected_etag: input.etag },
+    body: { intent: "DELETE", reason: input.reason, expected_etag: input.etag },
   });
   return parse(deletionPreflightWireSchema, raw, endpoint);
 }
@@ -704,7 +864,7 @@ export async function createVersionDiffJob(input: {
     `/datasets/${encodeURIComponent(input.datasetId)}/versions/${encodeURIComponent(input.versionId)}/diff-jobs`,
   );
   const raw = await request<unknown>({
-    method: 'POST',
+    method: "POST",
     path: endpoint,
     ifMatch: input.etag,
     idempotencyKey: input.idempotencyKey,
@@ -729,8 +889,8 @@ export async function resolveViewerEpisode(
   const episode = episodes.items.find((item) => item.episodeId === episodeId);
   if (!episode)
     throw createDomainError({
-      code: 'NOT_FOUND',
-      message: 'Episode 不在这个固定版本中',
+      code: "NOT_FOUND",
+      message: "Episode 不在这个固定版本中",
       fieldErrors: [],
       operationErrors: [],
       blockedReasons: [],
@@ -747,8 +907,8 @@ export async function resolveViewerEpisode(
   );
   if (revision.episode_id !== episodeId)
     throw createDomainError({
-      code: 'CONTRACT_MISMATCH',
-      message: 'Episode Revision 身份不一致',
+      code: "CONTRACT_MISMATCH",
+      message: "Episode Revision 身份不一致",
       fieldErrors: [],
       operationErrors: [],
       blockedReasons: [],

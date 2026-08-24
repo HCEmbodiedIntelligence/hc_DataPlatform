@@ -104,6 +104,11 @@ def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage()
         "REVIEW",
         "PUBLISHED",
     ]
+    signal_pipeline = schemas["DashboardSignalPipelineState"]
+    assert "stage_counts" in signal_pipeline["required"]
+    assert signal_pipeline["properties"]["stage_counts"]["items"] == {
+        "$ref": "#/components/schemas/DashboardSignalStageCount"
+    }
     assert "CLEAN" not in FRAGMENT.read_text(encoding="utf-8").upper().replace(
         "CLEANING IS NOT A SEPARATE SIGNAL STAGE", ""
     )

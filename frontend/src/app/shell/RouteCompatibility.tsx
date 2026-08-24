@@ -81,16 +81,6 @@ export function LegacyCleaningWorkbenchRedirect() {
   );
 }
 
-export function AnnotationRevisionUnavailableRoute() {
-  return (
-    <FeatureUnavailableRoute
-      eyebrow="数据标注 / 数据修订"
-      title="数据标注"
-      description="历史清洗入口已迁移到数据标注的数据修订模式；当前修订业务合同尚未实现。"
-    />
-  );
-}
-
 export function AnnotationTagReviewUnavailableRoute() {
   return (
     <FeatureUnavailableRoute

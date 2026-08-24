@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from threading import RLock
 from typing import Protocol
 
@@ -9,6 +10,7 @@ from .models import (
     CollectionJob,
     IngestWorkflowLocator,
     ManifestPreflightResultV1,
+    RawMediaAccessAuditEvent,
     RawObjectCommittedV1,
     Rollout,
     RolloutStatus,
@@ -60,6 +62,7 @@ class IngestPersistencePort(Protocol):
         *,
         status: str | None = None,
         data_package_id: str | None = None,
+        after: tuple[datetime, str] | None = None,
         limit: int = 50,
     ) -> list[UploadSession]: ...
 
@@ -97,6 +100,8 @@ class IngestPersistencePort(Protocol):
         request_id: str,
     ) -> IngestWorkflowLocator: ...
 
+    def record_raw_media_access(self, event: RawMediaAccessAuditEvent) -> None: ...
+
     def get_workflow_trigger(self, session_id: str) -> IngestWorkflowLocator | None: ...
 
 
@@ -116,6 +121,7 @@ class InMemoryIngestPersistence:
         self._manifest_preflights: dict[str, ManifestPreflightResultV1] = {}
         self._committed: dict[tuple[str, str], RawObjectCommittedV1] = {}
         self._workflow_triggers: dict[str, IngestWorkflowLocator] = {}
+        self.raw_media_audit_events: list[RawMediaAccessAuditEvent] = []
         self._lock = RLock()
 
     def register_upload(
@@ -251,6 +257,7 @@ class InMemoryIngestPersistence:
         *,
         status: str | None = None,
         data_package_id: str | None = None,
+        after: tuple[datetime, str] | None = None,
         limit: int = 50,
     ) -> list[UploadSession]:
         with self._lock:
@@ -261,6 +268,7 @@ class InMemoryIngestPersistence:
                 and item.region_code == region_code
                 and (status is None or item.status.value == status)
                 and (data_package_id is None or item.data_package_id == data_package_id)
+                and (after is None or (item.updated_at, item.session_id) < after)
             ]
             return sorted(
                 rows,
@@ -443,6 +451,10 @@ class InMemoryIngestPersistence:
                     self._workflow_triggers,
                 ) = snapshots
                 raise
+
+    def record_raw_media_access(self, event: RawMediaAccessAuditEvent) -> None:
+        with self._lock:
+            self.raw_media_audit_events.append(event)
 
     def get_workflow_trigger(self, session_id: str) -> IngestWorkflowLocator | None:
         with self._lock:

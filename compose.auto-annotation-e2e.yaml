@@ -1,0 +1,46 @@
+# Explicit acceptance-only overlay for the production HTTP auto-annotation path.
+# The deterministic gateway is not published to the host and is never composed
+# by the default development or production manifests.
+services:
+  auto-annotation-provider:
+    image: hc-data-platform-api:dev
+    command: [python, /fixture/auto-annotation-provider.py]
+    environment:
+      HC_AUTO_ANNOTATION_FIXTURE_API_KEY: ${HC_AUTO_ANNOTATION_FIXTURE_API_KEY:-local-acceptance-provider-key}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    volumes:
+      - ./deploy/compose/auto-annotation-provider.py:/fixture/auto-annotation-provider.py:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2)
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: "no"
+
+  api:
+    environment:
+      HC_AUTO_ANNOTATION_PROVIDER_NAME: acceptance-http
+      HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: http://auto-annotation-provider:8090/v1/annotate
+      HC_AUTO_ANNOTATION_PROVIDER_MODELS: '["deterministic-v1","fail-once-v1","slow-v1"]'
+      HC_AUTO_ANNOTATION_PROVIDER_API_KEY: ${HC_AUTO_ANNOTATION_FIXTURE_API_KEY:-local-acceptance-provider-key}
+      HC_AUTO_ANNOTATION_PROVIDER_TIMEOUT_SECONDS: 10
+    depends_on:
+      auto-annotation-provider:
+        condition: service_healthy
+
+  worker:
+    environment:
+      HC_AUTO_ANNOTATION_PROVIDER_NAME: acceptance-http
+      HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: http://auto-annotation-provider:8090/v1/annotate
+      HC_AUTO_ANNOTATION_PROVIDER_MODELS: '["deterministic-v1","fail-once-v1","slow-v1"]'
+      HC_AUTO_ANNOTATION_PROVIDER_API_KEY: ${HC_AUTO_ANNOTATION_FIXTURE_API_KEY:-local-acceptance-provider-key}
+      HC_AUTO_ANNOTATION_PROVIDER_TIMEOUT_SECONDS: 10
+    depends_on:
+      auto-annotation-provider:
+        condition: service_healthy

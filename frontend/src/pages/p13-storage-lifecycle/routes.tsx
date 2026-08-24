@@ -5,8 +5,8 @@ export const routes: RouteObject[] = [
   {
     path: "/storage/lifecycle",
     lazy: async () => {
-      const module = await import("../p12-storage-overview/page");
-      return { Component: module.StorageOverviewPage };
+      const module = await import("./page");
+      return { Component: module.LifecyclePage };
     },
   },
 ];

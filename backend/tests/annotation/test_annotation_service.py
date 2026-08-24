@@ -7,6 +7,7 @@ from hc_data_platform.annotation import (
     AnnotationConflictError,
     AnnotationOperation,
     AnnotationPermissionError,
+    AnnotationRestoreTargetError,
     AnnotationStatus,
     DisabledAutoAnnotationProvider,
     FeatureDisabledError,
@@ -14,6 +15,7 @@ from hc_data_platform.annotation import (
     InvalidAnnotationStateError,
     OperationKind,
     ReviewDecision,
+    RevisionOrigin,
     SelfReviewPolicy,
 )
 
@@ -111,6 +113,90 @@ def test_restore_creates_new_revision_and_preserves_history() -> None:
         (item.start_step, item.end_step)
         for item in service.effective_exclusions("task-1", revision=1)
     ] == [(300, 450)]
+
+
+def test_restore_to_historic_data_revision_appends_a_new_immutable_revision() -> None:
+    service, annotator = service_with_claimed_task()
+    initial = service.get_task("task-1")
+    service.save_draft(
+        "task-1",
+        annotator,
+        [operation("exclude", OperationKind.EXCLUDE, 300, 450)],
+        expected_revision=0,
+        if_match=initial.etag,
+        mutation_id="save-exclude",
+    )
+    after_exclude = service.get_task("task-1")
+    service.save_draft(
+        "task-1",
+        annotator,
+        [operation("restore-middle", OperationKind.RESTORE, 350, 400)],
+        expected_revision=1,
+        if_match=after_exclude.etag,
+        mutation_id="save-partial-restore",
+    )
+    before_rollback = service.get_task("task-1")
+
+    restored = service.restore_revision(
+        "task-1",
+        annotator,
+        target_revision=0,
+        expected_revision=2,
+        if_match=before_rollback.etag,
+        client_mutation_id="restore-to-r0",
+    )
+
+    assert restored.revision == 3
+    assert restored.parent_revision == 2
+    assert restored.origin is RevisionOrigin.ANNOTATION_RESTORE
+    assert [item.kind for item in restored.operations] == [
+        OperationKind.RESTORE,
+        OperationKind.RESTORE,
+    ]
+    assert [
+        (item.start_step, item.end_step)
+        for item in service.effective_exclusions("task-1", revision=3)
+    ] == []
+    assert [
+        (item.start_step, item.end_step)
+        for item in service.effective_exclusions("task-1", revision=2)
+    ] == [(300, 350), (400, 450)]
+    assert (
+        service.restore_revision(
+            "task-1",
+            annotator,
+            target_revision=0,
+            expected_revision=2,
+            if_match=before_rollback.etag,
+            client_mutation_id="restore-to-r0",
+        )
+        == restored
+    )
+
+
+def test_restore_rejects_current_or_future_target_without_mutating_history() -> None:
+    service, annotator = service_with_claimed_task()
+    task = service.get_task("task-1")
+    service.save_draft(
+        "task-1",
+        annotator,
+        [operation("exclude", OperationKind.EXCLUDE, 300, 450)],
+        expected_revision=0,
+        if_match=task.etag,
+        mutation_id="save-exclude",
+    )
+    current = service.get_task("task-1")
+
+    with pytest.raises(AnnotationRestoreTargetError):
+        service.restore_revision(
+            "task-1",
+            annotator,
+            target_revision=1,
+            expected_revision=1,
+            if_match=current.etag,
+            client_mutation_id="invalid-target",
+        )
+    assert service.get_task("task-1").current_revision == 1
 
 
 def test_stale_revision_or_etag_returns_conflict_without_overwrite() -> None:
@@ -295,9 +381,10 @@ def test_submitter_cannot_review_own_revision() -> None:
         )
 
 
-def test_vlm_capability_is_explicitly_disabled() -> None:
+def test_unconfigured_vlm_provider_fails_with_retryable_service_error() -> None:
     provider = DisabledAutoAnnotationProvider()
     assert provider.enabled is False
     with pytest.raises(FeatureDisabledError) as error:
         provider.request(task_id="task-1", revision=1)
-    assert error.value.code == "FEATURE_DISABLED"
+    assert error.value.code == "AUTO_ANNOTATION_PROVIDER_UNAVAILABLE"
+    assert error.value.status == 503

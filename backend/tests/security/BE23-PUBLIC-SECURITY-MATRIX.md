@@ -1,8 +1,8 @@
 # BE23 公网路径安全覆盖与严格回归差距矩阵
 
-审计时点：2026-08-18。事实源是当前工作树 `create_app(...).openapi()`，不是
-`backend/openapi.generated.yaml`、Mock 或历史验收统计。当前 runtime 有 85 个 schema path、
-95 个 HTTP operation（其中 93 个 `/api/v1` operation）；另有 5 个未进入 schema 的公开面。
+审计时点：2026-08-18；2026-08-20 已追加当前 runtime 路径清单。事实源是当前工作树 `create_app(...).openapi()`，不是
+`backend/openapi.generated.yaml`、Mock 或历史验收统计。当前 runtime 有 159 个 schema path、
+173 个 HTTP operation（其中 171 个 `/api/v1` operation）；另有 5 个未进入 schema 的公开面。
 
 状态口径：`PASS` 只表示该单元格列出的行为已真实执行；`PARTIAL`、`FAIL`、`G-*` 都不是
 发布通过。相同证据代码在每行重复出现，是为了让每个公网 path 都有测试路径或明确缺口。
@@ -25,6 +25,8 @@
 | C1 | `tests/security/test_authorization_pairs.py::test_pagination_cursor_cannot_be_reused_with_the_same_snapshot_id_in_another_scope`；collection task 自有 cursor/filter 测试见 `tests/collection_tasks/test_collection_task_service.py::test_cursor_is_bound_to_project_and_filter`。 |
 | A1 | `tests/security/test_access_api.py::test_two_users_are_repository_scoped_and_revocation_is_immediate`：access 审计动作和 reason/password 脱敏。 |
 | A2 | `tests/storage/test_lifecycle_service.py::test_policy_crud_enable_pause_audit_and_idempotency`。 |
+| A3 | `tests/security/test_account_settings_api.py`：opaque-session self-only、资料 ETag/CAS/幂等、改密、其他会话撤销、密码/审计脱敏与并发 winner；PostgreSQL 原子竞态见 `test_access_postgres.py::test_postgres_account_profile_and_password_change_are_atomic_under_race`。 |
+| A4 | `tests/security/test_session_lifecycle.py` 与 `test_access_postgres.py::test_postgres_session_expiry_touch_credential_revision_and_atomic_cap`：UTC idle/absolute 边界、受限 touch、credential revision fail-closed、默认 5 个 active session、并发登录原子上限；超额登录以 `SESSION_LIMIT_REACHED` + 有界 `Retry-After` 拒绝且不创建/淘汰会话，`EXPIRED` 持久化与 admission/expiry 安全审计可验证；过期 API token 返回 `SESSION_INVALID`。 |
 | B1 | `tests/security/test_public_abuse_controls.py`：注册竞态单账户、登录防枚举、注册/登录 abuse hook、输入/请求理由/Idempotency-Key 上限。生产限流策略仍为 G-RATE。 |
 | B2 | `tests/ingest/test_manifest_security_gate.py`：Manifest 字节/深度/节点/topic/path 等有界输入；upload data-plane 速率仍为 G-RATE。 |
 | I1 | access 重复/冲突/并发：`test_public_abuse_controls.py`、`test_access_api.py::test_concurrent_duplicate_approval_has_one_effect_and_conflicting_decision_is_409`。 |
@@ -43,12 +45,12 @@
 | G-AUTHZ | PARTIAL | 只有上述成对用例；没有对每个资源 route 做同项目不同 capability 与同 ID 跨项目测试。各领域 owner 补 route+Repository pair，BE24 汇总。 |
 | G-SCOPE | PARTIAL | 部分 Repository 已强制 scope，但无法从通用测试证明每个查询。领域 owner 增加真实 PostgreSQL scoped pair；不能只测 Router。 |
 | G-AUDIT | PARTIAL | access、storage lifecycle、dashboard 实现有局部证据；多数读写/拒绝/危险动作没有审计事件断言。领域 owner 定义 allowlist 并测试。 |
-| G-RATE | FAIL | `AccessService` 只有可注入 hook，生产 composition 使用 no-op；其余 route 无应用层/网关 burst、slow-client、per-principal budget 证据。OPEN-02/SLO 需要产品确认，平台安全 owner 实现分布式策略，BE24 接入 Compose/gateway。 |
+| G-RATE | PARTIAL | 账户注册/登录已经使用生产 PostgreSQL 的 HMAC source/subject/global bucket、渐进延迟、临时锁、Turnstile 和全局能力受限的管理解锁；真实 HTTP/数据库证据见 A4/B1 与 `test_auth_abuse_postgres.py`。其余业务 route 仍无应用层/网关 burst、slow-client、per-principal budget 证据，OPEN-02/SLO 与平台级 gateway 仍由 BE24 完成。 |
 | G-CORS | PARTIAL | 当前同源 fail-closed 已测；若跨域部署，明确 origin/method/header/credential allowlist 尚未确认。BE24/deploy owner 按部署拓扑配置并实测。 |
 | G-IDEMP | PARTIAL | 只读为 N/A；有状态命令逐行标 I1-I5 或 G-IDEMP。缺口由领域 owner 增加 duplicate body reuse、并发 winner、stale revision。 |
 | G-HTTP500 | FAIL | `HTTPException(500, detail=...)` 会把 detail 原样写入 Problem Details；复现命令记录于本文件第 5 节。`core/app.py` 属 BE24 共享边界，需对 5xx 固定脱敏 detail 并回归。 |
 | G-ARTIFACT | FAIL | 当前 `public-security-expanded.xml` 含测试 PostgreSQL DSN 密码和失败内部栈。BE24 gate runner 对 JUnit/log 做 secret-safe 运行与最终 S1 扫描；不得打印匹配值。 |
-| G-SESSION | FAIL | access session 表/模型无 expires_at，登录并发可无限创建长期 session；需要安全产品确认 TTL/并发会话/全局撤销，security migration + BE24 manifest。 |
+| G-SESSION | PARTIAL | A4 已实现可配置 idle/absolute TTL、受限 `last_seen_at` touch、credential revision、默认 5 个 active opaque session，并以 account row lock 原子拒绝最新超额签发，保留全部既有有效会话；`EXPIRED` 与 `auth.session.admission.denied` 审计已落库，拒绝携带有界 `Retry-After`。`/api/v1/platform/accounts/{principal_id}:unlock` 只接受全局 `platform.account_security.manage`，实际解锁才留下单一 `auth.login.unlocked` 审计；仍缺管理员全局撤销和真实浏览器管理端入口。 |
 | G-PAGE | PARTIAL | access request/audit、jobs、annotation 多个 list 无统一 cursor/limit；owner 增加稳定排序、上限及跨 scope cursor tests。 |
 
 ## 3. Runtime OpenAPI 逐路径矩阵
@@ -57,23 +59,31 @@
 
 | Runtime path | 方法 | Authn | Authz | IDOR / Repository scope | 审计 | 限流/资源上限 | CORS/CSRF | 幂等/并发 | 错误/脱敏 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `/api/v1/auth/config` | GET | N0；显式公开 | N/A（只读公开策略） | N/A | N/A | 固定有界响应；no-store | X1；无 secret | N/A | 严格响应模型；E1 | PASS（发现合同）；平台仍继承 G-RATE/G-SESSION |
 | `/api/v1/auth/registrations` | POST | N0 | N/A（建空账户） | N/A | A1 局部 | B1；G-RATE | X1 | 并发唯一 B1；非幂等 | E1 | PARTIAL：G-RATE/G-SESSION |
 | `/api/v1/auth/sessions` | POST | N0 | 防枚举 B1 | N/A | A1 局部 | B1；G-RATE | X1；不发 cookie | G-SESSION | E1 | FAIL：G-RATE/G-SESSION |
+| `/api/v1/auth/password-recovery-requests` | POST | N0；统一 202 防枚举 | N/A | 仅内部解析账号/邮箱 | 请求审计不含邮箱/token | 公共认证限流；Turnstile 开启时强制验证 | X1；no-store | 新请求使旧令牌失效 | token/邮箱不入响应与审计 | PASS（恢复请求） |
+| `/api/v1/auth/password-recovery-confirmations` | POST | N0；单次高熵 token | self-only token scope | token hash + principal 原子锁 | `auth.password.recovered` | 单次/限时 token；密码策略 | X1；no-store | 消费一次；重放 422 | 不要求原密码；不返回密码 | PASS（恢复确认） |
 | `/api/v1/auth/session/bootstrap` | GET | N1 | Z1 撤权即时 | Z1 | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
 | `/api/v1/auth/session:logout` | POST | N1 | 本 session | token hash scope；缺全局撤销 | A1 局部 | G-RATE | X1 | 重复 revoke 安全；缺并发 test | E1 | PARTIAL：G-SESSION |
-| `/api/v1/projects/{project_id}/membership-requests` | POST/GET | N1 | Z1 | Z1；G-SCOPE(Postgres 可执行) | A1 | B1；G-RATE/G-PAGE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/membership-requests/{access_request_id}` | GET | N1 | Z1 | 同 ID 跨项目 Z1 | A1 | G-RATE | X1 | N/A | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/membership-requests/{access_request_id}:approve` | POST | N1 | 同项目 capability pair Z1 | 同 ID 跨项目 Z1 | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/membership-requests/{access_request_id}:reject` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/membership-requests/{access_request_id}:revoke` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1；旧会话 Z1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/membership-requests/{access_request_id}:withdraw` | POST | N1 | requester-only test in `test_access_api` | requester + project filter | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/capability-requests` | POST/GET | N1 | Z1 | Z1/G-SCOPE | A1 | B1；G-RATE/G-PAGE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/capability-requests/{access_request_id}` | GET | N1 | Z1 | Z1/G-SCOPE | A1 | G-RATE | X1 | N/A | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/capability-requests/{access_request_id}:approve` | POST | N1 | 同项目 capability pair Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/capability-requests/{access_request_id}:reject` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/capability-requests/{access_request_id}:revoke` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1；旧会话 Z1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/capability-requests/{access_request_id}:withdraw` | POST | N1 | requester-only test in `test_access_api` | requester + project filter | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
-| `/api/v1/projects/{project_id}/access-audit-events` | GET | N1 | manager capability Z1 | project scope Z1 | A1（自审计读取未定义） | G-RATE/G-PAGE | X1 | N/A | reason/password 脱敏 A1；E1 | PARTIAL |
+| `/api/v1/account/profile` | GET/PATCH | N1；仅 opaque session | self-only A3 | token resolve + principal key A3；JWT 不能碰撞授权 | A3 changed_fields only | 密码策略投影有界；G-RATE | X1 | PATCH ETag+key+16 路 CAS winner A3 | 资料值/密码/token 不入审计 A3；E1 | PASS（本资源）；平台仍继承 G-RATE/G-SESSION |
+| `/api/v1/account/password:change` | POST | N1；当前密码二次证明 A3 | self-only A3 | 当前 opaque session + account row lock A3 | 单一 `auth.password.changed` A3 | 15..128/blocklist/context；G-RATE | X1 | ETag+key，PostgreSQL 双路仅一 winner A3 | 写字段 writeOnly，响应/审计无 secret A3；E1 | PASS（本资源）；平台仍继承 G-RATE/G-SESSION |
+| `/api/v1/account/recovery-email-verifications` | POST | N1 | self-only | 当前 principal 绑定 | 不记录邮箱/token | 邮件投递与 TTL 有界 | X1；no-store | 新请求使旧 token 失效 | SMTP 错误固定脱敏 | PASS（邮箱验证请求） |
+| `/api/v1/account/recovery-email:confirm` | POST | N1 + 单次 token | self-only | token principal 必须与 session principal 一致 | `auth.recovery_email.configured` | 单次/限时 token | X1；no-store | 原子消费 | 仅返回掩码邮箱 | PASS（邮箱绑定） |
+| `/api/v1/platform/accounts/{principal_id}:unlock` | POST | N1 | 仅全局 `platform.account_security.manage`；项目 admin 不可代替 | 不枚举未知或已解锁账户 | 仅实际解除临时锁写一条 `auth.login.unlocked` | 无 payload；幂等 204 | X1 | 重复 unlock 无额外副作用 | A5 单元/API/PostgreSQL；E1 | PASS（账户安全解锁）；全局撤销仍缺 |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests` | POST/GET | N1 | Z1 | exact organization/project scope；G-SCOPE(Postgres 可执行) | A1 | B1；G-RATE/G-PAGE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests/{access_request_id}` | GET | N1 | Z1 | 同 ID 跨组织或跨项目 Z1 | A1 | G-RATE | X1 | N/A | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests/{access_request_id}:approve` | POST | N1 | 同组织项目 capability pair Z1 | 同 ID 跨组织或跨项目 Z1 | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests/{access_request_id}:reject` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests/{access_request_id}:revoke` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1；旧会话 Z1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests/{access_request_id}:withdraw` | POST | N1 | requester-only test in `test_access_api` | requester + organization/project filter | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests` | POST/GET | N1 | Z1 | Z1/G-SCOPE | A1 | B1；G-RATE/G-PAGE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests/{access_request_id}` | GET | N1 | Z1 | Z1/G-SCOPE | A1 | G-RATE | X1 | N/A | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests/{access_request_id}:approve` | POST | N1 | 同组织项目 capability pair Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests/{access_request_id}:reject` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests/{access_request_id}:revoke` | POST | N1 | Z1 | Z1/G-SCOPE | A1 | abuse hook；G-RATE | X1 | I1；旧会话 Z1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/capability-requests/{access_request_id}:withdraw` | POST | N1 | requester-only test in `test_access_api` | requester + organization/project filter | A1 | abuse hook；G-RATE | X1 | I1 | E1 | PARTIAL |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/access-audit-events` | GET | N1 | manager capability Z1 | exact organization/project scope Z1 | A1（自审计读取未定义） | G-RATE/G-PAGE | X1 | N/A | reason/password 脱敏 A1；E1 | PARTIAL |
 | `/api/v1/projects/{project_id}/collection-tasks` | POST/GET | N1 | role pair Z5 | Z5；Postgres skip 待执行 | G-AUDIT | limit/cursor；G-RATE | X1 | I3 | E1 | PARTIAL |
 | `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}` | GET/PATCH | N1 | Z5 | 同 ID 跨项目 Z5 | G-AUDIT | G-RATE | X1 | ETag I3；PATCH 缺 Idempotency-Key | E1 | PARTIAL |
 | `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}/progress` | GET | N1 | Z5 | project+region Z5/Z2 | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
@@ -81,6 +91,7 @@
 | `/api/v1/projects/{project_id}/regions/{region_code}/upload-manifests:preflight` | POST | N1；OpenAPI authn 缺口 N3 | role/scope Z6 | Repository N/A（纯校验）；path scope Z6/Z2 | G-AUDIT | B2；G-RATE | X1 | N/A | manifest errors bounded；E1 | PARTIAL：合同缺口 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions` | POST/GET | N1；OpenAPI authn 缺口 N3 | Z6 | session/project/region Z6；Postgres skip | G-AUDIT | body/parts limit；G-RATE/G-PAGE(GET 无 cursor) | X1 | I4 | E1；signed URL 仅授权响应 | PARTIAL：合同缺口 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}` | GET | N1；OpenAPI authn 缺口 N3 | Z6 | same session ID scope Z6 | G-AUDIT | G-RATE | X1 | N/A | E1；对象定位器响应需再审 | PARTIAL |
+| `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media` | GET | N1；OpenAPI authn 缺口 N3 | uploader + project/region/session Z6 | committed raw object + project/region exact match；跨 scope 不可签发 | `raw.media.access_authorized` 记录 actor/request/session/rollout/byte length，绝不记录 key 或 URL | committed-only、TTL≤1h、响应 no-store；G-RATE | X1；无 cookie | N/A | 严格 `RawMediaSourceV1`；无 bucket/key；签名下载响应 no-store；E1 | PARTIAL：G-RATE/contract authn 缺口 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/manifest` | GET | N1；OpenAPI authn 缺口 N3 | Z6 | Z6/G-SCOPE | G-AUDIT | G-RATE | X1 | N/A | Manifest 可能含对象路径；缺最小披露 test | PARTIAL |
 | `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts` | GET | N1；OpenAPI authn 缺口 N3 | Z6 | Z6/G-SCOPE | G-AUDIT | G-RATE/G-PAGE | X1 | N/A | signed/object locator 最小披露缺口 | PARTIAL |
 | `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:renew` | POST | N1；OpenAPI authn 缺口 N3 | Z6 | Z6/G-SCOPE | G-AUDIT | part max；G-RATE | X1 | I4 局部 | signed URL 不落错误/日志尚缺 pilot | PARTIAL |
@@ -101,6 +112,7 @@
 | `/api/v1/annotation-tasks/{task_id}/current` | GET | N1；OpenAPI authn 缺口 N3 | Z4 | G-AUTHZ/G-SCOPE | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
 | `/api/v1/annotation-tasks/{task_id}/revisions` | POST/GET | N1；OpenAPI authn 缺口 N3 | Z4 | G-AUTHZ/G-SCOPE | G-AUDIT | payload limits局部；G-RATE/G-PAGE | X1 | I2/If-Match；POST 无 Idempotency-Key | E1 | PARTIAL |
 | `/api/v1/annotation-tasks/{task_id}/revisions/{revision}` | GET | N1；OpenAPI authn 缺口 N3 | Z4 | G-AUTHZ/G-SCOPE | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
+| `/api/v1/annotation-tasks/{task_id}/revisions:restore` | POST | N1；OpenAPI authn 缺口 N3 | Z4 | task 与历史 revision 的同项目范围；G-AUTHZ/G-SCOPE | G-AUDIT | client mutation ≤256；G-RATE | X1 | I2/If-Match/client_mutation_id 重放 | E1 | PARTIAL |
 | `/api/v1/annotation-tasks/{task_id}/submit` | POST | N1；OpenAPI authn 缺口 N3 | Z4 | G-AUTHZ/G-SCOPE | G-AUDIT | G-RATE | X1 | I2/If-Match/Idempotency-Key | E1 | PARTIAL |
 | `/api/v1/annotation-tasks/{task_id}/submissions` | GET | N1；OpenAPI authn 缺口 N3 | Z4 | G-AUTHZ/G-SCOPE | G-AUDIT | G-RATE/G-PAGE | X1 | N/A | E1 | PARTIAL |
 | `/api/v1/annotation-tasks/{task_id}/submissions/{submission_id}` | GET | N1；OpenAPI authn 缺口 N3 | Z4 | 同 task/submission pair 未测 | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
@@ -112,6 +124,7 @@
 | `/api/v1/capabilities/auto-annotation` | GET | N0（公开 feature discovery） | N/A | N/A | N/A | G-RATE | X1 | N/A | 响应字段小；E1 | PARTIAL：公开性需产品确认 |
 | `/api/v1/previews/sessions` | POST | N1 | Z3 read permission | body project scope Z3；adapter IDOR 未全测 | G-AUDIT | G-RATE | X1 | 缺 Idempotency-Key/concurrent create test | signed URL 仅授权响应；日志 pilot 缺 | PARTIAL |
 | `/api/v1/previews/sessions/{session_id}` | GET | N1 | Z3 | descriptor project scope Z3；same ID pair不全 | G-AUDIT | G-RATE | X1 | N/A | signed URL/对象 locator 最小披露缺 pilot | PARTIAL |
+| `/api/v1/previews/sessions/{session_id}/media/{asset_name}` | GET | N0；仅会话/资产/过期时间三元 HMAC capability，不接受 bearer | descriptor 签发前 N1/Z3；媒体请求必须逐项验 session、artifact、asset、expiry | session UUID 不可枚举；asset 仅 allowlist，缓存根边界由 `test_preview_media_api.py` 覆盖 | G-AUDIT | URI、签名和 Range 有界；G-RATE | X1；不发 cookie | N/A（只读能力 URL） | 过期/篡改 403，无文件或对象定位器泄露；Range 206 | PARTIAL：本地 HLS 缓存已可用；对象存储原始媒体、下载审计与 gateway 限流仍缺 |
 | `/api/v1/datasets/publication-preflight` | POST | N1 | publish permission Z3 | request project Z3；Repo pair不全 | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
 | `/api/v1/datasets/publications` | POST | N1 | publish permission Z3 | request project；Repo pair不全 | G-AUDIT | G-RATE | X1 | service idempotency局部；HTTP key缺 | E1 | PARTIAL |
 | `/api/v1/datasets/{dataset_id}/versions/{dataset_version}` | GET | N1 | read Z3 | project query/body source；same ID pair不全 | G-AUDIT | G-RATE | X1 | N/A | manifest/object locators最小披露未测 | PARTIAL |
@@ -219,3 +232,164 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 - 全仓 Ruff lint 与 mypy 分别 PASS（127 个 source）；format check 因 2 个 storage source、
   2 个 storage test、1 个 dashboard test 的并发未格式化改动退出 1。它们超出 BE23 修改边界，
   owner 为 storage/dashboard，下一步由各领域终端格式化后 BE24 重跑全仓 gate。
+
+## 6. 2026-08-20 当前 Runtime 路径增量清单
+
+本节不改写上方 2026-08-18 历史缺陷记录。它把后来组成的 P02、P05–P07、P09–P19 正式
+路径纳入动态 N1 匿名拒绝测试的覆盖范围；每条路径同时由所属领域 API/合同/PostgreSQL
+测试及 `VITE_MOCK_MODE=off` 页面验收覆盖。未知或未批准的写操作仍必须返回正式
+`FEATURE_UNAVAILABLE`，不能被页面伪造成成功。
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}` | N1；组织-项目范围与 robot-model capability。 |
+| `/api/v1/platform/accounts/{principal_id}:unlock` | N1；仅全局 `platform.account_security.manage`，不接受项目管理员替代。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/upload-sessions` | N1；未批准上传合同。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:preflight-publish` | N1；未批准发布合同。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:publish` | N1；正式 `FEATURE_UNAVAILABLE`。 |
+| `/api/v1/organizations/{organization_id}/robot-models` | N1；P14 组织范围。 |
+| `/api/v1/organizations/{organization_id}/stream-schemas` | N1；P17 组织范围。 |
+| `/api/v1/organizations/{organization_id}/stream-schemas/{schema_id}/versions/{schema_version}` | N1；schema 版本读取。 |
+| `/api/v1/organizations/{organization_id}/stream-schemas/{schema_id}/versions/{schema_version}:preflight-publish` | N1；未批准发布合同。 |
+| `/api/v1/organizations/{organization_id}/stream-schemas/{schema_id}/versions/{schema_version}:publish` | N1；正式 `FEATURE_UNAVAILABLE`。 |
+| `/api/v1/projects/{project_id}/audit/bootstrap` | N1；P19 红脱敏读投影。 |
+| `/api/v1/projects/{project_id}/audit/events` | N1；P19 keyset 范围。 |
+| `/api/v1/projects/{project_id}/audit/events/facets` | N1；P19 范围。 |
+| `/api/v1/projects/{project_id}/audit/events/{event_id}` | N1；P19 单资源范围。 |
+| `/api/v1/projects/{project_id}/datasets` | N1；P05 project 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/bootstrap` | N1；P06 读投影。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/deletion-checks` | N1；不可执行预检。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions` | N1；P06 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions/{version}` | N1；P06 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/bootstrap` | N1；P07 固定版本范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/capacity-facts` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/deletion-checks` | N1；不可执行预检。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/diff-jobs` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}` | N1；P07 资源范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/episodes` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/manifest` | N1；P07 最小披露。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/operational-inventory` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/required-storage` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/review-checks` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/schema` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/schema-summary` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/source-provenance` | N1；P07 范围。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}:approve` | N1；P07 审核 capability 与审计。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}:return` | N1；P07 审核 capability 与审计。 |
+| `/api/v1/projects/{project_id}/datasets:facets` | N1；P05 project 范围。 |
+| `/api/v1/projects/{project_id}/datasets:page-capabilities` | N1；P05 capability 读投影。 |
+| `/api/v1/projects/{project_id}/datasets:summary` | N1；P05 project 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/manifest-discovery` | N1；P08 task-bound 脱敏 discovery。 |
+| `/api/v1/annotations/revisions` | N1；P08 项目/区域 Scope、签名游标与脱敏读审计。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets` | N1；P16 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}` | N1；P16 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}:preflight-publish` | N1；未批准发布合同。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}:publish` | N1；正式 `FEATURE_UNAVAILABLE`。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts` | N1；P10 只读 RLS 投影。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/bootstrap` | N1；P11 workbench 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/commits` | N1；P11 提交 capability/幂等。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/edl` | N1；P11 ETag/CAS。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/events` | N1；P10 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/previews` | N1；P11 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/review-findings` | N1；P11 只读审核反馈。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/summary` | N1；P10 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts:summary` | N1；P10 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/components/{component_id}/channels` | N1；P15 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/components/{component_id}/frames` | N1；P15 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources` | N1；P02 RLS 与 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources/page` | N1；P02 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources/{source_id}` | N1；P02 单资源范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:disable` | N1；P02 管理 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:enable` | N1；P02 管理 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:rotate-credential` | N1；P02 凭据不回显。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:test-connection` | N1；P02 异步工作范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/manual-issues` | N1；P09 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}` | N1；P09 单资源范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}/cleaning-drafts` | N1；P09→P11 范围 handoff。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:resolve` | N1；P09 capability/审计。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:triage` | N1；P09 capability/审计。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/manual-issues:page` | N1；P09 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/robots` | N1；P15 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/search` | N1；A1 shell 机器人检索只在 `robot.read`、项目/区域 RLS 范围内执行，游标绑定主体、权限版本、作用域和查询。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}/bootstrap` | N1；P15 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}/components` | N1；P15 RLS 范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/route-resolutions/p15-to-p17` | N1；P15→P17 范围深链。 |
+| `/api/v1/account/notifications` | N1；A2 当前账户收件箱，session-only、recipient RLS、无项目头。 |
+| `/api/v1/account/notifications/unread-count` | N1；A2 当前账户未读计数，session-only、no-store。 |
+| `/api/v1/account/notifications/{notification_id}:read` | N1；A2 当前账户已读幂等写入与脱敏审计。 |
+| `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}` | N1；P07 导出任务 project 读取范围。 |
+| `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}/download` | N1；P07 导出下载当前授权范围。 |
+
+## 7. 2026-08-24 运行时路径增量
+
+本节补齐当前运行时新增的 P12/P13、P19、平台账户与自动标注 job 路径。每行首先受动态 N1
+匿名拒绝测试保护；更细的授权、RLS、审计、幂等和容量缺口仍以第 1、2 节的代码为准，不能据此
+提升为发布 PASS。
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `/api/v1/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}` | N1；task/project/region scope，自动标注任务读取。 |
+| `/api/v1/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}:apply` | N1；annotator scope、ETag 与人工确认后才应用建议。 |
+| `/api/v1/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}:cancel` | N1；annotator scope，持久化 job 状态转换。 |
+| `/api/v1/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}:retry` | N1；annotator scope，失败/取消任务写入新的 durable outbox 事件。 |
+| `/api/v1/platform/accounts` | N1；平台账户目录只由全局账户管理 capability 访问。 |
+| `/api/v1/platform/accounts/{principal_id}` | N1；平台账户单资源管理范围。 |
+| `/api/v1/platform/accounts/{principal_id}:disable` | N1；全局账户管理 capability 与安全审计。 |
+| `/api/v1/platform/accounts/{principal_id}:enable` | N1；全局账户管理 capability 与安全审计。 |
+| `/api/v1/platform/accounts/{principal_id}:reset-password` | N1；管理员重置不回显凭据或恢复 token。 |
+| `/api/v1/platform/accounts/{principal_id}:role` | N1；全局角色变更受账户管理 capability 保护。 |
+| `/api/v1/projects/{project_id}/audit/exports` | N1；P19 organization/project/region exact scope，创建持久化导出任务。 |
+| `/api/v1/projects/{project_id}/audit/exports/{job_id}` | N1；P19 导出任务按 organization/project/region 隔离。 |
+| `/api/v1/projects/{project_id}/audit/exports/{job_id}/download` | N1；仅成功任务可签发短时、no-store 下载授权。 |
+| `/api/v1/projects/{project_id}/audit/exports/{job_id}:cancel` | N1；P19 导出任务取消状态转换。 |
+| `/api/v1/projects/{project_id}/audit/exports/{job_id}:retry` | N1；P19 导出重试写入 durable outbox 事件。 |
+| `/api/v1/projects/{project_id}/audit/legal-holds` | N1；P19 legal-hold 的 organization/project/region scope。 |
+| `/api/v1/projects/{project_id}/audit/legal-holds/{hold_id}:release` | N1；P19 legal-hold release 写操作和审计。 |
+| `/api/v1/projects/{project_id}/audit/retention-policy` | N1；P19 retention policy 的 ETag/CAS 与 organization scope。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/processing` | N1；上传处理状态只在 project/region/session scope 内读取。 |
+| `/api/v1/projects/{project_id}/datasets/{dataset_id}/episodes/{episode_id}/revision-history` | N1；P07 episode revision history 按 project/dataset/episode 范围读取。 |
+| `/api/v1/projects/{project_id}/storage/capacity/portfolio` | N1；P12 portfolio capacity 读取受项目 scope 保护。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions` | N1；P13 生命周期执行列表/创建受项目 scope 保护。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions/{execution_id}` | N1；P13 execution 单资源 scope。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions/{execution_id}/logs` | N1；P13 execution log 受项目 scope 与分页上限保护。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions/{execution_id}:approve` | N1；P13 危险执行审批与审计。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions/{execution_id}:cancel` | N1；P13 execution 取消状态转换。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions/{execution_id}:retry` | N1；P13 execution 重试状态转换。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions/{execution_id}:start` | N1；P13 execution start 受生命周期写权限保护。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-executions:dry-run` | N1；P13 dry-run 仍需项目 scope，不生成实际对象副作用。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-schedules` | N1；P13 lifecycle schedule 列表/写操作受项目 scope 保护。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-schedules/{schedule_id}` | N1；P13 schedule 单资源 scope。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-schedules/{schedule_id}/enable` | N1；P13 schedule enable 状态转换与审计。 |
+| `/api/v1/projects/{project_id}/storage/lifecycle-schedules/{schedule_id}/pause` | N1；P13 schedule pause 状态转换与审计。 |
+| `/api/v1/projects/{project_id}/storage/multipart-uploads/{multipart_id}:abort` | N1；P12 multipart abort 受项目 scope 与对象所有权保护。 |
+| `/api/v1/projects/{project_id}/storage/objects` | N1；P12 object inventory 受项目 scope 与分页限制保护。 |
+| `/api/v1/projects/{project_id}/storage/objects/{object_id}` | N1；P12 object 单资源 scope。 |
+| `/api/v1/projects/{project_id}/storage/objects/{object_id}:download` | N1；P12 仅当前授权对象可签发短时下载。 |
+| `/api/v1/projects/{project_id}/storage/objects/{object_id}:restore` | N1；P12 recoverable restore 受项目 scope 与审计保护。 |
+| `/api/v1/projects/{project_id}/storage/objects/{object_id}:transition` | N1；P12 storage-class transition 受项目 scope 与审计保护。 |
+| `/api/v1/projects/{project_id}/storage/objects/{object_id}:trash` | N1；P12 recoverable delete 受项目 scope、保留期与审计保护。 |
+| `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:cancel` | N1；P07 导出取消 capability。 |
+| `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:retry` | N1；P07 导出重试 capability。 |
+| `/api/v1/organizations/{organization_id}/projects/{project_id}/regions/{region_code}/stream-schemas/{schema_id}/versions/{schema_version}/dataset-references` | N1；P17 schema/dataset 关联范围。 |
+| `/api/v1/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:authorize-parts` | N1；P14 未批准 asset 上传授权。 |
+| `/api/v1/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:complete-file` | N1；P14 未批准 asset 上传完成。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/assets` | N1；P14 版本 asset 范围。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/assets/{asset_id}/download` | N1；P14 asset 下载范围。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/bindings` | N1；P14 关节绑定范围。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/joint-mappings` | N1；P14 关节映射范围。 |
+| `/api/v1/organizations/{organization_id}/stream-schemas/{schema_id}/versions/{schema_version}:validate` | N1；P17 schema 校验范围。 |
+| `/api/v1/organizations/{organization_id}/stream-schemas:import` | N1；P17 schema 导入范围。 |
+| `/api/v1/projects/{project_id}/audit/integrity` | N1；P19 审计完整性只读校验。 |
+| `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:cancel` | N1；P20 collection task 取消 capability。 |
+| `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:reopen` | N1；P20 collection task 重新打开 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions` | N1；P16 校准版本范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}/dataset-associations` | N1；P16 dataset 关联范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}/document` | N1；P16 版本文档范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}:validate` | N1；P16 校验范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/calibration-validation-reports/{report_id}` | N1；P16 校验报告范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/components/{component_id}` | N1；P15 component 单资源范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/components/{component_id}:transition` | N1；P15 component 状态写 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}` | N1；P15 robot 单资源范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}/maintenance-records` | N1；P15 维保记录范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}:transition` | N1；P15 robot 状态写 capability。 |
+| `/api/v1/projects/{project_id}/storage/capacity/history` | N1；P12 容量历史 project 范围。 |

@@ -1,4 +1,5 @@
 import type { Scope } from "../../entities/scope";
+import { z } from "zod";
 import {
   createDomainError,
   isDomainError,
@@ -6,6 +7,8 @@ import {
 import type { DomainError } from "../../shared/api/domain-error";
 import type { components } from "../../shared/api/generated/platform";
 import { request } from "../../shared/api/http-client";
+import { getRuntimeConfig } from "../../shared/config/runtime";
+import { parseWire } from "../../shared/api/validate";
 import type {
   DataVisualizationWorkbenchAdapter,
   StreamDescriptor,
@@ -22,9 +25,17 @@ export type RuntimeAnnotationHistory =
   components["schemas"]["AnnotationHistory"];
 export type RuntimeAnnotationRevision =
   components["schemas"]["AnnotationRevision"];
+export type RuntimeAnnotationRevisionThread =
+  components["schemas"]["AnnotationRevisionThread"];
+export type RuntimeAnnotationRevisionThreadPage =
+  components["schemas"]["AnnotationRevisionThreadPage"];
 export type RuntimeAnnotationSubmission =
   components["schemas"]["AnnotationSubmission"];
 export type RuntimeAnnotationTag = components["schemas"]["AnnotationTag"];
+export type RuntimeAutoAnnotationCapability =
+  components["schemas"]["AutoAnnotationCapability"];
+export type RuntimeAutoAnnotationJob =
+  components["schemas"]["AutoAnnotationJob"];
 export type RuntimeTagSchemaVersion = components["schemas"]["TagSchemaVersion"];
 export type RuntimeManifestDiscovery =
   components["schemas"]["ManifestDiscoveryV1"];
@@ -34,6 +45,59 @@ export type RuntimeReviewDecision = components["schemas"]["ReviewDecision"];
 export type RuntimeReviewCheckKind = components["schemas"]["ReviewCheckKind"];
 
 export type AnnotationWorkbenchMode = "annotation" | "tag-review";
+
+const annotationStatusWireSchema = z.enum([
+  "DRAFT",
+  "SUBMITTED",
+  "APPROVED",
+  "NEEDS_REVISION",
+  "REJECTED",
+]);
+const revisionOriginWireSchema = z.enum([
+  "ANNOTATION",
+  "ANNOTATION_RESTORE",
+  "LEGACY_CLEANING",
+]);
+const annotationRevisionThreadWireSchema = z
+  .object({
+    task_id: z.string().min(1),
+    project_id: z.string().min(1),
+    region_code: z.string().min(1),
+    dataset_id: z.string().min(1),
+    dataset_version: z.number().int().positive(),
+    rollout_id: z.string().min(1),
+    status: annotationStatusWireSchema,
+    latest_revision: z
+      .object({
+        revision: z.number().int().nonnegative(),
+        origin: revisionOriginWireSchema,
+        author_id: z.string().min(1),
+        content_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+        created_at: z.iso.datetime({ offset: true }),
+      })
+      .strict(),
+    submitted_revision: z.number().int().nonnegative().nullable().optional(),
+    current_submission_id: z.string().min(1).nullable().optional(),
+    approved_revision: z.number().int().nonnegative().nullable().optional(),
+    approved_review_id: z.string().min(1).nullable().optional(),
+    legacy_draft_id: z.string().min(1).nullable().optional(),
+    updated_at: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+const annotationRevisionThreadPageWireSchema = z
+  .object({
+    items: z.array(annotationRevisionThreadWireSchema),
+    page_info: z
+      .object({
+        has_next_page: z.boolean(),
+        has_previous_page: z.boolean(),
+        start_cursor: z.string().min(1).nullable().optional(),
+        end_cursor: z.string().min(1).nullable().optional(),
+      })
+      .strict(),
+    snapshot_at: z.iso.datetime({ offset: true }),
+  })
+  .strict();
 
 export interface RuntimeAnnotationScope {
   readonly projectId: string;
@@ -81,6 +145,10 @@ export interface RuntimeAnnotationCommands {
   readonly claim: (
     task: RuntimeAnnotationTask,
   ) => Promise<RuntimeAnnotationTask>;
+  readonly restoreRevision: (
+    task: RuntimeAnnotationTask,
+    targetRevision: number,
+  ) => Promise<RuntimeAnnotationRevision>;
 }
 
 const STEP_RATE_HZ = 30n;
@@ -141,6 +209,47 @@ function assertTaskIdentity(
   }
 }
 
+function assertAutoAnnotationCapability(
+  capability: RuntimeAutoAnnotationCapability,
+): void {
+  const providerNames = capability.providers.map((item) => item.provider);
+  if (
+    capability.enabled !== capability.providers.length > 0 ||
+    new Set(providerNames).size !== providerNames.length ||
+    capability.providers.some(
+      (provider) =>
+        provider.models.length === 0 ||
+        new Set(provider.models).size !== provider.models.length,
+    )
+  ) {
+    contractMismatch("自动标注能力返回了不一致的 Provider 配置。");
+  }
+}
+
+function assertAutoAnnotationJobIdentity(
+  job: RuntimeAutoAnnotationJob,
+  scope: RuntimeAnnotationScope,
+  taskId: string,
+): void {
+  const successful = job.status === "SUCCEEDED" || job.status === "APPLIED";
+  if (
+    job.project_id !== scope.projectId ||
+    job.region_code !== scope.regionCode ||
+    job.task_id !== taskId ||
+    successful !==
+      (job.tags !== null &&
+        job.tags !== undefined &&
+        job.operations !== null &&
+        job.operations !== undefined &&
+        job.usage !== null &&
+        job.usage !== undefined) ||
+    (job.status === "APPLIED") !==
+      (job.applied_revision !== null && job.applied_revision !== undefined)
+  ) {
+    contractMismatch("自动标注任务与当前作用域、任务或状态不一致。");
+  }
+}
+
 export function createClientMutationId(prefix: string): string {
   const suffix =
     globalThis.crypto?.randomUUID?.() ??
@@ -182,6 +291,44 @@ export async function listRuntimeAnnotationTasks(
   });
   tasks.forEach((task) => assertTaskIdentity(task, scope));
   return tasks;
+}
+
+export async function listRuntimeAnnotationRevisionThreads(
+  scope: RuntimeAnnotationScope,
+  input: {
+    readonly status?: RuntimeAnnotationRevisionThread["status"];
+    readonly origin?: RuntimeAnnotationRevisionThread["latest_revision"]["origin"];
+    readonly legacyDraftId?: string;
+    readonly after?: string;
+    readonly limit?: number;
+  } = {},
+  signal?: AbortSignal,
+): Promise<RuntimeAnnotationRevisionThreadPage> {
+  const raw = await request<unknown>({
+    method: "GET",
+    path: "/annotations/revisions",
+    scope: scopeForRequest(scope),
+    query: {
+      status: input.status,
+      origin: input.origin,
+      legacy_draft_id: input.legacyDraftId,
+      after: input.after,
+      limit: input.limit ?? 25,
+    },
+    ...(signal ? { signal } : {}),
+  });
+  const page = parseWire(annotationRevisionThreadPageWireSchema, raw, {
+    endpoint: "listAnnotationRevisionThreads",
+  });
+  for (const thread of page.items) {
+    if (
+      thread.project_id !== scope.projectId ||
+      thread.region_code !== scope.regionCode
+    ) {
+      contractMismatch("修订索引包含当前项目或 Region 以外的任务。");
+    }
+  }
+  return page;
 }
 
 export async function claimRuntimeAnnotationTask(
@@ -256,48 +403,12 @@ async function loadManifestForTask(
   task: RuntimeAnnotationTask,
   signal?: AbortSignal,
 ): Promise<RuntimeManifestDiscovery> {
-  const sessions = await request<components["schemas"]["UploadSessionListV1"]>({
+  return request<components["schemas"]["ManifestDiscoveryV1"]>({
     method: "GET",
-    path: `/projects/${encoded(scope.projectId)}/regions/${encoded(scope.regionCode)}/upload-sessions`,
+    path: `/projects/${encoded(scope.projectId)}/regions/${encoded(scope.regionCode)}/annotation-tasks/${encoded(task.task_id)}/manifest-discovery`,
     scope: scopeForRequest(scope),
     ...(signal ? { signal } : {}),
   });
-  const session = sessions.items.find(
-    (item) => item.rollout_id === task.rollout_id,
-  );
-  if (!session?.session_id) {
-    throw createDomainError({
-      code: "NOT_FOUND",
-      message: "当前标注任务未找到可读取的 Manifest 上传会话。",
-      fieldErrors: [],
-      operationErrors: [],
-      blockedReasons: [],
-      requestId: null,
-      retryable: false,
-      httpStatus: 404,
-    });
-  }
-  if (
-    session.project_id !== scope.projectId ||
-    session.region_code !== scope.regionCode
-  ) {
-    contractMismatch("Manifest 上传会话与标注任务作用域不一致。");
-  }
-  const result = await request<
-    components["schemas"]["ManifestPreflightResultV1"]
-  >({
-    method: "GET",
-    path: `/projects/${encoded(scope.projectId)}/regions/${encoded(scope.regionCode)}/upload-sessions/${encoded(session.session_id)}/manifest`,
-    scope: scopeForRequest(scope),
-    ...(signal ? { signal } : {}),
-  });
-  if (
-    result.manifest.rollout_id !== task.rollout_id ||
-    result.manifest.project_id !== task.project_id
-  ) {
-    contractMismatch("Manifest 与标注任务固定的 Rollout 不一致。");
-  }
-  return result.discovery;
 }
 
 export async function loadRuntimeAnnotationBundle(
@@ -379,6 +490,161 @@ export async function saveRuntimeAnnotationDraft(
   return revision;
 }
 
+export async function restoreRuntimeAnnotationRevision(
+  scope: RuntimeAnnotationScope,
+  task: RuntimeAnnotationTask,
+  targetRevision: number,
+): Promise<RuntimeAnnotationRevision> {
+  if (!Number.isSafeInteger(targetRevision) || targetRevision < 0) {
+    contractMismatch("回退目标修订必须是非负整数。");
+  }
+  if (targetRevision >= task.current_revision) {
+    contractMismatch("回退目标必须早于当前标注修订。");
+  }
+  const body = {
+    client_mutation_id: createClientMutationId("restore"),
+    expected_revision: task.current_revision,
+    target_revision: targetRevision,
+  } satisfies components["schemas"]["RestoreRevisionRequest"];
+  const revision = await request<components["schemas"]["AnnotationRevision"]>({
+    method: "POST",
+    path: `/annotation-tasks/${encoded(task.task_id)}/revisions:restore`,
+    scope: scopeForRequest(scope),
+    ifMatch: task.etag,
+    body,
+  });
+  if (
+    revision.task_id !== task.task_id ||
+    revision.tag_schema_id !== task.tag_schema_id ||
+    revision.tag_schema_version !== task.tag_schema_version ||
+    revision.parent_revision !== task.current_revision ||
+    revision.origin !== "ANNOTATION_RESTORE"
+  ) {
+    contractMismatch("回退后的修订与任务、父修订或 Tag Schema 不一致。");
+  }
+  return revision;
+}
+
+export async function loadRuntimeAutoAnnotationCapability(
+  scope: RuntimeAnnotationScope,
+  signal?: AbortSignal,
+): Promise<RuntimeAutoAnnotationCapability> {
+  const capability = await request<RuntimeAutoAnnotationCapability>({
+    method: "GET",
+    path: "/capabilities/auto-annotation",
+    scope: scopeForRequest(scope),
+    ...(signal ? { signal } : {}),
+  });
+  assertAutoAnnotationCapability(capability);
+  return capability;
+}
+
+export async function createRuntimeAutoAnnotationJob(
+  scope: RuntimeAnnotationScope,
+  task: RuntimeAnnotationTask,
+  input: {
+    readonly provider: string;
+    readonly model: string;
+    readonly startStep: number;
+    readonly endStep: number;
+  },
+): Promise<RuntimeAutoAnnotationJob> {
+  const body = {
+    revision: task.current_revision,
+    provider: input.provider,
+    model: input.model,
+    input_selection: {
+      start_step: input.startStep,
+      end_step: input.endStep,
+      modalities: [],
+    },
+  } satisfies components["schemas"]["AutoAnnotationRequest"];
+  const job = await request<RuntimeAutoAnnotationJob>({
+    method: "POST",
+    path: `/annotation-tasks/${encoded(task.task_id)}/auto-annotation`,
+    scope: scopeForRequest(scope),
+    idempotencyKey: createClientMutationId("auto-annotation"),
+    body,
+  });
+  assertAutoAnnotationJobIdentity(job, scope, task.task_id);
+  if (job.source_revision !== task.current_revision) {
+    contractMismatch("自动标注任务没有固定当前不可变修订。");
+  }
+  return job;
+}
+
+export async function getRuntimeAutoAnnotationJob(
+  scope: RuntimeAnnotationScope,
+  taskId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<RuntimeAutoAnnotationJob> {
+  const job = await request<RuntimeAutoAnnotationJob>({
+    method: "GET",
+    path: `/annotation-tasks/${encoded(taskId)}/auto-annotation-jobs/${encoded(jobId)}`,
+    scope: scopeForRequest(scope),
+    ...(signal ? { signal } : {}),
+  });
+  assertAutoAnnotationJobIdentity(job, scope, taskId);
+  return job;
+}
+
+async function mutateRuntimeAutoAnnotationJob(
+  scope: RuntimeAnnotationScope,
+  taskId: string,
+  jobId: string,
+  action: "cancel" | "retry",
+): Promise<RuntimeAutoAnnotationJob> {
+  const job = await request<RuntimeAutoAnnotationJob>({
+    method: "POST",
+    path: `/annotation-tasks/${encoded(taskId)}/auto-annotation-jobs/${encoded(jobId)}:${action}`,
+    scope: scopeForRequest(scope),
+  });
+  assertAutoAnnotationJobIdentity(job, scope, taskId);
+  return job;
+}
+
+export function cancelRuntimeAutoAnnotationJob(
+  scope: RuntimeAnnotationScope,
+  taskId: string,
+  jobId: string,
+): Promise<RuntimeAutoAnnotationJob> {
+  return mutateRuntimeAutoAnnotationJob(scope, taskId, jobId, "cancel");
+}
+
+export function retryRuntimeAutoAnnotationJob(
+  scope: RuntimeAnnotationScope,
+  taskId: string,
+  jobId: string,
+): Promise<RuntimeAutoAnnotationJob> {
+  return mutateRuntimeAutoAnnotationJob(scope, taskId, jobId, "retry");
+}
+
+export async function applyRuntimeAutoAnnotationJob(
+  scope: RuntimeAnnotationScope,
+  task: RuntimeAnnotationTask,
+  job: RuntimeAutoAnnotationJob,
+): Promise<RuntimeAnnotationRevision> {
+  const body = {
+    expected_revision: job.source_revision,
+  } satisfies components["schemas"]["ApplyAutoAnnotationRequest"];
+  const revision = await request<RuntimeAnnotationRevision>({
+    method: "POST",
+    path: `/annotation-tasks/${encoded(task.task_id)}/auto-annotation-jobs/${encoded(job.job_id)}:apply`,
+    scope: scopeForRequest(scope),
+    ifMatch: task.etag,
+    body,
+  });
+  if (
+    revision.task_id !== task.task_id ||
+    revision.parent_revision !== task.current_revision ||
+    revision.revision !== task.current_revision + 1
+  ) {
+    contractMismatch("应用自动标注结果后没有追加预期的不可变修订。");
+  }
+  return revision;
+}
+
 export async function submitRuntimeAnnotationRevision(
   scope: RuntimeAnnotationScope,
   task: RuntimeAnnotationTask,
@@ -387,7 +653,9 @@ export async function submitRuntimeAnnotationRevision(
   const body = {
     expected_revision: revision,
   } satisfies components["schemas"]["SubmitRequest"];
-  const submission = await request<components["schemas"]["AnnotationSubmission"]>({
+  const submission = await request<
+    components["schemas"]["AnnotationSubmission"]
+  >({
     method: "POST",
     path: `/annotation-tasks/${encoded(task.task_id)}/submit`,
     scope: scopeForRequest(scope),
@@ -447,6 +715,8 @@ export function createRuntimeAnnotationCommands(
         comment,
       ),
     claim: (task) => claimRuntimeAnnotationTask(scope, task),
+    restoreRevision: (task, targetRevision) =>
+      restoreRuntimeAnnotationRevision(scope, task, targetRevision),
   };
 }
 
@@ -487,12 +757,19 @@ function createPreviewMediaSource(
       contractMismatch("预览授权与当前任务、相机或修订不一致。");
     }
     return {
-      url: descriptor.playlist_url,
+      url: resolvePreviewMediaUrl(descriptor.playlist_url),
       expiresAt: descriptor.signed_url_expires_at,
       kind: "rgb-video" as const,
     };
   };
   return { authorize, refresh: authorize };
+}
+
+function resolvePreviewMediaUrl(url: string): string {
+  if (/^https?:\/\//u.test(url)) return url;
+  const origin = globalThis.location?.origin ?? "http://localhost";
+  const apiOrigin = new URL(getRuntimeConfig().apiBaseUrl, origin).origin;
+  return new URL(url, apiOrigin).toString();
 }
 
 export function resolveReviewSubmission(
@@ -674,7 +951,7 @@ function collectionItems(
     facts:
       task.task_id === bundle.task.task_id
         ? [
-            { label: "任务", value: task.task_id, technical: true },
+            { label: "任务 ID", value: task.task_id, technical: true },
             {
               label: "Schema",
               value: `${task.tag_schema_id} v${task.tag_schema_version}`,

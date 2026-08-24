@@ -60,6 +60,8 @@ class ObjectStoragePort(Protocol):
 
     def read_chunks(self, key: str, chunk_size: int = 8 * 1024 * 1024) -> Iterable[bytes]: ...
 
+    def presign_read(self, key: str, expires_seconds: int) -> str: ...
+
     def put_json(
         self, key: str, value: dict[str, Any], *, if_none_match: bool
     ) -> ObjectMetadata: ...
@@ -213,6 +215,13 @@ class InMemoryObjectStorage:
         body = self.objects[key]
         for offset in range(0, len(body), chunk_size):
             yield body[offset : offset + chunk_size]
+
+    def presign_read(self, key: str, expires_seconds: int) -> str:
+        if expires_seconds < 1:
+            raise ValueError("expires_seconds must be positive")
+        if self.head(key) is None:
+            raise KeyError(key)
+        return f"memory://object/{key}?expires={expires_seconds}"
 
     def put_json(self, key: str, value: dict[str, Any], *, if_none_match: bool) -> ObjectMetadata:
         with self._lock:

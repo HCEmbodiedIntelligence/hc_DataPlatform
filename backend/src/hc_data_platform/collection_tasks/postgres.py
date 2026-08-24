@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
@@ -18,7 +18,7 @@ from .models import (
     CollectionTaskStatus,
     ProgressFacts,
 )
-from .repository import task_closed, task_not_found, version_conflict
+from .repository import task_cancelled, task_closed, task_not_found, version_conflict
 
 
 class PostgresCollectionTaskRepository:
@@ -32,19 +32,22 @@ class PostgresCollectionTaskRepository:
                 cursor.execute(
                     """
                     INSERT INTO collection_tasks.collection_tasks (
-                        collection_task_id, project_id, task_code, name, task_type,
+                        collection_task_id, organization_id, project_id, created_by,
+                        task_code, name, task_type,
                         scenario, description, target_json, quality_threshold, status,
                         version, create_fingerprint, created_at, updated_at
                     ) VALUES (
-                        %s, %s,
+                        %s, %s, %s, %s,
                         lpad(nextval('collection_tasks.task_code_sequence')::text, 8, '0'),
                         %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s
                     )
-                    ON CONFLICT (project_id, collection_task_id) DO NOTHING
+                    ON CONFLICT (organization_id, project_id, collection_task_id) DO NOTHING
                     """,
                     (
                         task.collection_task_id,
+                        task.organization_id,
                         task.project_id,
+                        task.created_by,
                         task.name,
                         task.type,
                         task.scenario,
@@ -61,6 +64,7 @@ class PostgresCollectionTaskRepository:
                 inserted = cursor.rowcount == 1
                 record = self._select_task(
                     cursor,
+                    task.organization_id,
                     task.project_id,
                     task.collection_task_id,
                 )
@@ -86,13 +90,14 @@ class PostgresCollectionTaskRepository:
     def list(
         self,
         *,
+        organization_id: str,
         project_id: str,
         status: CollectionTaskStatus | None,
         limit: int,
         after: tuple[datetime, str] | None,
     ) -> tuple[tuple[CollectionTaskRecord, ...], bool]:
-        clauses = ["project_id = %s"]
-        params: list[object] = [project_id]
+        clauses = ["organization_id = %s", "project_id = %s"]
+        params: list[object] = [organization_id, project_id]
         if status is not None:
             clauses.append("status = %s")
             params.append(status.value)
@@ -118,17 +123,23 @@ class PostgresCollectionTaskRepository:
             connection.close()
         return records[:limit], len(records) > limit
 
-    def get(self, project_id: str, collection_task_id: str) -> CollectionTaskRecord | None:
+    def get(
+        self,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+    ) -> CollectionTaskRecord | None:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
-                return self._select_task(cursor, project_id, collection_task_id)
+                return self._select_task(cursor, organization_id, project_id, collection_task_id)
         finally:
             connection.close()
 
     def update(
         self,
         *,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         expected_version: int,
@@ -157,6 +168,7 @@ class PostgresCollectionTaskRepository:
             with connection.cursor() as cursor:
                 current = self._select_task(
                     cursor,
+                    organization_id,
                     project_id,
                     collection_task_id,
                     for_update=True,
@@ -165,16 +177,18 @@ class PostgresCollectionTaskRepository:
                     raise task_not_found()
                 if current.status is CollectionTaskStatus.CLOSED:
                     raise task_closed()
+                if current.status is CollectionTaskStatus.CANCELLED:
+                    raise task_cancelled()
                 if current.version != expected_version:
                     raise version_conflict(current.version)
                 cursor.execute(
                     f"""
                     UPDATE collection_tasks.collection_tasks
                     SET {", ".join(set_clauses)}, version = version + 1, updated_at = now()
-                    WHERE project_id = %s AND collection_task_id = %s
+                    WHERE organization_id = %s AND project_id = %s AND collection_task_id = %s
                     RETURNING {self._columns()}
                     """,
-                    (*params, project_id, collection_task_id),
+                    (*params, organization_id, project_id, collection_task_id),
                 )
                 updated = self._record(cursor.fetchone())
                 self._audit(
@@ -194,6 +208,7 @@ class PostgresCollectionTaskRepository:
     def close(
         self,
         *,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         expected_version: int,
@@ -203,6 +218,7 @@ class PostgresCollectionTaskRepository:
             with connection.cursor() as cursor:
                 current = self._select_task(
                     cursor,
+                    organization_id,
                     project_id,
                     collection_task_id,
                     for_update=True,
@@ -212,16 +228,18 @@ class PostgresCollectionTaskRepository:
                 if current.status is CollectionTaskStatus.CLOSED:
                     connection.commit()
                     return current
+                if current.status is CollectionTaskStatus.CANCELLED:
+                    raise task_cancelled()
                 if current.version != expected_version:
                     raise version_conflict(current.version)
                 cursor.execute(
                     f"""
                     UPDATE collection_tasks.collection_tasks
                     SET status = 'CLOSED', version = version + 1, updated_at = now()
-                    WHERE project_id = %s AND collection_task_id = %s
+                    WHERE organization_id = %s AND project_id = %s AND collection_task_id = %s
                     RETURNING {self._columns()}
                     """,
-                    (project_id, collection_task_id),
+                    (organization_id, project_id, collection_task_id),
                 )
                 closed = self._record(cursor.fetchone())
                 self._audit(
@@ -230,6 +248,7 @@ class PostgresCollectionTaskRepository:
                     before=current,
                     after=closed,
                 )
+                self._notify_lifecycle_transition(cursor, current, closed)
             connection.commit()
             return closed
         except Exception:
@@ -238,8 +257,105 @@ class PostgresCollectionTaskRepository:
         finally:
             connection.close()
 
+    def cancel(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        expected_version: int,
+    ) -> CollectionTaskRecord:
+        return self._transition(
+            organization_id=organization_id,
+            project_id=project_id,
+            collection_task_id=collection_task_id,
+            expected_version=expected_version,
+            target_status=CollectionTaskStatus.CANCELLED,
+            action="collection_task.cancelled",
+        )
+
+    def reopen(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        expected_version: int,
+    ) -> CollectionTaskRecord:
+        return self._transition(
+            organization_id=organization_id,
+            project_id=project_id,
+            collection_task_id=collection_task_id,
+            expected_version=expected_version,
+            target_status=CollectionTaskStatus.ACTIVE,
+            action="collection_task.reopened",
+        )
+
+    def _transition(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        expected_version: int,
+        target_status: CollectionTaskStatus,
+        action: str,
+    ) -> CollectionTaskRecord:
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                current = self._select_task(
+                    cursor,
+                    organization_id,
+                    project_id,
+                    collection_task_id,
+                    for_update=True,
+                )
+                if current is None:
+                    raise task_not_found()
+                if current.status is target_status:
+                    connection.commit()
+                    return current
+                if target_status is CollectionTaskStatus.CANCELLED:
+                    if current.status is CollectionTaskStatus.CLOSED:
+                        raise task_closed()
+                    if current.status is not CollectionTaskStatus.ACTIVE:
+                        raise task_cancelled()
+                elif target_status is CollectionTaskStatus.ACTIVE:
+                    if current.status not in {
+                        CollectionTaskStatus.CLOSED,
+                        CollectionTaskStatus.CANCELLED,
+                    }:
+                        raise task_closed()
+                else:
+                    raise ValueError(
+                        f"unsupported collection task transition target {target_status.value}"
+                    )
+                if current.version != expected_version:
+                    raise version_conflict(current.version)
+                cursor.execute(
+                    f"""
+                    UPDATE collection_tasks.collection_tasks
+                    SET status = %s, version = version + 1, updated_at = now()
+                    WHERE organization_id = %s AND project_id = %s AND collection_task_id = %s
+                    RETURNING {self._columns()}
+                    """,
+                    (target_status.value, organization_id, project_id, collection_task_id),
+                )
+                updated = self._record(cursor.fetchone())
+                self._audit(cursor, action=action, before=current, after=updated)
+                self._notify_lifecycle_transition(cursor, current, updated)
+            connection.commit()
+            return updated
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def progress(
         self,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         region_code: str,
@@ -247,6 +363,11 @@ class PostgresCollectionTaskRepository:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
+                if (
+                    self._select_task(cursor, organization_id, project_id, collection_task_id)
+                    is None
+                ):
+                    raise task_not_found()
                 cursor.execute(
                     """
                     WITH received AS (
@@ -274,6 +395,45 @@ class PostgresCollectionTaskRepository:
                           ON summary.project_id = received.project_id
                          AND summary.region_code = received.region_code
                          AND summary.rollout_id = received.rollout_id
+                    ), duration_rows AS (
+                        SELECT received.data_package_id,
+                               CASE
+                                   WHEN NULLIF(
+                                       discovery.preflight_json #>> '{time_range,start_time}', ''
+                                   ) IS NOT NULL
+                                    AND NULLIF(
+                                       discovery.preflight_json #>> '{time_range,end_time}', ''
+                                   ) IS NOT NULL
+                                   THEN extract(
+                                       epoch FROM (
+                                           (
+                                               discovery.preflight_json #>> ARRAY[
+                                                   'time_range',
+                                                   'end_time'
+                                               ]
+                                           )::timestamptz
+                                           - (
+                                               discovery.preflight_json #>> ARRAY[
+                                                   'time_range',
+                                                   'start_time'
+                                               ]
+                                           )::timestamptz
+                                       )
+                                   )
+                                   ELSE NULL
+                               END AS duration_seconds
+                        FROM received
+                        LEFT JOIN ingest.manifest_discoveries discovery
+                          ON discovery.project_id = received.project_id
+                         AND discovery.region_code = received.region_code
+                         AND discovery.data_package_id = received.data_package_id
+                    ), duration_facts AS (
+                        SELECT sum(duration_seconds)::double precision AS captured_duration_seconds,
+                               count(*) FILTER (WHERE duration_seconds IS NOT NULL)::bigint
+                                   AS duration_observed_package_count,
+                               count(*) FILTER (WHERE duration_seconds IS NULL)::bigint
+                                   AS duration_unknown_package_count
+                        FROM duration_rows
                     ), discoveries AS (
                         SELECT discovery.preflight_json
                         FROM received
@@ -284,6 +444,9 @@ class PostgresCollectionTaskRepository:
                     )
                     SELECT now(), counts.received_count, counts.pass_count,
                            counts.risk_count, counts.reject_count,
+                           duration_facts.captured_duration_seconds,
+                           duration_facts.duration_observed_package_count,
+                           duration_facts.duration_unknown_package_count,
                            COALESCE((
                                SELECT array_agg(DISTINCT source_id ORDER BY source_id)
                                FROM (
@@ -320,6 +483,7 @@ class PostgresCollectionTaskRepository:
                                WHERE topic->>'name' IS NOT NULL
                            ), ARRAY[]::text[])
                     FROM counts
+                    CROSS JOIN duration_facts
                     """,
                     (project_id, collection_task_id, region_code),
                 )
@@ -332,9 +496,12 @@ class PostgresCollectionTaskRepository:
                     pass_count=int(row[2]),
                     risk_count=int(row[3]),
                     reject_count=int(row[4]),
-                    device_ids=tuple(map(str, row[5])),
-                    camera_ids=tuple(map(str, row[6])),
-                    topic_names=tuple(map(str, row[7])),
+                    captured_duration_seconds=(None if row[5] is None else float(row[5])),
+                    duration_observed_package_count=int(row[6]),
+                    duration_unknown_package_count=int(row[7]),
+                    device_ids=tuple(map(str, row[8])),
+                    camera_ids=tuple(map(str, row[9])),
+                    topic_names=tuple(map(str, row[10])),
                 )
         finally:
             connection.close()
@@ -342,7 +509,8 @@ class PostgresCollectionTaskRepository:
     @staticmethod
     def _columns() -> str:
         return (
-            "collection_task_id, project_id, task_code, name, task_type, scenario, "
+            "collection_task_id, organization_id, project_id, created_by, task_code, name, "
+            "task_type, scenario, "
             "description, target_json, quality_threshold, status, version, "
             "create_fingerprint, created_at, updated_at"
         )
@@ -350,6 +518,7 @@ class PostgresCollectionTaskRepository:
     def _select_task(
         self,
         cursor: Any,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         *,
@@ -360,9 +529,9 @@ class PostgresCollectionTaskRepository:
             f"""
             SELECT {self._columns()}
             FROM collection_tasks.collection_tasks
-            WHERE project_id = %s AND collection_task_id = %s{suffix}
+            WHERE organization_id = %s AND project_id = %s AND collection_task_id = %s{suffix}
             """,
-            (project_id, collection_task_id),
+            (organization_id, project_id, collection_task_id),
         )
         row = cursor.fetchone()
         return None if row is None else self._record(row)
@@ -370,24 +539,26 @@ class PostgresCollectionTaskRepository:
     @staticmethod
     def _record(row: object) -> CollectionTaskRecord:
         values: tuple[object, ...] = tuple(row)  # type: ignore[arg-type]
-        target = values[7]
+        target = values[9]
         if isinstance(target, str):
             target = json.loads(target)
         return CollectionTaskRecord(
             collection_task_id=str(values[0]),
-            project_id=str(values[1]),
-            task_code=str(values[2]),
-            name=str(values[3]),
-            type=str(values[4]),
-            scenario=str(values[5]),
-            description=str(values[6]),
+            organization_id=str(values[1]),
+            project_id=str(values[2]),
+            created_by=None if values[3] is None else str(values[3]),
+            task_code=str(values[4]),
+            name=str(values[5]),
+            type=str(values[6]),
+            scenario=str(values[7]),
+            description=str(values[8]),
             target=None if target is None else CollectionTarget.model_validate(target),
-            quality_threshold=(None if values[8] is None else float(cast(float, values[8]))),
-            status=CollectionTaskStatus(str(values[9])),
-            version=cast(int, values[10]),
-            create_fingerprint=str(values[11]),
-            created_at=values[12],
-            updated_at=values[13],
+            quality_threshold=(None if values[10] is None else float(cast(float, values[10]))),
+            status=CollectionTaskStatus(str(values[11])),
+            version=cast(int, values[12]),
+            create_fingerprint=str(values[13]),
+            created_at=values[14],
+            updated_at=values[15],
         )
 
     @staticmethod
@@ -399,6 +570,70 @@ class PostgresCollectionTaskRepository:
         else:
             payload = CollectionTarget.model_validate(value).model_dump(mode="json")
         return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _notify_lifecycle_transition(
+        cursor: Any,
+        before: CollectionTaskRecord,
+        after: CollectionTaskRecord,
+    ) -> None:
+        """Persist an owner notification with the status update, never as an outbox side effect.
+
+        A task created by an older service or a non-account automation identity has no
+        recipient.  It remains auditable, but cannot safely manufacture an inbox owner.
+        Session-authenticated API creation supplies a UUID principal, and the unique
+        recipient/event key makes an idempotent command incapable of duplicating an event.
+        """
+
+        if before.status is after.status or after.created_by is None:
+            return
+        try:
+            recipient_id = UUID(after.created_by)
+        except ValueError:
+            return
+        kind = {
+            CollectionTaskStatus.CLOSED: "COLLECTION_TASK_CLOSED",
+            CollectionTaskStatus.CANCELLED: "COLLECTION_TASK_CANCELLED",
+            CollectionTaskStatus.ACTIVE: "COLLECTION_TASK_REOPENED",
+        }[after.status]
+        event_key = (
+            f"collection-task:{after.collection_task_id}:{after.status.value.lower()}:"
+            f"v{after.version}"
+        )
+        context = current_request_context()
+        cursor.execute("SELECT set_config('app.subject_id', %s, true)", (str(recipient_id),))
+        try:
+            cursor.execute(
+                """
+                INSERT INTO access_control.account_notifications (
+                    notification_id, recipient_id, kind, organization_id, project_id,
+                    access_request_id, resource_type, resource_id, event_key, state
+                ) VALUES (
+                    %s::uuid, %s::uuid, %s, %s, %s,
+                    NULL, 'COLLECTION_TASK', %s, %s, 'UNREAD'
+                )
+                ON CONFLICT (recipient_id, event_key) DO NOTHING
+                """,
+                (
+                    str(uuid4()),
+                    str(recipient_id),
+                    kind,
+                    after.organization_id,
+                    after.project_id,
+                    after.collection_task_id,
+                    event_key,
+                ),
+            )
+        except Exception:
+            # The enclosing lifecycle transaction must roll back the status update,
+            # audit row, and notification together.  Do not mask its root cause by
+            # issuing another command against PostgreSQL's aborted transaction.
+            raise
+        else:
+            cursor.execute(
+                "SELECT set_config('app.subject_id', %s, true)",
+                (context.subject_id or "",),
+            )
 
     @staticmethod
     def _audit(

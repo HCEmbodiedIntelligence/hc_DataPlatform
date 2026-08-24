@@ -42,8 +42,8 @@ class DecoderProbe(Protocol):
         schema_name: str = "",
         schema_data: bytes,
         message_data: bytes,
-    ) -> None:
-        """Raise ``ValueError`` when the sample cannot be decoded."""
+    ) -> object:
+        """Return the decoded sample or raise ``ValueError`` when it is invalid."""
 
 
 @runtime_checkable
@@ -101,11 +101,12 @@ class FakeDecoderProbe:
         schema_name: str = "",
         schema_data: bytes,
         message_data: bytes,
-    ) -> None:
+    ) -> object:
         del schema_name
         self.calls.append((message_encoding, schema_encoding))
         if self.reject_prefix and message_data.startswith(self.reject_prefix):
             raise ValueError("sample rejected by decoder")
+        return message_data
 
 
 SampleDecoder = Callable[[bytes, bytes], object]
@@ -128,14 +129,14 @@ class RegisteredDecoderProbe:
         schema_name: str = "",
         schema_data: bytes,
         message_data: bytes,
-    ) -> None:
+    ) -> object:
         del schema_name
         try:
             decoder = self._decoders[(message_encoding, schema_encoding)]
         except KeyError as exc:
             raise ValueError("no registered decoder supports the schema pair") from exc
         try:
-            decoder(schema_data, message_data)
+            return decoder(schema_data, message_data)
         except (TypeError, ValueError):
             raise
         except Exception as exc:
@@ -163,14 +164,14 @@ class CompositeDecoderProbe:
         schema_name: str = "",
         schema_data: bytes,
         message_data: bytes,
-    ) -> None:
+    ) -> object:
         decoder = next(
             (item for item in self._decoders if item.supports(message_encoding, schema_encoding)),
             None,
         )
         if decoder is None:
             raise ValueError("no registered decoder supports the schema pair")
-        decoder.probe(
+        return decoder.probe(
             message_encoding=message_encoding,
             schema_encoding=schema_encoding,
             schema_name=schema_name,
@@ -196,7 +197,7 @@ class McapRos2DecoderProbe:
         schema_name: str = "",
         schema_data: bytes,
         message_data: bytes,
-    ) -> None:
+    ) -> object:
         if not self.supports(message_encoding, schema_encoding):
             raise ValueError("the ROS 2 decoder only supports cdr/ros2msg")
         if not schema_name:
@@ -214,7 +215,7 @@ class McapRos2DecoderProbe:
             decoder = factory.decoder_for(message_encoding, schema)
             if decoder is None:
                 raise ValueError("the ROS 2 factory rejected the schema pair")
-            decoder(message_data)
+            return decoder(message_data)
         except (TypeError, ValueError):
             raise
         except Exception as exc:

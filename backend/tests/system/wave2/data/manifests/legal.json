@@ -7,13 +7,14 @@
   "cameras": [
     {
       "camera_id": "front",
+      "encoding": "jpeg",
       "topic": "/camera/front/image"
     }
   ],
   "collection_job_id": "be22-legal-job",
   "collection_session_id": "be22-legal-session",
   "compression": "none",
-  "crc64": "13305216265320122395",
+  "crc64": "3627812729156321151",
   "data_package_id": "be22-legal-package",
   "end_time": "2023-11-14T22:13:21Z",
   "expected_topics": [
@@ -21,15 +22,15 @@
     "/joint_states",
     "/action"
   ],
-  "file_size": 4637,
+  "file_size": 34881,
   "files": [
     {
-      "crc64": "13305216265320122395",
+      "crc64": "3627812729156321151",
       "media_type": "application/octet-stream",
       "path": "recording.mcap",
       "role": "RAW_MCAP",
-      "sha256": "2519485c1c0d93c0e759be517bfbc90df43f8d293319edbd075e53c309f8d403",
-      "size": 4637
+      "sha256": "35f060e6fd2b8d443165a5771c3faa0b2f548c623f5dd4e0ad795b5534596a35",
+      "size": 34881
     }
   ],
   "project_id": "be22-template-project",
@@ -39,21 +40,27 @@
   "rollout_id": "be22-legal-rollout",
   "schema_version": 1,
   "sequence_no": 1,
-  "sha256": "2519485c1c0d93c0e759be517bfbc90df43f8d293319edbd075e53c309f8d403",
+  "sha256": "35f060e6fd2b8d443165a5771c3faa0b2f548c623f5dd4e0ad795b5534596a35",
   "start_time": "2023-11-14T22:13:20Z",
   "task_id": "be22-template-task",
   "topics": [
     {
+      "message_encoding": "json",
       "name": "/camera/front/image",
-      "required": true
+      "required": true,
+      "schema_name": "sensor_msgs/Image"
     },
     {
+      "message_encoding": "cdr",
       "name": "/joint_states",
-      "required": true
+      "required": true,
+      "schema_name": "sensor_msgs/JointState"
     },
     {
+      "message_encoding": "cdr",
       "name": "/action",
-      "required": true
+      "required": true,
+      "schema_name": "hc_msgs/Action"
     }
   ]
 }

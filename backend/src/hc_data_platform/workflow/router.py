@@ -4,16 +4,21 @@ import inspect
 import os
 from collections.abc import Awaitable
 from functools import lru_cache
-from typing import TypeVar, cast
+from typing import Annotated, TypeVar, cast
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 
 from hc_data_platform.core.config import get_settings
 from hc_data_platform.core.errors import problem
+from hc_data_platform.data_sources.models import DataSourceAsyncJob
+from hc_data_platform.data_sources.router import get_data_source_service
+from hc_data_platform.dataset_registry.models import DatasetPageAsyncJob
+from hc_data_platform.dataset_registry.router import get_dataset_page_service
 from hc_data_platform.security import Permission
 from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
 
 from .models import JobListV1, JobRecord, JobStatus
+from .names import EXPORT_WORKFLOW
 from .service import InMemoryWorkflowLauncher, TemporalWorkflowLauncher
 from .worker import DEFAULT_TASK_QUEUE
 
@@ -43,6 +48,20 @@ async def _resolve(value: _T | Awaitable[_T]) -> _T:
     return value
 
 
+def _without_export_locators(job: JobRecord) -> JobRecord:
+    """Project export jobs without their stored physical locator or prior grant."""
+
+    if job.job_type != EXPORT_WORKFLOW or not isinstance(job.result, dict):
+        return job
+    raw_export = job.result.get("export")
+    if not isinstance(raw_export, dict):
+        return job
+    safe_export = dict(raw_export)
+    safe_export.pop("artifact_uri", None)
+    safe_export.pop("download_uri", None)
+    return job.model_copy(update={"result": {**job.result, "export": safe_export}})
+
+
 @router.get("/jobs", response_model=JobListV1)
 async def list_jobs(
     auth: VerifiedAuth,
@@ -52,7 +71,7 @@ async def list_jobs(
     selected_project = project_id
     if selected_project is not None:
         authorize_read(auth, selected_project)
-    elif "admin" not in auth.roles:
+    elif "admin" not in auth.legacy_roles():
         if len(auth.project_ids) != 1:
             raise problem(
                 status=400,
@@ -68,11 +87,35 @@ async def list_jobs(
     return await _resolve(result)
 
 
-@router.get("/jobs/{job_id}", response_model=JobRecord)
-async def get_job(job_id: str, auth: VerifiedAuth) -> JobRecord:
+@router.get("/jobs/{job_id}", response_model=JobRecord | DataSourceAsyncJob | DatasetPageAsyncJob)
+async def get_job(
+    job_id: str,
+    auth: VerifiedAuth,
+    organization_id: Annotated[str | None, Header(alias="X-Organization-Id")] = None,
+    project_id: Annotated[str | None, Header(alias="X-Project-Id")] = None,
+    region_code: Annotated[str | None, Header(alias="X-Region-Code")] = None,
+) -> JobRecord | DataSourceAsyncJob | DatasetPageAsyncJob:
+    data_source_job = get_data_source_service().get_connection_test_async_job(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        job_id=job_id,
+    )
+    if data_source_job is not None:
+        return data_source_job
+    dataset_page_job = get_dataset_page_service().get_async_job(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        job_id=job_id,
+    )
+    if dataset_page_job is not None:
+        return dataset_page_job
     job = await _resolve(get_launcher().get(job_id))
     authorize_read(auth, job.project_id)
-    return job
+    return _without_export_locators(job)
 
 
 @router.post("/jobs/{job_id}:cancel", response_model=JobRecord)

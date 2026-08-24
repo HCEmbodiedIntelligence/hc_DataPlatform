@@ -45,6 +45,15 @@ interface SaveRequest {
   readonly idempotencyKey?: string;
 }
 
+type LifecycleAction = "close" | "cancel" | "reopen";
+
+interface LifecycleTarget {
+  readonly task: CollectionTask;
+  readonly action: LifecycleAction;
+}
+
+interface LifecycleRequest extends LifecycleTarget {}
+
 export interface CollectionTaskPageProps {
   readonly gateway?: CollectionTaskGateway;
   readonly capabilityOverride?: "manage" | "read-only";
@@ -95,7 +104,7 @@ function problemDescription(error: unknown, fallback: string) {
   );
 }
 
-function newIdempotencyKey(prefix: "create" | "close"): string {
+function newIdempotencyKey(prefix: "create" | LifecycleAction): string {
   const identifier =
     globalThis.crypto?.randomUUID?.() ??
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -128,15 +137,17 @@ export function CollectionTaskPage({
   const [params, setParams] = useSearchParams();
   const search = collectionTaskQueryCodec.parse(params);
   const [cursorTrail, setCursorTrail] = useState<readonly string[]>([]);
-  const [closeTarget, setCloseTarget] = useState<CollectionTask | null>(null);
+  const [lifecycleTarget, setLifecycleTarget] =
+    useState<LifecycleTarget | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const createIdempotencyKey = useRef(newIdempotencyKey("create"));
-  const closeAttempt = useRef<{
+  const lifecycleAttempt = useRef<{
     readonly taskId: string;
     readonly etag: string;
     readonly idempotencyKey: string;
+    readonly action: LifecycleAction;
   } | null>(null);
-  const closeSubmitLock = useRef(false);
+  const lifecycleSubmitLock = useRef(false);
 
   const scope = useMemo<CollectionTaskScope | null>(
     () =>
@@ -275,21 +286,42 @@ export function CollectionTaskPage({
     },
   });
 
-  const closeTask = useMutation({
-    mutationFn: async (task: CollectionTask) => {
+  const lifecycleTask = useMutation({
+    mutationFn: async ({ action, task }: LifecycleRequest) => {
       if (scope === null) throw new Error("Missing collection-task scope");
-      let attempt = closeAttempt.current;
-      if (attempt === null || attempt.taskId !== task.collection_task_id) {
+      let attempt = lifecycleAttempt.current;
+      if (
+        attempt === null ||
+        attempt.taskId !== task.collection_task_id ||
+        attempt.action !== action
+      ) {
         const snapshot = await gateway.detail(scope, task.collection_task_id);
         attempt = {
           taskId: task.collection_task_id,
           etag: snapshot.etag,
-          idempotencyKey: newIdempotencyKey("close"),
+          idempotencyKey: newIdempotencyKey(action),
+          action,
         };
-        closeAttempt.current = attempt;
+        lifecycleAttempt.current = attempt;
       }
       try {
-        return await gateway.close(
+        if (action === "close") {
+          return await gateway.close(
+            scope,
+            task.collection_task_id,
+            attempt.etag,
+            attempt.idempotencyKey,
+          );
+        }
+        if (action === "cancel") {
+          return await gateway.cancel(
+            scope,
+            task.collection_task_id,
+            attempt.etag,
+            attempt.idempotencyKey,
+          );
+        }
+        return await gateway.reopen(
           scope,
           task.collection_task_id,
           attempt.etag,
@@ -301,21 +333,21 @@ export function CollectionTaskPage({
           (error.code === "VERSION_CONFLICT" ||
             error.code === "PRECONDITION_FAILED")
         ) {
-          closeAttempt.current = null;
+          lifecycleAttempt.current = null;
         }
         throw error;
       }
     },
     onSuccess: async () => {
-      closeAttempt.current = null;
-      setCloseTarget(null);
+      lifecycleAttempt.current = null;
+      setLifecycleTarget(null);
       await queryClient.invalidateQueries({
         queryKey: ["collection-tasks", scopeKey],
       });
       window.setTimeout(() => returnFocusRef.current?.focus(), 0);
     },
     onSettled: () => {
-      closeSubmitLock.current = false;
+      lifecycleSubmitLock.current = false;
     },
   });
 
@@ -335,8 +367,8 @@ export function CollectionTaskPage({
 
   useEffect(() => {
     setCursorTrail([]);
-    setCloseTarget(null);
-    closeAttempt.current = null;
+    setLifecycleTarget(null);
+    lifecycleAttempt.current = null;
   }, [scopeKey]);
 
   const openCreate = useCallback(() => {
@@ -372,11 +404,39 @@ export function CollectionTaskPage({
         document.activeElement instanceof HTMLElement
           ? document.activeElement
           : null;
-      closeAttempt.current = null;
-      closeTask.reset();
-      setCloseTarget(task);
+      lifecycleAttempt.current = null;
+      lifecycleTask.reset();
+      setLifecycleTarget({ task, action: "close" });
     },
-    [canManage, closeTask],
+    [canManage, lifecycleTask],
+  );
+
+  const requestCancelTask = useCallback(
+    (task: CollectionTask) => {
+      if (!canManage || task.status !== "ACTIVE") return;
+      returnFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      lifecycleAttempt.current = null;
+      lifecycleTask.reset();
+      setLifecycleTarget({ task, action: "cancel" });
+    },
+    [canManage, lifecycleTask],
+  );
+
+  const requestReopenTask = useCallback(
+    (task: CollectionTask) => {
+      if (!canManage || task.status === "ACTIVE") return;
+      returnFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      lifecycleAttempt.current = null;
+      lifecycleTask.reset();
+      setLifecycleTarget({ task, action: "reopen" });
+    },
+    [canManage, lifecycleTask],
   );
 
   const submitDrawer = async (command: CreateCollectionTask) => {
@@ -421,8 +481,10 @@ export function CollectionTaskPage({
       canManage={canManage}
       filtered={filtered}
       loading={list.isPending}
+      onCancel={requestCancelTask}
       onClose={requestCloseTask}
       onEdit={openEdit}
+      onReopen={requestReopenTask}
       progressByTaskId={progressByTaskId}
       tasks={visibleTasks}
     />
@@ -475,6 +537,19 @@ export function CollectionTaskPage({
   const drawerMode = search.drawer?.mode ?? "create";
   const drawerTask = drawerMode === "edit" ? detail.data?.task : undefined;
   const drawerLoadError = drawerMode === "edit" ? detail.error : undefined;
+  const lifecycleAction = lifecycleTarget?.action ?? "close";
+  const lifecycleTitle =
+    lifecycleAction === "close"
+      ? "关闭采集任务"
+      : lifecycleAction === "cancel"
+        ? "取消采集任务"
+        : "重新开启采集任务";
+  const lifecycleConfirm =
+    lifecycleAction === "close"
+      ? "确认关闭任务"
+      : lifecycleAction === "cancel"
+        ? "确认取消任务"
+        : "确认重新开启";
 
   return (
     <div
@@ -537,6 +612,7 @@ export function CollectionTaskPage({
                       { value: "ALL", label: "全部状态" },
                       { value: "ACTIVE", label: "进行中" },
                       { value: "CLOSED", label: "已关闭" },
+                      { value: "CANCELLED", label: "已取消" },
                     ]}
                     value={search.status}
                     onChange={(status) => changeSearch({ status }, true)}
@@ -652,81 +728,97 @@ export function CollectionTaskPage({
 
       <Modal
         cancelText="取消"
-        closable={!closeTask.isPending}
-        keyboard={!closeTask.isPending}
+        closable={!lifecycleTask.isPending}
+        keyboard={!lifecycleTask.isPending}
         mask={{ closable: false }}
         okButtonProps={{
-          danger: true,
-          disabled: closeTask.isPending,
-          loading: closeTask.isPending,
+          danger: lifecycleAction !== "reopen",
+          disabled: lifecycleTask.isPending,
+          loading: lifecycleTask.isPending,
         }}
         okText={
-          closeTask.isPending
-            ? "正在关闭…"
-            : closeTask.error &&
-                isDomainError(closeTask.error) &&
-                (closeTask.error.code === "VERSION_CONFLICT" ||
-                  closeTask.error.code === "PRECONDITION_FAILED")
-              ? "重新加载并关闭"
-              : "确认关闭任务"
+          lifecycleTask.isPending
+            ? lifecycleAction === "close"
+              ? "正在关闭…"
+              : lifecycleAction === "cancel"
+                ? "正在取消…"
+                : "正在重新开启…"
+            : lifecycleTask.error &&
+                isDomainError(lifecycleTask.error) &&
+                (lifecycleTask.error.code === "VERSION_CONFLICT" ||
+                  lifecycleTask.error.code === "PRECONDITION_FAILED")
+              ? `重新加载并${lifecycleAction === "reopen" ? "开启" : lifecycleAction === "cancel" ? "取消" : "关闭"}`
+              : lifecycleConfirm
         }
-        open={closeTarget !== null}
-        title="关闭采集任务"
+        open={lifecycleTarget !== null}
+        title={lifecycleTitle}
         onCancel={() => {
-          if (closeTask.isPending) return;
-          setCloseTarget(null);
-          closeAttempt.current = null;
+          if (lifecycleTask.isPending) return;
+          setLifecycleTarget(null);
+          lifecycleAttempt.current = null;
           window.setTimeout(() => returnFocusRef.current?.focus(), 0);
         }}
         onOk={() => {
-          if (!closeTarget || closeSubmitLock.current) return;
-          closeSubmitLock.current = true;
-          closeTask.mutate(closeTarget);
+          if (!lifecycleTarget || lifecycleSubmitLock.current) return;
+          lifecycleSubmitLock.current = true;
+          lifecycleTask.mutate(lifecycleTarget);
         }}
       >
-        {closeTarget ? (
+        {lifecycleTarget ? (
           <Space orientation="vertical" size="middle">
             <Alert
               showIcon
-              title="关闭后不再接受新的数据包关联，历史数据仍可查询。"
+              title={
+                lifecycleAction === "close"
+                  ? "关闭后不再接受新的数据包关联，历史数据仍可查询。"
+                  : lifecycleAction === "cancel"
+                    ? "取消后不再接受新的数据包关联；可由有权限成员明确重新开启。"
+                    : "重新开启后，任务可再次接受新的数据包关联。"
+              }
               type="warning"
             />
             <p className={styles.closeIdentity}>
-              <strong>{closeTarget.name}</strong>
-              <code translate="no">{closeTarget.task_code}</code>
+              <strong>{lifecycleTarget.task.name}</strong>
+              <code translate="no">{lifecycleTarget.task.task_code}</code>
             </p>
-            <p>此版本不支持重新打开；如需再次采集，请创建新任务。</p>
-            {closeTask.error ? (
+            <p>
+              {lifecycleAction === "close"
+                ? "关闭后可由有权限成员明确重新开启；系统不会因进度达标而自动关闭。"
+                : lifecycleAction === "cancel"
+                  ? "取消不是删除，历史数据与审计记录仍会保留。"
+                  : "重新开启不会修改已关联的数据包、质量事实或目标。"}
+            </p>
+            {lifecycleTask.error ? (
               <Alert
                 role="alert"
                 showIcon
                 title={
-                  isDomainError(closeTask.error) &&
-                  closeTask.error.code === "RATE_LIMITED"
+                  isDomainError(lifecycleTask.error) &&
+                  lifecycleTask.error.code === "RATE_LIMITED"
                     ? "请求频率受限"
-                    : "任务未关闭"
+                    : "任务状态未更新"
                 }
                 description={
                   <Space orientation="vertical" size={4}>
                     <span>
-                      {isDomainError(closeTask.error)
-                        ? closeTask.error.message
+                      {isDomainError(lifecycleTask.error)
+                        ? lifecycleTask.error.message
                         : "请稍后重试。"}
                     </span>
-                    {requestId(closeTask.error) ? (
+                    {requestId(lifecycleTask.error) ? (
                       <Typography.Text code translate="no">
-                        请求 ID：{requestId(closeTask.error)}
+                        请求 ID：{requestId(lifecycleTask.error)}
                       </Typography.Text>
                     ) : null}
-                    {isDomainError(closeTask.error) &&
-                    closeTask.error.problemCode ? (
+                    {isDomainError(lifecycleTask.error) &&
+                    lifecycleTask.error.problemCode ? (
                       <Typography.Text code translate="no">
-                        问题代码：{closeTask.error.problemCode}
+                        问题代码：{lifecycleTask.error.problemCode}
                       </Typography.Text>
                     ) : null}
-                    {isDomainError(closeTask.error) ? (
+                    {isDomainError(lifecycleTask.error) ? (
                       <span>
-                        {closeTask.error.retryable
+                        {lifecycleTask.error.retryable
                           ? "服务端允许重试。"
                           : "请先重新加载任务事实。"}
                       </span>

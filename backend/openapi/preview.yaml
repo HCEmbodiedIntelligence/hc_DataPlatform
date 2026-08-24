@@ -3,6 +3,9 @@ paths:
     post:
       operationId: createPreviewSession
       tags: [preview]
+      parameters:
+        - {in: header, name: X-Organization-Id, required: false, schema: {type: string, minLength: 1}}
+        - {in: header, name: X-Region-Code, required: false, schema: {type: string, minLength: 1}}
       requestBody:
         required: true
         content:
@@ -19,6 +22,8 @@ paths:
       operationId: getPreviewSession
       tags: [preview]
       parameters:
+        - {in: header, name: X-Organization-Id, required: false, schema: {type: string, minLength: 1}}
+        - {in: header, name: X-Region-Code, required: false, schema: {type: string, minLength: 1}}
         - in: path
           name: session_id
           required: true
@@ -29,15 +34,57 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/PreviewDescriptorV1'}
+  /api/v1/previews/sessions/{session_id}/media/{asset_name}:
+    get:
+      operationId: getPreviewMedia
+      tags: [preview]
+      security: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: {type: string, minLength: 1}
+        - in: path
+          name: asset_name
+          required: true
+          schema: {type: string, pattern: '^(?:index\\.m3u8|init\\.mp4|segment_[0-9]{5}\\.m4s)$'}
+        - in: query
+          name: expires
+          required: true
+          schema: {type: integer, minimum: 1}
+        - in: query
+          name: sig
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      responses:
+        "200":
+          description: Signed HLS playlist or complete CMAF preview asset
+          headers:
+            Cache-Control: {schema: {type: string}}
+          content:
+            application/vnd.apple.mpegurl: {schema: {type: string}}
+            video/mp4: {schema: {type: string, format: binary}}
+            video/iso.segment: {schema: {type: string, format: binary}}
+        "206":
+          description: Requested byte range of a CMAF preview asset
+          headers:
+            Accept-Ranges: {schema: {type: string, const: bytes}}
+            Content-Range: {schema: {type: string}}
+            Cache-Control: {schema: {type: string}}
+        "403": {description: Invalid or expired media capability}
+        "404": {description: Preview session or asset not found}
+        "416": {description: Requested range is not satisfiable}
 components:
   schemas:
     EncodingProfileV1:
       type: object
       properties:
-        name: {type: string, default: h264-cmaf-preview-v1}
+        name:
+          type: string
+          default: h264-cmaf-preview-v1
         width: {type: integer, minimum: 16, maximum: 4096, default: 1280}
         height: {type: integer, minimum: 16, maximum: 2160, default: 720}
-        video_codec: {type: string, const: h264, default: h264}
+        video_codec: {type: string, enum: [h264, vp9], default: h264}
         pixel_format: {type: string, const: yuv420p, default: yuv420p}
         video_bitrate_kbps: {type: integer, minimum: 64, maximum: 50000, default: 2000}
         segment_duration_seconds: {type: number, minimum: 0.25, maximum: 10, default: 2}

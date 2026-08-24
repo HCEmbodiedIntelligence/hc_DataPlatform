@@ -186,7 +186,7 @@ function EpisodeFilters({
 }>) {
   const [draft, setDraft] = useState(() => ({
     q: search.q ?? '',
-    task: search.task ?? '',
+    task: search.collectionTaskId ?? search.task ?? '',
     success: search.successState ?? '',
     sort: search.sort ?? 'ordinal-asc',
     limit: search.limit,
@@ -195,12 +195,19 @@ function EpisodeFilters({
     () =>
       setDraft({
         q: search.q ?? '',
-        task: search.task ?? '',
+        task: search.collectionTaskId ?? search.task ?? '',
         success: search.successState ?? '',
         sort: search.sort ?? 'ordinal-asc',
         limit: search.limit,
       }),
-    [search.limit, search.q, search.sort, search.successState, search.task],
+    [
+      search.collectionTaskId,
+      search.limit,
+      search.q,
+      search.sort,
+      search.successState,
+      search.task,
+    ],
   );
   return (
     <FilterToolbar
@@ -208,7 +215,7 @@ function EpisodeFilters({
       onApply={() =>
         onApply({
           q: draft.q.trim() || undefined,
-          task: draft.task.trim() || undefined,
+          task: search.collectionTaskId ? undefined : draft.task.trim() || undefined,
           successState: (draft.success || undefined) as DatasetDetailSearch['successState'],
           sort: draft.sort,
           limit: draft.limit,
@@ -234,8 +241,14 @@ function EpisodeFilters({
       <label className={styles.filterField}>
         任务
         <input
+          readOnly={Boolean(search.collectionTaskId)}
+          title={search.collectionTaskId ? '此任务范围由入口 URL 锁定' : undefined}
           value={draft.task}
-          onChange={(event) => setDraft((value) => ({ ...value, task: event.target.value }))}
+          onChange={(event) =>
+            search.collectionTaskId
+              ? undefined
+              : setDraft((value) => ({ ...value, task: event.target.value }))
+          }
         />
       </label>
       <label className={styles.filterField}>
@@ -345,10 +358,17 @@ export function DatasetDetailPage() {
   const [params] = useSearchParams();
   const [compactInspector, setCompactInspector] = useState(() => globalThis.innerWidth <= 1024);
   const search = datasetDetailQueryCodec.parse(params);
+  const rawCollectionTaskId = params.get('collectionTaskId');
+  const collectionTaskParamInvalid =
+    rawCollectionTaskId !== null && search.collectionTaskId === undefined;
   const capabilities = useCapabilities();
   const valid = isDatasetId(rawDatasetId);
+  const validRequest = valid && !collectionTaskParamInvalid;
   const datasetId = valid ? rawDatasetId : invalidDataset;
-  const bootstrap = useDatasetBootstrapQuery(datasetId, valid && capabilities.has('dataset.read'));
+  const bootstrap = useDatasetBootstrapQuery(
+    datasetId,
+    validRequest && capabilities.has('dataset.read'),
+  );
   const chosenVersionId =
     search.versionId ??
     bootstrap.data?.suggestedVersionId ??
@@ -358,24 +378,30 @@ export function DatasetDetailPage() {
   const versions = useDatasetVersionsQuery(
     datasetId,
     search,
-    valid && search.tab === 'versions' && capabilities.has('dataset_version.read'),
+    validRequest && search.tab === 'versions' && capabilities.has('dataset_version.read'),
   );
   const episodes = useVersionEpisodesQuery(
     datasetId,
     chosenVersionId,
     search,
-    valid && search.tab === 'episodes' && hasChosenVersion && capabilities.has('episode.read'),
+    validRequest &&
+      search.tab === 'episodes' &&
+      hasChosenVersion &&
+      capabilities.has('episode.read'),
   );
   const schema = useDatasetVersionSchemaSummaryQuery(
     datasetId,
     chosenVersionId,
-    valid && search.tab === 'schema' && hasChosenVersion && capabilities.has('data_schema.read'),
+    validRequest &&
+      search.tab === 'schema' &&
+      hasChosenVersion &&
+      capabilities.has('data_schema.read'),
   );
   const sources = useDatasetVersionSourceProvenanceQuery(
     datasetId,
     chosenVersionId,
     search,
-    valid &&
+    validRequest &&
       search.tab === 'sources' &&
       hasChosenVersion &&
       capabilities.has('dataset_version.read'),
@@ -383,7 +409,7 @@ export function DatasetDetailPage() {
   const capacity = useDatasetVersionCapacityQuery(
     datasetId,
     chosenVersionId,
-    valid &&
+    validRequest &&
       search.tab === 'capacity' &&
       hasChosenVersion &&
       capabilities.has('storage.overview.read'),
@@ -406,7 +432,7 @@ export function DatasetDetailPage() {
   };
 
   useEffect(() => {
-    if (!valid || !versionBoundTab || search.versionId || !hasChosenVersion) return;
+    if (!validRequest || !versionBoundTab || search.versionId || !hasChosenVersion) return;
     const next = datasetDetailQueryCodec.withChanges(search, { versionId: chosenVersionId });
     const serialized = datasetDetailQueryCodec.build(next).toString();
     const base = routes.datasetDetail.build({ datasetId });
@@ -418,7 +444,7 @@ export function DatasetDetailPage() {
     navigate,
     search,
     search.versionId,
-    valid,
+    validRequest,
     versionBoundTab,
   ]);
 
@@ -442,6 +468,16 @@ export function DatasetDetailPage() {
           state="not-found"
           title="Dataset ID 格式无效"
           description="必须使用稳定、不可变的 Dataset ID。"
+        />
+      </main>
+    );
+  if (collectionTaskParamInvalid)
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState
+          state="not-found"
+          title="采集任务参数无效"
+          description="collectionTaskId 必须是稳定、不可变的采集任务 ID。"
         />
       </main>
     );
@@ -611,7 +647,9 @@ export function DatasetDetailPage() {
             <div>
               <Typography.Title level={2}>Episodes</Typography.Title>
               <Typography.Paragraph>
-                固定 Dataset + Version + Episode 身份进入只读 Viewer。
+                {search.collectionTaskId
+                  ? `仅展示采集任务 ${search.collectionTaskId} 关联的真实数据。`
+                  : '固定 Dataset + Version + Episode 身份进入只读 Viewer。'}
               </Typography.Paragraph>
             </div>
           </div>
@@ -632,7 +670,15 @@ export function DatasetDetailPage() {
                     onRetry={() => void episodes.refetch()}
                   />
                 ) : episodes.data.items.length === 0 ? (
-                  <PageState state="filtered-empty" />
+                  search.collectionTaskId ? (
+                    <PageState
+                      state="empty"
+                      title="该采集任务暂无数据"
+                      description="任务尚未产生可在当前数据集版本中浏览的 Episode。"
+                    />
+                  ) : (
+                    <PageState state="filtered-empty" />
+                  )
                 ) : (
                   <>
                     <EpisodeTable

@@ -33,15 +33,24 @@ function contractMismatch(message: string) {
   });
 }
 
-function projectRoot(projectId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}`;
+function projectRoot(scope: AccessScope): string {
+  return `/organizations/${encodeURIComponent(scope.organizationId)}/projects/${encodeURIComponent(scope.projectId)}`;
 }
 
 function assertProjectListScope(
-  projectId: string,
-  items: readonly { readonly project_id: string }[],
+  scope: AccessScope,
+  items: readonly {
+    readonly organization_id: string;
+    readonly project_id: string;
+  }[],
 ): void {
-  if (items.some((item) => item.project_id !== projectId)) {
+  if (
+    items.some(
+      (item) =>
+        item.organization_id !== scope.organizationId ||
+        item.project_id !== scope.projectId,
+    )
+  ) {
     throw contractMismatch(
       "申请列表响应包含当前项目之外的数据，页面已安全关闭。",
     );
@@ -54,14 +63,14 @@ export async function listMembershipRequests(
 ): Promise<MembershipRequestList> {
   const result = await request<MembershipRequestList>({
     method: "GET",
-    path: `${projectRoot(scope.projectId)}/membership-requests`,
+    path: `${projectRoot(scope)}/membership-requests`,
     scope,
     ...(signal ? { signal } : {}),
     cache: "no-store",
   });
   if (!Array.isArray(result.items))
     throw contractMismatch("项目加入申请列表不符合正式合同。");
-  assertProjectListScope(scope.projectId, result.items);
+  assertProjectListScope(scope, result.items);
   return result;
 }
 
@@ -71,14 +80,14 @@ export async function listCapabilityRequests(
 ): Promise<CapabilityRequestList> {
   const result = await request<CapabilityRequestList>({
     method: "GET",
-    path: `${projectRoot(scope.projectId)}/capability-requests`,
+    path: `${projectRoot(scope)}/capability-requests`,
     scope,
     ...(signal ? { signal } : {}),
     cache: "no-store",
   });
   if (!Array.isArray(result.items))
     throw contractMismatch("权限申请列表不符合正式合同。");
-  assertProjectListScope(scope.projectId, result.items);
+  assertProjectListScope(scope, result.items);
   return result;
 }
 
@@ -102,13 +111,14 @@ export async function decideAccessRequest(
   const body = { reason: input.reason } satisfies AccessDecisionCommand;
   const result = await request<MembershipRequest | CapabilityRequest>({
     method: "POST",
-    path: `${projectRoot(input.projectId)}/${resource}/${encodeURIComponent(input.requestId)}:${input.action}`,
+    path: `${projectRoot(scope)}/${resource}/${encodeURIComponent(input.requestId)}:${input.action}`,
     body,
     scope,
     idempotencyKey: globalThis.crypto.randomUUID(),
     cache: "no-store",
   });
   if (
+    result.organization_id !== scope.organizationId ||
     result.project_id !== input.projectId ||
     result.request_id !== input.requestId
   ) {
@@ -128,41 +138,41 @@ function useAccessRequestIdentity() {
     (state) => state.authorization?.roleVersion ?? "authorization-unavailable",
   );
   return {
-    scope: scope?.projectId ? (scope as AccessScope) : null,
+    scope:
+      scope?.projectId && scope.organizationId ? (scope as AccessScope) : null,
     projectId: scope?.projectId ?? null,
     principalId,
     authorizationRevision,
   } as const;
 }
 
-export function useMembershipRequests() {
+export function useMembershipRequests(enabled = true) {
   const identity = useAccessRequestIdentity();
   return useQuery({
     queryKey: makeQueryKey(accessQueryDomain, "membership-requests", identity),
-    enabled: Boolean(identity.projectId),
+    enabled: enabled && identity.scope !== null,
     staleTime: 15_000,
-    queryFn: ({ signal }) =>
-      listMembershipRequests(identity.scope!, signal),
+    queryFn: ({ signal }) => listMembershipRequests(identity.scope!, signal),
   });
 }
 
-export function useCapabilityRequests() {
+export function useCapabilityRequests(enabled = true) {
   const identity = useAccessRequestIdentity();
   return useQuery({
     queryKey: makeQueryKey(accessQueryDomain, "capability-requests", identity),
-    enabled: Boolean(identity.projectId),
+    enabled: enabled && identity.scope !== null,
     staleTime: 15_000,
-    queryFn: ({ signal }) =>
-      listCapabilityRequests(identity.scope!, signal),
+    queryFn: ({ signal }) => listCapabilityRequests(identity.scope!, signal),
   });
 }
 
 export function useAccessDecision() {
   const queryClient = useQueryClient();
   const scopeKey = useShellStore((state) => state.scopeKey);
-  const activeScope = useShellStore(
-    (state) =>
-      state.scope?.projectId ? (state.scope as AccessScope) : null,
+  const activeScope = useShellStore((state) =>
+    state.scope?.projectId && state.scope.organizationId
+      ? (state.scope as AccessScope)
+      : null,
   );
   return useMutation({
     mutationFn: async (input: AccessDecisionInput) => {

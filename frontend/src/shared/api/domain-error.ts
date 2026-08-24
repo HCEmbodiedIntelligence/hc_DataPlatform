@@ -37,11 +37,16 @@ export interface DomainError {
   blockedReasons: readonly DomainBlockedReason[];
   requestId: string | null;
   retryable: boolean;
+  retryAfterSeconds: number | null;
   httpStatus: number | null;
 }
 
-export type DomainErrorInput = Omit<DomainError, "problemCode"> & {
+export type DomainErrorInput = Omit<
+  DomainError,
+  "problemCode" | "retryAfterSeconds"
+> & {
   problemCode?: string | null;
+  retryAfterSeconds?: number | null;
 };
 
 const domainErrorCodes: ReadonlySet<string> = new Set<DomainErrorCode>([
@@ -66,6 +71,7 @@ class DomainErrorImpl extends Error implements DomainError {
   readonly blockedReasons: readonly DomainBlockedReason[];
   readonly requestId: string | null;
   readonly retryable: boolean;
+  readonly retryAfterSeconds: number | null;
   readonly httpStatus: number | null;
 
   constructor(error: DomainErrorInput) {
@@ -78,6 +84,7 @@ class DomainErrorImpl extends Error implements DomainError {
     this.blockedReasons = error.blockedReasons;
     this.requestId = error.requestId;
     this.retryable = error.retryable;
+    this.retryAfterSeconds = error.retryAfterSeconds ?? null;
     this.httpStatus = error.httpStatus;
   }
 }
@@ -114,6 +121,8 @@ export function isDomainError(error: unknown): error is DomainError & Error {
     Array.isArray(candidate.blockedReasons) &&
     (typeof candidate.requestId === "string" || candidate.requestId === null) &&
     typeof candidate.retryable === "boolean" &&
+    (typeof candidate.retryAfterSeconds === "number" ||
+      candidate.retryAfterSeconds === null) &&
     (typeof candidate.httpStatus === "number" || candidate.httpStatus === null)
   );
 }

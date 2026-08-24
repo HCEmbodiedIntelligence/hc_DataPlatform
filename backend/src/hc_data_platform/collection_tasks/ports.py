@@ -12,17 +12,24 @@ class CollectionTaskRepositoryPort(Protocol):
     def list(
         self,
         *,
+        organization_id: str,
         project_id: str,
         status: CollectionTaskStatus | None,
         limit: int,
         after: tuple[datetime, str] | None,
     ) -> tuple[tuple[CollectionTaskRecord, ...], bool]: ...
 
-    def get(self, project_id: str, collection_task_id: str) -> CollectionTaskRecord | None: ...
+    def get(
+        self,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+    ) -> CollectionTaskRecord | None: ...
 
     def update(
         self,
         *,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         expected_version: int,
@@ -32,6 +39,25 @@ class CollectionTaskRepositoryPort(Protocol):
     def close(
         self,
         *,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        expected_version: int,
+    ) -> CollectionTaskRecord: ...
+
+    def cancel(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        expected_version: int,
+    ) -> CollectionTaskRecord: ...
+
+    def reopen(
+        self,
+        *,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         expected_version: int,
@@ -39,6 +65,7 @@ class CollectionTaskRepositoryPort(Protocol):
 
     def progress(
         self,
+        organization_id: str,
         project_id: str,
         collection_task_id: str,
         region_code: str,

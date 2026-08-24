@@ -7,7 +7,14 @@ import {
   resetRuntimeConfigForTests,
 } from "../../shared/config/runtime";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { loadFormalUploadDetail } from "./formal-detail-client";
+import {
+  getFormalUploadProcessingStatus,
+  getFormalUploadRawMedia,
+  loadFormalUploadDetail,
+  resolveFormalUploadPreviewTarget,
+  resolveFormalUploadViewerTarget,
+  type FormalUploadSession,
+} from "./formal-detail-client";
 
 const scope: IngestScope = {
   organizationId: "org-a",
@@ -16,7 +23,7 @@ const scope: IngestScope = {
 };
 
 const session = {
-  session_id: "session-a",
+  session_id: "52faee8f-f489-4c19-8b54-38a51cf46899",
   project_id: scope.projectId,
   region_code: scope.regionCode,
   rollout_id: "rollout-a",
@@ -28,7 +35,14 @@ const session = {
   object_key: "objects/package-a.mcap",
   source_type: "BROWSER_MULTIPART",
   status: "RAW_COMMITTED",
-};
+  workflow: {
+    event_id: "a1111111-1111-4111-8111-111111111111",
+    workflow_id: "ingest-rollout/project-a/rollout-a",
+    status: "DISPATCHED",
+    attempts: 1,
+    updated_at: "2026-08-21T08:00:00Z",
+  },
+} satisfies FormalUploadSession;
 
 const manifest = {
   identifiers: {
@@ -75,13 +89,13 @@ beforeEach(() => {
     buildVersion: "p04-test",
     releaseEnv: "test",
   });
-  useShellStore.getState().setScope(scope);
   useShellStore
     .getState()
     .setSession(
       { actorId: "actor-a", displayName: "测试用户", roleIds: [] },
       "session-token",
     );
+  useShellStore.getState().setScope(scope);
 });
 
 afterEach(() => {
@@ -97,28 +111,26 @@ describe("P04 formal upload detail client", () => {
     const sessionResponse = new Promise<Response>((resolve) => {
       resolveSession = resolve;
     });
-    const fetchMock = vi.fn(
-      (input: RequestInfo | URL, _init?: RequestInit) => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/upload-sessions/session-a/manifest")) {
+      if (url.endsWith(`/upload-sessions/${session.session_id}/manifest`)) {
         return Promise.resolve(json(manifest));
       }
-      if (url.endsWith("/upload-sessions/session-a")) {
+      if (url.endsWith(`/upload-sessions/${session.session_id}`)) {
         return sessionResponse;
       }
       if (url.endsWith("/rollouts/rollout-a/quality")) {
         return Promise.resolve(json(quality));
       }
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
-      },
-    );
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const pending = loadFormalUploadDetail(scope, session.session_id);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
-      "/api/v1/projects/project-a/regions/cn-test/upload-sessions/session-a/manifest",
-      "/api/v1/projects/project-a/regions/cn-test/upload-sessions/session-a",
+      `/api/v1/projects/project-a/regions/cn-test/upload-sessions/${session.session_id}/manifest`,
+      `/api/v1/projects/project-a/regions/cn-test/upload-sessions/${session.session_id}`,
     ]);
 
     resolveSession(json(session));
@@ -173,6 +185,127 @@ describe("P04 formal upload detail client", () => {
 
     await expect(
       loadFormalUploadDetail(scope, session.session_id),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+  });
+
+  it("gets an authorized Raw source with the active scoped credentials", async () => {
+    const source = {
+      schema_version: "raw-media-source/v1",
+      format: "MCAP",
+      media_type: "application/x-mcap",
+      download_url: "https://objects.example.test/signed/raw.mcap",
+      expires_at: "2026-08-20T10:00:00Z",
+      byte_length: 1024,
+      sha256: "a".repeat(64),
+    };
+    const fetchMock = vi.fn().mockResolvedValue(json(source));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getFormalUploadRawMedia(scope, session.session_id),
+    ).resolves.toEqual(source);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `/api/v1/projects/project-a/regions/cn-test/upload-sessions/${session.session_id}/raw-media`,
+    );
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer session-token");
+    expect(headers.get("X-Organization-Id")).toBe(scope.organizationId);
+    expect(headers.get("X-Project-Id")).toBe(scope.projectId);
+    expect(headers.get("X-Region-Code")).toBe(scope.regionCode);
+  });
+
+  it("loads the exact ingest workflow and derives a fixed Lance preview target", async () => {
+    const processing = {
+      schema_version: "upload-processing-status/v1",
+      session_id: session.session_id,
+      rollout_id: session.rollout_id,
+      workflow_id: session.workflow.workflow_id,
+      status: "SUCCEEDED",
+      stage: "succeeded",
+      attempt: 1,
+      preview: {
+        schema_version: "upload-preview-target/v1",
+        project_id: scope.projectId,
+        dataset_id: "dataset_ingest_a",
+        rollout_id: session.rollout_id,
+        dataset_version: 4,
+        lance_version: 7,
+        annotation_task_id: "annotation-a",
+        frequency_hz: 30,
+        start_step: 0,
+        end_step: 300,
+      },
+      viewer: {
+        schema_version: "dataset-ingest-viewer-target/v1",
+        dataset_id: "dataset_ingest_a",
+        version_id: "version_lance_4",
+        episode_id: "episode_ingest_a",
+        revision_id: "revision_ingest_a",
+      },
+      error_code: null,
+      updated_at: "2026-08-21T08:01:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(json(processing));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const loaded = await getFormalUploadProcessingStatus(scope, session);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/projects/project-a/regions/cn-test/upload-sessions/52faee8f-f489-4c19-8b54-38a51cf46899/processing",
+    );
+    expect(resolveFormalUploadPreviewTarget(session, loaded)).toEqual({
+      datasetId: "dataset_ingest_a",
+      datasetVersion: 4,
+      lanceVersion: 7,
+      annotationTaskId: "annotation-a",
+      frequencyHz: 30,
+      startStep: 0,
+      endStep: 300,
+    });
+    expect(resolveFormalUploadViewerTarget(session, loaded)).toEqual({
+      datasetId: "dataset_ingest_a",
+      versionId: "version_lance_4",
+      episodeId: "episode_ingest_a",
+      revisionId: "revision_ingest_a",
+    });
+  });
+
+  it("fails closed when a successful workflow result crosses upload lineage", async () => {
+    const processing = {
+      schema_version: "upload-processing-status/v1",
+      session_id: session.session_id,
+      rollout_id: session.rollout_id,
+      workflow_id: session.workflow.workflow_id,
+      status: "SUCCEEDED",
+      stage: "succeeded",
+      attempt: 1,
+      preview: {
+        schema_version: "upload-preview-target/v1",
+        project_id: "project-other",
+        dataset_id: "dataset_ingest_a",
+        rollout_id: session.rollout_id,
+        dataset_version: 4,
+        lance_version: 7,
+        annotation_task_id: "annotation-a",
+        frequency_hz: 30,
+        start_step: 0,
+        end_step: 300,
+      },
+      viewer: {
+        schema_version: "dataset-ingest-viewer-target/v1",
+        dataset_id: "dataset_ingest_a",
+        version_id: "version_lance_4",
+        episode_id: "episode_ingest_a",
+        revision_id: "revision_ingest_a",
+      },
+      error_code: null,
+      updated_at: "2026-08-21T08:01:00Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(processing)));
+
+    await expect(
+      getFormalUploadProcessingStatus(scope, session),
     ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
   });
 });

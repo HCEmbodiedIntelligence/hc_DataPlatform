@@ -10,8 +10,16 @@ from hc_data_platform.core.errors import problem
 
 
 class S3ArtifactSink:
-    def __init__(self, client: Any, bucket: str, *, prefix: str = "artifacts") -> None:
+    def __init__(
+        self,
+        client: Any,
+        bucket: str,
+        *,
+        prefix: str = "artifacts",
+        presign_client: Any | None = None,
+    ) -> None:
         self._client = client
+        self._presign_client = presign_client or client
         self._bucket = bucket
         self._prefix = prefix.strip("/")
 
@@ -67,9 +75,13 @@ class S3ArtifactSink:
             )
         self.put_immutable(artifact_uri, content)
         return str(
-            self._client.generate_presigned_url(
+            self._presign_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self._bucket, "Key": self._key(artifact_uri)},
+                Params={
+                    "Bucket": self._bucket,
+                    "Key": self._key(artifact_uri),
+                    "ResponseContentDisposition": "attachment",
+                },
                 ExpiresIn=900,
                 HttpMethod="GET",
             )
@@ -82,9 +94,13 @@ class S3ArtifactSink:
         if self.get_published(artifact_uri) is None:
             return None
         return str(
-            self._client.generate_presigned_url(
+            self._presign_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self._bucket, "Key": self._key(artifact_uri)},
+                Params={
+                    "Bucket": self._bucket,
+                    "Key": self._key(artifact_uri),
+                    "ResponseContentDisposition": "attachment",
+                },
                 ExpiresIn=900,
                 HttpMethod="GET",
             )

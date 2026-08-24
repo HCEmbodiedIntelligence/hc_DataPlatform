@@ -1839,7 +1839,8 @@ export interface components {
             actual_topics: string[];
             collection_job_id: components["schemas"]["IngestIdentifier"];
             compression: string;
-            crc64: number;
+            /** Unsigned CRC64 decimal string; JSON numbers cannot represent uint64 safely. */
+            crc64: string;
             /** Format: date-time */
             end_time: string;
             expected_topics: string[];
@@ -1988,7 +1989,8 @@ export interface components {
         UploadPart: {
             /** Format: date-time */
             authorization_expires_at?: string | null;
-            crc64?: number | null;
+            /** Unsigned CRC64 decimal string; JSON numbers cannot represent uint64 safely. */
+            crc64?: string | null;
             etag?: string | null;
             part_number: number;
             project_id: components["schemas"]["IngestIdentifier"];
@@ -2007,7 +2009,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             etag?: string | null;
-            expected_crc64: number;
+            /** Unsigned CRC64 decimal string; JSON numbers cannot represent uint64 safely. */
+            expected_crc64: string;
             expected_sha256: string;
             expected_size: number;
             failure_code?: string | null;

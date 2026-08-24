@@ -1,15 +1,15 @@
-import { useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DatasetId } from '../../../entities/dataset';
-import type { DatasetVersionId } from '../../../entities/dataset-version';
-import type { EpisodeId, EpisodeRevisionId } from '../../../entities/episode';
-import { makeQueryKey, normalizeFilters } from '../../../shared/api/query-keys';
-import { useShellStore } from '../../../shared/scope/shell-store';
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DatasetId } from "../../../entities/dataset";
+import type { DatasetVersionId } from "../../../entities/dataset-version";
+import type { EpisodeId, EpisodeRevisionId } from "../../../entities/episode";
+import { makeQueryKey, normalizeFilters } from "../../../shared/api/query-keys";
+import { useShellStore } from "../../../shared/scope/shell-store";
 import type {
   ApproveReviewCommandWire,
   CreateDatasetRequestWire,
   ReturnReviewCommandWire,
-} from './wire-schemas';
+} from "./wire-schemas";
 import {
   approveVersionReview,
   createDataset,
@@ -24,6 +24,7 @@ import {
   fetchDatasetVersionSourceProvenance,
   fetchDatasetVersions,
   fetchVersionBootstrap,
+  fetchEpisodeRevisionHistory,
   fetchEpisodeRevision,
   fetchOperationalInventory,
   fetchRequiredStorage,
@@ -36,10 +37,16 @@ import {
   runReviewChecks,
   type DatasetListApiFilters,
   type EpisodeListApiFilters,
+  type EpisodeRevisionHistoryApiFilters,
   type VersionListApiFilters,
-} from './queries';
+} from "./queries";
 
-function useScopedKey(domain: string, resource: string, identity: unknown, revision?: string) {
+function useScopedKey(
+  domain: string,
+  resource: string,
+  identity: unknown,
+  revision?: string,
+) {
   const scopeKey = useShellStore((state) => state.scopeKey);
   return useMemo(() => {
     void scopeKey;
@@ -47,9 +54,15 @@ function useScopedKey(domain: string, resource: string, identity: unknown, revis
   }, [domain, identity, resource, revision, scopeKey]);
 }
 
-export function useDatasetsQuery(filters: DatasetListApiFilters, enabled = true) {
-  const normalized = normalizeFilters(filters, { sort: 'activityDesc', limit: 20 });
-  const key = useScopedKey('datasets', 'list', normalized);
+export function useDatasetsQuery(
+  filters: DatasetListApiFilters,
+  enabled = true,
+) {
+  const normalized = normalizeFilters(filters, {
+    sort: "activityDesc",
+    limit: 20,
+  });
+  const key = useScopedKey("datasets", "list", normalized);
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasets(filters, signal),
@@ -59,7 +72,7 @@ export function useDatasetsQuery(filters: DatasetListApiFilters, enabled = true)
 }
 
 export function useDatasetsPageCapabilitiesQuery(enabled = true) {
-  const key = useScopedKey('datasets', 'page-capabilities', {});
+  const key = useScopedKey("datasets", "page-capabilities", {});
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasetsPageCapabilities(signal),
@@ -67,9 +80,15 @@ export function useDatasetsPageCapabilitiesQuery(enabled = true) {
   });
 }
 
-export function useDatasetSummaryQuery(filters: DatasetListApiFilters, enabled = true) {
-  const normalized = normalizeFilters(filters, { sort: 'activityDesc', limit: 20 });
-  const key = useScopedKey('datasets', 'summary', normalized);
+export function useDatasetSummaryQuery(
+  filters: DatasetListApiFilters,
+  enabled = true,
+) {
+  const normalized = normalizeFilters(filters, {
+    sort: "activityDesc",
+    limit: 20,
+  });
+  const key = useScopedKey("datasets", "summary", normalized);
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasetSummary(filters, signal),
@@ -78,9 +97,15 @@ export function useDatasetSummaryQuery(filters: DatasetListApiFilters, enabled =
   });
 }
 
-export function useDatasetFacetsQuery(filters: DatasetListApiFilters, enabled = true) {
-  const normalized = normalizeFilters(filters, { sort: 'activityDesc', limit: 20 });
-  const key = useScopedKey('datasets', 'facets', normalized);
+export function useDatasetFacetsQuery(
+  filters: DatasetListApiFilters,
+  enabled = true,
+) {
+  const normalized = normalizeFilters(filters, {
+    sort: "activityDesc",
+    limit: 20,
+  });
+  const key = useScopedKey("datasets", "facets", normalized);
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasetFacets(filters, signal),
@@ -90,7 +115,7 @@ export function useDatasetFacetsQuery(filters: DatasetListApiFilters, enabled = 
 }
 
 export function useDatasetBootstrapQuery(datasetId: DatasetId, enabled = true) {
-  const key = useScopedKey('datasets', 'bootstrap', { datasetId });
+  const key = useScopedKey("datasets", "bootstrap", { datasetId });
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasetBootstrap(datasetId, signal),
@@ -103,9 +128,9 @@ export function useDatasetVersionsQuery(
   filters: VersionListApiFilters,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'versions', {
+  const key = useScopedKey("datasets", "versions", {
     datasetId,
-    filters: normalizeFilters(filters, { sort: 'created-desc', limit: 20 }),
+    filters: normalizeFilters(filters, { sort: "created-desc", limit: 20 }),
   });
   return useQuery({
     queryKey: key,
@@ -119,10 +144,14 @@ export function useDatasetVersionSchemaSummaryQuery(
   versionId: DatasetVersionId,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'schema-summary', { datasetId, versionId });
+  const key = useScopedKey("datasets", "schema-summary", {
+    datasetId,
+    versionId,
+  });
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchDatasetVersionSchemaSummary(datasetId, versionId, signal),
+    queryFn: ({ signal }) =>
+      fetchDatasetVersionSchemaSummary(datasetId, versionId, signal),
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -141,11 +170,20 @@ export function useDatasetVersionSourceProvenanceQuery(
   }>,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'source-provenance', { datasetId, versionId, filters });
+  const key = useScopedKey("datasets", "source-provenance", {
+    datasetId,
+    versionId,
+    filters,
+  });
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) =>
-      fetchDatasetVersionSourceProvenance(datasetId, versionId, filters, signal),
+      fetchDatasetVersionSourceProvenance(
+        datasetId,
+        versionId,
+        filters,
+        signal,
+      ),
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -156,12 +194,17 @@ export function useDatasetVersionCapacityQuery(
   versionId: DatasetVersionId,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'capacity-facts', { datasetId, versionId });
+  const key = useScopedKey("datasets", "capacity-facts", {
+    datasetId,
+    versionId,
+  });
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchDatasetVersionCapacity(datasetId, versionId, signal),
+    queryFn: ({ signal }) =>
+      fetchDatasetVersionCapacity(datasetId, versionId, signal),
     enabled,
-    refetchInterval: (query) => (query.state.data?.state === 'CALCULATING' ? 5_000 : false),
+    refetchInterval: (query) =>
+      query.state.data?.state === "CALCULATING" ? 5_000 : false,
   });
 }
 
@@ -172,18 +215,19 @@ export function useVersionEpisodesQuery(
   enabled = true,
 ) {
   const key = useScopedKey(
-    'datasets',
-    'episodes',
+    "datasets",
+    "episodes",
     {
       datasetId,
       versionId,
-      filters: normalizeFilters(filters, { sort: 'ordinal-asc', limit: 20 }),
+      filters: normalizeFilters(filters, { sort: "ordinal-asc", limit: 20 }),
     },
     filters.snapshotToken,
   );
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchVersionEpisodes(datasetId, versionId, filters, signal),
+    queryFn: ({ signal }) =>
+      fetchVersionEpisodes(datasetId, versionId, filters, signal),
     enabled,
   });
 }
@@ -193,10 +237,14 @@ export function useVersionBootstrapQuery(
   versionId: DatasetVersionId,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'version-bootstrap', { datasetId, versionId });
+  const key = useScopedKey("datasets", "version-bootstrap", {
+    datasetId,
+    versionId,
+  });
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchVersionBootstrap(datasetId, versionId, signal),
+    queryFn: ({ signal }) =>
+      fetchVersionBootstrap(datasetId, versionId, signal),
     enabled,
   });
 }
@@ -207,10 +255,15 @@ export function useVersionManifestQuery(
   filters: { after?: string; before?: string; limit?: number },
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'manifest', { datasetId, versionId, filters });
+  const key = useScopedKey("datasets", "manifest", {
+    datasetId,
+    versionId,
+    filters,
+  });
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchVersionManifest(datasetId, versionId, filters, signal),
+    queryFn: ({ signal }) =>
+      fetchVersionManifest(datasetId, versionId, filters, signal),
     enabled,
   });
 }
@@ -223,16 +276,42 @@ export function useEpisodeRevisionQuery(
   enabled = true,
 ) {
   const key = useScopedKey(
-    'datasets',
-    'episode-revision',
+    "datasets",
+    "episode-revision",
     { datasetId, versionId, revisionId },
     snapshotToken,
   );
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) =>
-      fetchEpisodeRevision(datasetId, versionId, revisionId!, snapshotToken!, signal),
+      fetchEpisodeRevision(
+        datasetId,
+        versionId,
+        revisionId!,
+        snapshotToken!,
+        signal,
+      ),
     enabled: enabled && Boolean(revisionId) && Boolean(snapshotToken),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function useEpisodeRevisionHistoryQuery(
+  datasetId: DatasetId,
+  episodeId: EpisodeId | undefined,
+  filters: EpisodeRevisionHistoryApiFilters,
+  enabled = true,
+) {
+  const key = useScopedKey("datasets", "episode-revision-history", {
+    datasetId,
+    episodeId,
+    filters: normalizeFilters(filters, { limit: 20 }),
+  });
+  return useQuery({
+    queryKey: key,
+    queryFn: ({ signal }) =>
+      fetchEpisodeRevisionHistory(datasetId, episodeId!, filters, signal),
+    enabled: enabled && Boolean(episodeId),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -243,10 +322,16 @@ export function useVersionSchemaQuery(
   snapshotToken: string | undefined,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'version-schema', { datasetId, versionId }, snapshotToken);
+  const key = useScopedKey(
+    "datasets",
+    "version-schema",
+    { datasetId, versionId },
+    snapshotToken,
+  );
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => fetchVersionSchema(datasetId, versionId, snapshotToken!, signal),
+    queryFn: ({ signal }) =>
+      fetchVersionSchema(datasetId, versionId, snapshotToken!, signal),
     enabled: enabled && Boolean(snapshotToken),
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -260,15 +345,21 @@ export function useRequiredStorageQuery(
   enabled = true,
 ) {
   const key = useScopedKey(
-    'datasets',
-    'required-storage',
+    "datasets",
+    "required-storage",
     { datasetId, versionId, filters },
     snapshotToken,
   );
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) =>
-      fetchRequiredStorage(datasetId, versionId, snapshotToken!, filters, signal),
+      fetchRequiredStorage(
+        datasetId,
+        versionId,
+        snapshotToken!,
+        filters,
+        signal,
+      ),
     enabled: enabled && Boolean(snapshotToken),
   });
 }
@@ -281,15 +372,21 @@ export function useOperationalInventoryQuery(
   enabled = true,
 ) {
   const key = useScopedKey(
-    'datasets',
-    'operational-inventory',
+    "datasets",
+    "operational-inventory",
     { datasetId, versionId, filters },
     operationalRevision,
   );
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) =>
-      fetchOperationalInventory(datasetId, versionId, operationalRevision!, filters, signal),
+      fetchOperationalInventory(
+        datasetId,
+        versionId,
+        operationalRevision!,
+        filters,
+        signal,
+      ),
     enabled: enabled && Boolean(operationalRevision),
     staleTime: 15_000,
   });
@@ -301,10 +398,15 @@ export function useViewerEpisodeQuery(
   episodeId: EpisodeId,
   enabled = true,
 ) {
-  const key = useScopedKey('datasets', 'episode-viewer', { datasetId, versionId, episodeId });
+  const key = useScopedKey("datasets", "episode-viewer", {
+    datasetId,
+    versionId,
+    episodeId,
+  });
   return useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => resolveViewerEpisode(datasetId, versionId, episodeId, signal),
+    queryFn: ({ signal }) =>
+      resolveViewerEpisode(datasetId, versionId, episodeId, signal),
     enabled,
   });
 }
@@ -312,16 +414,21 @@ export function useViewerEpisodeQuery(
 export function useCreateDatasetMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { command: CreateDatasetRequestWire; idempotencyKey: string }) =>
-      createDataset(input.command, input.idempotencyKey),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasets'] }),
+    mutationFn: (input: {
+      command: CreateDatasetRequestWire;
+      idempotencyKey: string;
+    }) => createDataset(input.command, input.idempotencyKey),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["datasets"] }),
   });
 }
 
 export function useReviewChecksMutation() {
   return useMutation({
-    mutationFn: (input: { datasetId: DatasetId; versionId: DatasetVersionId; etag: string }) =>
-      runReviewChecks(input.datasetId, input.versionId, input.etag),
+    mutationFn: (input: {
+      datasetId: DatasetId;
+      versionId: DatasetVersionId;
+      etag: string;
+    }) => runReviewChecks(input.datasetId, input.versionId, input.etag),
   });
 }
 
@@ -342,7 +449,7 @@ export function useApproveReviewMutation() {
         input.etag,
         input.idempotencyKey,
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasets'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["datasets"] }),
   });
 }
 
@@ -365,7 +472,7 @@ export function useReturnReviewMutation() {
         input.etag,
         input.idempotencyKey,
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasets'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["datasets"] }),
   });
 }
 

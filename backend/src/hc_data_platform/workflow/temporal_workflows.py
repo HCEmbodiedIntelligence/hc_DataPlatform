@@ -40,10 +40,16 @@ with workflow.unsafe.imports_passed_through():
         DatasetWriterWorkflowInput,
         ExportActivityInput,
         ExportActivityOutput,
+        ExportArtifactVerificationActivityInput,
+        ExportArtifactVerificationActivityOutput,
+        ExportPreflightActivityInput,
+        ExportPreflightActivityOutput,
         ExportWorkflowInput,
         IngestRolloutWorkflowInput,
         JobRecord,
         JobStatus,
+        LegacyAutomaticAnnotationActivityInput,
+        LegacyExportActivityInput,
         ManifestActivityOutput,
         PreviewActivityInput,
         PreviewActivityOutput,
@@ -71,12 +77,14 @@ with workflow.unsafe.imports_passed_through():
         EXPORT_WORKFLOW,
         INGEST_ROLLOUT_WORKFLOW,
         PARSE_MANIFEST_ACTIVITY,
+        PREFLIGHT_EXPORT_ACTIVITY,
         PREVIEW_WORKFLOW,
         PUBLISH_DATASET_ACTIVITY,
         PUBLISH_DATASET_WORKFLOW,
         PUBLISH_RECONCILIATION_WORKFLOW,
         RECONCILE_CATALOG_ACTIVITY,
         RECONCILE_PUBLICATION_ACTIVITY,
+        VERIFY_EXPORT_ARTIFACT_ACTIVITY,
         VERIFY_RAW_ACTIVITY,
     )
 
@@ -309,49 +317,70 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 policy=LONG_ACTIVITY,
             )
             self._stage("lance_commit")
-            commit_request = CatalogCommitActivityInput(fragment=aligned.catalog_fragment)
-            writer_resource = "/".join(
-                (
-                    request.dataset_id,
-                    request.rollout_id,
-                    aligned.catalog_fragment.manifest.content_hash,
+            if aligned.dataset_version is not None and aligned.derived_ready is not None:
+                writer_result = {
+                    "dataset_version": aligned.dataset_version.model_dump(mode="json"),
+                    "derived_ready": aligned.derived_ready.model_dump(mode="json"),
+                    "viewer_target": (
+                        None
+                        if aligned.viewer_target is None
+                        else aligned.viewer_target.model_dump(mode="json")
+                    ),
+                }
+                derived = aligned.derived_ready
+            else:
+                # Replay compatibility for histories produced before the alignment
+                # activity committed Lance inline and returned only compact facts.
+                commit_request = CatalogCommitActivityInput(fragment=aligned.catalog_fragment)
+                writer_resource = "/".join(
+                    (
+                        request.dataset_id,
+                        request.rollout_id,
+                        aligned.catalog_fragment.manifest.content_hash,
+                    )
                 )
-            )
-            writer = await workflow.execute_child_workflow(
-                DATASET_WRITER_WORKFLOW,
-                DatasetWriterWorkflowInput(
-                    project_id=request.project_id,
-                    dataset_id=request.dataset_id,
-                    resource_id=writer_resource,
-                    commit=commit_request,
-                ),
-                id=workflow_id(
-                    "dataset-writer",
-                    request.project_id,
-                    writer_resource,
-                ),
-                result_type=JobRecord,
-                id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
-            )
-            if writer.status is not JobStatus.SUCCEEDED:
-                return self._finish(
-                    JobStatus.TECHNICAL_FAILED,
-                    result={**common_result, "writer_job": writer.model_dump(mode="json")},
-                    error_code=writer.error_code or "DATASET_WRITER_FAILED",
+                writer = await workflow.execute_child_workflow(
+                    DATASET_WRITER_WORKFLOW,
+                    DatasetWriterWorkflowInput(
+                        project_id=request.project_id,
+                        dataset_id=request.dataset_id,
+                        resource_id=writer_resource,
+                        commit=commit_request,
+                    ),
+                    id=workflow_id(
+                        "dataset-writer",
+                        request.project_id,
+                        writer_resource,
+                    ),
+                    result_type=JobRecord,
+                    id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
                 )
-            derived_payload = (writer.result or {}).get("derived_ready")
-            if not isinstance(derived_payload, dict):
+                if writer.status is not JobStatus.SUCCEEDED:
+                    return self._finish(
+                        JobStatus.TECHNICAL_FAILED,
+                        result={**common_result, "writer_job": writer.model_dump(mode="json")},
+                        error_code=writer.error_code or "DATASET_WRITER_FAILED",
+                    )
+                writer_result = writer.result or {}
+                derived_payload = writer_result.get("derived_ready")
+                if not isinstance(derived_payload, dict):
+                    raise ApplicationError(
+                        "dataset writer did not return an immutable DerivedReady event",
+                        type="VALIDATION_FAILED",
+                        non_retryable=True,
+                    )
+                derived = CatalogCommitActivityOutput.model_validate(
+                    {
+                        "version": writer_result.get("dataset_version"),
+                        "derived_ready": derived_payload,
+                    }
+                ).derived_ready
+            if request.alignment.source is not None and aligned.viewer_target is None:
                 raise ApplicationError(
-                    "dataset writer did not return an immutable DerivedReady event",
-                    type="VALIDATION_FAILED",
+                    "ingest alignment did not publish a Dataset viewer target",
+                    type="DATASET_VIEWER_PROJECTION_MISSING",
                     non_retryable=True,
                 )
-            derived = CatalogCommitActivityOutput.model_validate(
-                {
-                    "version": (writer.result or {}).get("dataset_version"),
-                    "derived_ready": derived_payload,
-                }
-            ).derived_ready
             if (
                 derived.project_id != request.project_id
                 or derived.dataset_id != request.dataset_id
@@ -363,9 +392,16 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     non_retryable=True,
                 )
             self._stage("annotation_task")
-            annotation_task = await _execute_activity(
-                CREATE_ANNOTATION_TASK_ACTIVITY,
+            uses_organization_scope = workflow.patched("annotation-organization-scope-v1")
+            if uses_organization_scope and request.organization_id is None:
+                raise ApplicationError(
+                    "ingest workflow has no verified organization scope",
+                    type="ORGANIZATION_SCOPE_MISSING",
+                    non_retryable=True,
+                )
+            annotation_input = (
                 AutomaticAnnotationActivityInput(
+                    organization_id=request.organization_id,
                     project_id=request.project_id,
                     region_code=request.region_code,
                     rollout_id=request.rollout_id,
@@ -375,7 +411,23 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
                     base_step_count=derived.step_count,
                     source_workflow_id=workflow.info().workflow_id,
-                ),
+                )
+                if uses_organization_scope
+                else LegacyAutomaticAnnotationActivityInput(
+                    project_id=request.project_id,
+                    region_code=request.region_code,
+                    rollout_id=request.rollout_id,
+                    dataset_id=request.dataset_id,
+                    dataset_version=derived.dataset_version,
+                    lance_version=derived.lance_version,
+                    dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
+                    base_step_count=derived.step_count,
+                    source_workflow_id=workflow.info().workflow_id,
+                )
+            )
+            annotation_task = await _execute_activity(
+                CREATE_ANNOTATION_TASK_ACTIVITY,
+                annotation_input,
                 AutomaticAnnotationActivityOutput,
                 STANDARD_ACTIVITY,
             )
@@ -384,8 +436,9 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 result={
                     **common_result,
                     "alignment": aligned.staged_manifest.model_dump(mode="json"),
-                    "derived": (writer.result or {}).get("derived_ready"),
-                    "dataset_version": (writer.result or {}).get("dataset_version"),
+                    "derived": writer_result.get("derived_ready"),
+                    "dataset_version": writer_result.get("dataset_version"),
+                    "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
                     "training_eligible": True,
                 },
@@ -518,19 +571,56 @@ class ExportWorkflow(_JobLifecycle):
     @workflow.run
     async def run(self, request: ExportWorkflowInput) -> JobRecord:
         manifest = request.manifest
+        uses_attempt_identity = workflow.patched("export-attempt-identity-v1")
+        uses_phase_progress = workflow.patched("export-phase-progress-v1")
         self._begin(
             job_type=EXPORT_WORKFLOW,
             project_id=manifest.project_id,
-            resource_id=f"{manifest.dataset_id}/{manifest.dataset_version}/{request.format.value}",
+            resource_id=(
+                (
+                    f"{manifest.dataset_id}/{manifest.dataset_version}/"
+                    f"{request.format.value}/{request.attempt_id}"
+                )
+                if uses_attempt_identity
+                else f"{manifest.dataset_id}/{manifest.dataset_version}/{request.format.value}"
+            ),
         )
         try:
-            self._stage("export")
+            if uses_phase_progress:
+                self._stage("preflight")
+                await _execute_activity(
+                    PREFLIGHT_EXPORT_ACTIVITY,
+                    ExportPreflightActivityInput(
+                        manifest=manifest,
+                        format=request.format,
+                    ),
+                    ExportPreflightActivityOutput,
+                    STANDARD_ACTIVITY,
+                )
+            self._stage("materializing" if uses_phase_progress else "export")
+            activity_input = (
+                ExportActivityInput(
+                    manifest=manifest,
+                    format=request.format,
+                    attempt_id=request.attempt_id,
+                )
+                if uses_attempt_identity
+                else LegacyExportActivityInput(manifest=manifest, format=request.format)
+            )
             result = await _execute_activity(
                 EXPORT_DATASET_ACTIVITY,
-                ExportActivityInput(manifest=manifest, format=request.format),
+                activity_input,
                 ExportActivityOutput,
                 LONG_ACTIVITY,
             )
+            if uses_phase_progress:
+                self._stage("verifying_artifact")
+                await _execute_activity(
+                    VERIFY_EXPORT_ARTIFACT_ACTIVITY,
+                    ExportArtifactVerificationActivityInput(result=result.result),
+                    ExportArtifactVerificationActivityOutput,
+                    STANDARD_ACTIVITY,
+                )
             return self._finish(
                 JobStatus.SUCCEEDED,
                 result={"export": result.result.model_dump(mode="json")},
@@ -539,7 +629,13 @@ class ExportWorkflow(_JobLifecycle):
             self._cancelled()
             raise
         except ActivityError as exc:
-            return self._technical_failure(exc)
+            return self._finish(
+                JobStatus.TECHNICAL_FAILED,
+                error_code=_error_code(exc),
+                error_message=(
+                    "The export workflow failed. Retry after resolving the reported code."
+                ),
+            )
 
     @workflow.query(name="job")
     def job(self) -> JobRecord:

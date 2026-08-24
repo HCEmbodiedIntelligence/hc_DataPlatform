@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -24,6 +24,20 @@ def reader(project_id: str = "project-a") -> AuthContext:
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
         roles=frozenset({Role.UPLOADER.value}),
+    )
+
+
+def capability_reader(
+    *capabilities: str,
+    project_id: str = "project-a",
+) -> AuthContext:
+    return AuthContext(
+        subject_id="capacity-capability-reader",
+        project_ids=frozenset({project_id}),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset(capabilities),
+        scope_pairs=frozenset({(project_id, None)}),
     )
 
 
@@ -95,6 +109,30 @@ def reconciliation_sample() -> tuple[CapacityInventoryFact, ...]:
             category=None,
             disposition=InventoryDisposition.TEMPORARY,
         ),
+    )
+
+
+def snapshot_facts(
+    *,
+    snapshot_id: str,
+    observed_at: datetime,
+    annotated_bytes: int,
+) -> tuple[CapacityInventoryFact, ...]:
+    """Create one internally reconciled immutable snapshot for a trend day."""
+
+    return tuple(
+        item.model_copy(
+            update={
+                "snapshot_id": snapshot_id,
+                "observed_at": observed_at,
+                **(
+                    {"physical_bytes": str(annotated_bytes)}
+                    if item.physical_instance_id == "physical/annotated"
+                    else {}
+                ),
+            }
+        )
+        for item in reconciliation_sample()
     )
 
 
@@ -234,3 +272,105 @@ def test_capacity_scope_and_cursor_pagination_are_enforced() -> None:
             limit=2,
         )
     assert cursor_denied.value.problem.code == "CAPACITY_SNAPSHOT_NOT_FOUND"
+
+
+def test_capacity_requires_its_documented_capability_with_legacy_read_compatibility() -> None:
+    service = StorageGovernanceService(InMemoryStorageRepository(), cursor_secret="test-secret")
+    service.record_inventory_snapshot(
+        project_id="project-a",
+        snapshot_id="snapshot-1",
+        facts=reconciliation_sample(),
+    )
+
+    exact = service.capacity_snapshot(
+        project_id="project-a",
+        actor=capability_reader("storage.overview.read"),
+    )
+    assert exact.project_id == "project-a"
+
+    with pytest.raises(ProblemException) as denied:
+        service.capacity_snapshot(
+            project_id="project-a",
+            actor=capability_reader("dashboard.read"),
+        )
+    assert denied.value.problem.code == "CAPABILITY_REQUIRED"
+
+
+def test_capacity_history_uses_latest_utc_fact_per_day_and_exact_growth() -> None:
+    now = datetime(2026, 8, 18, 12, tzinfo=timezone.utc)
+    service = StorageGovernanceService(
+        InMemoryStorageRepository(),
+        clock=lambda: now,
+    )
+    first_at = now - timedelta(days=3)
+    same_day_early = now - timedelta(days=2, hours=2)
+    same_day_late = now - timedelta(days=2)
+    final_at = now - timedelta(days=1)
+    for snapshot_id, observed_at, annotated_bytes in (
+        ("history-first", first_at, 50),
+        ("history-middle-early", same_day_early, 60),
+        ("history-middle-late", same_day_late, 80),
+        ("history-final", final_at, 110),
+    ):
+        service.record_inventory_snapshot(
+            project_id="project-a",
+            snapshot_id=snapshot_id,
+            facts=snapshot_facts(
+                snapshot_id=snapshot_id,
+                observed_at=observed_at,
+                annotated_bytes=annotated_bytes,
+            ),
+        )
+
+    history = service.capacity_history(project_id="project-a", actor=reader())
+
+    assert [item.snapshot_id for item in history.items] == [
+        "history-first",
+        "history-middle-late",
+        "history-final",
+    ]
+    assert [item.candidate_business_total_bytes for item in history.items] == [
+        "200",
+        "230",
+        "260",
+    ]
+    assert history.growth is not None
+    assert history.growth.candidate_change_bytes == "60"
+    assert history.growth.elapsed_seconds == 2 * 86_400
+    assert history.growth.candidate_bytes_per_day == "30"
+
+
+def test_capacity_history_keeps_current_snapshot_chronological_and_rejects_bad_ranges() -> None:
+    now = datetime(2026, 8, 18, 12, tzinfo=timezone.utc)
+    service = StorageGovernanceService(InMemoryStorageRepository(), clock=lambda: now)
+    # Deliberately insert the newer fact first: in-memory behavior must match
+    # PostgreSQL's observed_at ordering rather than insertion order.
+    for snapshot_id, observed_at in (
+        ("history-newer", now - timedelta(days=1)),
+        ("history-older", now - timedelta(days=2)),
+    ):
+        service.record_inventory_snapshot(
+            project_id="project-a",
+            snapshot_id=snapshot_id,
+            facts=snapshot_facts(
+                snapshot_id=snapshot_id,
+                observed_at=observed_at,
+                annotated_bytes=50,
+            ),
+        )
+
+    assert (
+        service.capacity_snapshot(project_id="project-a", actor=reader()).snapshot_id
+        == "history-newer"
+    )
+    with pytest.raises(ProblemException) as invalid:
+        service.capacity_history(
+            project_id="project-a",
+            actor=reader(),
+            window_start=now - timedelta(days=32),
+            window_end=now,
+        )
+    assert invalid.value.problem.code == "CAPACITY_HISTORY_RANGE_INVALID"
+    with pytest.raises(ProblemException) as denied:
+        service.capacity_history(project_id="project-a", actor=reader("project-b"))
+    assert denied.value.problem.code == "PROJECT_SCOPE_DENIED"

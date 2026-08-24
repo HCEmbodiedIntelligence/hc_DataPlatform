@@ -50,6 +50,31 @@ rollout sample and therefore cannot prove the daily target.
 | MinIO download + SHA latency | 0.982642 s | 1.100629 s | 1.100629 s | Stage diagnostic |
 | MinIO download + SHA throughput | 273.18 MB/s | 396.70 MB/s | 396.70 MB/s | Stage-only pass |
 
+## 2026-08-24 local MinIO remeasurement
+
+The current isolated Docker MinIO remeasurement is retained in
+`tests/load/results/minio-capacity-20260824.json`. It used seven 256 MiB deterministic
+objects, a unique `be12-capacity-20260824` prefix, four multipart client threads, SHA-256
+download verification, and `--cleanup`; the probe confirmed zero objects remained in that prefix.
+
+| Measured stage | P50 | P95/P99 | Minimum | Result against 75.23 MB/s |
+| --- | ---: | ---: | ---: | --- |
+| MinIO multipart upload latency | 4.773212 s | 4.882078 s | 4.752473 s | FAIL stage target |
+| MinIO multipart upload throughput | 56.24 MB/s | 56.48 MB/s | 54.98 MB/s | FAIL vs 75.23 MB/s |
+| MinIO download + SHA throughput | 271.32 MB/s | 332.23 MB/s | 218.09 MB/s | Stage diagnostic only |
+
+This rerun again does not measure API authentication, Temporal, PostgreSQL, Lance, FFmpeg,
+LeRobot, production network contention, or a 30-minute full pipeline. Its `end_to_end_5tb_per_day`
+verdict is therefore `NOT_MEASURED`, and its below-threshold upload minimum independently confirms
+that the production capacity gate remains **not passed**.
+
+The same local validation run executed `inprocess_http_probe.py --concurrency 50 --rollout-size
+21474836480`: all 50 authenticated FastAPI control-plane requests returned `201`, created 50 unique
+sessions, stored zero object bodies, and completed in 0.374068 s (133.67 sessions/s; P50/P95/P99
+0.212842/0.358164/0.360044 s). This proves the bounded in-process validation path only; it is not
+included in the throughput verdict because it bypasses sockets, object bodies, and every durable
+downstream stage.
+
 The minimum observed local SHA throughput was 1,399.94 MB/s. Reads after the first sample may be
 served from the Linux page cache; the result identifies SHA as non-bottlenecking on this VM but
 does not represent object-store or network throughput.

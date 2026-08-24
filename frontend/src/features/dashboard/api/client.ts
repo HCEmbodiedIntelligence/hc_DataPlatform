@@ -4,13 +4,11 @@ import { parseWire } from '../../../shared/api/validate';
 import type { DashboardScope } from '../types';
 import {
   adaptDashboardActivity,
-  adaptDashboardCoverage,
   adaptDashboardPendingPage,
   adaptDashboardSnapshot,
 } from './adapter';
 import {
   dashboardActivityWireSchema,
-  dashboardCoverageWireSchema,
   dashboardPendingPageWireSchema,
   dashboardSnapshotWireSchema,
 } from './schemas';
@@ -57,18 +55,6 @@ export async function getDashboardSnapshot(scope: DashboardScope, window: Dashbo
   const wire = parseWire(dashboardSnapshotWireSchema, raw, { endpoint });
   assertDashboardScope(wire, scope, 'dashboard-snapshot');
   return adaptDashboardSnapshot(wire);
-}
-
-export async function getDashboardCoverage(scope: DashboardScope, window: DashboardWindow, signal?: AbortSignal) {
-  const endpoint = `${dashboardRoot(scope)}/coverage`;
-  const raw = await request<unknown>({
-    method: 'GET', path: endpoint,
-    query: { region_code: scope.regionCode, from: window.from, to: window.to, timezone: scope.timezone },
-    ...(signal ? { signal } : {}),
-  });
-  const wire = parseWire(dashboardCoverageWireSchema, raw, { endpoint });
-  assertDashboardScope(wire, scope, 'dashboard-coverage');
-  return adaptDashboardCoverage(wire);
 }
 
 export async function listDashboardPendingItems(

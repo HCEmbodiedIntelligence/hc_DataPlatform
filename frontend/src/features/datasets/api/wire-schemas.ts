@@ -1,14 +1,20 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const CONTRACT_VERSION = 'dataset-version-review.v1alpha1' as const;
+export const CONTRACT_VERSION = "dataset-version-review.v1alpha1" as const;
 
-export const datasetIdWireSchema = z.string().regex(/^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
+export const datasetIdWireSchema = z
+  .string()
+  .regex(/^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
 export const versionIdWireSchema = z
   .string()
   .regex(/^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/)
-  .refine((value) => value !== 'version_current' && value !== 'version_latest');
-export const episodeIdWireSchema = z.string().regex(/^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
-export const revisionIdWireSchema = z.string().regex(/^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
+  .refine((value) => value !== "version_current" && value !== "version_latest");
+export const episodeIdWireSchema = z
+  .string()
+  .regex(/^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
+export const revisionIdWireSchema = z
+  .string()
+  .regex(/^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
 export const episodeStreamIdWireSchema = z
   .string()
   .regex(/^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
@@ -18,7 +24,9 @@ export const reviewDecisionIdWireSchema = z
 export const reviewFindingIdWireSchema = z
   .string()
   .regex(/^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
-export const draftIdWireSchema = z.string().regex(/^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
+export const draftIdWireSchema = z
+  .string()
+  .regex(/^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/);
 export const decimalIntegerWireSchema = z.string().regex(/^(0|[1-9][0-9]*)$/);
 export const decimalNsWireSchema = decimalIntegerWireSchema;
 export const isoDateTimeWireSchema = z.string().datetime({ offset: true });
@@ -87,7 +95,7 @@ const currentReadyVersionWireSchema = z
     version_id: versionIdWireSchema,
     display_version: z.string().min(1).max(64),
     kind: z.string().min(1),
-    status: z.literal('READY'),
+    status: z.literal("READY"),
     published_at: isoDateTimeWireSchema,
     manifest_sha256: sha256WireSchema,
   })
@@ -201,9 +209,15 @@ function successEnvelope<T extends z.ZodType>(data: T) {
   return z.object({ data, meta: responseMetaWireSchema }).strict();
 }
 
-export const datasetBootstrapWireSchema = successEnvelope(datasetBootstrapDataWireSchema);
-export const datasetSummaryEnvelopeWireSchema = successEnvelope(datasetSummaryWireSchema);
-export const datasetFacetsEnvelopeWireSchema = successEnvelope(datasetFacetsWireSchema);
+export const datasetBootstrapWireSchema = successEnvelope(
+  datasetBootstrapDataWireSchema,
+);
+export const datasetSummaryEnvelopeWireSchema = successEnvelope(
+  datasetSummaryWireSchema,
+);
+export const datasetFacetsEnvelopeWireSchema = successEnvelope(
+  datasetFacetsWireSchema,
+);
 export const datasetsPageCapabilitiesEnvelopeWireSchema = successEnvelope(
   datasetsPageCapabilitiesWireSchema,
 );
@@ -222,10 +236,12 @@ const versionIdentityShape = {
 const reviewingVersionWireSchema = z
   .object({
     ...versionIdentityShape,
-    status: z.literal('REVIEWING'),
+    status: z.literal("REVIEWING"),
     source_draft_id: draftIdWireSchema,
     delivery_status: z.string().min(1),
-    approved_review_decision_id: reviewDecisionIdWireSchema.nullable().optional(),
+    approved_review_decision_id: reviewDecisionIdWireSchema
+      .nullable()
+      .optional(),
     allowed_actions: z.array(allowedActionWireSchema),
   })
   .strict();
@@ -233,7 +249,7 @@ const reviewingVersionWireSchema = z
 const returnedVersionWireSchema = z
   .object({
     ...versionIdentityShape,
-    status: z.literal('RETURNED'),
+    status: z.literal("RETURNED"),
     source_draft_id: draftIdWireSchema,
     review_decision_id: reviewDecisionIdWireSchema,
     review_finding_ids: z.array(reviewFindingIdWireSchema).min(1),
@@ -247,23 +263,23 @@ const returnedVersionWireSchema = z
   .superRefine((value, context) => {
     if (value.successor_draft_id === value.supersedes_draft_id) {
       context.addIssue({
-        code: 'custom',
-        path: ['successor_draft_id'],
-        message: 'successor must be new',
+        code: "custom",
+        path: ["successor_draft_id"],
+        message: "successor must be new",
       });
     }
     if (value.returned_from_version_id !== value.version_id) {
       context.addIssue({
-        code: 'custom',
-        path: ['returned_from_version_id'],
-        message: 'version lineage mismatch',
+        code: "custom",
+        path: ["returned_from_version_id"],
+        message: "version lineage mismatch",
       });
     }
     if (value.returned_from_review_decision_id !== value.review_decision_id) {
       context.addIssue({
-        code: 'custom',
-        path: ['returned_from_review_decision_id'],
-        message: 'decision lineage mismatch',
+        code: "custom",
+        path: ["returned_from_review_decision_id"],
+        message: "decision lineage mismatch",
       });
     }
   });
@@ -324,7 +340,7 @@ export const datasetVersionCapacityDataWireSchema = z
     scope: scopeWireSchema,
     dataset_id: datasetIdWireSchema,
     version_id: versionIdWireSchema,
-    state: z.enum(['CALCULATING', 'PARTIAL', 'SETTLED', 'FAILED']),
+    state: z.enum(["CALCULATING", "PARTIAL", "SETTLED", "FAILED"]),
     source_bytes: decimalIntegerWireSchema.nullable(),
     required_physical_bytes: decimalIntegerWireSchema.nullable(),
     actual_oss_bytes: decimalIntegerWireSchema.nullable(),
@@ -334,15 +350,15 @@ export const datasetVersionCapacityDataWireSchema = z
   .strict()
   .superRefine((value, context) => {
     if (
-      value.state === 'SETTLED' &&
+      value.state === "SETTLED" &&
       (value.source_bytes === null ||
         value.required_physical_bytes === null ||
         value.actual_oss_bytes === null)
     ) {
       context.addIssue({
-        code: 'custom',
-        path: ['state'],
-        message: 'SETTLED capacity requires all facts',
+        code: "custom",
+        path: ["state"],
+        message: "SETTLED capacity requires all facts",
       });
     }
   });
@@ -374,13 +390,15 @@ export const versionSchemaDataWireSchema = z
   .superRefine((value, context) => {
     if (BigInt(value.channel_count) !== BigInt(value.channels.length)) {
       context.addIssue({
-        code: 'custom',
-        path: ['channel_count'],
-        message: 'channel count mismatch',
+        code: "custom",
+        path: ["channel_count"],
+        message: "channel count mismatch",
       });
     }
   });
-export const versionSchemaWireSchema = successEnvelope(versionSchemaDataWireSchema);
+export const versionSchemaWireSchema = successEnvelope(
+  versionSchemaDataWireSchema,
+);
 
 export const requiredStorageItemWireSchema = z
   .object({
@@ -388,10 +406,23 @@ export const requiredStorageItemWireSchema = z
     dataset_id: datasetIdWireSchema,
     version_id: versionIdWireSchema,
     object_id: z.string().min(1).max(128),
-    role: z.enum(['SOURCE', 'REVISION', 'INDEX', 'METADATA', 'PREVIEW', 'EXPORT']),
+    role: z.enum([
+      "SOURCE",
+      "REVISION",
+      "INDEX",
+      "METADATA",
+      "PREVIEW",
+      "EXPORT",
+    ]),
     size_bytes: decimalIntegerWireSchema,
-    reuse: z.enum(['NEW', 'REUSED', 'SHARED', 'UNKNOWN']),
-    protection: z.enum(['NONE', 'RETENTION', 'LEGAL_HOLD', 'IMMUTABLE', 'UNKNOWN']),
+    reuse: z.enum(["NEW", "REUSED", "SHARED", "UNKNOWN"]),
+    protection: z.enum([
+      "NONE",
+      "RETENTION",
+      "LEGAL_HOLD",
+      "IMMUTABLE",
+      "UNKNOWN",
+    ]),
     safe_locator: z.string().max(256).nullable().optional(),
   })
   .strict();
@@ -409,7 +440,9 @@ const storagePageShape = <T extends z.ZodType>(item: T) =>
     })
     .strict();
 
-export const requiredStoragePageWireSchema = storagePageShape(requiredStorageItemWireSchema);
+export const requiredStoragePageWireSchema = storagePageShape(
+  requiredStorageItemWireSchema,
+);
 
 export const operationalInventoryItemWireSchema = z
   .object({
@@ -417,9 +450,16 @@ export const operationalInventoryItemWireSchema = z
     dataset_id: datasetIdWireSchema,
     version_id: versionIdWireSchema,
     inventory_id: z.string().min(1).max(128),
-    kind: z.enum(['PREVIEW', 'EXPORT', 'MATERIALIZATION']),
+    kind: z.enum(["PREVIEW", "EXPORT", "MATERIALIZATION"]),
     operational_revision: z.string().min(1).max(256),
-    status: z.enum(['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'EXPIRED', 'STALE']),
+    status: z.enum([
+      "QUEUED",
+      "RUNNING",
+      "SUCCEEDED",
+      "FAILED",
+      "EXPIRED",
+      "STALE",
+    ]),
     size_bytes: decimalIntegerWireSchema,
     job_id: z.string().min(1).max(128).nullable(),
     created_at: isoDateTimeWireSchema,
@@ -464,11 +504,13 @@ const manifestSummaryWireSchema = z
 const readyVersionWireSchema = z
   .object({
     ...versionIdentityShape,
-    status: z.literal('READY'),
+    status: z.literal("READY"),
     published_at: isoDateTimeWireSchema,
     content_snapshot: contentSnapshotWireSchema,
     manifest: manifestSummaryWireSchema,
-    approved_review_decision_id: reviewDecisionIdWireSchema.nullable().optional(),
+    approved_review_decision_id: reviewDecisionIdWireSchema
+      .nullable()
+      .optional(),
     allowed_actions: z.array(allowedActionWireSchema),
   })
   .strict();
@@ -476,7 +518,9 @@ const readyVersionWireSchema = z
 const unknownVersionWireSchema = z
   .object({
     ...versionIdentityShape,
-    status: z.string().refine((value) => !['REVIEWING', 'RETURNED', 'READY'].includes(value)),
+    status: z
+      .string()
+      .refine((value) => !["REVIEWING", "RETURNED", "READY"].includes(value)),
     allowed_actions: z.array(allowedActionWireSchema).optional().default([]),
   })
   .passthrough();
@@ -520,14 +564,50 @@ export const versionEpisodeListItemWireSchema = z
     success_state: z.string().min(1),
     task: z.string().nullable(),
     robot_id: z.string().nullable(),
-    review_status: z.string().optional(),
-    review_finding_count: decimalIntegerWireSchema.optional(),
+    review_status: z.string().nullable().optional(),
+    review_finding_count: decimalIntegerWireSchema.nullable().optional(),
   })
   .strict();
 
 export const episodePageEnvelopeWireSchema = z
   .object({
     items: z.array(versionEpisodeListItemWireSchema),
+    page_info: pageInfoWireSchema,
+    snapshot_at: isoDateTimeWireSchema,
+    snapshot_id: z.string().min(1),
+    scope: scopeWireSchema,
+    request_id: z.string().min(1),
+    contract_version: z.literal(CONTRACT_VERSION),
+  })
+  .strict();
+
+export const episodeRevisionHistoryItemWireSchema = z
+  .object({
+    scope: scopeWireSchema,
+    dataset_id: datasetIdWireSchema,
+    episode_id: episodeIdWireSchema,
+    version_id: versionIdWireSchema,
+    display_version: z.string().min(1).max(64),
+    version_kind: z.enum(["RAW", "CLEANED"]),
+    version_status: z.enum(["REVIEWING", "RETURNED", "READY"]),
+    version_created_at: isoDateTimeWireSchema,
+    version_published_at: isoDateTimeWireSchema.nullable(),
+    selected_revision: revisionSnapshotRefWireSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.selected_revision.episode_id !== value.episode_id) {
+      context.addIssue({
+        code: "custom",
+        path: ["selected_revision", "episode_id"],
+        message: "selected revision does not belong to the history episode",
+      });
+    }
+  });
+
+export const episodeRevisionHistoryWireSchema = z
+  .object({
+    items: z.array(episodeRevisionHistoryItemWireSchema),
     page_info: pageInfoWireSchema,
     snapshot_at: isoDateTimeWireSchema,
     snapshot_id: z.string().min(1),
@@ -552,11 +632,17 @@ export const versionBootstrapDataWireSchema = z
       value.version.dataset_id !== value.dataset_id ||
       value.version.version_id !== value.version_id
     ) {
-      context.addIssue({ code: 'custom', path: ['version'], message: 'path identity mismatch' });
+      context.addIssue({
+        code: "custom",
+        path: ["version"],
+        message: "path identity mismatch",
+      });
     }
   });
 
-export const versionBootstrapWireSchema = successEnvelope(versionBootstrapDataWireSchema);
+export const versionBootstrapWireSchema = successEnvelope(
+  versionBootstrapDataWireSchema,
+);
 
 export const episodeStreamWireSchema = z
   .object({
@@ -565,14 +651,125 @@ export const episodeStreamWireSchema = z
     kind: z.string().min(1).max(64),
     t_start_ns: decimalNsWireSchema,
     t_end_ns: decimalNsWireSchema,
+    preview_binding: z
+      .object({
+        rollout_id: z.string().min(1).max(256),
+        lance_version: z.number().int().positive(),
+        annotation_revision: z.number().int().nonnegative(),
+        camera_id: z.string().min(1).max(256),
+        frequency_hz: z.number().positive().max(240),
+        start_step: z.number().int().nonnegative(),
+        end_step: z.number().int().positive(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
+    data_binding: z
+      .object({
+        rollout_id: z.string().min(1).max(256),
+        lance_version: z.number().int().positive(),
+        modality_key: z.string().min(1).max(512),
+        value_kind: z.enum(["SCALAR", "VECTOR", "POINTCLOUD_XYZ", "EVENT"]),
+        start_step: z.number().int().nonnegative(),
+        end_step: z.number().int().positive(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
   })
   .strict()
   .superRefine((value, context) => {
     if (BigInt(value.t_start_ns) >= BigInt(value.t_end_ns)) {
       context.addIssue({
-        code: 'custom',
-        path: ['t_end_ns'],
-        message: 'stream range must be non-empty',
+        code: "custom",
+        path: ["t_end_ns"],
+        message: "stream range must be non-empty",
+      });
+    }
+    if (
+      value.preview_binding &&
+      value.preview_binding.end_step <= value.preview_binding.start_step
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["preview_binding", "end_step"],
+        message: "preview step window must be non-empty",
+      });
+    }
+    if (
+      value.preview_binding &&
+      !["VIDEO", "RGB", "RGB_VIDEO", "DEPTH"].includes(
+        value.kind.trim().toUpperCase(),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["preview_binding"],
+        message:
+          "preview binding is only valid for RGB or depth camera streams",
+      });
+    }
+    if (
+      value.data_binding &&
+      value.data_binding.end_step <= value.data_binding.start_step
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["data_binding", "end_step"],
+        message: "data step window must be non-empty",
+      });
+    }
+    const streamKind = value.kind.trim().toUpperCase();
+    if (
+      value.data_binding &&
+      ![
+        "POINTCLOUD",
+        "JOINT_STATE",
+        "ACTION",
+        "FORCE",
+        "POSE",
+        "IMU",
+        "TACTILE",
+        "EVENT",
+      ].includes(streamKind)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["data_binding"],
+        message: "data binding is only valid for supported non-camera streams",
+      });
+    }
+    if (
+      value.data_binding &&
+      streamKind === "POINTCLOUD" &&
+      value.data_binding.value_kind !== "POINTCLOUD_XYZ"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["data_binding", "value_kind"],
+        message: "pointcloud data binding must use POINTCLOUD_XYZ",
+      });
+    }
+    if (
+      value.data_binding &&
+      streamKind === "EVENT" &&
+      value.data_binding.value_kind !== "EVENT"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["data_binding", "value_kind"],
+        message: "event data binding must use EVENT",
+      });
+    }
+    if (
+      value.data_binding &&
+      !["POINTCLOUD", "EVENT"].includes(streamKind) &&
+      !["SCALAR", "VECTOR"].includes(value.data_binding.value_kind)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["data_binding", "value_kind"],
+        message: "numeric data binding must use SCALAR or VECTOR",
       });
     }
   });
@@ -592,9 +789,11 @@ export const episodeRevisionDataWireSchema = z
   })
   .strict();
 
-export const episodeRevisionWireSchema = successEnvelope(episodeRevisionDataWireSchema);
+export const episodeRevisionWireSchema = successEnvelope(
+  episodeRevisionDataWireSchema,
+);
 
-const severityWireSchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+const severityWireSchema = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
 const findingCatalogWireSchema = z
   .object({
     version: z.string().min(1).max(128),
@@ -631,7 +830,7 @@ export const reviewChecksDataWireSchema = z
     dataset_id: datasetIdWireSchema,
     output_version_id: versionIdWireSchema,
     source_draft_id: draftIdWireSchema,
-    expected_status: z.literal('REVIEWING'),
+    expected_status: z.literal("REVIEWING"),
     review_token: z.string().min(32).max(2048),
     review_token_expires_at: isoDateTimeWireSchema,
     version_token: z.string().min(16).max(256),
@@ -651,7 +850,9 @@ export const reviewChecksDataWireSchema = z
   })
   .strict();
 
-export const reviewChecksWireSchema = successEnvelope(reviewChecksDataWireSchema);
+export const reviewChecksWireSchema = successEnvelope(
+  reviewChecksDataWireSchema,
+);
 
 export const createDatasetRequestWireSchema = z
   .object({
@@ -665,7 +866,7 @@ export const datasetEnvelopeWireSchema = successEnvelope(datasetWireSchema);
 
 export const returnReviewCommandWireSchema = z
   .object({
-    expected_status: z.literal('REVIEWING'),
+    expected_status: z.literal("REVIEWING"),
     review_token: z.string().min(32).max(2048),
     finding_catalog_version: z.string().min(1).max(128),
     findings: z
@@ -687,9 +888,9 @@ export const returnReviewCommandWireSchema = z
           .superRefine((value, context) => {
             if (BigInt(value.start_ns) >= BigInt(value.end_ns)) {
               context.addIssue({
-                code: 'custom',
-                path: ['end_ns'],
-                message: 'range must be [start,end)',
+                code: "custom",
+                path: ["end_ns"],
+                message: "range must be [start,end)",
               });
             }
           }),
@@ -701,7 +902,7 @@ export const returnReviewCommandWireSchema = z
 
 export const approveReviewCommandWireSchema = z
   .object({
-    expected_status: z.literal('REVIEWING'),
+    expected_status: z.literal("REVIEWING"),
     review_token: z.string().min(32).max(2048),
   })
   .strict();
@@ -711,7 +912,7 @@ export const manifestEntryWireSchema = z
     entry_id: z.string().min(1),
     episode_id: episodeIdWireSchema,
     revision_id: revisionIdWireSchema,
-    role: z.enum(['SOURCE', 'REVISION', 'INDEX', 'METADATA']),
+    role: z.enum(["SOURCE", "REVISION", "INDEX", "METADATA"]),
     size_bytes: decimalIntegerWireSchema,
     sha256: sha256WireSchema,
     safe_locator: z.string().max(256).nullable().optional(),
@@ -754,7 +955,7 @@ export const reviewFindingWireSchema = z
       .string()
       .regex(/^[A-Z][A-Z0-9_:-]*$/)
       .max(96),
-    severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+    severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
     note: z.string().trim().min(1).max(8192),
     immutable: z.literal(true),
     created_at: isoDateTimeWireSchema,
@@ -762,7 +963,11 @@ export const reviewFindingWireSchema = z
   .strict()
   .superRefine((value, context) => {
     if (BigInt(value.start_ns) >= BigInt(value.end_ns)) {
-      context.addIssue({ code: 'custom', path: ['end_ns'], message: 'range must be [start,end)' });
+      context.addIssue({
+        code: "custom",
+        path: ["end_ns"],
+        message: "range must be [start,end)",
+      });
     }
   });
 
@@ -770,7 +975,7 @@ export const reviewDecisionWireSchema = z
   .object({
     id: reviewDecisionIdWireSchema,
     output_version_id: versionIdWireSchema,
-    decision: z.enum(['APPROVED', 'RETURNED']),
+    decision: z.enum(["APPROVED", "RETURNED"]),
     immutable: z.literal(true),
     created_at: isoDateTimeWireSchema,
   })
@@ -778,11 +983,13 @@ export const reviewDecisionWireSchema = z
 
 export const approveReviewResultWireSchema = z
   .object({
-    review_decision: reviewDecisionWireSchema.extend({ decision: z.literal('APPROVED') }),
+    review_decision: reviewDecisionWireSchema.extend({
+      decision: z.literal("APPROVED"),
+    }),
     output_version: z
       .object({
         id: versionIdWireSchema,
-        status: z.literal('REVIEWING'),
+        status: z.literal("REVIEWING"),
         version_token: z.string().min(16),
       })
       .strict(),
@@ -795,9 +1002,9 @@ export const approveReviewResultWireSchema = z
   .superRefine((value, context) => {
     if (value.review_decision.output_version_id !== value.output_version.id) {
       context.addIssue({
-        code: 'custom',
-        path: ['output_version', 'id'],
-        message: 'approved version identity mismatch',
+        code: "custom",
+        path: ["output_version", "id"],
+        message: "approved version identity mismatch",
       });
     }
   });
@@ -805,13 +1012,15 @@ export const approveReviewResultWireSchema = z
 export const returnReviewResultDataWireSchema = z
   .object({
     scope: scopeWireSchema,
-    review_decision: reviewDecisionWireSchema.extend({ decision: z.literal('RETURNED') }),
+    review_decision: reviewDecisionWireSchema.extend({
+      decision: z.literal("RETURNED"),
+    }),
     findings: z.array(reviewFindingWireSchema).min(1),
     review_finding_ids: z.array(reviewFindingIdWireSchema).min(1),
     output_version: z
       .object({
         id: versionIdWireSchema,
-        status: z.literal('RETURNED'),
+        status: z.literal("RETURNED"),
         version_token: z.string().min(16),
       })
       .strict(),
@@ -828,16 +1037,16 @@ export const returnReviewResultDataWireSchema = z
       new Set(value.review_finding_ids).size !== value.review_finding_ids.length
     ) {
       context.addIssue({
-        code: 'custom',
-        path: ['review_finding_ids'],
-        message: 'finding IDs must be unique',
+        code: "custom",
+        path: ["review_finding_ids"],
+        message: "finding IDs must be unique",
       });
     }
     if (new Set(ids).size !== ids.length) {
       context.addIssue({
-        code: 'custom',
-        path: ['findings'],
-        message: 'finding IDs must be unique',
+        code: "custom",
+        path: ["findings"],
+        message: "finding IDs must be unique",
       });
     }
     if (
@@ -845,9 +1054,9 @@ export const returnReviewResultDataWireSchema = z
       ids.some((id, index) => id !== value.review_finding_ids[index])
     ) {
       context.addIssue({
-        code: 'custom',
-        path: ['review_finding_ids'],
-        message: 'finding order mismatch',
+        code: "custom",
+        path: ["review_finding_ids"],
+        message: "finding order mismatch",
       });
     }
     if (
@@ -855,39 +1064,41 @@ export const returnReviewResultDataWireSchema = z
       value.returned_from_version_id !== value.review_decision.output_version_id
     ) {
       context.addIssue({
-        code: 'custom',
-        path: ['returned_from_version_id'],
-        message: 'version mismatch',
+        code: "custom",
+        path: ["returned_from_version_id"],
+        message: "version mismatch",
       });
     }
     if (value.returned_from_review_decision_id !== value.review_decision.id) {
       context.addIssue({
-        code: 'custom',
-        path: ['returned_from_review_decision_id'],
-        message: 'decision mismatch',
+        code: "custom",
+        path: ["returned_from_review_decision_id"],
+        message: "decision mismatch",
       });
     }
     if (value.successor_draft_id === value.supersedes_draft_id) {
       context.addIssue({
-        code: 'custom',
-        path: ['successor_draft_id'],
-        message: 'successor must be new',
+        code: "custom",
+        path: ["successor_draft_id"],
+        message: "successor must be new",
       });
     }
   });
 
-export const returnReviewResultWireSchema = successEnvelope(returnReviewResultDataWireSchema);
+export const returnReviewResultWireSchema = successEnvelope(
+  returnReviewResultDataWireSchema,
+);
 
 const deletionCheckWireSchema = z
   .object({
     check_type: z.enum([
-      'ACTIVE_REFERENCES',
-      'RETENTION',
-      'LEGAL_HOLD',
-      'PERMISSION',
-      'CONCURRENT_JOBS',
-      'CURRENT_READY',
-      'AUDIT_PROTECTION',
+      "ACTIVE_REFERENCES",
+      "RETENTION",
+      "LEGAL_HOLD",
+      "PERMISSION",
+      "CONCURRENT_JOBS",
+      "CURRENT_READY",
+      "AUDIT_PROTECTION",
     ]),
     passed: z.boolean(),
     blocked_reasons: z.array(blockedReasonWireSchema),
@@ -899,9 +1110,9 @@ const deletionCheckWireSchema = z
 export const deletionPreflightWireSchema = z
   .object({
     scope: scopeWireSchema,
-    resource_type: z.enum(['DATASET', 'DATASET_VERSION']),
+    resource_type: z.enum(["DATASET", "DATASET_VERSION"]),
     resource_id: z.string().min(1),
-    capability_status: z.literal('RESERVED_CONDITIONAL'),
+    capability_status: z.literal("RESERVED_CONDITIONAL"),
     executable: z.literal(false),
     domain_clear: z.boolean(),
     preflight_token: z.string().min(32).max(2048),
@@ -919,28 +1130,61 @@ export const deletionPreflightWireSchema = z
   })
   .strict();
 
-export type DatasetListEnvelopeWire = z.infer<typeof datasetListEnvelopeWireSchema>;
-export type DatasetBootstrapWire = z.infer<typeof datasetBootstrapDataWireSchema>;
+export type DatasetListEnvelopeWire = z.infer<
+  typeof datasetListEnvelopeWireSchema
+>;
+export type DatasetBootstrapWire = z.infer<
+  typeof datasetBootstrapDataWireSchema
+>;
 export type DatasetSummaryWire = z.infer<typeof datasetSummaryWireSchema>;
 export type DatasetFacetsWire = z.infer<typeof datasetFacetsWireSchema>;
-export type DatasetsPageCapabilitiesWire = z.infer<typeof datasetsPageCapabilitiesWireSchema>;
-export type VersionPageEnvelopeWire = z.infer<typeof versionPageEnvelopeWireSchema>;
-export type EpisodePageEnvelopeWire = z.infer<typeof episodePageEnvelopeWireSchema>;
-export type VersionBootstrapWire = z.infer<typeof versionBootstrapDataWireSchema>;
-export type ReturnReviewResultWire = z.infer<typeof returnReviewResultDataWireSchema>;
+export type DatasetsPageCapabilitiesWire = z.infer<
+  typeof datasetsPageCapabilitiesWireSchema
+>;
+export type VersionPageEnvelopeWire = z.infer<
+  typeof versionPageEnvelopeWireSchema
+>;
+export type EpisodePageEnvelopeWire = z.infer<
+  typeof episodePageEnvelopeWireSchema
+>;
+export type VersionBootstrapWire = z.infer<
+  typeof versionBootstrapDataWireSchema
+>;
+export type ReturnReviewResultWire = z.infer<
+  typeof returnReviewResultDataWireSchema
+>;
 export type DeletionPreflightWire = z.infer<typeof deletionPreflightWireSchema>;
 export type EpisodeRevisionWire = z.infer<typeof episodeRevisionDataWireSchema>;
+export type EpisodeRevisionHistoryWire = z.infer<
+  typeof episodeRevisionHistoryWireSchema
+>;
 export type ReviewChecksWire = z.infer<typeof reviewChecksDataWireSchema>;
-export type CreateDatasetRequestWire = z.infer<typeof createDatasetRequestWireSchema>;
-export type ApproveReviewCommandWire = z.infer<typeof approveReviewCommandWireSchema>;
-export type ApproveReviewResultWire = z.infer<typeof approveReviewResultWireSchema>;
-export type ReturnReviewCommandWire = z.infer<typeof returnReviewCommandWireSchema>;
+export type CreateDatasetRequestWire = z.infer<
+  typeof createDatasetRequestWireSchema
+>;
+export type ApproveReviewCommandWire = z.infer<
+  typeof approveReviewCommandWireSchema
+>;
+export type ApproveReviewResultWire = z.infer<
+  typeof approveReviewResultWireSchema
+>;
+export type ReturnReviewCommandWire = z.infer<
+  typeof returnReviewCommandWireSchema
+>;
 export type VersionManifestWire = z.infer<typeof versionManifestWireSchema>;
 export type DatasetVersionSchemaSummaryWire = z.infer<
   typeof datasetVersionSchemaSummaryDataWireSchema
 >;
-export type SourceProvenancePageWire = z.infer<typeof sourceProvenancePageWireSchema>;
-export type DatasetVersionCapacityWire = z.infer<typeof datasetVersionCapacityDataWireSchema>;
+export type SourceProvenancePageWire = z.infer<
+  typeof sourceProvenancePageWireSchema
+>;
+export type DatasetVersionCapacityWire = z.infer<
+  typeof datasetVersionCapacityDataWireSchema
+>;
 export type VersionSchemaWire = z.infer<typeof versionSchemaDataWireSchema>;
-export type RequiredStoragePageWire = z.infer<typeof requiredStoragePageWireSchema>;
-export type OperationalInventoryPageWire = z.infer<typeof operationalInventoryPageWireSchema>;
+export type RequiredStoragePageWire = z.infer<
+  typeof requiredStoragePageWireSchema
+>;
+export type OperationalInventoryPageWire = z.infer<
+  typeof operationalInventoryPageWireSchema
+>;

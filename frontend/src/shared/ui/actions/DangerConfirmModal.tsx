@@ -180,6 +180,7 @@ export function DangerConfirmModal({
       keyboard={!pending}
       mask={{ closable: false }}
       destroyOnHidden
+      zIndex={1100}
       width={{ xs: 'calc(100vw - 16px)', sm: 640 }}
       focusable={{ focusTriggerAfterClose: true, trap: true }}
       afterOpenChange={(isOpen) => {

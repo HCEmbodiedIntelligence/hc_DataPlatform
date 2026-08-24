@@ -15,6 +15,7 @@ class DomainEventEnvelope(BaseModel):
     schema_version: int = Field(default=1, ge=1)
     aggregate_type: str
     aggregate_id: str
+    organization_id: str | None = None
     project_id: str
     region_code: str | None = None
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

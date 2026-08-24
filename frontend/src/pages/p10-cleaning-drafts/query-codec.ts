@@ -12,7 +12,7 @@ const SORTS = [
   'updatedAtDesc', 'updatedAtAsc', 'createdAtDesc', 'reuseRatioDesc', 'effectiveDurationDesc',
 ] as const;
 const PREVIEW = ['NONE', 'QUEUED', 'RUNNING', 'READY', 'FAILED', 'EXPIRED', 'STALE'] as const;
-const COMMIT = ['NONE', 'QUEUED', 'SUCCEEDED', 'FAILED'] as const;
+const COMMIT = ['NONE', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED'] as const;
 const REVIEW = ['REVIEWING', 'READY', 'RETURNED'] as const;
 const ID = /^[A-Za-z][A-Za-z0-9_-]{1,127}$/;
 

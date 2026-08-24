@@ -5,6 +5,7 @@ import json
 import time
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from hc_data_platform.core.errors import problem
@@ -25,6 +26,7 @@ from .ports import (
     EffectiveExclusionPort,
     MediaEncoderPort,
     PreviewCachePort,
+    PreviewMediaReaderPort,
     StepReaderPort,
     UrlSignerPort,
 )
@@ -141,6 +143,7 @@ class PreviewService:
         encoder: MediaEncoderPort,
         cache: PreviewCachePort,
         signer: UrlSignerPort,
+        media_reader: PreviewMediaReaderPort | None = None,
         cache_ttl: timedelta = timedelta(hours=24),
         signed_url_ttl: timedelta = timedelta(minutes=15),
         clock: Callable[[], datetime] | None = None,
@@ -150,6 +153,7 @@ class PreviewService:
         self._encoder = encoder
         self._cache = cache
         self._signer = signer
+        self._media_reader = media_reader
         self._cache_ttl = cache_ttl
         self._signed_url_ttl = signed_url_ttl
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -243,6 +247,70 @@ class PreviewService:
             )
         return self._descriptor(record, now=now)
 
+    def resolve_media(
+        self,
+        *,
+        session_id: str,
+        asset_name: str,
+        expires: int,
+        signature: str,
+    ) -> tuple[PreviewCacheRecordV1, Path]:
+        """Validate a short-lived media capability and resolve its local cache asset."""
+
+        now = self._now()
+        record = self._cache.get_by_session(session_id, now=now)
+        if record is None:
+            raise problem(
+                status=404,
+                code="PREVIEW_SESSION_NOT_FOUND",
+                title="Preview session not found",
+                detail="The preview session does not exist or its cache has expired.",
+            )
+        if not self._signer.verify(
+            session_id=session_id,
+            artifact_uri=record.artifact.artifact_uri,
+            asset_name=asset_name,
+            expires=expires,
+            signature=signature,
+            now=now,
+        ):
+            raise problem(
+                status=403,
+                code="PREVIEW_MEDIA_FORBIDDEN",
+                title="Preview media is unavailable",
+                detail="The preview media capability is invalid or has expired.",
+            )
+        if self._media_reader is None:
+            raise problem(
+                status=404,
+                code="PREVIEW_MEDIA_NOT_FOUND",
+                title="Preview media not found",
+                detail="The requested preview asset is not available.",
+            )
+        try:
+            return record, self._media_reader.resolve(record, asset_name=asset_name)
+        except FileNotFoundError:
+            raise problem(
+                status=404,
+                code="PREVIEW_MEDIA_NOT_FOUND",
+                title="Preview media not found",
+                detail="The requested preview asset is not available.",
+            ) from None
+
+    def sign_media_asset(
+        self,
+        record: PreviewCacheRecordV1,
+        *,
+        asset_name: str,
+        expires: int,
+    ) -> str:
+        return self._signer.sign(
+            session_id=record.session_id,
+            artifact_uri=record.artifact.artifact_uri,
+            asset_name=asset_name,
+            expires_at=datetime.fromtimestamp(expires, tz=timezone.utc),
+        )
+
     def _descriptor(self, record: PreviewCacheRecordV1, *, now: datetime) -> PreviewDescriptorV1:
         signed_url_expires_at = min(now + self._signed_url_ttl, record.cache_expires_at)
         request = record.request
@@ -258,7 +326,9 @@ class PreviewService:
             view_mode=request.view_mode,
             encoding_profile=request.encoding_profile,
             playlist_url=self._signer.sign(
-                record.artifact.artifact_uri,
+                session_id=record.session_id,
+                artifact_uri=record.artifact.artifact_uri,
+                asset_name="index.m3u8",
                 expires_at=signed_url_expires_at,
             ),
             media_type=record.artifact.media_type,

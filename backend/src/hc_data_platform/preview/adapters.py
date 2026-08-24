@@ -45,6 +45,72 @@ class CommandRunner(Protocol):
 ImageRefResolver = Callable[[object], str | bytes | None]
 
 
+class S3ImageClient(Protocol):
+    def get_object(self, *, Bucket: str, Key: str) -> dict[str, object]: ...
+
+
+class S3ImageRefResolver:
+    """Materialize a configured-bucket ``s3://`` image reference for FFmpeg.
+
+    Lance rows may contain either embedded image bytes, local/HTTP references for
+    development, or immutable source objects in the deployment's data bucket.
+    Only the configured bucket is eligible for S3 resolution, which prevents a
+    catalog value from turning preview generation into a cross-bucket reader.
+    Invalid or unavailable source imagery is represented as the existing explicit
+    placeholder path rather than exposing object-store errors to the browser.
+    """
+
+    def __init__(
+        self, client: S3ImageClient, bucket: str, *, max_object_bytes: int = 64 * 1024 * 1024
+    ) -> None:
+        if not bucket.strip():
+            raise ValueError("bucket must not be empty")
+        if max_object_bytes < 1:
+            raise ValueError("max_object_bytes must be positive")
+        self._client = client
+        self._bucket = bucket
+        self._max_object_bytes = max_object_bytes
+
+    def __call__(self, value: object) -> str | bytes | None:
+        if not isinstance(value, str):
+            return _default_image_ref(value)
+        parsed = urlparse(value)
+        if parsed.scheme != "s3":
+            return _default_image_ref(value)
+        if (
+            parsed.netloc != self._bucket
+            or not parsed.path
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None
+        key = unquote(parsed.path).lstrip("/")
+        if not key:
+            return None
+        try:
+            response = self._get_object(key)
+            raw_length = response.get("ContentLength")
+            if isinstance(raw_length, int) and raw_length > self._max_object_bytes:
+                return None
+            body = response.get("Body")
+            if body is None or not hasattr(body, "read") or not hasattr(body, "close"):
+                return None
+            try:
+                data = bytes(body.read(self._max_object_bytes + 1))
+            finally:
+                body.close()
+        except Exception:
+            return None
+        return data if len(data) <= self._max_object_bytes else None
+
+    def _get_object(self, key: str) -> dict[str, object]:
+        response = self._client.get_object(Bucket=self._bucket, Key=key)
+        if not isinstance(response, dict):
+            raise TypeError("S3 get_object response must be a mapping")
+        return response
+
+
 class FilePreviewCache:
     """Process-independent TTL metadata cache paired with atomic FFmpeg directories."""
 
@@ -102,9 +168,37 @@ class FilePreviewCache:
                 os.unlink(temporary_name)
 
 
+class FilePreviewMediaReader:
+    """Safely opens only committed HLS assets beneath the configured preview cache root."""
+
+    _SAFE_ASSET = re.compile(r"^(?:index\.m3u8|init\.mp4|segment_[0-9]{5}\.m4s)$")
+    _SAFE_CACHE_KEY = re.compile(r"^[0-9a-f]{64}$")
+
+    def __init__(self, media_root: Path) -> None:
+        self._media_root = media_root.resolve()
+
+    def resolve(self, record: PreviewCacheRecordV1, *, asset_name: str) -> Path:
+        if self._SAFE_ASSET.fullmatch(asset_name) is None:
+            raise FileNotFoundError
+        if self._SAFE_CACHE_KEY.fullmatch(record.cache_key) is None:
+            raise FileNotFoundError
+        parsed = urlparse(record.artifact.artifact_uri)
+        if parsed.scheme != "file" or parsed.netloc not in ("", "localhost"):
+            raise FileNotFoundError
+        artifact = Path(unquote(parsed.path)).resolve()
+        expected_playlist = self._media_root / record.cache_key / "index.m3u8"
+        if artifact != expected_playlist:
+            raise FileNotFoundError
+        candidate = (expected_playlist.parent / asset_name).resolve()
+        if candidate.parent != expected_playlist.parent or not candidate.is_file():
+            raise FileNotFoundError
+        return candidate
+
+
 def _default_image_ref(value: object) -> str | bytes | None:
     if isinstance(value, (bytes, bytearray, memoryview)):
-        return bytes(value)
+        encoded = bytes(value)
+        return encoded or None
     if isinstance(value, str) and value:
         return value
     if isinstance(value, os.PathLike):
@@ -241,10 +335,10 @@ class LanceStepReaderAdapter:
         invalid_reason: str | None = None
         if not record.sample_valid:
             invalid_reason = "source sample is invalid"
-        elif not camera_valid:
-            invalid_reason = f"{modality_key} is invalid"
         elif image_ref is None:
             invalid_reason = f"{modality_key} image reference is missing or unsupported"
+        elif not camera_valid:
+            invalid_reason = f"{modality_key} is invalid"
 
         source_timestamps = record.source_timestamps_ns.get(modality_key, ())
         source_timestamp = (
@@ -396,6 +490,26 @@ class FFmpegHlsEncoder:
 
         profile = request.encoding_profile
         keyframe_interval = max(1, round(request.frequency_hz * profile.segment_duration_seconds))
+        if profile.video_codec == "h264":
+            codec_arguments = [
+                "-c:v",
+                "libx264",
+                "-preset",
+                profile.preset,
+                "-sc_threshold",
+                "0",
+            ]
+        else:
+            codec_arguments = [
+                "-c:v",
+                "libvpx-vp9",
+                "-deadline",
+                "good",
+                "-cpu-used",
+                "4",
+                "-row-mt",
+                "1",
+            ]
         self._runner(
             [
                 self._ffmpeg_binary,
@@ -411,10 +525,7 @@ class FFmpegHlsEncoder:
                 "-i",
                 str(frame_directory / "frame_%09d.ppm"),
                 "-an",
-                "-c:v",
-                "libx264",
-                "-preset",
-                profile.preset,
+                *codec_arguments,
                 "-b:v",
                 f"{profile.video_bitrate_kbps}k",
                 "-pix_fmt",
@@ -423,8 +534,6 @@ class FFmpegHlsEncoder:
                 str(keyframe_interval),
                 "-keyint_min",
                 str(keyframe_interval),
-                "-sc_threshold",
-                "0",
                 "-force_key_frames",
                 f"expr:gte(t,n_forced*{profile.segment_duration_seconds})",
                 "-f",

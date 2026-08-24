@@ -3,7 +3,7 @@ import { useShellStore } from '../../shared/scope/shell-store';
 import { registerScenario } from './registry';
 
 export const dashboardScenarioIds = [
-  'happy', 'empty', 'filtered-empty', 'first-loading', 'refreshing', 'partial-error', 'fatal-error',
+  'happy', 'empty', 'filtered-empty', 'first-loading', 'refreshing', 'fatal-error',
   'forbidden', 'not-found', 'gone', 'conflict', 'rate-limited', 'offline-recovery',
   'unknown-enum', 'contract-mismatch', 'scope-switch-race', 'feature-unavailable',
 ] as const;

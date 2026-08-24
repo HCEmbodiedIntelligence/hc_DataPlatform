@@ -2,7 +2,7 @@
   min-width: 0;
 }
 
-.page :global([class*='summaryRegion']) {
+.page :global([class*="summaryRegion"]) {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
@@ -62,6 +62,10 @@
 
 .tableRegion {
   min-width: 0;
+}
+
+.page :global(.hc-data-table .ant-table-tbody .ant-btn-link > small) {
+  color: var(--hc-color-info-text, #1e4e9b);
 }
 
 .desktopInspector {

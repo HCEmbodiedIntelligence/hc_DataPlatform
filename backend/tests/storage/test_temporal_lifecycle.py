@@ -102,7 +102,7 @@ async def test_lifecycle_worker_recovers_idempotently_and_replays_history() -> N
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_worker_blocks_production_before_any_activity() -> None:
+async def test_lifecycle_worker_blocks_production_without_bound_approval() -> None:
     environment = await WorkflowEnvironment.start_time_skipping(
         data_converter=pydantic_data_converter
     )
@@ -127,7 +127,7 @@ async def test_lifecycle_worker_blocks_production_before_any_activity() -> None:
             result = await handle.result()
             assert result.status == "BLOCKED"
             assert result.processed_instance_ids == ()
-            assert result.blocked_reasons == ("OPEN_10_PRODUCTION_EXECUTION_DISABLED",)
+            assert result.blocked_reasons == ("LIFECYCLE_APPROVAL_REQUIRED",)
 
             history = await handle.fetch_history()
             await Replayer(

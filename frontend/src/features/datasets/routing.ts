@@ -13,6 +13,7 @@ export type DatasetAssetState =
 export type DatasetStorageClass = 'standard' | 'ia' | 'archive';
 
 export type DatasetsRouteFilters = Readonly<{
+  collectionTaskId?: string;
   q?: string;
   robotModelId?: string;
   robotId?: string;
@@ -51,6 +52,8 @@ export type DatasetDetailRouteInput = Readonly<{
   datasetId: DatasetId;
   tab?: DatasetDetailTab;
   versionId?: DatasetVersionId;
+  collectionTaskId?: string;
+  episodeId?: EpisodeId;
   returnTo?: string;
 }>;
 
@@ -90,6 +93,7 @@ function withSearch(path: string, search: URLSearchParams): string {
 
 function buildDatasets(filters: DatasetsRouteFilters = {}): string {
   const search = new URLSearchParams();
+  appendText(search, 'collectionTaskId', filters.collectionTaskId);
   appendText(search, 'q', filters.q);
   appendText(search, 'robotModelId', filters.robotModelId);
   appendText(search, 'robotId', filters.robotId);
@@ -124,6 +128,8 @@ function buildDatasetDetail(input: DatasetDetailRouteInput): string {
   const search = new URLSearchParams();
   if (input.tab && input.tab !== 'overview') search.set('tab', input.tab);
   if (input.versionId) search.set('versionId', input.versionId);
+  appendText(search, 'collectionTaskId', input.collectionTaskId);
+  if (input.tab === 'episodes' && input.episodeId) search.set('episodeId', input.episodeId);
   if (input.returnTo && isSafeAppRelativeUrl(input.returnTo))
     search.set('returnTo', input.returnTo);
   return withSearch(`/datasets/${encodeURIComponent(input.datasetId)}`, search);

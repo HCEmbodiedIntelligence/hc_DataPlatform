@@ -41,4 +41,35 @@ describe("cleaning mock scope", () => {
       expect(response.status).toBe(200);
     },
   );
+
+  it("creates a source-bound ManualIssue without an If-Match header", async () => {
+    const response = await fetch(`${baseUrl}/manual-issues`, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "p09-mock-create",
+      },
+      body: JSON.stringify({
+        origin_dataset_version_id: "version_fx_mc_base_01",
+        episode_id: "episode_fx_mc_01",
+        episode_revision_id: "revision_fx_mc_base_01",
+        episode_stream_id: "stream_fx_mc_camera_01",
+        start_ns: "100",
+        end_ns: "200",
+        issue_type: "POSE_JITTER",
+        severity: "HIGH",
+        note: "Source-bound mock ManualIssue.",
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        id: "issue_fx_mc_created_01",
+        status: "OPEN",
+        allowed_actions: ["VIEW_EPISODE", "TRIAGE", "CREATE_DRAFT"],
+      },
+    });
+  });
 });

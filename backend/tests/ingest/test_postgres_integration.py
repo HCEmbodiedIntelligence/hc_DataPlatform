@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -25,6 +25,7 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
     psycopg_connection_factory,
 )
 from hc_data_platform.core.errors import ProblemException  # noqa: E402
+from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
 from hc_data_platform.ingest.models import (  # noqa: E402
     ManifestFileV1,
     RolloutManifestV1,
@@ -40,6 +41,10 @@ from hc_data_platform.ingest.service import UploadSessionService  # noqa: E402
 pytestmark = pytest.mark.integration
 
 
+def _organization_for(project_id: str) -> str:
+    return f"organization-{project_id}"
+
+
 def _database_dsn() -> str:
     value = os.getenv("HC_TEST_POSTGRES_DSN")
     if not value:
@@ -51,6 +56,7 @@ def _database_dsn() -> str:
 def _scope(project_id: str, region_code: str) -> Iterator[None]:
     token = bind_request_context(
         RequestContext(
+            organization_id=_organization_for(project_id),
             project_id=project_id,
             region_code=region_code,
             subject_id="ingest-postgres-integration",
@@ -101,17 +107,10 @@ def _manifest(project_id: str, body: bytes) -> RolloutManifestV1:
 
 
 def _apply_migrations(dsn: str) -> None:
-    root = Path(__file__).parents[2] / "migrations"
-    scripts = (
-        root / "security" / "001_core.sql",
-        root / "ingest" / "001_ingest.sql",
-        root / "ingest" / "002_package_manifest_uploads.sql",
-        root / "ingest" / "003_automatic_workflow_trigger.sql",
-        root / "security" / "003_outbox_dispatch.sql",
-    )
-    with psycopg.connect(dsn, autocommit=True) as connection:
-        for path in scripts:
-            connection.execute(path.read_text(encoding="utf-8"))
+    # Use the production migration runner so repeatable security passes finish in
+    # the same 001 -> 012 -> 019 -> 002 order as deployment.  Replaying 001 alone
+    # would intentionally reinstall its historical project-only baseline.
+    asyncio.run(apply_migrations(dsn))
 
 
 def _create_role(dsn: str, role: str) -> None:
@@ -194,7 +193,18 @@ def _cleanup(dsn: str, project_id: str, role: str) -> None:
             (project_id,),
         )
         connection.execute("DELETE FROM core.outbox_events WHERE project_id = %s", (project_id,))
+        connection.execute(
+            "DELETE FROM core.audit_integrity_entries WHERE project_id = %s", (project_id,)
+        )
         connection.execute("DELETE FROM core.audit_events WHERE project_id = %s", (project_id,))
+        connection.execute(
+            "DELETE FROM core.audit_integrity_heads WHERE project_id = %s", (project_id,)
+        )
+        connection.execute(
+            "DELETE FROM registry.organization_projects "
+            "WHERE organization_id = %s AND project_id = %s",
+            (_organization_for(project_id), project_id),
+        )
         connection.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
         connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
 
@@ -206,6 +216,12 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
     project_id = f"ingest-it-{suffix}"
     role = f"ingest_it_role_{suffix}"
     region = "cn-test"
+    with psycopg.connect(dsn) as connection:
+        connection.execute(
+            "INSERT INTO registry.organization_projects (organization_id, project_id) "
+            "VALUES (%s, %s)",
+            (_organization_for(project_id), project_id),
+        )
     _create_role(dsn, role)
     storage = InMemoryObjectStorage()
     factory = _restricted_factory(dsn, role)
@@ -313,6 +329,14 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
             assert committed.data_package_id == "package-object-reference"
             assert committed.workflow is not None
             assert committed.workflow.workflow_id.endswith("cn-test%2Frollout-object-reference")
+            raw_source = restarted.authorize_raw_media(
+                session_id=external_grant.session.session_id,
+                actor_id="integration-user",
+                request_id="raw-media-request",
+            )
+            assert raw_source.download_url.startswith("memory://object/")
+            assert raw_source.byte_length == len(external_body)
+            assert raw_source.sha256 == external.sha256
             assert (
                 restarted.commit_manifest(
                     session_id=external_grant.session.session_id,
@@ -326,12 +350,46 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
                     (project_id,),
                 ).fetchone() == (1,)
                 assert connection.execute(
+                    "SELECT bool_and(available_at <= clock_timestamp()) "
+                    "FROM core.outbox_events WHERE project_id = %s",
+                    (project_id,),
+                ).fetchone() == (True,)
+                assert connection.execute(
                     "SELECT count(*) FROM core.audit_events "
                     "WHERE project_id = %s AND action = 'ingest.workflow.staged'",
                     (project_id,),
                 ).fetchone() == (1,)
+                assert connection.execute(
+                    "SELECT actor_id, request_id, details->>'format', details->>'session_id' "
+                    "FROM core.audit_events "
+                    "WHERE project_id = %s AND action = 'raw.media.access_authorized'",
+                    (project_id,),
+                ).fetchone() == (
+                    "integration-user",
+                    "raw-media-request",
+                    "MCAP",
+                    external_grant.session.session_id,
+                )
             listed = restarted.list_sessions(project_id, region)
             assert listed.total == 2
+            first_page = restarted.list_sessions(project_id, region, limit=1)
+            assert first_page.total == 1
+            assert first_page.next_cursor is not None
+            second_page = restarted.list_sessions(
+                project_id,
+                region,
+                cursor=first_page.next_cursor,
+                limit=1,
+            )
+            assert second_page.total == 1
+            assert second_page.next_cursor is None
+            assert {
+                first_page.items[0].session_id,
+                second_page.items[0].session_id,
+            } == {
+                created.session_id,
+                external_grant.session.session_id,
+            }
             filtered = restarted.list_sessions(
                 project_id,
                 region,

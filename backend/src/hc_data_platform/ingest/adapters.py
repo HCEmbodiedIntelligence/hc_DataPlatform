@@ -147,6 +147,24 @@ class S3ObjectStorage:
         finally:
             body.close()
 
+    def presign_read(self, key: str, expires_seconds: int) -> str:
+        if expires_seconds < 1:
+            raise ValueError("expires_seconds must be positive")
+        return str(
+            self._presign_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": self._bucket,
+                    "Key": key,
+                    # The source URL is credential-like evidence. Keep a browser
+                    # or intermediary from retaining its successful response.
+                    "ResponseCacheControl": "no-store",
+                },
+                ExpiresIn=expires_seconds,
+                HttpMethod="GET",
+            )
+        )
+
     def put_json(self, key: str, value: dict[str, Any], *, if_none_match: bool) -> ObjectMetadata:
         body = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
         arguments: dict[str, Any] = {
@@ -302,6 +320,18 @@ class OssObjectStorage:
             close = getattr(result, "close", None)
             if close is not None:
                 close()
+
+    def presign_read(self, key: str, expires_seconds: int) -> str:
+        if expires_seconds < 1:
+            raise ValueError("expires_seconds must be positive")
+        return str(
+            self._bucket.sign_url(
+                "GET",
+                key,
+                expires_seconds,
+                params={"response-cache-control": "no-store"},
+            )
+        )
 
     def put_json(self, key: str, value: dict[str, Any], *, if_none_match: bool) -> ObjectMetadata:
         body = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()

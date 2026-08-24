@@ -9,20 +9,25 @@
   },
   "packageManager": "pnpm@10.14.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "msw"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "msw"
+    ]
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:container": "node scripts/assert-production-env.mjs && tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "gen:api": "node scripts/generate-api-client.mjs"
+    "gen:api": "node scripts/generate-api-client.mjs",
+    "verify:visual-baseline": "node scripts/verify-visual-baseline.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "5.85.5",
     "@tanstack/react-table": "8.21.3",
     "antd": "6.6.0",
     "echarts": "6.0.0",
+    "hls.js": "1.7.0",
     "lucide-react": "0.542.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
@@ -46,6 +51,7 @@
     "@typescript-eslint/eslint-plugin": "8.41.0",
     "@typescript-eslint/parser": "8.41.0",
     "@vitejs/plugin-react": "4.7.0",
+    "axe-core": "4.13.0",
     "eslint": "8.57.1",
     "eslint-plugin-react-hooks": "5.2.0",
     "eslint-plugin-react-refresh": "0.4.20",

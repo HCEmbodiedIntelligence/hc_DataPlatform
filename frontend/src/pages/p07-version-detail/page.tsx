@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Modal, Tabs, Typography } from 'antd';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { isDatasetId, type DatasetId } from '../../entities/dataset';
-import { isDatasetVersionId, type DatasetVersionId } from '../../entities/dataset-version';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, Button, Card, Modal, Tabs, Typography } from "antd";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { isDatasetId, type DatasetId } from "../../entities/dataset";
+import {
+  isDatasetVersionId,
+  type DatasetVersionId,
+} from "../../entities/dataset-version";
+import type { EpisodeId } from "../../entities/episode";
 import {
   useApproveReviewMutation,
   useCreateVersionDiffJobMutation,
+  useEpisodeRevisionHistoryQuery,
   useEpisodeRevisionQuery,
   useOperationalInventoryQuery,
   useRequiredStorageQuery,
@@ -16,19 +26,19 @@ import {
   useVersionEpisodesQuery,
   useVersionManifestQuery,
   useVersionSchemaQuery,
-} from '../../features/datasets/api';
-import { RegionState } from '../../features/datasets/components/RegionState';
-import { datasetRegionStateForError } from '../../features/datasets/components/error-state';
-import { buildSuccessorDraftPendingLink } from '../../features/datasets/pending-links';
+} from "../../features/datasets/api";
+import { RegionState } from "../../features/datasets/components/RegionState";
+import { datasetRegionStateForError } from "../../features/datasets/components/error-state";
+import { buildSuccessorDraftPendingLink } from "../../features/datasets/pending-links";
 import {
   canRunReviewMutation,
   getReviewStatePolicy,
-} from '../../features/datasets/review-state-machine';
-import { routes, type VersionDetailTab } from '../../features/datasets/routing';
-import { isDomainError } from '../../shared/api/domain-error';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { useAsyncJob } from '../../shared/jobs/use-async-job';
-import { useShellStore } from '../../shared/scope/shell-store';
+} from "../../features/datasets/review-state-machine";
+import { routes, type VersionDetailTab } from "../../features/datasets/routing";
+import { isDomainError } from "../../shared/api/domain-error";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useAsyncJob } from "../../shared/jobs/use-async-job";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   DangerConfirmModal,
   DetailPageScaffold,
@@ -36,8 +46,9 @@ import {
   PageState,
   StatusTag,
   UiMetricCard,
-} from '../../shared/ui';
+} from "../../shared/ui";
 import {
+  EpisodeRevisionHistoryTable,
   EpisodeRevisionTable,
   InventoryTable,
   ManifestCursorPager,
@@ -46,23 +57,33 @@ import {
   RevisionStreamTable,
   SchemaChannelTable,
   VersionCursorPager,
-} from './components/VersionDetailTables';
-import versionDetailQueryCodec, { type VersionDetailSearch } from './query-codec';
-import styles from './styles.module.css';
+} from "./components/VersionDetailTables";
+import {
+  authorizePublishedExportDownload,
+  cancelPublishedExport,
+  createPublishedExport,
+  fetchPublishedExport,
+  retryPublishedExport,
+  type PublishedExportFormat,
+} from "./export-api";
+import versionDetailQueryCodec, {
+  type VersionDetailSearch,
+} from "./query-codec";
+import styles from "./styles.module.css";
 
-const invalidDataset = 'dataset_invalid' as DatasetId;
-const invalidVersion = 'version_invalid' as DatasetVersionId;
+const invalidDataset = "dataset_invalid" as DatasetId;
+const invalidVersion = "version_invalid" as DatasetVersionId;
 const tabs: readonly { id: VersionDetailTab; label: string }[] = [
-  { id: 'revisions', label: 'Episodes' },
-  { id: 'changes', label: '变更' },
-  { id: 'review', label: 'Review' },
-  { id: 'manifest', label: 'Manifest' },
-  { id: 'schema', label: 'Schema' },
-  { id: 'capacity', label: '容量' },
-  { id: 'exports', label: '导出' },
+  { id: "revisions", label: "Episodes" },
+  { id: "changes", label: "变更" },
+  { id: "review", label: "Review" },
+  { id: "manifest", label: "Manifest" },
+  { id: "schema", label: "Schema" },
+  { id: "capacity", label: "容量" },
+  { id: "exports", label: "导出" },
 ];
 
-type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 function idempotencyKey(prefix: string): string {
   return (
@@ -73,7 +94,8 @@ function idempotencyKey(prefix: string): string {
 
 function JobStatus({ jobId }: { jobId: string }) {
   const job = useAsyncJob(jobId);
-  if (job.isPending) return <RegionState state="first-loading" title="任务已接受" />;
+  if (job.isPending)
+    return <RegionState state="first-loading" title="任务已接受" />;
   if (job.isError)
     return (
       <RegionState
@@ -88,17 +110,25 @@ function JobStatus({ jobId }: { jobId: string }) {
       <p>
         <code>{jobId}</code> · {job.data.status} · {job.connectionStatus}
       </p>
-      {job.data.status === 'FAILED' ? (
-        <RegionState state="partial-error" message="任务失败；Version 事实未被前端乐观改写。" />
+      {job.data.status === "FAILED" ? (
+        <RegionState
+          state="partial-error"
+          message="任务失败；Version 事实未被前端乐观改写。"
+        />
       ) : null}
-      {job.data.status === 'SUCCEEDED' ? (
-        <p role="status">任务已完成；仍以重新读取的 Version Bootstrap 判定最终状态。</p>
+      {job.data.status === "SUCCEEDED" ? (
+        <p role="status">
+          任务已完成；仍以重新读取的 Version Bootstrap 判定最终状态。
+        </p>
       ) : null}
     </section>
   );
 }
 
-function MutationError({ error, onRetry }: Readonly<{ error: unknown; onRetry?: () => void }>) {
+function MutationError({
+  error,
+  onRetry,
+}: Readonly<{ error: unknown; onRetry?: () => void }>) {
   const domain = isDomainError(error) ? error : null;
   return (
     <div>
@@ -121,7 +151,12 @@ function MutationError({ error, onRetry }: Readonly<{ error: unknown; onRetry?: 
   );
 }
 
-function rangeIsValid(startNs: string, endNs: string, lower: string, upper: string): boolean {
+function rangeIsValid(
+  startNs: string,
+  endNs: string,
+  lower: string,
+  upper: string,
+): boolean {
   if (!/^\d+$/.test(startNs) || !/^\d+$/.test(endNs)) return false;
   return (
     BigInt(startNs) >= BigInt(lower) &&
@@ -132,7 +167,18 @@ function rangeIsValid(startNs: string, endNs: string, lower: string, upper: stri
 
 function formText(form: FormData, key: string): string {
   const value = form.get(key);
-  return typeof value === 'string' ? value : '';
+  return typeof value === "string" ? value : "";
+}
+
+function triggerExportDownload(url: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "";
+  anchor.rel = "noreferrer";
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 export function VersionDetailPage() {
@@ -142,16 +188,19 @@ export function VersionDetailPage() {
   const [params] = useSearchParams();
   const search = versionDetailQueryCodec.parse(params);
   const capabilities = useCapabilities();
+  const scope = useShellStore((state) => state.scope);
   const scopeKey = useShellStore((state) => state.scopeKey);
   const queryClient = useQueryClient();
   const handledExpiredSnapshot = useRef<string | null>(null);
   const valid = isDatasetId(raw.datasetId) && isDatasetVersionId(raw.versionId);
   const datasetId = valid ? (raw.datasetId as DatasetId) : invalidDataset;
-  const versionId = valid ? (raw.versionId as DatasetVersionId) : invalidVersion;
+  const versionId = valid
+    ? (raw.versionId as DatasetVersionId)
+    : invalidVersion;
   const bootstrap = useVersionBootstrapQuery(
     datasetId,
     versionId,
-    valid && capabilities.has('dataset_version.read'),
+    valid && capabilities.has("dataset_version.read"),
   );
   const episodes = useVersionEpisodesQuery(
     datasetId,
@@ -159,41 +208,49 @@ export function VersionDetailPage() {
     { ...search, snapshotToken: bootstrap.data?.snapshotToken },
     valid &&
       Boolean(bootstrap.data) &&
-      capabilities.has('episode.read') &&
-      search.tab === 'revisions',
+      capabilities.has("episode.read") &&
+      search.tab === "revisions",
   );
   const revision = useEpisodeRevisionQuery(
     datasetId,
     versionId,
     search.revisionId,
     bootstrap.data?.snapshotToken,
-    valid && search.tab === 'revisions',
+    valid && search.tab === "revisions",
   );
   const manifest = useVersionManifestQuery(
     datasetId,
     versionId,
     { after: search.after, before: search.before, limit: search.limit },
-    valid && search.tab === 'manifest' && capabilities.has('dataset_version.read'),
+    valid &&
+      search.tab === "manifest" &&
+      capabilities.has("dataset_version.read"),
   );
   const schema = useVersionSchemaQuery(
     datasetId,
     versionId,
     bootstrap.data?.snapshotToken,
-    valid && search.tab === 'schema' && capabilities.has('dataset_version.read'),
+    valid &&
+      search.tab === "schema" &&
+      capabilities.has("dataset_version.read"),
   );
   const requiredStorage = useRequiredStorageQuery(
     datasetId,
     versionId,
     bootstrap.data?.snapshotToken,
     { after: search.after, before: search.before, limit: search.limit },
-    valid && search.tab === 'capacity' && capabilities.has('dataset_version.read'),
+    valid &&
+      search.tab === "capacity" &&
+      capabilities.has("dataset_version.read"),
   );
   const inventory = useOperationalInventoryQuery(
     datasetId,
     versionId,
     bootstrap.data?.operationalRevision,
     { after: search.after, before: search.before, limit: search.limit },
-    valid && search.tab === 'capacity' && capabilities.has('dataset_version.read'),
+    valid &&
+      search.tab === "capacity" &&
+      capabilities.has("dataset_version.read"),
   );
   const checks = useReviewChecksMutation();
   const approveMutation = useApproveReviewMutation();
@@ -209,31 +266,54 @@ export function VersionDetailPage() {
   const [returnResult, setReturnResult] = useState<Awaited<
     ReturnType<typeof returnMutation.mutateAsync>
   > | null>(null);
-  const [note, setNote] = useState('');
-  const [severity, setSeverity] = useState<Severity>('HIGH');
-  const [findingType, setFindingType] = useState('');
-  const [selectedRevisionId, setSelectedRevisionId] = useState('');
-  const [selectedStreamId, setSelectedStreamId] = useState('');
-  const [startNs, setStartNs] = useState('0');
-  const [endNs, setEndNs] = useState('1');
+  const [note, setNote] = useState("");
+  const [severity, setSeverity] = useState<Severity>("HIGH");
+  const [findingType, setFindingType] = useState("");
+  const [selectedRevisionId, setSelectedRevisionId] = useState("");
+  const [selectedStreamId, setSelectedStreamId] = useState("");
+  const [startNs, setStartNs] = useState("0");
+  const [endNs, setEndNs] = useState("1");
   const [jobId, setJobId] = useState<string | null>(null);
-  const [compareTo, setCompareTo] = useState('');
+  const [compareTo, setCompareTo] = useState("");
   const [checksPreparedAt, setChecksPreparedAt] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] =
+    useState<PublishedExportFormat>("lance_snapshot");
+  const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
+  const [historyEpisodeId, setHistoryEpisodeId] = useState<EpisodeId | null>(
+    null,
+  );
+  const [historyCursor, setHistoryCursor] = useState<{
+    after?: string;
+    before?: string;
+  }>({});
+  const history = useEpisodeRevisionHistoryQuery(
+    datasetId,
+    historyEpisodeId ?? undefined,
+    { ...historyCursor, limit: 20 },
+    valid && Boolean(historyEpisodeId) && capabilities.has("episode.read"),
+  );
 
   const snapshotExpired = [
     episodes.error,
     revision.error,
     schema.error,
     requiredStorage.error,
-  ].some((error) => isDomainError(error) && String(error.code) === 'VERSION_SNAPSHOT_EXPIRED');
+  ].some(
+    (error) =>
+      isDomainError(error) && String(error.code) === "VERSION_SNAPSHOT_EXPIRED",
+  );
   useEffect(() => {
     const expiredToken = bootstrap.data?.snapshotToken;
-    if (!snapshotExpired || !expiredToken || handledExpiredSnapshot.current === expiredToken)
+    if (
+      !snapshotExpired ||
+      !expiredToken ||
+      handledExpiredSnapshot.current === expiredToken
+    )
       return;
     handledExpiredSnapshot.current = expiredToken;
     void (async () => {
       const sameSnapshot = (query: { queryKey: readonly unknown[] }) =>
-        query.queryKey[0] === 'datasets' && query.queryKey[4] === expiredToken;
+        query.queryKey[0] === "datasets" && query.queryKey[4] === expiredToken;
       await queryClient.cancelQueries({ predicate: sameSnapshot });
       queryClient.removeQueries({ predicate: sameSnapshot });
       await bootstrap.refetch();
@@ -247,17 +327,111 @@ export function VersionDetailPage() {
     void navigate(serialized ? `${base}?${serialized}` : base);
   };
 
+  const exportTarget = {
+    projectId: scope?.projectId ?? "",
+    datasetId,
+    datasetVersion: versionId,
+  };
+  const canExport =
+    capabilities.has("dataset_version.publish") && Boolean(scope?.projectId);
+  const exportJob = useQuery({
+    queryKey: [
+      "published-export",
+      scopeKey,
+      datasetId,
+      versionId,
+      search.exportJobId,
+    ],
+    queryFn: ({ signal }) =>
+      fetchPublishedExport({
+        ...exportTarget,
+        jobId: search.exportJobId!,
+        signal,
+      }),
+    enabled:
+      valid &&
+      search.tab === "exports" &&
+      canExport &&
+      typeof search.exportJobId === "string" &&
+      search.exportJobId.length > 0,
+    staleTime: 0,
+    refetchInterval: (query) =>
+      query.state.data?.status === "PENDING" ||
+      query.state.data?.status === "RUNNING"
+        ? 2_000
+        : false,
+  });
+  const startExport = useMutation({
+    mutationFn: (format: PublishedExportFormat) =>
+      createPublishedExport({
+        ...exportTarget,
+        format,
+        idempotencyKey: idempotencyKey("published-export"),
+      }),
+    onSuccess: (created) => {
+      setDownloadFeedback(null);
+      queryClient.setQueryData(
+        ["published-export", scopeKey, datasetId, versionId, created.job_id],
+        created,
+      );
+      applySearch({ tab: "exports", exportJobId: created.job_id });
+    },
+  });
+  const cancelExport = useMutation({
+    mutationFn: (jobId: string) =>
+      cancelPublishedExport({ ...exportTarget, jobId }),
+    onSuccess: (cancelled) => {
+      setDownloadFeedback(null);
+      queryClient.setQueryData(
+        ["published-export", scopeKey, datasetId, versionId, cancelled.job_id],
+        cancelled,
+      );
+    },
+  });
+  const retryExport = useMutation({
+    mutationFn: (jobId: string) =>
+      retryPublishedExport({
+        ...exportTarget,
+        jobId,
+        idempotencyKey: idempotencyKey("published-export-retry"),
+      }),
+    onSuccess: (retried) => {
+      setDownloadFeedback(null);
+      queryClient.setQueryData(
+        ["published-export", scopeKey, datasetId, versionId, retried.job_id],
+        retried,
+      );
+      applySearch({ tab: "exports", exportJobId: retried.job_id });
+    },
+  });
+  const downloadExport = useMutation({
+    mutationFn: (jobId: string) =>
+      authorizePublishedExportDownload({ ...exportTarget, jobId }),
+    onSuccess: (authorization) => {
+      triggerExportDownload(authorization.download_url);
+      setDownloadFeedback(
+        `已申请新的短期下载授权，过期时间：${new Date(authorization.expires_at).toLocaleString()}。`,
+      );
+    },
+  });
+
   const target = checks.data?.eligible_targets.find(
     (item) => item.output_revision_id === selectedRevisionId,
   );
-  const stream = target?.streams.find((item) => item.episode_stream_id === selectedStreamId);
+  const stream = target?.streams.find(
+    (item) => item.episode_stream_id === selectedStreamId,
+  );
   const selectedFindingType = checks.data?.finding_catalog.finding_types.find(
     (item) => item.code === findingType,
   );
   const severityOptions = useMemo(() => {
     if (!checks.data || !selectedFindingType) return [] as readonly Severity[];
-    const catalogOrder = checks.data.finding_catalog.severities.map((item) => item.code);
-    return catalogOrder.filter((item) => selectedFindingType.allowed_severities.includes(item));
+    const catalogOrder = checks.data.finding_catalog.severities.map(
+      (item) => item.code,
+    );
+    return catalogOrder.filter((item) =>
+      selectedFindingType.allowed_severities.includes(item),
+    );
   }, [checks.data, selectedFindingType]);
 
   if (!valid)
@@ -275,7 +449,7 @@ export function VersionDetailPage() {
         <PageState state="loading" label="版本详情" />
       </main>
     );
-  if (capabilities.failed || !capabilities.has('dataset_version.read'))
+  if (capabilities.failed || !capabilities.has("dataset_version.read"))
     return (
       <main className={styles.page} data-page-id="P07">
         <PageState state="forbidden" />
@@ -286,7 +460,11 @@ export function VersionDetailPage() {
       <main className={styles.page} data-page-id="P07">
         <RegionState
           state={datasetRegionStateForError(bootstrap.error)}
-          message={bootstrap.error instanceof Error ? bootstrap.error.message : undefined}
+          message={
+            bootstrap.error instanceof Error
+              ? bootstrap.error.message
+              : undefined
+          }
           onRetry={() => void bootstrap.refetch()}
         />
       </main>
@@ -295,8 +473,12 @@ export function VersionDetailPage() {
   const data = bootstrap.data;
   const version = data.version;
   const policy = getReviewStatePolicy(version.status, version.deliveryStatus);
-  const reviewAction = data.allowedActions.find((action) => action.action === 'REVIEW_VERSION');
-  const canReview = capabilities.has('dataset_version.review') && reviewAction?.allowed === true;
+  const reviewAction = data.allowedActions.find(
+    (action) => action.action === "REVIEW_VERSION",
+  );
+  const canReview =
+    capabilities.has("dataset_version.review") &&
+    reviewAction?.allowed === true;
   const checksCurrent = Boolean(
     checks.data &&
       checks.data.version_token === version.versionToken &&
@@ -307,11 +489,12 @@ export function VersionDetailPage() {
     : scopeKey;
   const canApprove =
     canReview &&
-    capabilities.has('dataset_version.publish') &&
-    canRunReviewMutation(policy, 'APPROVE') &&
+    capabilities.has("dataset_version.publish") &&
+    canRunReviewMutation(policy, "APPROVE") &&
     checksCurrent &&
     checks.data?.blockers.length === 0;
-  const canReturn = canReview && canRunReviewMutation(policy, 'RETURN') && checksCurrent;
+  const canReturn =
+    canReview && canRunReviewMutation(policy, "RETURN") && checksCurrent;
   const noteLengthValid = Boolean(
     checks.data &&
       note.trim().length >= checks.data.finding_catalog.note_min_length &&
@@ -325,18 +508,23 @@ export function VersionDetailPage() {
       rangeIsValid(startNs, endNs, stream.t_start_ns, stream.t_end_ns),
   );
   const returnBlockedReasons = [
-    ...(!checksCurrent ? ['Review Token 已过期或 Version Token 已变化'] : []),
-    ...(!target ? ['请选择预检返回的 Output Revision'] : []),
-    ...(!stream ? ['请选择预检返回的 Episode Stream'] : []),
-    ...(!selectedFindingType ? ['请选择当前目录中的 Finding 类型'] : []),
-    ...(!severityOptions.includes(severity) ? ['严重级别不属于当前 Finding 类型'] : []),
+    ...(!checksCurrent ? ["Review Token 已过期或 Version Token 已变化"] : []),
+    ...(!target ? ["请选择预检返回的 Output Revision"] : []),
+    ...(!stream ? ["请选择预检返回的 Episode Stream"] : []),
+    ...(!selectedFindingType ? ["请选择当前目录中的 Finding 类型"] : []),
+    ...(!severityOptions.includes(severity)
+      ? ["严重级别不属于当前 Finding 类型"]
+      : []),
     ...(!noteLengthValid
       ? [
           `说明长度必须在 ${checks.data?.finding_catalog.note_min_length ?? 1}–${checks.data?.finding_catalog.note_max_length ?? 8192} 字符之间`,
         ]
       : []),
-    ...(stream && !rangeIsValid(startNs, endNs, stream.t_start_ns, stream.t_end_ns)
-      ? [`时间范围必须位于 [${stream.t_start_ns}, ${stream.t_end_ns}) 且 start < end`]
+    ...(stream &&
+    !rangeIsValid(startNs, endNs, stream.t_start_ns, stream.t_end_ns)
+      ? [
+          `时间范围必须位于 [${stream.t_start_ns}, ${stream.t_end_ns}) 且 start < end`,
+        ]
       : []),
   ];
 
@@ -347,19 +535,23 @@ export function VersionDetailPage() {
         onSuccess: (result) => {
           setChecksPreparedAt(new Date().toISOString());
           const firstTarget =
-            result.eligible_targets.length === 1 ? result.eligible_targets[0] : undefined;
+            result.eligible_targets.length === 1
+              ? result.eligible_targets[0]
+              : undefined;
           const firstStream =
-            firstTarget?.streams.length === 1 ? firstTarget.streams[0] : undefined;
+            firstTarget?.streams.length === 1
+              ? firstTarget.streams[0]
+              : undefined;
           const firstType = result.finding_catalog.finding_types[0];
-          setSelectedRevisionId(firstTarget?.output_revision_id ?? '');
-          setSelectedStreamId(firstStream?.episode_stream_id ?? '');
-          setStartNs(firstStream?.t_start_ns ?? '0');
-          setEndNs(firstStream?.t_end_ns ?? '1');
-          setFindingType(firstType?.code ?? '');
+          setSelectedRevisionId(firstTarget?.output_revision_id ?? "");
+          setSelectedStreamId(firstStream?.episode_stream_id ?? "");
+          setStartNs(firstStream?.t_start_ns ?? "0");
+          setEndNs(firstStream?.t_end_ns ?? "1");
+          setFindingType(firstType?.code ?? "");
           setSeverity(
             firstType?.allowed_severities[0] ??
               result.finding_catalog.severities[0]?.code ??
-              'HIGH',
+              "HIGH",
           );
           setApproveIntentKey(null);
           setReturnIntentKey(null);
@@ -371,13 +563,13 @@ export function VersionDetailPage() {
 
   const openApprove = () => {
     if (!canApprove) return;
-    setApproveIntentKey(idempotencyKey('review-approve'));
+    setApproveIntentKey(idempotencyKey("review-approve"));
     setApproveOpen(true);
   };
 
   const openReturn = () => {
     if (!canReturn) return;
-    setReturnIntentKey(idempotencyKey('review-return'));
+    setReturnIntentKey(idempotencyKey("review-return"));
     setReturnOpen(true);
   };
 
@@ -389,7 +581,10 @@ export function VersionDetailPage() {
         versionId,
         etag: version.etag,
         idempotencyKey: approveIntentKey,
-        command: { expected_status: 'REVIEWING', review_token: checks.data.review_token },
+        command: {
+          expected_status: "REVIEWING",
+          review_token: checks.data.review_token,
+        },
       },
       {
         onSuccess: (result) => {
@@ -402,7 +597,8 @@ export function VersionDetailPage() {
   };
 
   const confirmReturn = () => {
-    if (!checks.data || !target || !stream || !returnIntentKey || !findingValid) return;
+    if (!checks.data || !target || !stream || !returnIntentKey || !findingValid)
+      return;
     returnMutation.mutate(
       {
         datasetId,
@@ -411,7 +607,7 @@ export function VersionDetailPage() {
         etag: version.etag,
         idempotencyKey: returnIntentKey,
         command: {
-          expected_status: 'REVIEWING',
+          expected_status: "REVIEWING",
           review_token: checks.data.review_token,
           finding_catalog_version: checks.data.finding_catalog.version,
           findings: [
@@ -440,12 +636,17 @@ export function VersionDetailPage() {
 
   const openDiff = () => {
     if (!isDatasetVersionId(compareTo) || compareTo === versionId) return;
-    setDiffIntentKey(idempotencyKey('version-diff'));
+    setDiffIntentKey(idempotencyKey("version-diff"));
     setDiffOpen(true);
   };
 
   const confirmDiff = () => {
-    if (!isDatasetVersionId(compareTo) || compareTo === versionId || !diffIntentKey) return;
+    if (
+      !isDatasetVersionId(compareTo) ||
+      compareTo === versionId ||
+      !diffIntentKey
+    )
+      return;
     diffJob.mutate(
       {
         datasetId,
@@ -482,8 +683,8 @@ export function VersionDetailPage() {
           <code>{data.snapshotToken}</code>
         </dd>
         <dt>Schema</dt>
-        <dd title={schema.data?.snapshot.id ?? '切换到 Schema 后加载'}>
-          {schema.data?.snapshot.id ?? '切换到 Schema 后加载'}
+        <dd title={schema.data?.snapshot.id ?? "切换到 Schema 后加载"}>
+          {schema.data?.snapshot.id ?? "切换到 Schema 后加载"}
         </dd>
         <dt>Operational</dt>
         <dd title={data.operationalRevision}>
@@ -494,20 +695,24 @@ export function VersionDetailPage() {
           <StatusTag
             status={version.status}
             tone={
-              version.status === 'READY'
-                ? 'success'
-                : version.status === 'RETURNED'
-                  ? 'danger'
-                  : 'info'
+              version.status === "READY"
+                ? "success"
+                : version.status === "RETURNED"
+                  ? "danger"
+                  : "info"
             }
-            known={version.status !== 'UNKNOWN'}
+            known={version.status !== "UNKNOWN"}
           />
         </dd>
       </dl>
-      <Button type="primary" block onClick={() => applySearch({ tab: 'manifest' })}>
+      <Button
+        type="primary"
+        block
+        onClick={() => applySearch({ tab: "manifest" })}
+      >
         查看 Manifest
       </Button>
-      <Button block onClick={() => applySearch({ tab: 'schema' })}>
+      <Button block onClick={() => applySearch({ tab: "schema" })}>
         查看 Schema
       </Button>
     </div>
@@ -519,9 +724,10 @@ export function VersionDetailPage() {
         resourceId={versionId}
         header={{
           title: version.displayVersion,
-          description: '内容快照与 operational revision 分离，均绑定固定 Version。',
+          description:
+            "内容快照与 operational revision 分离，均绑定固定 Version。",
           breadcrumbs: [
-            { key: 'assets', label: '数据资产', to: routes.datasets.build() },
+            { key: "assets", label: "数据资产", to: routes.datasets.build() },
             {
               key: datasetId,
               label: <code>{datasetId}</code>,
@@ -533,19 +739,21 @@ export function VersionDetailPage() {
             <StatusTag
               status={version.status}
               tone={
-                version.status === 'READY'
-                  ? 'success'
-                  : version.status === 'RETURNED'
-                    ? 'danger'
-                    : version.status === 'REVIEWING'
-                      ? 'info'
-                      : 'warning'
+                version.status === "READY"
+                  ? "success"
+                  : version.status === "RETURNED"
+                    ? "danger"
+                    : version.status === "REVIEWING"
+                      ? "info"
+                      : "warning"
               }
-              known={version.status !== 'UNKNOWN'}
+              known={version.status !== "UNKNOWN"}
             />
           ),
           actions: search.returnTo ? (
-            <Button onClick={() => void navigate(search.returnTo!)}>返回数据集</Button>
+            <Button onClick={() => void navigate(search.returnTo!)}>
+              返回数据集
+            </Button>
           ) : undefined,
         }}
         tabs={
@@ -576,7 +784,10 @@ export function VersionDetailPage() {
                 </Typography.Paragraph>
               </div>
             </div>
-            <div className={styles.versionSummaryBand} aria-label="版本关键事实">
+            <div
+              className={styles.versionSummaryBand}
+              aria-label="版本关键事实"
+            >
               <div>
                 <span>类型</span>
                 <strong>{version.kind}</strong>
@@ -586,27 +797,27 @@ export function VersionDetailPage() {
                 <StatusTag
                   status={version.status}
                   tone={
-                    version.status === 'READY'
-                      ? 'success'
-                      : version.status === 'RETURNED'
-                        ? 'danger'
-                        : 'info'
+                    version.status === "READY"
+                      ? "success"
+                      : version.status === "RETURNED"
+                        ? "danger"
+                        : "info"
                   }
-                  known={version.status !== 'UNKNOWN'}
+                  known={version.status !== "UNKNOWN"}
                 />
               </div>
               <div>
                 <span>Delivery</span>
                 <StatusTag
-                  status={version.deliveryStatus ?? 'NONE'}
+                  status={version.deliveryStatus ?? "NONE"}
                   tone={
-                    version.deliveryStatus === 'CANDIDATE_READY'
-                      ? 'success'
-                      : version.deliveryStatus === 'GENERATING'
-                        ? 'info'
-                        : 'neutral'
+                    version.deliveryStatus === "CANDIDATE_READY"
+                      ? "success"
+                      : version.deliveryStatus === "GENERATING"
+                        ? "info"
+                        : "neutral"
                   }
-                  known={version.deliveryStatus !== 'UNKNOWN'}
+                  known={version.deliveryStatus !== "UNKNOWN"}
                 />
               </div>
               <div>
@@ -615,13 +826,17 @@ export function VersionDetailPage() {
               </div>
               <div>
                 <span>Operational revision</span>
-                <code title={data.operationalRevision}>{data.operationalRevision}</code>
+                <code title={data.operationalRevision}>
+                  {data.operationalRevision}
+                </code>
               </div>
             </div>
           </section>
-          {policy.unknownEnum ? <PageState state="unknown" description={policy.reason} /> : null}
+          {policy.unknownEnum ? (
+            <PageState state="unknown" description={policy.reason} />
+          ) : null}
 
-          {search.tab === 'revisions' ? (
+          {search.tab === "revisions" ? (
             <section className={styles.section}>
               <div className={styles.sectionHeader}>
                 <div>
@@ -635,14 +850,18 @@ export function VersionDetailPage() {
                   event.preventDefault();
                   const form = new FormData(event.currentTarget);
                   applySearch({
-                    q: formText(form, 'q').trim() || undefined,
+                    q: formText(form, "q").trim() || undefined,
                     included:
-                      form.get('included') === 'all' ? undefined : form.get('included') === 'true',
-                    hasFinding:
-                      form.get('hasFinding') === 'all'
+                      form.get("included") === "all"
                         ? undefined
-                        : form.get('hasFinding') === 'true',
-                    limit: Number(form.get('limit')) as VersionDetailSearch['limit'],
+                        : form.get("included") === "true",
+                    hasFinding:
+                      form.get("hasFinding") === "all"
+                        ? undefined
+                        : form.get("hasFinding") === "true",
+                    limit: Number(
+                      form.get("limit"),
+                    ) as VersionDetailSearch["limit"],
                   });
                 }}
               >
@@ -654,7 +873,11 @@ export function VersionDetailPage() {
                   Included
                   <select
                     name="included"
-                    defaultValue={search.included === undefined ? 'all' : String(search.included)}
+                    defaultValue={
+                      search.included === undefined
+                        ? "all"
+                        : String(search.included)
+                    }
                   >
                     <option value="all">全部</option>
                     <option value="true">是</option>
@@ -666,7 +889,9 @@ export function VersionDetailPage() {
                   <select
                     name="hasFinding"
                     defaultValue={
-                      search.hasFinding === undefined ? 'all' : String(search.hasFinding)
+                      search.hasFinding === undefined
+                        ? "all"
+                        : String(search.hasFinding)
                     }
                   >
                     <option value="all">全部</option>
@@ -699,7 +924,13 @@ export function VersionDetailPage() {
                 <>
                   <EpisodeRevisionTable
                     items={episodes.data.items}
-                    onInspect={(episode) => applySearch({ revisionId: episode.selectedRevisionId })}
+                    onInspect={(episode) =>
+                      applySearch({ revisionId: episode.selectedRevisionId })
+                    }
+                    onOpenHistory={(episode) => {
+                      setHistoryCursor({});
+                      setHistoryEpisodeId(episode.episodeId);
+                    }}
                     onOpenViewer={(episode) =>
                       void navigate(
                         routes.episodeViewer.build({
@@ -721,40 +952,63 @@ export function VersionDetailPage() {
             </section>
           ) : null}
 
-          {search.tab === 'review' ? (
+          {search.tab === "review" ? (
             <section className={styles.section}>
               <div className={styles.sectionHeader}>
                 <div>
                   <h2>Review 决定与 Findings</h2>
-                  <p>P07 是唯一 mutation Owner；Finding 是不可变复核事实，不是 ManualIssue。</p>
+                  <p>
+                    P07 是唯一 mutation Owner；Finding 是不可变复核事实，不是
+                    ManualIssue。
+                  </p>
                 </div>
                 <div className={styles.actions}>
-                  <Button disabled={!canReview || checks.isPending} onClick={runChecks}>
-                    {checks.isPending ? '预检中…' : '运行 Review 预检'}
+                  <Button
+                    disabled={!canReview || checks.isPending}
+                    onClick={runChecks}
+                  >
+                    {checks.isPending ? "预检中…" : "运行 Review 预检"}
                   </Button>
-                  <Button type="primary" disabled={!canApprove} onClick={openApprove}>
+                  <Button
+                    type="primary"
+                    disabled={!canApprove}
+                    onClick={openApprove}
+                  >
                     复核通过
                   </Button>
-                  <Button danger type="primary" disabled={!canReturn} onClick={openReturn}>
+                  <Button
+                    danger
+                    type="primary"
+                    disabled={!canReturn}
+                    onClick={openReturn}
+                  >
                     退回
                   </Button>
                 </div>
               </div>
               {!canReview ? (
                 <RegionState
-                  state={policy.unknownEnum ? 'unknown-enum' : 'feature-unavailable'}
+                  state={
+                    policy.unknownEnum ? "unknown-enum" : "feature-unavailable"
+                  }
                   message={
-                    reviewAction?.blockedReasons.map((reason) => reason.message).join('；') ||
-                    policy.reason
+                    reviewAction?.blockedReasons
+                      .map((reason) => reason.message)
+                      .join("；") || policy.reason
                   }
                 />
               ) : null}
-              {checks.isError ? <MutationError error={checks.error} onRetry={runChecks} /> : null}
+              {checks.isError ? (
+                <MutationError error={checks.error} onRetry={runChecks} />
+              ) : null}
               {checks.data ? (
                 <div className={styles.stack}>
                   <p>
-                    Catalog <code>{checks.data.finding_catalog.version}</code> · Token 到期{' '}
-                    {new Date(checks.data.review_token_expires_at).toLocaleString()}
+                    Catalog <code>{checks.data.finding_catalog.version}</code> ·
+                    Token 到期{" "}
+                    {new Date(
+                      checks.data.review_token_expires_at,
+                    ).toLocaleString()}
                   </p>
                   {!checksCurrent ? (
                     <RegionState
@@ -786,19 +1040,23 @@ export function VersionDetailPage() {
                     Decision <code>{returnResult.reviewDecision.id}</code>
                   </p>
                   <p>
-                    Findings:{' '}
+                    Findings:{" "}
                     {returnResult.reviewFindingIds.map((id) => (
                       <code key={id}>{id} </code>
                     ))}
                   </p>
                   <p>
-                    Lineage: <code>{returnResult.supersedesDraftId}</code> →{' '}
+                    Lineage: <code>{returnResult.supersedesDraftId}</code> →{" "}
                     <code>{returnResult.successorDraftId}</code>
                   </p>
                   <Button
                     type="primary"
                     onClick={() => {
-                      void navigate(buildSuccessorDraftPendingLink(returnResult.successorDraftId));
+                      void navigate(
+                        buildSuccessorDraftPendingLink(
+                          returnResult.successorDraftId,
+                        ),
+                      );
                     }}
                   >
                     继续返工
@@ -811,20 +1069,22 @@ export function VersionDetailPage() {
                     Decision <code>{data.returnLineage.reviewDecisionId}</code>
                   </p>
                   <p>
-                    Findings:{' '}
+                    Findings:{" "}
                     {data.returnLineage.reviewFindingIds.map((id) => (
                       <code key={id}>{id} </code>
                     ))}
                   </p>
                   <p>
-                    Lineage: <code>{data.returnLineage.supersedesDraftId}</code> →{' '}
-                    <code>{data.returnLineage.successorDraftId}</code>
+                    Lineage: <code>{data.returnLineage.supersedesDraftId}</code>{" "}
+                    → <code>{data.returnLineage.successorDraftId}</code>
                   </p>
                   <Button
                     type="primary"
                     onClick={() => {
                       void navigate(
-                        buildSuccessorDraftPendingLink(data.returnLineage!.successorDraftId),
+                        buildSuccessorDraftPendingLink(
+                          data.returnLineage!.successorDraftId,
+                        ),
                       );
                     }}
                   >
@@ -832,12 +1092,15 @@ export function VersionDetailPage() {
                   </Button>
                 </Card>
               ) : null}
-              {approveMutation.isError ? <MutationError error={approveMutation.error} /> : null}
+              {approveMutation.isError ? (
+                <MutationError error={approveMutation.error} />
+              ) : null}
               {returnMutation.isError ? (
                 <MutationError
                   error={returnMutation.error}
                   onRetry={
-                    isDomainError(returnMutation.error) && returnMutation.error.retryable
+                    isDomainError(returnMutation.error) &&
+                    returnMutation.error.retryable
                       ? confirmReturn
                       : undefined
                   }
@@ -847,7 +1110,7 @@ export function VersionDetailPage() {
             </section>
           ) : null}
 
-          {search.tab === 'manifest' ? (
+          {search.tab === "manifest" ? (
             <section className={styles.section}>
               <h2>Manifest 摘要</h2>
               <p>Manifest 原文、对象路径和授权 URL 不进入遥测或 Query Key。</p>
@@ -861,7 +1124,7 @@ export function VersionDetailPage() {
               ) : (
                 <>
                   <p>
-                    <code>{manifest.data.manifest.manifest_id}</code> · SHA-256{' '}
+                    <code>{manifest.data.manifest.manifest_id}</code> · SHA-256{" "}
                     {manifest.data.manifest.sha256}
                   </p>
                   {manifest.data.items.length === 0 ? (
@@ -883,31 +1146,42 @@ export function VersionDetailPage() {
             </section>
           ) : null}
 
-          {search.tab === 'changes' ? (
+          {search.tab === "changes" ? (
             <section className={styles.section}>
               <h2>Version Diff</h2>
-              <p>比较对象必须是同一 Dataset 的固定 Version ID；不接受 latest/current。</p>
+              <p>
+                比较对象必须是同一 Dataset 的固定 Version ID；不接受
+                latest/current。
+              </p>
               <label className={styles.filterField}>
                 比较 Version ID
-                <input value={compareTo} onChange={(event) => setCompareTo(event.target.value)} />
+                <input
+                  value={compareTo}
+                  onChange={(event) => setCompareTo(event.target.value)}
+                />
               </label>
               <Button
                 type="primary"
                 disabled={
-                  !isDatasetVersionId(compareTo) || compareTo === versionId || diffJob.isPending
+                  !isDatasetVersionId(compareTo) ||
+                  compareTo === versionId ||
+                  diffJob.isPending
                 }
                 onClick={openDiff}
               >
-                {diffJob.isPending ? '提交中…' : '创建 Diff Job'}
+                {diffJob.isPending ? "提交中…" : "创建 Diff Job"}
               </Button>
               {diffJob.isError ? <MutationError error={diffJob.error} /> : null}
               {jobId ? <JobStatus jobId={jobId} /> : null}
             </section>
           ) : null}
-          {search.tab === 'schema' ? (
+          {search.tab === "schema" ? (
             <section className={styles.section}>
               <h2>Schema Snapshot</h2>
-              <p>Schema 与当前固定 Version 的内容快照绑定；合同不匹配时整区 fail closed。</p>
+              <p>
+                Schema 与当前固定 Version 的内容快照绑定；合同不匹配时整区 fail
+                closed。
+              </p>
               {schema.isPending ? (
                 <RegionState state="first-loading" />
               ) : schema.isError ? (
@@ -922,8 +1196,14 @@ export function VersionDetailPage() {
                       label="Reference"
                       value={`${schema.data.snapshot.type} / ${schema.data.snapshot.id}`}
                     />
-                    <UiMetricCard label="Schema Version" value={schema.data.snapshot.version} />
-                    <UiMetricCard label="Channels" value={schema.data.channelCount} />
+                    <UiMetricCard
+                      label="Schema Version"
+                      value={schema.data.snapshot.version}
+                    />
+                    <UiMetricCard
+                      label="Channels"
+                      value={schema.data.channelCount}
+                    />
                     <UiMetricCard
                       label="SHA-256"
                       value={`${schema.data.snapshot.sha256.slice(0, 16)}…`}
@@ -938,12 +1218,13 @@ export function VersionDetailPage() {
               )}
             </section>
           ) : null}
-          {search.tab === 'capacity' ? (
+          {search.tab === "capacity" ? (
             <section className={styles.section}>
               <h2>容量与运营库存</h2>
               <p>
-                Required storage 绑定内容快照，operational inventory 绑定{' '}
-                <code>{data.operationalRevision}</code>；两者不会在前端合并推算。
+                Required storage 绑定内容快照，operational inventory 绑定{" "}
+                <code>{data.operationalRevision}</code>
+                ；两者不会在前端合并推算。
               </p>
               <h3>Required storage</h3>
               {requiredStorage.isPending ? (
@@ -987,14 +1268,194 @@ export function VersionDetailPage() {
               )}
             </section>
           ) : null}
-          {search.tab === 'exports' ? (
+          {search.tab === "exports" ? (
             <section className={styles.section}>
-              <h2>导出</h2>
-              <p>导出执行状态、结果可用性和下载授权是三个独立状态轴。</p>
-              <RegionState
-                state="feature-unavailable"
-                message="下载授权合同未冻结；页面不会缓存或猜测签名 URL。"
-              />
+              <div className={styles.sectionHeader}>
+                <div>
+                  <h2>导出</h2>
+                  <p>任务状态、产物可用性和每次下载授权分别以真实 API 为准。</p>
+                </div>
+                <div className={styles.actions}>
+                  <label className={styles.filterField}>
+                    导出格式
+                    <select
+                      aria-label="导出格式"
+                      value={exportFormat}
+                      disabled={!canExport || startExport.isPending}
+                      onChange={(event) =>
+                        setExportFormat(
+                          event.target.value as PublishedExportFormat,
+                        )
+                      }
+                    >
+                      <option value="lance_snapshot">Lance Snapshot</option>
+                      <option value="lerobot_v3">LeRobot v3</option>
+                    </select>
+                  </label>
+                  <Button
+                    type="primary"
+                    disabled={!canExport || startExport.isPending}
+                    loading={startExport.isPending}
+                    onClick={() => startExport.mutate(exportFormat)}
+                  >
+                    {startExport.isPending
+                      ? "正在创建导出任务…"
+                      : "创建导出任务"}
+                  </Button>
+                </div>
+              </div>
+              {!canExport ? (
+                <RegionState
+                  state="forbidden"
+                  message="需要当前项目的数据集发布权限才能创建、查询或下载导出。"
+                />
+              ) : null}
+              {startExport.isError ? (
+                <MutationError
+                  error={startExport.error}
+                  onRetry={() => startExport.mutate(exportFormat)}
+                />
+              ) : null}
+              {!search.exportJobId ? (
+                <RegionState
+                  state="empty"
+                  message="尚未选择导出任务。创建后会保留可刷新的任务状态链接。"
+                />
+              ) : exportJob.isPending ? (
+                <RegionState state="first-loading" title="正在读取导出任务" />
+              ) : exportJob.isError ? (
+                <MutationError
+                  error={exportJob.error}
+                  onRetry={() => void exportJob.refetch()}
+                />
+              ) : exportJob.data ? (
+                <div className={styles.exportJob} aria-label="导出任务状态">
+                  <div className={styles.exportFacts}>
+                    <span>任务</span>
+                    <code>{exportJob.data.job_id}</code>
+                    <span>状态</span>
+                    <StatusTag
+                      status={exportJob.data.status}
+                      tone={
+                        exportJob.data.status === "SUCCEEDED"
+                          ? "success"
+                          : exportJob.data.status === "FAILED"
+                            ? "danger"
+                            : exportJob.data.status === "CANCELLED"
+                              ? "neutral"
+                              : "info"
+                      }
+                      known
+                    />
+                    <span>阶段</span>
+                    <strong>{exportJob.data.stage}</strong>
+                    <span>进度</span>
+                    <strong>
+                      {exportJob.data.progress.completed_phases}/
+                      {exportJob.data.progress.total_phases} ·{" "}
+                      {exportJob.data.progress.phase}
+                    </strong>
+                    <span>格式</span>
+                    <strong>{exportJob.data.format}</strong>
+                    <span>更新时间</span>
+                    <time dateTime={exportJob.data.updated_at}>
+                      {new Date(exportJob.data.updated_at).toLocaleString()}
+                    </time>
+                  </div>
+                  {exportJob.data.status === "PENDING" ||
+                  exportJob.data.status === "RUNNING" ? (
+                    <p role="status">
+                      已完成 {exportJob.data.progress.completed_phases}/
+                      {exportJob.data.progress.total_phases}
+                      个真实导出阶段；页面会自动刷新。
+                    </p>
+                  ) : null}
+                  {exportJob.data.result ? (
+                    <p>
+                      已验证 {exportJob.data.result.row_count} 行 ·{" "}
+                      <code>
+                        {exportJob.data.result.artifact_content_hash.slice(
+                          0,
+                          16,
+                        )}
+                        …
+                      </code>
+                    </p>
+                  ) : null}
+                  {exportJob.data.status === "FAILED" ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      message={exportJob.data.error_code ?? "导出失败"}
+                      description={
+                        exportJob.data.error_message ?? "导出工作流未能完成。"
+                      }
+                    />
+                  ) : null}
+                  <div className={styles.actions}>
+                    {(exportJob.data.status === "PENDING" ||
+                      exportJob.data.status === "RUNNING") && (
+                      <Button
+                        danger
+                        loading={cancelExport.isPending}
+                        onClick={() =>
+                          cancelExport.mutate(exportJob.data.job_id)
+                        }
+                      >
+                        取消导出
+                      </Button>
+                    )}
+                    {(exportJob.data.status === "FAILED" ||
+                      exportJob.data.status === "CANCELLED") && (
+                      <Button
+                        type="primary"
+                        loading={retryExport.isPending}
+                        onClick={() =>
+                          retryExport.mutate(exportJob.data.job_id)
+                        }
+                      >
+                        重试导出
+                      </Button>
+                    )}
+                    {exportJob.data.status === "SUCCEEDED" && (
+                      <Button
+                        type="primary"
+                        loading={downloadExport.isPending}
+                        onClick={() =>
+                          downloadExport.mutate(exportJob.data.job_id)
+                        }
+                      >
+                        {downloadExport.isPending
+                          ? "正在申请下载授权…"
+                          : "下载导出文件"}
+                      </Button>
+                    )}
+                  </div>
+                  {cancelExport.isError ? (
+                    <MutationError
+                      error={cancelExport.error}
+                      onRetry={() => cancelExport.mutate(exportJob.data.job_id)}
+                    />
+                  ) : null}
+                  {retryExport.isError ? (
+                    <MutationError
+                      error={retryExport.error}
+                      onRetry={() => retryExport.mutate(exportJob.data.job_id)}
+                    />
+                  ) : null}
+                  {downloadExport.isError ? (
+                    <MutationError
+                      error={downloadExport.error}
+                      onRetry={() =>
+                        downloadExport.mutate(exportJob.data.job_id)
+                      }
+                    />
+                  ) : null}
+                  {downloadFeedback ? (
+                    <p role="status">{downloadFeedback}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           ) : null}
         </div>
@@ -1002,7 +1463,9 @@ export function VersionDetailPage() {
 
       <EntityDrawer
         open={Boolean(search.revisionId)}
-        title={<Typography.Title level={2}>Revision Inspector</Typography.Title>}
+        title={
+          <Typography.Title level={2}>Revision Inspector</Typography.Title>
+        }
         loading={revision.isPending}
         onClose={() => applySearch({ revisionId: undefined })}
       >
@@ -1038,9 +1501,9 @@ export function VersionDetailPage() {
         actionLabel="确认复核通过"
         resourceId={versionId}
         impact={[
-          '创建不可变 ReviewDecision',
-          '启动 Manifest/发布异步任务',
-          'Version 保持 REVIEWING，直到完整 Bootstrap 证明 READY',
+          "创建不可变 ReviewDecision",
+          "启动 Manifest/发布异步任务",
+          "Version 保持 REVIEWING，直到完整 Bootstrap 证明 READY",
         ]}
         blockers={checks.data?.blockers}
         preflight={
@@ -1057,8 +1520,12 @@ export function VersionDetailPage() {
         pending={approveMutation.isPending}
         conflict={
           isDomainError(approveMutation.error) &&
-          (approveMutation.error.httpStatus === 409 || approveMutation.error.httpStatus === 412)
-            ? { status: approveMutation.error.httpStatus, code: approveMutation.error.code }
+          (approveMutation.error.httpStatus === 409 ||
+            approveMutation.error.httpStatus === 412)
+            ? {
+                status: approveMutation.error.httpStatus,
+                code: approveMutation.error.code,
+              }
             : null
         }
         onConfirm={confirmApprove}
@@ -1069,6 +1536,58 @@ export function VersionDetailPage() {
           }
         }}
       />
+
+      <Modal
+        open={historyEpisodeId !== null}
+        title={
+          historyEpisodeId
+            ? `Episode 版本历史 · ${historyEpisodeId}`
+            : "Episode 版本历史"
+        }
+        footer={null}
+        onCancel={() => setHistoryEpisodeId(null)}
+        width={1000}
+      >
+        <p className={styles.historyHint}>
+          每一行都是该 Episode 在一个不可变 Dataset Version 中当前选定的
+          Revision；打开后仅以该 Version 的事实进行可视化。
+        </p>
+        {history.isPending ? (
+          <RegionState state="first-loading" />
+        ) : history.isError ? (
+          <RegionState
+            state={datasetRegionStateForError(history.error)}
+            onRetry={() => void history.refetch()}
+          />
+        ) : history.data?.items.length === 0 ? (
+          <RegionState
+            state="empty"
+            message="该 Episode 尚无可见的跨版本历史。"
+          />
+        ) : history.data ? (
+          <>
+            <EpisodeRevisionHistoryTable
+              items={history.data.items}
+              onOpenViewer={(item) => {
+                setHistoryEpisodeId(null);
+                void navigate(
+                  routes.episodeViewer.build({
+                    datasetId,
+                    versionId: item.versionId,
+                    episodeId: item.episodeId,
+                    returnTo: `${location.pathname}${location.search}`,
+                  }),
+                );
+              }}
+            />
+            <VersionCursorPager
+              page={history.data}
+              busy={history.isFetching}
+              onChange={setHistoryCursor}
+            />
+          </>
+        ) : null}
+      </Modal>
 
       <Modal
         open={diffOpen}
@@ -1082,7 +1601,11 @@ export function VersionDetailPage() {
           }
         }}
         footer={[
-          <Button key="cancel" disabled={diffJob.isPending} onClick={() => setDiffOpen(false)}>
+          <Button
+            key="cancel"
+            disabled={diffJob.isPending}
+            onClick={() => setDiffOpen(false)}
+          >
             取消
           </Button>,
           <Button
@@ -1146,16 +1669,21 @@ export function VersionDetailPage() {
                   (item) => item.output_revision_id === event.target.value,
                 );
                 const nextStream =
-                  nextTarget?.streams.length === 1 ? nextTarget.streams[0] : undefined;
+                  nextTarget?.streams.length === 1
+                    ? nextTarget.streams[0]
+                    : undefined;
                 setSelectedRevisionId(event.target.value);
-                setSelectedStreamId(nextStream?.episode_stream_id ?? '');
-                setStartNs(nextStream?.t_start_ns ?? '0');
-                setEndNs(nextStream?.t_end_ns ?? '1');
+                setSelectedStreamId(nextStream?.episode_stream_id ?? "");
+                setStartNs(nextStream?.t_start_ns ?? "0");
+                setEndNs(nextStream?.t_end_ns ?? "1");
               }}
             >
               <option value="">请选择固定 Revision</option>
               {checks.data?.eligible_targets.map((item) => (
-                <option key={item.output_revision_id} value={item.output_revision_id}>
+                <option
+                  key={item.output_revision_id}
+                  value={item.output_revision_id}
+                >
                   {item.output_revision_id} · {item.episode_id}
                 </option>
               ))}
@@ -1170,13 +1698,16 @@ export function VersionDetailPage() {
                   (item) => item.episode_stream_id === event.target.value,
                 );
                 setSelectedStreamId(event.target.value);
-                setStartNs(nextStream?.t_start_ns ?? '0');
-                setEndNs(nextStream?.t_end_ns ?? '1');
+                setStartNs(nextStream?.t_start_ns ?? "0");
+                setEndNs(nextStream?.t_end_ns ?? "1");
               }}
             >
               <option value="">请选择稳定 Stream</option>
               {target?.streams.map((item) => (
-                <option key={item.episode_stream_id} value={item.episode_stream_id}>
+                <option
+                  key={item.episode_stream_id}
+                  value={item.episode_stream_id}
+                >
                   {item.channel_path} · {item.episode_stream_id}
                 </option>
               ))}
@@ -1191,7 +1722,7 @@ export function VersionDetailPage() {
                   (item) => item.code === event.target.value,
                 );
                 setFindingType(event.target.value);
-                setSeverity(next?.allowed_severities[0] ?? 'HIGH');
+                setSeverity(next?.allowed_severities[0] ?? "HIGH");
               }}
             >
               {checks.data?.finding_catalog.finding_types.map((item) => (
@@ -1209,8 +1740,9 @@ export function VersionDetailPage() {
             >
               {severityOptions.map((item) => (
                 <option key={item} value={item}>
-                  {checks.data?.finding_catalog.severities.find((entry) => entry.code === item)
-                    ?.label ?? item}
+                  {checks.data?.finding_catalog.severities.find(
+                    (entry) => entry.code === item,
+                  )?.label ?? item}
                 </option>
               ))}
             </select>
@@ -1269,14 +1801,17 @@ export function VersionDetailPage() {
         actionLabel="确认原子退回"
         resourceId={versionId}
         impact={[
-          '当前 Version 进入终态 RETURNED',
-          'Review Decision 与 Finding 永久不可变',
-          '创建唯一 successor Draft；前端只使用响应 draftId 跳转',
+          "当前 Version 进入终态 RETURNED",
+          "Review Decision 与 Finding 永久不可变",
+          "创建唯一 successor Draft；前端只使用响应 draftId 跳转",
         ]}
         blockers={
           findingValid
             ? []
-            : returnBlockedReasons.map((message) => ({ code: 'FINDING_INVALID', message }))
+            : returnBlockedReasons.map((message) => ({
+                code: "FINDING_INVALID",
+                message,
+              }))
         }
         preflight={
           checks.data && checksPreparedAt
@@ -1292,8 +1827,12 @@ export function VersionDetailPage() {
         pending={returnMutation.isPending}
         conflict={
           isDomainError(returnMutation.error) &&
-          (returnMutation.error.httpStatus === 409 || returnMutation.error.httpStatus === 412)
-            ? { status: returnMutation.error.httpStatus, code: returnMutation.error.code }
+          (returnMutation.error.httpStatus === 409 ||
+            returnMutation.error.httpStatus === 412)
+            ? {
+                status: returnMutation.error.httpStatus,
+                code: returnMutation.error.code,
+              }
             : null
         }
         onConfirm={confirmReturn}

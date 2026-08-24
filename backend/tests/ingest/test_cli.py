@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,19 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel
 
-from hc_data_platform.ingest.cli import HttpResponse, import_offline_bundle
-from hc_data_platform.ingest.models import CompletedPart, ManifestFileV1, RolloutManifestV1
+from hc_data_platform.ingest.cli import (
+    MAX_MULTIPART_PARTS,
+    HttpResponse,
+    UploadTransportError,
+    effective_part_size,
+    import_offline_bundle,
+)
+from hc_data_platform.ingest.models import (
+    CompletedPart,
+    FailedPartV1,
+    ManifestFileV1,
+    RolloutManifestV1,
+)
 from hc_data_platform.ingest.ports import InMemoryObjectStorage, crc64_ecma
 from hc_data_platform.ingest.service import UploadSessionService
 
@@ -92,6 +104,15 @@ class ServiceBackedHttp:
             return response_json(
                 200,
                 self.service.renew_part_authorizations(session_id, payload["part_numbers"]),
+            )
+        if method == "POST" and url.endswith(":retry-parts"):
+            assert isinstance(payload, dict)
+            return response_json(
+                200,
+                self.service.retry_failed_parts(
+                    session_id,
+                    [FailedPartV1.model_validate(item) for item in payload["failures"]],
+                ),
             )
         if method == "POST" and url.endswith(":complete"):
             assert isinstance(payload, dict)
@@ -205,3 +226,146 @@ def test_offline_manifest_integrity_is_checked_before_any_http_call(tmp_path: Pa
     else:
         raise AssertionError("invalid offline bundle was accepted")
     assert not called
+
+
+def test_effective_part_size_keeps_a_five_tib_import_within_s3_part_limit() -> None:
+    five_tib = 5 * 1024**4
+
+    part_size = effective_part_size(file_size=five_tib, requested_part_size=64 * 1024**2)
+
+    assert part_size == math.ceil(five_tib / MAX_MULTIPART_PARTS)
+    assert math.ceil(five_tib / part_size) == MAX_MULTIPART_PARTS
+
+
+def test_offline_import_reuses_a_part_after_the_put_response_is_lost(tmp_path: Path) -> None:
+    body = b"lost-put-response"
+    manifest = manifest_for(body)
+    mcap_path = tmp_path / "recording.mcap"
+    manifest_path = tmp_path / "rollout_manifest.json"
+    mcap_path.write_bytes(body)
+    manifest_path.write_text(manifest.model_dump_json(), encoding="utf-8")
+
+    class LostResponseHttp(ServiceBackedHttp):
+        direct_puts = 0
+
+        def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
+            if url.startswith("memory://"):
+                self.direct_puts += 1
+                response = super().request(method, url, **kwargs)
+                if self.direct_puts == 1:
+                    raise UploadTransportError(
+                        "the object store accepted bytes but the connection reset"
+                    )
+                return response
+            return super().request(method, url, **kwargs)
+
+    storage = InMemoryObjectStorage()
+    http = LostResponseHttp(UploadSessionService(storage), storage)
+
+    result = import_offline_bundle(
+        mcap_path,
+        manifest_path,
+        api_base_url="https://api.invalid",
+        region_code="cn-hz",
+        access_token="token",
+        idempotency_key="lost-response",
+        part_size=5 * 1024 * 1024,
+        retry_base_seconds=0.01,
+        sleep=lambda _: None,
+        http=http,
+    )
+
+    assert http.direct_puts == 1
+    assert result["object_key"] in storage.objects
+
+
+def test_offline_import_records_a_failed_part_and_retries_after_disconnect(tmp_path: Path) -> None:
+    body = b"retry-after-disconnect"
+    manifest = manifest_for(body)
+    mcap_path = tmp_path / "recording.mcap"
+    manifest_path = tmp_path / "rollout_manifest.json"
+    mcap_path.write_bytes(body)
+    manifest_path.write_text(manifest.model_dump_json(), encoding="utf-8")
+
+    class DisconnectBeforePutHttp(ServiceBackedHttp):
+        direct_puts = 0
+
+        def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
+            if url.startswith("memory://"):
+                self.direct_puts += 1
+                if self.direct_puts == 1:
+                    raise UploadTransportError(
+                        "connection reset before object store received the bytes"
+                    )
+            return super().request(method, url, **kwargs)
+
+    storage = InMemoryObjectStorage()
+    service = UploadSessionService(storage)
+    http = DisconnectBeforePutHttp(service, storage)
+
+    result = import_offline_bundle(
+        mcap_path,
+        manifest_path,
+        api_base_url="https://api.invalid",
+        region_code="cn-hz",
+        access_token="token",
+        idempotency_key="disconnect-before-put",
+        part_size=5 * 1024 * 1024,
+        retry_base_seconds=0.01,
+        sleep=lambda _: None,
+        http=http,
+    )
+
+    assert http.direct_puts == 2
+    assert result["object_key"] in storage.objects
+    session = service.persistence.find_session_by_package("p1", "package1")
+    assert session is not None
+    parts = service.list_parts(session.session_id)
+    assert parts[0].retry_count == 1
+    assert parts[0].failure_code is None
+
+
+def test_offline_import_restart_skips_parts_the_server_already_has(tmp_path: Path) -> None:
+    body = b"previous-process-uploaded-this-part"
+    manifest = manifest_for(body)
+    mcap_path = tmp_path / "recording.mcap"
+    manifest_path = tmp_path / "rollout_manifest.json"
+    mcap_path.write_bytes(body)
+    manifest_path.write_text(manifest.model_dump_json(), encoding="utf-8")
+    storage = InMemoryObjectStorage()
+    service = UploadSessionService(storage)
+    session = service.create_session(
+        manifest=manifest,
+        region_code="cn-hz",
+        idempotency_key="offline-import",
+    )
+    storage.upload_part(
+        session.multipart_upload_id or "",
+        1,
+        body,
+        key=session.object_key,
+    )
+
+    class CountingHttp(ServiceBackedHttp):
+        direct_puts = 0
+
+        def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
+            if url.startswith("memory://"):
+                self.direct_puts += 1
+            return super().request(method, url, **kwargs)
+
+    http = CountingHttp(service, storage)
+    result = import_offline_bundle(
+        mcap_path,
+        manifest_path,
+        api_base_url="https://api.invalid",
+        region_code="cn-hz",
+        access_token="token",
+        idempotency_key="offline-import",
+        part_size=5 * 1024 * 1024,
+        sleep=lambda _: None,
+        http=http,
+    )
+
+    assert http.direct_puts == 0
+    assert result["object_key"] == session.object_key

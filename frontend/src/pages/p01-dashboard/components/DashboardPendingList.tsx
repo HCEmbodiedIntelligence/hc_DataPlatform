@@ -51,6 +51,27 @@ const pendingPresentation: Readonly<
   },
 };
 
+const severityCopy: Readonly<
+  Record<DashboardPendingItem["severity"], string>
+> = {
+  CRITICAL: "紧急",
+  HIGH: "高",
+  MEDIUM: "中",
+  LOW: "低",
+};
+
+const sourceStateCopy: Readonly<Record<string, string>> = {
+  FAILED: "失败",
+  RISK: "有风险",
+  REJECT: "未通过",
+  SUBMITTED: "已提交",
+  APPROVED: "已通过",
+};
+
+function sourceStateLabel(sourceState: string): string {
+  return sourceStateCopy[sourceState] ?? "状态未知";
+}
+
 function severityTone(severity: DashboardPendingItem["severity"]) {
   return severity === "CRITICAL"
     ? "danger"
@@ -81,14 +102,17 @@ export function DashboardPendingList({
                 <strong>{title}</strong>
                 <StatusTag
                   status={item.severity}
-                  label={item.severity}
+                  label={severityCopy[item.severity]}
                   known
                   tone={severityTone(item.severity)}
                 />
               </div>
               <span>{description}</span>
-              <small title={item.target.resource_id}>
-                {item.sourceState} · {item.target.resource_id}
+              <small
+                title={item.target.resource_id}
+                data-source-state={item.sourceState}
+              >
+                {sourceStateLabel(item.sourceState)} · {item.target.resource_id}
               </small>
             </div>
             {item.target.deep_link ? (

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, TypeAlias, runtime_checkable
 
 from .models import (
@@ -16,6 +17,7 @@ from .models import (
     AnnotationOperation,
     AnnotationReview,
     AnnotationRevision,
+    AnnotationRevisionThread,
     AnnotationStatus,
     AnnotationSubmission,
     AnnotationSubmissionMutationRecord,
@@ -26,6 +28,7 @@ from .models import (
     AutoAnnotationCapability,
     ExclusionRange,
     ReviewDecision,
+    RevisionOrigin,
     TagSchemaVersion,
 )
 
@@ -66,6 +69,33 @@ class AnnotationRepositoryPort(Protocol):
     ) -> AnnotationAggregate | None: ...
 
     def list_for_project(self, project_id: str) -> tuple[AnnotationAggregate, ...]: ...
+
+    def list_revision_threads(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        status: AnnotationStatus | None,
+        origin: RevisionOrigin | None,
+        legacy_draft_id: str | None,
+        snapshot_at: datetime,
+        after_updated_at: datetime | None,
+        after_task_id: str | None,
+        limit: int,
+    ) -> tuple[AnnotationRevisionThread, ...]: ...
+
+    def append_revision_thread_list_audit(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        actor_id: str,
+        request_id: str,
+        status: AnnotationStatus | None,
+        origin: RevisionOrigin | None,
+        legacy_draft_id: str | None,
+        limit: int,
+    ) -> None: ...
 
     def compare_and_swap(
         self,

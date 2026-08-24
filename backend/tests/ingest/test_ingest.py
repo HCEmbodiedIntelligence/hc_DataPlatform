@@ -23,6 +23,7 @@ from hc_data_platform.ingest.models import (
     RolloutStatus,
     UploadObjectStatus,
     UploadPartStatus,
+    UploadSession,
     UploadSourceType,
     UploadStatus,
     manifest_object_key,
@@ -109,6 +110,53 @@ def assert_problem(exc: pytest.ExceptionInfo[ProblemException], code: str) -> No
     assert exc.value.problem.code == code
 
 
+def test_upload_session_listing_uses_scope_bound_cursor_pagination() -> None:
+    persistence = InMemoryIngestPersistence()
+    service = UploadSessionService(
+        InMemoryObjectStorage(),
+        persistence,
+        cursor_secret="test-ingest-session-pagination-secret",
+    )
+    updated_at = datetime(2026, 8, 21, 8, tzinfo=timezone.utc)
+    for index in range(3):
+        persistence.save_session(
+            UploadSession(
+                session_id=f"00000000-0000-0000-0000-{index + 1:012d}",
+                project_id="p1",
+                region_code="cn-hz",
+                rollout_id=f"rollout-{index}",
+                data_package_id=f"package-{index}",
+                object_key=f"raw/v1/package-{index}.mcap",
+                expected_sha256="a" * 64,
+                expected_size=1,
+                expected_crc64="1",
+                manifest_fingerprint="b" * 64,
+                updated_at=updated_at - timedelta(seconds=index),
+            )
+        )
+
+    first = service.list_sessions("p1", "cn-hz", limit=1)
+    assert first.total == 1
+    assert [item.data_package_id for item in first.items] == ["package-0"]
+    assert first.next_cursor is not None
+
+    second = service.list_sessions("p1", "cn-hz", cursor=first.next_cursor, limit=1)
+    third = service.list_sessions("p1", "cn-hz", cursor=second.next_cursor, limit=1)
+    assert [item.data_package_id for item in second.items] == ["package-1"]
+    assert [item.data_package_id for item in third.items] == ["package-2"]
+    assert third.next_cursor is None
+
+    with pytest.raises(ProblemException) as wrong_filter:
+        service.list_sessions(
+            "p1",
+            "cn-hz",
+            cursor=first.next_cursor,
+            data_package_id="package-0",
+            limit=1,
+        )
+    assert_problem(wrong_filter, "INVALID_CURSOR")
+
+
 def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     body = b"valid-mcap-placeholder"
     manifest = manifest_for(body)
@@ -139,6 +187,81 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     assert rollout.status is RolloutStatus.RAW_COMMITTED
     assert storage.head(event.manifest_key) is not None
     assert event.object_key == raw_object_key(manifest)
+
+
+def test_raw_media_access_requires_a_committed_object_and_records_a_redacted_audit() -> None:
+    body = b"valid-mcap-placeholder"
+    manifest = manifest_for(body, rollout_id="raw-media")
+    storage = InMemoryObjectStorage()
+    persistence = InMemoryIngestPersistence()
+    service = UploadSessionService(storage, persistence, raw_media_authorization_ttl_seconds=120)
+    session, parts = upload_parts(service, storage, manifest, body)
+
+    with pytest.raises(ProblemException) as before_commit:
+        service.authorize_raw_media(
+            session_id=session.session_id,
+            actor_id="operator-1",
+            request_id="request-raw-media",
+        )
+    assert_problem(before_commit, "RAW_MEDIA_NOT_COMMITTED")
+    assert persistence.raw_media_audit_events == []
+
+    service.complete_upload(session.session_id, parts)
+    service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    source = service.authorize_raw_media(
+        session_id=session.session_id,
+        actor_id="operator-1",
+        request_id="request-raw-media",
+    )
+
+    assert source.format == "MCAP"
+    assert source.media_type == "application/x-mcap"
+    assert source.byte_length == len(body)
+    assert source.sha256 == manifest.sha256
+    assert source.download_url.startswith("memory://object/")
+    assert source.expires_at > datetime.now(timezone.utc)
+
+    assert len(persistence.raw_media_audit_events) == 1
+    audit = persistence.raw_media_audit_events[0]
+    assert audit.actor_id == "operator-1"
+    assert audit.request_id == "request-raw-media"
+    assert audit.byte_length == len(body)
+    assert audit.session_id == session.session_id
+    assert audit.rollout_id == manifest.rollout_id
+
+
+def test_manifest_discovery_for_rollout_is_exactly_project_and_region_scoped() -> None:
+    body = b"task-bound-manifest-discovery"
+    manifest = manifest_for(body, rollout_id="task-bound-rollout")
+    service = UploadSessionService(InMemoryObjectStorage(), InMemoryIngestPersistence())
+    session = service.create_session(
+        manifest=manifest,
+        region_code="cn-hz",
+        idempotency_key="task-bound-manifest",
+    )
+
+    discovery = service.get_manifest_discovery_for_rollout(
+        project_id=manifest.project_id,
+        region_code="cn-hz",
+        rollout_id=manifest.rollout_id,
+    )
+    assert discovery == service.get_manifest_preflight(session.session_id).discovery
+
+    with pytest.raises(ProblemException) as wrong_region:
+        service.get_manifest_discovery_for_rollout(
+            project_id=manifest.project_id,
+            region_code="us-west",
+            rollout_id=manifest.rollout_id,
+        )
+    assert_problem(wrong_region, "UPLOAD_SESSION_NOT_FOUND")
+
+    with pytest.raises(ProblemException) as wrong_rollout:
+        service.get_manifest_discovery_for_rollout(
+            project_id=manifest.project_id,
+            region_code="cn-hz",
+            rollout_id="another-rollout",
+        )
+    assert_problem(wrong_rollout, "UPLOAD_SESSION_NOT_FOUND")
 
 
 def test_retry_reconciles_manifest_marker_after_persistence_crash() -> None:

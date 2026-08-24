@@ -54,10 +54,18 @@ def test_compose_public_gateway_denies_metrics_and_documentation_without_ip_head
 def test_production_helm_has_public_deny_and_selector_bound_internal_metrics_path() -> None:
     documents = _render_production_chart()
     services = {item["metadata"]["name"]: item for item in _by_kind(documents, "Service")}
-    ingress = _by_kind(documents, "Ingress")
-    assert len(ingress) == 1
+    ingress_documents = _by_kind(documents, "Ingress")
+    assert len(ingress_documents) == 2
+    ingress = next(
+        item
+        for item in ingress_documents
+        if not item["metadata"]["name"].endswith("-preview-media")
+    )
+    preview_ingress = next(
+        item for item in ingress_documents if item["metadata"]["name"].endswith("-preview-media")
+    )
 
-    rules = ingress[0]["spec"]["rules"][0]["http"]["paths"]
+    rules = ingress["spec"]["rules"][0]["http"]["paths"]
     backends = {
         (item["path"], item["pathType"]): item["backend"]["service"]["name"] for item in rules
     }
@@ -68,6 +76,11 @@ def test_production_helm_has_public_deny_and_selector_bound_internal_metrics_pat
     )
 
     api_backend = backends[("/docs", "Exact")]
+    api_service_port = next(
+        item["backend"]["service"]["port"]
+        for item in rules
+        if item["path"] == "/api" and item["pathType"] == "Prefix"
+    )
     assert api_backend.endswith("-backend-api")
     for path in ("/docs/oauth2-redirect", "/redoc", "/openapi.json"):
         assert backends[(path, "Exact")] == api_backend
@@ -83,6 +96,25 @@ def test_production_helm_has_public_deny_and_selector_bound_internal_metrics_pat
         {"name": "metrics", "port": 9090, "targetPort": "http", "protocol": "TCP"}
     ]
     assert internal_metrics["metadata"]["annotations"]["prometheus.io/path"] == "/metrics"
+
+    preview_paths = preview_ingress["spec"]["rules"][0]["http"]["paths"]
+    assert preview_paths == [
+        {
+            "path": "/api/v1/previews/sessions/",
+            "pathType": "Prefix",
+            "backend": {
+                "service": {
+                    "name": api_backend,
+                    "port": api_service_port,
+                }
+            },
+        }
+    ]
+    assert preview_ingress["metadata"]["annotations"] == {
+        "nginx.ingress.kubernetes.io/limit-rps": "30",
+        "nginx.ingress.kubernetes.io/limit-burst-multiplier": "4",
+        "nginx.ingress.kubernetes.io/limit-connections": "8",
+    }
 
     deployments = _by_kind(documents, "Deployment")
     pod_components = {

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   useDashboardActivity,
-  useDashboardCoverage,
   useDashboardPending,
   useDashboardPendingPage,
   useDashboardSnapshot,
@@ -24,11 +23,11 @@ import {
 } from "../../shared/ui";
 import { AssetCapacityBoard } from "./components/AssetCapacityBoard";
 import { DashboardActivityList } from "./components/DashboardActivityList";
-import { DashboardCoverageTable } from "./components/DashboardCoverageTable";
 import { DashboardPendingDrawer } from "./components/DashboardPendingDrawer";
 import { DashboardPendingList } from "./components/DashboardPendingList";
 import {
   DashboardSectionNotice,
+  sectionLabel,
   sectionTone,
 } from "./components/DashboardSectionNotice";
 import { dashboardQueryCodec, type DashboardRange } from "./query-codec";
@@ -203,7 +202,6 @@ export function DashboardPage() {
   const activity = useDashboardActivity(scope, window, routeAllowed);
   const snapshot = useDashboardSnapshot(scope, window, routeAllowed);
   const pending = useDashboardPending(scope, window, routeAllowed);
-  const coverage = useDashboardCoverage(scope, window, routeAllowed);
   const pendingPageInput = useMemo(
     () => ({ limit: 50 as const, ...pendingCursor }),
     [pendingCursor],
@@ -215,7 +213,7 @@ export function DashboardPage() {
     routeAllowed && pendingOpen && !scopeChanged,
   );
 
-  const queries = [activity, snapshot, pending, coverage] as const;
+  const queries = [activity, snapshot, pending] as const;
   const fatal = queries.every(
     (query) => query.error && query.data === undefined,
   );
@@ -227,16 +225,12 @@ export function DashboardPage() {
         ? "feature-unavailable"
         : fatal
           ? stateFromError(
-              activity.error ??
-                snapshot.error ??
-                pending.error ??
-                coverage.error,
+              activity.error ?? snapshot.error ?? pending.error,
             )
           : "ready";
   const pendingState = queryState(pending);
   const activityState = queryState(activity);
   const snapshotState = queryState(snapshot);
-  const coverageState = queryState(coverage);
   const pendingPageState = queryState(pendingPage);
 
   const pendingContent = pending.data ? (
@@ -252,7 +246,7 @@ export function DashboardPage() {
         <div className={styles.panelHeadingActions}>
           <StatusTag
             status={pending.data.section.status}
-            label={pending.data.section.status}
+            label={sectionLabel(pending.data.section.status)}
             known
             tone={sectionTone(pending.data.section.status)}
           />
@@ -284,20 +278,6 @@ export function DashboardPage() {
       onRetry={() => void activity.refetch()}
     />
   ) : null;
-  const coverageContent = coverage.data ? (
-    <section
-      className={`${styles.panel} ${styles.coveragePanel}`}
-      aria-labelledby="dashboard-coverage-title"
-    >
-      <div className={styles.panelHeading}>
-        <div>
-          <h2 id="dashboard-coverage-title">局部状态</h2>
-          <p>未冻结口径不会显示伪造百分比</p>
-        </div>
-      </div>
-      <DashboardCoverageTable coverage={coverage.data} />
-    </section>
-  ) : null;
 
   const readyContent = (
     <div className={styles.contentStack}>
@@ -318,20 +298,13 @@ export function DashboardPage() {
           pendingContent,
           () => void pending.refetch(),
         )}
-        <aside className={styles.sideColumn} aria-label="最近活动与局部状态">
+        <aside className={styles.sideColumn} aria-label="最近活动">
           {renderRegion(
             activityState,
             "最近活动",
             activity.error,
             activityContent,
             () => void activity.refetch(),
-          )}
-          {renderRegion(
-            coverageState,
-            "覆盖率合同状态",
-            coverage.error,
-            coverageContent,
-            () => void coverage.refetch(),
           )}
         </aside>
       </div>
@@ -347,7 +320,7 @@ export function DashboardPage() {
   );
 
   return (
-    <main className={styles.page} data-page-id="P01">
+    <section className={styles.page} data-page-id="P01">
       <StandardPageScaffold
         header={{
           title: "工作台",
@@ -435,7 +408,7 @@ export function DashboardPage() {
         onCursorChange={setPendingCursor}
         onClose={() => setPendingOpen(false)}
       />
-    </main>
+    </section>
   );
 }
 

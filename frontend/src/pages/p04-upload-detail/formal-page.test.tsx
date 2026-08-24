@@ -2,21 +2,26 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  MemoryRouter,
-  Route,
-  Routes,
-  useLocation,
-} from "react-router-dom";
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { createDomainError } from "../../shared/api/domain-error";
 import type { FormalUploadDetail } from "./formal-detail-client";
 import FormalUploadDetailPage from "./formal-page";
 
-const { loadDetailMock } = vi.hoisted(() => ({
-  loadDetailMock: vi.fn(),
-}));
+const { loadDetailMock, loadRawMediaMock, loadWorkflowMock } = vi.hoisted(
+  () => ({
+    loadDetailMock: vi.fn(),
+    loadRawMediaMock: vi.fn(),
+    loadWorkflowMock: vi.fn(),
+  }),
+);
 
 vi.mock("../../features/ingest/use-ingest-scope", () => ({
   useIngestScope: () => ({
@@ -35,8 +40,14 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
 }));
 
 vi.mock("./formal-detail-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./formal-detail-client")>();
-  return { ...actual, loadFormalUploadDetail: loadDetailMock };
+  const actual =
+    await importOriginal<typeof import("./formal-detail-client")>();
+  return {
+    ...actual,
+    loadFormalUploadDetail: loadDetailMock,
+    getFormalUploadRawMedia: loadRawMediaMock,
+    getFormalUploadProcessingStatus: loadWorkflowMock,
+  };
 });
 
 vi.mock("../../features/viewer", async (importOriginal) => {
@@ -46,11 +57,24 @@ vi.mock("../../features/viewer", async (importOriginal) => {
     RawDiagnosticWorkbench: (props: {
       readonly manifest: { readonly cameras: readonly unknown[] };
       readonly findings: readonly unknown[];
+      readonly mediaStreamsByTopic: Readonly<
+        Record<
+          string,
+          { readonly availability?: string; readonly mediaSource?: unknown }
+        >
+      >;
     }) => (
       <section
         aria-label="Raw 诊断测试适配器"
         data-camera-count={props.manifest.cameras.length}
         data-finding-count={props.findings.length}
+        data-stream-count={Object.keys(props.mediaStreamsByTopic).length}
+        data-ready-count={
+          Object.values(props.mediaStreamsByTopic).filter(
+            (stream) =>
+              stream.availability === "ready" && Boolean(stream.mediaSource),
+          ).length
+        }
       >
         Raw 诊断正式入口
       </section>
@@ -88,6 +112,13 @@ function detailFixture(
       object_key: "raw/package-a.mcap",
       source_type: "BROWSER_MULTIPART",
       status: "RAW_COMMITTED",
+      workflow: {
+        event_id: "a1111111-1111-4111-8111-111111111111",
+        workflow_id: "ingest-rollout/project-a/rollout-a",
+        status: "DISPATCHED",
+        attempts: 1,
+        updated_at: "2026-08-21T08:00:00Z",
+      },
     },
     manifest: {
       schema_version: "manifest-preflight/v1",
@@ -169,6 +200,47 @@ function detailFixture(
   };
 }
 
+function workflowFixture(
+  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "TECHNICAL_FAILED",
+) {
+  return {
+    schema_version: "upload-processing-status/v1",
+    session_id: "session-a",
+    rollout_id: "rollout-a",
+    workflow_id: "ingest-rollout/project-a/rollout-a",
+    status,
+    stage: status === "SUCCEEDED" ? "succeeded" : "alignment",
+    attempt: 1,
+    preview:
+      status === "SUCCEEDED"
+        ? {
+            schema_version: "upload-preview-target/v1",
+            project_id: "project-a",
+            dataset_id: "dataset_ingest_a",
+            rollout_id: "rollout-a",
+            dataset_version: 4,
+            lance_version: 7,
+            annotation_task_id: "annotation-a",
+            frequency_hz: 30,
+            start_step: 0,
+            end_step: 300,
+          }
+        : null,
+    viewer:
+      status === "SUCCEEDED"
+        ? {
+            schema_version: "dataset-ingest-viewer-target/v1",
+            dataset_id: "dataset_ingest_a",
+            version_id: "version_lance_4",
+            episode_id: "episode_ingest_a",
+            revision_id: "revision_ingest_a",
+          }
+        : null,
+    error_code: status === "TECHNICAL_FAILED" ? "ALIGNMENT_FAILED" : null,
+    updated_at: "2026-08-21T08:01:00Z",
+  };
+}
+
 function LocationProbe() {
   const location = useLocation();
   return (
@@ -201,6 +273,16 @@ function renderPage(path = "/ingest/uploads/session-a?from=pending#quality") {
 
 beforeEach(() => {
   loadDetailMock.mockResolvedValue(detailFixture("PASS", 4));
+  loadWorkflowMock.mockResolvedValue(workflowFixture("SUCCEEDED"));
+  loadRawMediaMock.mockResolvedValue({
+    schema_version: "raw-media-source/v1",
+    format: "MCAP",
+    media_type: "application/x-mcap",
+    download_url: "https://object.example.test/raw/signed",
+    expires_at: "2026-08-20T10:00:00Z",
+    byte_length: 2_048,
+    sha256: "source-a",
+  });
 });
 
 afterEach(() => {
@@ -209,22 +291,57 @@ afterEach(() => {
 });
 
 describe("P04 formal upload detail page", () => {
-  it("keeps a direct deep link query/hash and shows PASS without a false Raw error banner", async () => {
+  it("keeps a direct deep link/query/hash and exposes the authorized Raw source on PASS", async () => {
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "上传详情" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "上传详情" }),
+    ).toBeVisible();
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/ingest/uploads/session-a?from=pending#quality",
     );
     expect(screen.getByText("自动质检通过")).toBeVisible();
     expect(screen.getByText("未发现需要诊断的异常")).toBeVisible();
-    expect(screen.queryByText("Raw 诊断正式入口")).not.toBeInTheDocument();
+    expect(screen.getByText("Raw 诊断正式入口")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByLabelText("Raw 诊断测试适配器")).toHaveAttribute(
+        "data-ready-count",
+        "4",
+      ),
+    );
+    expect(screen.getByText(/可视化数据已生成/u)).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "打开完整数据视图" }),
+    ).toHaveAttribute(
+      "href",
+      "/datasets/dataset_ingest_a/versions/version_lance_4/episodes/episode_ingest_a/view",
+    );
+    expect(
+      await screen.findByRole("link", { name: "下载 Raw MCAP" }),
+    ).toHaveAttribute("href", "https://object.example.test/raw/signed");
+    expect(loadRawMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-a",
+        regionCode: "cn-test",
+      }),
+      "session-a",
+      expect.any(AbortSignal),
+    );
     expect(loadDetailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: "project-a",
         regionCode: "cn-test",
       }),
       "session-a",
+      expect.any(AbortSignal),
+    );
+    expect(loadWorkflowMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-a",
+        projectId: "project-a",
+        regionCode: "cn-test",
+      }),
+      expect.objectContaining({ rollout_id: "rollout-a" }),
       expect.any(AbortSignal),
     );
   });
@@ -240,10 +357,77 @@ describe("P04 formal upload detail page", () => {
         "data-camera-count",
         String(cameraCount),
       );
+      expect(workbench).toHaveAttribute(
+        "data-stream-count",
+        String(cameraCount),
+      );
       expect(workbench).toHaveAttribute("data-finding-count", "1");
       expect(screen.getByText("自动质检：RISK")).toBeVisible();
+      expect(
+        await screen.findByRole("link", { name: "下载 Raw MCAP" }),
+      ).toHaveAttribute("href", "https://object.example.test/raw/signed");
+      expect(loadRawMediaMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: "project-a",
+          regionCode: "cn-test",
+        }),
+        "session-a",
+        expect.any(AbortSignal),
+      );
     },
   );
+
+  it("keeps cameras in a generating state while the durable workflow is running", async () => {
+    loadDetailMock.mockResolvedValue(detailFixture("PASS", 1));
+    loadWorkflowMock.mockResolvedValue(workflowFixture("RUNNING"));
+    renderPage();
+
+    expect(await screen.findByText(/后台处理中 · alignment/u)).toBeVisible();
+    const workbench = screen.getByLabelText("Raw 诊断测试适配器");
+    expect(workbench).toHaveAttribute("data-ready-count", "0");
+    expect(screen.queryByText(/不支持/u)).not.toBeInTheDocument();
+  });
+
+  it("shows a durable processing failure without hiding Raw evidence", async () => {
+    loadDetailMock.mockResolvedValue(detailFixture("PASS", 1));
+    loadWorkflowMock.mockResolvedValue(workflowFixture("TECHNICAL_FAILED"));
+    renderPage();
+
+    expect(await screen.findByText(/TECHNICAL_FAILED/u)).toBeVisible();
+    expect(screen.getByText(/问题代码 ALIGNMENT_FAILED/u)).toBeVisible();
+    expect(screen.getByLabelText("Raw 诊断测试适配器")).toHaveAttribute(
+      "data-ready-count",
+      "0",
+    );
+    expect(
+      await screen.findByRole("link", { name: "下载 Raw MCAP" }),
+    ).toBeVisible();
+  });
+
+  it("keeps Raw diagnostics visible when the authorized source fails and retries only that source", async () => {
+    loadDetailMock.mockResolvedValue(detailFixture("RISK", 1));
+    loadRawMediaMock.mockRejectedValue(
+      createDomainError({
+        code: "NETWORK_ERROR",
+        message: "对象存储暂时不可用",
+        fieldErrors: [],
+        operationErrors: [],
+        blockedReasons: [],
+        requestId: "raw-source-request",
+        retryable: true,
+        httpStatus: 503,
+      }),
+    );
+    renderPage();
+
+    expect(await screen.findByLabelText("Raw 诊断测试适配器")).toBeVisible();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "对象存储暂时不可用",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "重新获取受权链接" }));
+    expect(loadRawMediaMock).toHaveBeenCalledTimes(2);
+    expect(loadDetailMock).toHaveBeenCalledTimes(1);
+  });
 
   it("preserves Problem Details and a retry action instead of converting an error to empty", async () => {
     loadDetailMock.mockRejectedValue(

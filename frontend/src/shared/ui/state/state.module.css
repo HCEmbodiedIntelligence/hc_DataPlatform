@@ -292,24 +292,34 @@
   white-space: normal;
 }
 
-.statusTag[data-tone="neutral"] {
-  color: var(--hc-color-neutral-text, #555b70);
+.statusTag[data-tone="neutral"]:global(.ant-tag) {
+  color: var(--hc-color-neutral-text, #42485e) !important;
+  border-color: var(--hc-color-neutral-border, #c6cad8) !important;
+  background: var(--hc-color-neutral-surface, #eaecf2) !important;
 }
 
-.statusTag[data-tone="info"] {
-  color: var(--hc-color-info-text, #2455bd);
+.statusTag[data-tone="info"]:global(.ant-tag) {
+  color: var(--hc-color-info-text, #1e4e9b) !important;
+  border-color: var(--hc-color-info-border, #aabbdf) !important;
+  background: var(--hc-color-info-surface, #dce8ff) !important;
 }
 
-.statusTag[data-tone="success"] {
-  color: var(--hc-color-success-text, #246851);
+.statusTag[data-tone="success"]:global(.ant-tag) {
+  color: var(--hc-color-success-text, #1f5f4d) !important;
+  border-color: var(--hc-color-success-border, #a5ccbc) !important;
+  background: var(--hc-color-success-surface, #dcefe7) !important;
 }
 
-.statusTag[data-tone="warning"] {
-  color: var(--hc-color-warning-text, #8a5008);
+.statusTag[data-tone="warning"]:global(.ant-tag) {
+  color: var(--hc-color-warning-text, #7a4706) !important;
+  border-color: var(--hc-color-warning-border, #e5be7f) !important;
+  background: var(--hc-color-warning-surface, #fff0d5) !important;
 }
 
-.statusTag[data-tone="danger"] {
-  color: var(--hc-color-error-text, #963333);
+.statusTag[data-tone="danger"]:global(.ant-tag) {
+  color: var(--hc-color-error-text, #8e2d2d) !important;
+  border-color: var(--hc-color-error-border, #e0ada7) !important;
+  background: var(--hc-color-error-surface, #f9dedb) !important;
 }
 
 .metricCard {

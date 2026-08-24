@@ -1,7 +1,9 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Button, Progress, Space, Tooltip } from "antd";
-import { CircleAlert, Pencil, XCircle } from "lucide-react";
+import { Ban, CircleAlert, Pencil, RotateCcw, XCircle } from "lucide-react";
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
+import { routes } from "../../../features/datasets/routing";
 import { isDomainError } from "../../../shared/api/domain-error";
 import { DataTable } from "../../../shared/ui/data/DataTable";
 import { PageState } from "../../../shared/ui/state/PageState";
@@ -23,6 +25,8 @@ export interface CollectionTaskTableProps {
   readonly filtered: boolean;
   readonly onEdit: (task: CollectionTask) => void;
   readonly onClose: (task: CollectionTask) => void;
+  readonly onCancel: (task: CollectionTask) => void;
+  readonly onReopen: (task: CollectionTask) => void;
 }
 
 const numberFormat = new Intl.NumberFormat("zh-CN");
@@ -37,10 +41,16 @@ const dateTimeFormat = new Intl.DateTimeFormat("zh-CN", {
 
 function TaskIdentity({ task }: Readonly<{ task: CollectionTask }>) {
   return (
-    <span className={styles.taskIdentity}>
+    <Link
+      aria-label={`查看采集任务 ${task.name}（${task.task_code}）的数据`}
+      className={styles.taskIdentity}
+      to={routes.datasets.build({
+        collectionTaskId: task.collection_task_id,
+      })}
+    >
       <strong title={task.name}>{task.name}</strong>
       <code translate="no">{task.task_code}</code>
-    </span>
+    </Link>
   );
 }
 
@@ -92,6 +102,15 @@ function PackageProgress({
           ? ` / ${numberFormat.format(target)}`
           : " 个已接收"}
       </small>
+      {progress.data.attainment.status !== "NOT_CONFIGURED" ? (
+        <small className={styles.attainmentValue}>
+          {progress.data.attainment.status === "ATTAINED"
+            ? "目标已达成"
+            : progress.data.attainment.status === "EXCEEDED"
+              ? "目标已超出"
+              : "目标进行中"}
+        </small>
+      ) : null}
     </span>
   );
 }
@@ -136,8 +155,10 @@ export function CollectionTaskTable({
   canManage,
   filtered,
   loading = false,
+  onCancel,
   onClose,
   onEdit,
+  onReopen,
   progressByTaskId,
   tasks,
 }: Readonly<CollectionTaskTableProps>) {
@@ -155,9 +176,21 @@ export function CollectionTaskTable({
         size: 92,
         cell: ({ row }) => (
           <StatusTag
-            label={row.original.status === "ACTIVE" ? "进行中" : "已关闭"}
+            label={
+              row.original.status === "ACTIVE"
+                ? "进行中"
+                : row.original.status === "CLOSED"
+                  ? "已关闭"
+                  : "已取消"
+            }
             status={row.original.status}
-            tone={row.original.status === "ACTIVE" ? "success" : "neutral"}
+            tone={
+              row.original.status === "ACTIVE"
+                ? "success"
+                : row.original.status === "CANCELLED"
+                  ? "danger"
+                  : "neutral"
+            }
           />
         ),
       },
@@ -243,13 +276,31 @@ export function CollectionTaskTable({
               >
                 关闭任务
               </Button>
+              <Button
+                danger
+                icon={<Ban aria-hidden="true" size={14} />}
+                size="small"
+                type="link"
+                onClick={() => onCancel(row.original)}
+              >
+                取消任务
+              </Button>
             </Space>
+          ) : canManage ? (
+            <Button
+              icon={<RotateCcw aria-hidden="true" size={14} />}
+              size="small"
+              type="link"
+              onClick={() => onReopen(row.original)}
+            >
+              重新开启
+            </Button>
           ) : (
             <span className={styles.mutedValue}>—</span>
           ),
       },
     ],
-    [canManage, onClose, onEdit, progressByTaskId],
+    [canManage, onCancel, onClose, onEdit, onReopen, progressByTaskId],
   );
 
   return (

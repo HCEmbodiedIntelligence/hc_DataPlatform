@@ -8,13 +8,15 @@ interface AxeResult {
 
 const artifactRoot = resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe13"
-      ? "../artifacts/visual/e01-e10/FE13-fixes"
-      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-        ? "../artifacts/visual/e01-e10/FE12-final"
-        : "../artifacts/visual/e01-e10",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe13"
+        ? "../artifacts/visual/e01-e10/FE13-fixes"
+        : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+          ? "../artifacts/visual/e01-e10/FE12-final"
+          : "../artifacts/visual/e01-e10",
 );
 
 async function mountFixture(
@@ -167,16 +169,15 @@ async function expectGeometry(
   page: Page,
   mode: "annotation" | "tag-review",
 ): Promise<void> {
+  await expect(page.getByLabel("采集条目导航")).toHaveCount(0);
   const boxes = await Promise.all([
-    page.getByLabel("采集条目导航").boundingBox(),
     page.getByLabel("相机与同步信号").boundingBox(),
     page.getByLabel("模式工具与发现").boundingBox(),
   ]);
   expect(boxes.every(Boolean)).toBe(true);
   const widths = boxes.map((box) => box?.width ?? 0);
   const total = widths.reduce((sum, width) => sum + width, 0);
-  const expected =
-    mode === "annotation" ? [0.18, 0.58, 0.24] : [0.18, 0.54, 0.28];
+  const expected = mode === "annotation" ? [0.76, 0.24] : [0.72, 0.28];
   widths.forEach((width, index) =>
     expect(Math.abs(width / total - (expected[index] ?? 0))).toBeLessThan(
       0.035,
@@ -188,6 +189,10 @@ async function expectGeometry(
   expect(overflow).toBeLessThanOrEqual(0);
   await expect(page.getByRole("slider", { name: "共享播放位置" })).toHaveCount(
     1,
+  );
+  await expect(page.getByRole("button", { name: "数据信息" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
   );
 }
 
@@ -208,7 +213,7 @@ for (const mode of ["annotation", "tag-review"] as const) {
       if (mode === "annotation") {
         await expect(page.getByText("多级 Tag 工具")).toBeVisible();
         await expect(
-          page.getByRole("button", { name: "保存草稿" }),
+          page.getByRole("button", { name: "保存修改" }),
         ).toBeVisible();
         await expect(
           page.getByRole("button", { name: "提交审核" }),
@@ -270,6 +275,90 @@ test("E07 adapts a one-camera Manifest without adding another timeline", async (
     path: resolve(directory, "1280x800-one-camera.png"),
     fullPage: false,
   });
+});
+
+test("E07 opens collection data as an overlay without resizing the viewer", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const directory = resolve(artifactRoot, "E07");
+  mkdirSync(directory, { recursive: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mountFixture(page, {
+    mode: "annotation",
+    cameraCount: 4,
+    scenario: "reference",
+  });
+  const media = page.getByLabel("相机与同步信号");
+  const timeline = page.getByLabel("共享视频时间轴区域");
+  const before = await Promise.all([
+    media.boundingBox(),
+    timeline.boundingBox(),
+  ]);
+
+  await page.getByRole("button", { name: "数据信息" }).click();
+  const drawer = page.getByRole("dialog", { name: /数据信息/u });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "采集条目" })).toBeVisible();
+  await expect(drawer.getByText("任务 ID", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Schema", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Lance", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("区间", { exact: true })).toBeVisible();
+
+  const after = await Promise.all([
+    media.boundingBox(),
+    timeline.boundingBox(),
+  ]);
+  expect(after).toEqual(before);
+  await expect(page.getByRole("slider", { name: "共享播放位置" })).toHaveCount(
+    1,
+  );
+  await page.screenshot({
+    path: resolve(directory, "1280x800-data-information-open.png"),
+    animations: "disabled",
+    fullPage: false,
+  });
+
+  await drawer.getByRole("button", { name: /close/i }).click();
+  await expect(drawer).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "数据信息" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(pageErrors).toEqual([]);
+});
+
+test("E07 keeps data information overlay-only on narrow screens", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await mountFixture(page, {
+    mode: "annotation",
+    cameraCount: 1,
+    scenario: "reference",
+  });
+
+  await expect(page.getByLabel("采集条目导航")).toHaveCount(0);
+  const media = await page.getByLabel("相机与同步信号").boundingBox();
+  const timeline = await page.getByLabel("共享视频时间轴区域").boundingBox();
+  expect(media).not.toBeNull();
+  expect(timeline).not.toBeNull();
+  expect(Math.abs((media?.width ?? 0) - (timeline?.width ?? 0))).toBeLessThan(
+    1,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+
+  await page.getByRole("button", { name: "数据信息" }).click();
+  const drawer = page.getByRole("dialog", { name: /数据信息/u });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("任务 ID", { exact: true })).toBeVisible();
+  const drawerBox = await drawer.boundingBox();
+  expect(drawerBox?.width).toBe(720);
 });
 
 test("E08 keeps the fixed submission visible after a concurrent 409", async ({

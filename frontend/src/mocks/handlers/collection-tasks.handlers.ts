@@ -8,12 +8,20 @@ type CollectionTaskProgress = components["schemas"]["CollectionTaskProgress"];
 const root = "*/api/v1/projects/:projectId/collection-tasks";
 const closePath =
   /\/api\/v1\/projects\/(?<projectId>[^/]+)\/collection-tasks\/(?<taskId>[^/:]+):close$/u;
+const cancelPath =
+  /\/api\/v1\/projects\/(?<projectId>[^/]+)\/collection-tasks\/(?<taskId>[^/:]+):cancel$/u;
+const reopenPath =
+  /\/api\/v1\/projects\/(?<projectId>[^/]+)\/collection-tasks\/(?<taskId>[^/:]+):reopen$/u;
 
-function initialTasks(projectId: string): CollectionTask[] {
+function initialTasks(
+  organizationId: string,
+  projectId: string,
+): CollectionTask[] {
   return [
     {
       schema_version: "1",
       collection_task_id: "collection-task-fx-01",
+      organization_id: organizationId,
       project_id: projectId,
       task_code: "00000042",
       name: "透明件抓取多视角采集",
@@ -27,6 +35,7 @@ function initialTasks(projectId: string): CollectionTask[] {
     {
       schema_version: "1",
       collection_task_id: "collection-task-fx-02",
+      organization_id: organizationId,
       project_id: projectId,
       task_code: "00000039",
       name: "托盘搬运夜班数据补采",
@@ -40,13 +49,18 @@ function initialTasks(projectId: string): CollectionTask[] {
   ];
 }
 
-let tasksByProject = new Map<string, CollectionTask[]>();
+let tasksByScope = new Map<string, CollectionTask[]>();
 
-function tasksFor(projectId: string): CollectionTask[] {
-  const current = tasksByProject.get(projectId);
+function organizationFrom(request: Request): string {
+  return request.headers.get("X-Organization-Id") || "organization-mock";
+}
+
+function tasksFor(organizationId: string, projectId: string): CollectionTask[] {
+  const key = `${organizationId}/${projectId}`;
+  const current = tasksByScope.get(key);
   if (current) return current;
-  const created = initialTasks(projectId);
-  tasksByProject.set(projectId, created);
+  const created = initialTasks(organizationId, projectId);
+  tasksByScope.set(key, created);
   return created;
 }
 
@@ -73,10 +87,14 @@ function progress(task: CollectionTask): CollectionTaskProgress {
   return {
     schema_version: "1",
     collection_task_id: task.collection_task_id,
+    organization_id: task.organization_id,
     project_id: task.project_id,
     status: task.status,
     as_of: "2026-08-18T05:30:00Z",
     received_package_count: received,
+    captured_duration_seconds: received * 75,
+    duration_observed_package_count: received,
+    duration_unknown_package_count: 0,
     qc: {
       evaluated_count: evaluated,
       pass_count: passed,
@@ -88,6 +106,22 @@ function progress(task: CollectionTask): CollectionTaskProgress {
         denominator: evaluated,
         value: evaluated > 0 ? passed / evaluated : null,
       },
+    },
+    attainment: {
+      status: task.target ? "IN_PROGRESS" : "NOT_CONFIGURED",
+      package_count:
+        task.target?.package_count == null
+          ? null
+          : {
+              actual: received,
+              target: task.target.package_count,
+              progress: received / task.target.package_count,
+              status: "IN_PROGRESS",
+            },
+      duration_seconds: null,
+      quality_threshold: task.quality_threshold,
+      quality_status:
+        task.quality_threshold == null ? "NOT_CONFIGURED" : "PENDING_QC",
     },
     observed_sources: {
       device_ids: ["robot_fx_01"],
@@ -102,17 +136,18 @@ export const collectionTaskHandlers = [
     const denied = forbidden();
     if (denied) return denied;
     const projectId = String(params.projectId);
+    const organizationId = organizationFrom(request);
     const status = new URL(request.url).searchParams.get("status");
-    const items = tasksFor(projectId).filter(
+    const items = tasksFor(organizationId, projectId).filter(
       (task) => status === null || task.status === status,
     );
     return HttpResponse.json({ items, next_cursor: null });
   }),
-  http.get(`${root}/:taskId/progress`, ({ params }) => {
+  http.get(`${root}/:taskId/progress`, ({ request, params }) => {
     const denied = forbidden();
     if (denied) return denied;
     const projectId = String(params.projectId);
-    const task = tasksFor(projectId).find(
+    const task = tasksFor(organizationFrom(request), projectId).find(
       (candidate) => candidate.collection_task_id === String(params.taskId),
     );
     return task
@@ -122,11 +157,11 @@ export const collectionTaskHandlers = [
           { status: 404 },
         );
   }),
-  http.get(`${root}/:taskId`, ({ params }) => {
+  http.get(`${root}/:taskId`, ({ request, params }) => {
     const denied = forbidden();
     if (denied) return denied;
     const projectId = String(params.projectId);
-    const task = tasksFor(projectId).find(
+    const task = tasksFor(organizationFrom(request), projectId).find(
       (candidate) => candidate.collection_task_id === String(params.taskId),
     );
     return task
@@ -142,15 +177,17 @@ export const collectionTaskHandlers = [
     const denied = forbidden();
     if (denied) return denied;
     const projectId = String(params.projectId);
+    const organizationId = organizationFrom(request);
     const body =
       (await request.json()) as components["schemas"]["CreateCollectionTask"];
-    const tasks = tasksFor(projectId);
+    const tasks = tasksFor(organizationId, projectId);
     const task: CollectionTask = {
       ...body,
       quality_threshold: body.quality_threshold ?? null,
       target: body.target ?? null,
       schema_version: "1",
       collection_task_id: `collection-task-fx-${tasks.length + 1}`,
+      organization_id: organizationId,
       project_id: projectId,
       task_code: String(43 + tasks.length).padStart(8, "0"),
       status: "ACTIVE",
@@ -162,7 +199,7 @@ export const collectionTaskHandlers = [
     const denied = forbidden();
     if (denied) return denied;
     const projectId = String(params.projectId);
-    const tasks = tasksFor(projectId);
+    const tasks = tasksFor(organizationFrom(request), projectId);
     const index = tasks.findIndex(
       (candidate) => candidate.collection_task_id === String(params.taskId),
     );
@@ -179,11 +216,11 @@ export const collectionTaskHandlers = [
       headers: { ETag: '"collection-task-fx-v2"' },
     });
   }),
-  http.post(closePath, ({ params }) => {
+  http.post(closePath, ({ request, params }) => {
     const denied = forbidden();
     if (denied) return denied;
     const projectId = String(params.projectId);
-    const tasks = tasksFor(projectId);
+    const tasks = tasksFor(organizationFrom(request), projectId);
     const index = tasks.findIndex(
       (candidate) => candidate.collection_task_id === String(params.taskId),
     );
@@ -196,10 +233,47 @@ export const collectionTaskHandlers = [
     tasks[index] = closed;
     return HttpResponse.json(closed);
   }),
+  http.post(cancelPath, ({ request, params }) => {
+    const denied = forbidden();
+    if (denied) return denied;
+    const projectId = String(params.projectId);
+    const tasks = tasksFor(organizationFrom(request), projectId);
+    const index = tasks.findIndex(
+      (candidate) => candidate.collection_task_id === String(params.taskId),
+    );
+    if (index < 0)
+      return HttpResponse.json(
+        { detail: "Collection task not found." },
+        { status: 404 },
+      );
+    const cancelled: CollectionTask = {
+      ...tasks[index]!,
+      status: "CANCELLED",
+    };
+    tasks[index] = cancelled;
+    return HttpResponse.json(cancelled);
+  }),
+  http.post(reopenPath, ({ request, params }) => {
+    const denied = forbidden();
+    if (denied) return denied;
+    const projectId = String(params.projectId);
+    const tasks = tasksFor(organizationFrom(request), projectId);
+    const index = tasks.findIndex(
+      (candidate) => candidate.collection_task_id === String(params.taskId),
+    );
+    if (index < 0)
+      return HttpResponse.json(
+        { detail: "Collection task not found." },
+        { status: 404 },
+      );
+    const reopened: CollectionTask = { ...tasks[index]!, status: "ACTIVE" };
+    tasks[index] = reopened;
+    return HttpResponse.json(reopened);
+  }),
 ];
 
 export function resetCollectionTaskHandlerState(): void {
-  tasksByProject = new Map();
+  tasksByScope = new Map();
 }
 
 export default collectionTaskHandlers;

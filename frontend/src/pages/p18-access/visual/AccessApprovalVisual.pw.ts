@@ -15,30 +15,34 @@ interface AxeResult {
 
 const artifactDirectory = resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture/E09"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe15"
-      ? "../artifacts/visual/e01-e10/FE15-fixes/E09"
-      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-        ? "../artifacts/visual/e01-e10/FE12-final/E09"
-        : "../artifacts/visual/e01-e10/E09",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture/E09"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture/E09"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe15"
+        ? "../artifacts/visual/e01-e10/FE15-fixes/E09"
+        : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+          ? "../artifacts/visual/e01-e10/FE12-final/E09"
+          : "../artifacts/visual/e01-e10/E09",
 );
 const repairArtifactDirectory = resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe15"
-      ? "../artifacts/visual/e01-e10/FE15-fixes/E09"
-      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-        ? "../artifacts/visual/e01-e10/FE12-final"
-        : "../artifacts/visual/e01-e10/FE11-repair",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe15"
+        ? "../artifacts/visual/e01-e10/FE15-fixes/E09"
+        : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+          ? "../artifacts/visual/e01-e10/FE12-final"
+          : "../artifacts/visual/e01-e10/FE11-repair",
 );
 
 async function mountFixture(
   page: Page,
   options: {
-    readonly scenario: "reference" | "forbidden" | "empty";
-    readonly tab?: "membership-requests" | "capability-requests";
+    readonly scenario: "reference" | "users" | "forbidden" | "empty";
+    readonly tab?: "users" | "membership-requests" | "capability-requests";
   },
 ) {
   await page.addInitScript(() => {
@@ -58,8 +62,11 @@ async function mountFixture(
       mountAccessApprovalVisualFixture(
         element: HTMLElement,
         value: {
-          readonly scenario: "reference" | "forbidden" | "empty";
-          readonly tab?: "membership-requests" | "capability-requests";
+          readonly scenario: "reference" | "users" | "forbidden" | "empty";
+          readonly tab?:
+            | "users"
+            | "membership-requests"
+            | "capability-requests";
         },
       ): void;
     };
@@ -73,6 +80,52 @@ async function mountFixture(
     page.getByRole("heading", { level: 1, name: "账户与权限" }),
   ).toBeVisible();
 }
+
+test("E09 platform user management stays usable across desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  mkdirSync(artifactDirectory, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mountFixture(page, { scenario: "users", tab: "users" });
+  await expect(page.getByRole("tab", { name: "用户管理" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    page.getByRole("region", { name: "平台用户管理" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建用户" })).toBeEnabled();
+  await expect(page.getByText("h***@example.cn")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  const axe = await runAxe(page);
+  if (axe) {
+    const report = JSON.stringify({ violations: axe.violations }, null, 2);
+    writeFileSync(
+      resolve(artifactDirectory, "axe-users-1440x900.json"),
+      report,
+    );
+    await testInfo.attach("axe-users", {
+      body: report,
+      contentType: "application/json",
+    });
+    expect(axe.violations).toEqual([]);
+  }
+  await page.screenshot({
+    path: resolve(artifactDirectory, "users-1440x900.png"),
+    animations: "disabled",
+    fullPage: false,
+  });
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByRole("button", { name: "创建用户" })).toBeVisible();
+  await page.screenshot({
+    path: resolve(artifactDirectory, "users-375x812.png"),
+    animations: "disabled",
+    fullPage: false,
+  });
+});
 
 async function expectGeometry(page: Page) {
   const [main, drawer] = await Promise.all([

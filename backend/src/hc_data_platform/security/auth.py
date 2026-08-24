@@ -10,9 +10,12 @@ import jwt
 from hc_data_platform.core.errors import problem
 
 from .capabilities import (
+    ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES,
+    CAPABILITY_PLATFORM_ADMIN,
     PERMISSION_CAPABILITIES,
     capabilities_for_roles,
     capabilities_from_legacy_roles,
+    expand_capability_aliases,
     legacy_roles_from_capabilities,
 )
 
@@ -55,6 +58,8 @@ SIGNATURE_ALGORITHMS = frozenset(
         "EdDSA",
     }
 )
+MAX_JWT_ORGANIZATION_SCOPES = 256
+MAX_JWT_SCOPE_CAPABILITIES = 256
 
 
 def _claim_values(claims: Mapping[str, Any], name: str) -> frozenset[str]:
@@ -76,6 +81,102 @@ def _claim_values(claims: Mapping[str, Any], name: str) -> frozenset[str]:
     return frozenset(raw)
 
 
+def _organization_scope_claims(
+    claims: Mapping[str, Any],
+) -> tuple[
+    frozenset[str],
+    frozenset[str],
+    frozenset[str],
+    frozenset[tuple[str, str | None]],
+    frozenset[tuple[str, str]],
+    frozenset[tuple[str, str, str | None]],
+    frozenset[tuple[str, str, str]],
+]:
+    raw = claims.get("organization_scopes", [])
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
+        raise problem(
+            status=401,
+            code="INVALID_ACCESS_TOKEN",
+            title="Invalid access token",
+            detail="The organization_scopes claim must be an array of scope objects.",
+        )
+    if len(raw) > MAX_JWT_ORGANIZATION_SCOPES:
+        raise problem(
+            status=401,
+            code="INVALID_ACCESS_TOKEN",
+            title="Invalid access token",
+            detail="The organization_scopes claim contains too many entries.",
+        )
+
+    organization_ids: set[str] = set()
+    project_ids: set[str] = set()
+    region_codes: set[str] = set()
+    scope_pairs: set[tuple[str, str | None]] = set()
+    scoped_capabilities: set[tuple[str, str]] = set()
+    organization_scope_triples: set[tuple[str, str, str | None]] = set()
+    organization_scoped_capabilities: set[tuple[str, str, str]] = set()
+    allowed_keys = frozenset({"organization_id", "project_id", "region_code", "capabilities"})
+    for value in raw:
+        if not isinstance(value, Mapping) or set(value) != allowed_keys:
+            raise problem(
+                status=401,
+                code="INVALID_ACCESS_TOKEN",
+                title="Invalid access token",
+                detail=(
+                    "Each organization_scopes entry must contain exactly organization_id, "
+                    "project_id, region_code, and capabilities."
+                ),
+            )
+        organization_id = value["organization_id"]
+        project_id = value["project_id"]
+        region_code = value["region_code"]
+        capabilities = value["capabilities"]
+        if (
+            not isinstance(organization_id, str)
+            or not organization_id
+            or not isinstance(project_id, str)
+            or not project_id
+            or (region_code is not None and (not isinstance(region_code, str) or not region_code))
+        ):
+            raise problem(
+                status=401,
+                code="INVALID_ACCESS_TOKEN",
+                title="Invalid access token",
+                detail="An organization scope contains an empty or invalid identity.",
+            )
+        if (
+            isinstance(capabilities, (str, bytes))
+            or not isinstance(capabilities, Sequence)
+            or len(capabilities) > MAX_JWT_SCOPE_CAPABILITIES
+            or any(not isinstance(capability, str) or not capability for capability in capabilities)
+        ):
+            raise problem(
+                status=401,
+                code="INVALID_ACCESS_TOKEN",
+                title="Invalid access token",
+                detail="An organization scope contains invalid capabilities.",
+            )
+        organization_ids.add(organization_id)
+        project_ids.add(project_id)
+        if region_code is not None:
+            region_codes.add(region_code)
+        scope_pairs.add((project_id, region_code))
+        organization_scope_triples.add((organization_id, project_id, region_code))
+        for capability in capabilities:
+            scoped_capabilities.add((project_id, capability))
+            organization_scoped_capabilities.add((organization_id, project_id, capability))
+
+    return (
+        frozenset(organization_ids),
+        frozenset(project_ids),
+        frozenset(region_codes),
+        frozenset(scope_pairs),
+        frozenset(scoped_capabilities),
+        frozenset(organization_scope_triples),
+        frozenset(organization_scoped_capabilities),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class AuthContext:
     subject_id: str
@@ -87,12 +188,19 @@ class AuthContext:
     capability_revision: int = 0
     scope_pairs: frozenset[tuple[str, str | None]] = frozenset()
     scoped_capabilities: frozenset[tuple[str, str]] = frozenset()
+    organization_ids: frozenset[str] = frozenset()
+    organization_scope_triples: frozenset[tuple[str, str, str | None]] = frozenset()
+    organization_scoped_capabilities: frozenset[tuple[str, str, str]] = frozenset()
 
     def __post_init__(self) -> None:
         if not self.subject_id:
             raise ValueError("subject_id must not be empty")
-        if any(not value for value in (*self.project_ids, *self.region_codes)):
-            raise ValueError("project and region scopes must not contain empty values")
+        if any(
+            not value for value in (*self.organization_ids, *self.project_ids, *self.region_codes)
+        ):
+            raise ValueError(
+                "organization, project, and region scopes must not contain empty values"
+            )
         unknown = self.roles - ALLOWED_ROLES
         if unknown:
             raise ValueError(f"unknown roles: {', '.join(sorted(unknown))}")
@@ -104,6 +212,18 @@ class AuthContext:
             not project_id or not capability for project_id, capability in self.scoped_capabilities
         ):
             raise ValueError("scoped capabilities must contain non-empty values")
+        if any(
+            not organization_id or not project_id or region_code == ""
+            for organization_id, project_id, region_code in self.organization_scope_triples
+        ):
+            raise ValueError(
+                "organization scope triples must contain organization, project, and optional region"
+            )
+        if any(
+            not organization_id or not project_id or not capability
+            for organization_id, project_id, capability in self.organization_scoped_capabilities
+        ):
+            raise ValueError("organization scoped capabilities must contain non-empty values")
         pair_projects = {project_id for project_id, _ in self.scope_pairs}
         pair_regions = {
             region_code for _, region_code in self.scope_pairs if region_code is not None
@@ -114,9 +234,34 @@ class AuthContext:
             raise ValueError("scope-pair regions must be present in region_codes")
         if any(project_id not in self.project_ids for project_id, _ in self.scoped_capabilities):
             raise ValueError("scoped capability projects must be present in project_ids")
+        triple_organizations = {
+            organization_id for organization_id, _, _ in self.organization_scope_triples
+        }
+        triple_projects = {project_id for _, project_id, _ in self.organization_scope_triples}
+        triple_regions = {
+            region_code
+            for _, _, region_code in self.organization_scope_triples
+            if region_code is not None
+        }
+        if not triple_organizations.issubset(self.organization_ids):
+            raise ValueError("organization scope triples must be present in organization_ids")
+        if not triple_projects.issubset(self.project_ids):
+            raise ValueError("organization scope triple projects must be present in project_ids")
+        if not triple_regions.issubset(self.region_codes):
+            raise ValueError("organization scope triple regions must be present in region_codes")
+        if any(
+            organization_id not in self.organization_ids or project_id not in self.project_ids
+            for organization_id, project_id, _ in self.organization_scoped_capabilities
+        ):
+            raise ValueError(
+                "organization scoped capability identities must be present in "
+                "organization_ids/project_ids"
+            )
 
     @property
     def permissions(self) -> frozenset[str]:
+        if self.is_platform_admin:
+            return ALL_PERMISSIONS
         effective = self.effective_capabilities()
         return frozenset(
             permission
@@ -124,8 +269,10 @@ class AuthContext:
             if effective.intersection(accepted)
         )
 
-    def effective_capabilities(self, project_id: str | None = None) -> frozenset[str]:
-        """Resolve approved keys plus the one compatibility projection for legacy JWTs."""
+    def effective_capabilities(
+        self, project_id: str | None = None, organization_id: str | None = None
+    ) -> frozenset[str]:
+        """Resolve global/project grants and their canonical/legacy compatibility aliases."""
 
         scoped = (
             frozenset(
@@ -133,21 +280,56 @@ class AuthContext:
                 for project, capability in self.scoped_capabilities
                 if project == project_id
             )
-            if project_id is not None
+            if project_id is not None and organization_id is None
             else frozenset()
         )
-        return self.capabilities | scoped | capabilities_from_legacy_roles(self.roles)
+        organization_scoped = (
+            frozenset(
+                capability
+                for organization, project, capability in self.organization_scoped_capabilities
+                if project == project_id and organization == organization_id
+            )
+            if project_id is not None and organization_id is not None
+            else frozenset()
+        )
+        if self.is_platform_admin:
+            return ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES
+        # ``platform.admin`` is only meaningful as a global platform grant.  A malformed
+        # JWT or an accidentally approved project capability must never activate it.
+        project_capabilities = (scoped | organization_scoped) - {CAPABILITY_PLATFORM_ADMIN}
+        return expand_capability_aliases(
+            self.capabilities | project_capabilities | capabilities_from_legacy_roles(self.roles)
+        )
 
-    def legacy_roles(self, project_id: str | None = None) -> frozenset[str]:
-        return legacy_roles_from_capabilities(self.effective_capabilities(project_id))
+    @property
+    def is_platform_admin(self) -> bool:
+        """Whether the principal holds the global, non-project super-admin marker."""
 
-    def require_role(self, *allowed: str | Role, project_id: str | None = None) -> None:
+        return CAPABILITY_PLATFORM_ADMIN in self.capabilities
+
+    def legacy_roles(
+        self, project_id: str | None = None, organization_id: str | None = None
+    ) -> frozenset[str]:
+        return legacy_roles_from_capabilities(
+            self.effective_capabilities(project_id, organization_id)
+        )
+
+    def require_role(
+        self,
+        *allowed: str | Role,
+        project_id: str | None = None,
+        organization_id: str | None = None,
+    ) -> None:
         normalized = frozenset(role.value if isinstance(role, Role) else role for role in allowed)
         required_capabilities = capabilities_for_roles(normalized)
+        if normalized and self.is_platform_admin:
+            return
         if (
             not normalized
             or not required_capabilities
-            or not self.effective_capabilities(project_id).intersection(required_capabilities)
+            or not self.effective_capabilities(project_id, organization_id).intersection(
+                required_capabilities
+            )
         ):
             raise problem(
                 status=403,
@@ -157,12 +339,17 @@ class AuthContext:
             )
 
     def require_permission(
-        self, permission: str | Permission, project_id: str | None = None
+        self,
+        permission: str | Permission,
+        project_id: str | None = None,
+        organization_id: str | None = None,
     ) -> None:
         normalized = permission.value if isinstance(permission, Permission) else permission
         accepted = PERMISSION_CAPABILITIES.get(normalized, frozenset())
+        if normalized in ALL_PERMISSIONS and self.is_platform_admin:
+            return
         if normalized not in ALL_PERMISSIONS or not self.effective_capabilities(
-            project_id
+            project_id, organization_id
         ).intersection(accepted):
             raise problem(
                 status=403,
@@ -171,11 +358,24 @@ class AuthContext:
                 detail=f"The {normalized!r} permission is required.",
             )
 
-    def has_capability(self, capability: str, project_id: str | None = None) -> bool:
-        return capability in self.effective_capabilities(project_id)
+    def has_capability(
+        self,
+        capability: str,
+        project_id: str | None = None,
+        organization_id: str | None = None,
+    ) -> bool:
+        return bool(capability) and (
+            self.is_platform_admin
+            or capability in self.effective_capabilities(project_id, organization_id)
+        )
 
-    def require_capability(self, capability: str, project_id: str | None = None) -> None:
-        if not capability or not self.has_capability(capability, project_id):
+    def require_capability(
+        self,
+        capability: str,
+        project_id: str | None = None,
+        organization_id: str | None = None,
+    ) -> None:
+        if not capability or not self.has_capability(capability, project_id, organization_id):
             raise problem(
                 status=403,
                 code="CAPABILITY_REQUIRED",
@@ -343,14 +543,28 @@ class JwtVerifier:
                 title="Invalid access token",
                 detail="The service_identity claim must be a boolean.",
             )
+        (
+            organization_ids,
+            organization_projects,
+            organization_regions,
+            scope_pairs,
+            scoped_capabilities,
+            organization_scope_triples,
+            organization_scoped_capabilities,
+        ) = _organization_scope_claims(claims)
         return AuthContext(
             subject_id=subject_id,
-            project_ids=_claim_values(claims, "project_ids"),
-            region_codes=_claim_values(claims, "region_codes"),
+            project_ids=_claim_values(claims, "project_ids") | organization_projects,
+            region_codes=_claim_values(claims, "region_codes") | organization_regions,
             roles=roles,
             service_identity=service_identity,
             capabilities=_claim_values(claims, "capabilities"),
             capability_revision=_non_negative_int_claim(claims, "capability_revision"),
+            scope_pairs=scope_pairs,
+            scoped_capabilities=scoped_capabilities,
+            organization_ids=organization_ids,
+            organization_scope_triples=organization_scope_triples,
+            organization_scoped_capabilities=organization_scoped_capabilities,
         )
 
 

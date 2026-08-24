@@ -4,19 +4,23 @@ const requestControllers = new Set<AbortController>();
 const sseCleanups = new Set<Cleanup>();
 const resourceCleanups = new Map<string, Set<Cleanup>>();
 
-export function createManagedAbortController(signal?: AbortSignal): {
+export function createManagedAbortController(
+  signal?: AbortSignal,
+  options: { cancelOnScopeChange?: boolean } = {},
+): {
   controller: AbortController;
   release: () => void;
 } {
   const controller = new AbortController();
+  const cancelOnScopeChange = options.cancelOnScopeChange ?? true;
   const forwardAbort = () => controller.abort(signal?.reason);
   if (signal?.aborted) forwardAbort();
   else signal?.addEventListener('abort', forwardAbort, { once: true });
-  requestControllers.add(controller);
+  if (cancelOnScopeChange) requestControllers.add(controller);
   return {
     controller,
     release: () => {
-      requestControllers.delete(controller);
+      if (cancelOnScopeChange) requestControllers.delete(controller);
       signal?.removeEventListener('abort', forwardAbort);
     },
   };

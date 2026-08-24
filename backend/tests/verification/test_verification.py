@@ -471,7 +471,7 @@ def test_fake_and_production_decoder_contract(production: bool) -> None:
 
     assert isinstance(decoder, DecoderProbe)
     assert decoder.supports("json", "jsonschema")
-    decoder.probe(
+    decoded_value = decoder.probe(
         message_encoding="json",
         schema_encoding="jsonschema",
         schema_data=b"{}",
@@ -479,6 +479,9 @@ def test_fake_and_production_decoder_contract(production: bool) -> None:
     )
     if production:
         assert calls == [(b"{}", b'{"ok":true}')]
+        assert decoded_value == {"ok": True}
+    else:
+        assert decoded_value == b'{"ok":true}'
 
 
 def test_decoder_adapters_preserve_empty_support_and_normalize_failures() -> None:
@@ -523,7 +526,7 @@ def test_ros2_decoder_receives_schema_name_and_composes_with_json_decoder() -> N
 
     assert composite.supports("json", "jsonschema")
     assert composite.supports("cdr", "ros2msg")
-    composite.probe(
+    decoded_value = composite.probe(
         message_encoding="cdr",
         schema_encoding="ros2msg",
         schema_name="sensor_msgs/msg/Image",
@@ -532,6 +535,7 @@ def test_ros2_decoder_receives_schema_name_and_composes_with_json_decoder() -> N
     )
 
     assert decoded == [("sensor_msgs/msg/Image", b"uint8[] data", b"\x00\x01\x00\x00payload")]
+    assert decoded_value is not None
 
 
 class _CloseTrackingReader:

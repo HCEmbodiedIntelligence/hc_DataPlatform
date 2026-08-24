@@ -101,11 +101,11 @@
 }
 
 .workbenchFrame :global([data-mode="annotation"]) {
-  grid-template-columns: minmax(180px, 18fr) minmax(0, 58fr) minmax(250px, 24fr);
+  grid-template-columns: minmax(0, 76fr) minmax(250px, 24fr);
 }
 
 .workbenchFrame :global([data-mode="tag-review"]) {
-  grid-template-columns: minmax(180px, 18fr) minmax(0, 54fr) minmax(280px, 28fr);
+  grid-template-columns: minmax(0, 72fr) minmax(280px, 28fr);
 }
 
 .workbenchFrame :global([data-mode="tag-review"] > header > span) {
@@ -175,6 +175,82 @@
   color: var(--hc-color-text);
   background: var(--hc-color-surface);
   font: inherit;
+}
+
+.modeStripTools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.modeStripTools > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modeStrip .dataInfoTrigger {
+  display: inline-flex;
+  min-height: 27px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding-inline: 8px 5px;
+  border: 1px solid var(--hc-color-border);
+  color: var(--hc-color-primary-active);
+  background: var(--hc-color-surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--hc-color-text) 7%, transparent);
+  font-weight: 700;
+}
+
+.dataInfoTrigger em {
+  display: inline-grid;
+  min-width: 18px;
+  min-height: 18px;
+  place-items: center;
+  padding-inline: 4px;
+  border-radius: 5px;
+  color: var(--hc-color-text-muted);
+  background: var(--hc-color-surface-muted);
+  font-size: 8px;
+  font-style: normal;
+}
+
+.dataInfoDrawerTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.dataInfoDrawerTitle > svg {
+  color: var(--hc-color-primary);
+}
+
+.dataInfoDrawerTitle span,
+.dataInfoDrawerTitle small {
+  display: block;
+}
+
+.dataInfoDrawerTitle small {
+  margin-top: 2px;
+  color: var(--hc-color-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.dataInfoDrawer {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-sm);
+  background: var(--hc-color-surface);
+}
+
+.dataInfoDrawer :global(section) {
+  min-height: min(620px, calc(100dvh - 142px));
 }
 
 .inspectorPanel {
@@ -446,7 +522,7 @@
 }
 
 .intervalList code {
-  color: var(--hc-color-info);
+  color: var(--hc-color-info-text);
   font-size: 8px;
 }
 
@@ -561,7 +637,7 @@
   height: 17px;
   place-items: center;
   border-radius: 50%;
-  color: var(--hc-color-success);
+  color: var(--hc-color-success-text);
   background: color-mix(
     in srgb,
     var(--hc-color-success) 10%,
@@ -570,7 +646,7 @@
 }
 
 .checkList li[data-status="FAIL"] .checkIcon {
-  color: var(--hc-color-error);
+  color: var(--hc-color-error-text);
   background: color-mix(
     in srgb,
     var(--hc-color-error) 10%,
@@ -599,7 +675,7 @@
 .checkList em {
   padding: 2px 4px;
   border-radius: 4px;
-  color: var(--hc-color-success);
+  color: var(--hc-color-success-text);
   background: color-mix(
     in srgb,
     var(--hc-color-success) 8%,
@@ -610,7 +686,7 @@
 }
 
 .checkList li[data-status="FAIL"] em {
-  color: var(--hc-color-error);
+  color: var(--hc-color-error-text);
   background: color-mix(
     in srgb,
     var(--hc-color-error) 8%,
@@ -623,6 +699,72 @@
   margin: 0;
   border: 1px solid var(--hc-color-border-subtle);
   border-radius: 6px;
+}
+
+.revisionHistoryList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.revisionHistoryList li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 58px;
+}
+
+.revisionHistoryList button {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  grid-template-columns: minmax(72px, 0.42fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 7px;
+  color: var(--hc-color-text);
+  background: var(--hc-color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.revisionHistoryList button[aria-pressed="true"] {
+  border-color: var(--hc-color-primary);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--hc-color-primary) 16%, transparent);
+}
+
+.revisionHistoryList li[data-current="true"] button {
+  border-color: var(--hc-color-success-border);
+  background: var(--hc-color-success-surface);
+}
+
+.revisionHistoryList button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.revisionHistoryList span,
+.revisionHistoryList small {
+  display: block;
+  min-width: 0;
+}
+
+.revisionHistoryList strong {
+  font-size: 12px;
+}
+
+.revisionHistoryList small,
+.revisionHistoryList time {
+  margin-top: 2px;
+  color: var(--hc-color-text-muted);
+  font-size: 8px;
+}
+
+.revisionHistoryList time {
+  text-align: right;
 }
 
 .propertyTable > div {
@@ -710,10 +852,72 @@
   height: 100%;
   min-height: 0;
   align-content: stretch;
-  grid-template-rows: minmax(0, 1fr) repeat(4, auto);
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-rows: auto;
   gap: 7px;
   padding: 9px;
   background: var(--hc-color-surface-muted);
+}
+
+.preSubmitCheck {
+  display: grid;
+  max-height: min(280px, 38vh);
+  gap: 6px;
+  overflow: hidden auto;
+  padding: 8px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 7px;
+  background: var(--hc-color-surface);
+  scrollbar-width: thin;
+}
+
+.preSubmitCheck[data-status="failed"],
+.preSubmitCheck[data-status="error"] {
+  border-color: var(--hc-color-error-border);
+  background: var(--hc-color-error-surface);
+}
+
+.preSubmitCheck h3,
+.preSubmitCheck p {
+  margin: 0;
+}
+
+.preSubmitCheck h3,
+.preSubmitPassed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preSubmitCheck h3 {
+  color: var(--hc-color-text);
+  font-size: 11px;
+}
+
+.preSubmitCheck[data-status="failed"] h3,
+.preSubmitCheck[data-status="error"] h3 {
+  color: var(--hc-color-error-text);
+}
+
+.preSubmitCheck p {
+  color: var(--hc-color-text-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.loadingIcon {
+  animation: pre-submit-spin 800ms linear infinite;
+}
+
+.preSubmitPassed {
+  color: var(--hc-color-success-text);
+  font-weight: 650;
+}
+
+@keyframes pre-submit-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .dockSummary {
@@ -781,9 +985,210 @@
 }
 
 .actionDock .primaryAction {
-  border-color: var(--hc-color-primary);
+  border-color: var(--hc-color-primary-active);
   color: #fff;
-  background: var(--hc-color-primary);
+  background: var(--hc-color-primary-active);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.autoAnnotationPanel {
+  display: grid;
+  max-height: min(330px, 44vh);
+  gap: 7px;
+  overflow: hidden auto;
+  padding: 8px;
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-info) 34%, var(--hc-color-border));
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--hc-color-info) 4%,
+    var(--hc-color-surface)
+  );
+  scrollbar-width: thin;
+}
+
+.autoAnnotationPanel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.autoAnnotationPanel > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.autoAnnotationPanel > header em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--hc-color-info);
+  background: color-mix(
+    in srgb,
+    var(--hc-color-info) 10%,
+    var(--hc-color-surface)
+  );
+  font-size: 8px;
+  font-style: normal;
+}
+
+.autoAnnotationPanel > header em[data-status="FAILED"],
+.autoAnnotationPanel > header em[data-status="CANCELLED"] {
+  color: var(--hc-color-error);
+}
+
+.autoAnnotationPanel > header em[data-status="SUCCEEDED"],
+.autoAnnotationPanel > header em[data-status="APPLIED"] {
+  color: var(--hc-color-success);
+}
+
+.autoAnnotationFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.autoAnnotationFields label {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  color: var(--hc-color-text-muted);
+  font-size: 8px;
+}
+
+.autoAnnotationFields input,
+.autoAnnotationFields select {
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 6px;
+  color: var(--hc-color-text);
+  background: var(--hc-color-surface);
+  font: inherit;
+}
+
+.autoAnnotationFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin: 0;
+}
+
+.autoAnnotationFacts > div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 5px;
+  padding-top: 3px;
+  border-top: 1px solid var(--hc-color-border-subtle);
+  font-size: 8px;
+}
+
+.autoAnnotationFacts dt {
+  color: var(--hc-color-text-muted);
+}
+
+.autoAnnotationFacts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.autoAnnotationActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.autoAnnotationActions button {
+  display: inline-flex;
+  min-height: 30px;
+  flex: 1 1 110px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid var(--hc-color-info);
+  border-radius: 6px;
+  color: var(--hc-color-info);
+  background: var(--hc-color-surface);
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.autoAnnotationActions button:disabled {
+  color: var(--hc-color-text-muted);
+  border-color: var(--hc-color-border);
+  background: var(--hc-color-surface-muted);
+  cursor: not-allowed;
+}
+
+.autoAnnotationPanel .autoAnnotationError {
+  align-items: flex-start;
+  color: var(--hc-color-error);
+}
+
+.revisionRestoreControl {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-warning) 38%, var(--hc-color-border));
+  border-radius: 7px;
+  background: color-mix(
+    in srgb,
+    var(--hc-color-warning) 5%,
+    var(--hc-color-surface)
+  );
+}
+
+.revisionRestoreControl label {
+  display: grid;
+  gap: 3px;
+  color: var(--hc-color-text-muted);
+  font-size: 9px;
+}
+
+.revisionRestoreControl select {
+  min-width: 0;
+  min-height: 29px;
+  padding: 3px 24px 3px 7px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 6px;
+  color: var(--hc-color-text);
+  background: var(--hc-color-surface);
+  font: inherit;
+}
+
+.revisionRestoreControl button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--hc-color-warning);
+  border-radius: 6px;
+  color: var(--hc-color-warning);
+  background: var(--hc-color-surface);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.revisionRestoreControl small {
+  color: var(--hc-color-text-muted);
+  font-size: 8px;
+  line-height: 1.35;
 }
 
 .actionDock .rejectButton {
@@ -829,17 +1234,11 @@
 
 @media (max-width: 1320px) {
   .workbenchFrame :global([data-mode="annotation"]) {
-    grid-template-columns: minmax(170px, 18fr) minmax(0, 58fr) minmax(
-        250px,
-        24fr
-      );
+    grid-template-columns: minmax(0, 76fr) minmax(250px, 24fr);
   }
 
   .workbenchFrame :global([data-mode="tag-review"]) {
-    grid-template-columns: minmax(170px, 18fr) minmax(0, 54fr) minmax(
-        270px,
-        28fr
-      );
+    grid-template-columns: minmax(0, 72fr) minmax(270px, 28fr);
   }
 
   .fieldGrid,
@@ -851,13 +1250,59 @@
     grid-column: 1;
   }
 
-  .modeStrip > span {
+  .modeStripTools > span {
     display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .workbenchFrame :global([data-mode="annotation"]),
+  .workbenchFrame :global([data-mode="tag-review"]) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "header"
+      "banner"
+      "media"
+      "timeline"
+      "inspector"
+      "actions";
+    overflow: visible;
+  }
+
+  .modeStrip {
+    align-items: flex-start;
+  }
+
+  .modeStrip nav {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .modeStripTools {
+    flex: 0 0 auto;
+  }
+
+  .dataInfoDrawer {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .dataInfoDrawer :global(section) {
+    min-height: calc(100dvh - 110px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .page * {
     scroll-behavior: auto !important;
+  }
+
+  .loadingIcon {
+    animation: none;
   }
 }

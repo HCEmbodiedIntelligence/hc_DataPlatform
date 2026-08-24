@@ -13,6 +13,13 @@ from hc_data_platform.core.openapi import aggregate_fragments
 BACKEND = Path(__file__).resolve().parents[2]
 OPENAPI = BACKEND / "openapi" / "collection_tasks.yaml"
 MIGRATION = BACKEND / "migrations" / "collection_tasks" / "0001_collection_tasks.sql"
+RULES_MIGRATION = BACKEND / "migrations" / "collection_tasks" / "0002_task_rules.sql"
+TARGET_MIGRATION = (
+    BACKEND / "migrations" / "collection_tasks" / "0003_positive_target_dimensions.sql"
+)
+ORGANIZATION_MIGRATION = (
+    BACKEND / "migrations" / "collection_tasks" / "0004_organization_scoped_collection_tasks.sql"
+)
 HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
 
 
@@ -63,7 +70,7 @@ def test_formal_fragment_matches_runtime_router_and_resolves_local_refs() -> Non
     app.include_router(router)
     generated = app.openapi()
     assert operations(fragment) == operations(generated)
-    assert len(operations(fragment)) == 6
+    assert len(operations(fragment)) == 8
 
     for ref in local_refs(fragment):
         current: object = fragment
@@ -103,6 +110,7 @@ def test_formal_schema_contains_only_confirmed_task_fields() -> None:
     assert set(task["properties"]) == {
         "schema_version",
         "collection_task_id",
+        "organization_id",
         "project_id",
         "task_code",
         "name",
@@ -116,6 +124,7 @@ def test_formal_schema_contains_only_confirmed_task_fields() -> None:
     assert fragment["components"]["schemas"]["CollectionTaskStatus"]["enum"] == [
         "ACTIVE",
         "CLOSED",
+        "CANCELLED",
     ]
     assert "default" not in task["properties"]["quality_threshold"]
     target = fragment["components"]["schemas"]["CollectionTarget"]
@@ -158,12 +167,45 @@ def test_migration_has_scope_cas_audit_and_close_association_lock() -> None:
     migrations = load_migrations()
     versions = [migration.version for migration in migrations]
     assert "collection_tasks/0001_collection_tasks.sql" in versions
+    assert "collection_tasks/0002_task_rules.sql" in versions
+    assert "collection_tasks/0003_positive_target_dimensions.sql" in versions
     assert versions.index("collection_tasks/0001_collection_tasks.sql") > versions.index(
         "quality/0002_tenant_report_identity.sql"
     )
+    assert versions.index("collection_tasks/0002_task_rules.sql") > versions.index(
+        "collection_tasks/0001_collection_tasks.sql"
+    )
+    assert versions.index("collection_tasks/0003_positive_target_dimensions.sql") > versions.index(
+        "collection_tasks/0002_task_rules.sql"
+    )
+    assert "collection_tasks/0004_organization_scoped_collection_tasks.sql" in versions
+    assert versions.index(
+        "collection_tasks/0004_organization_scoped_collection_tasks.sql"
+    ) > versions.index("collection_tasks/0003_positive_target_dimensions.sql")
+
+    rules_sql = RULES_MIGRATION.read_text(encoding="utf-8")
+    assert "CHECK (status IN ('ACTIVE', 'CLOSED', 'CANCELLED'))" in rules_sql
+    assert "COLLECTION_TASK_CANCELLED" in rules_sql
+    assert (
+        "CREATE OR REPLACE FUNCTION collection_tasks.reject_new_rollout_for_closed_task()"
+        in rules_sql
+    )
+
+    target_sql = TARGET_MIGRATION.read_text(encoding="utf-8")
+    assert "collection_tasks_target_positive_dimensions_check" in target_sql
+    assert "target_json ? 'package_count'" in target_sql
+    assert "target_json ? 'duration_seconds'" in target_sql
+    assert "::numeric > 0" in target_sql
+
+    organization_sql = ORGANIZATION_MIGRATION.read_text(encoding="utf-8")
+    assert "organization-scoped collection-task upgrade requires exactly one" in organization_sql
+    assert "PRIMARY KEY (organization_id, project_id, collection_task_id)" in organization_sql
+    assert "collection_tasks_organization_project_fk" in organization_sql
+    assert "COLLECTION_TASK_ORGANIZATION_SCOPE_DENIED" in organization_sql
+    assert "selected_organization_id" in organization_sql
 
 
-def test_no_reopen_or_task_upload_lifecycle_operations_exist() -> None:
+def test_explicit_task_lifecycle_operations_are_limited_to_close_cancel_and_reopen() -> None:
     fragment = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     operation_ids = {
         operation["operationId"]
@@ -177,5 +219,7 @@ def test_no_reopen_or_task_upload_lifecycle_operations_exist() -> None:
         "getCollectionTask",
         "updateCollectionTask",
         "closeCollectionTask",
+        "cancelCollectionTask",
+        "reopenCollectionTask",
         "getCollectionTaskProgress",
     }

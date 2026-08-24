@@ -32,7 +32,11 @@ paths:
           description: Durable workflow job status reconstructed from Temporal history
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/JobRecord'}
+              schema:
+                anyOf:
+                  - {$ref: '#/components/schemas/JobRecord'}
+                  - {$ref: '#/components/schemas/DataSourceAsyncJob'}
+                  - {$ref: '#/components/schemas/DatasetPageAsyncJob'}
         "404": {description: Job not found}
   /api/v1/jobs/{job_id}:cancel:
     post:
@@ -102,3 +106,25 @@ components:
           type: array
           items: {$ref: '#/components/schemas/JobRecord'}
         total: {type: integer, minimum: 0}
+    DataSourceAsyncJob:
+      type: object
+      required: [job_id, status, resource_id, created_at, updated_at, resource_version]
+      properties:
+        job_id: {type: string, minLength: 1, maxLength: 256}
+        job_type: {type: string, const: DATA_SOURCE_CONNECTION_TEST}
+        status: {type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]}
+        resource_type: {type: string, const: DATA_SOURCE}
+        resource_id: {type: string, minLength: 1, maxLength: 256}
+        progress:
+          type: [object, "null"]
+          additionalProperties: {type: string}
+        result_ref:
+          type: [object, "null"]
+          additionalProperties: {type: string}
+        error:
+          anyOf:
+            - {$ref: '#/components/schemas/DataSourceJobError'}
+            - {type: 'null'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        resource_version: {type: string, pattern: '^(0|[1-9]\d*)$'}

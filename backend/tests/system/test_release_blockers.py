@@ -25,6 +25,7 @@ from temporalio.exceptions import ApplicationError
 
 from hc_data_platform.alignment.models import AlignedValueV1, AlignmentStrategy
 from hc_data_platform.core.app import create_app
+from hc_data_platform.core.capacity_evidence import validate_capacity_evidence
 from hc_data_platform.core.config import Settings
 from hc_data_platform.core.health import ReadinessProbe
 from hc_data_platform.lance_catalog.models import StepRecord
@@ -252,16 +253,22 @@ def test_release_gate_default_pytest_command_registers_asyncio_marker() -> None:
 
 
 def test_release_gate_has_measured_end_to_end_capacity_pass() -> None:
-    accepted = {True, "PASS", "PASSED"}
     passing_evidence = []
+    invalid_pass_claims: dict[str, tuple[str, ...]] = {}
     for path in sorted((BACKEND / "tests" / "load" / "results").glob("*.json")):
         result = json.loads(path.read_text(encoding="utf-8"))
         verdict = result.get("verdict", {}).get("end_to_end_5tb_per_day")
-        if verdict in accepted:
+        if verdict != "PASS":
+            continue
+        validation = validate_capacity_evidence(result)
+        if validation.accepted:
             passing_evidence.append(path.name)
+        else:
+            invalid_pass_claims[path.name] = validation.errors
+    assert invalid_pass_claims == {}, invalid_pass_claims
     _xfail_if(
         not passing_evidence,
         "BE12-008",
-        "no measured 5 TB/day plus 30% end-to-end passing evidence exists",
+        "no strictly validated 30-minute production-like 5 TB/day plus 30% evidence exists",
     )
     assert passing_evidence

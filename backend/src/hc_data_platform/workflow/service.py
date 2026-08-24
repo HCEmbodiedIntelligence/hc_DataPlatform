@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any, Protocol, cast
 
-from hc_data_platform.core.errors import problem
+from hc_data_platform.core.errors import ProblemException, problem
 
 from .models import (
     TERMINAL_JOB_STATUSES,
@@ -89,12 +89,18 @@ class InMemoryWorkflowLauncher:
                 }
             )
         except Exception as exc:
+            if isinstance(exc, ProblemException):
+                error_code = exc.problem.code
+                error_message = exc.problem.title
+            else:
+                error_code = "WORKFLOW_EXECUTION_FAILED"
+                error_message = "The workflow execution failed."
             updated = job.model_copy(
                 update={
                     "status": JobStatus.TECHNICAL_FAILED,
                     "stage": "technical_failed",
-                    "error_code": getattr(exc, "code", type(exc).__name__),
-                    "error_message": str(exc),
+                    "error_code": error_code,
+                    "error_message": error_message,
                     "updated_at": datetime.now(timezone.utc),
                 }
             )

@@ -33,6 +33,12 @@ export const annotationRoutes = {
       return `${dataAnnotationRoutes.annotate}${suffix(search ? annotationQueueQueryCodec.build(search) : "")}`;
     },
   },
+  revisions: {
+    pattern: dataAnnotationRoutes.revisions,
+    build() {
+      return dataAnnotationRoutes.revisions;
+    },
+  },
   tagReview: {
     pattern: dataAnnotationRoutes.tagReview,
     build() {
@@ -79,10 +85,9 @@ export const p08RouteRecords: readonly PlatformRouteObject[] = [
     navigationOwnerGroupId: "annotation",
     navigationOwnerPageId: "P08",
     requiredCapabilities: ["annotation_task.read"],
-    hiddenFromNavigation: true,
     lazy: async () => ({
-      Component: (await import("../../app/shell/RouteCompatibility"))
-        .AnnotationRevisionUnavailableRoute,
+      Component: (await import("./AnnotationRevisionPage"))
+        .AnnotationRevisionPage,
     }),
   },
   {

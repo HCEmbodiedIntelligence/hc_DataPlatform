@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from hc_data_platform.core.app import create_app
 from hc_data_platform.core.config import Settings
 from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.security.abuse import PublicAuthAttempt
 from hc_data_platform.security.access_models import (
     AccessDecisionCommand,
     CapabilityRequestCreate,
@@ -32,7 +33,9 @@ def _fast_service(*, abuse_protection: object | None = None) -> AccessService:
 
 def test_concurrent_duplicate_registration_creates_exactly_one_account() -> None:
     service = _fast_service()
-    command = RegistrationCommand(username="be23-race-user", password="race-password")
+    command = RegistrationCommand(
+        username="be23-race-user", password="A durable race passphrase 2026!"
+    )
 
     def register(index: int) -> tuple[str, str]:
         try:
@@ -76,8 +79,9 @@ class RecordingLimit:
         self.operations: list[str] = []
         self._lock = Lock()
 
-    def check(self, *, operation: str, subject_hint: str | None) -> None:
-        del subject_hint
+    def check(self, attempt: PublicAuthAttempt, *, request_id: str) -> None:
+        del request_id
+        operation = attempt.operation.lower()
         with self._lock:
             self.operations.append(operation)
         if operation == self.blocked_operation:
@@ -88,6 +92,21 @@ class RecordingLimit:
                 detail="The configured abuse policy denied this request.",
                 retryable=True,
             )
+
+    def record_login_failure(
+        self,
+        attempt: PublicAuthAttempt,
+        *,
+        principal_id: str | None,
+        request_id: str,
+    ) -> None:
+        del attempt, principal_id, request_id
+
+    def record_login_success(self, attempt: PublicAuthAttempt, *, request_id: str) -> None:
+        del attempt, request_id
+
+    def check_authenticated(self, *, operation: str, subject_hint: str | None) -> None:
+        del operation, subject_hint
 
 
 @pytest.mark.parametrize("operation", ["register", "login"])
@@ -116,9 +135,9 @@ def test_public_authentication_operations_invoke_the_abuse_policy(operation: str
     assert limiter.operations == [operation]
 
 
-def test_public_access_models_have_resource_ceilings_without_inventing_password_strength() -> None:
-    # A one-character password remains valid until OPEN-02 is decided; only resource exhaustion
-    # ceilings are enforced here.
+def test_public_access_models_keep_login_compatibility_resource_ceilings() -> None:
+    # The wire model keeps the legacy login ceiling. Registration/password-change policy is
+    # centralized in AccessService so deployment settings and the returned policy cannot drift.
     assert RegistrationCommand(username="u", password="x").password.get_secret_value() == "x"
 
     with pytest.raises(ValidationError):
@@ -144,7 +163,7 @@ def test_membership_request_replay_is_exact_body_change_conflicts_and_header_is_
         access_service=service,
     )
     with TestClient(app) as client:
-        password = "be23-idempotency-password"
+        password = "Independent passphrase 2026!"
         assert (
             client.post(
                 "/api/v1/auth/registrations",
@@ -157,7 +176,7 @@ def test_membership_request_replay_is_exact_body_change_conflicts_and_header_is_
             json={"username": "be23-idempotency", "password": password},
         )
         token = session.json()["access_token"]
-        path = "/api/v1/projects/project-a/membership-requests"
+        path = "/api/v1/organizations/organization-a/projects/project-a/membership-requests"
         headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "same-key"}
         first = client.post(path, json={"reason": "same"}, headers=headers)
         replay = client.post(path, json={"reason": "same"}, headers=headers)

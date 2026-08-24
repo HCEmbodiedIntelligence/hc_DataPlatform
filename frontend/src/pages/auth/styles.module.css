@@ -403,26 +403,77 @@
 .formUtilities {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--hc-space-2);
   min-height: 36px;
   margin: -4px 0 var(--hc-space-3);
 }
 
-.formUtilities :global(.ant-checkbox-wrapper) {
-  color: var(--hc-color-text-muted);
-  font-size: 12px;
+.inlineAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding-inline: 4px;
+  color: var(--hc-color-primary-active);
+  font-size: 13px;
 }
 
-.inlineAction {
-  min-height: 36px;
-  padding-inline: 4px !important;
+.inlineAction:hover,
+.authBackLink:hover {
+  color: var(--hc-color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.inlineAction:focus-visible,
+.authBackLink:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+
+.authBackLink {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--hc-space-4);
+  color: var(--hc-color-primary-active);
   font-size: 13px;
 }
 
 .recoveryNotice,
 .registrationNotice {
   margin-bottom: var(--hc-space-4);
+}
+
+.challengeSection {
+  display: grid;
+  gap: var(--hc-space-2);
+  margin: 0 0 var(--hc-space-4);
+  padding: var(--hc-space-3);
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-primary) 28%, var(--hc-color-border));
+  border-radius: var(--hc-radius-sm);
+  background: color-mix(in srgb, var(--hc-color-primary) 4%, transparent);
+}
+
+.challengeSection h2,
+.challengeSection p {
+  margin: 0;
+}
+
+.challengeSection h2 {
+  color: var(--hc-color-text);
+  font-size: 14px;
+}
+
+.challengeSection p {
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.challengeWidget {
+  min-height: 65px;
 }
 
 .recoveryNotice :global(.ant-alert-description),
@@ -680,6 +731,28 @@
   gap: var(--hc-space-3);
   width: min(100%, 360px);
   margin-top: var(--hc-space-6);
+}
+
+.accountSettingsLink {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--hc-radius-sm);
+  color: var(--hc-color-primary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.accountSettingsLink:hover {
+  background: var(--hc-color-surface-tint);
+  color: var(--hc-color-primary-hover);
+}
+
+.accountSettingsLink:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
 }
 
 .statusActions :global(.ant-btn) {

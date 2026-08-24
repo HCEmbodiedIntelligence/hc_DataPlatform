@@ -26,18 +26,24 @@ def psycopg_connection_factory(dsn: str) -> Callable[[], Any]:
             connection.execute(
                 """
                 SELECT
+                    set_config('app.organization_id', %s, false),
                     set_config('app.project_id', %s, false),
                     set_config('app.region_code', %s, false),
                     set_config('app.subject_id', %s, false),
                     set_config('app.request_id', %s, false),
-                    set_config('app.service_identity', %s, false)
+                    set_config('app.service_identity', %s, false),
+                    set_config('app.platform_admin', %s, false),
+                    set_config('app.is_admin', %s, false)
                 """,
                 (
+                    context.organization_id or "",
                     context.project_id,
                     context.region_code or "",
                     context.subject_id or "",
                     context.request_id,
                     "true" if context.service_identity else "false",
+                    "true" if context.platform_admin else "false",
+                    "true" if context.platform_admin else "false",
                 ),
             )
         except BaseException:

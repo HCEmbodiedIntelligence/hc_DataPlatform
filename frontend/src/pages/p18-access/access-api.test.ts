@@ -12,12 +12,13 @@ vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 
 const requestMock = vi.mocked(request);
 const scope = {
-  organizationId: "",
+  organizationId: "organization-a",
   projectId: "project-a",
   regionCode: "cn-test",
 } as const;
 const membership: MembershipRequest = {
   request_id: "membership-1",
+  organization_id: scope.organizationId,
   project_id: "project-a",
   requester_id: "user-a",
   status: "PENDING",
@@ -51,13 +52,13 @@ describe("P18 formal runtime access gateway", () => {
 
     expect(requestMock).toHaveBeenNthCalledWith(1, {
       method: "GET",
-      path: "/projects/project-a/membership-requests",
+      path: "/organizations/organization-a/projects/project-a/membership-requests",
       scope,
       cache: "no-store",
     });
     expect(requestMock).toHaveBeenNthCalledWith(2, {
       method: "GET",
-      path: "/projects/project-a/capability-requests",
+      path: "/organizations/organization-a/projects/project-a/capability-requests",
       scope,
       cache: "no-store",
     });
@@ -111,7 +112,7 @@ describe("P18 formal runtime access gateway", () => {
 
       expect(requestMock).toHaveBeenCalledWith({
         method: "POST",
-        path: `/projects/project-a/${resource}/${requestId}:${action}`,
+        path: `/organizations/organization-a/projects/project-a/${resource}/${requestId}:${action}`,
         body: { reason },
         scope,
         idempotencyKey: expect.any(String),

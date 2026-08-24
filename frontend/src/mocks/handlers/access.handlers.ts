@@ -32,6 +32,7 @@ const response = (
 const requestedAt = "2026-08-18T01:00:00Z";
 const initialMembershipRequest: MembershipRequest = {
   request_id: "membership-request-fx-01",
+  organization_id: "org_fx_01",
   project_id: "prj_fx_01",
   requester_id: "contractor_fx_17",
   status: "PENDING",
@@ -42,6 +43,7 @@ const initialMembershipRequest: MembershipRequest = {
 };
 const initialCapabilityRequest: CapabilityRequest = {
   request_id: "capability-request-fx-01",
+  organization_id: "org_fx_01",
   project_id: "prj_fx_01",
   requester_id: "developer_fx_09",
   capability_keys: ["datasets.publish", "project.access.manage"],
@@ -73,7 +75,7 @@ function accessRequestResponse<T>(value: T): Response {
 }
 
 const decisionPath =
-  /\/api\/v1\/projects\/(?<projectId>[^/]+)\/(?<kind>membership-requests|capability-requests)\/(?<requestId>[^/:]+):(?<action>approve|reject|revoke|withdraw)$/u;
+  /\/api\/v1\/organizations\/(?<organizationId>[^/]+)\/projects\/(?<projectId>[^/]+)\/(?<kind>membership-requests|capability-requests)\/(?<requestId>[^/:]+):(?<action>approve|reject|revoke|withdraw)$/u;
 
 export default [
   http.get("*/api/v1/projects/:projectId/access/bootstrap", () =>
@@ -82,20 +84,24 @@ export default [
   http.get("*/api/v1/projects/:projectId/members", () =>
     response(membersPageFixture),
   ),
-  http.get("*/api/v1/projects/:projectId/membership-requests", ({ params }) => {
+  http.get("*/api/v1/organizations/:organizationId/projects/:projectId/membership-requests", ({ params }) => {
+    const organizationId = String(params.organizationId);
     const projectId = String(params.projectId);
     return accessRequestResponse({
       items: membershipRequests.map((item) => ({
         ...item,
+        organization_id: organizationId,
         project_id: projectId,
       })),
     });
   }),
-  http.get("*/api/v1/projects/:projectId/capability-requests", ({ params }) => {
+  http.get("*/api/v1/organizations/:organizationId/projects/:projectId/capability-requests", ({ params }) => {
+    const organizationId = String(params.organizationId);
     const projectId = String(params.projectId);
     return accessRequestResponse({
       items: capabilityRequests.map((item) => ({
         ...item,
+        organization_id: organizationId,
         project_id: projectId,
       })),
     });
@@ -103,7 +109,8 @@ export default [
   http.post(decisionPath, async ({ request, params }) => {
     if (getManagementScenario() === "forbidden") {
       return accessRequestResponse({});
-    }
+  }
+    const organizationId = String(params.organizationId);
     const projectId = String(params.projectId);
     const requestId = String(params.requestId);
     const action = String(params.action);
@@ -129,6 +136,7 @@ export default [
     }
     const updated = {
       ...collection[index]!,
+      organization_id: organizationId,
       project_id: projectId,
       status: nextStatus,
       decision_reason: body.reason ?? null,

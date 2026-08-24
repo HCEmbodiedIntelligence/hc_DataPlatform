@@ -94,6 +94,19 @@ def test_commit_is_idempotent_and_steps_use_logical_identity() -> None:
     assert catalog.version_snapshot("dataset-a") == first_version
 
 
+def test_fragment_hash_supports_non_utf8_binary_modalities() -> None:
+    _manifest, steps = fragment("rollout-binary", count=1)
+    binary = steps[0].model_copy(
+        update={"modalities": {"camera.front": b"\xff\xd8\xff\xd9", "joint.position": [0.0]}}
+    )
+
+    first = compute_fragment_hash((binary,))
+    second = compute_fragment_hash((binary.model_copy(deep=True),))
+
+    assert first == second
+    assert len(first) == 64
+
+
 def test_idempotency_key_cannot_be_reused_for_different_content() -> None:
     catalog = InMemoryLanceCatalog()
     catalog.register_schema(schema())

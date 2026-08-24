@@ -28,6 +28,8 @@ import styles from './DataVisualizationWorkbench.module.css';
 export interface DataVisualizationWorkbenchProps {
   readonly adapter: DataVisualizationWorkbenchAdapter;
   readonly slots?: DataVisualizationWorkbenchSlots;
+  /** Hide the persistent collection rail when the caller exposes it through an overlay. */
+  readonly showNavigation?: boolean;
 }
 
 const actionIcons: Readonly<Record<WorkbenchActionKind, ReactNode>> = {
@@ -85,7 +87,7 @@ function CollectionRailComponent({ adapter }: { readonly adapter: DataVisualizat
   );
 }
 
-const CollectionRail = memo(CollectionRailComponent);
+export const WorkbenchCollectionPanel = memo(CollectionRailComponent);
 
 function FindingsInspectorComponent({ adapter }: { readonly adapter: DataVisualizationWorkbenchAdapter }): JSX.Element {
   const notes = adapter.notes;
@@ -204,13 +206,18 @@ function ActionDock({ adapter }: { readonly adapter: DataVisualizationWorkbenchA
   );
 }
 
-export function DataVisualizationWorkbench({ adapter, slots }: DataVisualizationWorkbenchProps): JSX.Element {
+export function DataVisualizationWorkbench({
+  adapter,
+  showNavigation = true,
+  slots,
+}: DataVisualizationWorkbenchProps): JSX.Element {
   const slotContext = { adapter };
   return (
     <section
       className={styles.workbench}
       data-camera-count={adapter.cameraStreams.length}
       data-mode={adapter.mode}
+      data-navigation-visible={showNavigation}
       data-read-only={adapter.readOnly || undefined}
       aria-labelledby={`${adapter.id}-title`}
     >
@@ -237,9 +244,15 @@ export function DataVisualizationWorkbench({ adapter, slots }: DataVisualization
           </span>
         </div>
       ) : null}
-      <section className={styles.navigation} aria-label="采集条目导航">
-        {slots?.navigation ? slots.navigation(slotContext) : <CollectionRail adapter={adapter} />}
-      </section>
+      {showNavigation ? (
+        <section className={styles.navigation} aria-label="采集条目导航">
+          {slots?.navigation ? (
+            slots.navigation(slotContext)
+          ) : (
+            <WorkbenchCollectionPanel adapter={adapter} />
+          )}
+        </section>
+      ) : null}
       <section className={styles.media} aria-label="相机与同步信号">
         <header className={styles.mediaHeader}>
           <span>

@@ -132,7 +132,8 @@
   white-space: nowrap;
 }
 
-.stageFact[data-tone="danger"] {
+.stageFact[data-tone="danger"],
+.stageMeta[data-tone="danger"] {
   color: var(--hc-color-error, #b84646);
   font-weight: 650;
 }

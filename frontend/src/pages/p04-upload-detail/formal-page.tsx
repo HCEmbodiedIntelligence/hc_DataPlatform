@@ -1,12 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button, Space, Typography } from "antd";
-import {
-  ArrowLeft,
-  Camera,
-  Clock3,
-  FileJson2,
-  RadioTower,
-} from "lucide-react";
+import { ArrowLeft, Camera, Clock3, FileJson2, RadioTower } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
@@ -17,8 +11,11 @@ import {
   type WorkbenchFinding,
 } from "../../features/viewer";
 import type { RuntimeManifestDiscoveryProjection } from "../../features/viewer/raw-diagnostic-adapter";
+import type { StreamDescriptor } from "../../features/viewer/types";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { routes as datasetRoutes } from "../../features/datasets/routing";
+import { createDatasetPreviewMediaSource } from "../p06-dataset-detail/preview-media-source";
 import {
   PageState,
   StatusTag,
@@ -27,9 +24,17 @@ import {
   type PageStateKind,
 } from "../../shared/ui";
 import {
+  getFormalUploadProcessingStatus,
+  getFormalUploadRawMedia,
   loadFormalUploadDetail,
+  resolveFormalUploadPreviewTarget,
+  resolveFormalUploadViewerTarget,
+  type FormalUploadProcessingStatus,
   type FormalQcReport,
   type FormalUploadDetail,
+  type FormalUploadPreviewTarget,
+  type FormalUploadViewerTarget,
+  type FormalRawMediaSource,
 } from "./formal-detail-client";
 import styles from "./formal-page.module.css";
 
@@ -120,10 +125,9 @@ function formatDuration(durationNs: number): string {
   }).format(durationNs / 1_000_000_000)} 秒`;
 }
 
-function statusTone(status: FormalQcReport["status"]):
-  | "success"
-  | "warning"
-  | "danger" {
+function statusTone(
+  status: FormalQcReport["status"],
+): "success" | "warning" | "danger" {
   if (status === "PASS") return "success";
   return status === "RISK" ? "warning" : "danger";
 }
@@ -174,7 +178,246 @@ function diagnosticTracks(
   }));
 }
 
-function UploadDiagnostic({ detail }: { readonly detail: FormalUploadDetail }) {
+function rawCameraStreams(
+  manifest: RuntimeManifestDiscoveryProjection,
+  clock: ReturnType<typeof createPlaybackClock>,
+  rawSourceAvailable: boolean,
+  detail: FormalUploadDetail,
+  scope: NonNullable<ReturnType<typeof useIngestScope>>,
+  workflow: FormalUploadProcessingStatus | undefined,
+  previewTarget: FormalUploadPreviewTarget | null | undefined,
+): Readonly<Record<string, StreamDescriptor>> {
+  const streams: Record<string, StreamDescriptor> = {};
+  for (const camera of manifest.cameras) {
+    const modality = camera.encoding?.toLowerCase().includes("depth")
+      ? "depth"
+      : "rgb";
+    const previewReady = Boolean(previewTarget);
+    const previewPending =
+      !workflow ||
+      workflow.status === "PENDING" ||
+      workflow.status === "RUNNING";
+    streams[camera.topic] = {
+      id: `raw-mcap:${camera.camera_id}`,
+      canonicalPath: camera.topic,
+      displayName: camera.camera_id,
+      modality,
+      semanticRole: "raw-mcap-camera",
+      schema: {
+        id: "raw-mcap",
+        version: "raw-media-source/v1",
+        ...(camera.encoding ? { encoding: camera.encoding } : {}),
+      },
+      startNs: clock.startNs,
+      endNs: clock.endNs,
+      ...(camera.frame_id
+        ? { frame: { id: camera.frame_id, name: camera.frame_id } }
+        : {}),
+      availability: previewReady
+        ? "ready"
+        : previewPending
+          ? "preview-generating"
+          : "missing",
+      accessibleSummary: previewReady
+        ? `${camera.camera_id} 已从固定 Lance 版本生成受权 HLS；面板可见时才会按需签发播放地址。`
+        : previewPending
+          ? `${camera.camera_id} 正在完成校验、对齐和 Lance 持久化，完成后会自动显示。`
+          : rawSourceAvailable
+            ? `${camera.camera_id} 的 Raw MCAP 仍可下载，但本次工作流未生成可播放的 Lance 版本。`
+            : `${camera.camera_id} 尚无可用的 Raw 证据源或可播放版本。`,
+      ...(previewTarget
+        ? {
+            mediaSource: createDatasetPreviewMediaSource({
+              scope: {
+                organizationId: scope.organizationId,
+                projectId: scope.projectId,
+                regionCode: scope.regionCode,
+              },
+              datasetId: previewTarget.datasetId,
+              binding: {
+                rollout_id: detail.session.rollout_id,
+                lance_version: previewTarget.lanceVersion,
+                annotation_revision: 0,
+                // Lance fields from ingest use the immutable Manifest topic,
+                // so the preview request must use that exact key.
+                camera_id: camera.topic,
+                frequency_hz: previewTarget.frequencyHz,
+                start_step: previewTarget.startStep,
+                end_step: previewTarget.endStep,
+              },
+              modality,
+            }),
+          }
+        : {}),
+    };
+  }
+  return streams;
+}
+
+function ProcessingPreviewState({
+  session,
+  workflow,
+  previewTarget,
+  viewerTarget,
+  pending,
+  error,
+  onRefresh,
+}: {
+  readonly session: FormalUploadDetail["session"];
+  readonly workflow: FormalUploadProcessingStatus | undefined;
+  readonly previewTarget: FormalUploadPreviewTarget | null | undefined;
+  readonly viewerTarget: FormalUploadViewerTarget | null | undefined;
+  readonly pending: boolean;
+  readonly error: unknown;
+  readonly onRefresh: () => void;
+}) {
+  if (!session.workflow) {
+    return (
+      <div className={styles.processingState} role="alert">
+        已提交上传缺少持久化处理工作流，无法生成真实预览。
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className={styles.processingState} role="alert">
+        <span>{problemDescription(error)}</span>
+        <Button type="default" onClick={onRefresh}>
+          重新读取处理状态
+        </Button>
+      </div>
+    );
+  }
+  if (pending || !workflow) {
+    return (
+      <output className={styles.processingState} aria-live="polite">
+        正在读取上传处理状态…
+      </output>
+    );
+  }
+  if (previewTarget) {
+    const viewerPath = viewerTarget
+      ? datasetRoutes.episodeViewer.build({
+          datasetId: viewerTarget.datasetId,
+          versionId: viewerTarget.versionId,
+          episodeId: viewerTarget.episodeId,
+        })
+      : null;
+    return (
+      <div className={styles.processingState} role="status" aria-live="polite">
+        <span>
+          可视化数据已生成 · 数据集版本 {previewTarget.datasetVersion} · Lance
+          版本 {previewTarget.lanceVersion}
+        </span>
+        {viewerPath ? (
+          <Link className={styles.viewerLink} to={viewerPath}>
+            打开完整数据视图
+          </Link>
+        ) : null}
+      </div>
+    );
+  }
+  if (workflow.status === "PENDING" || workflow.status === "RUNNING") {
+    return (
+      <output className={styles.processingState} aria-live="polite">
+        后台处理中 · {workflow.stage} · 第 {workflow.attempt} 次尝试
+      </output>
+    );
+  }
+  return (
+    <div className={styles.processingState} role="alert">
+      <span>
+        处理结果：{workflow.status}
+        {workflow.error_code ? ` · 问题代码 ${workflow.error_code}` : ""}
+      </span>
+      <Button type="default" onClick={onRefresh}>
+        刷新处理状态
+      </Button>
+    </div>
+  );
+}
+
+function RawMediaEvidence({
+  source,
+  pending,
+  error,
+  onRefresh,
+}: {
+  readonly source: FormalRawMediaSource | undefined;
+  readonly pending: boolean;
+  readonly error: unknown;
+  readonly onRefresh: () => void;
+}) {
+  return (
+    <section
+      className={styles.rawSource}
+      aria-labelledby="raw-media-source-title"
+    >
+      <div>
+        <span>RAW EVIDENCE</span>
+        <h2 id="raw-media-source-title">原始 MCAP 证据源</h2>
+        <p>
+          浏览器不会把 MCAP 采集包误播为视频；相机话题与 Raw 文件保持一对一的
+          Manifest 关联。
+        </p>
+      </div>
+      {pending ? (
+        <output aria-live="polite">正在取得受权 Raw 源…</output>
+      ) : null}
+      {error ? (
+        <div className={styles.rawSourceError} role="alert">
+          <span>{problemDescription(error)}</span>
+          <Button type="default" onClick={onRefresh}>
+            重新获取受权链接
+          </Button>
+        </div>
+      ) : null}
+      {source ? (
+        <div className={styles.rawSourceAction}>
+          <span>
+            已授权 · {formatBytes(source.byte_length)} · 至
+            {formatDate(source.expires_at)} 有效
+          </span>
+          <a
+            className={styles.rawSourceLink}
+            href={source.download_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            referrerPolicy="no-referrer"
+          >
+            下载 Raw MCAP
+          </a>
+          <Button type="text" onClick={onRefresh}>
+            刷新链接
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+interface WorkflowPreviewView {
+  readonly job: FormalUploadProcessingStatus | undefined;
+  readonly target: FormalUploadPreviewTarget | null | undefined;
+  readonly viewer: FormalUploadViewerTarget | null | undefined;
+  readonly pending: boolean;
+  readonly error: unknown;
+  readonly onRefresh: () => void;
+}
+
+function UploadDiagnostic({
+  detail,
+  rawSourceAvailable,
+  scope,
+  workflowPreview,
+  showContextBar = true,
+}: {
+  readonly detail: FormalUploadDetail;
+  readonly rawSourceAvailable: boolean;
+  readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
+  readonly workflowPreview: WorkflowPreviewView;
+  readonly showContextBar?: boolean;
+}) {
   const bounds = useMemo(
     () => diagnosticBounds(detail.quality),
     [detail.quality.end_ns, detail.quality.start_ns],
@@ -192,46 +435,86 @@ function UploadDiagnostic({ detail }: { readonly detail: FormalUploadDetail }) {
     () => diagnosticTracks(detail.quality),
     [detail.quality],
   );
+  const mediaStreamsByTopic = useMemo(
+    () =>
+      rawCameraStreams(
+        manifest,
+        clock,
+        rawSourceAvailable,
+        detail,
+        scope,
+        workflowPreview.job,
+        workflowPreview.target,
+      ),
+    [
+      clock,
+      detail,
+      manifest,
+      rawSourceAvailable,
+      scope,
+      workflowPreview.job,
+      workflowPreview.target,
+    ],
+  );
 
   return (
     <>
-      <div className={styles.contextBar}>
-        <Link to={uploadRecordsPath}>
-          <ArrowLeft aria-hidden="true" size={16} />
-          返回上传记录
-        </Link>
-        <Space wrap>
-          <StatusTag
-            status={detail.session.status}
-            label={`上传：${detail.session.status}`}
-            tone="info"
-          />
-          <StatusTag
-            status={detail.quality.status}
-            label={`自动质检：${detail.quality.status}`}
-            tone={statusTone(detail.quality.status)}
-          />
-        </Space>
-      </div>
+      {showContextBar ? (
+        <div className={styles.contextBar}>
+          <Link to={uploadRecordsPath}>
+            <ArrowLeft aria-hidden="true" size={16} />
+            返回上传记录
+          </Link>
+          <Space wrap>
+            <StatusTag
+              status={detail.session.status}
+              label={`上传：${detail.session.status}`}
+              tone="info"
+            />
+            <StatusTag
+              status={detail.quality.status}
+              label={`自动质检：${detail.quality.status}`}
+              tone={statusTone(detail.quality.status)}
+            />
+          </Space>
+        </div>
+      ) : null}
+      <ProcessingPreviewState
+        session={detail.session}
+        workflow={workflowPreview.job}
+        previewTarget={workflowPreview.target}
+        viewerTarget={workflowPreview.viewer}
+        pending={workflowPreview.pending}
+        error={workflowPreview.error}
+        onRefresh={workflowPreview.onRefresh}
+      />
       <RawDiagnosticWorkbench
         id={`upload-diagnostic:${detail.session.session_id ?? detail.session.rollout_id}`}
         title="Raw 诊断"
         description="采集记录 / 数据包诊断 / 自动质检证据"
         clock={clock}
         manifest={manifest}
-        mediaStreamsByTopic={{}}
+        mediaStreamsByTopic={mediaStreamsByTopic}
         collectionItems={[
           {
             id: detail.session.data_package_id,
             label: detail.session.data_package_id,
             description: `机器人 ${detail.manifest.identifiers.robot_id}`,
             status: `自动质检 ${detail.quality.status}`,
-            statusTone:
-              detail.quality.status === "RISK" ? "warning" : "error",
+            statusTone: detail.quality.status === "RISK" ? "warning" : "error",
             facts: [
-              { label: "开始", value: formatDate(detail.manifest.time_range.start_time) },
-              { label: "结束", value: formatDate(detail.manifest.time_range.end_time) },
-              { label: "时长", value: formatDuration(detail.quality.duration_ns) },
+              {
+                label: "开始",
+                value: formatDate(detail.manifest.time_range.start_time),
+              },
+              {
+                label: "结束",
+                value: formatDate(detail.manifest.time_range.end_time),
+              },
+              {
+                label: "时长",
+                value: formatDuration(detail.quality.duration_ns),
+              },
               { label: "相机", value: `${manifest.cameras.length} 路` },
               { label: "来源", value: "Manifest" },
             ],
@@ -257,7 +540,22 @@ function UploadDiagnostic({ detail }: { readonly detail: FormalUploadDetail }) {
   );
 }
 
-function PassedUploadDetail({ detail }: { readonly detail: FormalUploadDetail }) {
+function PassedUploadDetail({
+  detail,
+  rawMedia,
+  scope,
+  workflowPreview,
+}: {
+  readonly detail: FormalUploadDetail;
+  readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
+  readonly workflowPreview: WorkflowPreviewView;
+  readonly rawMedia: {
+    readonly source: FormalRawMediaSource | undefined;
+    readonly pending: boolean;
+    readonly error: unknown;
+    readonly onRefresh: () => void;
+  };
+}) {
   const discovery = detail.manifest.discovery;
   return (
     <section className={styles.passedPage}>
@@ -307,8 +605,19 @@ function PassedUploadDetail({ detail }: { readonly detail: FormalUploadDetail })
           description={`${formatDate(detail.manifest.time_range.start_time)} 开始`}
         />
       </div>
+      <RawMediaEvidence {...rawMedia} />
+      <UploadDiagnostic
+        detail={detail}
+        rawSourceAvailable={Boolean(rawMedia.source)}
+        scope={scope}
+        workflowPreview={workflowPreview}
+        showContextBar={false}
+      />
       <div className={styles.passedGrid}>
-        <section className={styles.factPanel} aria-labelledby="manifest-facts-title">
+        <section
+          className={styles.factPanel}
+          aria-labelledby="manifest-facts-title"
+        >
           <header>
             <Typography.Title id="manifest-facts-title" level={2}>
               Manifest 发现
@@ -344,7 +653,10 @@ function PassedUploadDetail({ detail }: { readonly detail: FormalUploadDetail })
             </ul>
           </details>
         </section>
-        <section className={styles.qualityPanel} aria-labelledby="quality-result-title">
+        <section
+          className={styles.qualityPanel}
+          aria-labelledby="quality-result-title"
+        >
           <Typography.Title id="quality-result-title" level={2}>
             自动质检
           </Typography.Title>
@@ -387,6 +699,58 @@ export default function FormalUploadDetailPage() {
     queryFn: ({ signal }) => {
       if (!scope || !stableId) throw new Error("UPLOAD_SCOPE_UNAVAILABLE");
       return loadFormalUploadDetail(scope, stableId, signal);
+    },
+  });
+  const rawMediaSessionId = detail.data?.session.session_id;
+  const rawMedia = useQuery({
+    queryKey: [
+      "p04-raw-media-source",
+      scope?.projectId,
+      scope?.regionCode,
+      rawMediaSessionId,
+    ],
+    enabled:
+      Boolean(scope) &&
+      detail.data?.session.status === "RAW_COMMITTED" &&
+      Boolean(rawMediaSessionId),
+    staleTime: 0,
+    queryFn: ({ signal }) => {
+      if (!scope || !rawMediaSessionId) {
+        throw new Error("UPLOAD_RAW_MEDIA_SCOPE_OR_SESSION_UNAVAILABLE");
+      }
+      return getFormalUploadRawMedia(scope, rawMediaSessionId, signal);
+    },
+  });
+  const workflowSession = detail.data?.session;
+  const workflowId = workflowSession?.workflow?.workflow_id;
+  const workflow = useQuery({
+    queryKey: [
+      "p04-ingest-workflow",
+      scope?.organizationId,
+      scope?.projectId,
+      scope?.regionCode,
+      workflowId,
+    ],
+    enabled: Boolean(scope && workflowSession && workflowId),
+    staleTime: 0,
+    queryFn: async ({ signal }) => {
+      if (!scope || !workflowSession || !workflowId) {
+        throw new Error("UPLOAD_WORKFLOW_SCOPE_OR_SESSION_UNAVAILABLE");
+      }
+      const job = await getFormalUploadProcessingStatus(
+        scope,
+        workflowSession,
+        signal,
+      );
+      return {
+        job,
+        target: resolveFormalUploadPreviewTarget(workflowSession, job),
+        viewer: resolveFormalUploadViewerTarget(workflowSession, job),
+      };
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data?.job.status;
+      return status === "PENDING" || status === "RUNNING" ? 1_000 : false;
     },
   });
 
@@ -442,7 +806,9 @@ export default function FormalUploadDetailPage() {
           requestId={isDomainError(error) ? error.requestId : null}
           onRetry={() => void detail.refetch()}
           retryLabel={
-            isDomainError(error) && error.retryable ? "按服务端提示重试" : "重新加载"
+            isDomainError(error) && error.retryable
+              ? "按服务端提示重试"
+              : "重新加载"
           }
           action={<Button href={uploadRecordsPath}>返回上传记录</Button>}
         />
@@ -450,12 +816,44 @@ export default function FormalUploadDetailPage() {
     );
   }
 
+  const workflowPreview: WorkflowPreviewView = {
+    job: workflow.data?.job,
+    target: workflow.data?.target,
+    viewer: workflow.data?.viewer,
+    pending: Boolean(workflowId) && workflow.isPending,
+    error: workflow.error,
+    onRefresh: () => void workflow.refetch(),
+  };
+
   return (
     <main className={styles.page}>
       {detail.data.quality.status === "PASS" ? (
-        <PassedUploadDetail detail={detail.data} />
+        <PassedUploadDetail
+          detail={detail.data}
+          scope={scope}
+          workflowPreview={workflowPreview}
+          rawMedia={{
+            source: rawMedia.data,
+            pending: rawMedia.isPending,
+            error: rawMedia.error,
+            onRefresh: () => void rawMedia.refetch(),
+          }}
+        />
       ) : (
-        <UploadDiagnostic detail={detail.data} />
+        <>
+          <RawMediaEvidence
+            source={rawMedia.data}
+            pending={rawMedia.isPending}
+            error={rawMedia.error}
+            onRefresh={() => void rawMedia.refetch()}
+          />
+          <UploadDiagnostic
+            detail={detail.data}
+            rawSourceAvailable={Boolean(rawMedia.data)}
+            scope={scope}
+            workflowPreview={workflowPreview}
+          />
+        </>
       )}
     </main>
   );

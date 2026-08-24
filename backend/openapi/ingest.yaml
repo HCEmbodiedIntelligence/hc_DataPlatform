@@ -60,6 +60,7 @@ paths:
         - *region_parameter
         - {name: status, in: query, schema: {type: string, enum: [REGISTERED, UPLOADING, PAUSED, MULTIPART_COMPLETED, RAW_COMMITTED, FAILED, CANCELLED]}}
         - {name: data_package_id, in: query, schema: {$ref: "#/components/schemas/IngestIdentifier"}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 16, maxLength: 16384}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
       responses:
         "200":
@@ -118,6 +119,50 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media:
+    get:
+      operationId: getUploadRawMedia
+      tags: [ingest]
+      description: Issues an audited, short-lived GET URL for the immutable committed Raw MCAP capture. The URL and any object locator are sensitive and must not be cached or logged.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Authorized Raw MCAP source. Browser rendering support is determined by the client capability, not by this grant.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Signed URLs must not be cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawMediaSourceV1"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "404": *not_found_response
+        "409": *conflict_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/processing:
+    get:
+      operationId: getUploadProcessingStatus
+      tags: [ingest]
+      description: Returns only the durable processing state and preview lineage linked to the authorized upload session. It never exposes an arbitrary Workflow result.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Uploader-safe processing state. A not-yet-visible Temporal execution remains PENDING while its durable dispatch is outstanding.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Processing state is never cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadProcessingStatusV1"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "404": *not_found_response
+        "409": *conflict_response
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts:
     get:
       operationId: listUploadParts
@@ -508,10 +553,11 @@ components:
     UploadSessionListV1:
       type: object
       additionalProperties: false
-      required: [items, total]
+      required: [items, total, next_cursor]
       properties:
         items: {type: array, items: {$ref: "#/components/schemas/UploadSession"}}
         total: {type: integer, minimum: 0}
+        next_cursor: {type: [string, "null"], minLength: 16, maxLength: 16384}
     UploadPart:
       type: object
       required: [session_id, project_id, region_code, part_number, status, updated_at]
@@ -550,6 +596,76 @@ components:
           oneOf:
             - {$ref: "#/components/schemas/IngestWorkflowLocator"}
             - {type: "null"}
+    RawMediaSourceV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, format, media_type, download_url, expires_at, byte_length, sha256]
+      properties:
+        schema_version: {type: string, const: raw-media-source/v1}
+        format: {type: string, const: MCAP}
+        media_type: {type: string, const: application/x-mcap}
+        download_url: {type: string, format: uri, minLength: 1, maxLength: 8192, description: Short-lived signed GET URL; sensitive and never cacheable.}
+        expires_at: {type: string, format: date-time}
+        byte_length: {type: integer, minimum: 1}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+    UploadPreviewTargetV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, dataset_id, rollout_id, dataset_version, lance_version, annotation_task_id, frequency_hz, start_step, end_step]
+      properties:
+        schema_version: {type: string, const: upload-preview-target/v1}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        dataset_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        dataset_version: {type: integer, minimum: 1}
+        lance_version: {type: integer, minimum: 1}
+        annotation_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        frequency_hz: {type: number, exclusiveMinimum: 0}
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 1}
+    DatasetIngestViewerTarget:
+      type: object
+      additionalProperties: false
+      required: [schema_version, dataset_id, version_id, episode_id, revision_id]
+      properties:
+        schema_version: {type: string, const: dataset-ingest-viewer-target/v1}
+        dataset_id:
+          type: string
+          pattern: "^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+        version_id:
+          type: string
+          pattern: "^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+        episode_id:
+          type: string
+          pattern: "^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+        revision_id:
+          type: string
+          pattern: "^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+    UploadProcessingStatusV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, session_id, rollout_id, workflow_id, status, stage, attempt, preview, viewer, error_code, updated_at]
+      properties:
+        schema_version: {type: string, const: upload-processing-status/v1}
+        session_id: {type: string, format: uuid}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        workflow_id: {type: string, minLength: 1}
+        status: {type: string, enum: [PENDING, RUNNING, SUCCEEDED, TECHNICAL_FAILED, QUALITY_RISK, QUALITY_REJECTED, CANCELLED]}
+        stage: {type: string, minLength: 1, maxLength: 128}
+        attempt: {type: integer, minimum: 0}
+        preview:
+          oneOf:
+            - {$ref: "#/components/schemas/UploadPreviewTargetV1"}
+            - {type: "null"}
+        viewer:
+          oneOf:
+            - {$ref: "#/components/schemas/DatasetIngestViewerTarget"}
+            - {type: "null"}
+        error_code:
+          type: [string, "null"]
+          maxLength: 128
+          pattern: "^[A-Z0-9_]+$"
+        updated_at: {type: string, format: date-time}
     IngestWorkflowLocator:
       type: object
       additionalProperties: false

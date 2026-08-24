@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 import math
 from base64 import b64encode
 from collections.abc import Callable, Iterator, Sequence
@@ -25,7 +26,12 @@ from .models import (
     StepRecord,
     StorageCommitReceipt,
 )
-from .schema import LanceDependencyError, compile_arrow_schema
+from .schema import (
+    JSON_MODALITIES_METADATA_KEY,
+    LanceDependencyError,
+    canonical_schema_spec,
+    compile_arrow_schema,
+)
 from .service import (
     CatalogConflictError,
     DatasetReconciliationRequired,
@@ -104,12 +110,55 @@ def _arrow_table_hash(table: Any) -> str:
 def _table_from_steps(snapshot: DatasetSchemaSnapshot, steps: Sequence[StepRecord]) -> Any:
     arrow = _module("pyarrow")
     schema = compile_arrow_schema(snapshot)
-    rows = [step.model_dump(mode="python", exclude={"schema_version"}) for step in steps]
+    json_modalities = {
+        name for name, type_name in canonical_schema_spec(snapshot.fields) if type_name == "json"
+    }
+    rows = []
+    for step in steps:
+        row = step.model_dump(mode="python", exclude={"schema_version"})
+        modalities = dict(row["modalities"])
+        for name in json_modalities:
+            modalities[name] = json.dumps(
+                modalities[name],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        row["modalities"] = modalities
+        rows.append(row)
     try:
         return arrow.Table.from_pylist(rows, schema=schema)
     except (TypeError, ValueError) as exc:
         raise SchemaIncompatibleError(
             f"fragment values do not conform to the compiled Arrow schema: {exc}"
+        ) from exc
+
+
+def _steps_from_table(table: Any) -> tuple[StepRecord, ...]:
+    """Decode logical JSON modalities without exposing their physical encoding."""
+
+    metadata = table.schema.metadata or {}
+    try:
+        raw_names = json.loads(metadata.get(JSON_MODALITIES_METADATA_KEY, b"[]"))
+        if not isinstance(raw_names, list) or not all(
+            isinstance(name, str) and name for name in raw_names
+        ):
+            raise ValueError("JSON modality metadata must be a string list")
+        rows = table.to_pylist()
+        for row in rows:
+            modalities = row["modalities"]
+            if not isinstance(modalities, dict):
+                raise ValueError("modalities must be an Arrow struct")
+            for name in raw_names:
+                encoded = modalities.get(name)
+                if not isinstance(encoded, str):
+                    raise ValueError(f"JSON modality {name!r} is not encoded text")
+                modalities[name] = json.loads(encoded)
+        return tuple(StepRecord.model_validate(row) for row in rows)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise SchemaIncompatibleError(
+            f"stored Lance JSON modalities do not match schema metadata: {exc}"
         ) from exc
 
 
@@ -381,7 +430,7 @@ class LanceAdapter:
             & (arrow_compute.field("step_index") < end_step)
         )
         table = dataset.to_table(filter=predicate)
-        steps = [StepRecord.model_validate(row) for row in table.to_pylist()]
+        steps = list(_steps_from_table(table))
         steps.sort(key=lambda item: item.step_index)
         return tuple(steps)
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -28,19 +27,17 @@ def _operations(document: dict[str, Any]) -> set[tuple[str, str]]:
     }
 
 
-def test_storage_fragment_matches_runtime_and_has_no_preview_or_execution_path() -> None:
+def test_storage_fragment_matches_runtime_and_exposes_guarded_execution_paths() -> None:
     fragment = yaml.safe_load(FRAGMENT.read_text(encoding="utf-8"))
     runtime = create_app(settings=Settings(environment="test", runtime_backend="memory")).openapi()
     assert _operations(fragment) == _operations(runtime)
 
-    source = FRAGMENT.read_text(encoding="utf-8").lower()
-    assert "simulat" not in source
-    assert "impact-preview" not in source
-    assert "dry-run" not in source
-    assert re.search(r"\b(hot|cold|warm|archive)\b", source) is None
-    assert "delete_object" not in source
-    assert "abort_multipart" not in source
-    assert all("execution" not in path for path in fragment["paths"])
+    paths = fragment["paths"]
+    assert any(path.endswith("lifecycle-executions:dry-run") for path in paths)
+    assert any(path.endswith(":approve") for path in paths)
+    assert any(path.endswith(":start") for path in paths)
+    assert any(path.endswith(":restore") for path in paths)
+    assert any(path.endswith(":abort") for path in paths)
 
     category = fragment["components"]["schemas"]["BusinessCapacityCategory"]
     assert category["enum"] == [
@@ -80,7 +77,28 @@ def test_storage_migration_freezes_reconciliation_protection_and_open_10_gate() 
     assert seal.index("SET sealed = true") < seal.index("ALTER COLUMN sealed SET NOT NULL")
 
     versions = [migration.version for migration in load_migrations(BACKEND / "migrations")]
-    assert versions[-2:] == [
+    # Storage's forward repair has a fixed relative order, but later approved
+    # modules must be appendable without making this historical contract fail.
+    seal_index = versions.index("storage/0002_seal_inventory_snapshots.sql")
+    assert versions[seal_index : seal_index + 2] == [
         "storage/0002_seal_inventory_snapshots.sql",
         "annotation/0004_backfill_task_base_step_count.sql",
     ]
+
+
+def test_storage_production_execution_requires_independent_approval() -> None:
+    migration = (
+        BACKEND / "migrations/storage/0004_approval_bound_production_execution.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "DROP CONSTRAINT IF EXISTS lifecycle_executions_production_check" in migration
+    assert (
+        "DROP CONSTRAINT IF EXISTS lifecycle_executions_production_execution_approved_check"
+    ) in migration
+    assert "requested_by <> approved_by" in migration
+
+    schedule_lineage = (
+        BACKEND / "migrations/storage/0005_schedule_execution_lineage.sql"
+    ).read_text(encoding="utf-8")
+    assert "FOREIGN KEY (project_id, last_execution_id)" in schedule_lineage
+    assert "REFERENCES storage.lifecycle_executions (project_id, execution_id)" in schedule_lineage

@@ -8,17 +8,19 @@
   "cameras": [
     {
       "camera_id": "front",
+      "encoding": "jpeg",
       "topic": "/camera/front/image"
     },
     {
       "camera_id": "rear",
+      "encoding": "jpeg",
       "topic": "/camera/rear/image"
     }
   ],
   "collection_job_id": "be22-missing-frame-job",
   "collection_session_id": "be22-missing-frame-session",
   "compression": "none",
-  "crc64": "1519035706320994679",
+  "crc64": "222490090825115582",
   "data_package_id": "be22-missing-frame-package",
   "end_time": "2023-11-14T22:13:21Z",
   "expected_topics": [
@@ -27,15 +29,15 @@
     "/action",
     "/camera/rear/image"
   ],
-  "file_size": 6250,
+  "file_size": 64901,
   "files": [
     {
-      "crc64": "1519035706320994679",
+      "crc64": "222490090825115582",
       "media_type": "application/octet-stream",
       "path": "recording.mcap",
       "role": "RAW_MCAP",
-      "sha256": "120d9a3cfe3131d7eb8af7df997837f007a8a6e55c68f98067b70b1eb95718ae",
-      "size": 6250
+      "sha256": "496ff4a6b2a53bfcde24c3493d63879ec4528a8fa1f85c968abe41b04aff111d",
+      "size": 64901
     }
   ],
   "project_id": "be22-template-project",
@@ -45,25 +47,33 @@
   "rollout_id": "be22-missing-frame-rollout",
   "schema_version": 1,
   "sequence_no": 1,
-  "sha256": "120d9a3cfe3131d7eb8af7df997837f007a8a6e55c68f98067b70b1eb95718ae",
+  "sha256": "496ff4a6b2a53bfcde24c3493d63879ec4528a8fa1f85c968abe41b04aff111d",
   "start_time": "2023-11-14T22:13:20Z",
   "task_id": "be22-template-task",
   "topics": [
     {
+      "message_encoding": "json",
       "name": "/camera/front/image",
-      "required": true
+      "required": true,
+      "schema_name": "sensor_msgs/Image"
     },
     {
+      "message_encoding": "cdr",
       "name": "/joint_states",
-      "required": true
+      "required": true,
+      "schema_name": "sensor_msgs/JointState"
     },
     {
+      "message_encoding": "cdr",
       "name": "/action",
-      "required": true
+      "required": true,
+      "schema_name": "hc_msgs/Action"
     },
     {
+      "message_encoding": "json",
       "name": "/camera/rear/image",
-      "required": true
+      "required": true,
+      "schema_name": "sensor_msgs/Image"
     }
   ]
 }

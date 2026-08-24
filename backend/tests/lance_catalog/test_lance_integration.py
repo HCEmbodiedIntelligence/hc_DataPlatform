@@ -5,11 +5,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
 
-pytest.importorskip("pyarrow")
-lance = pytest.importorskip("lance")
-
-from hc_data_platform.lance_catalog import (  # noqa: E402
+from hc_data_platform.lance_catalog import (
     AlignedFragmentManifestV1,
     CatalogIndexPendingError,
     DatasetSchemaSnapshot,
@@ -20,6 +19,18 @@ from hc_data_platform.lance_catalog import (  # noqa: E402
     StepRecord,
     compute_fragment_hash,
 )
+from hc_data_platform.lance_catalog.audit import InMemoryLanceCatalogAuditRecorder
+from hc_data_platform.lance_catalog.router import (
+    configure_lance_catalog,
+    configure_lance_catalog_audit_recorder,
+)
+from hc_data_platform.lance_catalog.router import (
+    router as lance_catalog_router,
+)
+from hc_data_platform.security.auth import AuthContext
+
+pytest.importorskip("pyarrow")
+lance = pytest.importorskip("lance")
 
 
 def _schema() -> DatasetSchemaSnapshot:
@@ -171,3 +182,101 @@ def test_real_lance_twenty_parallel_rollouts_use_one_writer(tmp_path: Path) -> N
         for step in service.read_steps("dataset-a", rollout_id, 0, 1).steps
     }
     assert len(identities) == 20
+
+
+@pytest.mark.integration
+def test_real_lance_step_window_http_wire_is_precise_scoped_and_audited(tmp_path: Path) -> None:
+    service, _, _ = _service(tmp_path)
+    snapshot = _schema()
+    manifest, steps = _fragment(snapshot, "rollout-p06", count=2)
+    version, _ = service.commit_fragment(manifest, steps)
+    audit = InMemoryLanceCatalogAuditRecorder()
+    configure_lance_catalog(service)
+    configure_lance_catalog_audit_recorder(audit)
+
+    app = FastAPI()
+    app.include_router(lance_catalog_router)
+
+    @app.middleware("http")
+    async def install_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
+        request.state.auth_context = AuthContext(
+            subject_id="p06-real-lance-reader",
+            project_ids=frozenset({"project-a"}),
+            region_codes=frozenset(),
+            roles=frozenset({"annotator"}),
+        )
+        return await call_next(request)
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-p06/steps",
+            params={"start_step": 0, "end_step": 2, "version": version.version},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset_version"] == version.version
+    assert payload["steps"][0]["modalities"]["camera.front"] == {
+        "$type": "binary",
+        "byte_length": len(b"frame-0"),
+        "transport": "preview_media",
+    }
+    assert payload["steps"][0]["modalities"]["joint.position"] == [0.0]
+    assert payload["steps"][1]["timestamp_ns"] == "33333333"
+    assert [(event.rollout_id, event.returned_step_count) for event in audit.events] == [
+        ("rollout-p06", 2)
+    ]
+
+
+@pytest.mark.integration
+def test_real_lance_json_modality_round_trips_typed_values(tmp_path: Path) -> None:
+    snapshot = DatasetSchemaSnapshot.create(
+        project_id="project-a",
+        dataset_id="dataset-json",
+        schema_snapshot_id="schema-json",
+        frequency_hz=30,
+        fields={"joint.dynamic": "json", "event.dynamic": "json"},
+    )
+    adapter = LanceAdapter(tmp_path)
+    repository = InMemoryCatalogRepository()
+    service = LanceCatalogService(adapter, repository, InMemoryDatasetWriterLock())
+    service.register_schema(snapshot)
+    steps = (
+        StepRecord(
+            rollout_id="rollout-json",
+            step_index=0,
+            timestamp_ns=0,
+            modalities={
+                "joint.dynamic": [0.1, 0.2, -0.3],
+                "event.dynamic": {"label": "grasp", "confidence": 0.95},
+            },
+            source_timestamps_ns={"joint.dynamic": (0,), "event.dynamic": (0,)},
+            time_error_ns={"joint.dynamic": 0, "event.dynamic": 0},
+            valid={"joint.dynamic": True, "event.dynamic": True},
+            repeated={"joint.dynamic": False, "event.dynamic": False},
+        ),
+    )
+    manifest = AlignedFragmentManifestV1(
+        project_id=snapshot.project_id,
+        dataset_id=snapshot.dataset_id,
+        schema_snapshot_id=snapshot.schema_snapshot_id,
+        schema_fingerprint=snapshot.fingerprint,
+        frequency_hz=snapshot.frequency_hz,
+        rollout_id="rollout-json",
+        source_sha256=hashlib.sha256(b"rollout-json").hexdigest(),
+        converter_version="aligner-json-1",
+        attempt_id="attempt-json",
+        fragment_uri="s3://alignment-staging/rollout-json.arrow",
+        step_count=1,
+        content_hash=compute_fragment_hash(steps),
+    )
+
+    version, _ready = service.commit_fragment(manifest, steps)
+
+    assert service.read_steps("dataset-json", "rollout-json", 0, 1).steps == steps
+    physical = lance.dataset(adapter.dataset_uri(snapshot), version=version.lance_version)
+    physical_modalities = physical.to_table().to_pylist()[0]["modalities"]
+    assert physical_modalities == {
+        "event.dynamic": '{"confidence":0.95,"label":"grasp"}',
+        "joint.dynamic": "[0.1,0.2,-0.3]",
+    }

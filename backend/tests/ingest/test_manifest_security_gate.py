@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -75,6 +76,31 @@ def test_validated_manifest_can_only_build_a_scoped_raw_object_key() -> None:
     assert ".." not in key
     assert "//" not in key
     assert key.endswith("/recording.mcap")
+
+
+def test_internal_postgres_decimal_crc64_round_trips_as_a_canonical_wire_string() -> None:
+    payload = valid_manifest()
+    crc64 = Decimal("13305216265320122395")
+    payload["crc64"] = crc64
+    payload["files"][0]["crc64"] = crc64
+
+    manifest = RolloutManifestV1.model_validate(payload)
+
+    assert manifest.crc64 == int(crc64)
+    assert manifest.files[0].crc64 == int(crc64)
+    assert json.loads(manifest.model_dump_json())["crc64"] == str(crc64)
+
+
+@pytest.mark.parametrize("value", [Decimal("1.5"), Decimal("NaN"), Decimal("Infinity")])
+def test_internal_postgres_decimal_crc64_rejects_non_integral_or_non_finite_values(
+    value: Decimal,
+) -> None:
+    payload = valid_manifest()
+    payload["crc64"] = value
+    payload["files"][0]["crc64"] = value
+
+    with pytest.raises(ValidationError):
+        RolloutManifestV1.model_validate(payload)
 
 
 def test_preflight_reports_read_only_discovery_and_missing_topics() -> None:

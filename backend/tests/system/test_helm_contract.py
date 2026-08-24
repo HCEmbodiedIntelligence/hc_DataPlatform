@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -63,7 +64,12 @@ def test_api_and_worker_have_probes_resources_and_rolling_updates() -> None:
         CHART / "templates" / "backend-worker.yaml"
     ).read_text(encoding="utf-8")
     helpers = (CHART / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
-    assert helpers.count("secretKeyRef:") == 4
+    assert helpers.count("secretKeyRef:") == 9
+    assert "HC_DATA_SOURCE_CREDENTIAL_KEY" in helpers
+    assert "HC_AUTH_ABUSE_HMAC_SECRET" in helpers
+    assert "HC_AUTH_TURNSTILE_SECRET" in helpers
+    assert "HC_AUTH_SMTP_PASSWORD" in helpers
+    assert "HC_AUTO_ANNOTATION_PROVIDER_API_KEY" in helpers
 
     worker = (CHART / "templates" / "backend-worker.yaml").read_text(encoding="utf-8")
     readiness = worker.split("readinessProbe:", maxsplit=1)[1].split("livenessProbe:", maxsplit=1)[
@@ -80,6 +86,62 @@ def test_api_and_worker_have_probes_resources_and_rolling_updates() -> None:
     assert "workflowActivityFactory" in values["backend"]["config"]
     assert "serviceVersion" in values["backend"]["config"]
     assert "HC_WORKFLOW_ACTIVITY_FACTORY" in configmap
+    assert "HC_OUTBOX_SCOPES" in configmap
+    assert "HC_ARTIFACT_PREFIX" in configmap
+    assert "HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT" in configmap
+    assert "HC_AUTO_ANNOTATION_PROVIDER_MODELS" in configmap
+    assert "HC_PASSWORD_MIN_LENGTH" in configmap
+    assert "HC_SESSION_IDLE_TTL_SECONDS" in configmap
+    assert "HC_SESSION_ABSOLUTE_TTL_SECONDS" in configmap
+    assert "HC_SESSION_TOUCH_INTERVAL_SECONDS" in configmap
+    assert "HC_MAX_ACTIVE_SESSIONS" in configmap
+    assert "HC_AUTH_ABUSE_ENABLED" in configmap
+    assert "HC_AUTH_TRUSTED_PROXY_CIDRS" in configmap
+    assert "HC_AUTH_CHALLENGE_PROVIDER" in configmap
+    assert "HC_AUTH_TURNSTILE_SITE_KEY" in configmap
+    assert "HC_AUTH_TURNSTILE_EXPECTED_HOSTNAMES" in configmap
+    assert "HC_AUTH_RECOVERY_ENABLED" in configmap
+    assert "HC_AUTH_RECOVERY_PUBLIC_BASE_URL" in configmap
+    assert "HC_AUTH_SMTP_HOST" in configmap
+    assert values["backend"]["config"]["maxActiveSessions"] == "5"
+    media_rate = values["ingress"]["previewMediaRateLimit"]
+    assert media_rate == {
+        "enabled": True,
+        "requestsPerSecond": "30",
+        "burstMultiplier": "4",
+        "connections": "8",
+    }
+    ingress = (CHART / "templates" / "ingress.yaml").read_text(encoding="utf-8")
+    assert "-preview-media" in ingress
+    assert "nginx.ingress.kubernetes.io/limit-rps" in ingress
+    assert "nginx.ingress.kubernetes.io/limit-burst-multiplier" in ingress
+    assert "nginx.ingress.kubernetes.io/limit-connections" in ingress
+    assert "path: /api/v1/previews/sessions/" in ingress
+    for environment in ("staging", "production"):
+        example = _yaml(
+            REPOSITORY / "deploy" / "environments" / f"{environment}/values.example.yaml"
+        )
+        session_config = example["backend"]["config"]
+        outbox_scopes = json.loads(session_config["outboxScopes"])
+        assert outbox_scopes
+        assert all(len(scope.split("/")) == 3 for scope in outbox_scopes)
+        assert session_config["sessionIdleTtlSeconds"] == "1800"
+        assert session_config["sessionAbsoluteTtlSeconds"] == "86400"
+        assert session_config["sessionTouchIntervalSeconds"] == "60"
+        assert session_config["maxActiveSessions"] == "5"
+        assert session_config["authAbuseEnabled"] == "true"
+        assert session_config["authClientIpMode"] == "trusted_proxy"
+        assert session_config["authTrustedProxyCidrs"]
+        assert session_config["autoAnnotationProviderEndpoint"].startswith("https://")
+        assert json.loads(session_config["autoAnnotationProviderModels"])
+        assert session_config["authChallengeProvider"] == "turnstile"
+        assert session_config["authTurnstileSiteKey"]
+        assert session_config["authTurnstileExpectedHostnames"]
+        assert session_config["authRecoveryEnabled"] == "true"
+        assert session_config["authRecoveryPublicBaseUrl"].startswith("https://")
+        assert session_config["authRecoveryEmailFrom"]
+        assert session_config["authSmtpHost"]
+        assert session_config["authSmtpUsername"]
     assert "service.version" in configmap
 
 

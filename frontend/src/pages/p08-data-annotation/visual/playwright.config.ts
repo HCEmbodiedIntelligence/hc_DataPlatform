@@ -2,7 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 const mockMode =
   process.env.HC_REAL_API_E2E_RUN_OWNER === "fe13" ||
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14" ||
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
     ? "off"
     : "browser";
 

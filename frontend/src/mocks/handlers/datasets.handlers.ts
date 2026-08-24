@@ -254,8 +254,17 @@ export const datasetHandlers = [
           },
         ],
       });
-    if (s === 'empty' || s === 'filtered-empty' || url.searchParams.get('q') === 'missing')
+    if (
+      s === 'empty' ||
+      s === 'filtered-empty' ||
+      url.searchParams.get('q') === 'missing' ||
+      (url.searchParams.has('task') &&
+        url.searchParams.get('task') !== episodePageFixture.items[0]?.task)
+    )
       return HttpResponse.json({ ...datasetListFixture, items: [] });
+    if (url.searchParams.has('task')) {
+      return HttpResponse.json({ ...datasetListFixture, items: [datasetListFixture.items[0]] });
+    }
     if (s === 'cursor-pagination') {
       const secondWindow = url.searchParams.get('after') === 'cursor_fx_next';
       return HttpResponse.json({
@@ -338,8 +347,10 @@ export const datasetHandlers = [
         'limit',
       ]);
     if (invalid) return invalid;
+    const requestedTask = new URL(request.url).searchParams.get('task');
     return HttpResponse.json(
-      getDatasetScenario() === 'empty'
+      getDatasetScenario() === 'empty' ||
+        (requestedTask !== null && requestedTask !== episodePageFixture.items[0]?.task)
         ? { ...episodePageFixture, items: [] }
         : {
             ...episodePageFixture,

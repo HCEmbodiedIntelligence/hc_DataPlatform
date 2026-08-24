@@ -11,7 +11,11 @@ import type {
   DashboardActivityEventType,
 } from "../../../features/dashboard/types";
 import { PageState, StatusTag } from "../../../shared/ui";
-import { DashboardSectionNotice, sectionTone } from "./DashboardSectionNotice";
+import {
+  DashboardSectionNotice,
+  sectionLabel,
+  sectionTone,
+} from "./DashboardSectionNotice";
 import styles from "../styles.module.css";
 
 const eventPresentation: Readonly<
@@ -28,6 +32,21 @@ const eventPresentation: Readonly<
   TAG_REVIEW_DECIDED: { Icon: Tags, label: "Tag 审核已决策" },
   DATASET_PUBLISHED: { Icon: Send, label: "数据集已发布" },
 };
+
+const sourceStateCopy: Readonly<Record<string, string>> = {
+  RAW_COMMITTED: "原始数据已提交",
+  COMMITTED: "已提交",
+  PASS: "通过",
+  RISK: "有风险",
+  REJECT: "未通过",
+  APPROVE: "已通过",
+  NEEDS_REVISION: "需修改",
+  PUBLISHED: "已发布",
+};
+
+function sourceStateLabel(sourceState: string): string {
+  return sourceStateCopy[sourceState] ?? "状态未知";
+}
 
 function formatTime(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -57,7 +76,7 @@ export function DashboardActivityList({
         </div>
         <StatusTag
           status={activity.section.status}
-          label={activity.section.status}
+          label={sectionLabel(activity.section.status)}
           known
           tone={sectionTone(activity.section.status)}
         />
@@ -96,8 +115,8 @@ export function DashboardActivityList({
                   ) : (
                     content
                   )}
-                  <small>
-                    {label} · {event.sourceState}
+                  <small data-source-state={event.sourceState}>
+                    {label} · {sourceStateLabel(event.sourceState)}
                   </small>
                 </div>
               </li>

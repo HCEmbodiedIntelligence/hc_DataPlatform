@@ -77,6 +77,10 @@ class RunScope:
                 raise ValueError("cleanup is restricted to the exact BE22 run namespace")
 
     @property
+    def organization_id(self) -> str:
+        return f"be22-{self.run_id}-org"
+
+    @property
     def object_prefixes(self) -> tuple[str, ...]:
         """All object-store namespaces the real Worker can create for this run."""
 

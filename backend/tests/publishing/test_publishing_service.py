@@ -18,6 +18,8 @@ from hc_data_platform.annotation import (
     OperationKind,
     ReviewDecision,
 )
+from hc_data_platform.core.app import create_app
+from hc_data_platform.core.config import Settings
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.lance_catalog import (
     AlignedFragmentManifestV1,
@@ -58,9 +60,52 @@ from hc_data_platform.publishing.models import (
     QualityStatus,
     StepRangeV1,
 )
+from hc_data_platform.publishing.s3 import S3ArtifactSink
 from hc_data_platform.publishing.service import DatasetPublisher, ExportCoordinator
 
 NOW = datetime(2026, 8, 14, 8, 0, tzinfo=timezone.utc)
+
+
+class _ReadableS3Client:
+    def get_object(self, **_arguments: object) -> dict[str, io.BytesIO]:
+        return {"Body": io.BytesIO(b"immutable-export")}
+
+
+class _PublicPresignClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def generate_presigned_url(self, operation: str, **arguments: object) -> str:
+        self.calls.append((operation, arguments))
+        return "https://downloads.example.test/hc/export?signature=opaque"
+
+
+def test_s3_export_authorization_uses_public_presign_client() -> None:
+    public = _PublicPresignClient()
+    sink = S3ArtifactSink(
+        _ReadableS3Client(),
+        "private-bucket",
+        prefix="exports",
+        presign_client=public,
+    )
+
+    authorization = sink.get_download_uri("dataset/version/export.zip")
+
+    assert authorization == "https://downloads.example.test/hc/export?signature=opaque"
+    assert public.calls == [
+        (
+            "get_object",
+            {
+                "Params": {
+                    "Bucket": "private-bucket",
+                    "Key": "exports/dataset/version/export.zip",
+                    "ResponseContentDisposition": "attachment",
+                },
+                "ExpiresIn": 900,
+                "HttpMethod": "GET",
+            },
+        )
+    ]
 
 
 def rollout(
@@ -557,6 +602,18 @@ def test_incomplete_export_source_leaves_no_downloadable_artifact() -> None:
     assert sink.download_authorizations == {}
 
 
+def test_unconfigured_exporter_is_a_retryable_worker_outage_not_a_product_501() -> None:
+    manifest = export_manifest()
+    with pytest.raises(ProblemException) as captured:
+        ExportCoordinator(
+            source=InMemoryExportSource(export_steps()),
+            sink=InMemoryArtifactSink(),
+            exporters=[],
+        ).export(manifest, format=ExportFormat.LANCE_SNAPSHOT)
+    assert captured.value.problem.status == 503
+    assert captured.value.problem.code == "EXPORTER_UNAVAILABLE"
+
+
 def test_phase_one_does_not_expose_hdf5_parquet_vlm_or_permanent_mp4() -> None:
     assert {item.value for item in ExportFormat} == {"lance_snapshot", "lerobot_v3"}
 
@@ -585,11 +642,69 @@ def test_openapi_fragment_has_resolved_export_and_publication_schemas() -> None:
 
     collect(document)
     assert references <= schemas.keys()
-    assert "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports" in document["paths"]
+    export_path = "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports"
+    assert export_path in document["paths"]
+    create_export = document["paths"][export_path]["post"]
+    assert create_export["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ExportJobV1"
+    }
+    assert "501" not in create_export["responses"]
+    for suffix, method, operation_id in (
+        ("/{job_id}", "get", "getPublishedDatasetExportJob"),
+        ("/{job_id}:cancel", "post", "cancelPublishedDatasetExportJob"),
+        ("/{job_id}:retry", "post", "retryPublishedDatasetExportJob"),
+        ("/{job_id}/download", "get", "authorizePublishedDatasetExportDownload"),
+    ):
+        operation = document["paths"][f"{export_path}{suffix}"][method]
+        assert operation["operationId"] == operation_id
+    assert "ExportResultV1" not in schemas
     assert schemas["ExportDatasetRequestV1"]["properties"]["format"]["enum"] == [
         "lance_snapshot",
         "lerobot_v3",
     ]
+
+
+def test_runtime_export_job_contract_has_no_direct_result_or_501_response() -> None:
+    runtime = create_app(settings=Settings(environment="test", runtime_backend="memory")).openapi()
+    backend_root = Path(__file__).resolve().parents[2]
+    formal = yaml.safe_load(
+        (backend_root / "openapi" / "publishing.yaml").read_text(encoding="utf-8")
+    )
+    root = "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports"
+    expected = {
+        root: ("post", "exportPublishedDatasetVersion", "202"),
+        f"{root}/{{job_id}}": ("get", "getPublishedDatasetExportJob", "200"),
+        f"{root}/{{job_id}}:cancel": ("post", "cancelPublishedDatasetExportJob", "200"),
+        f"{root}/{{job_id}}:retry": ("post", "retryPublishedDatasetExportJob", "202"),
+        f"{root}/{{job_id}}/download": ("get", "authorizePublishedDatasetExportDownload", "200"),
+    }
+    for path, (method, operation_id, success) in expected.items():
+        operation = runtime["paths"][path][method]
+        assert operation["operationId"] == operation_id
+        assert success in operation["responses"]
+        assert "501" not in operation["responses"]
+        headers = operation["responses"][success].get("headers", {})
+        assert "Cache-Control" in headers
+    create_parameters = runtime["paths"][root]["post"]["parameters"]
+    assert any(parameter["name"] == "Idempotency-Key" for parameter in create_parameters)
+    create_schema = runtime["paths"][root]["post"]["responses"]["202"]["content"][
+        "application/json"
+    ]["schema"]
+    assert create_schema == {"$ref": "#/components/schemas/ExportJobV1"}
+    assert "ExportResultV1" not in runtime["components"]["schemas"]
+    for schema_name in (
+        "ExportDatasetRequestV1",
+        "ExportJobResultV1",
+        "ExportJobProgressV1",
+        "ExportJobV1",
+        "ExportDownloadAuthorizationV1",
+    ):
+        assert formal["components"]["schemas"][schema_name].get("required", []) == runtime[
+            "components"
+        ]["schemas"][schema_name].get("required", [])
+    assert formal["components"]["schemas"]["ExportJobV1"]["properties"]["progress"] == {
+        "$ref": "#/components/schemas/ExportJobProgressV1"
+    }
 
 
 def test_migration_enforces_append_only_publication_and_validated_promotion() -> None:

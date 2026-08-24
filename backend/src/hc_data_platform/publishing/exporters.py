@@ -28,7 +28,7 @@ from .ports import ArtifactSinkPort, ExportSourcePort
 from .service import canonical_json_bytes
 
 
-def _collect_and_validate(
+def collect_and_validate_export_steps(
     manifest: PublishedDatasetManifestV1, source: ExportSourcePort
 ) -> list[ExportStepV1]:
     collected: list[ExportStepV1] = []
@@ -204,7 +204,7 @@ def _require_arrow() -> tuple[Any, Any]:
         import pyarrow.parquet as pq
     except ImportError as exc:  # pragma: no cover - exercised in minimal deployments
         raise problem(
-            status=501,
+            status=503,
             code="EXPORT_DEPENDENCY_MISSING",
             title="Export dependency is missing",
             detail="Install the backend data extra to enable native dataset exports.",
@@ -217,7 +217,7 @@ def _require_lance() -> Any:
         import lance
     except ImportError as exc:  # pragma: no cover - exercised in minimal deployments
         raise problem(
-            status=501,
+            status=503,
             code="EXPORT_DEPENDENCY_MISSING",
             title="Export dependency is missing",
             detail="Install the backend data extra to enable Lance Snapshot export.",
@@ -238,7 +238,7 @@ class LanceSnapshotExporter:
         sink: ArtifactSinkPort,
         attempt_id: str,
     ) -> ExportResultV1:
-        steps = _collect_and_validate(manifest, source)
+        steps = collect_and_validate_export_steps(manifest, source)
         artifact_uri = _artifact_uri(manifest, self.format, "aligned-steps.lance.zip")
         return _publish_validated(
             format=self.format,
@@ -388,7 +388,7 @@ class LeRobotV3Exporter:
         sink: ArtifactSinkPort,
         attempt_id: str,
     ) -> ExportResultV1:
-        steps = _collect_and_validate(manifest, source)
+        steps = collect_and_validate_export_steps(manifest, source)
         artifact_uri = _artifact_uri(manifest, self.format, "dataset.lerobot-v3.zip")
         return _publish_validated(
             format=self.format,

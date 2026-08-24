@@ -11,6 +11,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol, cast
+from uuid import uuid4
 
 from .models import (
     AnnotationMutationRecord,
@@ -18,6 +19,8 @@ from .models import (
     AnnotationReview,
     AnnotationReviewCheck,
     AnnotationRevision,
+    AnnotationRevisionThread,
+    AnnotationRevisionThreadRevision,
     AnnotationStatus,
     AnnotationSubmission,
     AnnotationSubmissionMutationRecord,
@@ -260,6 +263,163 @@ class PostgresAnnotationRepository:
             connection.close()
         return tuple(self._load_related(self._task_from_row(row)) for row in task_rows)
 
+    def list_revision_threads(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        status: AnnotationStatus | None,
+        origin: RevisionOrigin | None,
+        legacy_draft_id: str | None,
+        snapshot_at: datetime,
+        after_updated_at: datetime | None,
+        after_task_id: str | None,
+        limit: int,
+    ) -> tuple[AnnotationRevisionThread, ...]:
+        """Read one bounded page without loading every revision aggregate.
+
+        Both the explicit predicates and the current-setting predicates matter: the
+        first makes accidental cross-scope calls empty, while the latter still protects
+        an owner connection that can otherwise bypass RLS.
+        """
+
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    task.task_id,
+                    task.project_id,
+                    task.region_code,
+                    task.dataset_id,
+                    task.dataset_version,
+                    task.rollout_id,
+                    task.status,
+                    task.submitted_revision,
+                    task.current_submission_id,
+                    task.approved_revision,
+                    task.approved_review_id,
+                    task.updated_at,
+                    revision.revision AS latest_revision,
+                    revision.origin AS latest_origin,
+                    revision.author_id AS latest_author_id,
+                    revision.content_hash AS latest_content_hash,
+                    revision.created_at AS latest_created_at,
+                    legacy.legacy_draft_id
+                FROM annotation.annotation_tasks AS task
+                INNER JOIN annotation.annotation_revisions AS revision
+                  ON revision.task_id = task.task_id
+                 AND revision.revision = task.current_revision
+                LEFT JOIN LATERAL (
+                    SELECT NULLIF(legacy_revision.legacy_audit ->> 'draft_id', '')
+                        AS legacy_draft_id
+                    FROM annotation.annotation_revisions AS legacy_revision
+                    WHERE legacy_revision.task_id = task.task_id
+                      AND legacy_revision.origin = 'LEGACY_CLEANING'
+                      AND legacy_revision.legacy_audit IS NOT NULL
+                      AND (
+                          %s::text IS NULL
+                          OR legacy_revision.legacy_audit ->> 'draft_id' = %s
+                      )
+                    ORDER BY legacy_revision.revision DESC
+                    LIMIT 1
+                ) AS legacy ON TRUE
+                WHERE task.project_id = %s
+                  AND task.region_code = %s
+                  AND task.project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND task.region_code = NULLIF(current_setting('app.region_code', true), '')
+                  AND task.updated_at <= %s
+                  AND (%s::text IS NULL OR task.status = %s)
+                  AND (%s::text IS NULL OR revision.origin = %s)
+                  AND (%s::text IS NULL OR legacy.legacy_draft_id = %s)
+                  AND (
+                      %s::timestamptz IS NULL
+                      OR (task.updated_at, task.task_id) < (%s::timestamptz, %s::text)
+                  )
+                ORDER BY task.updated_at DESC, task.task_id DESC
+                LIMIT %s
+                """,
+                (
+                    legacy_draft_id,
+                    legacy_draft_id,
+                    project_id,
+                    region_code,
+                    snapshot_at,
+                    None if status is None else status.value,
+                    None if status is None else status.value,
+                    None if origin is None else origin.value,
+                    None if origin is None else origin.value,
+                    legacy_draft_id,
+                    legacy_draft_id,
+                    after_updated_at,
+                    after_updated_at,
+                    after_task_id,
+                    limit,
+                ),
+            )
+            return tuple(
+                self._revision_thread_from_row(row) for row in _rows(cursor, cursor.fetchall())
+            )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def append_revision_thread_list_audit(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        actor_id: str,
+        request_id: str,
+        status: AnnotationStatus | None,
+        origin: RevisionOrigin | None,
+        legacy_draft_id: str | None,
+        limit: int,
+    ) -> None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            require_repository_scope(cursor, project_id=project_id, region_code=region_code)
+            cursor.execute(
+                """
+                INSERT INTO core.audit_events (
+                    audit_id, project_id, region_code, actor_id, action,
+                    resource_type, resource_id, request_id, before_hash,
+                    after_hash, details, occurred_at
+                ) VALUES (
+                    %s, %s, %s, %s, 'annotation.revision_thread.listed',
+                    'annotation_revision_thread', %s, %s, NULL,
+                    NULL, %s::jsonb, now()
+                )
+                """,
+                (
+                    str(uuid4()),
+                    project_id,
+                    region_code,
+                    actor_id,
+                    f"{project_id}:{region_code}",
+                    request_id,
+                    json.dumps(
+                        {
+                            "status": None if status is None else status.value,
+                            "origin": None if origin is None else origin.value,
+                            "legacy_draft_filter": legacy_draft_id is not None,
+                            "limit": limit,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                ),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
     def create_tag_schema_version(self, schema: TagSchemaVersion) -> TagSchemaVersion:
         connection = self._connection_factory()
         cursor = connection.cursor()
@@ -500,7 +660,8 @@ class PostgresAnnotationRepository:
             )
             cursor.execute(
                 """
-                SELECT current_revision, state_version
+                SELECT organization_id, current_revision, state_version, status,
+                       assignee_id, current_submission_id
                 FROM annotation.annotation_tasks
                 WHERE task_id = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
@@ -567,6 +728,7 @@ class PostgresAnnotationRepository:
             self._insert_missing_mutations(cursor, aggregate.mutations)
             self._insert_missing_submissions(cursor, aggregate.submissions)
             self._insert_missing_submission_mutations(cursor, aggregate.submission_mutations)
+            self._insert_transition_audit(cursor, aggregate=aggregate, previous=locked)
             connection.commit()
             return True
         except Exception:
@@ -830,6 +992,41 @@ class PostgresAnnotationRepository:
         )
 
     @staticmethod
+    def _revision_thread_from_row(row: Mapping[str, object]) -> AnnotationRevisionThread:
+        return AnnotationRevisionThread(
+            task_id=str(row["task_id"]),
+            project_id=str(row["project_id"]),
+            region_code=str(row["region_code"]),
+            dataset_id=str(row["dataset_id"]),
+            dataset_version=_as_int(row["dataset_version"]),
+            rollout_id=str(row["rollout_id"]),
+            status=AnnotationStatus(str(row["status"])),
+            latest_revision=AnnotationRevisionThreadRevision(
+                revision=_as_int(row["latest_revision"]),
+                origin=RevisionOrigin(str(row["latest_origin"])),
+                author_id=str(row["latest_author_id"]),
+                content_hash=str(row["latest_content_hash"]),
+                created_at=cast(datetime, row["latest_created_at"]),
+            ),
+            submitted_revision=(
+                None if row["submitted_revision"] is None else _as_int(row["submitted_revision"])
+            ),
+            current_submission_id=(
+                None if row["current_submission_id"] is None else str(row["current_submission_id"])
+            ),
+            approved_revision=(
+                None if row["approved_revision"] is None else _as_int(row["approved_revision"])
+            ),
+            approved_review_id=(
+                None if row["approved_review_id"] is None else str(row["approved_review_id"])
+            ),
+            legacy_draft_id=(
+                None if row["legacy_draft_id"] is None else str(row["legacy_draft_id"])
+            ),
+            updated_at=cast(datetime, row["updated_at"]),
+        )
+
+    @staticmethod
     def _insert_revision(cursor: DbApiCursor, revision: AnnotationRevision) -> None:
         cursor.execute(
             """
@@ -886,11 +1083,20 @@ class PostgresAnnotationRepository:
             cursor.execute(
                 """
                 INSERT INTO annotation.legacy_cleaning_migrations (
+                    organization_id, project_id, region_code,
                     source_draft_id, source_revision, source_audit_event_id,
                     source_actor_id, source_created_at, target_task_id,
                     target_revision, source_payload
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                ON CONFLICT (source_draft_id, source_revision) DO NOTHING
+                )
+                SELECT
+                    task.organization_id, task.project_id, task.region_code,
+                    %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                FROM annotation.annotation_tasks AS task
+                WHERE task.task_id = %s
+                ON CONFLICT (
+                    organization_id, project_id, region_code,
+                    source_draft_id, source_revision
+                ) DO NOTHING
                 """,
                 (
                     audit.draft_id,
@@ -901,8 +1107,114 @@ class PostgresAnnotationRepository:
                     revision.task_id,
                     revision.revision,
                     json.dumps(audit.source_payload),
+                    revision.task_id,
                 ),
             )
+
+    @staticmethod
+    def _insert_transition_audit(
+        cursor: DbApiCursor,
+        *,
+        aggregate: AnnotationAggregate,
+        previous: Mapping[str, object],
+    ) -> None:
+        task = aggregate.task
+        previous_revision = _as_int(previous["current_revision"])
+        previous_status = str(previous["status"])
+        previous_assignee = (
+            None if previous["assignee_id"] is None else str(previous["assignee_id"])
+        )
+        previous_submission = (
+            None
+            if previous["current_submission_id"] is None
+            else str(previous["current_submission_id"])
+        )
+
+        action: str
+        actor_id: str
+        resource_type: str
+        resource_id: str
+        occurred_at: datetime
+        details: dict[str, object]
+        if task.current_revision == previous_revision + 1:
+            revision = aggregate.revisions[-1]
+            mutation = aggregate.mutations[-1]
+            action = {
+                RevisionOrigin.ANNOTATION: "annotation.revision.created",
+                RevisionOrigin.ANNOTATION_RESTORE: "annotation.revision.restored",
+                RevisionOrigin.LEGACY_CLEANING: "annotation.legacy_cleaning.imported",
+            }[revision.origin]
+            actor_id = mutation.actor_id
+            resource_type = "annotation_revision"
+            resource_id = f"{task.task_id}:{revision.revision}"
+            occurred_at = revision.created_at
+            details = {
+                "origin": revision.origin.value,
+                "revision": revision.revision,
+                "operation_count": len(revision.operations),
+                "tag_count": len(revision.tags),
+            }
+        elif task.current_submission_id != previous_submission:
+            submission = next(
+                item
+                for item in reversed(aggregate.submissions)
+                if item.submission_id == task.current_submission_id
+            )
+            action = "annotation.submission.created"
+            actor_id = submission.submitted_by
+            resource_type = "annotation_submission"
+            resource_id = submission.submission_id
+            occurred_at = submission.created_at
+            details = {"revision": submission.revision}
+        elif aggregate.reviews and task.status.value != previous_status:
+            review = aggregate.reviews[-1]
+            action = {
+                ReviewDecision.APPROVE: "annotation.review.approved",
+                ReviewDecision.NEEDS_REVISION: "annotation.review.needs_revision",
+                ReviewDecision.REJECT: "annotation.review.rejected",
+            }[review.decision]
+            actor_id = review.reviewer_id
+            resource_type = "annotation_review"
+            resource_id = review.review_id
+            occurred_at = review.created_at
+            details = {
+                "decision": review.decision.value,
+                "revision": review.revision,
+                "submission_id": review.submission_id,
+            }
+        elif task.assignee_id != previous_assignee and task.assignee_id is not None:
+            action = "annotation.task.claimed"
+            actor_id = task.assignee_id
+            resource_type = "annotation_task"
+            resource_id = task.task_id
+            occurred_at = task.updated_at
+            details = {}
+        else:
+            raise ValueError("annotation transition has no auditable kind")
+
+        cursor.execute(
+            """
+            INSERT INTO core.audit_events (
+                audit_id, organization_id, project_id, region_code, actor_id,
+                action, resource_type, resource_id, request_id, details, occurred_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                NULLIF(current_setting('app.request_id', true), ''), %s::jsonb, %s
+            )
+            """,
+            (
+                str(uuid4()),
+                str(previous["organization_id"]),
+                task.project_id,
+                task.region_code,
+                actor_id,
+                action,
+                resource_type,
+                resource_id,
+                json.dumps(details, sort_keys=True, separators=(",", ":")),
+                occurred_at,
+            ),
+        )
 
     @staticmethod
     def _insert_missing_reviews(cursor: DbApiCursor, reviews: Sequence[AnnotationReview]) -> None:

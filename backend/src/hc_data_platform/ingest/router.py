@@ -24,19 +24,23 @@ from .models import (
     FailedPartV1,
     ManifestPreflightResultV1,
     PartAuthorization,
+    RawMediaSourceV1,
     RawObjectCommittedV1,
     RolloutManifestV1,
     UploadPart,
+    UploadProcessingStatusV1,
     UploadSession,
     UploadSessionGrant,
     UploadSessionListV1,
     UploadStatus,
 )
 from .ports import InMemoryObjectStorage
+from .processing import UploadJobStatusPort, read_upload_processing_status
 from .service import UploadSessionService
 
 router = APIRouter(prefix="/api/v1", tags=["ingest"])
 _configured_service: UploadSessionService | None = None
+_configured_job_status: UploadJobStatusPort | None = None
 
 
 class CreateUploadRequest(BaseModel):
@@ -115,6 +119,27 @@ def configure_ingest_service(service: UploadSessionService) -> None:
     get_service.cache_clear()
 
 
+@lru_cache(maxsize=1)
+def get_upload_job_status() -> UploadJobStatusPort:
+    if _configured_job_status is not None:
+        return _configured_job_status
+    from hc_data_platform.workflow.router import get_launcher
+
+    return get_launcher()
+
+
+def configure_ingest_job_status(status: UploadJobStatusPort | None) -> None:
+    global _configured_job_status
+    _configured_job_status = status
+    get_upload_job_status.cache_clear()
+
+
+def _no_store(response: Response) -> None:
+    """Keep tenant-scoped upload facts out of browser and intermediary caches."""
+
+    response.headers["Cache-Control"] = "no-store"
+
+
 @router.post(
     "/projects/{project_id}/regions/{region_code}/upload-manifests:preflight",
     response_model=ManifestPreflightResultV1,
@@ -129,8 +154,10 @@ async def preflight_upload_manifest(
     project_id: str,
     region_code: str,
     request: Request,
+    response: Response,
     auth: Auth,
 ) -> ManifestPreflightResultV1:
+    _no_store(response)
     _authorize(auth, project_id, region_code)
     body = await _read_limited_body(request, MAX_MANIFEST_BYTES)
     result = parse_manifest_bytes(body)
@@ -163,6 +190,7 @@ async def create_upload_session(
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> UploadSessionGrant:
+    _no_store(response)
     _authorize(auth, project_id, region_code)
     payload = await _read_limited_json(request, _MAX_CREATE_REQUEST_BYTES)
     try:
@@ -184,7 +212,6 @@ async def create_upload_session(
         part_numbers=create_request.part_numbers,
         object_storage_uri=create_request.object_storage_uri,
     )
-    response.headers["Cache-Control"] = "no-store"
     return result
 
 
@@ -195,17 +222,21 @@ async def create_upload_session(
 def list_upload_sessions(
     project_id: str,
     region_code: str,
+    response: Response,
     auth: Auth,
     status: UploadStatus | None = None,
     data_package_id: str | None = Query(default=None, min_length=1, max_length=128),
+    cursor: str | None = Query(default=None, min_length=16, max_length=16_384),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> UploadSessionListV1:
+    _no_store(response)
     _authorize(auth, project_id, region_code)
     return get_service().list_sessions(
         project_id,
         region_code,
         status=status,
         data_package_id=data_package_id,
+        cursor=cursor,
         limit=limit,
     )
 
@@ -218,10 +249,64 @@ def get_upload_session(
     project_id: str,
     region_code: str,
     session_id: str,
+    response: Response,
     auth: Auth,
 ) -> UploadSession:
+    _no_store(response)
     _authorize(auth, project_id, region_code)
     return _scoped_session(project_id, region_code, session_id)
+
+
+@router.get(
+    "/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/processing",
+    response_model=UploadProcessingStatusV1,
+    responses={
+        200: {
+            "description": "Uploader-safe durable processing status",
+            "headers": {"Cache-Control": {"schema": {"type": "string"}}},
+        }
+    },
+)
+async def get_upload_processing_status(
+    project_id: str,
+    region_code: str,
+    session_id: str,
+    response: Response,
+    auth: Auth,
+) -> UploadProcessingStatusV1:
+    """Read only the processing result linked to this authorized upload session."""
+
+    _no_store(response)
+    session = _authorize_and_get(auth, project_id, region_code, session_id)
+    return await read_upload_processing_status(session, get_upload_job_status())
+
+
+@router.get(
+    "/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media",
+    response_model=RawMediaSourceV1,
+    responses={
+        200: {
+            "description": "Authorized Raw MCAP source",
+            "headers": {"Cache-Control": {"schema": {"type": "string"}}},
+        }
+    },
+)
+def get_upload_raw_media(
+    project_id: str,
+    region_code: str,
+    session_id: str,
+    response: Response,
+    auth: Auth,
+) -> RawMediaSourceV1:
+    """Issue an audited, short-lived Raw MCAP read handle for the scoped uploader."""
+
+    _no_store(response)
+    _authorize_and_get(auth, project_id, region_code, session_id)
+    return get_service().authorize_raw_media(
+        session_id=session_id,
+        actor_id=auth.subject_id,
+        request_id=current_request_context().request_id,
+    )
 
 
 @router.post(
@@ -242,13 +327,13 @@ async def renew_upload_authorizations(
     auth: Auth,
     response: Response,
 ) -> list[PartAuthorization]:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     command = _validate_request_model(
         PartNumbersRequest,
         await _read_limited_json(request, _MAX_CONTROL_REQUEST_BYTES),
     )
     result = get_service().renew_part_authorizations(session_id, command.part_numbers)
-    response.headers["Cache-Control"] = "no-store"
     return result
 
 
@@ -260,8 +345,10 @@ def list_uploaded_parts(
     project_id: str,
     region_code: str,
     session_id: str,
+    response: Response,
     auth: Auth,
 ) -> list[UploadPart]:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     return get_service().list_parts(session_id)
 
@@ -274,8 +361,10 @@ def get_upload_manifest(
     project_id: str,
     region_code: str,
     session_id: str,
+    response: Response,
     auth: Auth,
 ) -> ManifestPreflightResultV1:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     return get_service().get_manifest_preflight(session_id)
 
@@ -295,8 +384,10 @@ async def complete_upload_session(
     region_code: str,
     session_id: str,
     request: Request,
+    response: Response,
     auth: Auth,
 ) -> UploadSession:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     command = _validate_request_model(
         CompleteUploadRequest,
@@ -325,13 +416,13 @@ async def retry_failed_upload_parts(
     auth: Auth,
     response: Response,
 ) -> list[PartAuthorization]:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     command = _validate_request_model(
         RetryFailedPartsRequest,
         await _read_limited_json(request, _MAX_CONTROL_REQUEST_BYTES),
     )
     result = get_service().retry_failed_parts(session_id, command.failures)
-    response.headers["Cache-Control"] = "no-store"
     return result
 
 
@@ -343,8 +434,10 @@ def pause_upload_session(
     project_id: str,
     region_code: str,
     session_id: str,
+    response: Response,
     auth: Auth,
 ) -> UploadSession:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     return get_service().pause_upload(session_id)
 
@@ -367,13 +460,13 @@ async def resume_upload_session(
     auth: Auth,
     response: Response,
 ) -> UploadSessionGrant:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     command = _validate_request_model(
         ResumeUploadRequest,
         await _read_limited_json(request, _MAX_CONTROL_REQUEST_BYTES),
     )
     result = get_service().resume_upload(session_id, command.part_numbers)
-    response.headers["Cache-Control"] = "no-store"
     return result
 
 
@@ -385,8 +478,10 @@ def cancel_upload_session(
     project_id: str,
     region_code: str,
     session_id: str,
+    response: Response,
     auth: Auth,
 ) -> UploadSession:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     return get_service().cancel_upload(session_id)
 
@@ -406,8 +501,10 @@ async def commit_manifest(
     region_code: str,
     session_id: str,
     request: Request,
+    response: Response,
     auth: Auth,
 ) -> RawObjectCommittedV1:
+    _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     manifest = parse_manifest_bytes(await _read_limited_body(request, MAX_MANIFEST_BYTES)).manifest
     return get_service().commit_manifest(

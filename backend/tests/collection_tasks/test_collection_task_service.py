@@ -8,7 +8,9 @@ import pytest
 
 from hc_data_platform.collection_tasks.models import (
     CollectionTarget,
+    CollectionTaskAttainmentStatus,
     CollectionTaskStatus,
+    CollectionTaskTargetMetricStatus,
     CreateCollectionTask,
     QcOutcome,
     UpdateCollectionTask,
@@ -16,6 +18,8 @@ from hc_data_platform.collection_tasks.models import (
 from hc_data_platform.collection_tasks.repository import InMemoryCollectionTaskRepository
 from hc_data_platform.collection_tasks.service import CollectionTaskService
 from hc_data_platform.core.errors import ProblemException
+
+ORGANIZATION_ID = "org-a"
 
 
 def command(*, name: str = "Bin picking") -> CreateCollectionTask:
@@ -33,7 +37,12 @@ def create_task(
     *,
     key: str = "create-1",
 ) -> tuple[str, str]:
-    result = service.create(project_id="project-a", command=command(), idempotency_key=key)
+    result = service.create(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        command=command(),
+        idempotency_key=key,
+    )
     return result.record.collection_task_id, service.etag(result.record)
 
 
@@ -50,6 +59,7 @@ def race_close(
 ) -> str:
     barrier.wait()
     return service.close(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         collection_task_id=task_id,
         if_match=etag,
@@ -66,6 +76,7 @@ def race_associate(
     barrier.wait()
     try:
         repository.record_received_package(
+            organization_id=ORGANIZATION_ID,
             project_id="project-a",
             collection_task_id=task_id,
             package_id=f"package-{iteration}",
@@ -76,7 +87,7 @@ def race_associate(
         return "closed"
 
 
-def test_create_is_idempotent_and_open_questions_have_no_invented_defaults() -> None:
+def test_create_is_idempotent_and_exploratory_tasks_remain_explicitly_untargeted() -> None:
     service = CollectionTaskService()
     without_policy = CreateCollectionTask(
         name="Open policy",
@@ -85,11 +96,13 @@ def test_create_is_idempotent_and_open_questions_have_no_invented_defaults() -> 
     )
 
     first = service.create(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         command=without_policy,
         idempotency_key="same-key",
     )
     replay = service.create(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         command=without_policy,
         idempotency_key="same-key",
@@ -101,13 +114,16 @@ def test_create_is_idempotent_and_open_questions_have_no_invented_defaults() -> 
     assert first.record.target is None
     assert first.record.quality_threshold is None
     assert first.record.task_code == "00000001"
-    assert CollectionTarget(package_count=0, duration_seconds=-1).model_dump() == {
-        "package_count": 0,
-        "duration_seconds": -1.0,
-    }
+    with pytest.raises(ValueError):
+        CollectionTarget()
+    with pytest.raises(ValueError):
+        CollectionTarget(package_count=0)
+    with pytest.raises(ValueError):
+        CollectionTarget(duration_seconds=-1)
 
     with pytest.raises(ProblemException) as reused:
         service.create(
+            organization_id=ORGANIZATION_ID,
             project_id="project-a",
             command=command(name="Different request"),
             idempotency_key="same-key",
@@ -120,6 +136,7 @@ def test_create_is_idempotent_and_open_questions_have_no_invented_defaults() -> 
     [
         (CollectionTaskStatus.ACTIVE, "update", True, CollectionTaskStatus.ACTIVE),
         (CollectionTaskStatus.ACTIVE, "close", True, CollectionTaskStatus.CLOSED),
+        (CollectionTaskStatus.ACTIVE, "cancel", True, CollectionTaskStatus.CANCELLED),
         (CollectionTaskStatus.CLOSED, "update", False, CollectionTaskStatus.CLOSED),
         (CollectionTaskStatus.CLOSED, "close", True, CollectionTaskStatus.CLOSED),
     ],
@@ -135,6 +152,7 @@ def test_state_table(
     current_etag = active_etag
     if initial_status is CollectionTaskStatus.CLOSED:
         closed = service.close(
+            organization_id=ORGANIZATION_ID,
             project_id="project-a",
             collection_task_id=task_id,
             if_match=active_etag,
@@ -146,20 +164,33 @@ def test_state_table(
 
         def invoke() -> Any:
             return service.update(
+                organization_id=ORGANIZATION_ID,
                 project_id="project-a",
                 collection_task_id=task_id,
                 command=UpdateCollectionTask(description="updated"),
                 if_match=current_etag,
             )
 
-    else:
+    elif action == "close":
 
         def invoke() -> Any:
             return service.close(
+                organization_id=ORGANIZATION_ID,
                 project_id="project-a",
                 collection_task_id=task_id,
                 if_match=current_etag,
                 idempotency_key="table-close",
+            ).record
+
+    else:
+
+        def invoke() -> Any:
+            return service.cancel(
+                organization_id=ORGANIZATION_ID,
+                project_id="project-a",
+                collection_task_id=task_id,
+                if_match=current_etag,
+                idempotency_key="table-cancel",
             ).record
 
     if allowed:
@@ -169,13 +200,14 @@ def test_state_table(
         with pytest.raises(ProblemException) as rejected:
             invoke()
         assert_problem(rejected, "COLLECTION_TASK_CLOSED")
-        assert service.detail("project-a", task_id).status is final_status
+        assert service.detail(ORGANIZATION_ID, "project-a", task_id).status is final_status
 
 
 def test_update_requires_current_etag_and_only_changes_confirmed_fields() -> None:
     service = CollectionTaskService()
     task_id, etag = create_task(service)
     updated = service.update(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         collection_task_id=task_id,
         command=UpdateCollectionTask(
@@ -191,6 +223,7 @@ def test_update_requires_current_etag_and_only_changes_confirmed_fields() -> Non
 
     with pytest.raises(ProblemException) as stale:
         service.update(
+            organization_id=ORGANIZATION_ID,
             project_id="project-a",
             collection_task_id=task_id,
             command=UpdateCollectionTask(description="stale"),
@@ -202,17 +235,19 @@ def test_update_requires_current_etag_and_only_changes_confirmed_fields() -> Non
         UpdateCollectionTask(name=None)
 
 
-def test_close_replay_is_idempotent_and_has_no_reopen_transition() -> None:
+def test_close_cancel_and_reopen_are_explicit_idempotent_transitions() -> None:
     service = CollectionTaskService()
     task_id, etag = create_task(service)
 
     first = service.close(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         collection_task_id=task_id,
         if_match=etag,
         idempotency_key="close-1",
     )
     replay = service.close(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         collection_task_id=task_id,
         if_match=etag,
@@ -222,7 +257,158 @@ def test_close_replay_is_idempotent_and_has_no_reopen_transition() -> None:
     assert first.record == replay.record
     assert replay.replayed is True
     assert first.record.status is CollectionTaskStatus.CLOSED
-    assert not hasattr(service, "reopen")
+    reopened = service.reopen(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=task_id,
+        if_match=service.etag(first.record),
+        idempotency_key="reopen-1",
+    )
+    assert reopened.record.status is CollectionTaskStatus.ACTIVE
+    assert (
+        service.reopen(
+            organization_id=ORGANIZATION_ID,
+            project_id="project-a",
+            collection_task_id=task_id,
+            if_match=service.etag(first.record),
+            idempotency_key="reopen-1",
+        ).replayed
+        is True
+    )
+
+    cancelled = service.cancel(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=task_id,
+        if_match=service.etag(reopened.record),
+        idempotency_key="cancel-1",
+    )
+    assert cancelled.record.status is CollectionTaskStatus.CANCELLED
+    with pytest.raises(ProblemException) as cannot_edit_cancelled:
+        service.update(
+            organization_id=ORGANIZATION_ID,
+            project_id="project-a",
+            collection_task_id=task_id,
+            command=UpdateCollectionTask(description="must reopen first"),
+            if_match=service.etag(cancelled.record),
+        )
+    assert_problem(cannot_edit_cancelled, "COLLECTION_TASK_CANCELLED")
+
+
+def test_progress_reports_target_attainment_without_automatic_state_change() -> None:
+    repository = InMemoryCollectionTaskRepository()
+    service = CollectionTaskService(repository)
+    created = service.create(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        command=CreateCollectionTask(
+            name="Attainment",
+            type="COLLECTION",
+            scenario="integration",
+            target=CollectionTarget(package_count=2, duration_seconds=20),
+            quality_threshold=0.75,
+        ),
+        idempotency_key="attainment-create",
+    ).record
+
+    repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=created.collection_task_id,
+        package_id="package-1",
+        qc_outcome=QcOutcome.PASS,
+        duration_seconds=10,
+    )
+    partial = service.progress(
+        ORGANIZATION_ID,
+        "project-a",
+        created.collection_task_id,
+        "cn-test",
+    )
+    assert partial.attainment.status is CollectionTaskAttainmentStatus.IN_PROGRESS
+    assert partial.attainment.package_count is not None
+    assert partial.attainment.package_count.progress == 0.5
+    assert partial.attainment.duration_seconds is not None
+    assert partial.attainment.duration_seconds.progress == 0.5
+
+    repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=created.collection_task_id,
+        package_id="package-2",
+        duration_seconds=10,
+    )
+    pending_qc = service.progress(
+        ORGANIZATION_ID,
+        "project-a",
+        created.collection_task_id,
+        "cn-test",
+    )
+    assert pending_qc.attainment.status is CollectionTaskAttainmentStatus.IN_PROGRESS
+    assert pending_qc.attainment.quality_status.value == "PENDING_QC"
+
+    repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=created.collection_task_id,
+        package_id="package-2",
+        qc_outcome=QcOutcome.PASS,
+    )
+    attained = service.progress(
+        ORGANIZATION_ID,
+        "project-a",
+        created.collection_task_id,
+        "cn-test",
+    )
+    assert attained.attainment.status is CollectionTaskAttainmentStatus.ATTAINED
+    assert attained.status is CollectionTaskStatus.ACTIVE
+
+    repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=created.collection_task_id,
+        package_id="package-3",
+        qc_outcome=QcOutcome.PASS,
+        duration_seconds=5,
+    )
+    exceeded = service.progress(
+        ORGANIZATION_ID,
+        "project-a",
+        created.collection_task_id,
+        "cn-test",
+    )
+    assert exceeded.attainment.status is CollectionTaskAttainmentStatus.EXCEEDED
+    assert exceeded.attainment.package_count is not None
+    assert exceeded.attainment.package_count.status is CollectionTaskTargetMetricStatus.EXCEEDED
+
+
+def test_duration_target_stays_unknown_when_a_committed_manifest_lacks_time_range() -> None:
+    repository = InMemoryCollectionTaskRepository()
+    service = CollectionTaskService(repository)
+    task_id = service.create(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        command=CreateCollectionTask(
+            name="Duration evidence",
+            type="COLLECTION",
+            scenario="integration",
+            target=CollectionTarget(duration_seconds=60),
+        ),
+        idempotency_key="duration-create",
+    ).record.collection_task_id
+    repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=task_id,
+        package_id="legacy-manifest-without-time-range",
+    )
+
+    progress = service.progress(ORGANIZATION_ID, "project-a", task_id, "cn-test")
+    assert progress.captured_duration_seconds is None
+    assert progress.duration_unknown_package_count == 1
+    assert progress.attainment.duration_seconds is not None
+    assert progress.attainment.duration_seconds.status is CollectionTaskTargetMetricStatus.UNKNOWN
+    assert progress.attainment.status is CollectionTaskAttainmentStatus.IN_PROGRESS
 
 
 def test_progress_counts_distinct_received_packages_and_latest_qc_facts() -> None:
@@ -239,6 +425,7 @@ def test_progress_counts_distinct_received_packages_and_latest_qc_facts() -> Non
     }
     for index, (package_id, outcome) in enumerate(facts.items()):
         repository.record_received_package(
+            organization_id=ORGANIZATION_ID,
             project_id="project-a",
             collection_task_id=task_id,
             package_id=package_id,
@@ -249,13 +436,14 @@ def test_progress_counts_distinct_received_packages_and_latest_qc_facts() -> Non
         )
     # A latest-result update changes the outcome but never duplicates the package.
     repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         collection_task_id=task_id,
         package_id="package-3",
         qc_outcome=QcOutcome.PASS,
     )
 
-    progress = service.progress("project-a", task_id, "cn-test")
+    progress = service.progress(ORGANIZATION_ID, "project-a", task_id, "cn-test")
     assert progress.received_package_count == 5
     assert progress.qc.evaluated_count == 4
     assert progress.qc.pass_count == 3
@@ -282,12 +470,13 @@ def test_progress_rate_is_unknown_without_an_evaluated_denominator() -> None:
     service = CollectionTaskService(repository)
     task_id, _ = create_task(service)
     repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         collection_task_id=task_id,
         package_id="pending",
     )
 
-    progress = service.progress("project-a", task_id, "cn-test")
+    progress = service.progress(ORGANIZATION_ID, "project-a", task_id, "cn-test")
     assert progress.qc.pass_rate.numerator == 0
     assert progress.qc.pass_rate.denominator == 0
     assert progress.qc.pass_rate.value is None
@@ -313,11 +502,17 @@ def test_close_and_new_package_association_are_linearized() -> None:
             assert close_result.result() == "CLOSED"
             assert association_result.result() in {"associated", "closed"}
 
-        assert service.detail("project-a", task_id).status is CollectionTaskStatus.CLOSED
-        received = service.progress("project-a", task_id, "cn-test").received_package_count
+        assert (
+            service.detail(ORGANIZATION_ID, "project-a", task_id).status
+            is CollectionTaskStatus.CLOSED
+        )
+        received = service.progress(
+            ORGANIZATION_ID, "project-a", task_id, "cn-test"
+        ).received_package_count
         assert received == (1 if association_result.result() == "associated" else 0)
         with pytest.raises(ProblemException) as after_close:
             repository.record_received_package(
+                organization_id=ORGANIZATION_ID,
                 project_id="project-a",
                 collection_task_id=task_id,
                 package_id=f"later-{iteration}",
@@ -329,15 +524,23 @@ def test_cursor_is_bound_to_project_and_filter() -> None:
     service = CollectionTaskService()
     for index in range(3):
         service.create(
+            organization_id=ORGANIZATION_ID,
             project_id="project-a",
             command=command(name=f"Task {index}"),
             idempotency_key=f"task-{index}",
         )
-    first = service.list(project_id="project-a", status=None, limit=2, cursor=None)
+    first = service.list(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        status=None,
+        limit=2,
+        cursor=None,
+    )
     assert len(first.items) == 2
     assert first.next_cursor is not None
 
     second = service.list(
+        organization_id=ORGANIZATION_ID,
         project_id="project-a",
         status=None,
         limit=2,
@@ -347,6 +550,7 @@ def test_cursor_is_bound_to_project_and_filter() -> None:
 
     with pytest.raises(ProblemException) as cross_scope:
         service.list(
+            organization_id="org-b",
             project_id="project-b",
             status=None,
             limit=2,

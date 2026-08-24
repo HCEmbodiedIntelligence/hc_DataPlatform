@@ -9,6 +9,16 @@ export type MembershipRequestList =
 export type CapabilityRequest = components["schemas"]["CapabilityRequest"];
 export type CapabilityRequestList =
   components["schemas"]["CapabilityRequestList"];
+export type ManagedAccount = components["schemas"]["ManagedAccount"];
+export type ManagedAccountCreate =
+  components["schemas"]["ManagedAccountCreate"];
+export type ManagedAccountPage = components["schemas"]["ManagedAccountPage"];
+export type ManagedAccountPasswordReset =
+  components["schemas"]["ManagedAccountPasswordReset"];
+export type ManagedAccountPasswordResetResult =
+  components["schemas"]["ManagedAccountPasswordResetResult"];
+export type ManagedAccountState = components["schemas"]["ManagedAccountState"];
+export type PlatformAccountRole = components["schemas"]["PlatformAccountRole"];
 
 export type AccessRequestKind = "membership" | "capability";
 export type AccessDecision = "approve" | "reject" | "revoke" | "withdraw";

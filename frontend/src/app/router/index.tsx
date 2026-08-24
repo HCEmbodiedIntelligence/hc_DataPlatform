@@ -88,9 +88,8 @@ const lazyIngestPages: readonly {
         requiredCapabilities: ["upload.read"],
         hiddenFromNavigation: true,
         lazy: async () => ({
-          Component: (
-            await import("../../pages/p04-upload-detail/formal-page")
-          ).default,
+          Component: (await import("../../pages/p04-upload-detail/formal-page"))
+            .default,
         }),
       },
     ],
@@ -129,7 +128,7 @@ const pageReadCapability: Readonly<Record<string, string | null>> = {
   P08: "annotation_task.read",
   P09: "manual_issue.read",
   P10: "cleaning.read",
-  P11: "cleaning.read",
+  P11: "annotation_task.read",
   P12: "storage.overview.read",
   P13: "storage.lifecycle.read",
   P14: "robot_model.read",
@@ -234,6 +233,13 @@ export function createPlatformRouter() {
       element: <RuntimePlatformShell pageAvailability={pageAvailability} />,
       children: [
         { index: true, element: <Navigate replace to={firstRoute} /> },
+        {
+          path: "/account/settings",
+          lazy: async () => ({
+            Component: (await import("../../pages/account-settings/page"))
+              .default,
+          }),
+        },
         ...guardedRouteRecords,
         {
           path: "*",

@@ -1,7 +1,16 @@
+.page {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
 .lifecyclePane {
   min-width: 0;
-  border-left: 1px solid var(--hc-color-border-subtle);
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border-subtle);
+  border-radius: var(--hc-radius-md);
   background: var(--hc-color-surface);
+  box-shadow: var(--hc-shadow-sm);
 }
 
 .paneHeader {
@@ -14,7 +23,7 @@
   border-bottom: 1px solid var(--hc-color-border-subtle);
 }
 
-.paneHeader h2,
+.paneHeader h1,
 .paneHeader p,
 .protectionHeading h3,
 .protectionNote,
@@ -23,7 +32,8 @@
   margin: 0;
 }
 
-.paneHeader h2 {
+.paneHeader h1 {
+  margin: 0;
   font-size: 20px;
   font-weight: 680;
   line-height: 1.25;
@@ -265,13 +275,66 @@
   white-space: nowrap;
 }
 
-.protectionCell[data-protected='true'] {
+.protectionCell[data-protected="true"] {
   color: var(--hc-color-success);
   font-weight: 650;
 }
 
 .operationAlert {
   margin: 0;
+}
+
+.scheduleForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--hc-space-3);
+  margin-bottom: var(--hc-space-3);
+}
+
+.scheduleForm label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--hc-color-text-muted);
+  font-size: 11px;
+}
+
+.executionLogs {
+  display: grid;
+  gap: var(--hc-space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.executionLogs li {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 2px var(--hc-space-2);
+  padding: var(--hc-space-2);
+  border: 1px solid var(--hc-color-border-subtle);
+  border-left: 3px solid var(--hc-color-info);
+  border-radius: var(--hc-radius-sm);
+  background: var(--hc-color-bg-subtle);
+}
+
+.executionLogs li[data-level="WARNING"] {
+  border-left-color: var(--hc-color-warning);
+}
+
+.executionLogs li[data-level="ERROR"] {
+  border-left-color: var(--hc-color-danger);
+}
+
+.executionLogs time,
+.executionLogs small {
+  color: var(--hc-color-text-muted);
+  font-size: 10px;
+}
+
+.executionLogs small {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
 }
 
 .formGrid {
@@ -324,13 +387,6 @@
   }
 }
 
-@media (max-width: 1024px) {
-  .lifecyclePane {
-    border-top: 1px solid var(--hc-color-border-subtle);
-    border-left: 0;
-  }
-}
-
 @media (max-width: 768px) {
   .paneHeader,
   .headerActions {
@@ -346,7 +402,8 @@
   }
 
   .protectionItems,
-  .formGrid {
+  .formGrid,
+  .scheduleForm {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -360,5 +417,15 @@
 
   .localFilterNote {
     display: block;
+  }
+}
+
+@media (max-width: 520px) {
+  .filterBar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .executionLogs li {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import (
     BaseModel,
@@ -16,6 +17,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
 
 Identifier = Annotated[
     str,
@@ -47,6 +50,13 @@ def _parse_crc64(value: object) -> int:
     elif isinstance(value, int) and not isinstance(value, bool):
         # Internal domain code and persistence adapters use exact Python integers.
         parsed = value
+    elif isinstance(value, Decimal):
+        # psycopg decodes PostgreSQL numeric(20,0) as Decimal. It is an internal
+        # exact representation, unlike a JSON number, so accept only integral
+        # values before canonical JSON serialization turns it back into a string.
+        if not value.is_finite() or value != value.to_integral_value():
+            raise ValueError("CRC64 must be an exact unsigned integer")
+        parsed = int(value)
     else:
         raise ValueError("CRC64 must be a canonical unsigned decimal string")
     if parsed < 0 or parsed > CRC64_MAX:
@@ -418,6 +428,7 @@ class UploadSessionListV1(BaseModel):
 
     items: tuple[UploadSession, ...]
     total: int = Field(ge=0)
+    next_cursor: str | None = Field(min_length=16, max_length=16_384)
 
 
 class RawObjectCommittedV1(BaseModel):
@@ -433,6 +444,105 @@ class RawObjectCommittedV1(BaseModel):
     file_size: int = Field(gt=0)
     committed_at: datetime = Field(default_factory=utc_now)
     workflow: IngestWorkflowLocator | None = None
+
+
+class RawMediaSourceV1(BaseModel):
+    """A short-lived, project-authorized handle to one immutable MCAP capture."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["raw-media-source/v1"] = "raw-media-source/v1"
+    format: Literal["MCAP"] = "MCAP"
+    media_type: Literal["application/x-mcap"] = "application/x-mcap"
+    download_url: str = Field(min_length=1, max_length=8_192)
+    expires_at: datetime
+    byte_length: int = Field(gt=0)
+    sha256: Sha256
+
+
+class UploadProcessingState(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    TECHNICAL_FAILED = "TECHNICAL_FAILED"
+    QUALITY_RISK = "QUALITY_RISK"
+    QUALITY_REJECTED = "QUALITY_REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class UploadPreviewTargetV1(BaseModel):
+    """Bounded, lineage-checked facts needed to authorize one upload preview."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["upload-preview-target/v1"]
+    project_id: Identifier
+    dataset_id: Identifier
+    rollout_id: Identifier
+    dataset_version: int = Field(ge=1)
+    lance_version: int = Field(ge=1)
+    annotation_task_id: Identifier
+    frequency_hz: float = Field(gt=0)
+    start_step: int = Field(ge=0)
+    end_step: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def non_empty_window(self) -> UploadPreviewTargetV1:
+        if self.end_step <= self.start_step:
+            raise ValueError("preview step window must be non-empty")
+        return self
+
+
+class UploadProcessingStatusV1(BaseModel):
+    """Uploader-safe processing projection; never exposes a raw Workflow result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["upload-processing-status/v1"]
+    session_id: UUID
+    rollout_id: Identifier
+    workflow_id: str = Field(min_length=1)
+    status: UploadProcessingState
+    stage: str = Field(min_length=1, max_length=128)
+    attempt: int = Field(ge=0)
+    preview: UploadPreviewTargetV1 | None
+    viewer: DatasetIngestViewerTarget | None
+    error_code: str | None = Field(max_length=128, pattern=r"^[A-Z0-9_]+$")
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def preview_matches_state(self) -> UploadProcessingStatusV1:
+        if (self.status is UploadProcessingState.SUCCEEDED) != (self.preview is not None):
+            raise ValueError("only a successful upload may expose a preview target")
+        if (self.status is UploadProcessingState.SUCCEEDED) != (self.viewer is not None):
+            raise ValueError("only a successful upload may expose a viewer target")
+        if self.preview is not None and self.preview.rollout_id != self.rollout_id:
+            raise ValueError("preview rollout must match processing rollout")
+        if (
+            self.preview is not None
+            and self.viewer is not None
+            and (
+                self.preview.dataset_id != self.viewer.dataset_id
+                or self.viewer.version_id != f"version_lance_{self.preview.dataset_version}"
+            )
+        ):
+            raise ValueError("preview and viewer targets must identify the same Dataset version")
+        return self
+
+
+class RawMediaAccessAuditEvent(BaseModel):
+    """Internal audit payload; it deliberately excludes object keys and signed URLs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: Identifier
+    region_code: Identifier
+    actor_id: Identifier
+    request_id: Identifier
+    session_id: Identifier
+    rollout_id: Identifier
+    byte_length: int = Field(gt=0)
+    occurred_at: datetime = Field(default_factory=utc_now)
 
 
 def raw_object_key(manifest: RolloutManifestV1) -> str:

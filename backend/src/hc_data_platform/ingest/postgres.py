@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from typing import Any, cast
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
@@ -17,6 +18,7 @@ from .models import (
     IngestTriggerStatus,
     IngestWorkflowLocator,
     ManifestPreflightResultV1,
+    RawMediaAccessAuditEvent,
     RawObjectCommittedV1,
     Rollout,
     UploadObject,
@@ -210,6 +212,7 @@ class PostgresIngestPersistence:
         *,
         status: str | None = None,
         data_package_id: str | None = None,
+        after: tuple[datetime, str] | None = None,
         limit: int = 50,
     ) -> list[UploadSession]:
         clauses = ["project_id = %s", "region_code = %s"]
@@ -220,6 +223,9 @@ class PostgresIngestPersistence:
         if data_package_id is not None:
             clauses.append("data_package_id = %s")
             params.append(data_package_id)
+        if after is not None:
+            clauses.append("(updated_at, session_id) < (%s, %s::uuid)")
+            params.extend(after)
         params.append(limit)
         connection = self._connection_factory()
         try:
@@ -630,7 +636,7 @@ class PostgresIngestPersistence:
                     INSERT INTO core.outbox_events (
                         event_id, project_id, region_code, event_type, envelope,
                         occurred_at, published_at, publish_attempts, available_at
-                    ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, NULL, 0, %s)
+                    ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, NULL, 0, clock_timestamp())
                     ON CONFLICT (event_id) DO NOTHING
                     """,
                     (
@@ -638,8 +644,7 @@ class PostgresIngestPersistence:
                         envelope.project_id,
                         envelope.region_code,
                         envelope.event_type,
-                        envelope.model_dump_json(),
-                        envelope.occurred_at,
+                        envelope.model_dump_json(exclude_none=True),
                         envelope.occurred_at,
                     ),
                 )
@@ -694,6 +699,41 @@ class PostgresIngestPersistence:
                 return None if raw is None else self._trigger_model(cursor, raw)
         finally:
             connection.close()
+
+    def record_raw_media_access(self, event: RawMediaAccessAuditEvent) -> None:
+        def insert(cursor: Any) -> None:
+            cursor.execute(
+                """
+                INSERT INTO core.audit_events (
+                    audit_id, project_id, region_code, actor_id, action, resource_type,
+                    resource_id, request_id, before_hash, after_hash, details, occurred_at
+                ) VALUES (
+                    %s, %s, %s, %s, 'raw.media.access_authorized',
+                    'RAW_MEDIA', %s, %s, NULL, NULL, %s::jsonb, %s
+                )
+                """,
+                (
+                    str(uuid4()),
+                    event.project_id,
+                    event.region_code,
+                    event.actor_id,
+                    event.rollout_id,
+                    event.request_id,
+                    json.dumps(
+                        {
+                            "byte_length": event.byte_length,
+                            "format": "MCAP",
+                            "outcome": "AUTHORIZED",
+                            "session_id": event.session_id,
+                        },
+                        sort_keys=True,
+                    ),
+                    event.occurred_at,
+                ),
+            )
+            self._require_write(cursor, "raw media access audit")
+
+        self._write(insert)
 
     def _upsert_job(self, cursor: Any, job: CollectionJob) -> None:
         cursor.execute(

@@ -37,3 +37,18 @@ def normalize_for_json(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     raise TypeError(f"unsupported aligned value type: {type(value).__name__}")
+
+
+def denormalize_from_json(value: Any) -> Any:
+    """Restore canonical binary markers after an Arrow staging round trip."""
+
+    if isinstance(value, dict):
+        if set(value) == {"$bytes_base64"}:
+            encoded = value["$bytes_base64"]
+            if not isinstance(encoded, str):
+                raise TypeError("canonical byte marker must contain a base64 string")
+            return base64.b64decode(encoded, validate=True)
+        return {str(key): denormalize_from_json(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [denormalize_from_json(item) for item in value]
+    return value

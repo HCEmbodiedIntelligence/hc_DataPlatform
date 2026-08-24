@@ -54,6 +54,13 @@ ingress:
   tls:
     enabled: true
     secretName: hc-data-platform-tls
+  # A separate Ingress gives the bearerless HLS gateway a bounded per-client
+  # budget without throttling authenticated control-plane APIs.
+  previewMediaRateLimit:
+    enabled: true
+    requestsPerSecond: "30"
+    burstMultiplier: "4"
+    connections: "8"
 
 networkPolicy:
   enabled: false
@@ -169,17 +176,79 @@ backend:
     environment: production
     serviceVersion: unreleased
     temporalTarget: temporal-frontend.temporal.svc:7233
+    # Exact organization/project/region scopes consumed by the durable outbox dispatcher.
+    outboxScopes: '[]'
+    artifactPrefix: artifacts
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     objectStoreEndpoint: https://object-store.example.invalid
     # Required deployment input: browser-reachable HTTPS S3 endpoint used only for presigning.
     objectStorePublicEndpoint: ""
     objectStoreBucket: hc-data-production
     objectStoreRegion: us-east-1
+    # Optional provider gateway.  When empty, the API reports a clear 503
+    # capability state instead of pretending that automatic annotation exists.
+    autoAnnotationProviderName: vlm
+    autoAnnotationProviderEndpoint: ""
+    autoAnnotationProviderModels: '[]'
+    autoAnnotationProviderTimeoutSeconds: "60"
+    autoAnnotationMaxConcurrentJobs: "4"
+    autoAnnotationMaxJobsPerHour: "60"
+    autoAnnotationDailyCostLimitMicros: "5000000"
+    # Large-object multipart upload authorization. 5 TiB uses ~524 MiB parts;
+    # one hour accommodates an approved slow-link profile while remaining within
+    # the application-enforced 3600-second ceiling.
+    ingestPartAuthorizationTtlSeconds: "3600"
     jwtIssuer: https://identity.example.invalid
     jwtAudience: hc-data-platform
     jwtAlgorithms: '["RS256"]'
     jwtJwksUrl: https://identity.example.invalid/.well-known/jwks.json
     readinessTimeoutSeconds: "3"
+    passwordMinLength: "6"
+    passwordMaxLength: "128"
+    passwordScryptN: "32768"
+    passwordScryptR: "8"
+    passwordScryptP: "1"
+    sessionIdleTtlSeconds: "1800"
+    sessionAbsoluteTtlSeconds: "86400"
+    sessionTouchIntervalSeconds: "60"
+    maxActiveSessions: "5"
+    authAbuseEnabled: "true"
+    authClientIpMode: trusted_proxy
+    # Required exact CIDRs for the ingress/LB hops allowed to supply X-Forwarded-For.
+    authTrustedProxyCidrs: ""
+    authLoginFailureWindowSeconds: "900"
+    authLoginChallengeAfterFailures: "3"
+    authLoginDelayAfterFailures: "5"
+    authLoginDelayInitialSeconds: "30"
+    authLoginDelayMaxSeconds: "600"
+    authLoginLockAfterFailures: "10"
+    authLoginLockSeconds: "3600"
+    authLoginSourceRateLimit: "30"
+    authLoginSourceRateWindowSeconds: "60"
+    authLoginSubjectRateLimit: "20"
+    authLoginSubjectRateWindowSeconds: "900"
+    authRegistrationSourceRateLimit: "5"
+    authRegistrationSourceRateWindowSeconds: "600"
+    authRegistrationSubjectRateLimit: "3"
+    authRegistrationSubjectRateWindowSeconds: "3600"
+    authGlobalRateLimit: "1000"
+    authGlobalRateWindowSeconds: "60"
+    authChallengeProvider: turnstile
+    # Required public site key and exact frontend FQDNs for server-side Siteverify checks.
+    authTurnstileSiteKey: ""
+    authTurnstileExpectedHostnames: ""
+    authTurnstileConnectTimeoutSeconds: "3"
+    authTurnstileReadTimeoutSeconds: "5"
+    authRecoveryEnabled: "false"
+    authRecoveryEmailVerificationTtlSeconds: "600"
+    authRecoveryTokenTtlSeconds: "900"
+    authRecoveryPublicBaseUrl: ""
+    authRecoveryEmailFrom: ""
+    authSmtpHost: ""
+    authSmtpPort: "587"
+    authSmtpUsername: ""
+    authSmtpStarttls: "true"
+    authSmtpTimeoutSeconds: "10"
     enforceSchemaMigrations: "true"
     apiDocsEnabled: "false"
     otelExporterOtlpEndpoint: http://otel-collector.observability.svc:4317
@@ -200,6 +269,12 @@ backend:
     application:
       name: hc-data-application
       cursorSecretKey: cursor-secret
+      dataSourceCredentialKeyKey: data-source-credential-key
+      authAbuseHmacSecretKey: auth-abuse-hmac-secret
+      authTurnstileSecretKey: auth-turnstile-secret
+      authSmtpPasswordKey: auth-smtp-password
+      # Optional when the configured provider gateway uses workload identity.
+      autoAnnotationProviderApiKey: ""
   podAnnotations: {}
   podLabels: {}
   nodeSelector: {}

@@ -45,21 +45,25 @@ class RlsSessionContext:
             text(
                 """
                 SELECT
+                    set_config('app.organization_id', :organization_id, true),
                     set_config('app.project_id', :project_id, true),
                     set_config('app.region_code', :region_code, true),
                     set_config('app.project_ids', :project_id, true),
-                    set_config('app.is_admin', 'false', true),
+                    set_config('app.is_admin', :platform_admin, true),
+                    set_config('app.platform_admin', :platform_admin, true),
                     set_config('app.subject_id', :subject_id, true),
                     set_config('app.request_id', :request_id, true),
                     set_config('app.service_identity', :service_identity, true)
                 """
             ),
             {
+                "organization_id": scope.organization_id or "",
                 "project_id": scope.project_id,
                 "region_code": scope.region_code or "",
                 "subject_id": auth.subject_id,
                 "request_id": request_id,
                 "service_identity": "true" if auth.service_identity else "false",
+                "platform_admin": "true" if auth.is_platform_admin else "false",
             },
         )
 
@@ -114,6 +118,7 @@ class PostgresIdempotencyStore:
         now = datetime.now(timezone.utc)
         expires_at = now + self._ttl
         identity = {
+            "organization_id": self._selection.organization_id,
             "project_id": self._selection.project_id,
             "region_code": self._selection.region_code or "",
             "scope_key": scope,
@@ -126,13 +131,15 @@ class PostgresIdempotencyStore:
             text(
                 """
                 INSERT INTO core.idempotency_records (
-                    project_id, region_code, scope_key, idempotency_key,
+                    organization_id, project_id, region_code, scope_key, idempotency_key,
                     request_fingerprint, response_json, created_at, expires_at
                 ) VALUES (
-                    :project_id, :region_code, :scope_key, :idempotency_key,
+                    :organization_id, :project_id, :region_code, :scope_key, :idempotency_key,
                     :request_fingerprint, NULL, :created_at, :expires_at
                 )
-                ON CONFLICT (project_id, region_code, scope_key, idempotency_key)
+                ON CONFLICT (
+                    organization_id, project_id, region_code, scope_key, idempotency_key
+                )
                 DO NOTHING
                 """
             ),
@@ -148,7 +155,8 @@ class PostgresIdempotencyStore:
                 """
                 SELECT request_fingerprint, response_json, expires_at
                 FROM core.idempotency_records
-                WHERE project_id = :project_id
+                WHERE organization_id = :organization_id
+                  AND project_id = :project_id
                   AND region_code = :region_code
                   AND scope_key = :scope_key
                   AND idempotency_key = :idempotency_key
@@ -186,7 +194,8 @@ class PostgresIdempotencyStore:
                         response_json = NULL,
                         created_at = :created_at,
                         expires_at = :expires_at
-                    WHERE project_id = :project_id
+                    WHERE organization_id = :organization_id
+                      AND project_id = :project_id
                       AND region_code = :region_code
                       AND scope_key = :scope_key
                       AND idempotency_key = :idempotency_key
@@ -212,7 +221,8 @@ class PostgresIdempotencyStore:
                 UPDATE core.idempotency_records
                 SET response_json = CAST(:response_json AS jsonb),
                     expires_at = :expires_at
-                WHERE project_id = :project_id
+                WHERE organization_id = :organization_id
+                  AND project_id = :project_id
                   AND region_code = :region_code
                   AND scope_key = :scope_key
                   AND idempotency_key = :idempotency_key
@@ -235,13 +245,14 @@ class PostgresScopedUnitOfWork:
         session_factory: Callable[[], AsyncSession],
         *,
         auth: AuthContext,
+        organization_id: str,
         project_id: str,
         region_code: str | None = None,
         request_id: str | None = None,
     ) -> None:
         self._session_factory = session_factory
         self.auth = auth
-        self.scope = ScopeSelection(project_id, region_code)
+        self.scope = ScopeSelection(project_id, region_code, organization_id)
         self.request_id = request_id or str(uuid4())
         self.audit = PostgresAuditSink()
         self.outbox = PostgresOutboxPublisher()
@@ -255,6 +266,7 @@ class PostgresScopedUnitOfWork:
         session_factory: Callable[[], AsyncSession],
         *,
         auth: AuthContext,
+        organization_id: str,
         project_id: str,
         region_code: str | None = None,
         request_id: str | None = None,
@@ -262,10 +274,11 @@ class PostgresScopedUnitOfWork:
         if not auth.service_identity:
             raise ValueError("for_worker requires a service identity")
         # Construction itself verifies that no unscoped worker transaction can start.
-        ScopeGuard.require(auth, project_id, region_code)
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
         return cls(
             session_factory,
             auth=auth,
+            organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
             request_id=request_id,
@@ -344,6 +357,8 @@ class PostgresScopedUnitOfWork:
             if record.region_code is not None and record.region_code != self.scope.region_code:
                 raise ValueError("audit record region does not match the transaction scope")
         for event in self.outbox.events:
+            if event.organization_id not in {None, self.scope.organization_id}:
+                raise ValueError("outbox event organization does not match the transaction scope")
             if event.project_id != self.scope.project_id:
                 raise ValueError("outbox event project does not match the transaction scope")
             if event.region_code is not None and event.region_code != self.scope.region_code:
@@ -353,11 +368,12 @@ class PostgresScopedUnitOfWork:
         statement = text(
             """
             INSERT INTO core.audit_events (
-                audit_id, project_id, region_code, actor_id, action,
+                audit_id, organization_id, project_id, region_code, actor_id, action,
                 resource_type, resource_id, request_id, before_hash,
                 after_hash, details, occurred_at
             ) VALUES (
-                CAST(:audit_id AS uuid), :project_id, :region_code, :actor_id, :action,
+                CAST(:audit_id AS uuid), :organization_id, :project_id, :region_code,
+                :actor_id, :action,
                 :resource_type, :resource_id, :request_id, :before_hash,
                 :after_hash, CAST(:details AS jsonb), :occurred_at
             )
@@ -368,6 +384,7 @@ class PostgresScopedUnitOfWork:
                 statement,
                 {
                     "audit_id": record.audit_id,
+                    "organization_id": self.scope.organization_id,
                     "project_id": record.project_id,
                     "region_code": record.region_code or self.scope.region_code,
                     "actor_id": record.actor_id,
@@ -386,23 +403,25 @@ class PostgresScopedUnitOfWork:
         statement = text(
             """
             INSERT INTO core.outbox_events (
-                event_id, project_id, region_code, event_type,
+                event_id, organization_id, project_id, region_code, event_type,
                 envelope, occurred_at, published_at
             ) VALUES (
-                CAST(:event_id AS uuid), :project_id, :region_code, :event_type,
+                CAST(:event_id AS uuid), :organization_id, :project_id, :region_code, :event_type,
                 CAST(:envelope AS jsonb), :occurred_at, NULL
             )
             """
         )
         for event in self.outbox.events:
+            scoped_event = event.model_copy(update={"organization_id": self.scope.organization_id})
             await session.execute(
                 statement,
                 {
                     "event_id": event.event_id,
+                    "organization_id": self.scope.organization_id,
                     "project_id": event.project_id,
                     "region_code": event.region_code or self.scope.region_code,
                     "event_type": event.event_type,
-                    "envelope": json.dumps(event.model_dump(mode="json"), sort_keys=True),
+                    "envelope": json.dumps(scoped_event.model_dump(mode="json"), sort_keys=True),
                     "occurred_at": event.occurred_at,
                 },
             )

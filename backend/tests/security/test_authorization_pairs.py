@@ -25,15 +25,22 @@ from hc_data_platform.storage.service import StorageGovernanceService
 
 class ProjectAdminVerifier:
     def verify(self, token: str) -> AuthContext:
-        project_id = {"external-admin-a": "project-a", "external-admin-b": "project-b"}.get(token)
-        if project_id is None:
+        scope = {
+            "external-admin-a": ("organization-a", "project-a"),
+            "external-admin-b": ("organization-b", "project-b"),
+            "external-admin-other-organization": ("organization-b", "project-a"),
+        }.get(token)
+        if scope is None:
             raise AssertionError("unexpected external test token")
+        organization_id, project_id = scope
         return AuthContext(
             subject_id=token,
+            organization_ids=frozenset({organization_id}),
             project_ids=frozenset({project_id}),
             region_codes=frozenset(),
             roles=frozenset({Role.ADMIN.value}),
             scope_pairs=frozenset({(project_id, None)}),
+            organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         )
 
 
@@ -45,7 +52,7 @@ def _headers(token: str, idempotency_key: str | None = None) -> dict[str, str]:
 
 
 def _register(client: TestClient, username: str) -> str:
-    password = f"{username}-be23-password"
+    password = "Authorization pair passphrase 2026!"
     registered = client.post(
         "/api/v1/auth/registrations",
         json={"username": username, "password": password},
@@ -61,7 +68,7 @@ def _register(client: TestClient, username: str) -> str:
 
 def _request_membership(client: TestClient, token: str, suffix: str) -> dict[str, Any]:
     response = client.post(
-        "/api/v1/projects/project-a/membership-requests",
+        "/api/v1/organizations/organization-a/projects/project-a/membership-requests",
         json={"reason": "join"},
         headers=_headers(token, f"membership-{suffix}"),
     )
@@ -71,7 +78,7 @@ def _request_membership(client: TestClient, token: str, suffix: str) -> dict[str
 
 def _approve_membership(client: TestClient, request_id: str, suffix: str) -> None:
     response = client.post(
-        f"/api/v1/projects/project-a/membership-requests/{request_id}:approve",
+        f"/api/v1/organizations/organization-a/projects/project-a/membership-requests/{request_id}:approve",
         json={"reason": "approved"},
         headers=_headers("external-admin-a", f"approve-membership-{suffix}"),
     )
@@ -86,13 +93,13 @@ def _grant_capability(
     suffix: str,
 ) -> dict[str, Any]:
     requested = client.post(
-        "/api/v1/projects/project-a/capability-requests",
+        "/api/v1/organizations/organization-a/projects/project-a/capability-requests",
         json={"capability_keys": [capability], "reason": "least privilege"},
         headers=_headers(token, f"capability-{suffix}"),
     )
     assert requested.status_code == 201
     approved = client.post(
-        f"/api/v1/projects/project-a/capability-requests/{requested.json()['request_id']}:approve",
+        f"/api/v1/organizations/organization-a/projects/project-a/capability-requests/{requested.json()['request_id']}:approve",
         json={"reason": "approved"},
         headers=_headers("external-admin-a", f"approve-capability-{suffix}"),
     )
@@ -137,7 +144,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
 
         # Same project and same resource, but a read-only capability cannot approve access.
         reader_denied = client.post(
-            f"/api/v1/projects/project-a/membership-requests/{target_one['request_id']}:approve",
+            f"/api/v1/organizations/organization-a/projects/project-a/membership-requests/{target_one['request_id']}:approve",
             json={"reason": "must be denied"},
             headers=_headers(reader_token, "reader-must-not-approve"),
         )
@@ -145,7 +152,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         assert reader_denied.json()["code"] == "ACCESS_MANAGEMENT_REQUIRED"
 
         delegate_allowed = client.post(
-            f"/api/v1/projects/project-a/membership-requests/{target_one['request_id']}:approve",
+            f"/api/v1/organizations/organization-a/projects/project-a/membership-requests/{target_one['request_id']}:approve",
             json={"reason": "delegated approval"},
             headers=_headers(delegate_token, "delegate-approves"),
         )
@@ -154,11 +161,20 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         # Reusing the exact resource ID under another project is hidden, even from that
         # project's administrator.
         cross_project = client.get(
-            "/api/v1/projects/project-b/membership-requests/" + target_two["request_id"],
+            "/api/v1/organizations/organization-b/projects/project-b/membership-requests/"
+            + target_two["request_id"],
             headers=_headers("external-admin-b"),
         )
         assert cross_project.status_code == 404
         assert cross_project.json()["code"] == "MEMBERSHIP_REQUEST_NOT_FOUND"
+
+        cross_organization = client.get(
+            "/api/v1/organizations/organization-b/projects/project-a/membership-requests/"
+            + target_one["request_id"],
+            headers=_headers("external-admin-other-organization"),
+        )
+        assert cross_organization.status_code == 404
+        assert cross_organization.json()["code"] == "MEMBERSHIP_REQUEST_NOT_FOUND"
 
         before = client.get(
             "/api/v1/auth/session/bootstrap", headers=_headers(delegate_token)
@@ -166,7 +182,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         assert before["available_scopes"][0]["capabilities"] == ["project.access.manage"]
 
         revoked = client.post(
-            f"/api/v1/projects/project-a/capability-requests/{delegate_grant['request_id']}:revoke",
+            f"/api/v1/organizations/organization-a/projects/project-a/capability-requests/{delegate_grant['request_id']}:revoke",
             json={"reason": "remove delegated approval"},
             headers=_headers("external-admin-a", "revoke-delegate"),
         )
@@ -180,7 +196,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         # The already-issued session is resolved on every request and loses authority
         # immediately; no token-expiry wait or re-login is needed.
         revoked_session_denied = client.post(
-            f"/api/v1/projects/project-a/membership-requests/{target_two['request_id']}:approve",
+            f"/api/v1/organizations/organization-a/projects/project-a/membership-requests/{target_two['request_id']}:approve",
             json={"reason": "stale session must fail"},
             headers=_headers(delegate_token, "stale-session-approval"),
         )

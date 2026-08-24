@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Alert, Button, Form, Input } from "antd";
 import { UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
+import type { PasswordPolicyView } from "./api";
 import { PasswordField } from "./PasswordField";
 import styles from "./styles.module.css";
 
@@ -14,25 +15,27 @@ export interface RegistrationValues {
 interface RegisterPanelProps {
   readonly submitting: boolean;
   readonly error: string | null;
+  readonly passwordPolicy: PasswordPolicyView | null;
   readonly onSubmit: (values: RegistrationValues) => Promise<void> | void;
 }
 
-function passwordStrength(password: string): "empty" | "weak" | "strong" {
-  if (!password) return "empty";
-  const groups = [/[a-z]/u, /[A-Z]/u, /\d/u, /[^A-Za-z0-9]/u].filter(
-    (pattern) => pattern.test(password),
-  ).length;
-  return password.length >= 12 && groups >= 3 ? "strong" : "weak";
+function passwordPolicyGuidance(policy: PasswordPolicyView | null): string {
+  if (policy === null) {
+    return "密码要求将在提交时由服务器安全校验；请使用未在其他网站复用的密码。";
+  }
+  const guidance = [`密码需为 ${policy.min_length}–${policy.max_length} 个字符`];
+  if (policy.disallow_username) guidance.push("且不能包含用户名");
+  if (policy.blocked_password_count > 0) guidance.push("常见弱密码会被拒绝");
+  return `${guidance.join("，")}。`;
 }
 
 export function RegisterPanel({
   submitting,
   error,
+  passwordPolicy,
   onSubmit,
 }: RegisterPanelProps) {
   const [form] = Form.useForm<RegistrationValues>();
-  const password = Form.useWatch("password", form) ?? "";
-  const strength = passwordStrength(password);
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,19 +99,35 @@ export function RegisterPanel({
           autoComplete="new-password"
           disabled={submitting}
           placeholder="请设置密码…"
-          rules={[{ required: true, message: "请设置密码。" }]}
+          rules={[
+            { required: true, message: "请设置密码。" },
+            {
+              validator: (_, value: string | undefined) => {
+                if (!value || passwordPolicy === null) return Promise.resolve();
+                const normalizedPassword = value.normalize("NFKC");
+                const length = [...normalizedPassword].length;
+                if (length < passwordPolicy.min_length) {
+                  return Promise.reject(
+                    new Error(`密码至少需要 ${passwordPolicy.min_length} 个字符。`),
+                  );
+                }
+                if (length > passwordPolicy.max_length) {
+                  return Promise.reject(
+                    new Error(`密码不能超过 ${passwordPolicy.max_length} 个字符。`),
+                  );
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
         />
 
         <div
           className={styles.passwordStrength}
-          data-strength={strength}
+          data-strength={passwordPolicy === null ? "pending" : "policy"}
           aria-live="polite"
         >
-          {strength === "strong"
-            ? "密码强度较好。"
-            : strength === "weak"
-              ? "密码强度较弱：建议至少 12 位，并组合大小写字母、数字或符号。"
-              : "建议使用至少 12 位且不与其他网站重复的密码。"}
+          {passwordPolicyGuidance(passwordPolicy)}
         </div>
 
         <PasswordField

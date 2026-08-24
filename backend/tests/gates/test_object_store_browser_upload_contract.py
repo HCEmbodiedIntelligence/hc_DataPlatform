@@ -89,6 +89,7 @@ def test_minio_init_applies_idempotent_exact_origin_browser_upload_cors() -> Non
     assert "add_header Access-Control-Allow-Credentials" not in edge_config
     assert "PUT PUT;" in edge_config
     assert "HEAD HEAD;" in edge_config
+    assert "^(?:GET|PUT|HEAD)$" in edge_config
 
 
 def test_helm_requires_https_public_endpoint_without_claiming_vendor_cors_management() -> None:

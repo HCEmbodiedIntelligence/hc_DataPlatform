@@ -14,6 +14,19 @@ export const authRoutes: RouteObject[] = [
     }),
   },
   {
+    path: "/auth/recover-password",
+    lazy: async () => ({
+      Component: (await import("./PasswordRecoveryRoutes"))
+        .PasswordRecoveryRequestRoute,
+    }),
+  },
+  {
+    path: "/auth/reset-password",
+    lazy: async () => ({
+      Component: (await import("./PasswordRecoveryRoutes")).PasswordResetRoute,
+    }),
+  },
+  {
     path: "/auth/registered",
     lazy: async () => ({
       Component: (await import("./RegisteredRoute")).RegisteredRoute,

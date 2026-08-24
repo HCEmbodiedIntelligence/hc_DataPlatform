@@ -9,6 +9,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.security import AuthContext, ScopeGuard
 
 from .models import (
@@ -22,6 +23,7 @@ from .models import (
     AnnotationReview,
     AnnotationReviewCheck,
     AnnotationRevision,
+    AnnotationRevisionThreadPage,
     AnnotationStatus,
     AnnotationSubmission,
     AnnotationSubmissionMutationRecord,
@@ -122,6 +124,12 @@ class AnnotationValidationError(AnnotationError):
     title = "Annotation Tag validation failed"
 
 
+class AnnotationRestoreTargetError(AnnotationError):
+    status = 422
+    code = "ANNOTATION_RESTORE_TARGET_INVALID"
+    title = "Annotation restore target is invalid"
+
+
 class AnnotationPolicyUnconfirmedError(AnnotationError):
     status = 409
     code = "ANNOTATION_REVIEW_POLICY_UNCONFIRMED"
@@ -135,24 +143,26 @@ class TagSchemaImmutableError(AnnotationError):
 
 
 class FeatureDisabledError(AnnotationError):
-    status = 501
-    code = "FEATURE_DISABLED"
-    title = "Feature disabled"
+    status = 503
+    code = "AUTO_ANNOTATION_PROVIDER_UNAVAILABLE"
+    title = "Automatic annotation provider unavailable"
 
 
 class DisabledAutoAnnotationProvider:
-    """Explicitly disabled capability; it creates no fake jobs or results."""
+    """Fail-closed adapter used when no production provider is configured."""
 
     @property
     def enabled(self) -> bool:
         return False
 
     def capability(self) -> AutoAnnotationCapability:
-        return AutoAnnotationCapability()
+        return AutoAnnotationCapability(enabled=False, code="PROVIDER_UNAVAILABLE")
 
     def request(self, *, task_id: str, revision: int) -> str:
         del task_id, revision
-        raise FeatureDisabledError("automatic/VLM annotation is disabled in phase one")
+        raise FeatureDisabledError(
+            "no automatic annotation provider is configured for this deployment"
+        )
 
 
 def annotation_etag(task_id: str, revision: int, state_version: int) -> str:
@@ -242,6 +252,37 @@ def _subtract_interval(
     return result
 
 
+def _interval_difference(
+    source: Sequence[ExclusionRange],
+    subtract: Sequence[ExclusionRange],
+) -> tuple[tuple[int, int], ...]:
+    """Return the half-open pieces in ``source`` but not in ``subtract``.
+
+    Both inputs are normalized immutable revision facts.  Keeping the transform
+    here makes a restore an append-only sequence of explicit EXCLUDE/RESTORE
+    operations rather than an unsafe replacement of prior operation history.
+    """
+
+    result: list[tuple[int, int]] = []
+    for source_range in source:
+        pieces = [(source_range.start_step, source_range.end_step)]
+        for excluded in subtract:
+            next_pieces: list[tuple[int, int]] = []
+            for start, end in pieces:
+                if excluded.end_step <= start or excluded.start_step >= end:
+                    next_pieces.append((start, end))
+                    continue
+                if start < excluded.start_step:
+                    next_pieces.append((start, excluded.start_step))
+                if excluded.end_step < end:
+                    next_pieces.append((excluded.end_step, end))
+            pieces = next_pieces
+            if not pieces:
+                break
+        result.extend(pieces)
+    return tuple(result)
+
+
 class AnnotationService:
     """Application service backed by an atomic PostgreSQL-shaped repository port."""
 
@@ -254,11 +295,13 @@ class AnnotationService:
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[], str] = lambda: str(uuid4()),
         self_review_policy: SelfReviewPolicy = SelfReviewPolicy.UNCONFIRMED,
+        cursor_secret: str = "annotation-revision-cursor-secret",
     ) -> None:
         self._repository = repository
         self._clock = clock
         self._id_factory = id_factory
         self._self_review_policy = self_review_policy
+        self._cursor = CursorCodec(cursor_secret)
 
     def create_tag_schema_version(
         self,
@@ -598,6 +641,98 @@ class AnnotationService:
                 expected_state_version=aggregate.task.state_version,
             ):
                 return revision
+
+    def restore_revision(
+        self,
+        task_id: str,
+        actor: ActorContext,
+        *,
+        target_revision: int,
+        expected_revision: int,
+        if_match: str,
+        client_mutation_id: str,
+    ) -> AnnotationRevision:
+        """Append a new data revision whose effective Tags/ranges equal an older one.
+
+        A restore never rewrites the chosen historic revision.  It computes the
+        interval delta from the current revision, then delegates to the normal
+        CAS/idempotent save path with the historic full Tag set.  Thus each
+        task/rollout retains a complete, reviewable data-version lineage.
+        """
+
+        aggregate = self._required_aggregate(task_id)
+        self._authorize(aggregate.task, actor, roles={"annotator"})
+        identity = self._identity(actor, aggregate.task.project_id)
+        self._require_assignee(aggregate.task, identity)
+        replay = next(
+            (
+                record
+                for record in aggregate.mutations
+                if record.client_mutation_id == client_mutation_id
+            ),
+            None,
+        )
+        if replay is not None:
+            restored = aggregate.revisions[replay.result_revision]
+            if restored.origin is not RevisionOrigin.ANNOTATION_RESTORE:
+                raise AnnotationMutationConflictError(
+                    "client_mutation_id was already used for a non-restore revision"
+                )
+            return self.save_draft(
+                task_id,
+                actor,
+                restored.operations,
+                tags=restored.tags,
+                expected_revision=expected_revision,
+                if_match=if_match,
+                client_mutation_id=client_mutation_id,
+                origin=RevisionOrigin.ANNOTATION_RESTORE,
+            )
+        self._check_version(aggregate.task, expected_revision, if_match)
+        if aggregate.task.status not in {
+            AnnotationStatus.DRAFT,
+            AnnotationStatus.NEEDS_REVISION,
+            AnnotationStatus.REJECTED,
+        }:
+            raise InvalidAnnotationStateError(f"cannot restore from {aggregate.task.status.value}")
+        if target_revision < 0 or target_revision >= aggregate.task.current_revision:
+            raise AnnotationRestoreTargetError(
+                "target_revision must identify an earlier immutable revision",
+                details={
+                    "current_revision": aggregate.task.current_revision,
+                    "target_revision": target_revision,
+                },
+            )
+
+        target = aggregate.revisions[target_revision]
+        current_ranges = normalize_operations(aggregate.revisions, aggregate.task.current_revision)
+        target_ranges = normalize_operations(aggregate.revisions, target_revision)
+        restore_ranges = _interval_difference(current_ranges, target_ranges)
+        exclude_ranges = _interval_difference(target_ranges, current_ranges)
+        operation_specs = (
+            *((OperationKind.RESTORE, start, end) for start, end in restore_ranges),
+            *((OperationKind.EXCLUDE, start, end) for start, end in exclude_ranges),
+        )
+        operations = tuple(
+            AnnotationOperation(
+                operation_id=(f"restore:{client_mutation_id}:{kind.value.lower()}:{index}"),
+                kind=kind,
+                start_step=start,
+                end_step=end,
+                reason=f"Restore immutable annotation revision {target_revision}",
+            )
+            for index, (kind, start, end) in enumerate(operation_specs)
+        )
+        return self.save_draft(
+            task_id,
+            actor,
+            operations,
+            tags=target.tags,
+            expected_revision=expected_revision,
+            if_match=if_match,
+            client_mutation_id=client_mutation_id,
+            origin=RevisionOrigin.ANNOTATION_RESTORE,
+        )
 
     def submit(
         self,
@@ -953,6 +1088,120 @@ class AnnotationService:
             if status is None or aggregate.task.status is status
         )
 
+    def list_revision_threads(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        actor: ActorContext,
+        request_id: str,
+        status: AnnotationStatus | None = None,
+        origin: RevisionOrigin | None = None,
+        legacy_draft_id: str | None = None,
+        after: str | None = None,
+        limit: int = 25,
+    ) -> AnnotationRevisionThreadPage:
+        """Return a bounded, scope-bound revision-thread page.
+
+        The cursor carries the selected scope, caller identity, capability revision,
+        filters, and an ``updated_at`` snapshot.  It cannot be replayed after a
+        privilege change or across a different project/region query.
+        """
+
+        self._authorize_project(
+            project_id,
+            actor,
+            roles=set(self._READ_ROLES),
+            region_code=region_code,
+        )
+        identity = self._identity(actor, project_id)
+        capability_revision = actor.capability_revision if isinstance(actor, AuthContext) else 0
+        snapshot_at = self._clock()
+        after_updated_at: datetime | None = None
+        after_task_id: str | None = None
+        if after is not None:
+            payload = self._cursor.decode(after)
+            expected = {
+                "kind": "annotation-revision-thread-page",
+                "project_id": project_id,
+                "region_code": region_code,
+                "subject_id": identity.actor_id,
+                "capability_revision": capability_revision,
+                "status": None if status is None else status.value,
+                "origin": None if origin is None else origin.value,
+                "legacy_draft_id": legacy_draft_id,
+            }
+            if any(payload.get(key) != value for key, value in expected.items()):
+                raise problem(
+                    status=400,
+                    code="INVALID_CURSOR",
+                    title="Invalid pagination cursor",
+                    detail="The cursor does not match the selected annotation revision query.",
+                )
+            snapshot_at = self._cursor_datetime(payload, "snapshot_at")
+            after_updated_at = self._cursor_datetime(payload, "updated_at")
+            after_task_id = payload.get("task_id")
+            if not isinstance(after_task_id, str) or not after_task_id:
+                raise problem(
+                    status=400,
+                    code="INVALID_CURSOR",
+                    title="Invalid pagination cursor",
+                    detail="The cursor does not contain a valid revision-thread position.",
+                )
+
+        records = self._repository.list_revision_threads(
+            project_id=project_id,
+            region_code=region_code,
+            status=status,
+            origin=origin,
+            legacy_draft_id=legacy_draft_id,
+            snapshot_at=snapshot_at,
+            after_updated_at=after_updated_at,
+            after_task_id=after_task_id,
+            limit=limit + 1,
+        )
+        visible = records[:limit]
+        has_next = len(records) > limit
+        self._repository.append_revision_thread_list_audit(
+            project_id=project_id,
+            region_code=region_code,
+            actor_id=identity.actor_id,
+            request_id=request_id,
+            status=status,
+            origin=origin,
+            legacy_draft_id=legacy_draft_id,
+            limit=limit,
+        )
+        end_cursor = (
+            self._cursor.encode(
+                {
+                    "kind": "annotation-revision-thread-page",
+                    "project_id": project_id,
+                    "region_code": region_code,
+                    "subject_id": identity.actor_id,
+                    "capability_revision": capability_revision,
+                    "status": None if status is None else status.value,
+                    "origin": None if origin is None else origin.value,
+                    "legacy_draft_id": legacy_draft_id,
+                    "snapshot_at": snapshot_at.isoformat(),
+                    "updated_at": visible[-1].updated_at.isoformat(),
+                    "task_id": visible[-1].task_id,
+                }
+            )
+            if visible and has_next
+            else None
+        )
+        return AnnotationRevisionThreadPage(
+            items=visible,
+            page_info=PageInfo(
+                has_next_page=has_next,
+                has_previous_page=after is not None,
+                start_cursor=None,
+                end_cursor=end_cursor,
+            ),
+            snapshot_at=snapshot_at,
+        )
+
     def effective_exclusions(
         self,
         task_id: str,
@@ -1172,6 +1421,34 @@ class AnnotationService:
                     "current_etag": task.etag,
                 },
             )
+
+    @staticmethod
+    def _cursor_datetime(payload: dict[str, object], key: str) -> datetime:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not contain a valid revision-thread timestamp.",
+            )
+        try:
+            result = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not contain a valid revision-thread timestamp.",
+            ) from exc
+        if result.tzinfo is None:
+            raise problem(
+                status=400,
+                code="INVALID_CURSOR",
+                title="Invalid pagination cursor",
+                detail="The cursor does not contain a valid revision-thread timestamp.",
+            )
+        return result
 
     @staticmethod
     def _validate_operations(

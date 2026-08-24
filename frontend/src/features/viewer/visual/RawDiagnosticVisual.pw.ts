@@ -16,11 +16,13 @@ interface AxeResult {
 
 const artifactDirectory = resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture/E06"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-      ? "../artifacts/visual/e01-e10/FE12-final/E06"
-      : "../artifacts/visual/e01-e10/E06",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture/E06"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture/E06"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+        ? "../artifacts/visual/e01-e10/FE12-final/E06"
+        : "../artifacts/visual/e01-e10/E06",
 );
 
 async function mountFixture(
@@ -120,6 +122,10 @@ for (const viewport of [
       page.getByRole("button", { name: /PASS|通过|放行/u }),
     ).toHaveCount(0);
     await expectWorkbenchGeometry(page);
+    // CameraClockBadge subscribes in an effect.  Wait for its fixed fixture
+    // value before the screenshot so baseline pixels do not depend on effect
+    // scheduling.
+    await expect(page.getByText("7.632 s", { exact: true })).toHaveCount(4);
     const axe = await runAxe(page);
     if (axe) {
       writeFileSync(

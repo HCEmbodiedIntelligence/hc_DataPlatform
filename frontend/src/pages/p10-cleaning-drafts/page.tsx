@@ -42,7 +42,7 @@ function primaryState(draft: DraftListItem): string {
   if (draft.outputVersionStatus === 'RETURNED') return '复核退回';
   if (draft.outputVersionStatus === 'READY') return '版本可用';
   if (draft.outputVersionStatus === 'REVIEWING') return '等待复核';
-  if (draft.commitStatus === 'QUEUED') return '正在提交';
+  if (draft.commitStatus === 'QUEUED' || draft.commitStatus === 'RUNNING') return '正在提交';
   if (draft.commitStatus === 'FAILED') return '提交失败';
   if (draft.previewStatus === 'RUNNING' || draft.previewStatus === 'QUEUED') return '预览生成中';
   if (draft.previewStatus === 'FAILED') return '预览失败';
@@ -381,11 +381,16 @@ export function CleaningDraftsPage() {
       header: '操作',
       cell: ({ row }) => {
         const draft = row.original;
+        const canOpen = !draft.hasUnknownState && (
+          draft.allowedActions.includes('EDIT') ||
+          draft.allowedActions.includes('VIEW') ||
+          draft.allowedActions.includes('OPEN_SUCCESSOR')
+        );
         const draftId =
           draft.outputVersionStatus === 'RETURNED' && draft.review
             ? draft.review.successorDraftId
             : draft.id;
-        return (
+        return canOpen ? (
           <Link
             to={cleaningRoutes.cleaningWorkbench.build({
               draftId,
@@ -398,7 +403,7 @@ export function CleaningDraftsPage() {
                 ? '继续'
                 : '查看'}
           </Link>
-        );
+        ) : <Typography.Text type="secondary">—</Typography.Text>;
       },
     },
   ];

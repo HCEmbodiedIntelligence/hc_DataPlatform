@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.auth import Permission
@@ -45,14 +45,24 @@ def _required_repository() -> QualityRepository:
     return _repository
 
 
+def _no_store(response: Response) -> None:
+    """Quality profiles and reports are tenant-scoped operational evidence."""
+
+    response.headers["Cache-Control"] = "no-store"
+
+
 @router.post(
     "/projects/{project_id}/quality-profiles",
     response_model=QualityProfileV1,
     status_code=201,
 )
 def create_quality_profile(
-    project_id: str, profile: QualityProfileV1, auth: VerifiedAuth
+    project_id: str,
+    profile: QualityProfileV1,
+    response: Response,
+    auth: VerifiedAuth,
 ) -> QualityProfileV1:
+    _no_store(response)
     authorize_scope(auth, project_id, Permission.ADMINISTER)
     _required_repository().put_profile(project_id, profile)
     return profile
@@ -66,8 +76,10 @@ def get_quality_profile(
     project_id: str,
     profile_id: str,
     profile_version: int,
+    response: Response,
     auth: VerifiedAuth,
 ) -> QualityProfileV1:
+    _no_store(response)
     authorize_read(auth, project_id)
     profile = _required_repository().get_profile(project_id, profile_id, profile_version)
     if profile is None:
@@ -88,8 +100,10 @@ def get_rollout_quality(
     project_id: str,
     region_code: str,
     rollout_id: str,
+    response: Response,
     auth: VerifiedAuth,
 ) -> QcReportV1:
+    _no_store(response)
     authorize_read(auth, project_id, region_code)
     report = _required_repository().get_report(
         project_id=project_id, region_code=region_code, rollout_id=rollout_id

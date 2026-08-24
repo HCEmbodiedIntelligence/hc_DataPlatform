@@ -92,6 +92,7 @@ async def serve() -> None:
                 scopes=outbox.scopes,
                 poll_interval_seconds=outbox.poll_interval_seconds,
                 batch_size=outbox.batch_size,
+                schedule_enqueuer=outbox.schedule_enqueuer,
             ),
             name="outbox-dispatcher",
         ),

@@ -9,6 +9,7 @@ from temporalio import activity, workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
+from .errors import LifecycleExecutionBlocked
 from .models import (
     LifecycleBatchCommand,
     LifecycleBatchResult,
@@ -81,12 +82,16 @@ def configure_lifecycle_batch_executor(executor: LifecycleBatchExecutor) -> None
 def _execution_request(command: LifecycleBatchCommand) -> LifecycleExecutionRequest:
     return LifecycleExecutionRequest(
         execution_id=command.execution_id,
+        organization_id=command.organization_id,
         project_id=command.project_id,
+        region_code=command.region_code,
         policy_id=command.policy_id,
         policy_version=command.policy_version,
         action=command.action,
         production=command.production,
         production_execution_approved=command.production_execution_approved,
+        approval_id=command.approval_id,
+        plan_hash=command.plan_hash,
         candidates=command.candidates,
     )
 
@@ -104,6 +109,12 @@ async def storage_apply_lifecycle_batch(
         )
     try:
         return _executor.apply_batch(command)
+    except LifecycleExecutionBlocked as exc:
+        raise ApplicationError(
+            str(exc),
+            type="LIFECYCLE_PROTECTION_BLOCKED",
+            non_retryable=True,
+        ) from exc
     except LifecycleExecutorNotConfigured as exc:
         raise ApplicationError(
             str(exc),
@@ -136,13 +147,18 @@ class StorageLifecycleExecutionWorkflow:
                 APPLY_LIFECYCLE_BATCH_ACTIVITY,
                 LifecycleBatchCommand(
                     execution_id=request.execution_id,
+                    organization_id=request.organization_id,
                     project_id=request.project_id,
+                    region_code=request.region_code,
                     policy_id=request.policy_id,
                     policy_version=request.policy_version,
                     action=request.action,
                     production=request.production,
                     production_execution_approved=request.production_execution_approved,
+                    approval_id=request.approval_id,
+                    plan_hash=request.plan_hash,
                     batch_index=batch_index,
+                    final_batch=batch_index == len(candidate_batches) - 1,
                     candidates=batch,
                 ),
                 result_type=LifecycleBatchResult,

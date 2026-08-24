@@ -17,6 +17,7 @@ const scope: CollectionTaskScope = {
 const taskResponse = {
   schema_version: "1",
   collection_task_id: "task-a",
+  organization_id: scope.organizationId,
   project_id: scope.projectId,
   task_code: "00000001",
   name: "采集任务",
@@ -35,13 +36,13 @@ beforeEach(() => {
     buildVersion: "p20-test",
     releaseEnv: "test",
   });
-  useShellStore.getState().setScope(scope);
   useShellStore
     .getState()
     .setSession(
       { actorId: "actor-a", displayName: "测试用户", roleIds: [] },
       "session-token",
     );
+  useShellStore.getState().setScope(scope);
 });
 
 afterEach(() => {
@@ -182,5 +183,45 @@ describe("P20 generated-contract gateway", () => {
         { code: "ETAG_MISSING", message: "服务端未返回 ETag。" },
       ],
     });
+  });
+
+  it("uses generated cancel and reopen operations with ETag and idempotency", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(taskResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await collectionTaskGateway.cancel(
+      scope,
+      taskResponse.collection_task_id,
+      '"v1"',
+      "cancel-key",
+    );
+    await collectionTaskGateway.reopen(
+      scope,
+      taskResponse.collection_task_id,
+      '"v2"',
+      "reopen-key",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [index, suffix, etag, key] of [
+      [0, ":cancel", '"v1"', "cancel-key"],
+      [1, ":reopen", '"v2"', "reopen-key"],
+    ] as const) {
+      const [url, init] = fetchMock.mock.calls[index] ?? [];
+      expect(url).toBe(
+        `/api/v1/projects/project-a/collection-tasks/task-a${suffix}`,
+      );
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBeUndefined();
+      const headers = new Headers(init?.headers);
+      expect(headers.get("If-Match")).toBe(etag);
+      expect(headers.get("Idempotency-Key")).toBe(key);
+    }
   });
 });

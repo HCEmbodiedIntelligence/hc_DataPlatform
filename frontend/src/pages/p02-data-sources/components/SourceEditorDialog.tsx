@@ -243,6 +243,7 @@ export function SourceEditorDialog(props: {
       mask={{ closable: false }}
       destroyOnHidden
       width={720}
+      zIndex={1100}
       afterOpenChange={(open) => {
         if (open) form.setFocus('name');
       }}
@@ -280,6 +281,7 @@ export function SourceEditorDialog(props: {
             name="kind"
             label="连接器类型"
             disabled={props.pending || props.mode === 'update'}
+            preserveValueWhenDisabled={props.mode === 'update'}
             options={[
               { label: '机器人', value: 'ROBOT' },
               { label: '边缘代理', value: 'EDGE_AGENT' },
@@ -299,6 +301,7 @@ export function SourceEditorDialog(props: {
               <Input.Password
                 ref={credentialRef}
                 name="credentialToken"
+                aria-label="访问 Token（可选）"
                 autoComplete="new-password"
                 data-sensitive="credential"
                 disabled={props.pending}
@@ -318,6 +321,7 @@ export function SourceEditorDialog(props: {
                 >
                   <Input.TextArea
                     {...field}
+                    aria-label="变更原因"
                     rows={3}
                     maxLength={500}
                     disabled={props.pending}

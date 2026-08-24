@@ -11,10 +11,19 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlparse
 
+from pydantic import TypeAdapter
+
 from hc_data_platform.alignment.arrow_writer import ArrowFragmentWriter
+from hc_data_platform.alignment.canonical import denormalize_from_json
 from hc_data_platform.alignment.engine import AlignmentEngine
 from hc_data_platform.alignment.models import AlignedFragmentManifestV1, AlignedValueV1
 from hc_data_platform.alignment.postgres import PostgresAlignmentRepository
+from hc_data_platform.annotation.auto_jobs import (
+    AutoAnnotationJobService,
+    AutoAnnotationOutboxHandler,
+    HttpAutoAnnotationProvider,
+    PostgresAutoAnnotationJobRepository,
+)
 from hc_data_platform.annotation.automation import (
     AutomaticAnnotationTaskService,
     PostgresAutomaticAnnotationRepository,
@@ -22,6 +31,28 @@ from hc_data_platform.annotation.automation import (
 from hc_data_platform.annotation.postgres import PostgresAnnotationRepository
 from hc_data_platform.annotation.router import configure_annotation
 from hc_data_platform.annotation.service import AnnotationService
+from hc_data_platform.audit_projection.governance import (
+    AuditExportOutboxHandler,
+    AuditGovernanceService,
+    PostgresAuditGovernanceRepository,
+    S3AuditArtifactStore,
+)
+from hc_data_platform.audit_projection.repository import PostgresAuditProjectionRepository
+from hc_data_platform.audit_projection.router import configure_audit_projection
+from hc_data_platform.audit_projection.service import AuditProjectionService
+from hc_data_platform.calibrations.repository import PostgresCalibrationRepository
+from hc_data_platform.calibrations.router import configure_calibrations
+from hc_data_platform.calibrations.service import CalibrationService
+from hc_data_platform.cleaning_drafts.repository import PostgresCleaningDraftRepository
+from hc_data_platform.cleaning_drafts.router import configure_cleaning_drafts
+from hc_data_platform.cleaning_drafts.service import CleaningDraftService
+from hc_data_platform.cleaning_workbench.models import (
+    CommitAcceptedEnvelope,
+    PreviewAcceptedEnvelope,
+)
+from hc_data_platform.cleaning_workbench.repository import PostgresCleaningWorkbenchRepository
+from hc_data_platform.cleaning_workbench.router import configure_cleaning_workbench
+from hc_data_platform.cleaning_workbench.service import CleaningWorkbenchService
 from hc_data_platform.collection_tasks.models import CollectionTaskRecord
 from hc_data_platform.collection_tasks.postgres import PostgresCollectionTaskRepository
 from hc_data_platform.collection_tasks.router import configure_collection_tasks
@@ -31,6 +62,23 @@ from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.dashboard.postgres import PostgresDashboardRepository
 from hc_data_platform.dashboard.router import configure_dashboard
 from hc_data_platform.dashboard.service import DashboardService
+from hc_data_platform.data_schemas.repository import PostgresDataSchemaRepository
+from hc_data_platform.data_schemas.router import configure_data_schemas
+from hc_data_platform.data_schemas.service import DataSchemaService
+from hc_data_platform.data_sources.models import DataSourceMutationRecord
+from hc_data_platform.data_sources.repository import PostgresDataSourceRepository
+from hc_data_platform.data_sources.router import configure_data_sources
+from hc_data_platform.data_sources.service import DataSourceService
+from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
+from hc_data_platform.dataset_registry.models import (
+    DatasetPageApproveReviewMutationRecord,
+    DatasetPageAsyncJobMutationRecord,
+    DatasetPageMutationRecord,
+    DatasetPageReturnReviewMutationRecord,
+)
+from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
+from hc_data_platform.dataset_registry.router import configure_dataset_page
+from hc_data_platform.dataset_registry.service import DatasetPageService
 from hc_data_platform.ingest.adapters import S3ObjectStorage
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser
 from hc_data_platform.ingest.postgres import PostgresIngestPersistence
@@ -41,26 +89,47 @@ from hc_data_platform.lance_catalog.adapters import (
     PostgresAdvisoryDatasetLock,
     PostgresCatalogAdapter,
 )
+from hc_data_platform.lance_catalog.audit import (
+    LanceCatalogAuditRecorder,
+    PostgresLanceCatalogAuditRecorder,
+)
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
 )
 from hc_data_platform.lance_catalog.models import StepRecord
-from hc_data_platform.lance_catalog.router import configure_lance_catalog
+from hc_data_platform.lance_catalog.router import (
+    configure_lance_catalog,
+    configure_lance_catalog_audit_recorder,
+)
 from hc_data_platform.lance_catalog.service import LanceCatalogService, compute_fragment_hash
+from hc_data_platform.manual_cleaning.models import (
+    ManualIssueDraftMutationRecord,
+    ManualIssueMutationRecord,
+)
+from hc_data_platform.manual_cleaning.repository import PostgresManualIssueRepository
+from hc_data_platform.manual_cleaning.router import configure_manual_issues
+from hc_data_platform.manual_cleaning.service import ManualIssueService
 from hc_data_platform.preview.adapters import (
     AnnotationExclusionAdapter,
     FFmpegHlsEncoder,
     FilePreviewCache,
+    FilePreviewMediaReader,
     LanceStepReaderAdapter,
+    S3ImageRefResolver,
 )
+from hc_data_platform.preview.audit import PostgresPreviewAuditRecorder, PreviewAuditRecorder
 from hc_data_platform.preview.memory import HmacUrlSigner
-from hc_data_platform.preview.router import configure_preview_service
+from hc_data_platform.preview.router import (
+    configure_preview_audit_recorder,
+    configure_preview_service,
+)
 from hc_data_platform.preview.service import PreviewService
 from hc_data_platform.publishing.adapters import (
     ApprovedAnnotationSnapshotAdapter,
     CatalogSnapshotAdapter,
     StepReaderAdapter,
 )
+from hc_data_platform.publishing.audit import PostgresExportAuditRecorder
 from hc_data_platform.publishing.exporters import LanceSnapshotExporter, LeRobotV3Exporter
 from hc_data_platform.publishing.postgres import (
     PostgresAnnotationTaskLocator,
@@ -69,6 +138,7 @@ from hc_data_platform.publishing.postgres import (
 )
 from hc_data_platform.publishing.router import (
     configure_dataset_publisher,
+    configure_export_audit_recorder,
     configure_export_coordinator,
 )
 from hc_data_platform.publishing.s3 import S3ArtifactSink
@@ -76,13 +146,36 @@ from hc_data_platform.publishing.service import DatasetPublisher, ExportCoordina
 from hc_data_platform.quality.engine import QualityEngine
 from hc_data_platform.quality.postgres import PostgresQualityRepository
 from hc_data_platform.quality.router import configure_quality_repository
+from hc_data_platform.registry.repository import PostgresRegistryRepository
+from hc_data_platform.registry.router import configure_registry
+from hc_data_platform.registry.service import RegistryService
+from hc_data_platform.robotics.repository import PostgresRoboticsRepository
+from hc_data_platform.robotics.router import configure_robotics
+from hc_data_platform.robotics.service import RoboticsService
+from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
+from hc_data_platform.security.admin_accounts import AdminAccountService
+from hc_data_platform.security.challenge import challenge_verifier_from_settings
 from hc_data_platform.security.outbox import (
     OutboxDispatcher,
     PostgresOutboxDeliveryRepository,
 )
+from hc_data_platform.security.passwords import PasswordHasher, PasswordPolicy, ScryptParameters
 from hc_data_platform.security.psycopg import PsycopgIdempotencyStore
+from hc_data_platform.security.recovery import (
+    AccountRecoveryService,
+    recovery_delivery_from_settings,
+)
+from hc_data_platform.storage.dispatch import (
+    RepositoryStorageExecutionInputResolver,
+    RepositoryStorageScheduleEnqueuer,
+    StorageLifecycleOutboxHandler,
+    StorageLifecycleScheduleOutboxHandler,
+    StorageScheduleEnqueuer,
+)
+from hc_data_platform.storage.executor import PostgresLifecycleBatchExecutor
+from hc_data_platform.storage.object_store import S3StorageObjectOperator
 from hc_data_platform.storage.postgres import (
     PostgresStorageIdempotencyStore,
     PostgresStorageRepository,
@@ -109,6 +202,26 @@ from hc_data_platform.workflow.models import (
 )
 from hc_data_platform.workflow.service import TemporalWorkflowLauncher
 from hc_data_platform.workflow.worker import DEFAULT_TASK_QUEUE
+
+_DATASET_PAGE_IDEMPOTENCY_RESPONSE: TypeAdapter[
+    DatasetPageMutationRecord
+    | DatasetPageApproveReviewMutationRecord
+    | DatasetPageReturnReviewMutationRecord
+    | DatasetPageAsyncJobMutationRecord
+] = TypeAdapter(
+    DatasetPageMutationRecord
+    | DatasetPageApproveReviewMutationRecord
+    | DatasetPageReturnReviewMutationRecord
+    | DatasetPageAsyncJobMutationRecord
+)
+
+_MANUAL_ISSUE_IDEMPOTENCY_RESPONSE: TypeAdapter[
+    ManualIssueMutationRecord | ManualIssueDraftMutationRecord
+] = TypeAdapter(ManualIssueMutationRecord | ManualIssueDraftMutationRecord)
+
+_CLEANING_WORKBENCH_IDEMPOTENCY_RESPONSE: TypeAdapter[
+    PreviewAcceptedEnvelope | CommitAcceptedEnvelope
+] = TypeAdapter(PreviewAcceptedEnvelope | CommitAcceptedEnvelope)
 
 
 class ArrowFragmentWriterFactory:
@@ -181,7 +294,9 @@ class ArrowCatalogFragmentAdapter:
         rows: list[dict[str, Any]] = []
         for raw in raw_rows:
             encoded = raw["modalities_json"]
-            payload = json.loads(bytes(encoded).decode("utf-8"))
+            payload = denormalize_from_json(json.loads(bytes(encoded).decode("utf-8")))
+            if not isinstance(payload, dict):
+                raise ValueError("aligned fragment modalities must be a JSON object")
             rows.append(
                 {
                     **raw,
@@ -205,18 +320,35 @@ class PublicationReconciler:
 @dataclass(frozen=True)
 class RuntimeComponents:
     access: AccessService
+    admin_accounts: AdminAccountService
+    recovery: AccountRecoveryService
+    audit_projection: AuditProjectionService
+    audit_governance: AuditGovernanceService
     dashboard: DashboardService
     ingest: UploadSessionService
     collection_tasks: CollectionTaskService
     storage: StorageGovernanceService
+    registry: RegistryService
+    robotics: RoboticsService
+    calibrations: CalibrationService
+    data_schemas: DataSchemaService
+    data_sources: DataSourceService
+    dataset_page: DatasetPageService
+    manual_issues: ManualIssueService
+    cleaning_drafts: CleaningDraftService
+    cleaning_workbench: CleaningWorkbenchService
     annotation: AnnotationService
+    auto_annotation_jobs: AutoAnnotationJobService
     catalog: LanceCatalogService
+    catalog_audit: LanceCatalogAuditRecorder
     verification_repository: PostgresVerificationRepository
     quality_repository: PostgresQualityRepository
     alignment_repository: PostgresAlignmentRepository
     preview: PreviewService
+    preview_audit: PreviewAuditRecorder
     publisher: DatasetPublisher
     exporter: ExportCoordinator
+    export_audit: PostgresExportAuditRecorder
     activities: ActivityDependencies
 
 
@@ -226,9 +358,10 @@ class WorkerOutboxRuntime:
     scopes: tuple[str, ...]
     poll_interval_seconds: float
     batch_size: int
+    schedule_enqueuer: StorageScheduleEnqueuer
 
 
-def _s3(settings: Settings) -> tuple[Any, S3ObjectStorage]:
+def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
     import boto3
     from botocore.config import Config
 
@@ -251,10 +384,14 @@ def _s3(settings: Settings) -> tuple[Any, S3ObjectStorage]:
         endpoint_url=public_endpoint,
         **client_options,
     )
-    return operation_client, S3ObjectStorage(
+    return (
         operation_client,
-        settings.object_store_bucket,
-        presign_client=presign_client,
+        presign_client,
+        S3ObjectStorage(
+            operation_client,
+            settings.object_store_bucket,
+            presign_client=presign_client,
+        ),
     )
 
 
@@ -280,16 +417,87 @@ def _decoder(settings: Settings) -> DecoderProbe:
 def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
     resolved = settings or get_settings()
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
-    access = AccessService(PostgresAccessRepository.from_dsn(resolved.postgres_dsn))
+    hmac_secret = resolved.auth_abuse_hmac_secret
+    if resolved.auth_abuse_enabled and hmac_secret is None:
+        raise RuntimeError("auth abuse HMAC secret is not configured")
+    access_repository = PostgresAccessRepository.from_dsn(
+        resolved.postgres_dsn,
+        session_idle_ttl_seconds=resolved.session_idle_ttl_seconds,
+        session_absolute_ttl_seconds=resolved.session_absolute_ttl_seconds,
+        session_touch_interval_seconds=resolved.session_touch_interval_seconds,
+        max_active_sessions=resolved.max_active_sessions,
+    )
+    password_hasher = PasswordHasher(
+        ScryptParameters(
+            n=resolved.password_scrypt_n,
+            r=resolved.password_scrypt_r,
+            p=resolved.password_scrypt_p,
+        )
+    )
+    password_policy = PasswordPolicy(
+        min_length=resolved.password_min_length,
+        max_length=resolved.password_max_length,
+    )
+    abuse_protection = (
+        PostgresAbuseProtection.from_dsn(
+            resolved.postgres_dsn,
+            hmac_secret=hmac_secret.get_secret_value(),
+            policy=policy_from_settings(resolved),
+        )
+        if resolved.auth_abuse_enabled and hmac_secret is not None
+        else None
+    )
+    challenge_verifier = challenge_verifier_from_settings(resolved)
+    access = AccessService(
+        access_repository,
+        password_hasher=password_hasher,
+        password_policy=password_policy,
+        abuse_protection=abuse_protection,
+        challenge_verifier=challenge_verifier,
+    )
+    admin_accounts = AdminAccountService(
+        access_repository,
+        password_hasher=password_hasher,
+        password_policy=password_policy,
+    )
+    recovery = AccountRecoveryService(
+        access_repository,
+        delivery=recovery_delivery_from_settings(resolved),
+        password_hasher=password_hasher,
+        password_policy=password_policy,
+        abuse_protection=abuse_protection,
+        challenge_verifier=challenge_verifier,
+        email_verification_ttl_seconds=resolved.auth_recovery_email_verification_ttl_seconds,
+        password_recovery_ttl_seconds=resolved.auth_recovery_token_ttl_seconds,
+    )
+    audit_governance_repository = PostgresAuditGovernanceRepository(connection_factory)
+    audit_projection = AuditProjectionService(
+        PostgresAuditProjectionRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+        retention_policy_provider=audit_governance_repository.get_policy,
+        legal_hold_provider=audit_governance_repository.list_holds,
+    )
     dashboard = DashboardService(
         PostgresDashboardRepository(connection_factory),
         cursor_secret=resolved.cursor_secret,
     )
-    s3_client, object_storage = _s3(resolved)
+    s3_client, s3_presign_client, object_storage = _s3(resolved)
+    audit_governance = AuditGovernanceService(
+        audit_governance_repository,
+        audit_projection,
+        S3AuditArtifactStore(
+            s3_client,
+            resolved.object_store_bucket,
+            prefix=f"{resolved.artifact_prefix}/audit-exports",
+            presign_client=s3_presign_client,
+        ),
+    )
 
     ingest = UploadSessionService(
         object_storage,
         persistence=PostgresIngestPersistence(connection_factory),
+        authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
+        cursor_secret=resolved.cursor_secret,
     )
     collection_tasks = CollectionTaskService(
         PostgresCollectionTaskRepository(connection_factory),
@@ -300,6 +508,11 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         cursor_secret=resolved.cursor_secret,
     )
     storage_connection_factory = StorageTransactionConnectionFactory(connection_factory)
+    storage_object_operator = S3StorageObjectOperator(
+        s3_client,
+        resolved.object_store_bucket,
+        presign_client=s3_presign_client,
+    )
     storage = StorageGovernanceService(
         PostgresStorageRepository(storage_connection_factory),
         cursor_secret=resolved.cursor_secret,
@@ -307,8 +520,85 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
             connection_factory,
             storage_connection_factory,
         ),
+        object_operator=storage_object_operator,
     )
-    annotation = AnnotationService(PostgresAnnotationRepository(connection_factory))
+    registry = RegistryService(
+        PostgresRegistryRepository(connection_factory),
+        storage=object_storage,
+        cursor_secret=resolved.cursor_secret,
+    )
+    robotics = RoboticsService(
+        PostgresRoboticsRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
+    calibrations = CalibrationService(
+        PostgresCalibrationRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
+    data_schemas = DataSchemaService(
+        PostgresDataSchemaRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
+    data_sources = DataSourceService(
+        PostgresDataSourceRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+        credential_key=resolved.data_source_credential_key.get_secret_value(),
+        idempotency=PsycopgIdempotencyStore(
+            connection_factory,
+            response_decoder=DataSourceMutationRecord.model_validate,
+        ),
+    )
+    dataset_page = DatasetPageService(
+        PostgresDatasetPageRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+        idempotency=PsycopgIdempotencyStore(
+            connection_factory,
+            response_decoder=_DATASET_PAGE_IDEMPOTENCY_RESPONSE.validate_python,
+        ),
+    )
+    manual_issues = ManualIssueService(
+        PostgresManualIssueRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+        idempotency=PsycopgIdempotencyStore(
+            connection_factory,
+            response_decoder=_MANUAL_ISSUE_IDEMPOTENCY_RESPONSE.validate_python,
+        ),
+    )
+    cleaning_drafts = CleaningDraftService(
+        PostgresCleaningDraftRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
+    cleaning_workbench = CleaningWorkbenchService(
+        PostgresCleaningWorkbenchRepository(connection_factory),
+        idempotency=PsycopgIdempotencyStore(
+            connection_factory,
+            response_decoder=_CLEANING_WORKBENCH_IDEMPOTENCY_RESPONSE.validate_python,
+        ),
+    )
+    annotation = AnnotationService(
+        PostgresAnnotationRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
+    configured_auto_providers: tuple[HttpAutoAnnotationProvider, ...] = ()
+    if resolved.auto_annotation_provider_endpoint is not None:
+        api_key = resolved.auto_annotation_provider_api_key
+        configured_auto_providers = (
+            HttpAutoAnnotationProvider(
+                name=resolved.auto_annotation_provider_name,
+                endpoint=resolved.auto_annotation_provider_endpoint,
+                models=resolved.auto_annotation_provider_models,
+                api_key=None if api_key is None else api_key.get_secret_value(),
+                timeout_seconds=resolved.auto_annotation_provider_timeout_seconds,
+            ),
+        )
+    auto_annotation_jobs = AutoAnnotationJobService(
+        annotation,
+        PostgresAutoAnnotationJobRepository(connection_factory),
+        configured_auto_providers,
+        max_concurrent_jobs_per_project=resolved.auto_annotation_max_concurrent_jobs,
+        max_jobs_per_hour=resolved.auto_annotation_max_jobs_per_hour,
+        daily_cost_limit_micros=resolved.auto_annotation_daily_cost_limit_micros,
+    )
     automatic_annotation = AutomaticAnnotationTaskService(
         PostgresAutomaticAnnotationRepository(connection_factory)
     )
@@ -335,15 +625,27 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
     )
 
     preview = PreviewService(
-        step_reader=LanceStepReaderAdapter(catalog),
+        step_reader=LanceStepReaderAdapter(
+            catalog,
+            image_ref_resolver=S3ImageRefResolver(
+                s3_client,
+                resolved.object_store_bucket,
+            ),
+        ),
         exclusions=AnnotationExclusionAdapter(annotation),
         encoder=FFmpegHlsEncoder(Path(resolved.preview_cache_root) / "media"),
         cache=FilePreviewCache(Path(resolved.preview_cache_root) / "metadata"),
         signer=HmacUrlSigner(resolved.cursor_secret.encode()),
+        media_reader=FilePreviewMediaReader(Path(resolved.preview_cache_root) / "media"),
     )
+    preview_audit = PostgresPreviewAuditRecorder(connection_factory)
+    catalog_audit = PostgresLanceCatalogAuditRecorder(connection_factory)
 
     artifact_sink = S3ArtifactSink(
-        s3_client, resolved.object_store_bucket, prefix=resolved.artifact_prefix
+        s3_client,
+        resolved.object_store_bucket,
+        prefix=resolved.artifact_prefix,
+        presign_client=s3_presign_client,
     )
     publisher = DatasetPublisher(
         catalog=CatalogSnapshotAdapter(
@@ -363,14 +665,23 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         sink=artifact_sink,
         exporters=(LanceSnapshotExporter(), LeRobotV3Exporter()),
     )
+    export_audit = PostgresExportAuditRecorder(connection_factory)
+    decoder = _decoder(resolved)
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
         verifier=McapVerifier(
             ChunkedObjectStorageReader(object_storage),
-            decoder=_decoder(resolved),
+            decoder=decoder,
         ),
         quality=QualityEngine(),
         alignment=AlignmentEngine(),
+        ingest_projection=PostgresIngestWorkflowInputResolver(
+            connection_factory,
+            ChunkedObjectStorageReader(object_storage),
+            catalog,
+            decoder=decoder,
+        ),
+        dataset_ingest_projection=PostgresDatasetIngestProjector(connection_factory),
         fragment_writers=ArrowFragmentWriterFactory(Path(resolved.alignment_staging_root)),
         catalog_fragments=ArrowCatalogFragmentAdapter(catalog_repository),
         catalog=catalog,
@@ -383,40 +694,74 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         quality_reports=quality_repository,
         alignment_manifests=alignment_repository,
         annotation_tasks=automatic_annotation,
+        storage_lifecycle=PostgresLifecycleBatchExecutor(
+            connection_factory,
+            storage_object_operator,
+        ),
     )
     return RuntimeComponents(
         access=access,
+        admin_accounts=admin_accounts,
+        recovery=recovery,
+        audit_projection=audit_projection,
+        audit_governance=audit_governance,
         dashboard=dashboard,
         ingest=ingest,
         collection_tasks=collection_tasks,
         storage=storage,
+        registry=registry,
+        robotics=robotics,
+        calibrations=calibrations,
+        data_schemas=data_schemas,
+        data_sources=data_sources,
+        dataset_page=dataset_page,
+        manual_issues=manual_issues,
+        cleaning_drafts=cleaning_drafts,
+        cleaning_workbench=cleaning_workbench,
         annotation=annotation,
+        auto_annotation_jobs=auto_annotation_jobs,
         catalog=catalog,
+        catalog_audit=catalog_audit,
         verification_repository=verification_repository,
         quality_repository=quality_repository,
         alignment_repository=alignment_repository,
         preview=preview,
+        preview_audit=preview_audit,
         publisher=publisher,
         exporter=exporter,
+        export_audit=export_audit,
         activities=activities,
     )
 
 
 def configure_api(runtime: RuntimeComponents) -> None:
+    configure_audit_projection(runtime.audit_projection, runtime.audit_governance)
     configure_dashboard(runtime.dashboard)
     configure_ingest_service(runtime.ingest)
     configure_collection_tasks(runtime.collection_tasks)
     configure_storage_governance(runtime.storage)
-    configure_annotation(runtime.annotation)
+    configure_registry(runtime.registry)
+    configure_robotics(runtime.robotics)
+    configure_calibrations(runtime.calibrations)
+    configure_data_schemas(runtime.data_schemas)
+    configure_data_sources(runtime.data_sources)
+    configure_dataset_page(runtime.dataset_page)
+    configure_manual_issues(runtime.manual_issues)
+    configure_cleaning_drafts(runtime.cleaning_drafts)
+    configure_cleaning_workbench(runtime.cleaning_workbench)
+    configure_annotation(runtime.annotation, auto_jobs=runtime.auto_annotation_jobs)
     configure_verification_repository(runtime.verification_repository)
     configure_quality_repository(runtime.quality_repository)
     from hc_data_platform.alignment.router import configure_alignment_repository
 
     configure_alignment_repository(runtime.alignment_repository)
     configure_lance_catalog(runtime.catalog)
+    configure_lance_catalog_audit_recorder(runtime.catalog_audit)
     configure_preview_service(runtime.preview)
+    configure_preview_audit_recorder(runtime.preview_audit)
     configure_dataset_publisher(runtime.publisher)
     configure_export_coordinator(runtime.exporter)
+    configure_export_audit_recorder(runtime.export_audit)
 
 
 def activity_dependencies() -> ActivityDependencies:
@@ -436,7 +781,7 @@ def build_worker_outbox(
     if not resolved.outbox_scopes:
         return None
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
-    _s3_client, object_storage = _s3(resolved)
+    s3_client, s3_presign_client, object_storage = _s3(resolved)
     catalog_repository = PostgresCatalogAdapter(connection_factory)
     lance_root = resolved.lance_root_uri or f"s3://{resolved.object_store_bucket}/lance"
     catalog = LanceCatalogService(
@@ -465,9 +810,72 @@ def build_worker_outbox(
         catalog,
     )
     handler = IngestOutboxHandler(launcher, resolver)
+    storage_repository = PostgresStorageRepository(connection_factory)
+    storage_handler = StorageLifecycleOutboxHandler(
+        launcher,
+        RepositoryStorageExecutionInputResolver(storage_repository),
+    )
+    storage_transaction_factory = StorageTransactionConnectionFactory(connection_factory)
+    storage_schedule_repository = PostgresStorageRepository(storage_transaction_factory)
+    storage_schedule_service = StorageGovernanceService(
+        storage_schedule_repository,
+        cursor_secret=resolved.cursor_secret,
+        idempotency=PostgresStorageIdempotencyStore(
+            connection_factory,
+            storage_transaction_factory,
+        ),
+    )
+    schedule_handler = StorageLifecycleScheduleOutboxHandler(storage_schedule_service)
+    schedule_enqueuer = RepositoryStorageScheduleEnqueuer(storage_repository)
+    audit_repository = PostgresAuditGovernanceRepository(connection_factory)
+    audit_projection = AuditProjectionService(
+        PostgresAuditProjectionRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+        retention_policy_provider=audit_repository.get_policy,
+        legal_hold_provider=audit_repository.list_holds,
+    )
+    audit_governance = AuditGovernanceService(
+        audit_repository,
+        audit_projection,
+        S3AuditArtifactStore(
+            s3_client,
+            resolved.object_store_bucket,
+            prefix=f"{resolved.artifact_prefix}/audit-exports",
+            presign_client=s3_presign_client,
+        ),
+    )
+    annotation = AnnotationService(PostgresAnnotationRepository(connection_factory))
+    auto_providers: tuple[HttpAutoAnnotationProvider, ...] = ()
+    if resolved.auto_annotation_provider_endpoint is not None:
+        api_key = resolved.auto_annotation_provider_api_key
+        auto_providers = (
+            HttpAutoAnnotationProvider(
+                name=resolved.auto_annotation_provider_name,
+                endpoint=resolved.auto_annotation_provider_endpoint,
+                models=resolved.auto_annotation_provider_models,
+                api_key=None if api_key is None else api_key.get_secret_value(),
+                timeout_seconds=resolved.auto_annotation_provider_timeout_seconds,
+            ),
+        )
+    auto_annotation_jobs = AutoAnnotationJobService(
+        annotation,
+        PostgresAutoAnnotationJobRepository(connection_factory),
+        auto_providers,
+        max_concurrent_jobs_per_project=resolved.auto_annotation_max_concurrent_jobs,
+        max_jobs_per_hour=resolved.auto_annotation_max_jobs_per_hour,
+        daily_cost_limit_micros=resolved.auto_annotation_daily_cost_limit_micros,
+    )
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
-        {handler.EVENT_TYPE: handler},
+        {
+            handler.EVENT_TYPE: handler,
+            storage_handler.EVENT_TYPE: storage_handler,
+            schedule_handler.EVENT_TYPE: schedule_handler,
+            AuditExportOutboxHandler.EVENT_TYPE: AuditExportOutboxHandler(audit_governance),
+            AutoAnnotationOutboxHandler.EVENT_TYPE: AutoAnnotationOutboxHandler(
+                auto_annotation_jobs
+            ),
+        },
         worker_id=f"hc-outbox-{socket.gethostname()}",
     )
     return WorkerOutboxRuntime(
@@ -475,4 +883,5 @@ def build_worker_outbox(
         scopes=resolved.outbox_scopes,
         poll_interval_seconds=resolved.outbox_poll_interval_seconds,
         batch_size=resolved.outbox_batch_size,
+        schedule_enqueuer=schedule_enqueuer,
     )

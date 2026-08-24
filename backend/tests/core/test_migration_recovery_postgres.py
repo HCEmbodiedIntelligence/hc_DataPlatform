@@ -35,7 +35,7 @@ EXPECTED_NEW_OBJECTS = {
         "ingest.dashboard_rollout_objects_scope_committed_idx",
         "ingest.dashboard_rollouts_scope_created_idx",
     ),
-    "security/003_outbox_dispatch.sql": ("core.outbox_events_claimable_idx",),
+    "security/003_outbox_dispatch.sql": ("core.outbox_events_organization_claimable_idx",),
     "ingest/003_automatic_workflow_trigger.sql": ("ingest.workflow_triggers",),
     "annotation/0003_automatic_tasks.sql": (
         "annotation.tag_schema_bindings",
@@ -52,6 +52,12 @@ EXPECTED_NEW_OBJECTS = {
         "annotation.dashboard_annotation_reviews_event_idx",
     ),
 }
+
+
+def _migrations_after_historical_baseline() -> tuple[str, ...]:
+    """Keep the recovery gate current as additive domain migrations land."""
+
+    return tuple(item.version for item in load_migrations()[HISTORICAL_COUNT:])
 
 
 def _required_dsn(name: str) -> str:
@@ -229,30 +235,66 @@ async def _assert_current_objects(dsn: str) -> None:
 
 def test_existing_twenty_migrations_upgrade_forward_without_data_loss() -> None:
     dsn = _required_dsn("HC_MIGRATION_RECOVERY_EXISTING_DSN")
+    expected_missing = _migrations_after_historical_baseline()
     asyncio.run(_bootstrap_historical_twenty(dsn))
     expected_counts = asyncio.run(_seed_historical_rows(dsn))
 
     before = asyncio.run(migration_status(dsn))
     assert before == {
         "status": "not_current",
-        "expected": 28,
-        "applied": 20,
-        "missing": sorted((*ORIGINAL_MISSING, *FORWARD_REPAIR)),
+        "expected": HISTORICAL_COUNT + len(expected_missing),
+        "applied": HISTORICAL_COUNT,
+        "missing": sorted(expected_missing),
         "unknown": [],
         "checksum_drift": [],
     }
 
+    with pytest.raises(
+        asyncpg.exceptions.RaiseError,
+        match="organization-scoped product upgrade requires exactly one registry organization",
+    ):
+        asyncio.run(apply_migrations(dsn))
+
+    # Forward migrations before 019 commit independently.  The tenant-identity
+    # preflight is the deliberate stop point: operators must register one exact
+    # organization instead of letting the migration invent an owner for old data.
+    stopped = asyncio.run(migration_status(dsn))
+    assert stopped == {
+        "status": "not_current",
+        "expected": HISTORICAL_COUNT + len(expected_missing),
+        "applied": HISTORICAL_COUNT + len(expected_missing) - 2,
+        "missing": [
+            "annotation/0008_scoped_legacy_cleaning_import.sql",
+            "security/019_product_organization_scope.sql",
+        ],
+        "unknown": [],
+        "checksum_drift": [],
+    }
+    assert asyncio.run(_exact_counts(dsn, tuple(expected_counts))) == expected_counts
+
+    with psycopg.connect(normalize_postgres_dsn(dsn)) as connection:
+        connection.execute(
+            """
+            INSERT INTO registry.organization_projects (organization_id, project_id)
+            VALUES ('mr01-history-organization', 'mr01-history-project')
+            """
+        )
+
     applied_now = asyncio.run(apply_migrations(dsn))
-    assert tuple(applied_now) == (*ORIGINAL_MISSING, *FORWARD_REPAIR)
+    assert applied_now == [
+        "security/019_product_organization_scope.sql",
+        "annotation/0008_scoped_legacy_cleaning_import.sql",
+    ]
     assert asyncio.run(migration_status(dsn))["status"] == "current"
     assert asyncio.run(apply_migrations(dsn)) == []
     assert asyncio.run(_exact_counts(dsn, tuple(expected_counts))) == expected_counts
     asyncio.run(_assert_current_objects(dsn))
 
     with psycopg.connect(normalize_postgres_dsn(dsn)) as connection:
-        sealed, base_step_count = connection.execute(
+        sealed, base_step_count, snapshot_organization, task_organization = connection.execute(
             """
-            SELECT snapshot.sealed, task.base_step_count
+            SELECT snapshot.sealed, task.base_step_count,
+                   snapshot.organization_id, task.organization_id
             FROM storage.inventory_snapshots snapshot
             CROSS JOIN annotation.annotation_tasks task
             WHERE snapshot.snapshot_id = 'mr01-history-snapshot'
@@ -261,6 +303,8 @@ def test_existing_twenty_migrations_upgrade_forward_without_data_loss() -> None:
         ).fetchone()
     assert sealed is True
     assert base_step_count == 123
+    assert snapshot_organization == "mr01-history-organization"
+    assert task_organization == "mr01-history-organization"
 
 
 def test_fresh_database_upgrade_reupgrade_and_wave2_cleanup_scope(
@@ -271,8 +315,8 @@ def test_fresh_database_upgrade_reupgrade_and_wave2_cleanup_scope(
     assert asyncio.run(apply_migrations(dsn)) == expected_versions
     assert asyncio.run(migration_status(dsn)) == {
         "status": "current",
-        "expected": 28,
-        "applied": 28,
+        "expected": len(expected_versions),
+        "applied": len(expected_versions),
         "missing": [],
         "unknown": [],
         "checksum_drift": [],
@@ -282,16 +326,34 @@ def test_fresh_database_upgrade_reupgrade_and_wave2_cleanup_scope(
 
     scope = RunScope.create("mr01-cleanup")
     outside_project = "be22-outside-control-p1"
+    outside_organization = "be22-outside-control-org"
     with psycopg.connect(normalize_postgres_dsn(dsn)) as connection:
-        for project_id in (scope.project_id, scope.foreign_project_id, outside_project):
+        organization_projects = (
+            (scope.organization_id, scope.project_id),
+            (scope.organization_id, scope.foreign_project_id),
+            (outside_organization, outside_project),
+        )
+        for organization_id, project_id in organization_projects:
+            connection.execute(
+                """INSERT INTO registry.organization_projects (organization_id, project_id)
+                   VALUES (%s, %s) ON CONFLICT DO NOTHING""",
+                (organization_id, project_id),
+            )
+        for organization_id, project_id in organization_projects:
             connection.execute(
                 """
                 INSERT INTO core.audit_events (
-                    audit_id, project_id, actor_id, action, resource_type,
+                    audit_id, organization_id, project_id, actor_id, action, resource_type,
                     resource_id, request_id, details, occurred_at
-                ) VALUES (%s, %s, 'mr01', 'TEST', 'migration', %s, %s, '{}'::jsonb, now())
+                ) VALUES (%s, %s, %s, 'mr01', 'TEST', 'migration', %s, %s, '{}'::jsonb, now())
                 """,
-                (uuid.uuid4(), project_id, project_id, f"request-{project_id}"),
+                (
+                    uuid.uuid4(),
+                    organization_id,
+                    project_id,
+                    project_id,
+                    f"request-{project_id}",
+                ),
             )
 
     database = urlparse(normalize_postgres_dsn(dsn)).path.lstrip("/")

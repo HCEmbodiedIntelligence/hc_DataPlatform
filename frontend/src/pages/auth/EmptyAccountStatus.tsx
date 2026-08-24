@@ -1,6 +1,14 @@
 import { Button } from "antd";
-import { FileClock, FolderPlus, LogOut, ShieldPlus } from "lucide-react";
+import {
+  Bell,
+  FileClock,
+  FolderPlus,
+  LogOut,
+  Settings,
+  ShieldPlus,
+} from "lucide-react";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { AuthStatusCard } from "./AuthStatusCard";
 import styles from "./styles.module.css";
 
@@ -13,6 +21,7 @@ interface EmptyAccountStatusProps {
   readonly loggingOut?: boolean;
   readonly notice?: ReactNode;
   readonly onIntent: (intent: EmptyAccountIntent) => void;
+  readonly onNotifications?: () => void;
   readonly onLogout?: () => void;
 }
 
@@ -23,6 +32,7 @@ export function EmptyAccountStatus({
   loggingOut = false,
   notice,
   onIntent,
+  onNotifications,
   onLogout,
 }: EmptyAccountStatusProps) {
   return (
@@ -78,6 +88,19 @@ export function EmptyAccountStatus({
           >
             申请记录
           </Button>
+          {onNotifications ? (
+            <Button
+              type="link"
+              icon={<Bell size={17} aria-hidden="true" />}
+              onClick={onNotifications}
+            >
+              通知
+            </Button>
+          ) : null}
+          <Link className={styles.accountSettingsLink} to="/account/settings">
+            <Settings aria-hidden="true" size={17} />
+            账户设置
+          </Link>
         </>
       }
     />

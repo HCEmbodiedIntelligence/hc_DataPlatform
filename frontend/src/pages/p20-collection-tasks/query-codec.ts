@@ -18,6 +18,7 @@ const statuses = new Set<CollectionTaskStatusFilter>([
   "ALL",
   "ACTIVE",
   "CLOSED",
+  "CANCELLED",
 ]);
 const stableIdentifier = /^[A-Za-z0-9._-]{1,128}$/u;
 

@@ -21,6 +21,7 @@ _ERROR_CODE = re.compile(r"^[A-Z0-9_]{1,128}$")
 
 @dataclass(frozen=True, slots=True)
 class OutboxClaim:
+    organization_id: str
     event: DomainEventEnvelope
     claim_token: str
     attempt: int
@@ -30,6 +31,7 @@ class OutboxDeliveryRepository(Protocol):
     def claim_next(
         self,
         *,
+        organization_id: str,
         project_id: str,
         region_code: str,
         worker_id: str,
@@ -53,7 +55,7 @@ OutboxHandler = Callable[[DomainEventEnvelope], Awaitable[object] | object]
 
 
 class OutboxDispatcher:
-    """Dispatch one exact project/region scope; callers enumerate authorized scopes."""
+    """Dispatch one exact organization/project/region scope."""
 
     def __init__(
         self,
@@ -78,9 +80,12 @@ class OutboxDispatcher:
         self._lease_duration = lease_duration
         self._retry_delay = retry_delay
 
-    async def dispatch_one(self, *, project_id: str, region_code: str) -> bool:
+    async def dispatch_one(
+        self, *, organization_id: str, project_id: str, region_code: str
+    ) -> bool:
         now = self._clock()
         claim = self._repository.claim_next(
+            organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
             worker_id=self._worker_id,
@@ -147,6 +152,7 @@ class InMemoryOutboxDeliveryRepository:
     def claim_next(
         self,
         *,
+        organization_id: str,
         project_id: str,
         region_code: str,
         worker_id: str,
@@ -159,8 +165,9 @@ class InMemoryOutboxDeliveryRepository:
                 (
                     event
                     for event in self._events.values()
-                    if event.project_id == project_id
-                    and event.region_code == region_code
+                    if event.organization_id == organization_id
+                    and event.project_id == project_id
+                    and (event.region_code is None or event.region_code == region_code)
                     and self._claimable(self._state[event.event_id], now)
                 ),
                 key=lambda event: (event.occurred_at, event.event_id),
@@ -173,7 +180,12 @@ class InMemoryOutboxDeliveryRepository:
             state["attempts"] += 1
             state["claim_token"] = token
             state["claimed_until"] = claimed_until
-            return OutboxClaim(event=event, claim_token=token, attempt=state["attempts"])
+            return OutboxClaim(
+                organization_id=organization_id,
+                event=event,
+                claim_token=token,
+                attempt=state["attempts"],
+            )
 
     def mark_dispatched(self, claim: OutboxClaim, *, occurred_at: datetime) -> None:
         with self._lock:
@@ -226,6 +238,7 @@ class InMemoryOutboxDeliveryRepository:
     @staticmethod
     def _audit(claim: OutboxClaim, action: str, error_code: str | None) -> dict[str, object]:
         return {
+            "organization_id": claim.organization_id,
             "project_id": claim.event.project_id,
             "region_code": claim.event.region_code,
             "resource_id": claim.event.aggregate_id,
@@ -245,6 +258,7 @@ class PostgresOutboxDeliveryRepository:
     def claim_next(
         self,
         *,
+        organization_id: str,
         project_id: str,
         region_code: str,
         worker_id: str,
@@ -258,14 +272,16 @@ class PostgresOutboxDeliveryRepository:
                     """
                     SELECT event_id, envelope
                     FROM core.outbox_events
-                    WHERE project_id = %s AND region_code = %s
+                    WHERE organization_id = %s
+                      AND project_id = %s
+                      AND (region_code = %s OR region_code IS NULL)
                       AND published_at IS NULL AND available_at <= %s
                       AND (claimed_until IS NULL OR claimed_until <= %s)
                     ORDER BY available_at, occurred_at, event_id
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                     """,
-                    (project_id, region_code, now, now),
+                    (organization_id, project_id, region_code, now, now),
                 )
                 raw = cursor.fetchone()
                 if raw is None:
@@ -277,20 +293,27 @@ class PostgresOutboxDeliveryRepository:
                 )
                 if event.event_id != event_id:
                     raise RuntimeError("outbox envelope identity mismatch")
+                if event.organization_id not in {None, organization_id}:
+                    raise RuntimeError("outbox envelope organization mismatch")
                 claim_token = str(uuid4())
                 cursor.execute(
                     """
                     UPDATE core.outbox_events
                     SET claim_token = %s, claimed_by = %s, claimed_until = %s,
                         publish_attempts = publish_attempts + 1
-                    WHERE event_id = %s
+                    WHERE event_id = %s AND organization_id = %s
                     RETURNING publish_attempts
                     """,
-                    (claim_token, worker_id, claimed_until, event_id),
+                    (claim_token, worker_id, claimed_until, event_id, organization_id),
                 )
                 attempt = int(cursor.fetchone()[0])
             connection.commit()
-            return OutboxClaim(event=event, claim_token=claim_token, attempt=attempt)
+            return OutboxClaim(
+                organization_id=organization_id,
+                event=event,
+                claim_token=claim_token,
+                attempt=attempt,
+            )
         except Exception:
             connection.rollback()
             raise
@@ -339,7 +362,8 @@ class PostgresOutboxDeliveryRepository:
                         last_error = %s,
                         last_error_code = %s,
                         claim_token = NULL, claimed_by = NULL, claimed_until = NULL
-                    WHERE event_id = %s AND claim_token = %s AND published_at IS NULL
+                    WHERE event_id = %s AND organization_id = %s
+                      AND claim_token = %s AND published_at IS NULL
                     RETURNING event_id
                     """,
                     (
@@ -348,29 +372,31 @@ class PostgresOutboxDeliveryRepository:
                         error_code,
                         error_code,
                         event.event_id,
+                        claim.organization_id,
                         claim.claim_token,
                     ),
                 )
                 if cursor.fetchone() is None:
                     raise RuntimeError("outbox claim is no longer owned")
-                cursor.execute(
-                    """
-                    UPDATE ingest.workflow_triggers
-                    SET status = %s, attempts = %s, last_error_code = %s, updated_at = %s
-                    WHERE event_id = %s AND project_id = %s AND region_code = %s
-                    """,
-                    (
-                        status,
-                        claim.attempt,
-                        error_code,
-                        occurred_at,
-                        event.event_id,
-                        event.project_id,
-                        event.region_code,
-                    ),
-                )
-                if cursor.rowcount != 1:
-                    raise RuntimeError("ingest workflow trigger is missing")
+                if event.event_type == "ingest.workflow.requested.v1":
+                    cursor.execute(
+                        """
+                        UPDATE ingest.workflow_triggers
+                        SET status = %s, attempts = %s, last_error_code = %s, updated_at = %s
+                        WHERE event_id = %s AND project_id = %s AND region_code = %s
+                        """,
+                        (
+                            status,
+                            claim.attempt,
+                            error_code,
+                            occurred_at,
+                            event.event_id,
+                            event.project_id,
+                            event.region_code,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError("ingest workflow trigger is missing")
                 workflow_id = str(event.payload.get("workflow_id", ""))
                 details: dict[str, object] = {
                     "workflow_id": workflow_id,
@@ -387,15 +413,16 @@ class PostgresOutboxDeliveryRepository:
                 cursor.execute(
                     """
                     INSERT INTO core.audit_events (
-                        audit_id, project_id, region_code, actor_id, action,
+                        audit_id, organization_id, project_id, region_code, actor_id, action,
                         resource_type, resource_id, request_id, before_hash,
                         after_hash, details, occurred_at
-                    ) VALUES (%s, %s, %s, 'outbox-dispatcher', %s,
+                    ) VALUES (%s, %s, %s, %s, 'outbox-dispatcher', %s,
                               %s, %s, %s, NULL, %s, %s::jsonb, %s)
                     ON CONFLICT (audit_id) DO NOTHING
                     """,
                     (
                         audit_id,
+                        claim.organization_id,
                         event.project_id,
                         event.region_code,
                         action,

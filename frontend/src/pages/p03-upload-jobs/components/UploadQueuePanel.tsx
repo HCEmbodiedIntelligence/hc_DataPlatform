@@ -9,8 +9,15 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import type { UploadQueueItem } from "../upload-queue-store";
-import { formatBytes, formatDuration } from "../upload-contract";
+import type {
+  FolderBatchProgress,
+  UploadQueueItem,
+} from "../upload-queue-store";
+import {
+  formatBytes,
+  formatDuration,
+  type UploadProblemCopy,
+} from "../upload-contract";
 import styles from "../styles.module.css";
 
 const queueStatusTagStyle = {
@@ -20,6 +27,7 @@ const queueStatusTagStyle = {
 const transferLabels: Readonly<
   Record<UploadQueueItem["transferStatus"], string>
 > = {
+  waiting: "等待上传",
   preparing: "正在建立会话",
   uploading: "正在上传",
   pausing: "正在暂停传输",
@@ -37,6 +45,7 @@ function statusTone(status: UploadQueueItem["transferStatus"]) {
   if (status === "failed" || status === "cancelled") return "error";
   if (status === "paused" || status === "offline" || status === "needs-file")
     return "warning";
+  if (status === "waiting") return undefined;
   return "processing";
 }
 
@@ -91,7 +100,9 @@ function QueueItemCard(props: {
             ? "exception"
             : item.transferStatus === "committed"
               ? "success"
-              : "active"
+              : ["uploading", "finalizing"].includes(item.transferStatus)
+                ? "active"
+                : "normal"
         }
         size="small"
         format={(value) => `${Number(value).toFixed(1)}%`}
@@ -116,8 +127,10 @@ function QueueItemCard(props: {
           <dd>{formatDuration(item.remainingSeconds)}</dd>
         </div>
         <div>
-          <dt>已确认</dt>
-          <dd>{formatBytes(item.uploadedBytes)}</dd>
+          <dt>已上传 / 总大小</dt>
+          <dd>
+            {formatBytes(item.uploadedBytes)} / {formatBytes(item.totalBytes)}
+          </dd>
         </div>
       </dl>
 
@@ -225,6 +238,15 @@ function QueueItemCard(props: {
           >
             重试提交
           </Button>
+        ) : item.transferStatus === "failed" && item.sessionId ? (
+          <Button
+            size="small"
+            icon={<RotateCcw aria-hidden="true" size={13} />}
+            disabled={!props.canManage}
+            onClick={props.onResume}
+          >
+            继续未完成上传
+          </Button>
         ) : null}
         {mayCancel ? (
           <Popconfirm
@@ -257,6 +279,8 @@ function QueueItemCard(props: {
 export function UploadQueuePanel(props: {
   readonly items: readonly UploadQueueItem[];
   readonly recovering: boolean;
+  readonly recoveryProblem: UploadProblemCopy | null;
+  readonly folderBatch: FolderBatchProgress | null;
   readonly canManage: boolean;
   readonly onPause: (id: string) => void;
   readonly onResume: (id: string) => void;
@@ -264,6 +288,7 @@ export function UploadQueuePanel(props: {
   readonly onCancel: (id: string) => void;
   readonly onReattach: (id: string, file: File) => void;
   readonly onClearSettled: () => void;
+  readonly onRecover: () => void;
 }) {
   const settled = props.items.some((item) =>
     ["committed", "cancelled"].includes(item.transferStatus),
@@ -283,6 +308,49 @@ export function UploadQueuePanel(props: {
           </h2>
         </div>
       </header>
+      {props.recoveryProblem ? (
+        <div className={styles.queueFailure} role="alert">
+          <CircleAlert size={14} aria-hidden="true" />
+          <div>
+            <strong>{props.recoveryProblem.title}</strong>
+            <span>{props.recoveryProblem.detail}</span>
+            {props.recoveryProblem.requestId ? (
+              <small>
+                请求 ID：
+                <code translate="no">{props.recoveryProblem.requestId}</code>
+              </small>
+            ) : null}
+            <Button size="small" onClick={props.onRecover}>
+              重新恢复队列
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {props.folderBatch ? (
+        <p className={styles.queueNotice} aria-live="polite">
+          <UploadCloud size={14} aria-hidden="true" /> 目录批量上传：已处理
+          {props.folderBatch.completed} / {props.folderBatch.total}
+          {props.folderBatch.failed > 0
+            ? `，其中 ${props.folderBatch.failed} 个待人工处理`
+            : ""}
+          {props.folderBatch.status === "offline"
+            ? "；网络恢复后将继续当前数据包和其余目录。"
+            : props.folderBatch.status === "completed"
+              ? "；目录中的数据包已全部处理。"
+              : props.folderBatch.activeDataPackageId
+                ? `；当前：${props.folderBatch.activeDataPackageId}`
+                : "。"}
+        </p>
+      ) : null}
+      {props.items.some(
+        (item) =>
+          item.sourceType === "BROWSER_MULTIPART" &&
+          !["committed", "cancelled"].includes(item.transferStatus),
+      ) ? (
+        <p className={styles.queueBrowserWarning} role="note">
+          浏览器刷新或关闭会中断正在进行的直传。服务端会保留已成功分片；重新进入后可恢复任务状态，并在重新选择同一原文件后断点续传。
+        </p>
+      ) : null}
       <div className={styles.queueList} aria-live="polite">
         {props.items.map((item) => (
           <QueueItemCard
@@ -305,7 +373,7 @@ export function UploadQueuePanel(props: {
             <span>
               {props.recovering
                 ? "正在核对服务端已确认分片…"
-                : "预检通过后点击“开始上传”。"}
+                : "选择并确认采集文件夹后，平台预检通过的任务会出现在这里。"}
             </span>
           </div>
         ) : null}

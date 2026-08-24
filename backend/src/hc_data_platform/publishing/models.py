@@ -42,6 +42,14 @@ class ExportFormat(str, Enum):
     LEROBOT_V3 = "lerobot_v3"
 
 
+class ExportJobStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
 class StepRangeV1(BaseModel):
     """A half-open logical step range ``[start_step, end_step)``."""
 
@@ -235,7 +243,6 @@ class ExportDatasetRequestV1(BaseModel):
 
     project_id: str = Field(min_length=1)
     format: ExportFormat
-    attempt_id: str | None = Field(default=None, min_length=1)
 
 
 class ExportResultV1(BaseModel):
@@ -252,3 +259,70 @@ class ExportResultV1(BaseModel):
     artifact_content_hash: str = Field(pattern=SHA256_PATTERN)
     row_count: int = Field(ge=0)
     media_type: str
+
+
+class ExportJobResultV1(BaseModel):
+    """A completed export fact that deliberately omits physical locators and grants."""
+
+    model_config = ConfigDict(frozen=True)
+
+    format: ExportFormat
+    project_id: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    dataset_version: str = Field(min_length=1)
+    manifest_content_hash: str = Field(pattern=SHA256_PATTERN)
+    attempt_id: str = Field(min_length=1)
+    artifact_content_hash: str = Field(pattern=SHA256_PATTERN)
+    row_count: int = Field(ge=0)
+    media_type: str = Field(min_length=1)
+
+
+class ExportJobProgressV1(BaseModel):
+    """Progress over the three durable export phases, never an estimated byte rate."""
+
+    model_config = ConfigDict(frozen=True)
+
+    phase: str = Field(min_length=1)
+    completed_phases: int = Field(ge=0)
+    total_phases: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> ExportJobProgressV1:
+        if self.completed_phases > self.total_phases:
+            raise ValueError("completed_phases cannot exceed total_phases")
+        return self
+
+
+class ExportJobV1(BaseModel):
+    """One durable export workflow, projected without a reusable download grant."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    dataset_version: str = Field(min_length=1)
+    format: ExportFormat
+    attempt_id: str = Field(min_length=1)
+    status: ExportJobStatus
+    stage: str = Field(min_length=1)
+    progress: ExportJobProgressV1
+    cancellation_requested: bool
+    result: ExportJobResultV1 | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExportDownloadAuthorizationV1(BaseModel):
+    """A fresh, bearer-authorized short-lived object-store GET capability."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: str = Field(min_length=1)
+    format: ExportFormat
+    download_url: str = Field(min_length=1)
+    expires_at: datetime
+    artifact_content_hash: str = Field(pattern=SHA256_PATTERN)
+    media_type: str = Field(min_length=1)

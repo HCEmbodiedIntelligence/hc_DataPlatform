@@ -19,3 +19,6 @@ backend:
     serviceVersion: ci-validate
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     objectStorePublicEndpoint: https://uploads.example.invalid
+    authTrustedProxyCidrs: '["10.0.0.0/8"]'
+    authTurnstileSiteKey: ci-turnstile-site-key
+    authTurnstileExpectedHostnames: '["app.example.invalid"]'

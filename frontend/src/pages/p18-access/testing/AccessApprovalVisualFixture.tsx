@@ -2,16 +2,26 @@ import { useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createDomainError } from "../../../shared/api/domain-error";
 import { AccessApprovalView } from "../AccessApprovalView";
+import { UserManagementPanel } from "../UserManagementPanel";
 import type { AccessDecisionInput } from "../access-api";
-import type { AccessRequestRow, AccessRequestStatus } from "../contracts";
+import type {
+  AccessRequestRow,
+  AccessRequestStatus,
+  ManagedAccount,
+  ManagedAccountPage,
+} from "../contracts";
 import { decisionLabel } from "../presentation";
 import type { AccessSearch } from "../query-codec";
 
-export type AccessApprovalVisualScenario = "reference" | "forbidden" | "empty";
+export type AccessApprovalVisualScenario =
+  | "reference"
+  | "users"
+  | "forbidden"
+  | "empty";
 
 export interface AccessApprovalVisualFixtureOptions {
   readonly scenario?: AccessApprovalVisualScenario;
-  readonly tab?: "membership-requests" | "capability-requests";
+  readonly tab?: "users" | "membership-requests" | "capability-requests";
 }
 
 const statuses: readonly AccessRequestStatus[] = [
@@ -74,6 +84,61 @@ const capabilityRows: readonly AccessRequestRow[] = [
   },
 ];
 
+const managedAccounts: readonly ManagedAccount[] = [
+  {
+    principal_id: "principal-hc-admin",
+    username: "hc-admin",
+    display_name: "平台管理员",
+    state: "ACTIVE",
+    platform_role: "PLATFORM_ADMIN",
+    recovery_email_configured: true,
+    recovery_email_hint: "h***@example.cn",
+    active_session_count: 2,
+    password_changed_at: "2026-08-20T09:12:00Z",
+    created_at: "2026-07-01T03:00:00Z",
+    updated_at: "2026-08-20T09:12:00Z",
+    revision: 8,
+    etag: '"account-8"',
+  },
+  {
+    principal_id: "principal-robot-ops",
+    username: "robot-ops",
+    display_name: "机器人运维",
+    state: "ACTIVE",
+    platform_role: "USER",
+    recovery_email_configured: true,
+    recovery_email_hint: "r***@example.cn",
+    active_session_count: 3,
+    password_changed_at: "2026-08-18T02:20:00Z",
+    created_at: "2026-07-11T02:20:00Z",
+    updated_at: "2026-08-18T02:20:00Z",
+    revision: 4,
+    etag: '"account-4"',
+  },
+  {
+    principal_id: "principal-label-review",
+    username: "label-review",
+    display_name: "标注复核员",
+    state: "DISABLED",
+    platform_role: "USER",
+    recovery_email_configured: false,
+    recovery_email_hint: null,
+    active_session_count: 0,
+    password_changed_at: "2026-08-06T06:45:00Z",
+    created_at: "2026-08-06T06:45:00Z",
+    updated_at: "2026-08-19T11:30:00Z",
+    revision: 3,
+    etag: '"account-3"',
+  },
+];
+
+const managedAccountPage: ManagedAccountPage = {
+  items: [...managedAccounts],
+  page: 1,
+  page_size: 10,
+  total: managedAccounts.length,
+};
+
 const forbiddenError = createDomainError({
   code: "FORBIDDEN",
   problemCode: "PROJECT_SCOPE_FORBIDDEN",
@@ -93,6 +158,8 @@ function AccessApprovalVisualFixture({
   const [search, setSearch] = useState<AccessSearch>({
     tab,
     status: "ALL",
+    accountState: "ALL",
+    accountRole: "ALL",
     order: "recent",
     page: 1,
     pageSize: 10,
@@ -103,6 +170,7 @@ function AccessApprovalVisualFixture({
   const [successMessage, setSuccessMessage] = useState<string>();
   const empty = scenario === "empty";
   const forbidden = scenario === "forbidden";
+  const users = scenario === "users";
 
   const decide = (input: AccessDecisionInput) => {
     const removeDecidedRow = (rows: readonly AccessRequestRow[]) =>
@@ -134,6 +202,34 @@ function AccessApprovalVisualFixture({
           error: forbidden ? forbiddenError : null,
         }}
         canManage
+        canReadPlatformAccounts={users}
+        userManagement={
+          users ? (
+            <UserManagementPanel
+              search={search}
+              page={managedAccountPage}
+              loading={false}
+              fetching={false}
+              error={null}
+              mutationPending={false}
+              mutationError={null}
+              canManage
+              canUnlock
+              currentPrincipalId="principal-hc-admin"
+              onSearchChange={(patch) =>
+                setSearch((current) => ({ ...current, ...patch }))
+              }
+              onRefresh={() => undefined}
+              onCreate={() => Promise.resolve()}
+              onStatusChange={() => Promise.resolve()}
+              onRoleChange={() => Promise.resolve()}
+              onResetPassword={() => Promise.resolve()}
+              onDelete={() => Promise.resolve()}
+              onUnlock={() => Promise.resolve()}
+              onDismissStatus={() => undefined}
+            />
+          ) : undefined
+        }
         principalId="project-admin-01"
         decisionPending={false}
         decisionError={null}

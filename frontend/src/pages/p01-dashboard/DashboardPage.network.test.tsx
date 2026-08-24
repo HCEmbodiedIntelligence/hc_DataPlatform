@@ -9,13 +9,11 @@ import type { AuthorizationSnapshot } from "../../entities/capability";
 import { makeScopeKey } from "../../entities/scope";
 import {
   getDashboardActivity,
-  getDashboardCoverage,
   getDashboardSnapshot,
   listDashboardPendingItems,
 } from "../../features/dashboard/api/client";
 import {
   dashboardActivityFixture,
-  dashboardCoverageFixture,
   dashboardPendingFixture,
   dashboardSnapshotFixture,
 } from "../../mocks/fixtures/dashboard";
@@ -56,8 +54,6 @@ function responseFor(url: string): Response {
     return json(dashboardActivityFixture);
   if (url.includes("/dashboard/snapshot?"))
     return json(dashboardSnapshotFixture);
-  if (url.includes("/dashboard/coverage?"))
-    return json(dashboardCoverageFixture);
   if (url.includes("/dashboard/pending-items?"))
     return json(dashboardPendingFixture);
   return json({ title: "Unexpected request", status: 404 }, { status: 404 });
@@ -95,24 +91,23 @@ describe("Dashboard production client path", () => {
     resetRuntimeConfigForTests();
   });
 
-  it("issues only the four formal HTTP reads with no Browser Mock or MSW fallback", async () => {
+  it("issues only the three visible-region HTTP reads with no Browser Mock or MSW fallback", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
       responseFor(String(input)),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const [activity, snapshot, coverage, pending] = await Promise.all([
+    const [activity, snapshot, pending] = await Promise.all([
       getDashboardActivity(dashboardScope, dashboardWindow),
       getDashboardSnapshot(dashboardScope, dashboardWindow),
-      getDashboardCoverage(dashboardScope, dashboardWindow),
       listDashboardPendingItems(dashboardScope, dashboardWindow, { limit: 5 }),
     ]);
 
     expect(activity.items).toHaveLength(2);
     expect(snapshot.signalPipeline.stages).toHaveLength(8);
-    expect(coverage.section.status).toBe("BLOCKED");
+    expect(snapshot.signalPipeline.stageCounts.PUBLISHED).toBe(8);
     expect(pending.items).toHaveLength(4);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const urls = fetchMock.mock.calls.map(([input]) => String(input));
     expect(
       urls
@@ -120,7 +115,6 @@ describe("Dashboard production client path", () => {
         .sort(),
     ).toEqual([
       "/api/v1/projects/prj_fx_01/dashboard/activity",
-      "/api/v1/projects/prj_fx_01/dashboard/coverage",
       "/api/v1/projects/prj_fx_01/dashboard/pending-items",
       "/api/v1/projects/prj_fx_01/dashboard/snapshot",
     ]);
@@ -133,36 +127,32 @@ describe("Dashboard production client path", () => {
     }
   });
 
-  it("surfaces RFC 9457 errors and request IDs instead of returning fixture data", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        json(
-          {
-            type: "about:blank",
-            title: "Coverage unavailable",
-            status: 503,
-            detail: "覆盖率事实源暂时不可用",
-            code: "DASHBOARD_COVERAGE_UNAVAILABLE",
-            request_id: "req-p01-coverage-503",
-            retryable: true,
-          },
-          {
-            status: 503,
-            headers: { "Content-Type": "application/problem+json" },
-          },
-        ),
-      ),
+  it("renders only the remaining cards and never requests coverage", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      responseFor(String(input)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
-    await expect(
-      getDashboardCoverage(dashboardScope, dashboardWindow),
-    ).rejects.toMatchObject({
-      code: "SERVER_ERROR",
-      problemCode: "DASHBOARD_COVERAGE_UNAVAILABLE",
-      message: "覆盖率事实源暂时不可用",
-      requestId: "req-p01-coverage-503",
-    });
+    expect(
+      await screen.findByRole("heading", { name: "最近活动" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "局部状态" })).toBeNull();
+    expect(screen.queryByText("采集覆盖率")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/dashboard/coverage"),
+      ),
+    ).toBe(false);
   });
 
   it("fails closed on 403 authorization without issuing Dashboard reads", async () => {

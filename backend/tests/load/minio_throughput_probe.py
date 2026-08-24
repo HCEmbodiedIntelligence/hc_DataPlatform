@@ -57,9 +57,14 @@ def run(
     size_bytes: int,
     samples: int,
     directory: Path,
+    prefix: str,
+    cleanup: bool,
+    max_concurrency: int,
 ) -> dict[str, Any]:
-    if size_bytes < 1 or samples < 1:
-        raise ValueError("size_bytes and samples must be positive")
+    if size_bytes < 1 or samples < 1 or max_concurrency < 1 or not prefix.strip():
+        raise ValueError(
+            "size_bytes, samples and max_concurrency must be positive and prefix must be non-empty"
+        )
     import boto3
     from boto3.s3.transfer import TransferConfig
     from botocore.config import Config
@@ -79,38 +84,53 @@ def run(
     transfer = TransferConfig(
         multipart_threshold=8 * 1024 * 1024,
         multipart_chunksize=16 * 1024 * 1024,
-        max_concurrency=4,
+        max_concurrency=max_concurrency,
         use_threads=True,
     )
+    prefix = prefix.strip().strip("/")
     upload_seconds: list[float] = []
     download_seconds: list[float] = []
     keys: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="be12-minio-capacity-", dir=directory) as temporary:
-        source = Path(temporary) / "payload.bin"
-        expected_sha256 = _create_file(source, size_bytes)
-        for sample in range(samples):
-            key = f"be12-capacity/sample-{sample:02d}-{expected_sha256[:12]}.bin"
-            keys.append(key)
-            started = time.perf_counter()
-            client.upload_file(str(source), bucket, key, Config=transfer)
-            upload_seconds.append(time.perf_counter() - started)
+    cleanup_remaining: int | None = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="be12-minio-capacity-", dir=directory) as temporary:
+            source = Path(temporary) / "payload.bin"
+            expected_sha256 = _create_file(source, size_bytes)
+            for sample in range(samples):
+                key = f"{prefix}/sample-{sample:02d}-{expected_sha256[:12]}.bin"
+                keys.append(key)
+                started = time.perf_counter()
+                client.upload_file(str(source), bucket, key, Config=transfer)
+                upload_seconds.append(time.perf_counter() - started)
 
-            started = time.perf_counter()
-            digest = hashlib.sha256()
-            response = client.get_object(Bucket=bucket, Key=key)
-            body = response["Body"]
-            try:
-                for chunk in body.iter_chunks(chunk_size=8 * 1024 * 1024):
-                    digest.update(chunk)
-            finally:
-                body.close()
-            download_seconds.append(time.perf_counter() - started)
-            if digest.hexdigest() != expected_sha256:
-                raise RuntimeError(f"downloaded object {key} failed SHA-256 verification")
+                started = time.perf_counter()
+                digest = hashlib.sha256()
+                response = client.get_object(Bucket=bucket, Key=key)
+                body = response["Body"]
+                try:
+                    for chunk in body.iter_chunks(chunk_size=8 * 1024 * 1024):
+                        digest.update(chunk)
+                finally:
+                    body.close()
+                download_seconds.append(time.perf_counter() - started)
+                if digest.hexdigest() != expected_sha256:
+                    raise RuntimeError("downloaded object failed SHA-256 verification")
 
-    objects = client.list_objects_v2(Bucket=bucket, Prefix="be12-capacity/").get("Contents", [])
-    if sorted(value["Key"] for value in objects) != sorted(keys):
-        raise RuntimeError("MinIO object inventory differs from completed samples")
+        objects = client.list_objects_v2(Bucket=bucket, Prefix=f"{prefix}/").get("Contents", [])
+        if sorted(value["Key"] for value in objects) != sorted(keys):
+            raise RuntimeError("MinIO object inventory differs from completed samples")
+    finally:
+        if cleanup:
+            for key in keys:
+                client.delete_object(Bucket=bucket, Key=key)
+            remaining = client.list_objects_v2(Bucket=bucket, Prefix=f"{prefix}/").get(
+                "Contents", []
+            )
+            cleanup_remaining = len(remaining)
+            if cleanup_remaining != 0:
+                raise RuntimeError(
+                    "MinIO capacity probe cleanup left objects in its isolated prefix"
+                )
     upload_throughput = [size_bytes / duration for duration in upload_seconds]
     download_throughput = [size_bytes / duration for duration in download_seconds]
     return {
@@ -118,13 +138,16 @@ def run(
         "measured_at_unix_seconds": int(time.time()),
         "environment": {
             "endpoint_kind": "disposable MinIO container on the WSL2 Docker host",
-            "bucket": bucket,
         },
         "dataset": {
             "kind": "deterministic synthetic binary",
             "size_bytes": size_bytes,
             "samples": samples,
             "sha256": expected_sha256,
+        },
+        "transfer": {
+            "multipart_chunk_bytes": 16 * 1024 * 1024,
+            "max_concurrency": max_concurrency,
         },
         "latency_seconds": {
             "multipart_upload": _summary(upload_seconds),
@@ -150,6 +173,10 @@ def run(
                 "Lance, FFmpeg, LeRobot, and production network/storage contention."
             ),
         },
+        "cleanup": {
+            "enabled": cleanup,
+            "objects_remaining": cleanup_remaining,
+        },
     }
 
 
@@ -161,6 +188,9 @@ def main() -> None:
     parser.add_argument("--secret-key-env", required=True)
     parser.add_argument("--size-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument("--samples", type=int, default=7)
+    parser.add_argument("--prefix", default="be12-capacity")
+    parser.add_argument("--cleanup", action="store_true")
+    parser.add_argument("--max-concurrency", type=int, default=4)
     parser.add_argument("--directory", type=Path, default=Path(tempfile.gettempdir()))
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -176,6 +206,9 @@ def main() -> None:
         size_bytes=args.size_bytes,
         samples=args.samples,
         directory=args.directory,
+        prefix=args.prefix,
+        cleanup=args.cleanup,
+        max_concurrency=args.max_concurrency,
     )
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output is not None:

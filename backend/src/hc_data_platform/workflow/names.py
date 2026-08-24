@@ -9,6 +9,8 @@ CREATE_ANNOTATION_TASK_ACTIVITY = "workflow.create_annotation_task"
 CREATE_PREVIEW_ACTIVITY = "workflow.create_preview"
 PUBLISH_DATASET_ACTIVITY = "workflow.publish_dataset"
 EXPORT_DATASET_ACTIVITY = "workflow.export_dataset"
+PREFLIGHT_EXPORT_ACTIVITY = "workflow.preflight_export"
+VERIFY_EXPORT_ARTIFACT_ACTIVITY = "workflow.verify_export_artifact"
 RECONCILE_CATALOG_ACTIVITY = "workflow.reconcile_catalog"
 RECONCILE_PUBLICATION_ACTIVITY = "workflow.reconcile_publication"
 

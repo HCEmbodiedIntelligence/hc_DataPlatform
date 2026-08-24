@@ -16,6 +16,9 @@ export default defineConfig({
     colorScheme: 'light',
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
+    launchOptions: {
+      args: ['--disable-gpu', '--force-color-profile=srgb'],
+    },
   },
   webServer: {
     command: 'VITE_API_BASE_URL=/api/v1 VITE_SSE_BASE_URL=/api/v1 VITE_MOCK_MODE=browser VITE_BUILD_VERSION=e06-visual VITE_RELEASE_ENV=local pnpm dev --host 127.0.0.1 --port 5191',

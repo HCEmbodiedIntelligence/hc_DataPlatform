@@ -423,14 +423,7 @@ class ExportCoordinator:
         format: ExportFormat,
         attempt_id: str | None = None,
     ) -> ExportResultV1:
-        exporter = self._exporters.get(format)
-        if exporter is None:
-            raise problem(
-                status=501,
-                code="EXPORT_FORMAT_DISABLED",
-                title="Export format disabled",
-                detail=f"No exporter is configured for {format.value}.",
-            )
+        exporter = self._exporter(format)
         selected_attempt = (
             attempt_id
             or hashlib.sha256(f"{manifest.content_hash}:{format.value}".encode()).hexdigest()[:32]
@@ -456,3 +449,75 @@ class ExportCoordinator:
                 outcome=outcome,
                 format=format.value,
             ).inc()
+
+    def preflight(
+        self,
+        manifest: PublishedDatasetManifestV1,
+        *,
+        format: ExportFormat,
+    ) -> int:
+        """Read and validate the immutable source before the materialization activity.
+
+        The materializer deliberately reads the source again: shipping a possibly
+        large step list through Temporal history would make the job non-durable.
+        This separate bounded activity gives callers an honest preflight phase and
+        detects unavailable workers or incomplete source data before writing any
+        export bytes.
+        """
+
+        self._exporter(format)
+        from .exporters import collect_and_validate_export_steps
+
+        return len(collect_and_validate_export_steps(manifest, self._source))
+
+    def verify_artifact(self, result: ExportResultV1) -> None:
+        """Re-read the promoted object and verify its immutable content digest."""
+
+        artifact = self._sink.get_published(result.artifact_uri)
+        if artifact is None:
+            raise problem(
+                status=409,
+                code="EXPORT_ARTIFACT_NOT_AVAILABLE",
+                title="Export artifact is not available",
+                detail="The completed workflow no longer has its immutable artifact.",
+            )
+        if hashlib.sha256(artifact).hexdigest() != result.artifact_content_hash:
+            raise problem(
+                status=409,
+                code="EXPORT_ARTIFACT_HASH_MISMATCH",
+                title="Export artifact integrity check failed",
+                detail="The stored export artifact does not match its workflow result.",
+            )
+
+    def authorize_download(self, result: ExportResultV1) -> str:
+        """Mint a new object-store GET capability only after the API reauthorizes it.
+
+        The workflow result's original presign is never reused for a later browser
+        request. This check also catches any failed/partial promotion before a URL
+        can leave the authenticated boundary.
+        """
+
+        self.verify_artifact(result)
+        authorization = self._sink.get_download_uri(result.artifact_uri)
+        if authorization is None:
+            raise problem(
+                status=409,
+                code="EXPORT_AUTHORIZATION_MISSING",
+                title="Export authorization is missing",
+                detail="The immutable export cannot receive a download authorization.",
+            )
+        return authorization
+
+    def _exporter(self, format: ExportFormat) -> ExporterPort:
+        exporter = self._exporters.get(format)
+        if exporter is None:
+            raise problem(
+                status=503,
+                code="EXPORTER_UNAVAILABLE",
+                title="Export worker is unavailable",
+                detail=(
+                    "The selected native export worker is not available. "
+                    "Retry after the worker is restored."
+                ),
+            )
+        return exporter

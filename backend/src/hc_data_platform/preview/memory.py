@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import quote
 
 from .models import (
@@ -97,11 +99,78 @@ class InMemoryPreviewCache:
 
 
 class HmacUrlSigner:
+    """Signs relative API capability URLs, never object-store or file URLs."""
+
     def __init__(self, secret: bytes = b"preview-development-only") -> None:
         self._secret = secret
 
-    def sign(self, artifact_uri: str, *, expires_at: datetime) -> str:
+    def sign(
+        self,
+        *,
+        session_id: str,
+        artifact_uri: str,
+        asset_name: str,
+        expires_at: datetime,
+    ) -> str:
         expires = int(expires_at.timestamp())
-        payload = f"{artifact_uri}:{expires}".encode()
-        signature = hmac.new(self._secret, payload, hashlib.sha256).hexdigest()
-        return f"https://preview.invalid/media?uri={quote(artifact_uri)}&expires={expires}&sig={signature}"
+        signature = self._signature(
+            session_id=session_id,
+            artifact_uri=artifact_uri,
+            asset_name=asset_name,
+            expires=expires,
+        )
+        return (
+            f"/api/v1/previews/sessions/{quote(session_id, safe='')}/media/"
+            f"{quote(asset_name, safe='')}?expires={expires}&sig={signature}"
+        )
+
+    def verify(
+        self,
+        *,
+        session_id: str,
+        artifact_uri: str,
+        asset_name: str,
+        expires: int,
+        signature: str,
+        now: datetime,
+    ) -> bool:
+        if now.tzinfo is None:
+            raise ValueError("preview signature clock must be timezone-aware")
+        if expires <= int(now.astimezone(timezone.utc).timestamp()):
+            return False
+        expected = self._signature(
+            session_id=session_id,
+            artifact_uri=artifact_uri,
+            asset_name=asset_name,
+            expires=expires,
+        )
+        return hmac.compare_digest(expected, signature)
+
+    def _signature(
+        self,
+        *,
+        session_id: str,
+        artifact_uri: str,
+        asset_name: str,
+        expires: int,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "artifact_uri": artifact_uri,
+                "asset_name": asset_name,
+                "expires": expires,
+                "session_id": session_id,
+                "version": 1,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return hmac.new(self._secret, payload, hashlib.sha256).hexdigest()
+
+
+class InMemoryPreviewMediaReader:
+    """The in-memory preview composition has no physical media to expose."""
+
+    def resolve(self, record: PreviewCacheRecordV1, *, asset_name: str) -> Path:
+        del record, asset_name
+        raise FileNotFoundError

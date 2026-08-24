@@ -13,6 +13,13 @@ def _production_settings(**updates: object) -> Settings:
         "object_store_public_endpoint": "https://uploads.example.com",
         "object_store_secret_key": "production-object-store-secret",
         "cursor_secret": "production-cursor-secret",
+        "data_source_credential_key": "production-data-source-credential-key",
+        "auth_abuse_enabled": True,
+        "auth_abuse_hmac_secret": "production-auth-abuse-hmac-secret-at-least-32",
+        "auth_challenge_provider": "turnstile",
+        "auth_turnstile_site_key": "production-turnstile-site-key",
+        "auth_turnstile_secret": "production-turnstile-secret-at-least-32",
+        "auth_turnstile_expected_hostnames": ("app.example.com",),
         "jwt_issuer": "https://identity.example.com/",
         "jwt_signing_key": "production-jwt-signing-key",
         "enforce_schema_migrations": True,
@@ -57,6 +64,51 @@ def test_production_requires_an_explicit_public_https_fqdn() -> None:
 
     with pytest.raises(ValidationError, match="HC_OBJECT_STORE_PUBLIC_ENDPOINT"):
         _production_settings(object_store_public_endpoint=None)
+
+
+def test_multipart_authorization_ttl_is_bounded_and_operator_configurable() -> None:
+    assert Settings(environment="test", _env_file=None).ingest_part_authorization_ttl_seconds == 900
+    assert (
+        _production_settings(
+            ingest_part_authorization_ttl_seconds=3600
+        ).ingest_part_authorization_ttl_seconds
+        == 3600
+    )
+    with pytest.raises(ValidationError):
+        _production_settings(ingest_part_authorization_ttl_seconds=3601)
+
+
+def test_production_auth_abuse_policy_fails_closed_without_complete_network_configuration() -> None:
+    with pytest.raises(ValidationError, match="HC_AUTH_ABUSE_ENABLED"):
+        _production_settings(auth_abuse_enabled=False)
+    with pytest.raises(ValidationError, match="HC_AUTH_ABUSE_HMAC_SECRET"):
+        _production_settings(auth_abuse_hmac_secret=None)
+    with pytest.raises(ValidationError, match="HC_AUTH_TRUSTED_PROXY_CIDRS"):
+        _production_settings(auth_client_ip_mode="trusted_proxy")
+    trusted = _production_settings(
+        auth_client_ip_mode="trusted_proxy",
+        auth_trusted_proxy_cidrs=("10.0.0.0/8",),
+    )
+    assert trusted.auth_abuse_enabled is True
+    assert trusted.auth_trusted_proxy_cidrs == ("10.0.0.0/8",)
+
+
+def test_production_turnstile_configuration_fails_closed_and_normalizes_hostnames() -> None:
+    with pytest.raises(ValidationError, match="HC_AUTH_CHALLENGE_PROVIDER=turnstile"):
+        _production_settings(auth_challenge_provider="disabled")
+    with pytest.raises(ValidationError, match="HC_AUTH_TURNSTILE_SITE_KEY"):
+        _production_settings(auth_turnstile_site_key=None)
+    with pytest.raises(ValidationError, match="HC_AUTH_TURNSTILE_SECRET"):
+        _production_settings(auth_turnstile_secret=None)
+    with pytest.raises(ValidationError, match="HC_AUTH_TURNSTILE_EXPECTED_HOSTNAMES"):
+        _production_settings(auth_turnstile_expected_hostnames=())
+    configured = _production_settings(
+        auth_turnstile_expected_hostnames=("APP.Example.Com.", "login.example.com"),
+    )
+    assert configured.auth_turnstile_expected_hostnames == (
+        "app.example.com",
+        "login.example.com",
+    )
 
 
 @pytest.mark.parametrize("field", ["object_store_endpoint", "object_store_public_endpoint"])

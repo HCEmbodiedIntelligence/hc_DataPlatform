@@ -9,6 +9,8 @@ from contextlib import suppress
 from dataclasses import dataclass
 from threading import Lock, RLock
 
+from hc_data_platform.alignment.canonical import normalize_for_json
+
 from .models import (
     AlignedFragmentManifestV1,
     DatasetSchemaSnapshot,
@@ -59,7 +61,7 @@ def _dump_json(value: object) -> str:
 def compute_fragment_hash(steps: Sequence[StepRecord]) -> str:
     """Return a deterministic logical hash independent of Python object identity."""
 
-    payload = [step.model_dump(mode="json") for step in steps]
+    payload = [normalize_for_json(step.model_dump(mode="python")) for step in steps]
     return hashlib.sha256(_dump_json(payload).encode()).hexdigest()
 
 

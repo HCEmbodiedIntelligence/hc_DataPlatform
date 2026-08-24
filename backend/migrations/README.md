@@ -9,6 +9,28 @@
 本目录内的 SQL 全部用于 PostgreSQL。Lance 数据本身存放在 Lance 数据集或对象存储中；
 `lance_*` 表只保存 Lance 数据集的目录、版本、回执和血缘元数据。
 
+### 当前组织隔离基线
+
+`security/019_product_organization_scope.sql` 是跨产品的组织作用域协调迁移。它在任何
+DDL 变更前扫描所有含 `project_id` 但不含 `organization_id` 的持久基础表，并要求每个历史
+项目都能从组织-项目注册表解析到且仅解析到一个组织；零映射或多映射会让整次迁移回滚，
+不会留下半加列状态。通过预检后，迁移统一回填非空组织键、外键/检查约束和组织前导索引，
+再为每张项目表安装：
+
+- 一个中性的 permissive `hc_scope_allow` 策略；
+- 一个精确匹配组织、项目和可选区域的 restrictive `hc_scope_isolation` 策略。
+
+restrictive 策略会与历史 permissive 策略做 AND，因此旧的仅项目策略不能放宽组织边界。
+唯一显式例外是 `access_control.account_notifications`：它保持强制 RLS 和收件人隔离策略，
+因为账户收件箱必须在尚未选择项目时可读。迁移末尾再次断言不存在仅项目基础表。
+
+迁移执行器把 `security/001_core.sql`、`012_organization_aware_rls.sql`、
+`019_product_organization_scope.sql` 和 `020_platform_super_admin.sql` 作为有序可重复安全迁移；
+包括后置的 `annotation/0008_scoped_legacy_cleaning_import.sql` 在内的业务迁移完成后，执行器会
+再次运行 019 收敛组织策略，再运行 020 恢复 `platform.admin` RLS 语义。020 根据既有平台
+角色 grant 补齐全局标记并仅在实际变更时提升 revision/撤销旧会话，不依赖用户名。历史前缀
+测试只执行该前缀内已存在的可重复版本，不能把未来安全规则提前应用到旧 schema。
+
 ```text
 +--------------------------- PostgreSQL ----------------------------+
 | core         安全、幂等、审计、Outbox、迁移记录                    |
@@ -46,8 +68,8 @@ FK -> schema.table(columns) 表示真实数据库外键。
 LOGICAL -> table 表示仅有业务关联，数据库没有创建外键约束。
 ```
 
-本项目大量使用复合主键，将 `project_id`、`region_code` 放入主键是为了让相同业务 ID 或
-内容哈希可以安全地出现在不同租户中。
+本项目大量使用复合主键。租户身份由 `organization_id` 与组织内的 `project_id` 共同组成；
+需要区域隔离的表还会加入 `region_code`，使相同业务 ID 或内容哈希可安全存在于不同作用域。
 
 ## 3. Schema 与表清单
 
@@ -58,7 +80,9 @@ PostgreSQL
 |   +-- schema_migrations
 |   +-- idempotency_records
 |   +-- audit_events
-|   `-- outbox_events
+|   +-- outbox_events
+|   +-- audit_integrity_heads
+|   `-- audit_integrity_entries
 |
 +-- ingest
 |   +-- collection_jobs
@@ -179,14 +203,17 @@ publishing.dataset_versions
 
 ```text
 + core.idempotency_records
-| PK: (project_id, region_code, scope_key, idempotency_key)
+| PK: (organization_id, project_id, region_code, scope_key, idempotency_key)
+| FK: (organization_id, project_id)
+|     -> registry.organization_projects(organization_id, project_id)
 | IDX: idempotency_records_expiry_idx(expires_at)
-| RLS: 是，project_id + region_code
+| RLS: 是，organization_id + project_id + region_code
 |
-+-- project_id          text         NN PK(1) CK  项目/租户
-+-- region_code         text         NN PK(2)     区域；默认空字符串
-+-- scope_key           text         NN PK(3) CK  幂等作用域
-+-- idempotency_key     text         NN PK(4) CK  客户端幂等键
++-- organization_id     text         NN PK(1) FK  组织/租户
++-- project_id          text         NN PK(2) FK  组织内项目
++-- region_code         text         NN PK(3)     区域；默认空字符串
++-- scope_key           text         NN PK(4) CK  幂等作用域
++-- idempotency_key     text         NN PK(5) CK  客户端幂等键
 +-- request_fingerprint char(64)     NN           请求内容指纹
 +-- response_json       jsonb                     已缓存响应
 +-- created_at          timestamptz  NN DEFAULT   创建时间
@@ -200,11 +227,15 @@ publishing.dataset_versions
 ```text
 + core.audit_events
 | PK: audit_id
-| IDX: audit_events_project_occurred_idx(project_id, occurred_at DESC, audit_id)
-| RLS: 是，project_id + 可选 region_code
+| FK: (organization_id, project_id)
+|     -> registry.organization_projects(organization_id, project_id)
+| IDX: audit_events_project_occurred_idx(
+|      organization_id, project_id, occurred_at DESC, audit_id)
+| RLS: 是，organization_id + project_id + 可选 region_code
 |
 +-- audit_id       uuid         NN PK  审计事件 ID
-+-- project_id     text         NN CK  项目/租户
++-- organization_id text       NN FK  组织/租户
++-- project_id     text         NN FK CK 组织内项目
 +-- region_code    text                可选区域
 +-- actor_id       text         NN CK  操作者 ID
 +-- action         text         NN CK  操作名称
@@ -224,12 +255,18 @@ publishing.dataset_versions
 ```text
 + core.outbox_events
 | PK: event_id
-| IDX: outbox_events_pending_idx(available_at, occurred_at)
+| FK: (organization_id, project_id)
+|     -> registry.organization_projects(organization_id, project_id)
+| IDX: outbox_events_pending_idx(organization_id, available_at, occurred_at)
 |      WHERE published_at IS NULL
-| RLS: 是，project_id + 可选 region_code
+| IDX: outbox_events_organization_claimable_idx(
+|      organization_id, available_at, occurred_at, event_id)
+|      WHERE published_at IS NULL
+| RLS: 是，organization_id + project_id + 可选 region_code
 |
 +-- event_id          uuid         NN PK       事件 ID
-+-- project_id        text         NN CK       项目/租户
++-- organization_id   text         NN FK CK    组织/租户
++-- project_id        text         NN FK CK    组织内项目
 +-- region_code       text                     可选区域
 +-- event_type        text         NN CK       事件类型
 +-- envelope          jsonb        NN          事件信封/载荷
@@ -237,7 +274,48 @@ publishing.dataset_versions
 +-- published_at      timestamptz              成功发布时间
 +-- publish_attempts  integer      NN CK       发布次数，默认 0
 +-- available_at      timestamptz  NN DEFAULT  下次允许发布时间
-`-- last_error        text                     最近一次错误
++-- last_error        text                     最近一次错误
++-- last_error_code   text                     可重试的稳定错误码
++-- claim_token       uuid                     并发投递租约令牌
++-- claimed_by        text                     租约持有者
+`-- claimed_until     timestamptz              租约到期时间
+```
+
+### 5.5 `core.audit_integrity_heads` / `core.audit_integrity_entries`
+
+用途：按精确的组织、项目、区域作用域保存审计事件 SHA-256 链头与不可变链条。组织 ID 参与摘要，
+因此同项目 ID 的不同组织不会共享序列或摘要。
+
+```text
++ core.audit_integrity_heads
+| PK: (organization_id, project_id, region_code)
+| FK: (organization_id, project_id)
+|     -> registry.organization_projects(organization_id, project_id)
+| RLS: 是，organization_id + project_id + region_code
+|
++-- organization_id text        NN PK(1) FK  组织/租户
++-- project_id      text         NN PK(2) FK  组织内项目
++-- region_code     text         NN PK(3)     区域；默认空字符串
++-- last_sequence   bigint       NN CK        最后序号
++-- last_event_hash char(64)                  最后事件摘要
+`-- updated_at      timestamptz  NN DEFAULT   更新时间
+
++ core.audit_integrity_entries
+| PK: audit_id -> core.audit_events(audit_id)
+| UK: (organization_id, project_id, region_code, sequence_no)
+| FK: (organization_id, project_id)
+|     -> registry.organization_projects(organization_id, project_id)
+| RLS: 是，organization_id + project_id + region_code
+|
++-- audit_id           uuid         NN PK FK  审计事件 ID
++-- organization_id    text         NN UK FK  组织/租户
++-- project_id         text         NN UK FK  组织内项目
++-- region_code        text         NN UK     区域；默认空字符串
++-- sequence_no        bigint       NN UK CK  作用域内序号
++-- previous_event_hash char(64)                前一事件摘要
++-- event_hash         char(64)     NN CK      当前事件摘要
++-- occurred_at        timestamptz  NN         事件发生时间
+`-- created_at         timestamptz  NN DEFAULT 建链时间
 ```
 
 ## 6. ingest：数据采集与上传
@@ -869,7 +947,36 @@ publishing.dataset_versions
 `-- created_at          timestamptz  NN DEFAULT   创建时间
 ```
 
-### 12.6 标注视图
+### 12.6 `annotation.legacy_cleaning_migrations`
+
+用途：把组织/项目/区域内的旧 CleaningDraft EDL revision 唯一映射到不可变 annotation
+revision。`annotation/0008_scoped_legacy_cleaning_import.sql` 只接受 selected stream 能唯一解析到
+固定 Lance rollout/version/step-count 的历史行；任何未解析或多义行都会在写入前中止整个迁移。
+P11 纳秒 EDL 原文保存在 `source_payload`，不会被猜测转换成 step 操作。
+
+```text
++ annotation.legacy_cleaning_migrations
+| PK: (organization_id, project_id, region_code, source_draft_id, source_revision)
+| UK: (target_task_id, target_revision)
+| FK: (target_task_id, target_revision) -> annotation_revisions(task_id, revision)
+| RLS: 精确 organization/project/region
+| APPEND ONLY: UPDATE/DELETE 由触发器拒绝
+|
++-- organization_id      text         NN PK(1)  组织 ID
++-- project_id           text         NN PK(2)  项目 ID
++-- region_code          text         NN PK(3)  区域
++-- source_draft_id      text         NN PK(4)  旧 Draft ID
++-- source_revision      bigint       NN PK(5)  旧 EDL revision
++-- source_audit_event_id text                    可选的原审计事件 ID
++-- source_actor_id      text         NN        原操作者
++-- source_created_at    timestamptz  NN        原创建时间
++-- target_task_id       text         NN UK FK  P08 task
++-- target_revision      bigint       NN UK FK  P08 revision
++-- source_payload       jsonb        NN        完整旧 EDL snapshot
+`-- migrated_at          timestamptz  NN        导入时间
+```
+
+### 12.7 标注视图
 
 ```text
 annotation.annotation_current [VIEW]
@@ -1010,6 +1117,7 @@ workflow.jobs.resource_id
   project_id              项目级租户边界
   region_code             项目内区域边界
   core.scope_matches()    读取事务中的 app.project_id/app.region_code
+  app.platform_admin      已验证 platform.admin；只在 API 证明真实项目后绕过行 scope
   core.apply_project_rls  为带 project_id 的表启用并强制 RLS
   annotation 自有策略    同时使用 app.project_ids/app.is_admin
 

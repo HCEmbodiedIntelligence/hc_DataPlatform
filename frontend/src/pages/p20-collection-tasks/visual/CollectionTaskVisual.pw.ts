@@ -1,21 +1,26 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { assertNoSeriousOrCriticalAxe } from "../../../../e2e/visual-support/axe";
 
 const artifactDirectory = path.resolve(
   process.cwd(),
-  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
-    ? "../artifacts/visual/e01-e10/FE14-final/fixture/E04"
-    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
-      ? "../artifacts/visual/e01-e10/FE12-final/E04"
-      : "../artifacts/visual/e01-e10/E04",
+  process.env.HC_REAL_API_E2E_RUN_OWNER === "fe16"
+    ? "../artifacts/visual/e01-e10/FE16-final/fixture/E04"
+    : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe14"
+      ? "../artifacts/visual/e01-e10/FE14-final/fixture/E04"
+      : process.env.HC_REAL_API_E2E_RUN_OWNER === "fe12"
+        ? "../artifacts/visual/e01-e10/FE12-final/E04"
+        : "../artifacts/visual/e01-e10/E04",
 );
 
 const projectId = "project-dual-arm-01";
+const organizationId = "organization-dual-arm";
 const tasks = [
   {
     schema_version: "1",
     collection_task_id: "task-transparent-parts",
+    organization_id: organizationId,
     project_id: projectId,
     task_code: "00000042",
     name: "透明件抓取多视角采集",
@@ -29,6 +34,7 @@ const tasks = [
   {
     schema_version: "1",
     collection_task_id: "task-pallet",
+    organization_id: organizationId,
     project_id: projectId,
     task_code: "00000039",
     name: "托盘搬运夜班数据补采",
@@ -42,6 +48,7 @@ const tasks = [
   {
     schema_version: "1",
     collection_task_id: "task-forklift",
+    organization_id: organizationId,
     project_id: projectId,
     task_code: "00000035",
     name: "叉车协同避障基线采集",
@@ -55,6 +62,7 @@ const tasks = [
   {
     schema_version: "1",
     collection_task_id: "task-seal",
+    organization_id: organizationId,
     project_id: projectId,
     task_code: "00000028",
     name: "密封圈装配质量回归采集",
@@ -68,6 +76,7 @@ const tasks = [
   {
     schema_version: "1",
     collection_task_id: "task-cable",
+    organization_id: organizationId,
     project_id: projectId,
     task_code: "00000021",
     name: "线束插接精细动作采集",
@@ -148,12 +157,16 @@ async function installApiFixture(
       await fulfillJson(route, {
         schema_version: "1",
         collection_task_id: id,
+        organization_id: organizationId,
         project_id: projectId,
         status:
           tasks.find((task) => task.collection_task_id === id)?.status ??
           "ACTIVE",
         as_of: "2026-08-18T05:30:00Z",
         received_package_count: summary.received,
+        captured_duration_seconds: summary.received * 60,
+        duration_observed_package_count: summary.received,
+        duration_unknown_package_count: 0,
         qc: {
           evaluated_count: summary.evaluated,
           pass_count: summary.pass,
@@ -166,6 +179,13 @@ async function installApiFixture(
             value:
               summary.evaluated > 0 ? summary.pass / summary.evaluated : null,
           },
+        },
+        attainment: {
+          status: "NOT_CONFIGURED",
+          package_count: null,
+          duration_seconds: null,
+          quality_threshold: null,
+          quality_status: "NOT_CONFIGURED",
         },
         observed_sources: { device_ids: [], camera_ids: [], topic_names: [] },
       });
@@ -379,6 +399,17 @@ for (const viewport of [
     expect(geometry.labelContrast).toBeGreaterThanOrEqual(4.5);
     expect(geometry.hasVisibleFocusIndicator).toBe(true);
     expect(consoleErrors).toEqual([]);
+    await assertNoSeriousOrCriticalAxe(
+      page,
+      path.join(artifactDirectory, `axe-${viewport.name}.json`),
+      '[data-page-id="P20"]',
+    );
+
+    // Keep the focus-visible assertion above, but avoid including a blinking
+    // native input caret in the pixel baseline.
+    await page.evaluate(() =>
+      (document.activeElement as HTMLElement | null)?.blur(),
+    );
 
     await page.screenshot({
       path: path.join(artifactDirectory, `${viewport.name}.png`),

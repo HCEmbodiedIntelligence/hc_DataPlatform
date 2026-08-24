@@ -1,0 +1,2116 @@
+components:
+  schemas:
+    AuthorizeRobotModelAssetPartsRequest:
+      additionalProperties: false
+      properties:
+        part_numbers:
+          items:
+            type: integer
+          maxItems: 256
+          minItems: 1
+          title: Part Numbers
+          type: array
+        relative_path:
+          maxLength: 1024
+          minLength: 1
+          title: Relative Path
+          type: string
+      required:
+      - relative_path
+      - part_numbers
+      title: AuthorizeRobotModelAssetPartsRequest
+      type: object
+    BindRobotModelVersionRequest:
+      additionalProperties: false
+      properties:
+        region_code:
+          maxLength: 64
+          minLength: 1
+          title: Region Code
+          type: string
+        robot_etag:
+          maxLength: 256
+          minLength: 1
+          title: Robot Etag
+          type: string
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          title: Robot Id
+          type: string
+      required:
+      - region_code
+      - robot_id
+      - robot_etag
+      title: BindRobotModelVersionRequest
+      type: object
+    BlockedReason:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        message:
+          maxLength: 512
+          minLength: 1
+          title: Message
+          type: string
+      required:
+      - code
+      - message
+      title: BlockedReason
+      type: object
+    CompleteRobotModelAssetFileRequest:
+      additionalProperties: false
+      properties:
+        parts:
+          items:
+            $ref: '#/components/schemas/RobotAssetCompletedPart'
+          maxItems: 10000
+          minItems: 1
+          title: Parts
+          type: array
+        relative_path:
+          maxLength: 1024
+          minLength: 1
+          title: Relative Path
+          type: string
+      required:
+      - relative_path
+      - parts
+      title: CompleteRobotModelAssetFileRequest
+      type: object
+    CreateRobotModelAssetUploadRequest:
+      additionalProperties: false
+      properties:
+        files:
+          items:
+            $ref: '#/components/schemas/RobotModelAssetUploadFileRequest'
+          maxItems: 256
+          minItems: 1
+          title: Files
+          type: array
+      required:
+      - files
+      title: CreateRobotModelAssetUploadRequest
+      type: object
+    PublishRobotModelVersionRequest:
+      additionalProperties: false
+      properties:
+        preflight_token:
+          maxLength: 2048
+          minLength: 32
+          title: Preflight Token
+          type: string
+      required:
+      - preflight_token
+      title: PublishRobotModelVersionRequest
+      type: object
+    RegistryScope:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          title: Organization Id
+          type: string
+        project_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Project Id
+      required:
+      - organization_id
+      title: RegistryScope
+      type: object
+    ReplaceRobotModelJointMappingsRequest:
+      additionalProperties: false
+      properties:
+        mappings:
+          items:
+            $ref: '#/components/schemas/RobotModelJointMapping'
+          maxItems: 1024
+          title: Mappings
+          type: array
+      required:
+      - mappings
+      title: ReplaceRobotModelJointMappingsRequest
+      type: object
+    RobotAssetCompletedPart:
+      additionalProperties: false
+      properties:
+        etag:
+          maxLength: 512
+          minLength: 1
+          title: Etag
+          type: string
+        part_number:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Number
+          type: integer
+      required:
+      - part_number
+      - etag
+      title: RobotAssetCompletedPart
+      type: object
+    RobotAssetPartAuthorization:
+      additionalProperties: false
+      description: A short-lived browser PUT authorization. Never persist or cache this URL.
+      properties:
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        part_number:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Number
+          type: integer
+        url:
+          minLength: 1
+          title: Url
+          type: string
+      required:
+      - part_number
+      - url
+      - expires_at
+      title: RobotAssetPartAuthorization
+      type: object
+    RobotAssetPartAuthorizationPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotAssetPartAuthorization'
+          title: Items
+          type: array
+      required:
+      - items
+      title: RobotAssetPartAuthorizationPage
+      type: object
+    RobotAssetRole:
+      enum:
+      - URDF
+      - MESH
+      - TEXTURE
+      - CONFIG
+      - DOCUMENTATION
+      title: RobotAssetRole
+      type: string
+    RobotAssetUploadStatus:
+      enum:
+      - UPLOADING
+      - COMPLETED
+      - CANCELLED
+      - FAILED
+      title: RobotAssetUploadStatus
+      type: string
+    RobotJointDirection:
+      enum:
+      - SAME
+      - INVERTED
+      title: RobotJointDirection
+      type: string
+    RobotModelAsset:
+      additionalProperties: false
+      properties:
+        asset_id:
+          minLength: 1
+          title: Asset Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        relative_path:
+          maxLength: 1024
+          minLength: 1
+          title: Relative Path
+          type: string
+        role:
+          $ref: '#/components/schemas/RobotAssetRole'
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+          type: integer
+      required:
+      - asset_id
+      - relative_path
+      - role
+      - media_type
+      - size_bytes
+      - sha256
+      - created_at
+      title: RobotModelAsset
+      type: object
+    RobotModelAssetDownloadAuthorization:
+      additionalProperties: false
+      properties:
+        asset_id:
+          minLength: 1
+          title: Asset Id
+          type: string
+        download_url:
+          minLength: 1
+          title: Download Url
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+      required:
+      - asset_id
+      - download_url
+      - expires_at
+      - sha256
+      - media_type
+      title: RobotModelAssetDownloadAuthorization
+      type: object
+    RobotModelAssetPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotModelAsset'
+          title: Items
+          type: array
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+      required:
+      - items
+      - scope
+      - request_id
+      title: RobotModelAssetPage
+      type: object
+    RobotModelAssetUploadEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/RobotModelAssetUploadSession'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: RobotModelAssetUploadEnvelope
+      type: object
+    RobotModelAssetUploadFile:
+      additionalProperties: false
+      properties:
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        part_authorizations:
+          default: []
+          items:
+            $ref: '#/components/schemas/RobotAssetPartAuthorization'
+          title: Part Authorizations
+          type: array
+        part_size_bytes:
+          exclusiveMinimum: 0.0
+          title: Part Size Bytes
+          type: integer
+        relative_path:
+          maxLength: 1024
+          minLength: 1
+          title: Relative Path
+          type: string
+        role:
+          $ref: '#/components/schemas/RobotAssetRole'
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+          type: integer
+        status:
+          $ref: '#/components/schemas/RobotAssetUploadStatus'
+        total_parts:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Total Parts
+          type: integer
+      required:
+      - relative_path
+      - role
+      - media_type
+      - size_bytes
+      - sha256
+      - status
+      - part_size_bytes
+      - total_parts
+      title: RobotModelAssetUploadFile
+      type: object
+    RobotModelAssetUploadFileRequest:
+      additionalProperties: false
+      properties:
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        relative_path:
+          maxLength: 1024
+          minLength: 1
+          title: Relative Path
+          type: string
+        role:
+          $ref: '#/components/schemas/RobotAssetRole'
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          maximum: 5497558138880.0
+          title: Size Bytes
+          type: integer
+      required:
+      - relative_path
+      - role
+      - media_type
+      - size_bytes
+      - sha256
+      title: RobotModelAssetUploadFileRequest
+      type: object
+    RobotModelAssetUploadSession:
+      additionalProperties: false
+      properties:
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        files:
+          items:
+            $ref: '#/components/schemas/RobotModelAssetUploadFile'
+          title: Files
+          type: array
+        status:
+          $ref: '#/components/schemas/RobotAssetUploadStatus'
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        upload_id:
+          minLength: 1
+          title: Upload Id
+          type: string
+        version_id:
+          maxLength: 128
+          minLength: 1
+          title: Version Id
+          type: string
+      required:
+      - upload_id
+      - version_id
+      - status
+      - files
+      - created_at
+      - updated_at
+      title: RobotModelAssetUploadSession
+      type: object
+    RobotModelBinding:
+      additionalProperties: false
+      properties:
+        binding_id:
+          minLength: 1
+          title: Binding Id
+          type: string
+        bound_at:
+          format: date-time
+          title: Bound At
+          type: string
+        region_code:
+          maxLength: 64
+          minLength: 1
+          title: Region Code
+          type: string
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          title: Robot Id
+          type: string
+        status:
+          $ref: '#/components/schemas/RobotModelBindingStatus'
+        unbound_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Unbound At
+        version_id:
+          maxLength: 128
+          minLength: 1
+          title: Version Id
+          type: string
+      required:
+      - binding_id
+      - robot_id
+      - region_code
+      - version_id
+      - status
+      - bound_at
+      title: RobotModelBinding
+      type: object
+    RobotModelBindingPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotModelBinding'
+          title: Items
+          type: array
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+      required:
+      - items
+      - scope
+      - request_id
+      title: RobotModelBindingPage
+      type: object
+    RobotModelBindingStatus:
+      enum:
+      - ACTIVE
+      - SUPERSEDED
+      - REVOKED
+      title: RobotModelBindingStatus
+      type: string
+    RobotModelJointMapping:
+      additionalProperties: false
+      properties:
+        direction:
+          $ref: '#/components/schemas/RobotJointDirection'
+        source_joint_name:
+          maxLength: 256
+          minLength: 1
+          title: Source Joint Name
+          type: string
+        target_joint_name:
+          maxLength: 256
+          minLength: 1
+          title: Target Joint Name
+          type: string
+      required:
+      - source_joint_name
+      - target_joint_name
+      - direction
+      title: RobotModelJointMapping
+      type: object
+    RobotModelJointMappingPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotModelJointMapping'
+          title: Items
+          type: array
+        mapping_hash:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Mapping Hash
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+      required:
+      - items
+      - scope
+      - request_id
+      title: RobotModelJointMappingPage
+      type: object
+    RobotModelPage:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-19'
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/RobotModelSummary'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - scope
+      - request_id
+      title: RobotModelPage
+      type: object
+    RobotModelPublishCheck:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        message:
+          maxLength: 512
+          minLength: 1
+          title: Message
+          type: string
+        passed:
+          title: Passed
+          type: boolean
+      required:
+      - code
+      - passed
+      - message
+      title: RobotModelPublishCheck
+      type: object
+    RobotModelPublishPreflight:
+      additionalProperties: false
+      properties:
+        allowed:
+          title: Allowed
+          type: boolean
+        asset_manifest_hash:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Asset Manifest Hash
+        blockers:
+          items:
+            $ref: '#/components/schemas/BlockedReason'
+          title: Blockers
+          type: array
+        checks:
+          items:
+            $ref: '#/components/schemas/RobotModelPublishCheck'
+          title: Checks
+          type: array
+        expected_etag:
+          maxLength: 256
+          minLength: 1
+          title: Expected Etag
+          type: string
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        mapping_hash:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Mapping Hash
+        preflight_token:
+          anyOf:
+          - maxLength: 2048
+            minLength: 32
+            type: string
+          - type: 'null'
+          title: Preflight Token
+      required:
+      - allowed
+      - expected_etag
+      - checks
+      - blockers
+      title: RobotModelPublishPreflight
+      type: object
+    RobotModelPublishPreflightEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/RobotModelPublishPreflight'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: RobotModelPublishPreflightEnvelope
+      type: object
+    RobotModelSummary:
+      additionalProperties: false
+      properties:
+        current_published_version_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Current Published Version Id
+        display_name:
+          maxLength: 256
+          minLength: 1
+          title: Display Name
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        manufacturer:
+          maxLength: 256
+          minLength: 1
+          title: Manufacturer
+          type: string
+        model_code:
+          maxLength: 128
+          minLength: 1
+          title: Model Code
+          type: string
+      required:
+      - id
+      - manufacturer
+      - model_code
+      - display_name
+      title: RobotModelSummary
+      type: object
+    RobotModelVersion:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            type: string
+          title: Allowed Actions
+          type: array
+        asset_availability:
+          maxLength: 64
+          minLength: 1
+          title: Asset Availability
+          type: string
+        asset_manifest_hash:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Asset Manifest Hash
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/BlockedReason'
+          title: Blocked Reasons
+          type: array
+        etag:
+          maxLength: 256
+          minLength: 1
+          title: Etag
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        lifecycle:
+          maxLength: 64
+          minLength: 1
+          title: Lifecycle
+          type: string
+        publish_readiness:
+          maxLength: 64
+          minLength: 1
+          title: Publish Readiness
+          type: string
+        robot_model_id:
+          maxLength: 128
+          minLength: 1
+          title: Robot Model Id
+          type: string
+        validation_input_hash:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Validation Input Hash
+        version_label:
+          maxLength: 128
+          minLength: 1
+          title: Version Label
+          type: string
+      required:
+      - id
+      - robot_model_id
+      - version_label
+      - lifecycle
+      - asset_availability
+      - publish_readiness
+      - etag
+      title: RobotModelVersion
+      type: object
+    RobotModelVersionEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-19'
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/RobotModelVersion'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: RobotModelVersionEnvelope
+      type: object
+info:
+  title: HC registry contract
+  version: '2026-08-19'
+openapi: 3.1.0
+paths:
+  /api/v1/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:authorize-parts:
+    post:
+      operationId: authorizeRobotModelAssetParts
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeRobotModelAssetPartsRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotAssetPartAuthorizationPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Authorize Robot Model Asset Parts
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:complete-file:
+    post:
+      operationId: completeRobotModelAssetUploadFile
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteRobotModelAssetFileRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelAssetUploadEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Complete Robot Model Asset Upload File
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:
+    get:
+      operationId: getRobotModelVersion
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelVersionEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Robot Model Version
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/assets:
+    get:
+      operationId: listRobotModelAssets
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelAssetPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Robot Model Assets
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/assets/{asset_id}/download:
+    get:
+      operationId: authorizeRobotModelAssetDownload
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: asset_id
+        required: true
+        schema:
+          title: Asset Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelAssetDownloadAuthorization'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Authorize Robot Model Asset Download
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/bindings:
+    get:
+      operationId: listRobotModelBindings
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelBindingPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Robot Model Bindings
+      tags:
+      - registry
+    post:
+      operationId: bindRobotModelVersion
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindRobotModelVersionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelBinding'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Bind Robot Model Version
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/joint-mappings:
+    get:
+      operationId: listRobotModelJointMappings
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelJointMappingPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Robot Model Joint Mappings
+      tags:
+      - registry
+    put:
+      operationId: replaceRobotModelJointMappings
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceRobotModelJointMappingsRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelVersionEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Replace Robot Model Joint Mappings
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/upload-sessions:
+    post:
+      operationId: createRobotModelAssetUploadSession
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRobotModelAssetUploadRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelAssetUploadEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Robot Model Asset Upload Session
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:preflight-publish:
+    post:
+      operationId: preflightRobotModelPublish
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelPublishPreflightEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Preflight Robot Model Publish
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:publish:
+    post:
+      operationId: publishRobotModelVersion
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishRobotModelVersionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelVersionEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Publish Robot Model Version
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-models:
+    get:
+      operationId: listRobotModels
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: header
+        name: X-Project-ID
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Project-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Robot Models
+      tags:
+      - registry

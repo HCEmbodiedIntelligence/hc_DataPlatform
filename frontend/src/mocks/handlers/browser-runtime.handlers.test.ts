@@ -32,8 +32,8 @@ describe("Browser Mock runtime API coverage", () => {
       "/projects/prj_fx_01/collection-tasks",
       "/projects/prj_fx_01/annotation-tasks",
       "/projects/prj_fx_01/regions/cn-shanghai/upload-sessions",
-      "/projects/prj_fx_01/membership-requests",
-      "/projects/prj_fx_01/capability-requests",
+      "/organizations/org_fx_01/projects/prj_fx_01/membership-requests",
+      "/organizations/org_fx_01/projects/prj_fx_01/capability-requests",
     ];
     const responses = await Promise.all(
       paths.map((path) => fetch(`${api}${path}`, { headers: scopedHeaders })),

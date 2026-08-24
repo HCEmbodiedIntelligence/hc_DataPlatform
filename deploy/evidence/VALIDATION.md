@@ -51,3 +51,18 @@ was exercised. It no longer qualifies the current chart by itself: BE-12 tighten
 readiness on 2026-08-17 so a live-but-unconfigured Worker cannot become Ready. A current upgrade
 and rollback rehearsal now has a production factory and locally validated images, but still
 requires owner-managed image promotion and the pilot environment; it remains open.
+
+## 2026-08-20 current-image local kind rehearsal
+
+This section supersedes the prior current-chart `NOT RUN` statement for the disposable local acceptance rehearsal only; it does not claim an owner-managed production rollout.
+
+| Gate | Current execution | Result |
+| --- | --- | --- |
+| Current source images | API `sha256:b313e48f…`, Worker `sha256:d043ecd3…`, frontend `sha256:5b996673…` built and loaded into new kind | PASS |
+| Chart render | Helm 3.16.4 lint/template using credential-free acceptance values and digest-pinned images | PASS |
+| Baseline install | migration Job complete; API, Worker, frontend Ready; in-pod `/health/ready` = 200 | PASS |
+| Upgrade/rollback script | `deploy/scripts/exercise-upgrade-rollback.sh` on release `hc-final-acceptance-kind` | PASS: history 1 install → 2 upgrade → 3 rollback to 1 |
+| Final rolled-back state | three deployments 1/1 available; frontend release label `final-acceptance-kind-baseline` | PASS |
+| Backup/restore consistency | dedicated PostgreSQL schema dump/restore plus MinIO snapshot/delete/restore and SHA-256 comparison | PASS |
+
+All Kubernetes secrets used only test values in the disposable namespace and are excluded from repository evidence. The exact namespace, cluster, proxy, and connected test dependencies are removed by the final acceptance cleanup record. `PRODUCTION PERFORMANCE USER-WAIVED; EXECUTION NOT RUN` remains the sole capacity exception.

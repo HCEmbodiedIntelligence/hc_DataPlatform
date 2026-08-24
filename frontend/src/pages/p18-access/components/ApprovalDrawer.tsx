@@ -1,5 +1,5 @@
-import { Alert, Button, Descriptions, Input, Space, Typography } from "antd";
-import { KeyRound, ShieldAlert, UserRoundPlus, X } from "lucide-react";
+import { Alert, Button, Descriptions, Input, Space } from "antd";
+import { KeyRound, UserRoundPlus, X } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { isDomainError } from "../../../shared/api/domain-error";
 import type { AccessDecisionInput } from "../access-api";
@@ -197,22 +197,6 @@ export function ApprovalDrawer({
             />
           )}
         </section>
-
-        {impacts.length > 0 ? (
-          <section className={styles.approvalStep}>
-            <header>
-              <span>4</span>
-              <h3>高风险再认证</h3>
-            </header>
-            <Alert
-              type="warning"
-              showIcon
-              icon={<ShieldAlert aria-hidden="true" size={18} />}
-              title="再认证合同尚未开放"
-              description="runtime OpenAPI 未定义 step-up/reauth 请求或输入字段，本页不会采集密码或动态码。若服务端拒绝操作，将保留真实 401/403 与请求 ID。"
-            />
-          </section>
-        ) : null}
 
         <section
           className={styles.decisionSection}

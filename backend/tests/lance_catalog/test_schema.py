@@ -49,6 +49,21 @@ def test_schema_compilation_is_stable_and_order_independent() -> None:
     assert compiled.metadata[b"hc.schema.fingerprint"] == snapshot.fingerprint.encode()
 
 
+def test_json_modality_has_an_explicit_logical_type_and_physical_encoding() -> None:
+    snapshot = DatasetSchemaSnapshot.create(
+        project_id="project-a",
+        dataset_id="dataset-a",
+        schema_snapshot_id="schema-json",
+        frequency_hz=30,
+        fields={"joint.dynamic": "json"},
+    )
+
+    compiled = compile_arrow_schema(snapshot)
+
+    assert str(compiled.field("modalities").type.field("joint.dynamic").type) == "string"
+    assert compiled.metadata[b"hc.schema.json_modalities"] == b'["joint.dynamic"]'
+
+
 def test_unsupported_arrow_type_is_rejected() -> None:
     with pytest.raises(SchemaCompilationError, match="unsupported"):
         DatasetSchemaSnapshot.create(

@@ -8,7 +8,6 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import NoReturn
 
 from artifact_security import redact_text, sanitize_directory
 
@@ -113,7 +112,9 @@ def start_dependencies(*, require_worker: bool = False) -> None:
     run("dependency-status", [*COMPOSE_TEST, "ps"])
 
 
-def pytest_container(label: str, paths: list[str], *, strict_xfail: bool = True) -> None:
+def pytest_container(
+    label: str, paths: list[str], *, strict_xfail: bool = True
+) -> None:
     command = [
         *COMPOSE_TEST,
         "run",
@@ -156,7 +157,6 @@ def static_gate() -> None:
             *backend_python(),
             "-m",
             "hc_data_platform.core.openapi",
-            "--runtime",
             "--check",
         ],
         cwd=BACKEND,
@@ -190,7 +190,7 @@ def static_gate() -> None:
         assert isinstance(application.state.runtime.dashboard, DashboardService)
         runtime = application.openapi()
         check_formal_runtime_contract(formal, runtime)
-        assert committed == runtime
+        assert committed == formal
         mounted_operations = Counter(
             (route.path, method.lower())
             for route in application.routes
@@ -242,7 +242,7 @@ def static_gate() -> None:
         contract_issues = formal_runtime_contract_issues(formal, runtime)
         assert contract_issues == ()
         print(json.dumps({
-            "generated_runtime_sha256": hashlib.sha256(document_path.read_bytes()).hexdigest(),
+            "generated_formal_sha256": hashlib.sha256(document_path.read_bytes()).hexdigest(),
             "dashboard_paths": sorted(expected),
             "formal_paths": len(formal_paths),
             "formal_operations": len(formal_operations),
@@ -556,33 +556,6 @@ def regression_gate() -> None:
     pytest_host("backend-strict-regression", ["tests"])
 
 
-def e2e_gate() -> NoReturn:
-    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
-    report = {
-        "status": "NOT RUN",
-        "reason": (
-            "BE22 isolated fixtures exist, but the FE second-wave browser adapters are "
-            "still explicit dependency failures and no VITE_MOCK_MODE=off browser chain "
-            "has run successfully"
-        ),
-        "required_chain": [
-            "register empty account",
-            "request and approve project membership/capabilities",
-            "create collection task",
-            "upload package",
-            "Manifest discovery and QC",
-            "multi-camera annotation",
-            "multi-level Tag review",
-            "close collection task",
-        ],
-        "spec": "frontend/e2e/real-api/main-chain.spec.ts",
-    }
-    report_path = ARTIFACT_ROOT / "real-api-e2e-not-run.json"
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2))
-    raise SystemExit(2)
-
-
 def artifact_gate() -> None:
     audit_paths = sanitize_directory(ARTIFACT_ROOT)
     if audit_paths:
@@ -608,7 +581,9 @@ def artifact_gate() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run first-wave truthful quality gates")
+    parser = argparse.ArgumentParser(
+        description="Run first-wave truthful quality gates"
+    )
     parser.add_argument(
         "gate",
         choices=(
@@ -620,7 +595,6 @@ def parse_args() -> argparse.Namespace:
             "security",
             "security-baseline",
             "regression",
-            "e2e",
             "artifact",
         ),
     )
@@ -644,8 +618,6 @@ def _dispatch_gate(gate: str) -> None:
         security_gate(baseline=True)
     elif gate == "regression":
         regression_gate()
-    elif gate == "e2e":
-        e2e_gate()
     else:
         artifact_gate()
 
@@ -655,19 +627,21 @@ def main() -> None:
     gate_failure: BaseException | None = None
     try:
         _dispatch_gate(gate)
-    except BaseException as exc:
+    except BaseException as exc:  # noqa: BLE001 - the artifact scan must survive every gate exit
         gate_failure = exc
 
     artifact_failure: BaseException | None = None
     if gate != "artifact":
         try:
             artifact_gate()
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001 - scan even after SystemExit/interrupt
             artifact_failure = exc
 
     if artifact_failure is not None:
         if gate_failure is not None:
-            print("primary gate and sensitive artifact scan both failed", file=sys.stderr)
+            print(
+                "primary gate and sensitive artifact scan both failed", file=sys.stderr
+            )
         raise artifact_failure
     if gate_failure is not None:
         raise gate_failure

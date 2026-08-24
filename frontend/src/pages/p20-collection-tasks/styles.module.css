@@ -52,6 +52,24 @@
   gap: 2px;
 }
 
+.taskIdentity {
+  border-radius: var(--hc-radius-sm);
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.taskIdentity:hover strong {
+  color: var(--hc-color-primary-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.taskIdentity:focus-visible {
+  outline: 2px solid var(--hc-color-primary);
+  outline-offset: 2px;
+}
+
 .taskIdentity strong {
   display: -webkit-box;
   overflow: hidden;
@@ -103,6 +121,10 @@
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.35;
+}
+
+.attainmentValue {
+  color: var(--hc-color-text-secondary);
 }
 
 .qualityValue {

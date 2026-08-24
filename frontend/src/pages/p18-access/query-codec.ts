@@ -1,12 +1,14 @@
 import { defineQueryCodec } from "../../shared/routing/route-registry";
 import type { AccessRequestStatus } from "./contracts";
 
-export type AccessTab = "membership-requests" | "capability-requests";
+export type AccessTab = "users" | "membership-requests" | "capability-requests";
 
 export interface AccessSearch {
   readonly tab: AccessTab;
   readonly q?: string;
   readonly status: "ALL" | AccessRequestStatus;
+  readonly accountState: "ALL" | "ACTIVE" | "DISABLED" | "DELETED";
+  readonly accountRole: "ALL" | "USER" | "PLATFORM_ADMIN";
   readonly order: "recent" | "oldest";
   readonly page: number;
   readonly pageSize: 10 | 20;
@@ -17,12 +19,18 @@ export interface AccessSearch {
 const defaults: AccessSearch = {
   tab: "membership-requests",
   status: "ALL",
+  accountState: "ALL",
+  accountRole: "ALL",
   order: "recent",
   page: 1,
   pageSize: 10,
   drawer: "open",
 };
-const tabs = new Set<AccessTab>(["membership-requests", "capability-requests"]);
+const tabs = new Set<AccessTab>([
+  "users",
+  "membership-requests",
+  "capability-requests",
+]);
 const statuses = new Set<AccessSearch["status"]>([
   "ALL",
   "PENDING",
@@ -30,6 +38,17 @@ const statuses = new Set<AccessSearch["status"]>([
   "REJECTED",
   "WITHDRAWN",
   "REVOKED",
+]);
+const accountStates = new Set<AccessSearch["accountState"]>([
+  "ALL",
+  "ACTIVE",
+  "DISABLED",
+  "DELETED",
+]);
+const accountRoles = new Set<AccessSearch["accountRole"]>([
+  "ALL",
+  "USER",
+  "PLATFORM_ADMIN",
 ]);
 
 function positiveInteger(value: string | null, fallback: number): number {
@@ -52,6 +71,16 @@ export const accessQueryCodec = defineQueryCodec<AccessSearch>({
     return {
       tab,
       status,
+      accountState: accountStates.has(
+        sp.get("accountState") as AccessSearch["accountState"],
+      )
+        ? (sp.get("accountState") as AccessSearch["accountState"])
+        : defaults.accountState,
+      accountRole: accountRoles.has(
+        sp.get("accountRole") as AccessSearch["accountRole"],
+      )
+        ? (sp.get("accountRole") as AccessSearch["accountRole"])
+        : defaults.accountRole,
       order: sp.get("order") === "oldest" ? "oldest" : defaults.order,
       page: positiveInteger(sp.get("page"), defaults.page),
       pageSize: sp.get("pageSize") === "20" ? 20 : defaults.pageSize,
@@ -66,6 +95,10 @@ export const accessQueryCodec = defineQueryCodec<AccessSearch>({
     if (merged.tab !== defaults.tab) sp.set("tab", merged.tab);
     if (merged.q) sp.set("q", merged.q);
     if (merged.status !== defaults.status) sp.set("status", merged.status);
+    if (merged.accountState !== defaults.accountState)
+      sp.set("accountState", merged.accountState);
+    if (merged.accountRole !== defaults.accountRole)
+      sp.set("accountRole", merged.accountRole);
     if (merged.order !== defaults.order) sp.set("order", merged.order);
     if (merged.page !== defaults.page) sp.set("page", String(merged.page));
     if (merged.pageSize !== defaults.pageSize)

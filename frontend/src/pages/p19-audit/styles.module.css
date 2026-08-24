@@ -5,11 +5,11 @@
   color: var(--hc-color-text, #17211f);
 }
 
-.page :global([data-layout='standard-page']) {
+.page :global([data-layout="standard-page"]) {
   gap: 12px;
 }
 
-.page :global([aria-label='审计日志主内容']) {
+.page :global([aria-label="审计日志主内容"]) {
   padding: 12px;
 }
 
@@ -66,7 +66,10 @@
 }
 
 .desktopSplit .filterForm {
-  grid-template-columns: repeat(2, minmax(130px, 1.25fr)) repeat(7, minmax(76px, 1fr));
+  grid-template-columns: repeat(2, minmax(130px, 1.25fr)) repeat(
+      7,
+      minmax(76px, 1fr)
+    );
 }
 
 .desktopSplit .summaryGrid :global(.ant-card-body) {
@@ -84,6 +87,135 @@
 
 .contentStack {
   gap: 10px;
+}
+
+.governancePanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-sm, 4px);
+  background:
+    linear-gradient(135deg, rgb(89 101 216 / 5%), transparent 42%),
+    var(--hc-color-surface, #fff);
+}
+
+.governanceHeader,
+.governanceCardTitle,
+.governanceActions,
+.exportStatus > div,
+.holdList li {
+  display: flex;
+  align-items: center;
+}
+
+.governanceHeader,
+.governanceActions,
+.holdList li {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.governanceHeader > div {
+  display: grid;
+  gap: 1px;
+}
+
+.governanceHeader > div > span,
+.governanceMuted,
+.governanceActions > span,
+.holdList span,
+.exportStatus span {
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.75rem;
+}
+
+.governanceHeader h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.governanceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.governanceCard {
+  display: flex;
+  min-width: 0;
+  min-height: 154px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgb(89 101 216 / 15%);
+  border-radius: var(--hc-radius-sm, 4px);
+  background: rgb(255 255 255 / 76%);
+}
+
+.governanceCardTitle {
+  gap: 7px;
+  color: var(--hc-color-primary, #5965d8);
+}
+
+.retentionFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.retentionFields label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.72rem;
+}
+
+.retentionFields :global(.ant-input-number) {
+  width: 100%;
+}
+
+.governanceActions {
+  margin-top: auto;
+}
+
+.holdList {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.holdList li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.holdList strong,
+.holdList span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.holdComposer,
+.exportStatus {
+  display: grid;
+  gap: 7px;
+  margin-top: auto;
+}
+
+.exportStatus > div {
+  gap: 6px;
+}
+
+.governanceError {
+  margin: 0;
+  color: var(--hc-color-error, #a63d3a);
+  font-size: 0.75rem;
 }
 
 .changeList {
@@ -120,7 +252,10 @@
 
 .filterForm {
   display: grid;
-  grid-template-columns: repeat(2, minmax(170px, 1.35fr)) repeat(7, minmax(105px, 1fr));
+  grid-template-columns: repeat(2, minmax(170px, 1.35fr)) repeat(
+      7,
+      minmax(105px, 1fr)
+    );
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--hc-color-border, #d7e2df);
@@ -156,11 +291,17 @@
   white-space: normal;
 }
 
-.page :global(.hc-data-table .ant-table-tbody > tr:has(.identityButton[aria-current='true']) > td) {
+.page
+  :global(
+    .hc-data-table
+      .ant-table-tbody
+      > tr:has(.identityButton[aria-current="true"])
+      > td
+  ) {
   background: rgb(89 101 216 / 7%);
 }
 
-.identityButton[aria-current='true'] strong {
+.identityButton[aria-current="true"] strong {
   color: var(--hc-color-primary, #5965d8);
 }
 
@@ -179,6 +320,41 @@
   background: rgb(89 101 216 / 6%);
   color: var(--hc-color-text-muted, #64736f);
   font-size: 0.8125rem;
+}
+
+.integrityPassed,
+.integrityFailed {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: var(--hc-radius-sm, 4px);
+  font-size: 0.8125rem;
+}
+
+.integrityPassed {
+  border-color: rgb(48 135 92 / 28%);
+  background: rgb(48 135 92 / 7%);
+  color: #286c4c;
+}
+
+.integrityFailed {
+  border-color: rgb(194 64 61 / 30%);
+  background: rgb(194 64 61 / 7%);
+  color: #a63d3a;
+}
+
+.integrityPassed > div,
+.integrityFailed > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.integrityPassed span,
+.integrityFailed span {
+  color: var(--hc-color-text-muted, #64736f);
 }
 
 .auditWindowFacts {
@@ -226,7 +402,7 @@
   font-size: 0.75rem;
 }
 
-.page :global([aria-label='按 occurred_at DESC、event_id DESC 稳定排序']) {
+.page :global([aria-label="按 occurred_at DESC、event_id DESC 稳定排序"]) {
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -257,10 +433,17 @@
 }
 
 @media (max-width: 1199px) {
+  .governanceGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .governanceCard {
+    min-height: auto;
+  }
+
   .filterForm {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-
 
   .auditWindowFacts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -284,6 +467,10 @@
   .filterField {
     width: 100%;
     min-width: 0;
+  }
+
+  .retentionFields {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auditWindowFacts {

@@ -12,6 +12,7 @@ import {
   type DomainOperationError,
 } from "./domain-error";
 import { createManagedAbortController } from "./transport-lifecycle";
+import { runtimeOperations } from "./generated/platform-operations";
 
 export type RequestMethod =
   | "GET"
@@ -33,6 +34,17 @@ export type RequestOptions = {
   method: RequestMethod;
   path: string;
   /**
+   * Session mode sends the opaque bearer without tenant scope. Public mode
+   * sends neither bearer nor tenant headers. Both remain independent from a
+   * concurrent project-scope switch.
+   */
+  scopeMode?: "active" | "session" | "public";
+  /**
+   * Use one not-yet-installed opaque session for bootstrap or cleanup. This is
+   * accepted only in session mode and overrides the shell token.
+   */
+  bearerToken?: string;
+  /**
    * Bind a scoped request to one immutable scope snapshot. When supplied,
    * both request headers and the post-response scope guard use this value.
    */
@@ -46,6 +58,11 @@ export type RequestOptions = {
   body?: unknown;
   idempotencyKey?: string;
   ifMatch?: string;
+  /**
+   * Opaque single-use public-auth challenge response. The transport accepts it only for public
+   * operations, sends it as a header, and never places it in a URL, cache key, or error.
+   */
+  authChallengeResponse?: string;
   signal?: AbortSignal;
   /**
    * Short-lived authorization responses must never enter any HTTP cache.
@@ -53,6 +70,10 @@ export type RequestOptions = {
    */
   cache?: RequestCache;
 };
+
+export function isSafeBearerToken(value: string): boolean {
+  return /^[!-~]{1,4096}$/u.test(value);
+}
 
 interface ErrorEnvelopeWire {
   error?: {
@@ -63,6 +84,7 @@ interface ErrorEnvelopeWire {
     blocked_reasons?: unknown;
     request_id?: unknown;
     retryable?: unknown;
+    retry_after_seconds?: unknown;
   };
 }
 
@@ -130,6 +152,7 @@ function asRecord(value: unknown): ErrorPayloadWire | null {
 }
 
 const defaultAcceptLanguage = "zh-CN";
+const maximumRetryAfterSeconds = 86_400;
 
 function resolveAcceptLanguage(): string {
   const candidate = globalThis.navigator?.language;
@@ -141,6 +164,7 @@ function resolveAcceptLanguage(): string {
 export function domainErrorFromResponse(
   status: number,
   raw: unknown,
+  headers?: Headers,
 ): DomainError & Error {
   const payload = asRecord(raw);
   const envelope = asRecord((payload as ErrorEnvelopeWire | null)?.error);
@@ -154,6 +178,7 @@ export function domainErrorFromResponse(
       "code",
       "request_id",
       "retryable",
+      "retry_after_seconds",
       "details",
     ].some((key) => Object.hasOwn(payload, key));
   const isLegacyEnvelope = envelope !== null && !hasProblemDetailsField;
@@ -199,8 +224,40 @@ export function domainErrorFromResponse(
     blockedReasons,
     requestId: nonEmptyText(metadata?.request_id),
     retryable: metadata?.retryable === true,
+    retryAfterSeconds: retryAfterSeconds(status, headers, metadata),
     httpStatus: status,
   });
+}
+
+function retryAfterSeconds(
+  status: number,
+  headers: Headers | undefined,
+  metadata: ErrorPayloadWire | null,
+): number | null {
+  if (status !== 429 && status !== 503) return null;
+  const header = headers?.get("Retry-After");
+  if (header !== null && header !== undefined) {
+    if (!/^[0-9]+$/u.test(header)) return null;
+    const canonical = header.replace(/^0+/u, "");
+    if (!canonical) return null;
+    if (
+      canonical.length > 5 ||
+      (canonical.length === 5 && canonical > String(maximumRetryAfterSeconds))
+    ) {
+      return maximumRetryAfterSeconds;
+    }
+    const parsed = Number(canonical);
+    return parsed >= 1 ? parsed : null;
+  }
+  const bodyValue = metadata?.retry_after_seconds;
+  if (
+    typeof bodyValue !== "number" ||
+    !Number.isSafeInteger(bodyValue) ||
+    bodyValue < 1
+  ) {
+    return null;
+  }
+  return Math.min(bodyValue, maximumRetryAfterSeconds);
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -234,31 +291,131 @@ function scopeTransitionError(
   });
 }
 
+const runtimeParameterToken = /^\{[A-Za-z_][A-Za-z0-9_]*\}$/u;
+const runtimeParameterPart = /(\{[A-Za-z_][A-Za-z0-9_]*\})/u;
+const regularExpressionSpecialCharacter = /[.*+?^${}()|[\]\\]/gu;
+
+function runtimePathSegmentMatches(
+  templateSegment: string,
+  requestSegment: string,
+): boolean {
+  const expression = templateSegment
+    .split(runtimeParameterPart)
+    .map((part) =>
+      runtimeParameterToken.test(part)
+        ? "[^/]+"
+        : part.replace(regularExpressionSpecialCharacter, "\\$&"),
+    )
+    .join("");
+  return new RegExp(`^${expression}$`, "u").test(requestSegment);
+}
+
+function runtimeOperationMatches(
+  template: string,
+  requestPath: string,
+): boolean {
+  const expected = template.split("/");
+  const actual = requestPath.split("?")[0]?.split("/") ?? [];
+  return (
+    expected.length === actual.length &&
+    expected.every((segment, index) =>
+      runtimePathSegmentMatches(segment, actual[index] ?? ""),
+    )
+  );
+}
+
+function assertRuntimeOperation(method: RequestMethod, path: string): void {
+  if (
+    runtimeOperations.some(
+      (operation) =>
+        operation.method === method &&
+        runtimeOperationMatches(operation.path, path),
+    )
+  ) {
+    return;
+  }
+  throw createDomainError({
+    code: "CONTRACT_MISMATCH",
+    problemCode: "RUNTIME_OPERATION_UNDECLARED",
+    message: "客户端请求不在当前正式 API 合同中。",
+    fieldErrors: [],
+    operationErrors: [],
+    blockedReasons: [
+      {
+        code: "RUNTIME_OPERATION_UNDECLARED",
+        message: `${method} ${path} is absent from the production runtime OpenAPI.`,
+      },
+    ],
+    requestId: null,
+    retryable: false,
+    httpStatus: null,
+  });
+}
+
 export async function request<T>(opts: RequestOptions): Promise<T> {
   const config = getRuntimeConfig();
   const shell = getShellState();
-  if (shell.scopeChanging && opts.method !== "GET" && opts.method !== "HEAD") {
+  const sessionScoped = opts.scopeMode === "session";
+  const publicScoped = opts.scopeMode === "public";
+  const activeScoped = !sessionScoped && !publicScoped;
+  if (opts.bearerToken !== undefined) {
+    if (!sessionScoped) {
+      throw new TypeError("Explicit bearer tokens require session scope mode");
+    }
+    if (!isSafeBearerToken(opts.bearerToken)) {
+      throw new TypeError(
+        "Explicit bearer tokens must contain visible ASCII only",
+      );
+    }
+  }
+  if (!activeScoped && opts.scope !== undefined) {
+    throw new TypeError("Unscoped requests cannot bind a project scope");
+  }
+  if (opts.authChallengeResponse !== undefined) {
+    if (!publicScoped) {
+      throw new TypeError(
+        "Authentication challenge responses require public scope mode",
+      );
+    }
+    if (!/^[!-~]{1,2048}$/u.test(opts.authChallengeResponse)) {
+      throw new TypeError(
+        "Authentication challenge responses must be visible ASCII up to 2048 chars",
+      );
+    }
+  }
+  if (
+    activeScoped &&
+    shell.scopeChanging &&
+    opts.method !== "GET" &&
+    opts.method !== "HEAD"
+  ) {
     throw scopeTransitionError(
       "SCOPE_SWITCH_IN_PROGRESS",
       "作用域切换期间禁止提交写请求",
     );
   }
-  const requestScope = opts.scope ?? shell.scope;
+  const requestScope = activeScoped ? (opts.scope ?? shell.scope) : null;
   const requestScopeKey =
     requestScope === null ? shell.scopeKey : makeScopeKey(requestScope);
-  if (opts.scope !== undefined && shell.scopeKey !== requestScopeKey) {
+  if (
+    activeScoped &&
+    opts.scope !== undefined &&
+    shell.scopeKey !== requestScopeKey
+  ) {
     throw scopeTransitionError(
       "SCOPE_CHANGED",
       "Request scope no longer matches the active scope",
     );
   }
+  assertRuntimeOperation(opts.method, opts.path);
   const headers = new Headers({
     Accept: "application/json",
     "Accept-Language": resolveAcceptLanguage(),
     "X-Client-Version": config.buildVersion,
   });
-  if (shell.sessionToken)
-    headers.set("Authorization", `Bearer ${shell.sessionToken}`);
+  const bearerToken = opts.bearerToken ?? shell.sessionToken;
+  if (!publicScoped && bearerToken)
+    headers.set("Authorization", `Bearer ${bearerToken}`);
   if (requestScope?.organizationId)
     headers.set("X-Organization-Id", requestScope.organizationId);
   if (requestScope?.projectId)
@@ -267,9 +424,14 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     headers.set("X-Region-Code", requestScope.regionCode);
   if (opts.idempotencyKey) headers.set("Idempotency-Key", opts.idempotencyKey);
   if (opts.ifMatch) headers.set("If-Match", opts.ifMatch);
+  if (opts.authChallengeResponse !== undefined) {
+    headers.set("X-Auth-Challenge-Response", opts.authChallengeResponse);
+  }
   if (opts.body !== undefined) headers.set("Content-Type", "application/json");
 
-  const { controller, release } = createManagedAbortController(opts.signal);
+  const { controller, release } = createManagedAbortController(opts.signal, {
+    cancelOnScopeChange: activeScoped,
+  });
   try {
     const response = await globalThis.fetch(
       `${joinUrl(config.apiBaseUrl, opts.path)}${buildQuery(opts.query)}`,
@@ -281,11 +443,12 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
       },
     );
-    if (getShellState().scopeKey !== requestScopeKey) {
+    if (activeScoped && getShellState().scopeKey !== requestScopeKey) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
     }
     const raw = await readJson(response);
-    if (!response.ok) throw domainErrorFromResponse(response.status, raw);
+    if (!response.ok)
+      throw domainErrorFromResponse(response.status, raw, response.headers);
     return raw as T;
   } catch (error) {
     if (isDomainError(error)) throw error;

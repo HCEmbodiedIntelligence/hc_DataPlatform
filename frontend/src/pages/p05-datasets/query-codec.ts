@@ -2,6 +2,7 @@ import {
   asSearchParams,
   canonicalCursorPair,
   cleanCursor,
+  cleanId,
   cleanText,
   defineQueryCodec,
   enumValue,
@@ -25,6 +26,7 @@ const ASSET_STATES = [
 ] as const;
 const STORAGE_CLASSES = ['standard', 'ia', 'archive'] as const;
 const LIMITS = ['20', '50', '100'] as const;
+const COLLECTION_TASK_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
 export type DatasetsSearch = Omit<DatasetsRouteFilters, 'sort' | 'limit'> &
   Readonly<{
@@ -47,6 +49,7 @@ function parseDatasetsSearch(input: string | URLSearchParams): DatasetsSearch {
   const cursor = canonicalCursorPair(params);
   const limit = enumValue(params.get('limit'), LIMITS);
   return {
+    collectionTaskId: cleanId(params.get('collectionTaskId'), COLLECTION_TASK_ID),
     q: cleanText(params.get('q'), 200),
     robotModelId: cleanText(params.get('robotModelId'), 128),
     robotId: cleanText(params.get('robotId'), 128),
@@ -69,6 +72,7 @@ function parseDatasetsSearch(input: string | URLSearchParams): DatasetsSearch {
 function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
   const raw = new URLSearchParams(
     Object.entries({
+      collectionTaskId: input.collectionTaskId,
       q: input.q,
       robotModelId: input.robotModelId,
       robotId: input.robotId,
@@ -89,6 +93,7 @@ function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
   const normalized = parseDatasetsSearch(raw);
   const params = new URLSearchParams();
   for (const key of [
+    'collectionTaskId',
     'q',
     'robotModelId',
     'robotId',
@@ -112,6 +117,7 @@ function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
 }
 
 const PAGINATION_DIMENSIONS: readonly (keyof DatasetsSearch)[] = [
+  'collectionTaskId',
   'q',
   'robotModelId',
   'robotId',

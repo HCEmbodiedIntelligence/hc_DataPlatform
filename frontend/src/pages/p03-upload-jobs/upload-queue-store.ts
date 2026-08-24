@@ -10,6 +10,7 @@ import {
   listFormalUploadParts,
   listFormalUploadSessions,
   pauseFormalUpload,
+  preflightUploadManifest,
   renewFormalUploadParts,
   resumeFormalUpload,
   retryFormalUploadParts,
@@ -21,15 +22,18 @@ import {
 } from "./formal-client";
 import {
   AUTHORIZATION_BATCH_SIZE,
+  type FolderUploadBundle,
   findRawPackageFile,
   formatBytes,
   partBounds,
   planUploadParts,
   uploadProblemCopy,
   type UploadPartPlan,
+  type UploadProblemCopy,
 } from "./upload-contract";
 
 export type QueueTransferStatus =
+  | "waiting"
   | "preparing"
   | "uploading"
   | "pausing"
@@ -42,6 +46,17 @@ export type QueueTransferStatus =
   | "needs-file";
 
 export const PART_TRANSFER_TIMEOUT_MS = 120_000;
+export const MAX_CONCURRENT_PART_UPLOADS = 8;
+export const MAX_IN_FLIGHT_PART_BYTES = 128 * 1024 ** 2;
+/**
+ * A 5 TiB object necessarily has roughly 524 MiB parts at the S3/OSS 10,000-part
+ * ceiling.  A fixed two-minute timeout rejects such a part on otherwise usable
+ * links.  This is deliberately a conservative *floor* for timeout calculation,
+ * not a throughput promise or a global admission limit.
+ */
+export const SLOW_LINK_BYTES_PER_SECOND = 1024 ** 2;
+export const PRESIGNED_URL_SETTLE_MARGIN_MS = 30_000;
+const MIN_PART_TRANSFER_TIMEOUT_MS = 15_000;
 
 export interface FailedPartTransfer {
   readonly partNumber: number;
@@ -79,23 +94,56 @@ interface UploadRuntime {
   plan: UploadPartPlan | null;
   controller: AbortController | null;
   intent: "run" | "pause" | "cancel" | "offline";
+  initialAuthorizations: readonly PartAuthorization[];
 }
 
-interface StartUploadInput {
+export interface StartUploadInput {
   readonly scope: IngestScope;
   readonly preflight: ManifestPreflight;
   readonly sourceType: "BROWSER_MULTIPART" | "OBJECT_STORAGE_REFERENCE";
   readonly files: readonly File[];
   readonly objectStorageUri?: string;
+  /** Internal queue identity so a folder batch can resume the same item. */
+  readonly queueItemId?: string;
+  /** Stable per-package key used only by the folder-import scheduler. */
+  readonly idempotencyKey?: string;
+  /** Queue-first flows renew authorization only when this item actually starts. */
+  readonly deferPartAuthorization?: boolean;
+}
+
+export interface FolderBatchProgress {
+  readonly batchId: string;
+  readonly total: number;
+  readonly completed: number;
+  readonly failed: number;
+  readonly activeDataPackageId: string | null;
+  readonly status: "running" | "offline" | "completed";
+}
+
+interface FolderBatchRuntime {
+  readonly batchId: string;
+  readonly scope: IngestScope;
+  readonly bundles: readonly FolderUploadBundle[];
+  nextIndex: number;
+  pausedItemId: string | null;
+  running: boolean;
 }
 
 interface UploadQueueState {
   readonly scopeKey: string | null;
   readonly recovering: boolean;
+  readonly recoveryProblem: UploadProblemCopy | null;
   readonly items: readonly UploadQueueItem[];
+  readonly folderBatch: FolderBatchProgress | null;
   bindScope: (scope: IngestScope) => void;
   recover: (scope: IngestScope) => Promise<void>;
+  prepare: (input: StartUploadInput) => Promise<string>;
+  beginPrepared: (itemId: string) => Promise<void>;
   start: (input: StartUploadInput) => Promise<void>;
+  startFolderBatch: (input: {
+    readonly scope: IngestScope;
+    readonly bundles: readonly FolderUploadBundle[];
+  }) => Promise<void>;
   pause: (itemId: string) => Promise<void>;
   resume: (itemId: string) => Promise<void>;
   retryFailedParts: (itemId: string) => Promise<void>;
@@ -118,6 +166,7 @@ class PartTransferError extends Error {
 }
 
 const runtimeByItem = new Map<string, UploadRuntime>();
+const folderBatchRuntimeById = new Map<string, FolderBatchRuntime>();
 const activeServerStates = new Set<FormalUploadSession["status"]>([
   "REGISTERED",
   "UPLOADING",
@@ -125,6 +174,56 @@ const activeServerStates = new Set<FormalUploadSession["status"]>([
   "MULTIPART_COMPLETED",
   "FAILED",
 ]);
+
+/**
+ * Keep browser multipart throughput bounded by both a connection cap and an
+ * in-flight byte budget. Small 5–16 MiB parts can use the measured eight-way
+ * parallelism; very large computed parts step down before they can retain
+ * multi-gigabyte request bodies in the browser.
+ */
+export function partUploadConcurrency(
+  plan: UploadPartPlan,
+  authorizationCount: number,
+): number {
+  const memoryBound = Math.max(
+    1,
+    Math.floor(MAX_IN_FLIGHT_PART_BYTES / plan.partSize),
+  );
+  return Math.max(
+    1,
+    Math.min(MAX_CONCURRENT_PART_UPLOADS, memoryBound, authorizationCount),
+  );
+}
+
+/**
+ * Bound an XHR timeout by the actual short-lived authorization, while allowing
+ * large legal multipart parts enough time on a conservative 1 MiB/s link.  The
+ * server supplies the deadline, so the browser never knowingly keeps a PUT alive
+ * through a presigned URL expiry.  Invalid or already-expired legacy grants retain
+ * the existing bounded timeout and are rejected by object storage as before.
+ */
+export function partTransferTimeoutMs(
+  partBytes: number,
+  authorization: Pick<PartAuthorization, "expires_at">,
+  nowMs = Date.now(),
+): number {
+  const transferMs = Math.ceil(
+    (partBytes / SLOW_LINK_BYTES_PER_SECOND) * 1_000,
+  );
+  const desiredMs = Math.max(
+    PART_TRANSFER_TIMEOUT_MS,
+    transferMs + PRESIGNED_URL_SETTLE_MARGIN_MS,
+  );
+  const expiresAtMs = Date.parse(authorization.expires_at);
+  const authorizedWindowMs =
+    expiresAtMs - nowMs - PRESIGNED_URL_SETTLE_MARGIN_MS;
+  if (!Number.isFinite(authorizedWindowMs) || authorizedWindowMs <= 0)
+    return PART_TRANSFER_TIMEOUT_MS;
+  return Math.max(
+    MIN_PART_TRANSFER_TIMEOUT_MS,
+    Math.min(desiredMs, authorizedWindowMs),
+  );
+}
 
 function scopeKey(scope: IngestScope): string {
   return `${scope.organizationId}/${scope.projectId}/${scope.regionCode}`;
@@ -149,6 +248,230 @@ function updateItem(
       item.id === itemId ? updater(item) : item,
     ),
   }));
+}
+
+function updateFolderBatch(
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  batchId: string,
+  updater: (batch: FolderBatchProgress) => FolderBatchProgress,
+) {
+  set((state) => ({
+    folderBatch:
+      state.folderBatch?.batchId === batchId
+        ? updater(state.folderBatch)
+        : state.folderBatch,
+  }));
+}
+
+function folderIdempotencyKey(bundle: FolderUploadBundle): string {
+  return `folder-import:${bundle.manifest.data_package_id}:${bundle.manifest.sha256}`;
+}
+
+function folderFailureQueueItem(
+  bundle: FolderUploadBundle,
+  scope: IngestScope,
+  itemId: string,
+  error: unknown,
+): UploadQueueItem {
+  const copy =
+    error instanceof Error && error.message === "FOLDER_PACKAGE_ALREADY_ACTIVE"
+      ? {
+          problemCode: "FOLDER_PACKAGE_ALREADY_ACTIVE",
+          detail:
+            "此数据包已在当前页面的另一条传输中运行；为避免重复写入，本批次未接管它。",
+          requestId: null,
+        }
+      : uploadProblemCopy(error);
+  return {
+    id: itemId,
+    scopeKey: scopeKey(scope),
+    sessionId: null,
+    sourceType: "BROWSER_MULTIPART",
+    fileName: bundle.rawFile.name,
+    dataPackageId: bundle.manifest.data_package_id,
+    totalBytes: bundle.rawFile.size,
+    uploadedBytes: 0,
+    completedParts: 0,
+    totalParts: planUploadParts(bundle.rawFile.size).partCount,
+    speedBytesPerSecond: null,
+    remainingSeconds: null,
+    transferStatus: "failed",
+    serverStatus: null,
+    failedParts: [],
+    failedPartTransfers: [],
+    failureCode: copy.problemCode ?? "MANIFEST_PREFLIGHT_FAILED",
+    failureMessage: copy.detail,
+    requestId: copy.requestId,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function recordFolderBatchItem(
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  batchId: string,
+  item: UploadQueueItem | undefined,
+) {
+  updateFolderBatch(set, batchId, (batch) => ({
+    ...batch,
+    completed: batch.completed + 1,
+    failed: batch.failed + Number(item?.transferStatus === "failed"),
+    activeDataPackageId: null,
+  }));
+}
+
+async function continueFolderBatch(
+  batchId: string,
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  get: () => UploadQueueState,
+): Promise<void> {
+  const runtime = folderBatchRuntimeById.get(batchId);
+  if (!runtime || runtime.running) return;
+  runtime.running = true;
+  try {
+    while (runtime.nextIndex < runtime.bundles.length) {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        updateFolderBatch(set, batchId, (batch) => ({
+          ...batch,
+          status: "offline",
+          activeDataPackageId: null,
+        }));
+        return;
+      }
+      const bundle = runtime.bundles[runtime.nextIndex++];
+      if (!bundle) continue;
+      const itemId = newId();
+      updateFolderBatch(set, batchId, (batch) => ({
+        ...batch,
+        status: "running",
+        activeDataPackageId: bundle.manifest.data_package_id,
+      }));
+      const recoveredItem = get().items.find(
+        (item) =>
+          item.scopeKey === scopeKey(runtime.scope) &&
+          item.sourceType === "BROWSER_MULTIPART" &&
+          item.sessionId !== null &&
+          item.dataPackageId === bundle.manifest.data_package_id,
+      );
+      if (recoveredItem) {
+        if (recoveredItem.transferStatus === "committed") {
+          recordFolderBatchItem(set, batchId, recoveredItem);
+          continue;
+        }
+        if (
+          ["preparing", "uploading", "pausing", "finalizing"].includes(
+            recoveredItem.transferStatus,
+          )
+        ) {
+          set((state) => ({
+            items: [
+              folderFailureQueueItem(
+                bundle,
+                runtime.scope,
+                itemId,
+                new Error("FOLDER_PACKAGE_ALREADY_ACTIVE"),
+              ),
+              ...state.items,
+            ],
+          }));
+          recordFolderBatchItem(
+            set,
+            batchId,
+            get().items.find((item) => item.id === itemId),
+          );
+          continue;
+        }
+        await get().reattachAndResume(recoveredItem.id, bundle.rawFile);
+        const resumed = get().items.find(
+          (item) => item.id === recoveredItem.id,
+        );
+        if (resumed?.transferStatus === "offline") {
+          runtime.pausedItemId = recoveredItem.id;
+          updateFolderBatch(set, batchId, (batch) => ({
+            ...batch,
+            status: "offline",
+            activeDataPackageId: bundle.manifest.data_package_id,
+          }));
+          return;
+        }
+        recordFolderBatchItem(set, batchId, resumed);
+        continue;
+      }
+      let preflight: ManifestPreflight;
+      try {
+        preflight = await preflightUploadManifest(
+          runtime.scope,
+          bundle.manifest,
+        );
+      } catch (error) {
+        set((state) => ({
+          items: [
+            folderFailureQueueItem(bundle, runtime.scope, itemId, error),
+            ...state.items,
+          ],
+        }));
+        recordFolderBatchItem(
+          set,
+          batchId,
+          get().items.find((item) => item.id === itemId),
+        );
+        continue;
+      }
+      await get().start({
+        scope: runtime.scope,
+        preflight,
+        sourceType: "BROWSER_MULTIPART",
+        files: [bundle.manifestFile, bundle.rawFile],
+        queueItemId: itemId,
+        idempotencyKey: folderIdempotencyKey(bundle),
+      });
+      const item = get().items.find((candidate) => candidate.id === itemId);
+      if (item?.transferStatus === "offline") {
+        runtime.pausedItemId = itemId;
+        updateFolderBatch(set, batchId, (batch) => ({
+          ...batch,
+          status: "offline",
+          activeDataPackageId: bundle.manifest.data_package_id,
+        }));
+        return;
+      }
+      recordFolderBatchItem(set, batchId, item);
+    }
+    updateFolderBatch(set, batchId, (batch) => ({
+      ...batch,
+      status: "completed",
+      activeDataPackageId: null,
+    }));
+    folderBatchRuntimeById.delete(batchId);
+  } finally {
+    runtime.running = false;
+  }
+}
+
+async function resumeFolderBatch(
+  runtime: FolderBatchRuntime,
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  get: () => UploadQueueState,
+): Promise<void> {
+  if (runtime.pausedItemId) {
+    const itemId = runtime.pausedItemId;
+    runtime.pausedItemId = null;
+    await get().resume(itemId);
+    const item = get().items.find((candidate) => candidate.id === itemId);
+    if (item?.transferStatus === "offline") {
+      runtime.pausedItemId = itemId;
+      return;
+    }
+    recordFolderBatchItem(set, runtime.batchId, item);
+  }
+  await continueFolderBatch(runtime.batchId, set, get);
 }
 
 function uploadedBytes(
@@ -205,6 +528,8 @@ function itemFromRecovered(
   const failures = failedPartTransfers(parts);
   const raw = preflight.files.find((file) => file.role === "RAW_MCAP");
   let transferStatus: QueueTransferStatus = "needs-file";
+  if (session.source_type === "OBJECT_STORAGE_REFERENCE")
+    transferStatus = "failed";
   if (session.status === "PAUSED") transferStatus = "paused";
   if (session.status === "MULTIPART_COMPLETED") transferStatus = "failed";
   if (session.status === "FAILED") transferStatus = "failed";
@@ -233,6 +558,8 @@ function itemFromRecovered(
         ? "对象分片已传完；重新提交将继续执行 Manifest 提交。"
         : session.status === "FAILED"
           ? "服务端已将该上传标记为失败，请根据错误码核对后重试。"
+          : session.source_type === "OBJECT_STORAGE_REFERENCE"
+            ? "对象引用任务已恢复；请重试提交，平台会继续使用服务端已登记对象。"
           : "浏览器不能在刷新后保留本地文件句柄；重新选择同一原文件即可从服务端分片断点继续。",
     requestId: null,
     createdAt: session.created_at ?? new Date().toISOString(),
@@ -265,8 +592,9 @@ function putAuthorizedPart(
       cleanup();
       completion();
     };
+    const timeoutMs = partTransferTimeoutMs(blob.size, authorization);
     xhr.open("PUT", authorization.url, true);
-    xhr.timeout = PART_TRANSFER_TIMEOUT_MS;
+    xhr.timeout = timeoutMs;
     if (signal.aborted) {
       settle(() =>
         reject(
@@ -323,7 +651,7 @@ function putAuthorizedPart(
           new PartTransferError(
             authorization.part_number,
             "PART_TIMEOUT",
-            `分片 #${authorization.part_number} 在 120 秒内未完成传输，本批其余请求已停止。可“重试失败分片”；服务端已确认分片不会重复上传。`,
+            `分片 #${authorization.part_number} 在 ${Math.ceil(timeoutMs / 1_000)} 秒内未完成传输，本批其余请求已停止。可“重试失败分片”；服务端已确认分片不会重复上传。`,
           ),
         ),
       );
@@ -390,7 +718,7 @@ async function uploadAuthorizationBatch(
 
   let cursor = 0;
   const workers = Array.from(
-    { length: Math.min(3, authorizations.length) },
+    { length: partUploadConcurrency(runtime.plan, authorizations.length) },
     async () => {
       while (cursor < authorizations.length) {
         const authorization = authorizations[cursor++];
@@ -698,10 +1026,195 @@ async function commitObjectReference(
   }
 }
 
+async function prepareUploadSession(
+  input: StartUploadInput,
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  get: () => UploadQueueState,
+): Promise<string> {
+  const { scope, preflight, sourceType, files, objectStorageUri } = input;
+  get().bindScope(scope);
+  const rawFile =
+    sourceType === "BROWSER_MULTIPART"
+      ? findRawPackageFile(files, preflight.manifest)
+      : null;
+  const rawManifestFile = preflight.files.find(
+    (file) => file.role === "RAW_MCAP",
+  );
+  const plan = rawFile ? planUploadParts(rawFile.size) : null;
+
+  if (sourceType === "BROWSER_MULTIPART" && (!rawFile || !plan)) {
+    throw new Error(
+      "浏览器数据包中未找到 Manifest 声明的 RAW_MCAP 原文件。",
+    );
+  }
+  if (rawFile && rawFile.size !== preflight.manifest.file_size) {
+    throw new Error(
+      `本地原文件为 ${formatBytes(rawFile.size)}，与 Manifest 声明 ${formatBytes(preflight.manifest.file_size)} 不一致。`,
+    );
+  }
+
+  const existing = get().items.find(
+    (item) =>
+      item.scopeKey === scopeKey(scope) &&
+      item.sourceType === sourceType &&
+      item.dataPackageId === preflight.identifiers.data_package_id &&
+      item.sessionId !== null &&
+      item.transferStatus !== "cancelled",
+  );
+  if (existing) {
+    runtimeByItem.set(existing.id, {
+      scope,
+      manifest: preflight.manifest,
+      preflight,
+      file: rawFile,
+      plan,
+      controller: null,
+      intent: "pause",
+      initialAuthorizations: [],
+    });
+    return existing.id;
+  }
+
+  const initialPartNumbers =
+    input.deferPartAuthorization === true
+      ? []
+      : (plan?.partNumbers.slice(0, AUTHORIZATION_BATCH_SIZE) ?? []);
+  const grant = await createFormalUploadSession(
+    scope,
+    {
+      manifest: preflight.manifest,
+      ...(sourceType === "BROWSER_MULTIPART"
+        ? { part_numbers: initialPartNumbers }
+        : { object_storage_uri: objectStorageUri?.trim() }),
+    },
+    input.idempotencyKey ?? newId(),
+  );
+  if (!grant.session.session_id) throw new Error("UPLOAD_SESSION_ID_MISSING");
+
+  const id = input.queueItemId ?? grant.session.session_id;
+  const committed = grant.session.status === "RAW_COMMITTED";
+  const item: UploadQueueItem = {
+    id,
+    scopeKey: scopeKey(scope),
+    sessionId: grant.session.session_id,
+    sourceType,
+    fileName: rawFile?.name ?? rawManifestFile?.path ?? "授权对象",
+    dataPackageId: preflight.identifiers.data_package_id,
+    totalBytes: preflight.manifest.file_size,
+    uploadedBytes: committed ? preflight.manifest.file_size : 0,
+    completedParts: committed ? (plan?.partCount ?? 1) : 0,
+    totalParts: plan?.partCount ?? 1,
+    speedBytesPerSecond: null,
+    remainingSeconds: null,
+    transferStatus: committed ? "committed" : "waiting",
+    serverStatus: grant.session.status,
+    failedParts: [],
+    failedPartTransfers: [],
+    failureCode: null,
+    failureMessage: null,
+    requestId: null,
+    createdAt: grant.session.created_at ?? new Date().toISOString(),
+  };
+  runtimeByItem.set(id, {
+    scope,
+    manifest: preflight.manifest,
+    preflight,
+    file: rawFile,
+    plan,
+    controller: null,
+    intent: "pause",
+    initialAuthorizations: grant.parts,
+  });
+  set((state) => ({
+    items: state.items.some((candidate) => candidate.id === id)
+      ? state.items.map((candidate) => (candidate.id === id ? item : candidate))
+      : [item, ...state.items],
+  }));
+  return id;
+}
+
+async function beginPreparedUpload(
+  itemId: string,
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  get: () => UploadQueueState,
+): Promise<void> {
+  const runtime = runtimeByItem.get(itemId);
+  const item = get().items.find((candidate) => candidate.id === itemId);
+  if (
+    !runtime ||
+    !item?.sessionId ||
+    ["committed", "cancelled"].includes(item.transferStatus)
+  )
+    return;
+  if (item.sourceType === "OBJECT_STORAGE_REFERENCE") {
+    await commitObjectReference(itemId, set, get);
+    return;
+  }
+  if (!runtime.file || !runtime.plan) {
+    updateItem(set, itemId, (current) => ({
+      ...current,
+      transferStatus: "needs-file",
+      failureMessage: "请重新选择 Manifest 对应的同一原文件以恢复传输。",
+    }));
+    return;
+  }
+  let authorizations = runtime.initialAuthorizations;
+  runtime.initialAuthorizations = [];
+  if (item.serverStatus === "PAUSED") {
+    authorizations = (
+      await resumeFormalUpload(runtime.scope, item.sessionId, {
+        part_numbers: [],
+      })
+    ).parts;
+  }
+  await runBrowserTransfer(itemId, authorizations, [], set, get);
+}
+
+function preparationFailureItem(
+  input: StartUploadInput,
+  error: unknown,
+): UploadQueueItem {
+  const copy = uploadProblemCopy(error);
+  const raw = input.preflight.files.find((file) => file.role === "RAW_MCAP");
+  const file = findRawPackageFile(input.files, input.preflight.manifest);
+  const plan = file ? planUploadParts(file.size) : null;
+  return {
+    id: input.queueItemId ?? newId(),
+    scopeKey: scopeKey(input.scope),
+    sessionId: null,
+    sourceType: input.sourceType,
+    fileName: file?.name ?? raw?.path ?? "授权对象",
+    dataPackageId: input.preflight.identifiers.data_package_id,
+    totalBytes: input.preflight.manifest.file_size,
+    uploadedBytes: 0,
+    completedParts: 0,
+    totalParts: plan?.partCount ?? 1,
+    speedBytesPerSecond: null,
+    remainingSeconds: null,
+    transferStatus: "failed",
+    serverStatus: null,
+    failedParts: [],
+    failedPartTransfers: [],
+    failureCode: copy.problemCode ?? "UPLOAD_SESSION_CREATE_FAILED",
+    failureMessage:
+      error instanceof Error && error.message
+        ? error.message
+        : copy.detail,
+    requestId: copy.requestId,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
   scopeKey: null,
   recovering: false,
+  recoveryProblem: null,
   items: [],
+  folderBatch: null,
   bindScope: (scope) => {
     const nextKey = scopeKey(scope);
     if (get().scopeKey === nextKey) return;
@@ -710,21 +1223,35 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
       runtime.controller?.abort();
     }
     runtimeByItem.clear();
-    set({ scopeKey: nextKey, items: [], recovering: false });
+    folderBatchRuntimeById.clear();
+    set({
+      scopeKey: nextKey,
+      items: [],
+      recovering: false,
+      recoveryProblem: null,
+      folderBatch: null,
+    });
   },
   recover: async (scope) => {
     get().bindScope(scope);
     if (get().recovering) return;
-    set({ recovering: true });
+    set({ recovering: true, recoveryProblem: null });
     const itemScopeKey = scopeKey(scope);
     try {
-      const response = await listFormalUploadSessions(scope, { limit: 100 });
-      const sessions = response.items.filter(
-        (session) =>
-          activeServerStates.has(session.status) && session.session_id,
-      );
-      const recovered = await Promise.all(
-        sessions.map(async (session) => {
+      const recovered: UploadQueueItem[] = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const response = await listFormalUploadSessions(scope, {
+          limit: 100,
+          cursor,
+        });
+        const sessions = response.items.filter(
+          (session) =>
+            activeServerStates.has(session.status) && session.session_id,
+        );
+        for (const session of sessions) {
+          if (get().scopeKey !== itemScopeKey) return;
           const [preflight, parts] = await Promise.all([
             getFormalUploadManifest(scope, session.session_id!),
             listFormalUploadParts(scope, session.session_id!),
@@ -746,10 +1273,16 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
                 : null,
             controller: null,
             intent: "pause",
+            initialAuthorizations: [],
           });
-          return item;
-        }),
-      );
+          recovered.push(item);
+        }
+        const nextCursor = response.next_cursor ?? undefined;
+        if (nextCursor && seenCursors.has(nextCursor))
+          throw new Error("UPLOAD_SESSION_CURSOR_LOOP");
+        if (nextCursor) seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      } while (cursor);
       set((state) => {
         if (state.scopeKey !== itemScopeKey) return { recovering: false };
         const currentIds = new Set(
@@ -761,114 +1294,55 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
             ...recovered.filter((item) => !currentIds.has(item.sessionId)),
           ],
           recovering: false,
+          recoveryProblem: null,
         };
       });
-    } catch {
-      set({ recovering: false });
+    } catch (error) {
+      set({ recovering: false, recoveryProblem: uploadProblemCopy(error) });
     }
   },
-  start: async ({ scope, preflight, sourceType, files, objectStorageUri }) => {
-    get().bindScope(scope);
-    const id = newId();
-    const rawFile =
-      sourceType === "BROWSER_MULTIPART"
-        ? findRawPackageFile(files, preflight.manifest)
-        : null;
-    const rawManifestFile = preflight.files.find(
-      (file) => file.role === "RAW_MCAP",
-    );
-    const plan = rawFile ? planUploadParts(rawFile.size) : null;
-    const item: UploadQueueItem = {
-      id,
-      scopeKey: scopeKey(scope),
-      sessionId: null,
-      sourceType,
-      fileName: rawFile?.name ?? rawManifestFile?.path ?? "授权对象",
-      dataPackageId: preflight.identifiers.data_package_id,
-      totalBytes: preflight.manifest.file_size,
-      uploadedBytes: 0,
-      completedParts: 0,
-      totalParts: plan?.partCount ?? 1,
-      speedBytesPerSecond: null,
-      remainingSeconds: null,
-      transferStatus: "preparing",
-      serverStatus: null,
-      failedParts: [],
-      failedPartTransfers: [],
-      failureCode: null,
-      failureMessage: null,
-      requestId: null,
-      createdAt: new Date().toISOString(),
-    };
-    set((state) => ({ items: [item, ...state.items] }));
-    runtimeByItem.set(id, {
-      scope,
-      manifest: preflight.manifest,
-      preflight,
-      file: rawFile,
-      plan,
-      controller: null,
-      intent: "run",
-    });
-    if (sourceType === "BROWSER_MULTIPART" && (!rawFile || !plan)) {
-      updateItem(set, id, (current) => ({
-        ...current,
-        transferStatus: "failed",
-        failureCode: "RAW_FILE_REQUIRED",
-        failureMessage:
-          "浏览器数据包中未找到 Manifest 声明的 RAW_MCAP 原文件。",
-      }));
-      return;
-    }
-    if (rawFile && rawFile.size !== preflight.manifest.file_size) {
-      updateItem(set, id, (current) => ({
-        ...current,
-        transferStatus: "failed",
-        failureCode: "LOCAL_FILE_SIZE_MISMATCH",
-        failureMessage: `本地原文件为 ${formatBytes(rawFile.size)}，与 Manifest 声明 ${formatBytes(preflight.manifest.file_size)} 不一致。`,
-      }));
-      return;
-    }
+  prepare: (input) => prepareUploadSession(input, set, get),
+  beginPrepared: (itemId) => beginPreparedUpload(itemId, set, get),
+  start: async (input) => {
     try {
-      const initialPartNumbers =
-        plan?.partNumbers.slice(0, AUTHORIZATION_BATCH_SIZE) ?? [];
-      const grant = await createFormalUploadSession(
-        scope,
-        {
-          manifest: preflight.manifest,
-          ...(sourceType === "BROWSER_MULTIPART"
-            ? { part_numbers: initialPartNumbers }
-            : { object_storage_uri: objectStorageUri?.trim() }),
-        },
-        newId(),
-      );
-      updateItem(set, id, (current) => ({
-        ...current,
-        sessionId: grant.session.session_id ?? null,
-        serverStatus: grant.session.status,
-      }));
-      if (!grant.session.session_id)
-        throw new Error("UPLOAD_SESSION_ID_MISSING");
-      if (grant.session.status === "RAW_COMMITTED") {
-        updateItem(set, id, (current) => ({
-          ...current,
-          transferStatus: "committed",
-          uploadedBytes: current.totalBytes,
-          completedParts: current.totalParts,
-        }));
-      } else if (sourceType === "OBJECT_STORAGE_REFERENCE")
-        await commitObjectReference(id, set, get);
-      else await runBrowserTransfer(id, grant.parts, [], set, get);
+      const itemId = await prepareUploadSession(input, set, get);
+      await beginPreparedUpload(itemId, set, get);
     } catch (error) {
-      const copy = uploadProblemCopy(error);
-      updateItem(set, id, (current) => ({
-        ...current,
-        transferStatus: "failed",
-        failureCode: copy.problemCode,
-        failureMessage: copy.detail,
-        requestId: copy.requestId,
+      const item = preparationFailureItem(input, error);
+      set((state) => ({
+        items: state.items.some((candidate) => candidate.id === item.id)
+          ? state.items.map((candidate) =>
+              candidate.id === item.id ? item : candidate,
+            )
+          : [item, ...state.items],
       }));
     }
+  },
+  startFolderBatch: async ({ scope, bundles }) => {
+    get().bindScope(scope);
+    if (bundles.length === 0) return;
+    const current = get().folderBatch;
+    if (current?.status === "running" || current?.status === "offline") return;
+    const batchId = newId();
+    folderBatchRuntimeById.set(batchId, {
+      batchId,
+      scope,
+      bundles,
+      nextIndex: 0,
+      pausedItemId: null,
+      running: false,
+    });
+    set({
+      folderBatch: {
+        batchId,
+        total: bundles.length,
+        completed: 0,
+        failed: 0,
+        activeDataPackageId: null,
+        status: "running",
+      },
+    });
+    await continueFolderBatch(batchId, set, get);
   },
   pause: async (itemId) => {
     const runtime = runtimeByItem.get(itemId);
@@ -1052,8 +1526,20 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
     }
   },
   handleOnline: () => {
+    const batchPausedItems = new Set(
+      [...folderBatchRuntimeById.values()]
+        .map((runtime) => runtime.pausedItemId)
+        .filter((itemId): itemId is string => itemId !== null),
+    );
     for (const item of get().items) {
-      if (item.transferStatus === "offline") void get().resume(item.id);
+      if (item.transferStatus === "offline" && !batchPausedItems.has(item.id))
+        void get().resume(item.id);
+    }
+    for (const runtime of folderBatchRuntimeById.values()) {
+      const batch = get().folderBatch;
+      if (batch?.batchId !== runtime.batchId || batch.status !== "offline")
+        continue;
+      void resumeFolderBatch(runtime, set, get);
     }
   },
 }));
@@ -1070,10 +1556,13 @@ if (typeof window !== "undefined") {
 export function resetUploadQueueStoreForTests() {
   for (const runtime of runtimeByItem.values()) runtime.controller?.abort();
   runtimeByItem.clear();
+  folderBatchRuntimeById.clear();
   useUploadQueueStore.setState({
     scopeKey: null,
     recovering: false,
+    recoveryProblem: null,
     items: [],
+    folderBatch: null,
   });
 }
 
@@ -1094,5 +1583,6 @@ export function seedUploadRuntimeForTests(
     plan: planUploadParts(value.file.size),
     controller: null,
     intent: "pause",
+    initialAuthorizations: [],
   });
 }

@@ -1,9 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
+
+from hc_data_platform.core.context import clear_request_context
 
 _skipped: list[str] = []
 _xfailed: list[str] = []
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ambient_request_scope() -> Iterator[None]:
+    """Never let one test lend its tenant identity to another test."""
+
+    clear_request_context()
+    try:
+        yield
+    finally:
+        clear_request_context()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
