@@ -41,5 +41,5 @@ release-values.yaml
 # Patch application leftovers
 *.orig
 *.rej
-# Generated first-wave gate logs and JUnit reports.
-artifacts/test-gates/
+# Generated test, visual, and acceptance artifacts.
+/artifacts/
