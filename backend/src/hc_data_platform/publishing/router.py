@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import re
 from collections.abc import Awaitable
 from datetime import datetime, timedelta, timezone
 from typing import TypeVar
@@ -9,7 +10,7 @@ from typing import TypeVar
 from fastapi import APIRouter, Header, Response
 
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.core.errors import problem
+from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.security import Permission
 from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
 from hc_data_platform.workflow.models import (
@@ -63,6 +64,7 @@ _export_coordinator = ExportCoordinator(
 _audit_recorder: ExportAuditRecorder = InMemoryExportAuditRecorder()
 _T = TypeVar("_T")
 _DOWNLOAD_TTL = timedelta(minutes=15)
+_READY_LANCE_VERSION = re.compile(r"^version_lance_([1-9][0-9]*)$")
 _NO_STORE_HEADERS = {
     "Cache-Control": {
         "description": "Response contains workflow state or a bearer capability.",
@@ -118,6 +120,31 @@ def _resource_id(
     return "/".join(
         (manifest.dataset_id, manifest.dataset_version, export_format.value, attempt_id)
     )
+
+
+def _resolve_export_manifest(
+    *, project_id: str, dataset_id: str, dataset_version: str
+) -> PublishedDatasetManifestV1:
+    try:
+        return _publisher.get(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+        )
+    except ProblemException as exc:
+        if exc.problem.code != "DATASET_VERSION_NOT_FOUND":
+            raise
+        match = _READY_LANCE_VERSION.fullmatch(dataset_version)
+        if match is None:
+            raise
+        return _publisher.publish(
+            PublishDatasetRequestV1(
+                project_id=project_id,
+                dataset_id=dataset_id,
+                dataset_version=dataset_version,
+                base_lance_version=match.group(1),
+            )
+        )
 
 
 def _export_job_not_found() -> Exception:
@@ -333,7 +360,7 @@ async def export_dataset_version(
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
 ) -> ExportJobV1:
     authorize_scope(auth, request.project_id, Permission.PUBLISH)
-    manifest = _publisher.get(
+    manifest = _resolve_export_manifest(
         project_id=request.project_id,
         dataset_id=dataset_id,
         dataset_version=dataset_version,

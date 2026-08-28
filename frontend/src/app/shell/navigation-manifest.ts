@@ -2,6 +2,7 @@ import type {
   AuthorizationSnapshot,
   Capability,
 } from "../../entities/capability";
+import { isPageHidden } from "../page-visibility";
 import { dataAnnotationRoutes, dataUploadRoutes } from "./navigation-routes";
 
 export type NavigationGroupId =
@@ -16,6 +17,7 @@ export interface NavigationItem {
   label: string;
   path: string;
   requiredCapability: Capability | null;
+  administratorOnly: boolean;
   activePatterns: readonly string[];
 }
 
@@ -41,6 +43,7 @@ export const navigationManifest: NavigationManifest = [
         label: "工作台",
         path: "/dashboard",
         requiredCapability: null,
+        administratorOnly: false,
         activePatterns: ["/dashboard"],
       },
     ],
@@ -54,6 +57,7 @@ export const navigationManifest: NavigationManifest = [
         label: "采集任务",
         path: "/collection-tasks",
         requiredCapability: null,
+        administratorOnly: false,
         activePatterns: ["/collection-tasks", "/collection-tasks/:taskId"],
       },
       {
@@ -61,6 +65,7 @@ export const navigationManifest: NavigationManifest = [
         label: "数据源",
         path: "/ingest/sources",
         requiredCapability: "ingest_source.read",
+        administratorOnly: false,
         activePatterns: ["/ingest/sources"],
       },
       {
@@ -68,6 +73,7 @@ export const navigationManifest: NavigationManifest = [
         label: "数据上传",
         path: dataUploadRoutes.newUpload,
         requiredCapability: "upload.read",
+        administratorOnly: false,
         activePatterns: [
           dataUploadRoutes.legacyIndex,
           dataUploadRoutes.newUpload,
@@ -86,6 +92,7 @@ export const navigationManifest: NavigationManifest = [
         label: "数据集",
         path: "/datasets",
         requiredCapability: "dataset.read",
+        administratorOnly: false,
         activePatterns: [
           "/datasets",
           "/datasets/:datasetId",
@@ -98,6 +105,7 @@ export const navigationManifest: NavigationManifest = [
         label: "数据标注",
         path: dataAnnotationRoutes.annotate,
         requiredCapability: "annotation_task.read",
+        administratorOnly: false,
         activePatterns: [
           dataAnnotationRoutes.legacyIndex,
           dataAnnotationRoutes.annotate,
@@ -107,17 +115,30 @@ export const navigationManifest: NavigationManifest = [
         ],
       },
       {
+        pageId: "P21",
+        label: "数据导出",
+        path: "/exports",
+        requiredCapability: "export.read",
+        administratorOnly: false,
+        activePatterns: ["/exports"],
+      },
+      {
         pageId: "P09",
-        label: "质量问题",
+        label: "问题数据",
         path: "/manual/issues",
         requiredCapability: "manual_issue.read",
-        activePatterns: ["/manual/issues"],
+        administratorOnly: false,
+        activePatterns: [
+          "/manual/issues",
+          "/manual/issues/raw-diagnostic/:uploadId",
+        ],
       },
       {
         pageId: "P10Q",
         label: "标注任务",
         path: "/annotation-tasks",
         requiredCapability: "annotation_task.read",
+        administratorOnly: false,
         activePatterns: ["/annotation-tasks"],
       },
     ],
@@ -131,6 +152,7 @@ export const navigationManifest: NavigationManifest = [
         label: "存储容量",
         path: "/storage/overview",
         requiredCapability: "storage.overview.read",
+        administratorOnly: true,
         activePatterns: ["/storage/overview"],
       },
       {
@@ -138,6 +160,7 @@ export const navigationManifest: NavigationManifest = [
         label: "生命周期",
         path: "/storage/lifecycle",
         requiredCapability: "storage.lifecycle.read",
+        administratorOnly: true,
         activePatterns: ["/storage/lifecycle"],
       },
       {
@@ -145,6 +168,7 @@ export const navigationManifest: NavigationManifest = [
         label: "机器人资产",
         path: "/settings/robot-models",
         requiredCapability: "robot_model.read",
+        administratorOnly: true,
         activePatterns: ["/settings/robot-models", "/settings/robots"],
       },
       {
@@ -152,14 +176,8 @@ export const navigationManifest: NavigationManifest = [
         label: "标定管理",
         path: "/settings/calibrations",
         requiredCapability: "calibration.read",
+        administratorOnly: true,
         activePatterns: ["/settings/calibrations"],
-      },
-      {
-        pageId: "P17",
-        label: "Schema 管理",
-        path: "/settings/data-schemas",
-        requiredCapability: "data_schema.read",
-        activePatterns: ["/settings/data-schemas"],
       },
     ],
   },
@@ -172,6 +190,7 @@ export const navigationManifest: NavigationManifest = [
         label: "账户与权限",
         path: "/settings/access",
         requiredCapability: "access.read",
+        administratorOnly: true,
         activePatterns: ["/settings/access"],
       },
       {
@@ -179,6 +198,7 @@ export const navigationManifest: NavigationManifest = [
         label: "审计日志",
         path: "/settings/audit",
         requiredCapability: "audit.read",
+        administratorOnly: true,
         activePatterns: ["/settings/audit"],
       },
     ],
@@ -191,12 +211,16 @@ export function filterNavigationManifest(
 ): NavigationManifest {
   const capabilities =
     "capabilities" in source ? new Set(source.capabilities) : source;
+  const platformAdministrator = capabilities.has("platform.admin");
   return navigationManifest.flatMap((group) => {
     const items = group.items.filter(
       (item) =>
+        !isPageHidden(item.pageId) &&
         pageAvailability[item.pageId] === true &&
-        (item.requiredCapability === null ||
-          capabilities.has(item.requiredCapability)),
+        (!item.administratorOnly ||
+          platformAdministrator ||
+          (item.requiredCapability !== null &&
+            capabilities.has(item.requiredCapability))),
     );
     return items.length > 0 ? [{ ...group, items }] : [];
   });

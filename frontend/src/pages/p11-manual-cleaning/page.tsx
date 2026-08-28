@@ -44,6 +44,12 @@ import {
   int64ToBigInt,
   compareInt64,
 } from '../../shared/lib/bigint-string';
+import {
+  formatEffectiveDuration,
+  formatSignedDuration,
+  formatStorageSize,
+  formatTimeRange,
+} from '../../shared/lib/metric-presentation';
 import { PageHeader, StatusBadge } from '../../shared/ui';
 import { cleaningWorkbenchQueryCodec } from './query-codec';
 import styles from './workbench.module.css';
@@ -121,13 +127,13 @@ function resequence(operations: readonly EdlOperation[]): readonly EdlOperation[
 function operationSummary(operation: EdlOperation): string {
   switch (operation.type) {
     case 'TRIM':
-      return `[${operation.startNs}, ${operation.endNs})`;
+      return formatTimeRange(operation.startNs, operation.endNs);
     case 'EXCLUDE_RANGE':
-      return `[${operation.startNs}, ${operation.endNs}) · ${operation.reason ?? '无原因'}`;
+      return `${formatTimeRange(operation.startNs, operation.endNs)} · ${operation.reason ?? '无原因'}`;
     case 'SPLIT':
-      return `at ${operation.atNs}`;
+      return `位置 ${formatEffectiveDuration(operation.atNs)}`;
     case 'TIME_OFFSET':
-      return `${operation.episodeStreamId} ${operation.offsetNs} ns`;
+      return `${operation.episodeStreamId} ${formatSignedDuration(operation.offsetNs)}`;
     case 'DISABLE_CHANNEL':
       return operation.episodeStreamId;
     case 'SET_METADATA':
@@ -135,7 +141,7 @@ function operationSummary(operation: EdlOperation): string {
     case 'INVALIDATE_EPISODE':
       return operation.reasonCode;
     case 'INVALID_MASK':
-      return `[${operation.startNs}, ${operation.endNs})`;
+      return formatTimeRange(operation.startNs, operation.endNs);
   }
 }
 
@@ -351,8 +357,8 @@ function WorkbenchContent({
       <section className={`cleaning-origin-bar ${styles.originBar}`} aria-label="清洗草稿来源">
         {model.draft.origin.kind === 'ISSUE_DERIVED' ? (
           <p>
-            来源：ManualIssue <code>{model.draft.origin.manualIssueIds[0]}</code> · 固定范围 [
-            {model.draft.origin.startNs}, {model.draft.origin.endNs}) ns
+            来源：ManualIssue <code>{model.draft.origin.manualIssueIds[0]}</code> · 固定范围{' '}
+            {formatTimeRange(model.draft.origin.startNs, model.draft.origin.endNs)}
           </p>
         ) : (
           <p>
@@ -570,8 +576,8 @@ function WorkbenchContent({
           />
           <section className={styles.operationTracks} aria-label="清洗操作时间带">
             <div className={styles.trackScale}>
-              <span>0 ns</span>
-              <span>{timelineDuration} ns</span>
+              <span>{formatEffectiveDuration('0')}</span>
+              <span>{formatEffectiveDuration(timelineDuration)}</span>
             </div>
             <div className={styles.trackRow}>
               <strong>保留范围</strong>
@@ -619,7 +625,7 @@ function WorkbenchContent({
           </section>
           {selectedRange ? (
             <p>
-              当前半开范围：[{selectedRange[0]}, {selectedRange[1]}) ns
+              当前半开范围：{formatTimeRange(selectedRange[0], selectedRange[1])}
             </p>
           ) : null}
         </section>
@@ -644,9 +650,9 @@ function WorkbenchContent({
             ))}
             <dl>
               <dt>Source 时长</dt>
-              <dd>{model.summary.sourceDurationNs} ns</dd>
+              <dd>{formatEffectiveDuration(model.summary.sourceDurationNs)}</dd>
               <dt>Output 时长</dt>
-              <dd>{model.summary.outputDurationNs} ns</dd>
+              <dd>{formatEffectiveDuration(model.summary.outputDurationNs)}</dd>
               <dt>输出段</dt>
               <dd>{model.summary.outputSegmentCount}</dd>
               <dt>复用率</dt>
@@ -693,8 +699,8 @@ function WorkbenchContent({
                 {feedback.findings.map((finding) => (
                   <li key={finding.id} data-focused={focusedFinding === finding.id || undefined}>
                     <button type="button" onClick={() => focusFinding(finding)}>
-                      <code>{finding.id}</code> · {finding.severity} · {finding.findingType} · [
-                      {finding.startNs}, {finding.endNs})
+                      <code>{finding.id}</code> · {finding.severity} · {finding.findingType} ·{' '}
+                      {formatTimeRange(finding.startNs, finding.endNs)}
                     </button>
                     <p>{finding.note}</p>
                   </li>
@@ -721,8 +727,8 @@ function WorkbenchContent({
         resourceId={model.draft.id}
         description="Commit 会记录待物化的不可变输出；物化状态以服务端返回为准，且不会乐观推进 Draft 或 Version 状态。"
         impact={[
-          `输出 ${model.summary.outputSegmentCount} 个 Revision 段，Output 时长 ${model.summary.outputDurationNs} ns`,
-          `新增派生字节 ${model.summary.newDerivedBytes}，复用源字节 ${model.summary.reusedSourceBytes}`,
+          `输出 ${model.summary.outputSegmentCount} 个 Revision 段，Output 时长 ${formatEffectiveDuration(model.summary.outputDurationNs)}`,
+          `新增派生数据 ${formatStorageSize(model.summary.newDerivedBytes)}，复用源数据 ${formatStorageSize(model.summary.reusedSourceBytes)}`,
         ]}
         blockedReasons={[]}
         confirmLabel="确认危险提交"

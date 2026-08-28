@@ -42,6 +42,14 @@ from hc_data_platform.dashboard.repository import (  # noqa: E402
     DashboardWindow,
 )
 from hc_data_platform.dashboard.service import DashboardService  # noqa: E402
+from hc_data_platform.ingest.device_facts import (  # noqa: E402
+    DeviceCaptureFactService,
+    PostgresDeviceCaptureFactRepository,
+)
+from hc_data_platform.ingest.models import (  # noqa: E402
+    DeviceCaptureEventType,
+    DeviceCaptureFactRequest,
+)
 from hc_data_platform.security.auth import AuthContext  # noqa: E402
 from hc_data_platform.security.capabilities import (  # noqa: E402
     CAPABILITY_ANNOTATION_REVIEW,
@@ -49,6 +57,14 @@ from hc_data_platform.security.capabilities import (  # noqa: E402
     CAPABILITY_DATASETS_PUBLISH,
     CAPABILITY_DATASETS_READ,
     CAPABILITY_INGEST_UPLOAD,
+)
+from hc_data_platform.workflow.models import (  # noqa: E402
+    JobRecord,
+    JobStatus,
+    WorkflowJobPersistenceActivityInput,
+)
+from hc_data_platform.workflow.postgres import (  # noqa: E402
+    PostgresWorkflowJobRepository,
 )
 
 pytestmark = pytest.mark.integration
@@ -142,6 +158,42 @@ def request_scope(project_id: str, region_code: str) -> Any:
         reset_request_context(token)
 
 
+@contextmanager
+def worker_scope(project_id: str, region_code: str) -> Any:
+    token = bind_request_context(
+        RequestContext(
+            organization_id=organization_for(project_id),
+            project_id=project_id,
+            region_code=region_code,
+            subject_id="hc-data-worker",
+            request_id=f"worker-{uuid4()}",
+            service_identity=True,
+        )
+    )
+    try:
+        yield
+    finally:
+        reset_request_context(token)
+
+
+@contextmanager
+def device_scope(project_id: str, region_code: str, subject_id: str) -> Any:
+    token = bind_request_context(
+        RequestContext(
+            organization_id=organization_for(project_id),
+            project_id=project_id,
+            region_code=region_code,
+            subject_id=subject_id,
+            request_id=f"device-{uuid4()}",
+            service_identity=True,
+        )
+    )
+    try:
+        yield
+    finally:
+        reset_request_context(token)
+
+
 def seed_rollout(
     connection: Any,
     *,
@@ -156,6 +208,28 @@ def seed_rollout(
     rollout_id = f"rollout-{suffix}"
     session_id = uuid4()
     digest = hashlib.sha256(suffix.encode()).hexdigest()
+    task_code = str(int(digest[:16], 16) % 100_000_000).zfill(8)
+    connection.execute(
+        """
+        INSERT INTO collection_tasks.collection_tasks (
+            collection_task_id, project_id, dataset_id, task_code, name, task_type,
+            scenario, description, target_json, quality_threshold, status,
+            version, create_fingerprint, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, 'ROBOT', 'dashboard-integration', '',
+                  '{"package_count": 1}'::jsonb, NULL, 'ACTIVE', 1, %s, %s, %s)
+        ON CONFLICT (organization_id, project_id, collection_task_id) DO NOTHING
+        """,
+        (
+            f"task-{suffix}",
+            project_id,
+            f"dataset_task_{digest[:32]}",
+            task_code,
+            f"Dashboard task {suffix}",
+            digest,
+            at,
+            at,
+        ),
+    )
     connection.execute(
         """
         INSERT INTO ingest.collection_jobs (
@@ -332,6 +406,43 @@ def seed_scope(dsn: str, project_id: str, region_code: str, prefix: str) -> None
             suffix=f"{prefix}-qc",
             at=NOW - timedelta(minutes=10),
             committed=True,
+        )
+        device_fact_id = uuid4()
+        device_source_hash = hashlib.sha256(f"device-{prefix}".encode()).hexdigest()
+        connection.execute(
+            """
+            INSERT INTO ingest.device_capture_facts (
+                fact_id, project_id, region_code, source_event_id, event_type,
+                collection_task_id, collection_job_id, recording_request_id,
+                data_package_id, robot_id, device_id, device_sequence_no,
+                capture_started_at, capture_ended_at, saved_at,
+                local_artifact_size, local_artifact_sha256, recorder_version,
+                occurred_at, received_at, producer_subject_id, source_fingerprint, fact_json
+            ) VALUES (
+                %s, %s, %s, %s, 'SAVED', %s, %s, %s, %s, %s, %s, 1,
+                %s, %s, %s, 100, %s, 'recorder-integration', %s, %s,
+                'device-agent', %s, '{}'::jsonb
+            )
+            """,
+            (
+                device_fact_id,
+                project_id,
+                region_code,
+                f"device-event-{prefix}",
+                f"task-{prefix}-qc",
+                f"job-{prefix}-qc",
+                f"recording-{prefix}-qc",
+                f"package-{prefix}-qc",
+                f"robot-{prefix}-qc",
+                f"device-{prefix}",
+                NOW - timedelta(seconds=60),
+                NOW,
+                NOW,
+                device_source_hash,
+                NOW,
+                NOW,
+                device_source_hash,
+            ),
         )
         review_rollout, _ = seed_rollout(
             connection,
@@ -547,6 +658,33 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
         assert published.lineage_count == 1
         assert published.publication_count == 1
 
+        task_list = service.task_status(
+            auth=auth,
+            project_id="project-a",
+            region_code="cn-east",
+        )
+        assert len(task_list.tasks) == 5
+        assert task_list.selected is None
+        assert task_list.pipeline.task_count == 5
+        assert task_list.pipeline.package_count == 5
+        assert task_list.pipeline.stages[0].succeeded == 5
+        selected_task = service.task_status(
+            auth=auth,
+            project_id="project-a",
+            region_code="cn-east",
+            task_id="task-a-qc",
+        )
+        assert selected_task.selected is not None
+        assert selected_task.selected.task.lifecycle.value == "ACTIVE"
+        assert selected_task.selected.qc.rejected == 1
+        assert selected_task.selected.standardization.blocked_by_quality == 0
+        assert selected_task.selected.standardization.isolated_by_quality == 1
+        assert selected_task.selected.blocker_count == 0
+        assert selected_task.selected.actions[0].action == "VIEW_QC_ANOMALIES"
+        assert selected_task.selected.task.device_progress.captured_count == 1
+        assert selected_task.selected.task.device_progress.saved_count == 1
+        assert selected_task.selected.task.device_progress.confirmed_duration_seconds == 60
+
         observations = repository.collection_observations(
             auth=auth,
             scope=DashboardScope(auth.subject_id, "project-a", "cn-east"),
@@ -575,7 +713,12 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
             ORDER BY occurred_at, audit_id
             """
         ).fetchall()
-        assert {row[3] for row in audits} == {"activity", "pending-items", "snapshot"}
+        assert {row[3] for row in audits} == {
+            "activity",
+            "pending-items",
+            "snapshot",
+            "task-status",
+        }
         assert all(row[0] == auth.subject_id and row[1] == "cn-east" for row in audits)
         assert all(
             set(row[4]) == {"endpoint", "query_fingerprint", "result_status"} for row in audits
@@ -623,6 +766,128 @@ def test_postgres_capability_intersection_and_half_open_boundaries(isolated_dsn:
             limit=100,
         )
         assert at_exclusive_end.items == ()
+
+
+def test_postgres_workflow_job_writer_is_idempotent_and_keeps_latest_state(
+    isolated_dsn: str,
+) -> None:
+    repository = PostgresWorkflowJobRepository(psycopg_connection_factory(isolated_dsn))
+    base = JobRecord(
+        workflow_id="ingest-rollout:v1:project-a:writer-test",
+        workflow_run_id="run-writer-test",
+        job_type="IngestRolloutWorkflow",
+        project_id="project-a",
+        resource_id="writer-test",
+        status=JobStatus.RUNNING,
+        stage="alignment",
+        attempt=1,
+        created_at=NOW - timedelta(minutes=1),
+        updated_at=NOW - timedelta(seconds=1),
+    )
+    terminal = base.model_copy(
+        update={
+            "status": JobStatus.TECHNICAL_FAILED,
+            "stage": "lance_commit",
+            "error_code": "LANCE_WRITE_FAILED",
+            "updated_at": NOW,
+        }
+    )
+    with worker_scope("project-a", "cn-east"):
+        repository.put_job(
+            WorkflowJobPersistenceActivityInput(
+                organization_id=organization_for("project-a"),
+                region_code="cn-east",
+                job=base,
+            )
+        )
+        repository.put_job(
+            WorkflowJobPersistenceActivityInput(
+                organization_id=organization_for("project-a"),
+                region_code="cn-east",
+                job=terminal,
+            )
+        )
+
+    with psycopg.connect(isolated_dsn) as connection:
+        connection.execute(
+            """
+            SELECT set_config('app.organization_id', %s, false),
+                   set_config('app.project_id', 'project-a', false),
+                   set_config('app.region_code', 'cn-east', false),
+                   set_config('app.subject_id', 'dashboard-postgres-principal', false),
+                   set_config('app.service_identity', 'true', false)
+            """,
+            (organization_for("project-a"),),
+        )
+        row = connection.execute(
+            """
+            SELECT organization_id, status, stage, error_code, count(*) OVER ()
+            FROM workflow.jobs WHERE workflow_id = %s
+            """,
+            (terminal.workflow_id,),
+        ).fetchone()
+    assert row == (
+        organization_for("project-a"),
+        "TECHNICAL_FAILED",
+        "lance_commit",
+        "LANCE_WRITE_FAILED",
+        1,
+    )
+
+
+def test_postgres_device_fact_writer_is_idempotent_and_rejects_changed_retry(
+    isolated_dsn: str,
+) -> None:
+    subject_id = "device-agent:dashboard-integration"
+    auth = AuthContext(
+        subject_id=subject_id,
+        project_ids=frozenset({"project-a"}),
+        region_codes=frozenset({"cn-east"}),
+        roles=frozenset({"uploader"}),
+        service_identity=True,
+        organization_ids=frozenset({organization_for("project-a")}),
+        organization_scope_triples=frozenset(
+            {(organization_for("project-a"), "project-a", "cn-east")}
+        ),
+    )
+    service = DeviceCaptureFactService(
+        PostgresDeviceCaptureFactRepository(psycopg_connection_factory(isolated_dsn))
+    )
+    request = DeviceCaptureFactRequest(
+        schema_version="device-capture-fact/v1",
+        source_event_id="postgres-device-event",
+        event_type=DeviceCaptureEventType.SAVED,
+        collection_task_id="task-a-failed",
+        collection_job_id="job-a-failed",
+        recording_request_id="recording-device-extra",
+        data_package_id="package-device-extra",
+        robot_id="robot-a-failed",
+        device_id="device-dashboard-integration",
+        device_sequence_no=2,
+        capture_started_at=NOW - timedelta(seconds=15),
+        capture_ended_at=NOW - timedelta(seconds=5),
+        saved_at=NOW - timedelta(seconds=4),
+        local_artifact_size=1024,
+        local_artifact_sha256="a" * 64,
+        recorder_version="recorder-integration",
+        occurred_at=NOW - timedelta(seconds=3),
+    )
+    call = {
+        "auth": auth,
+        "organization_id": organization_for("project-a"),
+        "project_id": "project-a",
+        "region_code": "cn-east",
+    }
+    with device_scope("project-a", "cn-east", subject_id):
+        first = service.record(**call, request=request)
+        retried = service.record(**call, request=request)
+        assert first == retried
+        with pytest.raises(ProblemException) as changed:
+            service.record(
+                **call,
+                request=request.model_copy(update={"recorder_version": "recorder-changed"}),
+            )
+    assert changed.value.problem.code == "DEVICE_CAPTURE_FACT_IMMUTABLE"
 
 
 def test_postgres_explain_business_feeds_keep_scope_range_order_and_limit(

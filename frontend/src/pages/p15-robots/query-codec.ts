@@ -11,14 +11,14 @@ export interface RobotsSearch {
   readonly connectivityState?: "ONLINE" | "OFFLINE" | "DEGRADED";
   readonly robotId?: string;
   readonly componentId?: string;
-  readonly tab: "overview" | "frames" | "channels" | "history";
+  readonly tab: "overview" | "model" | "frames" | "channels" | "history";
   readonly after?: string;
   readonly before?: string;
   readonly limit: 20 | 50 | 100;
 }
 
 const defaults: RobotsSearch = { tab: "overview", limit: 20 };
-const tabs = ["overview", "frames", "channels", "history"] as const;
+const tabs = ["overview", "model", "frames", "channels", "history"] as const;
 const lifecycleStatuses = [
   "DRAFT",
   "ACTIVE",

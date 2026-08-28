@@ -49,6 +49,8 @@ def _auth(*, resolve: bool = True) -> AuthContext:
         "manual_issue.create",
         "manual_issue.triage",
         "cleaning.create",
+        "annotation.edit",
+        "annotation.review",
     }
     if resolve:
         capabilities.add("manual_issue.resolve")
@@ -159,6 +161,7 @@ def _service(
         organization_projects=((ORGANIZATION_ID, PROJECT_ID),),
         issues=(issue,),
         source_facts=(_source(),),
+        annotation_source_facts=(("annotation-task-p09", "/camera/front", _source()),),
         drafts=(draft, second_draft) if multiple_editing_drafts else (draft,),
         resolution_candidates=candidates,
     )
@@ -303,6 +306,47 @@ def test_p09_source_bound_create_triage_draft_replay_and_page_contract() -> None
     assert any(event.action == "manual_issue.created" for event in repository.audit_events)
     assert any(event.action == "cleaning.draft.created" for event in repository.audit_events)
     assert all("note" not in (event.details or {}) for event in repository.audit_events)
+
+
+def test_annotation_report_resolves_source_identity_and_enters_problem_data() -> None:
+    service, _repository = _service()
+    configure_manual_issues(service)
+    current: dict[str, AuthContext | None] = {"value": _auth()}
+    client = TestClient(_app(current))
+    root = f"/api/v1/projects/{PROJECT_ID}/regions/{REGION_CODE}/manual-issues"
+
+    response = client.post(
+        root,
+        headers=_headers(**{"Idempotency-Key": "p09-annotation-report"}),
+        json={
+            "source_kind": "ANNOTATION_TASK",
+            "discovery_source": "ANNOTATOR",
+            "annotation_task_id": "annotation-task-p09",
+            "stream_ref": "/camera/front",
+            "relative_start_ns": "25",
+            "relative_end_ns": "125",
+            "issue_type": "MISSING_FRAME",
+            "severity": "HIGH",
+            "note": "annotator found frames missed by automatic QC",
+        },
+    )
+
+    assert response.status_code == 201
+    issue = response.json()["data"]
+    assert issue["discovery_source"] == "ANNOTATOR"
+    assert issue["annotation_task_id"] == "annotation-task-p09"
+    assert issue["dataset_id"] == DATASET_ID
+    assert issue["episode_stream_id"] == STREAM_ID
+    assert issue["start_ns"] == "125"
+    assert issue["end_ns"] == "225"
+
+    listed = client.get(
+        root,
+        headers=_headers(),
+        params={"discovery_source": "ANNOTATOR"},
+    )
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [issue["id"]]
 
 
 def test_p09_rejects_stale_source_and_unqualified_resolution_without_faking_ready() -> None:

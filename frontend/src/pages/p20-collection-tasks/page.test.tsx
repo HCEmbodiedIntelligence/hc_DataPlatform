@@ -3,6 +3,7 @@
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -13,6 +14,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderHarness } from "../../app/providers";
+import { makeScopeKey } from "../../entities/scope";
 import {
   createDomainError,
   type DomainErrorCode,
@@ -34,6 +36,7 @@ const scope = {
 const task: CollectionTask = {
   schema_version: "1",
   collection_task_id: "task-1",
+  dataset_id: "dataset_task_test_1",
   organization_id: scope.organizationId,
   project_id: scope.projectId,
   task_code: "00000001",
@@ -41,7 +44,7 @@ const task: CollectionTask = {
   type: "抓取采集",
   scenario: "透明工件工位",
   description: "覆盖反光与遮挡条件。",
-  target: { package_count: 20 },
+  target: { package_count: 20, duration_seconds: 1200 },
   quality_threshold: 0.9,
   status: "ACTIVE",
 };
@@ -56,7 +59,7 @@ const progress: CollectionTaskProgress = {
   received_package_count: 8,
   captured_duration_seconds: 600,
   duration_observed_package_count: 8,
-  duration_unknown_package_count: 0,
+  duration_unknown_package_count: 2,
   qc: {
     evaluated_count: 7,
     pass_count: 6,
@@ -73,21 +76,41 @@ const progress: CollectionTaskProgress = {
       progress: 0.4,
       status: "IN_PROGRESS",
     },
-    duration_seconds: null,
+    duration_seconds: {
+      actual: 600,
+      target: 1200,
+      progress: 0.5,
+      status: "IN_PROGRESS",
+    },
     quality_threshold: 0.9,
     quality_status: "PENDING_QC",
   },
   observed_sources: {
-    device_ids: [],
-    camera_ids: [],
+    device_ids: ["robot-7"],
+    camera_ids: ["cam-a"],
     topic_names: [],
   },
 };
 
 function makeGateway() {
   return {
+    listAssignableDatasets: vi.fn(async () => [
+      {
+        datasetId: "dataset_shared_night",
+        name: "夜班采集",
+        folderPath: ["机器人", "G1"],
+      },
+    ]),
     list: vi.fn(async () => ({ items: [task], next_cursor: null })),
     progress: vi.fn(async () => progress),
+    packages: vi.fn(async () => ({
+      schema_version: "1" as const,
+      collection_task_id: task.collection_task_id,
+      organization_id: task.organization_id,
+      project_id: task.project_id,
+      as_of: "2026-08-26T12:00:00Z",
+      items: [],
+    })),
     detail: vi.fn(async () => ({ task, etag: '"v1"' })),
     create: vi.fn(async (_scope, command, _idempotencyKey: string) => ({
       ...task,
@@ -111,10 +134,11 @@ function makeGateway() {
 function renderPage(
   gateway: CollectionTaskGateway,
   capabilityOverride: "manage" | "read-only" | null = "manage",
+  initialEntry = "/collection-tasks",
 ) {
   return render(
     <ProviderHarness>
-      <MemoryRouter initialEntries={["/collection-tasks"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
           <Route
             path="/collection-tasks"
@@ -148,6 +172,14 @@ async function fillMinimumCreateForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(within(drawer).getByLabelText("任务名称"), "夜班工位采集");
   await user.type(within(drawer).getByLabelText("采集类型"), "抓取采集");
   await user.type(within(drawer).getByLabelText("采集场景"), "夜间灯光条件");
+}
+
+async function chooseTaskAction(
+  user: ReturnType<typeof userEvent.setup>,
+  name: "编辑任务" | "关闭任务" | "取消任务" | "重新开启",
+) {
+  await user.click(screen.getByRole("button", { name: "更多操作" }));
+  await user.click(await screen.findByRole("menuitem", { name }));
 }
 
 beforeEach(() => {
@@ -192,23 +224,147 @@ afterEach(() => {
 });
 
 describe("P20 collection tasks", () => {
+  it("renders the normal zero-row task table without tenant requests", () => {
+    useShellStore.setState({
+      scope: null,
+      scopeKey: makeScopeKey({ organizationId: "unscoped" }),
+      authorization: null,
+      authorizationLoading: false,
+      authorizationFailed: false,
+      bootstrapLoaded: true,
+    });
+    const gateway = makeGateway();
+
+    renderPage(gateway, null);
+
+    expect(screen.getByRole("heading", { name: "采集任务" })).toBeVisible();
+    expect(screen.getByLabelText("采集任务筛选")).toBeVisible();
+    expect(
+      screen.getByRole("columnheader", { name: "任务信息" }),
+    ).toBeVisible();
+    expect(screen.getByText("当前窗口 0 条")).toBeVisible();
+    expect(screen.queryByText("无权访问")).toBeNull();
+    expect(gateway.list).not.toHaveBeenCalled();
+  });
+
   it("opens the task-scoped dataset route from the identity link", async () => {
     const user = userEvent.setup();
     renderPage(makeGateway());
 
     await screen.findByText("目标进行中");
     const link = await screen.findByRole("link", {
-      name: `查看采集任务 ${task.name}（${task.task_code}）的数据`,
+      name: `查看采集任务 ${task.name}（${task.task_code}）的数据集`,
     });
-    expect(link).toHaveAttribute(
-      "href",
-      `/datasets?collectionTaskId=${task.collection_task_id}`,
-    );
+    expect(link).toHaveAttribute("href", `/datasets/${task.dataset_id}`);
 
     await user.click(link);
     expect(screen.getByTestId("location")).toHaveTextContent(
-      `/datasets?collectionTaskId=${task.collection_task_id}`,
+      `/datasets/${task.dataset_id}`,
     );
+  });
+
+  it("renders the real receive, duration, QC, source, and threshold facts", async () => {
+    renderPage(makeGateway());
+
+    await screen.findByText("目标进行中");
+    expect(screen.getByTitle("原始任务码：00000001")).toHaveTextContent(
+      "0000 0001",
+    );
+    expect(screen.getByText("类型：抓取采集")).toBeVisible();
+    expect(screen.getByText("场景：透明工件工位")).toBeVisible();
+    expect(screen.getByText("8 包 / 20 包")).toBeVisible();
+    expect(screen.getByText("10 分钟 / 20 分钟")).toBeVisible();
+    expect(screen.getByText("2 包时长未知")).toBeVisible();
+    expect(
+      screen.getByLabelText("Pass 6，Risk 1，Reject 0，未出质检 1"),
+    ).toBeVisible();
+    expect(screen.getByText("通过率 85.7%")).toBeVisible();
+    expect(screen.getByText("存在未出质检包")).toBeVisible();
+    expect(screen.getByText("1 设备 · 1 相机")).toBeVisible();
+    expect(
+      screen.queryByText("搜索与类型仅筛选当前游标窗口"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("任务码用于数据归类，不是数据包 ID。"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(task.dataset_id)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看数据集" })).toHaveAttribute(
+      "href",
+      `/datasets/${task.dataset_id}`,
+    );
+    expect(screen.queryByLabelText("当前项目")).not.toBeInTheDocument();
+    expect(screen.queryByText(/SAVED/u)).not.toBeInTheDocument();
+  });
+
+  it("uses the API quality status for a low pass rate", async () => {
+    const gateway = makeGateway();
+    gateway.progress.mockResolvedValueOnce({
+      ...progress,
+      qc: {
+        evaluated_count: 10,
+        pass_count: 2,
+        risk_count: 3,
+        reject_count: 5,
+        pending_count: 0,
+        pass_rate: { numerator: 2, denominator: 10, value: 0.2 },
+      },
+      attainment: {
+        ...progress.attainment,
+        quality_status: "NOT_MET",
+      },
+    });
+    renderPage(gateway);
+
+    expect(await screen.findByText("通过率 20%")).toBeVisible();
+    expect(screen.getByText("未达到阈值")).toBeVisible();
+    expect(screen.queryByText("达到阈值")).not.toBeInTheDocument();
+  });
+
+  it("keeps window filters reproducible in the URL and resets the cursor", async () => {
+    const user = userEvent.setup();
+    renderPage(makeGateway(), "manage", "/collection-tasks?cursor=window-2");
+
+    await screen.findByText(task.name);
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "当前窗口搜索任务名称或编号",
+      }),
+      "透明",
+    );
+    await waitFor(() => {
+      const location = screen.getByTestId("location").textContent ?? "";
+      expect(location).toContain("q=%E9%80%8F%E6%98%8E");
+      expect(location).not.toContain("cursor=");
+    });
+
+    await user.type(
+      screen.getByRole("textbox", { name: "当前窗口筛选采集类型" }),
+      "抓取",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "type=%E6%8A%93%E5%8F%96",
+      ),
+    );
+
+    const statusFilter = screen.getByRole("combobox", { name: "任务状态" });
+    fireEvent.mouseDown(statusFilter);
+    await user.click(
+      await screen.findByText("已关闭", {
+        selector: ".ant-select-item-option-content",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("status=CLOSED"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "重置" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/collection-tasks",
+      ),
+    );
+    expect(screen.getByTestId("location").textContent).not.toContain("?");
   });
 
   it("does not navigate when task lifecycle or edit actions are clicked", async () => {
@@ -216,16 +372,57 @@ describe("P20 collection tasks", () => {
     renderPage(makeGateway());
 
     await screen.findByText(task.name);
-    await user.click(screen.getByRole("button", { name: "编辑任务" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/collection-tasks");
+    await chooseTaskAction(user, "编辑任务");
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/collection-tasks",
+    );
     await user.click(screen.getByRole("button", { name: "关闭任务抽屉" }));
 
-    await user.click(screen.getByRole("button", { name: "关闭任务" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/collection-tasks");
+    expect(
+      screen.queryByRole("menuitem", { name: "关闭任务" }),
+    ).not.toBeInTheDocument();
+    await chooseTaskAction(user, "关闭任务");
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/collection-tasks",
+    );
     await user.click(screen.getByRole("button", { name: /^取\s*消$/u }));
 
-    await user.click(screen.getByRole("button", { name: "取消任务" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/collection-tasks");
+    await chooseTaskAction(user, "取消任务");
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/collection-tasks",
+    );
+  });
+
+  it("opens and dismisses the more-actions menu from the keyboard", async () => {
+    const user = userEvent.setup();
+    renderPage(makeGateway());
+
+    await screen.findByText(task.name);
+    const moreActions = screen.getByRole("button", { name: "更多操作" });
+    moreActions.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByRole("menuitem", { name: "关闭任务" }),
+    ).toBeVisible();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menuitem", { name: "关闭任务" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    moreActions.focus();
+    await user.keyboard(" ");
+    expect(
+      await screen.findByRole("menuitem", { name: "取消任务" }),
+    ).toBeVisible();
+    await user.click(document.body);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menuitem", { name: "取消任务" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("creates once from the confirmed schema and renders no disabled fields", async () => {
@@ -248,7 +445,6 @@ describe("P20 collection tasks", () => {
     expect(within(drawer).getByLabelText("任务编号（自动生成）")).toHaveValue(
       "保存后由系统生成",
     );
-
     for (const forbidden of [
       "分派",
       "人员",
@@ -269,6 +465,13 @@ describe("P20 collection tasks", () => {
       ).not.toBeInTheDocument();
     }
 
+    const datasetSelector = within(drawer).getByLabelText("关联数据集");
+    await user.click(datasetSelector);
+    await user.type(datasetSelector, "dataset_shared_night");
+    await user.click(
+      await screen.findByText("夜班采集 · dataset_shared_night"),
+    );
+
     await fillMinimumCreateForm(user);
     await user.dblClick(screen.getByRole("button", { name: "创建任务" }));
     await waitFor(() => expect(gateway.create).toHaveBeenCalledTimes(1));
@@ -276,6 +479,7 @@ describe("P20 collection tasks", () => {
       scope,
       {
         name: "夜班工位采集",
+        dataset_id: "dataset_shared_night",
         type: "抓取采集",
         scenario: "夜间灯光条件",
         description: "",
@@ -302,7 +506,7 @@ describe("P20 collection tasks", () => {
     renderPage(gateway);
 
     await screen.findByText(task.name);
-    await user.click(screen.getByRole("button", { name: "编辑任务" }));
+    await chooseTaskAction(user, "编辑任务");
     const editDrawer = screen.getByRole("dialog", { name: "编辑采集任务" });
     expect(within(editDrawer).getByText("任务描述")).toBeVisible();
     const description = editDrawer.querySelector<HTMLTextAreaElement>(
@@ -327,7 +531,7 @@ describe("P20 collection tasks", () => {
       ).not.toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("button", { name: "编辑任务" }));
+    await chooseTaskAction(user, "编辑任务");
     await screen.findByRole("dialog", { name: "编辑采集任务" });
     await waitFor(() => expect(gateway.detail).toHaveBeenCalledTimes(2));
     await user.click(screen.getByRole("button", { name: "关闭任务抽屉" }));
@@ -337,9 +541,9 @@ describe("P20 collection tasks", () => {
       ).not.toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("button", { name: "关闭任务" }));
+    await chooseTaskAction(user, "关闭任务");
     const closeDialog = screen
-      .getByText("关闭采集任务")
+      .getByText("确认关闭任务？")
       .closest('[role="dialog"]');
     expect(closeDialog).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "确认关闭任务" }));
@@ -351,6 +555,7 @@ describe("P20 collection tasks", () => {
       expect.stringMatching(/^close-/u),
     );
     expect(gateway.detail).toHaveBeenCalledTimes(3);
+    expect(await screen.findByText("采集任务已关闭")).toBeVisible();
   });
 
   it("requires explicit confirmation to cancel and reopen without deriving status from progress", async () => {
@@ -360,9 +565,9 @@ describe("P20 collection tasks", () => {
 
     await screen.findByText(task.name);
     expect(screen.getByText("目标进行中")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "取消任务" }));
+    await chooseTaskAction(user, "取消任务");
     expect(
-      screen.getByText("取消采集任务").closest('[role="dialog"]'),
+      screen.getByText("确认取消任务？").closest('[role="dialog"]'),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "确认取消任务" }));
     await waitFor(() => expect(cancelGateway.cancel).toHaveBeenCalledTimes(1));
@@ -372,6 +577,7 @@ describe("P20 collection tasks", () => {
       '"v1"',
       expect.stringMatching(/^cancel-/u),
     );
+    expect(await screen.findByText("采集任务已取消")).toBeVisible();
 
     const cancelledTask: CollectionTask = { ...task, status: "CANCELLED" };
     const reopenGateway = makeGateway();
@@ -387,7 +593,7 @@ describe("P20 collection tasks", () => {
     renderPage(reopenGateway);
 
     await screen.findByText("已取消");
-    await user.click(screen.getByRole("button", { name: "重新开启" }));
+    await chooseTaskAction(user, "重新开启");
     expect(
       screen.getByText("重新开启采集任务").closest('[role="dialog"]'),
     ).toBeInTheDocument();
@@ -481,6 +687,7 @@ describe("P20 collection tasks", () => {
   );
 
   it("keeps list and progress Problem Details visible instead of collapsing them", async () => {
+    const user = userEvent.setup();
     const listGateway = makeGateway();
     listGateway.list.mockRejectedValueOnce(
       createDomainError({
@@ -524,6 +731,11 @@ describe("P20 collection tasks", () => {
         /P20_PROGRESS_RATE_LIMITED.*request-progress-429.*服务端允许重试/u,
       ),
     ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() =>
+      expect(progressGateway.progress).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByText("8 包 / 20 包")).toBeVisible();
   });
 
   it("keeps long task content inspectable and honors read-only capability", async () => {
@@ -554,6 +766,9 @@ describe("P20 collection tasks", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "关闭任务" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "更多操作" }),
     ).not.toBeInTheDocument();
     expect(gateway.list).toHaveBeenCalledTimes(1);
   });

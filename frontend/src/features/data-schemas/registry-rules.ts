@@ -42,7 +42,7 @@ export function canPublishSchema(
   evidence: CompatibilityEvidence | null,
 ): { readonly allowed: boolean; readonly reasons: readonly string[] } {
   const reasons: string[] = [];
-  if (schema.status !== 'DRAFT') reasons.push('只有 DRAFT Schema 可发布。');
+  if (schema.status !== 'DRAFT') reasons.push('只有草稿状态的数据结构可发布。');
   if (!schema.hash) reasons.push('缺少服务端 canonical hash。');
   if (!schema.allowedActions.includes('PUBLISH')) reasons.push('资源未声明 PUBLISH action。');
   reasons.push(...schema.blockedReasons.map((reason) => reason.message));
@@ -55,4 +55,3 @@ export function canPublishSchema(
 export function schemaTelemetryProjection(schema: DataSchemaVersion): Readonly<Record<string, string>> {
   return { schemaId: schema.schemaId, schemaVersion: schema.version, status: schema.status };
 }
-

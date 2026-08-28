@@ -24,7 +24,7 @@ const defaults: AccessSearch = {
   order: "recent",
   page: 1,
   pageSize: 10,
-  drawer: "open",
+  drawer: "closed",
 };
 const tabs = new Set<AccessTab>([
   "users",
@@ -84,7 +84,7 @@ export const accessQueryCodec = defineQueryCodec<AccessSearch>({
       order: sp.get("order") === "oldest" ? "oldest" : defaults.order,
       page: positiveInteger(sp.get("page"), defaults.page),
       pageSize: sp.get("pageSize") === "20" ? 20 : defaults.pageSize,
-      drawer: sp.get("drawer") === "closed" ? "closed" : defaults.drawer,
+      drawer: sp.get("drawer") === "open" ? "open" : defaults.drawer,
       ...(q ? { q } : {}),
       ...(requestId ? { requestId } : {}),
     };

@@ -818,6 +818,7 @@ class AnnotationService:
             submission = AnnotationSubmission(
                 submission_id=self._id_factory(),
                 task_id=task_id,
+                episode_version=len(aggregate.submissions) + 1,
                 revision=revision.revision,
                 submitted_by=identity.actor_id,
                 base_lance_version=aggregate.task.base_lance_version,

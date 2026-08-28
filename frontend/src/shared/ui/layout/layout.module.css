@@ -144,9 +144,13 @@
 
 .detailGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--hc-layout-grid-gap, 16px);
   align-items: start;
+}
+
+.detailGrid[data-has-inspector="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
 }
 
 .inspectorRegion {
@@ -189,6 +193,75 @@
 .filterToolbarCompact {
   display: flex;
   justify-content: flex-end;
+}
+
+.filterToolbarCollapsible {
+  padding: 0;
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.collapsibleHeader {
+  display: flex;
+  min-height: 48px;
+  padding: 4px 10px 4px 16px;
+  gap: var(--hc-space-3, 12px);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filterHeading {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--hc-space-3, 12px);
+  align-items: center;
+  min-width: 0;
+}
+
+.filterHeading h2 {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.4;
+}
+
+.filterSummary {
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filterToggle:global(.ant-btn) {
+  flex: 0 0 auto;
+  min-height: 36px;
+  color: var(--hc-color-info-text, #1e4e9b);
+  font-weight: 600;
+}
+
+.filterToggle:global(.ant-btn:focus-visible) {
+  outline: 2px solid var(--hc-color-focus, #5965d8);
+  outline-offset: 2px;
+}
+
+.collapsibleBody {
+  border-top: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+}
+
+.filterToolbarCollapsible .filterForm {
+  padding: 10px 16px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filterToolbarCollapsible {
+    transition: none;
+  }
 }
 
 .entityDrawer :global(.ant-drawer-body) {
@@ -238,7 +311,7 @@
 }
 
 @media (max-width: 1024px) {
-  .detailGrid {
+  .detailGrid[data-has-inspector="true"] {
     grid-template-columns: minmax(0, 1fr);
   }
 

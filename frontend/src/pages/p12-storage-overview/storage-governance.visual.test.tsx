@@ -5,6 +5,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { components } from "../../shared/api/generated/platform";
+import { domainErrorFromResponse } from "../../shared/api/http-client";
 import {
   LifecyclePolicyTable,
   LifecycleProtectionSummary,
@@ -15,6 +16,7 @@ import {
 } from "../p13-storage-lifecycle/query-codec";
 import {
   CapacityOverview,
+  CapacityErrorState,
   CapacitySnapshotMeta,
   CapacityTrend,
   ProjectCapacityTable,
@@ -132,6 +134,37 @@ const history: CapacityHistory = {
 };
 
 describe("E10 capacity and lifecycle component contracts", () => {
+  it("shows the first-inventory empty state for CAPACITY_SNAPSHOT_NOT_FOUND", () => {
+    const error = domainErrorFromResponse(404, {
+      title: "Capacity snapshot not found",
+      status: 404,
+      detail: "The requested scoped resource does not exist.",
+      code: "CAPACITY_SNAPSHOT_NOT_FOUND",
+      request_id: "request-capacity-missing",
+    });
+
+    render(<CapacityErrorState error={error} label="容量管理" />);
+
+    expect(screen.getByText("暂无容量快照")).toBeVisible();
+    expect(screen.getByText(/等待首次存储盘点/u)).toBeVisible();
+    expect(screen.queryByText("资源不存在")).not.toBeInTheDocument();
+  });
+
+  it("keeps an ordinary HTTP NOT_FOUND as resource missing", () => {
+    const error = domainErrorFromResponse(404, {
+      title: "Storage object not found",
+      status: 404,
+      detail: "The object does not exist.",
+      code: "STORAGE_OBJECT_NOT_FOUND",
+      request_id: "request-object-missing",
+    });
+
+    render(<CapacityErrorState error={error} label="容量管理" />);
+
+    expect(screen.getByText("资源不存在")).toBeVisible();
+    expect(screen.queryByText("暂无容量快照")).not.toBeInTheDocument();
+  });
+
   it("keeps physical and business totals separate and shows exactly four fixed categories", () => {
     render(<CapacityOverview snapshot={snapshot} />);
 
@@ -166,7 +199,7 @@ describe("E10 capacity and lifecycle component contracts", () => {
 
     const figure = screen.getByRole("figure", { name: "增长趋势" });
     expect(figure).toHaveAccessibleDescription(/候选业务口径变化 \+40 B/u);
-    const plot = within(figure).getByRole("list", { name: "近 30 天容量快照" });
+    const plot = within(figure).getByRole("list", { name: "近 30 天容量记录" });
     expect(within(plot).getByText("160 B")).toBeVisible();
     expect(within(plot).getByText("200 B")).toBeVisible();
     expect(within(figure).getByText("+5 B/日")).toBeVisible();
@@ -205,7 +238,7 @@ describe("E10 capacity and lifecycle component contracts", () => {
       />,
     );
     expect(
-      screen.getByText("所选时间范围内没有已封存的容量快照。"),
+      screen.getByText("所选时间范围内没有已封存的容量记录。"),
     ).toBeVisible();
 
     rerender(
@@ -249,8 +282,8 @@ describe("E10 capacity and lifecycle component contracts", () => {
     render(<LifecycleProtectionSummary />);
 
     expect(screen.getByText("Raw")).toBeVisible();
-    expect(screen.getByText("Manifest")).toBeVisible();
-    expect(screen.getByText("已发布 Manifest")).toBeVisible();
+    expect(screen.getByText("数据清单")).toBeVisible();
+    expect(screen.getByText("已发布数据清单")).toBeVisible();
     expect(screen.getByText("生产执行需独立审批")).toBeVisible();
     expect(screen.getByText(/申请人不能审批自己的计划/u)).toBeVisible();
     expect(

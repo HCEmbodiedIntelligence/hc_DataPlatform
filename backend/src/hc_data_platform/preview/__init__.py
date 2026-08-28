@@ -1,4 +1,4 @@
-"""Temporary, revision-aware dataset preview generation."""
+"""Durable, asynchronously generated dataset preview artifacts."""
 
 from .models import (
     EncodingProfileV1,
@@ -10,7 +10,6 @@ from .models import (
     TimelineMappingV1,
     ViewMode,
 )
-from .service import PreviewService
 
 __all__ = [
     "EncodingProfileV1",
@@ -18,7 +17,6 @@ __all__ = [
     "PreviewDescriptorV1",
     "PreviewFrameV1",
     "PreviewRequestV1",
-    "PreviewService",
     "StepRangeV1",
     "TimelineMappingV1",
     "ViewMode",

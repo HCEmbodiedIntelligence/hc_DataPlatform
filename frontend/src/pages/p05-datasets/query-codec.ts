@@ -11,20 +11,15 @@ import {
 import type {
   DatasetAssetState,
   DatasetStorageClass,
+  DatasetWorkflowState,
   DatasetsRouteFilters,
   DatasetsSort,
 } from '../../features/datasets/routing';
 
 const SORTS = ['activityDesc', 'createdDesc', 'nameAsc'] as const;
-const ASSET_STATES = [
-  'ready',
-  'validating',
-  'problem',
-  'frozen',
-  'pending_ingest',
-  'unknown',
-] as const;
+const ASSET_STATES = ['ready', 'validating', 'problem', 'frozen', 'pending_ingest', 'unknown'] as const;
 const STORAGE_CLASSES = ['standard', 'ia', 'archive'] as const;
+const WORKFLOW_STATES = ['pendingReview', 'returned', 'actionableDraft'] as const;
 const LIMITS = ['20', '50', '100'] as const;
 const COLLECTION_TASK_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
@@ -33,16 +28,6 @@ export type DatasetsSearch = Omit<DatasetsRouteFilters, 'sort' | 'limit'> &
     sort: DatasetsSort;
     limit: 20 | 50 | 100;
   }>;
-
-function parseChannels(params: URLSearchParams): readonly string[] | undefined {
-  const values = params
-    .getAll('channels')
-    .flatMap((value) => value.split(','))
-    .map((value) => cleanText(value, 96))
-    .filter((value): value is string => Boolean(value));
-  const normalized = [...new Set(values)].sort();
-  return normalized.length ? normalized : undefined;
-}
 
 function parseDatasetsSearch(input: string | URLSearchParams): DatasetsSearch {
   const params = asSearchParams(input);
@@ -56,11 +41,8 @@ function parseDatasetsSearch(input: string | URLSearchParams): DatasetsSearch {
     task: cleanText(params.get('task'), 128),
     scene: cleanText(params.get('scene'), 128),
     assetState: enumValue(params.get('assetState'), ASSET_STATES) as DatasetAssetState | undefined,
-    storageClass: enumValue(params.get('storageClass'), STORAGE_CLASSES) as
-      | DatasetStorageClass
-      | undefined,
-    channels: parseChannels(params),
-    channelMatch: enumValue(params.get('channelMatch'), ['all', 'any'] as const) ?? 'all',
+    workflowState: enumValue(params.get('workflowState'), WORKFLOW_STATES) as DatasetWorkflowState | undefined,
+    storageClass: enumValue(params.get('storageClass'), STORAGE_CLASSES) as DatasetStorageClass | undefined,
     datasetCreatedFrom: cleanText(params.get('datasetCreatedFrom'), 40),
     datasetCreatedTo: cleanText(params.get('datasetCreatedTo'), 40),
     sort: enumValue(params.get('sort'), SORTS) ?? 'activityDesc',
@@ -79,8 +61,8 @@ function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
       task: input.task,
       scene: input.scene,
       assetState: input.assetState,
+      workflowState: input.workflowState,
       storageClass: input.storageClass,
-      channelMatch: input.channelMatch,
       datasetCreatedFrom: input.datasetCreatedFrom,
       datasetCreatedTo: input.datasetCreatedTo,
       sort: input.sort,
@@ -89,7 +71,6 @@ function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
       limit: input.limit ? String(input.limit) : undefined,
     }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
-  input.channels?.forEach((channel) => raw.append('channels', channel));
   const normalized = parseDatasetsSearch(raw);
   const params = new URLSearchParams();
   for (const key of [
@@ -100,6 +81,7 @@ function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
     'task',
     'scene',
     'assetState',
+    'workflowState',
     'storageClass',
     'datasetCreatedFrom',
     'datasetCreatedTo',
@@ -107,8 +89,6 @@ function buildDatasetsSearch(input: DatasetsRouteFilters): URLSearchParams {
     const value = normalized[key];
     if (typeof value === 'string' && value) params.set(key, value);
   }
-  normalized.channels?.forEach((channel) => params.append('channels', channel));
-  if (normalized.channelMatch === 'any') params.set('channelMatch', 'any');
   if (normalized.sort !== 'activityDesc') params.set('sort', normalized.sort);
   if (normalized.after) params.set('after', normalized.after);
   if (normalized.before) params.set('before', normalized.before);
@@ -124,9 +104,8 @@ const PAGINATION_DIMENSIONS: readonly (keyof DatasetsSearch)[] = [
   'task',
   'scene',
   'assetState',
+  'workflowState',
   'storageClass',
-  'channels',
-  'channelMatch',
   'datasetCreatedFrom',
   'datasetCreatedTo',
   'sort',

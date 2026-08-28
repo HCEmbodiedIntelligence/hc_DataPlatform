@@ -49,7 +49,7 @@ export function AnnotationEntryAction(props: AnnotationEntryActionProps): JSX.El
   return (
     <>
       <button type="button" disabled={pending || !resolution.schemaOptions.length} onClick={() => setChoosing(true)}>开始标注</button>
-      {choosing ? <section role="dialog" aria-modal="true" aria-labelledby="schema-choice-title"><h2 id="schema-choice-title">选择标注 Schema</h2>{resolution.schemaOptions.map((option) => <button type="button" disabled={pending} key={option.schemaVersionId} onClick={() => void run(() => props.onCreate(option))}>{option.label}</button>)}<button type="button" onClick={() => setChoosing(false)}>取消</button></section> : null}
+      {choosing ? <section role="dialog" aria-modal="true" aria-labelledby="schema-choice-title"><h2 id="schema-choice-title">选择标注结构</h2>{resolution.schemaOptions.map((option) => <button type="button" disabled={pending} key={option.schemaVersionId} onClick={() => void run(() => props.onCreate(option))}>{option.label}</button>)}<button type="button" onClick={() => setChoosing(false)}>取消</button></section> : null}
       {error ? <span role="alert">{error}</span> : null}
     </>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -54,6 +54,8 @@ export function Component() {
         tab: "users",
         q: search.tab === "users" ? search.q : undefined,
         page: search.tab === "users" ? search.page : 1,
+        requestId: undefined,
+        drawer: "closed",
       }
     : search;
   const membershipQuery = useMembershipRequests(
@@ -74,10 +76,18 @@ export function Component() {
   );
 
   const changeSearch = (patch: Partial<AccessSearch>) => {
-    if (Object.keys(patch).some((key) => key !== "drawer")) decision.reset();
-    setParams(accessQueryCodec.build({ ...effectiveSearch, ...patch }), {
-      replace: true,
-    });
+    const contextChanged = Object.keys(patch).some(
+      (key) => key !== "drawer" && key !== "requestId",
+    );
+    if (contextChanged || patch.drawer === "open") decision.reset();
+    const nextSearch = {
+      ...effectiveSearch,
+      ...patch,
+      ...(contextChanged || patch.drawer === "closed"
+        ? { requestId: undefined, drawer: "closed" as const }
+        : {}),
+    };
+    setParams(accessQueryCodec.build(nextSearch), { replace: true });
   };
 
   const submitDecision = (input: AccessDecisionInput) => {
@@ -96,9 +106,22 @@ export function Component() {
     });
   };
 
+  const previousScopeKeyRef = useRef(scopeKey);
   useEffect(() => {
+    const scopeChanged = previousScopeKeyRef.current !== scopeKey;
+    previousScopeKeyRef.current = scopeKey;
     decision.reset();
-  }, [decision.reset, scopeKey]);
+    if (!scopeChanged) return;
+    setParams(
+      (currentParams) =>
+        accessQueryCodec.build({
+          ...accessQueryCodec.parse(currentParams),
+          requestId: undefined,
+          drawer: "closed",
+        }),
+      { replace: true },
+    );
+  }, [decision.reset, scopeKey, setParams]);
 
   useEffect(() => {
     if (!platformOnlyAccount || search.tab === "users") return;

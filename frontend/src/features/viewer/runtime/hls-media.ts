@@ -55,7 +55,17 @@ export async function attachAuthorizedMedia(
 
   const { default: Hls } = await import("hls.js");
   if (Hls.isSupported()) {
-    const hls = new Hls();
+    const hls = new Hls({
+      // These previews are short, synchronized VOD clips. Keep one complete
+      // working window available so replay does not re-download three camera
+      // streams at once after the browser evicts ManagedMediaSource data.
+      preferManagedMediaSource: false,
+      maxBufferLength: 20,
+      maxMaxBufferLength: 20,
+      backBufferLength: 20,
+      maxBufferSize: 32 * 1024 * 1024,
+      startFragPrefetch: true,
+    });
     let disposed = false;
     hls.on(Hls.Events.ERROR, (_event, data) => {
       if (data.fatal && !disposed) {

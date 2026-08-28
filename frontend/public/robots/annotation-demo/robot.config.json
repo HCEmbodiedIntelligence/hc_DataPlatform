@@ -1,0 +1,43 @@
+{
+  "schema_version": "hc.robot-config/v1",
+  "display_name": "Annotation Demo 7-Axis Arm",
+  "joint_state_topic": "/robot/joint_states",
+  "angle_unit": "rad",
+  "joint_mapping": [
+    {
+      "source_joint_name": "J1",
+      "target_joint_name": "joint_1",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "J2",
+      "target_joint_name": "joint_2",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "J3",
+      "target_joint_name": "joint_3",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "J4",
+      "target_joint_name": "joint_4",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "J5",
+      "target_joint_name": "joint_5",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "J6",
+      "target_joint_name": "joint_6",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "J7",
+      "target_joint_name": "joint_7",
+      "direction": "SAME"
+    }
+  ]
+}

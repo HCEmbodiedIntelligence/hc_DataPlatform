@@ -7,12 +7,19 @@ import re
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable, Sequence
+import time
+from collections import deque
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import suppress
 from datetime import datetime
+from io import BytesIO
+from itertools import chain
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import unquote, urlparse
+
+from PIL import Image, ImageDraw
 
 from hc_data_platform.annotation.ports import (
     EffectiveExclusionPort as AnnotationEffectiveExclusionPort,
@@ -20,6 +27,7 @@ from hc_data_platform.annotation.ports import (
 from hc_data_platform.lance_catalog.models import StepRecord, StepWindow
 from hc_data_platform.lance_catalog.ports import StepReaderPort as LanceStepReaderPort
 
+from .metrics import FFMPEG_PROCESS, PREVIEW_OBJECT_GET, PREVIEW_SOURCE_BYTES_READ
 from .models import (
     EncodedPreviewArtifactV1,
     PreviewCacheRecordV1,
@@ -28,6 +36,7 @@ from .models import (
     RenderFrameV1,
     StepRangeV1,
 )
+from .profiles import DEFAULT_PREVIEW_PROFILES, PreviewProfileCatalog
 
 
 class PreviewAdapterError(RuntimeError):
@@ -38,8 +47,8 @@ class PreviewEncodingError(RuntimeError):
     """FFmpeg failed before a complete preview artifact could be committed."""
 
 
-class CommandRunner(Protocol):
-    def __call__(self, command: Sequence[str]) -> None: ...
+class PreviewGenerationCancelled(PreviewEncodingError):
+    """The Temporal activity asked the encoder to terminate its subprocess."""
 
 
 ImageRefResolver = Callable[[object], str | bytes | None]
@@ -105,6 +114,7 @@ class S3ImageRefResolver:
         return data if len(data) <= self._max_object_bytes else None
 
     def _get_object(self, key: str) -> dict[str, object]:
+        PREVIEW_OBJECT_GET.inc()
         response = self._client.get_object(Bucket=self._bucket, Key=key)
         if not isinstance(response, dict):
             raise TypeError("S3 get_object response must be a mapping")
@@ -228,12 +238,20 @@ class LanceStepReaderAdapter:
         *,
         page_size: int = 4_096,
         image_ref_resolver: ImageRefResolver = _default_image_ref,
+        image_prefetch: int = 16,
+        image_fetch_workers: int = 8,
     ) -> None:
         if page_size < 1:
             raise ValueError("page_size must be positive")
+        if image_prefetch < 1:
+            raise ValueError("image_prefetch must be positive")
+        if image_fetch_workers < 1:
+            raise ValueError("image_fetch_workers must be positive")
         self._source = source
         self._page_size = page_size
         self._image_ref_resolver = image_ref_resolver
+        self._image_prefetch = image_prefetch
+        self._image_fetch_workers = min(image_fetch_workers, image_prefetch)
 
     def read_steps(
         self,
@@ -245,18 +263,49 @@ class LanceStepReaderAdapter:
         camera_id: str,
         start_step: int | None,
         end_step: int | None,
-    ) -> Sequence[PreviewFrameV1]:
+    ) -> Iterable[PreviewFrameV1]:
         version = _parse_lance_version(lance_version)
         first_step = 0 if start_step is None else start_step
-        records = self._read_records(
-            project_id=project_id,
-            dataset_id=dataset_id,
-            rollout_id=rollout_id,
-            version=version,
-            start_step=first_step,
-            end_step=end_step,
+        return self._prefetched_frames(
+            self._read_records(
+                project_id=project_id,
+                dataset_id=dataset_id,
+                rollout_id=rollout_id,
+                version=version,
+                start_step=first_step,
+                end_step=end_step,
+            ),
+            camera_id=camera_id,
         )
-        return tuple(self._to_preview_frame(record, camera_id=camera_id) for record in records)
+
+    def _prefetched_frames(
+        self, records: Iterable[StepRecord], *, camera_id: str
+    ) -> Iterator[PreviewFrameV1]:
+        """Resolve image references concurrently without losing order or backpressure."""
+
+        source = iter(records)
+        pending: deque[Future[PreviewFrameV1]] = deque()
+        with ThreadPoolExecutor(
+            max_workers=self._image_fetch_workers,
+            thread_name_prefix="preview-image-fetch",
+        ) as executor:
+
+            def submit_one() -> bool:
+                try:
+                    record = next(source)
+                except StopIteration:
+                    return False
+                pending.append(
+                    executor.submit(self._to_preview_frame, record, camera_id=camera_id)
+                )
+                return True
+
+            while len(pending) < self._image_prefetch and submit_one():
+                pass
+            while pending:
+                frame = pending.popleft().result()
+                submit_one()
+                yield frame
 
     def _read_records(
         self,
@@ -267,33 +316,17 @@ class LanceStepReaderAdapter:
         version: int,
         start_step: int,
         end_step: int | None,
-    ) -> tuple[StepRecord, ...]:
-        if end_step is not None:
-            window = self._source.read_steps(
-                dataset_id,
-                rollout_id,
-                start_step,
-                end_step,
-                version=version,
-                project_id=project_id,
-            )
-            self._validate_window(
-                window,
-                project_id=project_id,
-                dataset_id=dataset_id,
-                version=version,
-                rollout_id=rollout_id,
-            )
-            return window.steps
-
-        records: list[StepRecord] = []
+    ) -> Iterator[StepRecord]:
         cursor = start_step
-        while True:
+        while end_step is None or cursor < end_step:
+            page_end = cursor + self._page_size
+            if end_step is not None:
+                page_end = min(page_end, end_step)
             window = self._source.read_steps(
                 dataset_id,
                 rollout_id,
                 cursor,
-                cursor + self._page_size,
+                page_end,
                 version=version,
                 project_id=project_id,
             )
@@ -305,9 +338,9 @@ class LanceStepReaderAdapter:
                 rollout_id=rollout_id,
             )
             if not window.steps:
-                return tuple(records)
-            records.extend(window.steps)
-            cursor += self._page_size
+                return
+            yield from window.steps
+            cursor = page_end
 
     @staticmethod
     def _validate_window(
@@ -333,9 +366,7 @@ class LanceStepReaderAdapter:
         camera_valid = record.valid.get(modality_key, image_ref is not None)
 
         invalid_reason: str | None = None
-        if not record.sample_valid:
-            invalid_reason = "source sample is invalid"
-        elif image_ref is None:
+        if image_ref is None:
             invalid_reason = f"{modality_key} image reference is missing or unsupported"
         elif not camera_valid:
             invalid_reason = f"{modality_key} is invalid"
@@ -388,23 +419,8 @@ class AnnotationExclusionAdapter:
         )
 
 
-def _subprocess_runner(command: Sequence[str]) -> None:
-    try:
-        subprocess.run(
-            list(command),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError as exc:
-        raise PreviewEncodingError(f"required executable is unavailable: {command[0]}") from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or "unknown FFmpeg failure").strip()
-        raise PreviewEncodingError(detail) from exc
-
-
 class FFmpegHlsEncoder:
-    """Writes H.264 HLS with CMAF/fMP4 segments, then atomically publishes the directory."""
+    """Stream camera JPEGs through one FFmpeg process into bounded HLS staging."""
 
     _SAFE_CACHE_KEY = re.compile(r"^[0-9a-f]{64}$")
 
@@ -413,38 +429,56 @@ class FFmpegHlsEncoder:
         cache_root: Path,
         *,
         ffmpeg_binary: str = "ffmpeg",
-        runner: CommandRunner = _subprocess_runner,
-        allowed_remote_schemes: Sequence[str] = ("http", "https"),
+        process_factory: Callable[..., Any] = subprocess.Popen,
+        profiles: PreviewProfileCatalog = DEFAULT_PREVIEW_PROFILES,
         max_embedded_image_bytes: int = 64 * 1024 * 1024,
+        ffmpeg_threads: int = 2,
+        process_timeout_seconds: float = 3_600,
     ) -> None:
         if max_embedded_image_bytes < 1:
             raise ValueError("max_embedded_image_bytes must be positive")
+        if ffmpeg_threads < 1:
+            raise ValueError("ffmpeg_threads must be positive")
+        if process_timeout_seconds <= 0:
+            raise ValueError("process_timeout_seconds must be positive")
         self._cache_root = cache_root
         self._ffmpeg_binary = ffmpeg_binary
-        self._runner = runner
-        self._allowed_remote_schemes = frozenset(allowed_remote_schemes)
+        self._process_factory = process_factory
+        self._profiles = profiles
         self._max_embedded_image_bytes = max_embedded_image_bytes
+        self._ffmpeg_threads = ffmpeg_threads
+        self._process_timeout_seconds = process_timeout_seconds
+        self._placeholder_cache: dict[tuple[int, int], bytes] = {}
 
     def encode(
         self,
         *,
         cache_key: str,
         request: PreviewRequestV1,
-        frames: Sequence[RenderFrameV1],
+        frames: Iterable[RenderFrameV1],
+        cancelled: Callable[[], bool] | None = None,
     ) -> EncodedPreviewArtifactV1:
         if self._SAFE_CACHE_KEY.fullmatch(cache_key) is None:
             raise ValueError("cache_key must be a lowercase SHA-256 digest")
+        profile = self._profiles.get(request.profile_id)
         self._cache_root.mkdir(parents=True, exist_ok=True)
         final_dir = self._cache_root / cache_key
         final_playlist = final_dir / "index.m3u8"
         if final_playlist.is_file():
-            return self._artifact(final_playlist, request=request, frame_count=len(frames))
+            frame_count = sum(1 for _ in frames)
+            return self._artifact(final_playlist, request=request, frame_count=frame_count)
         if final_dir.exists():
             raise PreviewEncodingError("preview cache target exists without a committed playlist")
 
         temporary_dir = Path(tempfile.mkdtemp(prefix=f".{cache_key}.", dir=self._cache_root))
         try:
-            self._encode_in_directory(temporary_dir, request=request, frames=frames)
+            frame_count = self._encode_in_directory(
+                temporary_dir,
+                request=request,
+                profile=profile,
+                frames=frames,
+                cancelled=cancelled,
+            )
             if not (temporary_dir / "index.m3u8").is_file():
                 raise PreviewEncodingError("FFmpeg completed without producing index.m3u8")
             try:
@@ -452,7 +486,7 @@ class FFmpegHlsEncoder:
             except OSError as exc:
                 if not final_playlist.is_file():
                     raise PreviewEncodingError("could not atomically commit preview cache") from exc
-            return self._artifact(final_playlist, request=request, frame_count=len(frames))
+            return self._artifact(final_playlist, request=request, frame_count=frame_count)
         finally:
             if temporary_dir.exists():
                 shutil.rmtree(temporary_dir)
@@ -462,84 +496,71 @@ class FFmpegHlsEncoder:
         directory: Path,
         *,
         request: PreviewRequestV1,
-        frames: Sequence[RenderFrameV1],
-    ) -> None:
-        if not frames:
+        profile: object,
+        frames: Iterable[RenderFrameV1],
+        cancelled: Callable[[], bool] | None,
+    ) -> int:
+        from .models import EncodingProfileV1
+
+        resolved_profile = EncodingProfileV1.model_validate(profile)
+        iterator = iter(frames)
+        try:
+            first = next(iterator)
+        except StopIteration:
             self._write_empty_playlist(directory / "index.m3u8")
-            return
+            return 0
 
-        frame_directory = directory / "frames"
-        frame_directory.mkdir()
-        for number, frame in enumerate(frames):
-            target = frame_directory / f"frame_{number:09d}.ppm"
-            if frame.placeholder is not None:
-                self._write_placeholder(
-                    target,
-                    width=request.encoding_profile.width,
-                    height=request.encoding_profile.height,
-                )
-            else:
-                if frame.image_ref is None:
-                    raise PreviewEncodingError("render frame has neither image_ref nor placeholder")
-                self._normalize_source_image(
-                    frame.image_ref,
-                    target,
-                    request=request,
-                    excluded=frame.excluded,
-                )
-
-        profile = request.encoding_profile
-        keyframe_interval = max(1, round(request.frequency_hz * profile.segment_duration_seconds))
-        if profile.video_codec == "h264":
-            codec_arguments = [
-                "-c:v",
-                "libx264",
-                "-preset",
-                profile.preset,
-                "-sc_threshold",
-                "0",
-            ]
-        else:
-            codec_arguments = [
-                "-c:v",
-                "libvpx-vp9",
-                "-deadline",
-                "good",
-                "-cpu-used",
-                "4",
-                "-row-mt",
-                "1",
-            ]
-        self._runner(
-            [
+        keyframe_interval = max(
+            1, round(request.frequency_hz * resolved_profile.segment_duration_seconds)
+        )
+        filters = (
+            f"scale={resolved_profile.width}:{resolved_profile.height}:"
+            "force_original_aspect_ratio=decrease,"
+            f"pad={resolved_profile.width}:{resolved_profile.height}:"
+            "(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+            f"format={resolved_profile.pixel_format}"
+        )
+        command = [
                 self._ffmpeg_binary,
                 "-hide_banner",
                 "-loglevel",
                 "error",
-                "-nostdin",
                 "-y",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "mjpeg",
                 "-framerate",
                 str(request.frequency_hz),
-                "-start_number",
-                "0",
                 "-i",
-                str(frame_directory / "frame_%09d.ppm"),
+                "pipe:0",
                 "-an",
-                *codec_arguments,
+                "-vf",
+                filters,
+                "-c:v",
+                "libx264",
+                "-preset",
+                resolved_profile.preset,
+                "-sc_threshold",
+                "0",
+                "-bf",
+                "0",
+                "-threads",
+                str(self._ffmpeg_threads),
                 "-b:v",
-                f"{profile.video_bitrate_kbps}k",
+                f"{resolved_profile.video_bitrate_kbps}k",
                 "-pix_fmt",
-                profile.pixel_format,
+                resolved_profile.pixel_format,
                 "-g",
                 str(keyframe_interval),
                 "-keyint_min",
                 str(keyframe_interval),
                 "-force_key_frames",
-                f"expr:gte(t,n_forced*{profile.segment_duration_seconds})",
+                f"expr:gte(t,n_forced*{resolved_profile.segment_duration_seconds})",
                 "-f",
                 "hls",
                 "-hls_time",
-                str(profile.segment_duration_seconds),
+                str(resolved_profile.segment_duration_seconds),
                 "-hls_playlist_type",
                 "vod",
                 "-hls_segment_type",
@@ -551,63 +572,123 @@ class FFmpegHlsEncoder:
                 "-hls_flags",
                 "independent_segments",
                 str(directory / "index.m3u8"),
-            ]
-        )
-
-    def _normalize_source_image(
-        self,
-        image_ref: str | bytes,
-        target: Path,
-        *,
-        request: PreviewRequestV1,
-        excluded: bool,
-    ) -> None:
-        temporary_source: Path | None = None
-        if isinstance(image_ref, bytes):
-            if len(image_ref) > self._max_embedded_image_bytes:
-                raise PreviewEncodingError("embedded image exceeds the configured size limit")
-            descriptor, name = tempfile.mkstemp(
-                prefix=f".{target.stem}.", suffix=".source-image", dir=target.parent
-            )
-            temporary_source = Path(name)
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(image_ref)
-            source = str(temporary_source)
-        else:
-            source = self._ffmpeg_input(image_ref)
-        profile = request.encoding_profile
-        filters = [
-            (f"scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease"),
-            f"pad={profile.width}:{profile.height}:(ow-iw)/2:(oh-ih)/2:color=black",
-            "setsar=1",
         ]
-        if excluded:
-            filters.append("drawbox=x=0:y=0:w=iw:h=ih:color=red@0.85:t=12")
         try:
-            self._runner(
-                [
-                    self._ffmpeg_binary,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-nostdin",
-                    "-y",
-                    "-i",
-                    source,
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    ",".join(filters),
-                    "-pix_fmt",
-                    "rgb24",
-                    str(target),
-                ]
+            FFMPEG_PROCESS.inc()
+            process = self._process_factory(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
             )
-        finally:
-            if temporary_source is not None:
-                temporary_source.unlink(missing_ok=True)
+        except FileNotFoundError as exc:
+            raise PreviewEncodingError(
+                f"required executable is unavailable: {self._ffmpeg_binary}"
+            ) from exc
+        stdin = process.stdin
+        if stdin is None:
+            process.kill()
+            raise PreviewEncodingError("FFmpeg stdin pipe was not created")
+        frame_count = 0
+        try:
+            for frame in chain((first,), iterator):
+                if cancelled is not None and cancelled():
+                    raise PreviewGenerationCancelled(
+                        "FFmpeg preview generation was cancelled"
+                    )
+                content = self._frame_bytes(
+                    frame,
+                    width=resolved_profile.width,
+                    height=resolved_profile.height,
+                )
+                stdin.write(content)
+                PREVIEW_SOURCE_BYTES_READ.inc(len(content))
+                frame_count += 1
+            stdin.close()
+            process.stdin = None
+            deadline = time.monotonic() + self._process_timeout_seconds
+            stderr = b""
+            while True:
+                if cancelled is not None and cancelled():
+                    raise PreviewGenerationCancelled(
+                        "FFmpeg preview generation was cancelled"
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(
+                        command, self._process_timeout_seconds
+                    )
+                try:
+                    _, stderr = process.communicate(timeout=min(1.0, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if process.returncode != 0:
+                detail = bytes(stderr or b"").decode("utf-8", errors="replace").strip()
+                raise PreviewEncodingError(detail or "unknown FFmpeg failure")
+        except BaseException as exc:
+            with suppress(Exception):
+                stdin.close()
+            with suppress(Exception):
+                process.kill()
+            with suppress(Exception):
+                process.communicate(timeout=5)
+            if isinstance(exc, subprocess.TimeoutExpired):
+                raise PreviewEncodingError("FFmpeg preview generation timed out") from exc
+            if isinstance(exc, BrokenPipeError):
+                stderr = process.stderr.read() if process.stderr is not None else b""
+                detail = bytes(stderr or b"").decode("utf-8", errors="replace").strip()
+                raise PreviewEncodingError(detail or "FFmpeg closed the input pipe") from exc
+            raise
+        return frame_count
 
-    def _ffmpeg_input(self, image_ref: str) -> str:
+    def _frame_bytes(self, frame: RenderFrameV1, *, width: int, height: int) -> bytes:
+        if frame.placeholder is not None:
+            return self._placeholder(width=width, height=height)
+        if frame.image_ref is None:
+            raise PreviewEncodingError("render frame has neither image_ref nor placeholder")
+        if isinstance(frame.image_ref, bytes):
+            content = frame.image_ref
+        else:
+            source = Path(self._local_image_path(frame.image_ref))
+            try:
+                size = source.stat().st_size
+            except OSError as exc:
+                raise PreviewEncodingError("preview source image is unavailable") from exc
+            if size > self._max_embedded_image_bytes:
+                raise PreviewEncodingError("embedded image exceeds the configured size limit")
+            try:
+                with source.open("rb") as stream:
+                    content = stream.read(self._max_embedded_image_bytes + 1)
+            except OSError as exc:
+                raise PreviewEncodingError("preview source image is unavailable") from exc
+        if len(content) > self._max_embedded_image_bytes:
+            raise PreviewEncodingError("embedded image exceeds the configured size limit")
+        if (
+            len(content) < 4
+            or not content.startswith(b"\xff\xd8")
+            or not content.endswith(b"\xff\xd9")
+        ):
+            raise PreviewEncodingError("preview source image must be a complete JPEG frame")
+        return content
+
+    def cleanup(self, encoded: EncodedPreviewArtifactV1) -> None:
+        """Remove only this worker's committed staging directory after publication."""
+
+        parsed = urlparse(encoded.artifact_uri)
+        if parsed.scheme != "file" or parsed.netloc not in {"", "localhost"}:
+            return
+        playlist = Path(unquote(parsed.path)).resolve()
+        root = self._cache_root.resolve()
+        if playlist.name != "index.m3u8" or root not in playlist.parents:
+            raise PreviewEncodingError("refusing to clean an unsafe preview staging path")
+        if self._SAFE_CACHE_KEY.fullmatch(playlist.parent.name) is None:
+            raise PreviewEncodingError("refusing to clean an unkeyed preview staging path")
+        if playlist.parent.exists():
+            shutil.rmtree(playlist.parent)
+
+    @staticmethod
+    def _local_image_path(image_ref: str) -> str:
         parsed = urlparse(image_ref)
         if not parsed.scheme:
             return image_ref
@@ -615,23 +696,29 @@ class FFmpegHlsEncoder:
             if parsed.netloc not in ("", "localhost"):
                 raise PreviewEncodingError("file image references cannot target a remote host")
             return unquote(parsed.path)
-        if parsed.scheme in self._allowed_remote_schemes:
-            return image_ref
         raise PreviewEncodingError(f"unsupported image reference scheme: {parsed.scheme}")
 
-    @staticmethod
-    def _write_placeholder(target: Path, *, width: int, height: int) -> None:
+    def _placeholder(self, *, width: int, height: int) -> bytes:
         """A conspicuous magenta checkerboard that cannot be mistaken for source imagery."""
 
-        header = f"P6\n{width} {height}\n255\n".encode("ascii")
-        rows = bytearray()
+        cached = self._placeholder_cache.get((width, height))
+        if cached is not None:
+            return cached
         block_size = max(8, min(width, height) // 12)
-        colors = (b"\xb0\x00\xb0", b"\x30\x00\x30")
-        for y in range(height):
-            rows.extend(
-                b"".join(colors[((x // block_size) + (y // block_size)) % 2] for x in range(width))
-            )
-        target.write_bytes(header + rows)
+        colors = ((176, 0, 176), (48, 0, 48))
+        image = Image.new("RGB", (width, height))
+        draw = ImageDraw.Draw(image)
+        for y in range(0, height, block_size):
+            for x in range(0, width, block_size):
+                draw.rectangle(
+                    (x, y, min(x + block_size - 1, width - 1), min(y + block_size - 1, height - 1)),
+                    fill=colors[((x // block_size) + (y // block_size)) % 2],
+                )
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=90, subsampling=0, optimize=False)
+        content = buffer.getvalue()
+        self._placeholder_cache[(width, height)] = content
+        return content
 
     @staticmethod
     def _write_empty_playlist(target: Path) -> None:

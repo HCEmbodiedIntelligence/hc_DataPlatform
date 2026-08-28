@@ -6,11 +6,14 @@ import {
   useDashboardActivity,
   useDashboardPending,
   useDashboardPendingPage,
-  useDashboardSnapshot,
+  useDashboardTaskStatus,
 } from "../../features/dashboard/api/queries";
 import {
   DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
+  type DashboardActivity,
+  type DashboardPendingPage,
   type DashboardScope,
+  type DashboardTaskStatus,
 } from "../../features/dashboard/types";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
@@ -32,6 +35,17 @@ import {
 } from "./components/DashboardSectionNotice";
 import { dashboardQueryCodec, type DashboardRange } from "./query-codec";
 import styles from "./styles.module.css";
+
+const taskStageOrder = [
+  "TASK_EXECUTION",
+  "PACKAGE_UPLOAD",
+  "RAW_RECEIPT",
+  "AUTOMATIC_VALIDATION",
+  "STANDARDIZATION",
+  "ANNOTATION",
+  "REVIEW",
+  "PUBLICATION",
+] as const;
 
 function stateFromError(error: unknown): PageStateKind {
   if (!isDomainError(error)) return "contract-mismatch";
@@ -150,6 +164,12 @@ function renderRegion(
 
 export function DashboardPage() {
   const shellScope = useShellStore((state) => state.scope);
+  const unscopedAccount = useShellStore(
+    (state) =>
+      state.bootstrapLoaded &&
+      !state.authorizationFailed &&
+      state.scope === null,
+  );
   const scopeKey = useShellStore((state) => state.scopeKey);
   const scope: DashboardScope | null =
     shellScope?.projectId && shellScope.regionCode
@@ -161,11 +181,7 @@ export function DashboardPage() {
         }
       : null;
   const capabilities = useCapabilities();
-  const dashboardReadGranted = useShellStore((state) =>
-    new Set<string>(state.authorization?.capabilities ?? []).has(
-      "dashboard.read",
-    ),
-  );
+  const dashboardReadGranted = capabilities.has("dashboard.read");
   const [searchParams, setSearchParams] = useSearchParams();
   const search = dashboardQueryCodec.parse(searchParams);
   const [anchor, setAnchor] = useState(
@@ -200,7 +216,7 @@ export function DashboardPage() {
     [anchor, search.from, search.range, search.to],
   );
   const activity = useDashboardActivity(scope, window, routeAllowed);
-  const snapshot = useDashboardSnapshot(scope, window, routeAllowed);
+  const taskStatus = useDashboardTaskStatus(scope, search.taskId, routeAllowed);
   const pending = useDashboardPending(scope, window, routeAllowed);
   const pendingPageInput = useMemo(
     () => ({ limit: 50 as const, ...pendingCursor }),
@@ -213,27 +229,84 @@ export function DashboardPage() {
     routeAllowed && pendingOpen && !scopeChanged,
   );
 
-  const queries = [activity, snapshot, pending] as const;
+  const unscopedData = useMemo(() => {
+    const section = {
+      status: "EMPTY" as const,
+      asOf: window.to,
+      error: null,
+    };
+    return {
+      taskStatus: {
+        asOf: window.to,
+        section,
+        tasks: [],
+        pipeline: {
+          taskCount: 0,
+          packageCount: 0,
+          qc: { waiting: 0, passed: 0, risk: 0, rejected: 0, unavailable: 0 },
+          stages: taskStageOrder.map((stage) => ({
+            stage,
+            waiting: 0,
+            running: 0,
+            succeeded: 0,
+            risk: 0,
+            isolated: 0,
+            blocked: 0,
+            failed: 0,
+            unavailable: 0,
+          })),
+          unavailableSources: [],
+        },
+        selectedTaskId: null,
+        selected: null,
+      } satisfies DashboardTaskStatus,
+      pending: {
+        asOf: window.to,
+        section,
+        authorizedSourceTypes: [],
+        items: [],
+        pageInfo: null,
+      } satisfies DashboardPendingPage,
+      activity: {
+        from: window.from,
+        to: window.to,
+        timezone: DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
+        asOf: window.to,
+        section,
+        items: [],
+        pageInfo: null,
+      } satisfies DashboardActivity,
+    };
+  }, [window.from, window.to]);
+  const taskStatusData = unscopedAccount
+    ? unscopedData.taskStatus
+    : taskStatus.data;
+  const pendingData = unscopedAccount ? unscopedData.pending : pending.data;
+  const activityData = unscopedAccount ? unscopedData.activity : activity.data;
+
+  const queries = [activity, taskStatus, pending] as const;
   const fatal = queries.every(
     (query) => query.error && query.data === undefined,
   );
   const pageState: PageStateKind | "ready" = capabilities.loading
     ? "loading"
-    : capabilities.failed || !routeAllowed
-      ? "forbidden"
+    : unscopedAccount
+      ? "ready"
       : !scope
         ? "feature-unavailable"
-        : fatal
-          ? stateFromError(
-              activity.error ?? snapshot.error ?? pending.error,
-            )
-          : "ready";
-  const pendingState = queryState(pending);
-  const activityState = queryState(activity);
-  const snapshotState = queryState(snapshot);
+        : capabilities.failed || !routeAllowed
+          ? "forbidden"
+          : fatal
+            ? stateFromError(
+                activity.error ?? taskStatus.error ?? pending.error,
+              )
+            : "ready";
+  const pendingState = unscopedAccount ? "ready" : queryState(pending);
+  const activityState = unscopedAccount ? "ready" : queryState(activity);
+  const taskStatusState = unscopedAccount ? "ready" : queryState(taskStatus);
   const pendingPageState = queryState(pendingPage);
 
-  const pendingContent = pending.data ? (
+  const pendingContent = pendingData ? (
     <section
       className={`${styles.panel} ${styles.pendingPanel}`}
       aria-labelledby="dashboard-pending-title"
@@ -245,12 +318,12 @@ export function DashboardPage() {
         </div>
         <div className={styles.panelHeadingActions}>
           <StatusTag
-            status={pending.data.section.status}
-            label={sectionLabel(pending.data.section.status)}
+            status={pendingData.section.status}
+            label={sectionLabel(pendingData.section.status)}
             known
-            tone={sectionTone(pending.data.section.status)}
+            tone={sectionTone(pendingData.section.status)}
           />
-          {pending.data.pageInfo?.hasNextPage ? (
+          {pendingData.pageInfo?.hasNextPage ? (
             <Button type="link" onClick={() => setPendingOpen(true)}>
               查看全部
             </Button>
@@ -258,23 +331,23 @@ export function DashboardPage() {
         </div>
       </div>
       <DashboardSectionNotice
-        section={pending.data.section}
+        section={pendingData.section}
         label="我的待办"
         onRetry={() => void pending.refetch()}
       />
-      {pending.data.items.length === 0 ? (
+      {pendingData.items.length === 0 ? (
         <div className={styles.compactState}>
           <PageState state="empty" label="我的待办" title="当前时段暂无待办" />
         </div>
       ) : (
-        <DashboardPendingList items={pending.data.items} />
+        <DashboardPendingList items={pendingData.items} />
       )}
     </section>
   ) : null;
 
-  const activityContent = activity.data ? (
+  const activityContent = activityData ? (
     <DashboardActivityList
-      activity={activity.data}
+      activity={activityData}
       onRetry={() => void activity.refetch()}
     />
   ) : null;
@@ -282,13 +355,23 @@ export function DashboardPage() {
   const readyContent = (
     <div className={styles.contentStack}>
       {renderRegion(
-        snapshotState,
+        taskStatusState,
         "信号轨道",
-        snapshot.error,
-        snapshot.data ? (
-          <AssetCapacityBoard snapshot={snapshot.data} pending={pending.data} />
+        taskStatus.error,
+        taskStatusData ? (
+          <AssetCapacityBoard
+            taskStatus={taskStatusData}
+            onTaskChange={(taskId) =>
+              setSearchParams(
+                dashboardQueryCodec.build({
+                  ...search,
+                  taskId: taskId ?? undefined,
+                }),
+              )
+            }
+          />
         ) : null,
-        () => void snapshot.refetch(),
+        () => void taskStatus.refetch(),
       )}
       <div className={styles.lowerGrid}>
         {renderRegion(
@@ -314,7 +397,7 @@ export function DashboardPage() {
   const firstError = queries.find((query) => query.error)?.error;
   const blockingState: PageStateKind =
     pageState === "ready" ? "error" : pageState;
-  const asOf = snapshot.data?.asOf ?? activity.data?.asOf ?? pending.data?.asOf;
+  const asOf = taskStatusData?.asOf ?? activityData?.asOf ?? pendingData?.asOf;
   const refreshing = queries.some(
     (query) => query.isFetching && query.data !== undefined,
   );
@@ -327,11 +410,14 @@ export function DashboardPage() {
           breadcrumbs: [{ key: "dashboard", label: "工作台" }],
           actions: (
             <>
-              <label className={styles.rangeControl}>
+              <label
+                className={styles.rangeControl}
+                title="仅筛选最近活动与我的待办，不影响任务当前状态"
+              >
                 <Clock3 aria-hidden="true" size={16} />
-                <span className={styles.srOnly}>时间范围</span>
+                <span className={styles.srOnly}>最近活动与待办时间范围</span>
                 <Select
-                  aria-label="时间范围"
+                  aria-label="最近活动与待办时间范围"
                   value={search.range}
                   options={[
                     { value: "24h", label: "最近 24 小时" },
@@ -348,7 +434,9 @@ export function DashboardPage() {
                       : []),
                   ]}
                   onChange={(range: DashboardRange) => {
-                    setSearchParams(dashboardQueryCodec.build({ range }));
+                    setSearchParams(
+                      dashboardQueryCodec.build({ ...search, range }),
+                    );
                     setAnchor(new Date(Math.floor(Date.now() / 1_000) * 1_000));
                   }}
                 />
@@ -366,6 +454,7 @@ export function DashboardPage() {
               <Button
                 icon={<RefreshCw aria-hidden="true" size={16} />}
                 aria-label="刷新工作台"
+                disabled={!scope}
                 loading={refreshing}
                 onClick={() => {
                   setAnchor(new Date(Math.floor(Date.now() / 1_000) * 1_000));

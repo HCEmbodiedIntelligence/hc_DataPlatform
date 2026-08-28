@@ -100,29 +100,32 @@ for (const viewport of viewports) {
     });
     await openDashboard(page);
 
-    const rail = page.getByRole("list", {
+    const stages = page.getByRole("list", {
       name: "采集到发布的固定八阶段",
     });
-    await expect(rail.getByRole("listitem")).toHaveCount(8);
-    await expect(page.getByText("已采集", { exact: true })).toBeVisible();
-    await expect(page.getByText("已接收", { exact: true })).toBeVisible();
-    await expect(rail.getByText("30 Hz 对齐", { exact: true })).toBeVisible();
-    await expect(rail.getByText("数据标注", { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: /进入发布/ })).toBeVisible();
-    await expect(page.getByText("清洗", { exact: true })).toHaveCount(0);
+    await expect(stages.getByRole("listitem")).toHaveCount(8);
+    await expect(stages.getByText("采集", { exact: true })).toBeVisible();
+    await expect(stages.getByText("登记上传", { exact: true })).toBeVisible();
+    await expect(stages.getByText("Raw 接收", { exact: true })).toBeVisible();
+    await expect(stages.getByText("标准化入库", { exact: true })).toBeVisible();
+    await expect(stages.getByText("数据标注", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "查看 Raw 诊断" }),
+    ).toBeVisible();
+    await expect(page.getByText("任务目标", { exact: true })).toHaveCount(0);
 
     const geometry = await page.evaluate(() => {
       const pending = document.querySelector(
         '[aria-labelledby="dashboard-pending-title"]',
       );
       const side = document.querySelector('[aria-label="最近活动"]');
-      const rail = document.querySelector(
+      const stages = document.querySelector(
         '[aria-label="采集到发布的固定八阶段"]',
       );
       if (
         !(pending instanceof HTMLElement) ||
         !(side instanceof HTMLElement) ||
-        !(rail instanceof HTMLElement)
+        !(stages instanceof HTMLElement)
       ) {
         throw new Error("E03 layout nodes are missing");
       }
@@ -131,22 +134,22 @@ for (const viewport of viewports) {
         viewportWidth: window.innerWidth,
         pendingWidth: pending.getBoundingClientRect().width,
         sideWidth: side.getBoundingClientRect().width,
-        railOverflow: rail.scrollWidth - rail.clientWidth,
+        stageOverflow: stages.scrollWidth - stages.clientWidth,
       };
     });
 
     expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
     expect(geometry.pendingWidth / geometry.sideWidth).toBeGreaterThan(1.55);
     expect(geometry.pendingWidth / geometry.sideWidth).toBeLessThan(2.3);
-    expect(geometry.railOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.stageOverflow).toBeLessThanOrEqual(1);
     await expect(page.getByRole("heading", { name: "局部状态" })).toHaveCount(
       0,
     );
     await expect(page.getByText("采集覆盖率", { exact: true })).toHaveCount(0);
 
-    const publishLink = page.getByRole("link", { name: /进入发布/ });
-    await publishLink.focus();
-    const focus = await publishLink.evaluate((element) => {
+    const primaryLink = page.getByRole("link", { name: "查看 Raw 诊断" });
+    await primaryLink.focus();
+    const focus = await primaryLink.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
         outlineStyle: style.outlineStyle,
@@ -159,7 +162,7 @@ for (const viewport of viewports) {
     expect(
       await contrastRatio(page.getByRole("heading", { name: "工作台" })),
     ).toBeGreaterThanOrEqual(4.5);
-    expect(await contrastRatio(publishLink)).toBeGreaterThanOrEqual(4.5);
+    expect(await contrastRatio(primaryLink)).toBeGreaterThanOrEqual(4.5);
 
     const unnamedInteractiveNodes = await page.evaluate(() =>
       [...document.querySelectorAll("a, button, input, select, textarea")]
@@ -190,32 +193,24 @@ for (const viewport of viewports) {
       fullPage: false,
     });
 
-    const projectName = page.getByText("prj_fx_01", { exact: true }).first();
-    await expect(projectName).toBeVisible();
-    const longProjectLayout = await projectName.evaluate((element) => {
-      const selectionItem =
-        element.closest(".ant-select-selection-item") ?? element;
-      if (!(selectionItem instanceof HTMLElement)) {
-        throw new Error("Current project selector value is missing");
-      }
+    const taskName = page.getByText("双臂装配采集", { exact: true }).first();
+    await expect(taskName).toBeVisible();
+    const longTaskLayout = await taskName.evaluate((element) => {
       element.textContent =
-        "华东机器人多模态数据闭环验证与量产交付超长项目名称";
+        "华东机器人多模态双臂装配闭环验证与量产交付超长采集任务名称";
       return {
         documentWidth: document.documentElement.scrollWidth,
         viewportWidth: window.innerWidth,
-        itemWidth: selectionItem.clientWidth,
-        itemScrollWidth: selectionItem.scrollWidth,
       };
     });
-    expect(longProjectLayout.documentWidth).toBeLessThanOrEqual(
-      longProjectLayout.viewportWidth,
-    );
-    expect(longProjectLayout.itemScrollWidth).toBeGreaterThan(
-      longProjectLayout.itemWidth,
+    expect(longTaskLayout.documentWidth).toBeLessThanOrEqual(
+      longTaskLayout.viewportWidth,
     );
 
     if (viewport.name === "1440x900") {
-      const rangeSelect = page.getByRole("combobox", { name: "时间范围" });
+      const rangeSelect = page.getByRole("combobox", {
+        name: "最近活动与待办时间范围",
+      });
       await rangeSelect.click();
       await rangeSelect.press("ArrowDown");
       await rangeSelect.press("Enter");
@@ -237,11 +232,13 @@ test("E03 empty state keeps the same information architecture", async ({
   await page.getByRole("button", { name: "刷新工作台" }).click();
   await expect(page.getByText("当前时段暂无待办")).toBeVisible();
   await expect(page.getByText("当前时段暂无活动")).toBeVisible();
-  await expect(
-    page
-      .getByRole("list", { name: "采集到发布的固定八阶段" })
-      .getByRole("listitem"),
-  ).toHaveCount(8);
+  await expect(page.getByText("当前范围没有采集任务")).toBeVisible();
+  const emptyRail = page.getByRole("list", {
+    name: "采集到发布的固定八阶段",
+  });
+  await expect(emptyRail).toBeVisible();
+  await expect(emptyRail.getByRole("listitem")).toHaveCount(8);
+  await expect(emptyRail.getByText("0 个数据包")).toHaveCount(8);
 
   const horizontalScroll = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,

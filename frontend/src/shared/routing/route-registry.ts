@@ -33,7 +33,7 @@ const canonicalPatterns = new Set<string>([
   "/settings/robot-models",
   "/settings/robots",
   "/settings/calibrations",
-  "/settings/data-schemas",
+  "/exports",
   "/settings/access",
   "/settings/audit",
 ]);

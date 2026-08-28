@@ -34,4 +34,4 @@ class McapSdkChunkDecompressor:
             uncompressed_size=uncompressed_size,
         )
         stream, decoded_size = get_chunk_data_stream(chunk, validate_crc=False)
-        return stream.read(decoded_size)
+        return bytes(stream.read(decoded_size))

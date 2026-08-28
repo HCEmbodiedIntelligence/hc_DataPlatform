@@ -16,13 +16,54 @@
   padding-inline-end: var(--hc-space-4);
 }
 
-.tableStack {
+.page :global([data-layout="standard-page"]) {
+  gap: var(--hc-space-3);
+}
+
+.page
+  :global(
+    [data-layout="standard-page"] > section[aria-label="采集任务主内容"]
+  ) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.paginationHint {
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.listPanel {
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-md);
+  background: var(--hc-color-surface);
+}
+
+.embeddedToolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hc-space-3);
+  align-items: end;
+  padding: var(--hc-space-3) var(--hc-space-4);
+  border-bottom: 1px solid var(--hc-color-border-subtle);
+}
+
+.filterFields {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  gap: var(--hc-space-3);
 }
 
 .filterField {
   display: grid;
-  min-width: 128px;
+  min-width: 132px;
   gap: var(--hc-space-1);
   color: var(--hc-color-text-muted);
   font-size: 0.75rem;
@@ -32,119 +73,356 @@
 .filterField :global(.ant-select),
 .filterField :global(.ant-input-affix-wrapper),
 .filterField > :global(.ant-input) {
-  min-width: 128px;
+  width: 100%;
+  min-width: 0;
 }
 
 .searchField {
-  flex: 1 1 220px;
-  max-width: 320px;
+  min-width: 260px;
+  flex: 1 1 360px;
 }
 
-.pagination {
+.toolbarStatus {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--hc-space-2);
+}
+
+.windowCount {
+  color: var(--hc-color-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.listBody {
+  min-width: 0;
+}
+
+.listBody :global(.hc-data-table .ant-table) {
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--hc-color-surface);
+  box-shadow: none;
+}
+
+.listBody :global(.hc-data-table .ant-table-thead > tr > th) {
+  padding-block: 9px;
+  color: var(--hc-color-text-muted);
+  background: var(--hc-color-surface-muted);
+}
+
+.listBody :global(.hc-data-table .ant-table-tbody > tr > td) {
+  padding: var(--hc-space-3);
+  vertical-align: top;
+}
+
+.listBody :global(.hc-data-table .ant-table-tbody > tr:hover > td) {
+  background: var(--hc-color-surface-muted);
+}
+
+.listBody :global([data-page-state="partial"] > .ant-alert) {
+  margin: var(--hc-space-3);
+}
+
+.paginationBar {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hc-space-3);
+  padding: var(--hc-space-2) var(--hc-space-4);
+  border-top: 1px solid var(--hc-color-border-subtle);
 }
 
 .taskIdentity,
-.qualityValue,
-.packageProgress {
+.receivedProgress,
+.qualityProgress,
+.progressTime {
   display: grid;
   min-width: 0;
-  gap: 2px;
 }
 
 .taskIdentity {
-  border-radius: var(--hc-radius-sm);
+  gap: 3px;
+}
+
+.taskNameLink {
+  width: fit-content;
+  max-width: 100%;
+  border-radius: var(--hc-radius-xs);
   color: inherit;
-  cursor: pointer;
   text-decoration: none;
 }
 
-.taskIdentity:hover strong {
+.taskNameLink:hover strong {
   color: var(--hc-color-primary-hover);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.taskIdentity:focus-visible {
-  outline: 2px solid var(--hc-color-primary);
+.taskNameLink:focus-visible,
+.viewDataAction:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
   outline-offset: 2px;
 }
 
-.taskIdentity strong {
+.taskNameLink strong {
   display: -webkit-box;
   overflow: hidden;
   color: var(--hc-color-text);
   font-size: 0.875rem;
-  font-weight: 650;
-  line-height: 1.35;
+  font-weight: 680;
+  line-height: 1.4;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.taskIdentity code,
+.taskCode,
 .closeIdentity code {
+  width: fit-content;
   color: var(--hc-color-text-muted);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
 }
 
-.projectId,
-.typeValue {
-  display: block;
-  max-width: 15ch;
+.taskDataset {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+}
+
+.taskDataset code {
   overflow: hidden;
+  color: var(--hc-color-text-secondary);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.projectId {
+.taskMetadata {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 2px var(--hc-space-1);
   color: var(--hc-color-text-muted);
   font-size: 0.75rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
-.packageProgress {
-  width: 132px;
+.receivedProgress {
+  gap: var(--hc-space-1);
 }
 
-.packageProgress :global(.ant-progress) {
-  margin: 0;
+.attainmentStatus {
+  width: fit-content;
+  color: var(--hc-color-primary);
+  font-size: 0.75rem;
+  font-weight: 650;
 }
 
-.packageProgress :global(.ant-progress-bg) {
-  background: var(--hc-color-signal);
-}
-
-.packageProgress small,
-.qualityValue small {
+.attainmentStatus[data-status="NOT_CONFIGURED"] {
   color: var(--hc-color-text-muted);
+}
+
+.attainmentStatus[data-status="ATTAINED"] {
+  color: var(--hc-color-success-text);
+}
+
+.attainmentStatus[data-status="EXCEEDED"] {
+  color: var(--hc-color-warning-text);
+}
+
+.metricProgress {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.metricHeading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--hc-space-2);
+}
+
+.metricHeading b,
+.metricHeading small,
+.metricValue,
+.qualityRequirement,
+.progressTime small,
+.staleValue {
   font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.metricHeading b {
+  color: var(--hc-color-text-muted);
+  font-weight: 600;
+}
+
+.metricHeading small,
+.qualityRequirement,
+.progressTime small {
+  color: var(--hc-color-text-muted);
+}
+
+.metricValue {
+  color: var(--hc-color-text);
   font-variant-numeric: tabular-nums;
-  line-height: 1.35;
 }
 
-.attainmentValue {
-  color: var(--hc-color-text-secondary);
+.metricProgress :global(.ant-progress) {
+  width: min(100%, 148px);
+  margin: 0;
+  line-height: 1;
 }
 
-.qualityValue {
-  color: var(--hc-color-success);
+.metricProgress :global(.ant-progress-inner),
+.metricProgress :global(.ant-progress-bg) {
+  height: 4px !important;
+  border-radius: 2px;
+}
+
+.metricProgress :global(.ant-progress-bg) {
+  background: var(--hc-color-primary);
+}
+
+.durationWarning,
+.progressError {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--hc-space-1);
+  color: var(--hc-color-warning-text);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.staleValue {
+  color: var(--hc-color-warning-text);
+}
+
+.progressUnavailable {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hc-space-1);
+}
+
+.progressUnavailable :global(.ant-btn-link) {
+  height: 28px;
+  padding-inline: var(--hc-space-1);
+}
+
+.qualityProgress {
+  gap: var(--hc-space-1);
+}
+
+.qcCounts {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--hc-space-1) var(--hc-space-2);
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
 
+.qcPass {
+  color: var(--hc-color-success-text);
+}
+
+.qcRisk {
+  color: var(--hc-color-warning-text);
+}
+
+.qcReject,
+.qualityNotMet {
+  color: var(--hc-color-error-text);
+}
+
+.qcPending,
+.qualityUnconfigured {
+  color: var(--hc-color-neutral-text);
+}
+
+.passRate {
+  width: fit-content;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.qualityMet {
+  color: var(--hc-color-success-text);
+}
+
+.qualityPending {
+  color: var(--hc-color-warning-text);
+}
+
+.qualityRequirement b {
+  font-weight: 650;
+}
+
+.progressTime {
+  gap: 2px;
+}
+
+.progressTime time {
+  color: var(--hc-color-text);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .progressPending,
-.progressError,
 .mutedValue {
   color: var(--hc-color-text-muted);
   font-size: 0.75rem;
 }
 
-.progressError {
-  display: inline-flex;
-  gap: var(--hc-space-1);
-  align-items: center;
-  color: var(--hc-color-warning);
+.mobileTaskList {
+  display: grid;
+  min-width: 0;
+}
+
+.mobileTaskCard {
+  display: grid;
+  min-width: 0;
+  gap: var(--hc-space-3);
+  padding: var(--hc-space-4);
+}
+
+.mobileTaskCard + .mobileTaskCard {
+  border-top: 1px solid var(--hc-color-border-subtle);
+}
+
+.mobileTaskSection {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: var(--hc-space-3);
+  align-items: start;
+}
+
+.mobileTaskLabel {
+  color: var(--hc-color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 .editorDrawer {
@@ -295,14 +573,85 @@
   overflow-wrap: anywhere;
 }
 
-.page :global(.hc-data-table .ant-table-cell) {
-  vertical-align: middle;
+.taskActions {
+  display: flex;
+  min-width: 0;
+  min-height: 36px;
+  align-items: center;
+  gap: var(--hc-space-1);
+  white-space: nowrap;
 }
 
-.page :global(.hc-data-table .ant-btn-link) {
-  height: 28px;
-  padding-inline: 0;
+.viewDataAction {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: var(--hc-space-1);
+  padding-inline: var(--hc-space-2);
+  border-radius: var(--hc-radius-xs);
+  color: var(--hc-color-primary);
   font-size: 0.75rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.viewDataAction:hover {
+  background: var(--hc-color-surface-tint);
+  color: var(--hc-color-primary-hover);
+}
+
+.viewDataAction:active {
+  background: var(--hc-color-surface-muted);
+  color: var(--hc-color-primary-active);
+}
+
+.moreTaskActions:global(.ant-btn):focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+
+.moreTaskActions:global(.ant-btn) {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  color: var(--hc-color-text-muted);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.moreTaskActions:global(.ant-btn):hover {
+  background: var(--hc-color-surface-muted);
+  color: var(--hc-color-text);
+}
+
+.moreTaskActions:global(.ant-btn):active {
+  background: var(--hc-color-surface-tint);
+  color: var(--hc-color-primary-active);
+}
+
+.taskActionDropdown :global(.ant-dropdown-menu) {
+  min-width: 144px;
+  padding: var(--hc-space-1);
+}
+
+.taskActionDropdown :global(.ant-dropdown-menu-item) {
+  min-height: 38px;
+  gap: var(--hc-space-2);
+  padding: var(--hc-space-2) var(--hc-space-3);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.taskActionDropdown :global(.ant-dropdown-menu-item-icon) {
+  min-width: 16px;
 }
 
 @media (max-width: 1180px) {
@@ -326,7 +675,13 @@
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
+  .embeddedToolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
   .editorDrawer {
     left: 0;
     width: 100vw;
@@ -342,13 +697,110 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .page :global([data-layout="standard-page"]) {
+    gap: var(--hc-space-3);
+  }
+
+  .embeddedToolbar {
+    padding: var(--hc-space-3);
+  }
+
+  .filterFields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--hc-space-2);
+  }
+
+  .filterField {
+    min-width: 0;
+  }
+
   .searchField {
-    max-width: none;
+    min-width: 0;
+    grid-column: 1 / -1;
+  }
+
+  .filterField :global(.ant-input-affix-wrapper),
+  .filterField > :global(.ant-input),
+  .filterField :global(.ant-select-selector) {
+    min-height: 44px !important;
+  }
+
+  .toolbarStatus {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .toolbarStatus :global(.ant-btn),
+  .paginationBar :global(.ant-btn),
+  .page :global(.ant-btn),
+  .editorDrawer :global(.ant-btn) {
+    min-height: 44px;
+  }
+
+  .paginationBar {
+    min-height: 60px;
+    padding-inline: var(--hc-space-3);
+  }
+
+  .paginationHint {
+    display: none;
+  }
+
+  .paginationBar :global(.ant-space) {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .mobileTaskCard {
+    gap: var(--hc-space-3);
+    padding: var(--hc-space-3);
+  }
+
+  .mobileTaskSection {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: var(--hc-space-2);
+  }
+
+  .mobileTaskSection > :global(.ant-tag) {
+    width: fit-content;
+    justify-self: start;
+  }
+
+  .mobileTaskSection .metricHeading b,
+  .mobileTaskSection .metricHeading small,
+  .mobileTaskSection .metricValue,
+  .mobileTaskSection .qualityRequirement,
+  .mobileTaskSection .progressTime small,
+  .mobileTaskSection .staleValue,
+  .mobileTaskSection .durationWarning {
+    font-size: 0.75rem;
+  }
+
+  .mobileTaskActions .taskActions {
+    justify-content: flex-start;
+  }
+
+  .viewDataAction,
+  .moreTaskActions:global(.ant-btn) {
+    min-height: 44px;
+  }
+
+  .moreTaskActions:global(.ant-btn) {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .editorDrawer {
     scroll-behavior: auto;
+  }
+
+  .viewDataAction,
+  .moreTaskActions:global(.ant-btn),
+  .taskActionDropdown :global(.ant-dropdown-menu-item) {
+    transition: none;
   }
 }

@@ -170,6 +170,54 @@ describe("RuntimePlatformShell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("loads an empty bootstrap once and keeps the personal shell usable", async () => {
+    const store = useShellStore.getState();
+    store.setSession(
+      {
+        actorId: "runtime-shell-user",
+        displayName: "Runtime Shell User",
+        roleIds: [],
+      },
+      "hcs_runtime-shell-session",
+    );
+    const bootstrapSpy = vi
+      .spyOn(authApi, "getSessionBootstrap")
+      .mockResolvedValue({
+        principal: {
+          principal_id: "runtime-shell-user",
+          username: "runtime-shell-user",
+          display_name: "Runtime Shell User",
+          status: "ACTIVE",
+          created_at: "2026-08-24T00:00:00Z",
+        },
+        available_organizations: [],
+        available_scopes: [],
+        platform_capabilities: [],
+        capability_revision: 2,
+      });
+
+    renderAuthenticatedShell();
+
+    expect(await screen.findByText("尚未加入组织或项目")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "个人主页" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "通知" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "工作台" })).toBeVisible();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "账户菜单" }));
+    expect(
+      await screen.findByRole("link", { name: "个人主页" }),
+    ).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "账户设置" })).toHaveAttribute(
+      "href",
+      "/account/settings",
+    );
+    await waitFor(() => expect(bootstrapSpy).toHaveBeenCalledTimes(1));
+    expect(useShellStore.getState().authorization).toBeNull();
+    expect(useShellStore.getState().bootstrapLoaded).toBe(true);
+  });
+
   it("revokes the server session, clears local credentials, and redirects to login", async () => {
     installAuthenticatedSession();
     const logoutSpy = vi

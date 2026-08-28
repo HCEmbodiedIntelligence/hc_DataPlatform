@@ -12,6 +12,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 
+from .device_facts import DeviceCaptureFactService, InMemoryDeviceCaptureFactRepository
 from .manifest import (
     MAX_MANIFEST_BYTES,
     decode_bounded_json,
@@ -21,6 +22,8 @@ from .manifest import (
 )
 from .models import (
     CompletedPart,
+    DeviceCaptureFact,
+    DeviceCaptureFactRequest,
     FailedPartV1,
     ManifestPreflightResultV1,
     PartAuthorization,
@@ -41,6 +44,7 @@ from .service import UploadSessionService
 router = APIRouter(prefix="/api/v1", tags=["ingest"])
 _configured_service: UploadSessionService | None = None
 _configured_job_status: UploadJobStatusPort | None = None
+_configured_device_facts: DeviceCaptureFactService | None = None
 
 
 class CreateUploadRequest(BaseModel):
@@ -134,10 +138,55 @@ def configure_ingest_job_status(status: UploadJobStatusPort | None) -> None:
     get_upload_job_status.cache_clear()
 
 
+@lru_cache(maxsize=1)
+def get_device_capture_facts() -> DeviceCaptureFactService:
+    if _configured_device_facts is not None:
+        return _configured_device_facts
+    return DeviceCaptureFactService(InMemoryDeviceCaptureFactRepository())
+
+
+def configure_device_capture_facts(service: DeviceCaptureFactService | None) -> None:
+    global _configured_device_facts
+    _configured_device_facts = service
+    get_device_capture_facts.cache_clear()
+
+
 def _no_store(response: Response) -> None:
     """Keep tenant-scoped upload facts out of browser and intermediary caches."""
 
     response.headers["Cache-Control"] = "no-store"
+
+
+@router.post(
+    "/projects/{project_id}/regions/{region_code}/device-capture-facts",
+    response_model=DeviceCaptureFact,
+)
+def record_device_capture_fact(
+    project_id: str,
+    region_code: str,
+    command: DeviceCaptureFactRequest,
+    response: Response,
+    auth: Auth,
+) -> DeviceCaptureFact:
+    _no_store(response)
+    _authorize(auth, project_id, region_code)
+    organization_id = current_request_context().organization_id
+    if organization_id is None:
+        raise problem(
+            status=403,
+            code="ORGANIZATION_SCOPE_REQUIRED",
+            title="Organization scope required",
+            detail="Device capture facts require an exact organization scope.",
+        )
+    ScopeGuard.require(auth, project_id, region_code, organization_id)
+    select_request_scope(project_id, region_code, organization_id=organization_id)
+    return get_device_capture_facts().record(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        request=command,
+    )
 
 
 @router.post(
@@ -168,7 +217,7 @@ async def preflight_upload_manifest(
             title="Project path mismatch",
             detail="The path project and manifest project must match.",
         )
-    return result
+    return get_service().preflight_upload_manifest(result.manifest)
 
 
 @router.post(

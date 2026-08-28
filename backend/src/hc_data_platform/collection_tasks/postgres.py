@@ -14,9 +14,13 @@ from hc_data_platform.security.audit import canonical_hash
 
 from .models import (
     CollectionTarget,
+    CollectionTaskPackage,
+    CollectionTaskPackageState,
     CollectionTaskRecord,
     CollectionTaskStatus,
     ProgressFacts,
+    QcOutcome,
+    dataset_id_for_collection_task,
 )
 from .repository import task_cancelled, task_closed, task_not_found, version_conflict
 
@@ -24,6 +28,56 @@ from .repository import task_cancelled, task_closed, task_not_found, version_con
 class PostgresCollectionTaskRepository:
     def __init__(self, connection_factory: Callable[[], Any]) -> None:
         self._connection_factory = connection_factory
+
+    def is_dataset_assignable(self, organization_id: str, project_id: str, dataset_id: str) -> bool:
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                          FROM dataset_registry.datasets
+                         WHERE organization_id = %s AND project_id = %s
+                           AND dataset_id = %s AND availability = 'ACTIVE'
+                    )
+                    """,
+                    (organization_id, project_id, dataset_id),
+                )
+                row = cursor.fetchone()
+                return bool(row and row[0])
+        finally:
+            connection.close()
+
+    def has_received_packages(
+        self, organization_id: str, project_id: str, collection_task_id: str
+    ) -> bool:
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                          FROM ingest.collection_jobs job
+                          JOIN ingest.rollouts rollout
+                            ON rollout.organization_id = job.organization_id
+                           AND rollout.project_id = job.project_id
+                           AND rollout.collection_job_id = job.collection_job_id
+                          JOIN ingest.rollout_objects object
+                            ON object.organization_id = rollout.organization_id
+                           AND object.project_id = rollout.project_id
+                           AND object.rollout_id = rollout.rollout_id
+                         WHERE job.organization_id = %s AND job.project_id = %s
+                           AND job.task_id = %s
+                    )
+                    """,
+                    (organization_id, project_id, collection_task_id),
+                )
+                row = cursor.fetchone()
+                return bool(row and row[0])
+        finally:
+            connection.close()
 
     def create(self, task: CollectionTaskRecord) -> CollectionTaskRecord:
         connection = self._connection_factory()
@@ -33,11 +87,11 @@ class PostgresCollectionTaskRepository:
                     """
                     INSERT INTO collection_tasks.collection_tasks (
                         collection_task_id, organization_id, project_id, created_by,
-                        task_code, name, task_type,
+                        dataset_id, task_code, name, task_type,
                         scenario, description, target_json, quality_threshold, status,
                         version, create_fingerprint, created_at, updated_at
                     ) VALUES (
-                        %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
                         lpad(nextval('collection_tasks.task_code_sequence')::text, 8, '0'),
                         %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s
                     )
@@ -48,6 +102,12 @@ class PostgresCollectionTaskRepository:
                         task.organization_id,
                         task.project_id,
                         task.created_by,
+                        task.dataset_id
+                        or dataset_id_for_collection_task(
+                            task.organization_id,
+                            task.project_id,
+                            task.collection_task_id,
+                        ),
                         task.name,
                         task.type,
                         task.scenario,
@@ -146,6 +206,7 @@ class PostgresCollectionTaskRepository:
         changes: dict[str, object],
     ) -> CollectionTaskRecord:
         column_names = {
+            "dataset_id": "dataset_id",
             "name": "name",
             "type": "task_type",
             "scenario": "scenario",
@@ -199,8 +260,20 @@ class PostgresCollectionTaskRepository:
                 )
             connection.commit()
             return updated
-        except Exception:
+        except Exception as exc:
             connection.rollback()
+            if getattr(
+                exc, "sqlstate", None
+            ) == "23514" and "COLLECTION_TASK_DATASET_REASSIGNMENT_BLOCKED" in str(exc):
+                raise problem(
+                    status=409,
+                    code="COLLECTION_TASK_DATASET_REASSIGNMENT_BLOCKED",
+                    title="Dataset assignment is locked",
+                    detail=(
+                        "This task received data while its Dataset assignment was "
+                        "being changed. Reload the task and keep its current Dataset."
+                    ),
+                ) from exc
             raise
         finally:
             connection.close()
@@ -506,10 +579,167 @@ class PostgresCollectionTaskRepository:
         finally:
             connection.close()
 
+    def packages(
+        self,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        region_code: str,
+        assigned_dataset_id: str,
+    ) -> tuple[CollectionTaskPackage, ...]:
+        """Return every committed package plus its workflow and Episode lineage."""
+
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    WITH received AS (
+                        SELECT DISTINCT object.data_package_id,
+                               rollout.rollout_id, rollout.robot_id,
+                               object.committed_at AS received_at,
+                               rollout.updated_at
+                          FROM ingest.collection_jobs job
+                          JOIN ingest.rollouts rollout
+                            ON rollout.organization_id = job.organization_id
+                           AND rollout.project_id = job.project_id
+                           AND rollout.collection_job_id = job.collection_job_id
+                          JOIN ingest.rollout_objects object
+                            ON object.organization_id = rollout.organization_id
+                           AND object.project_id = rollout.project_id
+                           AND object.rollout_id = rollout.rollout_id
+                         WHERE job.organization_id = %s
+                           AND job.project_id = %s
+                           AND job.task_id = %s
+                           AND job.region_code = %s
+                           AND rollout.region_code = %s
+                    )
+                    SELECT received.data_package_id, received.rollout_id,
+                           received.robot_id, summary.status,
+                           workflow.status, workflow.stage, workflow.error_code,
+                           publication.dataset_id, publication.version_id,
+                           publication.episode_id, publication.revision_id,
+                           received.received_at,
+                           greatest(
+                               received.updated_at,
+                               COALESCE(workflow.updated_at, received.updated_at),
+                               COALESCE(publication.updated_at, received.updated_at)
+                           ) AS updated_at
+                      FROM received
+                      LEFT JOIN quality_rollout_summaries summary
+                        ON summary.organization_id = %s
+                       AND summary.project_id = %s
+                       AND summary.region_code = %s
+                       AND summary.rollout_id = received.rollout_id
+                      LEFT JOIN LATERAL (
+                          SELECT job.status, job.stage, job.error_code, job.updated_at
+                            FROM workflow.jobs job
+                           WHERE job.organization_id = %s
+                             AND job.project_id = %s
+                             AND job.resource_id = received.rollout_id
+                             AND job.job_type = 'IngestRolloutWorkflow'
+                           ORDER BY job.updated_at DESC, job.job_id DESC
+                           LIMIT 1
+                      ) workflow ON true
+                      LEFT JOIN LATERAL (
+                          SELECT revision.dataset_id, revision.version_id,
+                                 revision.episode_id, revision.revision_id,
+                                 version.created_at AS updated_at
+                            FROM dataset_registry.dataset_version_episode_revisions revision
+                            JOIN dataset_registry.dataset_versions version
+                              ON version.organization_id = revision.organization_id
+                             AND version.project_id = revision.project_id
+                             AND version.region_code = revision.region_code
+                             AND version.dataset_id = revision.dataset_id
+                             AND version.version_id = revision.version_id
+                           WHERE revision.organization_id = %s
+                             AND revision.project_id = %s
+                             AND revision.region_code = %s
+                             AND EXISTS (
+                                 SELECT 1
+                                   FROM jsonb_array_elements(
+                                       COALESCE(
+                                           revision.revision_document -> 'streams',
+                                           '[]'::jsonb
+                                       )
+                                   ) stream
+                                  WHERE stream -> 'preview_binding' ->> 'rollout_id'
+                                            = received.rollout_id
+                                     OR stream -> 'data_binding' ->> 'rollout_id'
+                                            = received.rollout_id
+                             )
+                           ORDER BY version.created_at DESC, revision.ordinal DESC
+                           LIMIT 1
+                      ) publication ON true
+                     ORDER BY received.received_at, received.data_package_id
+                    """,
+                    (
+                        organization_id,
+                        project_id,
+                        collection_task_id,
+                        region_code,
+                        region_code,
+                        organization_id,
+                        project_id,
+                        region_code,
+                        organization_id,
+                        project_id,
+                        organization_id,
+                        project_id,
+                        region_code,
+                    ),
+                )
+                rows = tuple(cursor.fetchall())
+        finally:
+            connection.close()
+
+        items: list[CollectionTaskPackage] = []
+        for row in rows:
+            qc_outcome = None if row[3] is None else QcOutcome(str(row[3]))
+            published_dataset_id = None if row[7] is None else str(row[7])
+            if published_dataset_id is not None:
+                state = (
+                    CollectionTaskPackageState.PUBLISHED
+                    if published_dataset_id == assigned_dataset_id
+                    else CollectionTaskPackageState.DATASET_MISMATCH
+                )
+            elif qc_outcome is QcOutcome.RISK:
+                state = CollectionTaskPackageState.QUALITY_RISK
+            elif qc_outcome is QcOutcome.REJECT:
+                state = CollectionTaskPackageState.QUALITY_REJECTED
+            elif str(row[4] or "") in {"TECHNICAL_FAILED", "FAILED", "CANCELLED"}:
+                state = CollectionTaskPackageState.TECHNICAL_FAILED
+            elif qc_outcome is None:
+                state = CollectionTaskPackageState.PENDING_QC
+            else:
+                state = CollectionTaskPackageState.PROCESSING
+            visualizable = state is CollectionTaskPackageState.PUBLISHED
+            items.append(
+                CollectionTaskPackage(
+                    data_package_id=str(row[0]),
+                    rollout_id=str(row[1]),
+                    robot_id=str(row[2]),
+                    state=state,
+                    qc_outcome=qc_outcome,
+                    workflow_status=None if row[4] is None else str(row[4]),
+                    workflow_stage=None if row[5] is None else str(row[5]),
+                    error_code=None if row[6] is None else str(row[6]),
+                    dataset_id=published_dataset_id,
+                    version_id=None if row[8] is None else str(row[8]),
+                    episode_id=None if row[9] is None else str(row[9]),
+                    revision_id=None if row[10] is None else str(row[10]),
+                    visualizable=visualizable,
+                    received_at=row[11],
+                    updated_at=row[12],
+                )
+            )
+        return tuple(items)
+
     @staticmethod
     def _columns() -> str:
         return (
-            "collection_task_id, organization_id, project_id, created_by, task_code, name, "
+            "collection_task_id, organization_id, project_id, created_by, dataset_id, "
+            "task_code, name, "
             "task_type, scenario, "
             "description, target_json, quality_threshold, status, version, "
             "create_fingerprint, created_at, updated_at"
@@ -539,7 +769,7 @@ class PostgresCollectionTaskRepository:
     @staticmethod
     def _record(row: object) -> CollectionTaskRecord:
         values: tuple[object, ...] = tuple(row)  # type: ignore[arg-type]
-        target = values[9]
+        target = values[10]
         if isinstance(target, str):
             target = json.loads(target)
         return CollectionTaskRecord(
@@ -547,18 +777,19 @@ class PostgresCollectionTaskRepository:
             organization_id=str(values[1]),
             project_id=str(values[2]),
             created_by=None if values[3] is None else str(values[3]),
-            task_code=str(values[4]),
-            name=str(values[5]),
-            type=str(values[6]),
-            scenario=str(values[7]),
-            description=str(values[8]),
+            dataset_id=str(values[4]),
+            task_code=str(values[5]),
+            name=str(values[6]),
+            type=str(values[7]),
+            scenario=str(values[8]),
+            description=str(values[9]),
             target=None if target is None else CollectionTarget.model_validate(target),
-            quality_threshold=(None if values[10] is None else float(cast(float, values[10]))),
-            status=CollectionTaskStatus(str(values[11])),
-            version=cast(int, values[12]),
-            create_fingerprint=str(values[13]),
-            created_at=values[14],
-            updated_at=values[15],
+            quality_threshold=(None if values[11] is None else float(cast(float, values[11]))),
+            status=CollectionTaskStatus(str(values[12])),
+            version=cast(int, values[13]),
+            create_fingerprint=str(values[14]),
+            created_at=values[15],
+            updated_at=values[16],
         )
 
     @staticmethod

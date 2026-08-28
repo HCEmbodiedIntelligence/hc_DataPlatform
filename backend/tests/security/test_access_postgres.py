@@ -123,6 +123,155 @@ def _admin(subject_id: str, organization_id: str, project_id: str) -> AuthContex
     )
 
 
+def test_postgres_access_request_foreign_keys_map_to_their_actual_resource() -> None:
+    dsn = _database_url()
+    asyncio.run(apply_migrations(dsn))
+    suffix = uuid4().hex
+    organization_id = f"foreign-key-organization-{suffix}"
+    project_id = f"foreign-key-project-{suffix}"
+    missing_organization_id = f"missing-organization-{suffix}"
+    missing_project_id = f"missing-project-{suffix}"
+    unregistered_principal_id = str(uuid4())
+    service = AccessService(PostgresAccessRepository.from_dsn(dsn))
+    principal_ids: list[str] = []
+
+    try:
+        normalized = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+        with psycopg.connect(normalized) as connection:
+            connection.execute(
+                "INSERT INTO registry.organization_projects "
+                "(organization_id, project_id) VALUES (%s, %s)",
+                (organization_id, project_id),
+            )
+            connection.commit()
+
+        account = service.register(
+            RegistrationCommand(
+                username=f"foreign-key-account-{suffix}",
+                password="foreign-key-integration-password",
+            ),
+            request_id=f"foreign-key-register-{suffix}",
+        ).principal
+        principal_ids.append(account.principal_id)
+        token = service.login(
+            LoginCommand(
+                username=account.username,
+                password="foreign-key-integration-password",
+            ),
+            request_id=f"foreign-key-login-{suffix}",
+        ).access_token
+        registered_auth = service.authenticate_access_token(token)
+        assert registered_auth is not None
+        unregistered_auth = AuthContext(
+            subject_id=unregistered_principal_id,
+            project_ids=frozenset(),
+            region_codes=frozenset(),
+            roles=frozenset(),
+        )
+
+        membership_key = f"foreign-key-membership-{suffix}"
+        with pytest.raises(ProblemException) as missing_membership_project:
+            service.create_membership_request(
+                auth=registered_auth,
+                organization_id=missing_organization_id,
+                project_id=missing_project_id,
+                command=MembershipRequestCreate(reason="missing project"),
+                idempotency_key=membership_key,
+                request_id=f"missing-membership-project-{suffix}",
+            )
+        assert missing_membership_project.value.problem.status == 404
+        assert missing_membership_project.value.problem.code == "PROJECT_NOT_FOUND"
+        assert (
+            missing_membership_project.value.problem.detail
+            == "The requested project does not exist in the specified organization."
+        )
+
+        membership = service.create_membership_request(
+            auth=registered_auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            command=MembershipRequestCreate(reason="valid project"),
+            idempotency_key=membership_key,
+            request_id=f"valid-membership-{suffix}",
+        )
+        replayed_membership = service.create_membership_request(
+            auth=registered_auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            command=MembershipRequestCreate(reason="valid project"),
+            idempotency_key=membership_key,
+            request_id=f"replayed-membership-{suffix}",
+        )
+        assert membership == replayed_membership
+        assert membership.status is AccessRequestStatus.PENDING
+
+        with pytest.raises(ProblemException) as missing_membership_account:
+            service.create_membership_request(
+                auth=unregistered_auth,
+                organization_id=organization_id,
+                project_id=project_id,
+                command=MembershipRequestCreate(reason="unregistered principal"),
+                idempotency_key=f"missing-membership-account-{suffix}",
+                request_id=f"missing-membership-account-{suffix}",
+            )
+        assert missing_membership_account.value.problem.status == 403
+        assert missing_membership_account.value.problem.code == "ACCOUNT_PRINCIPAL_REQUIRED"
+
+        capability_key = f"foreign-key-capability-{suffix}"
+        capability_command = CapabilityRequestCreate(
+            capability_keys=("datasets.read",),
+            reason="foreign key regression",
+        )
+        with pytest.raises(ProblemException) as missing_capability_project:
+            service.create_capability_request(
+                auth=registered_auth,
+                organization_id=missing_organization_id,
+                project_id=missing_project_id,
+                command=capability_command,
+                idempotency_key=capability_key,
+                request_id=f"missing-capability-project-{suffix}",
+            )
+        assert missing_capability_project.value.problem.status == 404
+        assert missing_capability_project.value.problem.code == "PROJECT_NOT_FOUND"
+
+        capability = service.create_capability_request(
+            auth=registered_auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            command=capability_command,
+            idempotency_key=capability_key,
+            request_id=f"valid-capability-{suffix}",
+        )
+        replayed_capability = service.create_capability_request(
+            auth=registered_auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            command=capability_command,
+            idempotency_key=capability_key,
+            request_id=f"replayed-capability-{suffix}",
+        )
+        assert capability == replayed_capability
+
+        with pytest.raises(ProblemException) as missing_capability_account:
+            service.create_capability_request(
+                auth=unregistered_auth,
+                organization_id=organization_id,
+                project_id=project_id,
+                command=capability_command,
+                idempotency_key=f"missing-capability-account-{suffix}",
+                request_id=f"missing-capability-account-{suffix}",
+            )
+        assert missing_capability_account.value.problem.status == 403
+        assert missing_capability_account.value.problem.code == "ACCOUNT_PRINCIPAL_REQUIRED"
+    finally:
+        _cleanup(
+            dsn,
+            principal_ids=principal_ids,
+            project_ids=(project_id, missing_project_id),
+            actor_ids=(unregistered_principal_id, f"unused-actor-{suffix}"),
+        )
+
+
 def test_postgres_access_scope_revocation_and_concurrent_approval() -> None:
     dsn = _database_url()
     asyncio.run(apply_migrations(dsn))

@@ -192,7 +192,7 @@ describe("P17 real schema authoring page", () => {
     const user = userEvent.setup();
     renderPage();
 
-    expect(screen.getByRole("button", { name: "新建 Schema" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "新建数据结构" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "导入定义" })).toBeEnabled();
     expect(screen.queryByText("当前范围未开放")).not.toBeInTheDocument();
 
@@ -219,7 +219,7 @@ describe("P17 real schema authoring page", () => {
     renderPage();
 
     await user.click(screen.getByRole("button", { name: "导入定义" }));
-    expect(screen.getByText("导入 Schema 定义")).toBeInTheDocument();
+    expect(screen.getByText("导入数据结构定义")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("camera-front")).toBeEnabled();
     expect(screen.getByRole("button", { name: "创建草稿" })).toBeEnabled();
   });

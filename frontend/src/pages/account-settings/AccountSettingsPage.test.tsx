@@ -52,10 +52,10 @@ function response(value: unknown, status = 200): Response {
   });
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/account/settings") {
   render(
     <ProviderHarness>
-      <MemoryRouter initialEntries={["/account/settings"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
           <Route path="/account/settings" element={<AccountSettingsPage />} />
           <Route
@@ -211,6 +211,7 @@ describe("account settings page", () => {
     const user = userEvent.setup();
 
     renderPage();
+    await user.click(await screen.findByRole("tab", { name: "安全设置" }));
     await screen.findByLabelText("当前密码");
 
     const current = screen.getByLabelText("当前密码");
@@ -264,6 +265,7 @@ describe("account settings page", () => {
     const user = userEvent.setup();
 
     renderPage();
+    await user.click(await screen.findByRole("tab", { name: "安全设置" }));
     const email = await screen.findByRole("textbox", { name: "恢复邮箱" });
     await user.type(email, "recovery@example.com");
     await user.click(screen.getByRole("button", { name: "发送验证邮件" }));
@@ -294,6 +296,123 @@ describe("account settings page", () => {
     });
     expect(screen.getByRole("textbox", { name: "恢复邮箱" })).toHaveValue("");
     expect(screen.getByLabelText("邮件验证码")).toHaveValue("");
+  });
+
+  it("keeps every access-management action inside the five account settings tabs", async () => {
+    const store = useShellStore.getState();
+    store.clearSensitiveState();
+    store.setSessionScopes([], 4, [], []);
+    const emptyOverview = {
+      organizations: [],
+      projects: [],
+      requests: [],
+      pending_request_count: 0,
+    };
+    const pendingRequest = {
+      request_id: "organization-request-1",
+      kind: "ORGANIZATION",
+      organization_id: "org-join-code",
+      project_id: null,
+      capability_keys: [],
+      status: "PENDING",
+      reason: "参与质量治理",
+      created_at: "2026-08-25T01:00:00Z",
+      updated_at: "2026-08-25T01:00:00Z",
+    };
+    let submitted = false;
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/account/profile")) return Promise.resolve(response(settings));
+      if (url.endsWith("/account/access-overview")) {
+        return Promise.resolve(
+          response(
+            submitted
+              ? {
+                  ...emptyOverview,
+                  requests: [pendingRequest],
+                  pending_request_count: 1,
+                }
+              : emptyOverview,
+          ),
+        );
+      }
+      if (
+        url.endsWith("/account/organization-membership-requests") &&
+        init?.method === "POST"
+      ) {
+        submitted = true;
+        return Promise.resolve(response(pendingRequest, 201));
+      }
+      if (
+        url.endsWith(
+          "/account/organization-membership-requests/organization-request-1:withdraw",
+        ) && init?.method === "POST"
+      ) {
+        submitted = false;
+        return Promise.resolve(
+          response({ ...pendingRequest, status: "WITHDRAWN" }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage("/account/settings?tab=memberships");
+
+    for (const name of [
+      "个人资料",
+      "安全设置",
+      "我的组织与项目",
+      "权限申请",
+      "申请记录",
+    ]) {
+      expect(await screen.findByRole("tab", { name })).toBeVisible();
+    }
+    expect(screen.getByText("当前状态：尚未加入组织")).toBeVisible();
+    expect(screen.queryByLabelText("项目 ID")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("组织 ID 或加入码"), "org-join-code");
+    await user.type(screen.getByLabelText("申请原因"), "参与质量治理");
+    const submitOrganization = screen.getByRole("button", {
+      name: "提交加入组织申请",
+    });
+    await waitFor(() => expect(submitOrganization).toBeEnabled());
+    await user.click(submitOrganization);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url, init]) =>
+          String(url).endsWith("/account/organization-membership-requests") &&
+          (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true),
+    );
+    expect(await screen.findByText(/加入组织申请已提交/u)).toBeVisible();
+    const call = fetchMock.mock.calls.find(([url, init]) =>
+      String(url).endsWith("/account/organization-membership-requests") &&
+      (init as RequestInit).method === "POST",
+    );
+    expect(call?.[0]).toBe(
+      "/api/v1/account/organization-membership-requests",
+    );
+    expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({
+      organization_id_or_join_code: "org-join-code",
+      reason: "参与质量治理",
+    });
+    const headers = new Headers((call?.[1] as RequestInit).headers);
+    expect(headers.get("Authorization")).toBe("Bearer settings-session-token");
+    expect(headers.get("X-Project-Id")).toBeNull();
+
+    await user.click(screen.getByRole("tab", { name: "申请记录" }));
+    await user.click(await screen.findByRole("button", { name: "撤回申请" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url, init]) =>
+          String(url).endsWith(
+            "/account/organization-membership-requests/organization-request-1:withdraw",
+          ) && (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("clears a rejected session and routes to the expired-session state", async () => {

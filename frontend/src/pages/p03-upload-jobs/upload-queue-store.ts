@@ -555,7 +555,7 @@ function itemFromRecovered(
     failureCode: session.failure_code ?? null,
     failureMessage:
       session.status === "MULTIPART_COMPLETED"
-        ? "对象分片已传完；重新提交将继续执行 Manifest 提交。"
+        ? "对象分片已传完；重新提交将继续执行数据清单提交。"
         : session.status === "FAILED"
           ? "服务端已将该上传标记为失败，请根据错误码核对后重试。"
           : session.source_type === "OBJECT_STORAGE_REFERENCE"
@@ -1046,12 +1046,12 @@ async function prepareUploadSession(
 
   if (sourceType === "BROWSER_MULTIPART" && (!rawFile || !plan)) {
     throw new Error(
-      "浏览器数据包中未找到 Manifest 声明的 RAW_MCAP 原文件。",
+      "浏览器数据包中未找到数据清单声明的 RAW_MCAP 原文件。",
     );
   }
   if (rawFile && rawFile.size !== preflight.manifest.file_size) {
     throw new Error(
-      `本地原文件为 ${formatBytes(rawFile.size)}，与 Manifest 声明 ${formatBytes(preflight.manifest.file_size)} 不一致。`,
+      `本地原文件为 ${formatBytes(rawFile.size)}，与数据清单声明 ${formatBytes(preflight.manifest.file_size)} 不一致。`,
     );
   }
 
@@ -1158,7 +1158,7 @@ async function beginPreparedUpload(
     updateItem(set, itemId, (current) => ({
       ...current,
       transferStatus: "needs-file",
-      failureMessage: "请重新选择 Manifest 对应的同一原文件以恢复传输。",
+      failureMessage: "请重新选择数据清单对应的同一原文件以恢复传输。",
     }));
     return;
   }
@@ -1386,7 +1386,7 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
       updateItem(set, itemId, (current) => ({
         ...current,
         transferStatus: "needs-file",
-        failureMessage: "请重新选择 Manifest 对应的同一原文件以恢复传输。",
+        failureMessage: "请重新选择数据清单对应的同一原文件以恢复传输。",
       }));
       return;
     }

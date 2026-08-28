@@ -27,7 +27,7 @@ function CameraClockBadge({ clock }: { readonly clock: ViewerPanelRenderContext[
   useEffect(() => clock.subscribe((ns) => {
     if (!ref.current) return;
     ref.current.dateTime = ns;
-    ref.current.textContent = `${(Number(BigInt(ns) / 1_000_000n) / 1000).toFixed(3)} s`;
+    ref.current.textContent = `${(Number(BigInt(ns) / 1_000_000n) / 1000).toFixed(2)}s`;
   }), [clock]);
   return <time className={styles.cameraTime} ref={ref} />;
 }
@@ -98,7 +98,7 @@ function VisualCameraPanel({ context }: { readonly context: ViewerPanelRenderCon
         <div className={styles.missingFrame} role="status">
           <CameraOff aria-hidden="true" size={30} />
           <strong>{unavailable ? '媒体流缺失' : '局部帧缺失'}</strong>
-          <span>{unavailable ? 'Manifest 已声明，当前未返回预览' : '共享时间轴保留缺口位置'}</span>
+          <span>{unavailable ? '数据清单已声明，当前未返回预览' : '共享时间轴保留缺口位置'}</span>
         </div>
       ) : <RobotTelemetryScene index={index} />}
       <CameraClockBadge clock={context.clock} />
@@ -203,7 +203,7 @@ function RawDiagnosticVisualFixture({
           { label: '结束', value: '16:10:17' },
           { label: '时长', value: '17.100 s', technical: true },
           { label: '帧数', value: '3,256 帧' },
-          { label: '来源', value: 'Manifest', technical: true },
+          { label: '来源', value: '数据清单', technical: true },
         ],
       }]}
       selectedCollectionItemId="visual-package-1"

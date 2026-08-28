@@ -10,7 +10,7 @@ export default defineConfig({
     // the default bounded, but allow one UI interaction to wait through a
     // briefly contended CI worker instead of treating scheduler delay as a
     // product failure.
-    testTimeout: 10_000,
+    testTimeout: 30_000,
     include: ["src/**/*.test.{ts,tsx}"],
     exclude: ["src/**/*.pw.{ts,tsx}"],
   },

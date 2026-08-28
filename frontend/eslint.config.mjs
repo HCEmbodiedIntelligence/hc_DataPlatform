@@ -27,7 +27,7 @@ export default [
     },
   },
   {
-    files: ["src/**/*.{ts,tsx}", "e2e/**/*.test.ts"],
+    files: ["src/**/*.{ts,tsx}", "e2e/**/*.ts"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

@@ -242,6 +242,14 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 
 | Runtime path | 当前安全合同 |
 | --- | --- |
+| `/api/v1/account/access-overview` | N1；当前 opaque session 的 self-only 组织、项目与申请投影；不要求 project scope。 |
+| `/api/v1/account/organization-membership-requests` | N1；ACTIVE 个人账户 self-only 提交；Idempotency-Key；不要求 project scope。 |
+| `/api/v1/account/organization-membership-requests/{access_request_id}:withdraw` | N1；仅申请人可撤回自己的 PENDING 组织申请；Idempotency-Key。 |
+| `/api/v1/organization-membership-requests/{access_request_id}:approve` | N1；仅全局 `platform.admin`；批准只生成组织关系，不生成 project scope。 |
+| `/api/v1/organization-membership-requests/{access_request_id}:reject` | N1；仅全局 `platform.admin`；状态转换与 Idempotency-Key。 |
+| `/api/v1/organization-membership-requests/{access_request_id}:revoke` | N1；仅全局 `platform.admin`；撤销访问关系但保留个人账户与 session。 |
+| `/api/v1/projects/{project_id}/dashboard/task-status` | N1；dashboard capability 与 project/region 查询范围。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/device-capture-facts` | N1；ingest 读 capability 与 exact project/region 范围。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}` | N1；组织-项目范围与 robot-model capability。 |
 | `/api/v1/platform/accounts/{principal_id}:unlock` | N1；仅全局 `platform.account_security.manage`，不接受项目管理员替代。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/upload-sessions` | N1；未批准上传合同。 |

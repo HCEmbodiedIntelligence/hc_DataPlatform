@@ -119,6 +119,18 @@ services:
         condition: service_healthy
     restart: no
 
+  runtime-cache-init:
+    image: hc-data-platform-api:dev
+    user: "0:0"
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - >-
+        chown 65532:65532 /tmp/hc-data/alignment &&
+        chmod 0750 /tmp/hc-data/alignment
+    restart: no
+    volumes:
+      - alignment-cache:/tmp/hc-data/alignment
+
   api:
     image: hc-data-platform-api:dev
     build:
@@ -132,6 +144,7 @@ services:
       HC_API_PORT: 8000
       HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
       HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
+      HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
       HC_OBJECT_STORE_ENDPOINT: ${HC_OBJECT_STORE_ENDPOINT:-http://minio:9000}
       HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
       HC_OBJECT_STORE_BUCKET: ${HC_OBJECT_STORE_BUCKET:-hc-data-local}
@@ -148,6 +161,15 @@ services:
       HC_AUTO_ANNOTATION_MAX_JOBS_PER_HOUR: ${HC_AUTO_ANNOTATION_MAX_JOBS_PER_HOUR:-60}
       HC_AUTO_ANNOTATION_DAILY_COST_LIMIT_MICROS: ${HC_AUTO_ANNOTATION_DAILY_COST_LIMIT_MICROS:-5000000}
       HC_INGEST_PART_AUTHORIZATION_TTL_SECONDS: ${HC_INGEST_PART_AUTHORIZATION_TTL_SECONDS:-900}
+      HC_PREVIEW_ARTIFACT_TTL_DAYS: ${HC_PREVIEW_ARTIFACT_TTL_DAYS:-30}
+      HC_PREVIEW_SESSION_TTL_MINUTES: ${HC_PREVIEW_SESSION_TTL_MINUTES:-30}
+      HC_PREVIEW_STAGING_TTL_HOURS: ${HC_PREVIEW_STAGING_TTL_HOURS:-24}
+      HC_PREVIEW_GC_INTERVAL_SECONDS: ${HC_PREVIEW_GC_INTERVAL_SECONDS:-300}
+      HC_PREVIEW_PROJECT_QUOTA_BYTES: ${HC_PREVIEW_PROJECT_QUOTA_BYTES:-107374182400}
+      HC_PREVIEW_GLOBAL_QUOTA_BYTES: ${HC_PREVIEW_GLOBAL_QUOTA_BYTES:-1099511627776}
+      HC_PREVIEW_HIGH_WATERMARK_PERCENT: ${HC_PREVIEW_HIGH_WATERMARK_PERCENT:-85}
+      HC_PREVIEW_LOW_WATERMARK_PERCENT: ${HC_PREVIEW_LOW_WATERMARK_PERCENT:-70}
+      HC_PREVIEW_ALLOWED_PROFILES: ${HC_PREVIEW_ALLOWED_PROFILES:-annotation-h264-720p-v1}
       HC_JWT_ISSUER: ${HC_JWT_ISSUER:-https://identity.example.invalid/}
       HC_JWT_AUDIENCE: ${HC_JWT_AUDIENCE:-hc-data-platform}
       HC_JWT_ALGORITHMS: ${HC_JWT_ALGORITHMS:-["HS256"]}
@@ -214,6 +236,8 @@ services:
       HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
       HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
       HC_TEMPORAL_TASK_QUEUE: ${HC_TEMPORAL_TASK_QUEUE:-hc-data-pipeline}
+      HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
+      HC_WORKER_ROLE: main
       HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:activity_dependencies
       HC_OBJECT_STORE_ENDPOINT: ${HC_OBJECT_STORE_ENDPOINT:-http://minio:9000}
       HC_OBJECT_STORE_BUCKET: ${HC_OBJECT_STORE_BUCKET:-hc-data-local}
@@ -221,9 +245,19 @@ services:
       HC_OBJECT_STORE_SECRET_KEY: ${HC_OBJECT_STORE_SECRET_KEY:-minio-local-only}
       HC_OBJECT_STORE_REGION: ${HC_OBJECT_STORE_REGION:-us-east-1}
       HC_ARTIFACT_PREFIX: ${HC_ARTIFACT_PREFIX:-artifacts}
-      HC_OUTBOX_SCOPES: ${HC_OUTBOX_SCOPES:-[]}
+      HC_OUTBOX_SCOPES: ${HC_OUTBOX_SCOPES:-["legacy-real-api-e2e/be22-hf-g1-video-20260819-02-p1/be22-hf-g1-video-20260819-02-cn"]}
       HC_OUTBOX_POLL_INTERVAL_SECONDS: ${HC_OUTBOX_POLL_INTERVAL_SECONDS:-0.5}
       HC_OUTBOX_BATCH_SIZE: ${HC_OUTBOX_BATCH_SIZE:-32}
+      HC_STORAGE_INVENTORY_SCOPES: ${HC_STORAGE_INVENTORY_SCOPES:-["legacy-real-api-e2e/be22-hf-g1-video-20260819-02-p1/be22-hf-g1-video-20260819-02-cn"]}
+      HC_STORAGE_INVENTORY_INTERVAL_SECONDS: ${HC_STORAGE_INVENTORY_INTERVAL_SECONDS:-3600}
+      HC_PREVIEW_ARTIFACT_TTL_DAYS: ${HC_PREVIEW_ARTIFACT_TTL_DAYS:-30}
+      HC_PREVIEW_SESSION_TTL_MINUTES: ${HC_PREVIEW_SESSION_TTL_MINUTES:-30}
+      HC_PREVIEW_STAGING_TTL_HOURS: ${HC_PREVIEW_STAGING_TTL_HOURS:-24}
+      HC_PREVIEW_GC_INTERVAL_SECONDS: ${HC_PREVIEW_GC_INTERVAL_SECONDS:-300}
+      HC_PREVIEW_PROJECT_QUOTA_BYTES: ${HC_PREVIEW_PROJECT_QUOTA_BYTES:-107374182400}
+      HC_PREVIEW_GLOBAL_QUOTA_BYTES: ${HC_PREVIEW_GLOBAL_QUOTA_BYTES:-1099511627776}
+      HC_PREVIEW_HIGH_WATERMARK_PERCENT: ${HC_PREVIEW_HIGH_WATERMARK_PERCENT:-85}
+      HC_PREVIEW_LOW_WATERMARK_PERCENT: ${HC_PREVIEW_LOW_WATERMARK_PERCENT:-70}
       HC_AUTO_ANNOTATION_PROVIDER_NAME: ${HC_AUTO_ANNOTATION_PROVIDER_NAME:-vlm}
       HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: ${HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT:-}
       HC_AUTO_ANNOTATION_PROVIDER_MODELS: ${HC_AUTO_ANNOTATION_PROVIDER_MODELS:-[]}
@@ -251,8 +285,58 @@ services:
         condition: service_completed_successfully
       migration:
         condition: service_completed_successfully
+      runtime-cache-init:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app:ro
+      - alignment-cache:/tmp/hc-data/alignment
+
+  media-worker:
+    image: hc-data-platform-worker:dev
+    build:
+      context: backend
+      target: worker-dev
+    init: true
+    environment:
+      HC_ENVIRONMENT: ${HC_ENVIRONMENT:-local}
+      HC_RUNTIME_BACKEND: production
+      HC_WORKER_ROLE: media
+      HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:media_activity_dependencies
+      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
+      HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
+      HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
+      HC_OBJECT_STORE_ENDPOINT: ${HC_OBJECT_STORE_ENDPOINT:-http://minio:9000}
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
+      HC_OBJECT_STORE_BUCKET: ${HC_OBJECT_STORE_BUCKET:-hc-data-local}
+      HC_OBJECT_STORE_ACCESS_KEY: ${HC_OBJECT_STORE_ACCESS_KEY:-minio}
+      HC_OBJECT_STORE_SECRET_KEY: ${HC_OBJECT_STORE_SECRET_KEY:-minio-local-only}
+      HC_OBJECT_STORE_REGION: ${HC_OBJECT_STORE_REGION:-us-east-1}
+      HC_PREVIEW_ARTIFACT_TTL_DAYS: ${HC_PREVIEW_ARTIFACT_TTL_DAYS:-30}
+      HC_PREVIEW_SESSION_TTL_MINUTES: ${HC_PREVIEW_SESSION_TTL_MINUTES:-30}
+      HC_PREVIEW_STAGING_TTL_HOURS: ${HC_PREVIEW_STAGING_TTL_HOURS:-24}
+      HC_PREVIEW_GC_INTERVAL_SECONDS: ${HC_PREVIEW_GC_INTERVAL_SECONDS:-300}
+      HC_PREVIEW_PROJECT_QUOTA_BYTES: ${HC_PREVIEW_PROJECT_QUOTA_BYTES:-107374182400}
+      HC_PREVIEW_GLOBAL_QUOTA_BYTES: ${HC_PREVIEW_GLOBAL_QUOTA_BYTES:-1099511627776}
+      HC_PREVIEW_HIGH_WATERMARK_PERCENT: ${HC_PREVIEW_HIGH_WATERMARK_PERCENT:-85}
+      HC_PREVIEW_LOW_WATERMARK_PERCENT: ${HC_PREVIEW_LOW_WATERMARK_PERCENT:-70}
+      HC_PREVIEW_ALLOWED_PROFILES: ${HC_PREVIEW_ALLOWED_PROFILES:-annotation-h264-720p-v1}
+      HC_MEDIA_MAX_CONCURRENT_GENERATIONS: ${HC_MEDIA_MAX_CONCURRENT_GENERATIONS:-2}
+      HC_MEDIA_FFMPEG_THREADS: ${HC_MEDIA_FFMPEG_THREADS:-2}
+      HC_CURSOR_SECRET: ${HC_CURSOR_SECRET:-local-cursor-secret-change-me}
+      HC_DATA_SOURCE_CREDENTIAL_KEY: ${HC_DATA_SOURCE_CREDENTIAL_KEY:-local-data-source-credential-key-change-me}
+      HC_AUTH_ABUSE_ENABLED: ${HC_AUTH_ABUSE_ENABLED:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migration:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend:/app:ro
+      - media-staging:/tmp/hc-data/previews
 
   frontend:
     image: hc-data-platform-frontend:dev
@@ -293,3 +377,5 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  alignment-cache:
+  media-staging:

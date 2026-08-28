@@ -27,7 +27,7 @@ const tasks = [
     type: "抓取采集",
     scenario: "透明工件装配工位",
     description: "覆盖反光、遮挡与不同夹爪姿态。",
-    target: { package_count: 240 },
+    target: { package_count: 240, duration_seconds: 72000 },
     quality_threshold: 0.9,
     status: "ACTIVE",
   },
@@ -55,7 +55,7 @@ const tasks = [
     type: "协同采集",
     scenario: "人车混行测试区",
     description: "记录典型会车、让行与临时障碍条件。",
-    target: { package_count: 120 },
+    target: { duration_seconds: 21600 },
     quality_threshold: null,
     status: "ACTIVE",
   },
@@ -89,14 +89,68 @@ const tasks = [
   },
 ] as const;
 
-const progressById: Readonly<
-  Record<string, { received: number; pass: number; evaluated: number }>
-> = {
-  "task-transparent-parts": { received: 146, pass: 126, evaluated: 139 },
-  "task-pallet": { received: 98, pass: 83, evaluated: 91 },
-  "task-forklift": { received: 37, pass: 31, evaluated: 35 },
-  "task-seal": { received: 96, pass: 88, evaluated: 93 },
-  "task-cable": { received: 64, pass: 55, evaluated: 62 },
+interface VisualProgressSummary {
+  readonly received: number;
+  readonly capturedDuration: number;
+  readonly durationUnknown: number;
+  readonly pass: number;
+  readonly risk: number;
+  readonly reject: number;
+  readonly pending: number;
+  readonly qualityStatus: "NOT_CONFIGURED" | "PENDING_QC" | "NOT_MET" | "MET";
+}
+
+const progressById: Readonly<Record<string, VisualProgressSummary>> = {
+  "task-transparent-parts": {
+    received: 146,
+    capturedDuration: 55200,
+    durationUnknown: 2,
+    pass: 126,
+    risk: 8,
+    reject: 5,
+    pending: 7,
+    qualityStatus: "PENDING_QC",
+  },
+  "task-pallet": {
+    received: 98,
+    capturedDuration: 36000,
+    durationUnknown: 3,
+    pass: 65,
+    risk: 14,
+    reject: 12,
+    pending: 7,
+    qualityStatus: "NOT_MET",
+  },
+  "task-forklift": {
+    received: 37,
+    capturedDuration: 9000,
+    durationUnknown: 0,
+    pass: 31,
+    risk: 3,
+    reject: 1,
+    pending: 2,
+    qualityStatus: "NOT_CONFIGURED",
+  },
+  "task-seal": {
+    received: 96,
+    capturedDuration: 43200,
+    durationUnknown: 0,
+    pass: 88,
+    risk: 3,
+    reject: 2,
+    pending: 3,
+    qualityStatus: "MET",
+  },
+  "task-cable": {
+    received: 64,
+    capturedDuration: 28800,
+    durationUnknown: 1,
+    pass: 55,
+    risk: 4,
+    reject: 3,
+    pending: 2,
+    qualityStatus: "MET",
+  },
 };
 
 async function fulfillJson(
@@ -119,6 +173,13 @@ async function installApiFixture(
   page: Page,
   options: Readonly<{ listError?: boolean }> = {},
 ) {
+  await page.route(
+    "**/api/v1/account/notifications/unread-count",
+    async (route) => {
+      await fulfillJson(route, { unread_count: 0 });
+    },
+  );
+
   await page.route("**/api/v1/projects/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -149,11 +210,57 @@ async function installApiFixture(
     );
     if (progressMatch?.[1]) {
       const id = decodeURIComponent(progressMatch[1]);
+      const definition = tasks.find((task) => task.collection_task_id === id);
       const summary = progressById[id] ?? {
         received: 0,
+        capturedDuration: 0,
+        durationUnknown: 0,
         pass: 0,
-        evaluated: 0,
+        risk: 0,
+        reject: 0,
+        pending: 0,
+        qualityStatus: "NOT_CONFIGURED",
       };
+      const packageTarget =
+        definition?.target && "package_count" in definition.target
+          ? (definition.target.package_count ?? null)
+          : null;
+      const durationTarget =
+        definition?.target && "duration_seconds" in definition.target
+          ? (definition.target.duration_seconds ?? null)
+          : null;
+      const metric = (actual: number, target: number | null) =>
+        target === null
+          ? null
+          : {
+              actual,
+              target,
+              progress: actual / target,
+              status:
+                actual > target
+                  ? "EXCEEDED"
+                  : actual === target
+                    ? "MET"
+                    : "IN_PROGRESS",
+            };
+      const packageMetric = metric(summary.received, packageTarget);
+      const durationMetric = metric(summary.capturedDuration, durationTarget);
+      const targetStatuses = [
+        packageMetric?.status,
+        durationMetric?.status,
+      ].filter(
+        (status): status is "IN_PROGRESS" | "MET" | "EXCEEDED" =>
+          status !== undefined,
+      );
+      const attainmentStatus =
+        targetStatuses.length === 0
+          ? "NOT_CONFIGURED"
+          : targetStatuses.every((status) => status === "MET")
+            ? "ATTAINED"
+            : targetStatuses.every((status) => status !== "IN_PROGRESS")
+              ? "EXCEEDED"
+              : "IN_PROGRESS";
+      const evaluated = summary.pass + summary.risk + summary.reject;
       await fulfillJson(route, {
         schema_version: "1",
         collection_task_id: id,
@@ -164,30 +271,34 @@ async function installApiFixture(
           "ACTIVE",
         as_of: "2026-08-18T05:30:00Z",
         received_package_count: summary.received,
-        captured_duration_seconds: summary.received * 60,
-        duration_observed_package_count: summary.received,
-        duration_unknown_package_count: 0,
+        captured_duration_seconds: summary.capturedDuration,
+        duration_observed_package_count:
+          summary.received - summary.durationUnknown,
+        duration_unknown_package_count: summary.durationUnknown,
         qc: {
-          evaluated_count: summary.evaluated,
+          evaluated_count: evaluated,
           pass_count: summary.pass,
-          risk_count: Math.max(0, summary.evaluated - summary.pass),
-          reject_count: 0,
-          pending_count: Math.max(0, summary.received - summary.evaluated),
+          risk_count: summary.risk,
+          reject_count: summary.reject,
+          pending_count: summary.pending,
           pass_rate: {
             numerator: summary.pass,
-            denominator: summary.evaluated,
-            value:
-              summary.evaluated > 0 ? summary.pass / summary.evaluated : null,
+            denominator: evaluated,
+            value: evaluated > 0 ? summary.pass / evaluated : null,
           },
         },
         attainment: {
-          status: "NOT_CONFIGURED",
-          package_count: null,
-          duration_seconds: null,
-          quality_threshold: null,
-          quality_status: "NOT_CONFIGURED",
+          status: attainmentStatus,
+          package_count: packageMetric,
+          duration_seconds: durationMetric,
+          quality_threshold: definition?.quality_threshold ?? null,
+          quality_status: summary.qualityStatus,
         },
-        observed_sources: { device_ids: [], camera_ids: [], topic_names: [] },
+        observed_sources: {
+          device_ids: [`robot-${id.slice(-4)}`],
+          camera_ids: [`camera-${id.slice(-4)}`],
+          topic_names: id === "task-transparent-parts" ? ["/vision/rgb"] : [],
+        },
       });
       return;
     }
@@ -215,7 +326,13 @@ async function installApiFixture(
 async function preparePage(page: Page, listError = false) {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+    if (message.type() !== "error") return;
+    const location = message.location();
+    consoleErrors.push(
+      location.url
+        ? `${message.text()} (${location.url}:${location.lineNumber})`
+        : message.text(),
+    );
   });
   page.on("pageerror", (error) => consoleErrors.push(error.message));
   await page.addInitScript(() => {
@@ -227,7 +344,10 @@ async function preparePage(page: Page, listError = false) {
 
 async function installVisualScope(page: Page) {
   await page.evaluate(
-    async ({ projectId: activeProjectId }) => {
+    async ({
+      organizationId: activeOrganizationId,
+      projectId: activeProjectId,
+    }) => {
       const storeModulePath = "/src/shared/scope/shell-store.ts";
       const { useShellStore } = await import(
         /* @vite-ignore */ storeModulePath
@@ -242,13 +362,14 @@ async function installVisualScope(page: Page) {
         "e04-visual-session",
       );
       store.setScope({
-        organizationId: "org-e04-visual",
+        organizationId: activeOrganizationId,
         projectId: activeProjectId,
         regionCode: "cn-east-01",
       });
       store.setSessionScopes(
         [
           {
+            organizationId: activeOrganizationId,
             projectId: activeProjectId,
             regionCodes: ["cn-east-01"],
             projectWide: false,
@@ -264,13 +385,117 @@ async function installVisualScope(page: Page) {
         fetchedAt: "2026-08-18T05:30:00Z",
       });
     },
-    { projectId },
+    { organizationId, projectId },
   );
 }
 
 test.beforeAll(async () => {
   await mkdir(artifactDirectory, { recursive: true });
 });
+
+for (const viewport of [
+  { name: "1920x1080", width: 1920, height: 1080 },
+  { name: "1440x900", width: 1440, height: 900 },
+  { name: "1280x800", width: 1280, height: 800 },
+  { name: "375x812", width: 375, height: 812 },
+] as const) {
+  test(`E04 task list ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    const consoleErrors = await preparePage(page);
+    await page.goto("/collection-tasks", { waitUntil: "domcontentloaded" });
+    await installVisualScope(page);
+    await page.waitForLoadState("networkidle");
+
+    const listPanel = page.getByRole("region", { name: "采集任务列表" });
+    await expect(listPanel).toBeVisible();
+    await expect(
+      page.getByText("任务码用于数据归类，不是数据包 ID。"),
+    ).toHaveCount(0);
+    await expect(page.getByText("搜索与类型仅筛选当前游标窗口")).toHaveCount(0);
+    await expect(page.getByText("目标进行中").first()).toBeVisible();
+    await expect(page.getByText("146 包 / 240 包").first()).toBeVisible();
+    await expect(
+      page.getByText("15 小时 20 分 / 20 小时").first(),
+    ).toBeVisible();
+    await expect(page.getByText("未达到阈值").first()).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "查看数据" }).first(),
+    ).toBeVisible();
+    await expect(listPanel.getByLabel("当前项目")).toHaveCount(0);
+    await expect(page.getByText(/SAVED/u)).toHaveCount(0);
+
+    const geometry = await page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>(
+        'section[aria-label="采集任务列表"]',
+      );
+      const tableScroll =
+        panel?.querySelector<HTMLElement>(".ant-table-content");
+      const mobileCards = panel?.querySelectorAll("article") ?? [];
+      const mobileButtons = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-page-id="P20"] button, [data-page-id="P20"] a',
+        ),
+      ).filter((element) => {
+        const style = getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden")
+          return false;
+        return (
+          element.tagName === "BUTTON" ||
+          element.textContent?.includes("查看数据") === true
+        );
+      });
+      if (!panel) throw new Error("P20 list panel is missing.");
+      const panelRect = panel.getBoundingClientRect();
+      return {
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        panelLeft: panelRect.left,
+        panelRight: panelRect.right,
+        tableOverflow:
+          tableScroll == null
+            ? 0
+            : Math.max(0, tableScroll.scrollWidth - tableScroll.clientWidth),
+        mobileCardCount: mobileCards.length,
+        tableCount: panel.querySelectorAll("table").length,
+        minimumActionHeight:
+          mobileButtons.length === 0
+            ? 0
+            : Math.min(
+                ...mobileButtons.map(
+                  (element) => element.getBoundingClientRect().height,
+                ),
+              ),
+      };
+    });
+    expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.panelLeft).toBeGreaterThanOrEqual(0);
+    expect(geometry.panelRight).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+    if (viewport.width === 375) {
+      expect(geometry.mobileCardCount).toBe(tasks.length);
+      expect(geometry.tableCount).toBe(0);
+      expect(geometry.minimumActionHeight).toBeGreaterThanOrEqual(44);
+    } else {
+      expect(geometry.tableCount).toBe(1);
+      expect(geometry.mobileCardCount).toBe(0);
+      expect(geometry.tableOverflow).toBeLessThanOrEqual(1);
+    }
+    expect(consoleErrors).toEqual([]);
+
+    await assertNoSeriousOrCriticalAxe(
+      page,
+      path.join(artifactDirectory, `axe-list-${viewport.name}.json`),
+      '[data-page-id="P20"]',
+    );
+    await page.screenshot({
+      path: path.join(artifactDirectory, `list-${viewport.name}.png`),
+      animations: "disabled",
+      fullPage: viewport.width === 375,
+    });
+  });
+}
 
 for (const viewport of [
   { name: "1440x900", width: 1440, height: 900 },
@@ -429,7 +654,9 @@ test("E04 429 abnormal state", async ({ page }) => {
   await installVisualScope(page);
   await page.waitForLoadState("networkidle");
 
-  await expect(page.getByRole("heading", { name: "采集任务" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "采集任务", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("请求频率受限")).toBeVisible();
   await expect(page.getByText("request-e04-rate-limited")).toBeVisible();
   await expect(page.getByRole("button", { name: /重\s*试/u })).toBeVisible();

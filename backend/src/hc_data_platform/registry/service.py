@@ -27,6 +27,8 @@ from .models import (
     BlockedReason,
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
+    CreateRobotModelDraftRequest,
+    CreateRobotModelRequest,
     PublishRobotModelVersionRequest,
     RegistryScope,
     ReplaceRobotModelJointMappingsRequest,
@@ -195,6 +197,119 @@ class RegistryService:
             outcome="SUCCEEDED",
         )
         return RobotModelVersionEnvelope(data=item, scope=scope, request_id=request_id)
+
+    def create_robot_model_draft(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        source_version_id: str,
+        idempotency_key: str,
+        request_id: str,
+        command: CreateRobotModelDraftRequest,
+    ) -> RobotModelVersionEnvelope:
+        scope = self._authorize_manage(
+            auth=auth, organization_id=organization_id, project_id=project_id
+        )
+        fingerprint = request_fingerprint(command.model_dump(mode="json"))
+        new_version_id = f"version-{uuid4()}"
+        try:
+            draft = self._repository.create_robot_model_draft(
+                organization_id=organization_id,
+                project_id=project_id,
+                source_version_id=source_version_id,
+                new_version_id=new_version_id,
+                version_label=command.version_label,
+                update_scope=command.update_scope,
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
+                created_at=self._clock(),
+            )
+        except KeyError as error:
+            raise problem(
+                status=404,
+                code="ROBOT_MODEL_VERSION_NOT_FOUND",
+                title="Robot model version not found",
+                detail="The published source version does not exist in this organization.",
+            ) from error
+        except ValueError as error:
+            detail = str(error)
+            if "idempotency" in detail:
+                raise idempotency_conflict() from error
+            raise problem(
+                status=409,
+                code=(
+                    "ROBOT_MODEL_VERSION_LABEL_EXISTS"
+                    if "label already exists" in detail
+                    else "ROBOT_MODEL_DRAFT_SOURCE_INVALID"
+                ),
+                title="Robot model draft cannot be created",
+                detail=(
+                    "Choose a unique version label for this robot model."
+                    if "label already exists" in detail
+                    else "Only a published fixed version can be used as the draft source."
+                ),
+            ) from error
+        self._audit(
+            auth=auth,
+            scope=scope,
+            action="registry.robot_model_version.draft_created",
+            resource_id=draft.id,
+            request_id=request_id,
+            outcome="SUCCEEDED",
+        )
+        return RobotModelVersionEnvelope(data=draft, scope=scope, request_id=request_id)
+
+    def create_robot_model(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        idempotency_key: str,
+        request_id: str,
+        command: CreateRobotModelRequest,
+    ) -> RobotModelVersionEnvelope:
+        scope = self._authorize_manage(
+            auth=auth, organization_id=organization_id, project_id=project_id
+        )
+        fingerprint = request_fingerprint(command.model_dump(mode="json"))
+        model_id = f"model-{uuid4()}"
+        version_id = f"version-{uuid4()}"
+        try:
+            draft = self._repository.create_robot_model(
+                organization_id=organization_id,
+                project_id=project_id,
+                model_id=model_id,
+                version_id=version_id,
+                manufacturer=command.manufacturer,
+                model_code=command.model_code,
+                display_name=command.display_name,
+                version_label=command.version_label,
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
+                created_at=self._clock(),
+            )
+        except ValueError as error:
+            detail = str(error)
+            if "idempotency" in detail:
+                raise idempotency_conflict() from error
+            raise problem(
+                status=409,
+                code="ROBOT_MODEL_IDENTITY_EXISTS",
+                title="Robot model already exists",
+                detail="Use a unique manufacturer and model code, or select the existing model.",
+            ) from error
+        self._audit(
+            auth=auth,
+            scope=scope,
+            action="registry.robot_model.created",
+            resource_id=draft.robot_model_id,
+            request_id=request_id,
+            outcome="SUCCEEDED",
+        )
+        return RobotModelVersionEnvelope(data=draft, scope=scope, request_id=request_id)
 
     def create_asset_upload(
         self,
@@ -1035,8 +1150,10 @@ class RegistryService:
                 message="The URDF structure and joint declarations are valid.",
             )
         )
-        mapped_sources = {item.source_joint_name for item in mappings}
-        complete = mapped_sources == joints
+        # Runtime samples use source names and the viewer maps them onto URDF joint
+        # names, so publish validation must cover the URDF with mapping targets.
+        mapped_targets = {item.target_joint_name for item in mappings}
+        complete = mapped_targets == joints
         checks.append(
             RobotModelPublishCheck(
                 code="JOINT_MAPPINGS_COMPLETE",

@@ -109,6 +109,7 @@ export function DataSourceTable(props: {
       columns={columns}
       getRowId={(source) => source.id}
       caption="数据源连接器列表"
+      columnLayout="stable"
     />
   );
 }

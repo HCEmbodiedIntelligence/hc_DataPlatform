@@ -1,14 +1,24 @@
 import { z } from "zod";
 import type { ActorSummary } from "../../entities/actor";
 import type { components } from "../../shared/api/generated/platform";
-import { createDomainError } from "../../shared/api/domain-error";
 import { isSafeBearerToken, request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 
 export type AccountPrincipal = components["schemas"]["AccountPrincipal"];
 export type SessionCreated = components["schemas"]["SessionCreated"];
-export type SessionBootstrap = components["schemas"]["SessionBootstrap"];
 export type AvailableScope = components["schemas"]["AvailableScope"];
+export interface AvailableOrganization {
+  readonly organization_id: string;
+  readonly organization_name: string;
+  readonly member_status: "ACTIVE";
+}
+export interface SessionBootstrap {
+  readonly principal: AccountPrincipal;
+  readonly available_organizations?: readonly AvailableOrganization[];
+  readonly available_scopes: readonly AvailableScope[];
+  readonly platform_capabilities: readonly string[];
+  readonly capability_revision: number;
+}
 export type PasswordPolicyView = components["schemas"]["PasswordPolicyView"];
 export type PublicAuthConfiguration =
   components["schemas"]["PublicAuthConfiguration"];
@@ -24,10 +34,6 @@ type LoginCommand = components["schemas"]["LoginCommand"];
 type PasswordRecoveryRequest = components["schemas"]["PasswordRecoveryRequest"];
 type PasswordRecoveryConfirmation =
   components["schemas"]["PasswordRecoveryConfirmation"];
-type MembershipRequest = components["schemas"]["MembershipRequest"];
-type MembershipRequestCreate = components["schemas"]["MembershipRequestCreate"];
-type CapabilityRequest = components["schemas"]["CapabilityRequest"];
-type CapabilityRequestCreate = components["schemas"]["CapabilityRequestCreate"];
 
 const accountPrincipalWireSchema: z.ZodType<AccountPrincipal> = z
   .object({
@@ -62,9 +68,18 @@ const availableScopeWireSchema: z.ZodType<AvailableScope> = z
   })
   .strict();
 
+const availableOrganizationWireSchema: z.ZodType<AvailableOrganization> = z
+  .object({
+    organization_id: z.string().min(1),
+    organization_name: z.string().min(1),
+    member_status: z.literal("ACTIVE"),
+  })
+  .strict();
+
 const sessionBootstrapWireSchema: z.ZodType<SessionBootstrap> = z
   .object({
     principal: accountPrincipalWireSchema,
+    available_organizations: z.array(availableOrganizationWireSchema).default([]),
     available_scopes: z.array(availableScopeWireSchema),
     platform_capabilities: z.array(z.string().min(1)).default([]),
     capability_revision: z.number().int().nonnegative(),
@@ -258,69 +273,4 @@ export async function logoutSession(
       ? {}
       : { bearerToken: options.bearerToken }),
   });
-}
-
-function accessRequestMismatch(message: string): Error {
-  return createDomainError({
-    code: "CONTRACT_MISMATCH",
-    message,
-    fieldErrors: [],
-    operationErrors: [],
-    blockedReasons: [],
-    requestId: null,
-    retryable: false,
-    httpStatus: null,
-  });
-}
-
-export async function requestProjectMembership(
-  organizationId: string,
-  projectId: string,
-  reason: string | null,
-  idempotencyKey: string,
-): Promise<MembershipRequest> {
-  const body = { reason } satisfies MembershipRequestCreate;
-  const result = await request<MembershipRequest>({
-    method: "POST",
-    path: `/organizations/${encodeURIComponent(organizationId)}/projects/${encodeURIComponent(projectId)}/membership-requests`,
-    body,
-    idempotencyKey,
-    cache: "no-store",
-    scopeMode: "session",
-  });
-  if (
-    result.organization_id !== organizationId ||
-    result.project_id !== projectId
-  ) {
-    throw accessRequestMismatch("组织或项目加入申请响应与填写的范围不一致。");
-  }
-  return result;
-}
-
-export async function requestProjectCapabilities(
-  organizationId: string,
-  projectId: string,
-  capabilityKeys: readonly string[],
-  reason: string | null,
-  idempotencyKey: string,
-): Promise<CapabilityRequest> {
-  const body = {
-    capability_keys: [...capabilityKeys],
-    reason,
-  } satisfies CapabilityRequestCreate;
-  const result = await request<CapabilityRequest>({
-    method: "POST",
-    path: `/organizations/${encodeURIComponent(organizationId)}/projects/${encodeURIComponent(projectId)}/capability-requests`,
-    body,
-    idempotencyKey,
-    cache: "no-store",
-    scopeMode: "session",
-  });
-  if (
-    result.organization_id !== organizationId ||
-    result.project_id !== projectId
-  ) {
-    throw accessRequestMismatch("组织或项目权限申请响应与填写的范围不一致。");
-  }
-  return result;
 }

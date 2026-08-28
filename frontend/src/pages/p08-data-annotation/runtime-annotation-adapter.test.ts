@@ -9,11 +9,13 @@ import { createPlaybackClock } from "../../features/viewer";
 import {
   applyRuntimeAutoAnnotationJob,
   buildRuntimeWorkbenchAdapter,
+  claimRuntimeAnnotationTask,
   createRuntimeAutoAnnotationJob,
   listRuntimeAnnotationRevisionThreads,
   loadRuntimeAutoAnnotationCapability,
   loadRuntimeAnnotationBundle,
   restoreRuntimeAnnotationRevision,
+  resolveReviewSubmission,
   runtimeAnnotationScopeFromShell,
   saveRuntimeAnnotationDraft,
 } from "./runtime-annotation-adapter";
@@ -58,14 +60,22 @@ function installBundleResponses(
     if (options.path.endsWith("/draft")) return fixture.draft as never;
     if (options.path.endsWith("/history")) return fixture.history as never;
     if (options.path.includes("/tag-schemas/")) return fixture.schema as never;
+    if (options.path.includes("/lance-versions/"))
+      return fixture.datasetVersion as never;
     if (options.path.endsWith("/manifest-discovery"))
       return fixture.manifest as never;
     if (options.path === "/previews/sessions")
       return {
+        schema_version: 1,
+        session_id: "preview-session-p08",
+        artifact_key: "a".repeat(64),
         project_id: fixture.task.project_id,
+        dataset_id: fixture.task.dataset_id,
         rollout_id: fixture.task.rollout_id,
-        camera_id: fixture.manifest?.cameras[0]?.camera_id,
-        annotation_revision: fixture.draft?.revision,
+        lance_version: String(fixture.task.base_lance_version),
+        camera_id: fixture.manifest?.cameras[0]?.topic,
+        annotation_revision: 0,
+        profile_id: "annotation-h264-720p-v1",
         playlist_url: playlistUrl,
         signed_url_expires_at: "2026-08-18T12:00:00Z",
       } as never;
@@ -75,6 +85,105 @@ function installBundleResponses(
 }
 
 describe("P08 formal runtime annotation adapter", () => {
+  it("limits the default cockpit to four cameras and separates Tag levels into colored lanes", () => {
+    const fixture = createVisualAnnotationBundle({
+      mode: "annotation",
+      cameraCount: 8,
+    });
+    const root = fixture.draft!.tags[0]!;
+    const overlappingRoot = {
+      ...root,
+      annotation_id: "annotation-overlapping-root",
+      tag_id: "manual-overlapping-root",
+      label: "重叠一级 Tag",
+      parent_annotation_id: null,
+      path: ["manual-overlapping-root"],
+      start_step: root.start_step + 10,
+      end_step: root.end_step - 10,
+    };
+    const child = {
+      ...root,
+      annotation_id: "annotation-child",
+      tag_id: "manual-child",
+      label: "二级 Tag",
+      parent_annotation_id: root.annotation_id,
+      path: [...root.path, "manual-child"],
+      start_step: root.start_step + 20,
+      end_step: root.end_step - 20,
+    };
+    const clock = createPlaybackClock({ startNs: "0", endNs: "1000000000" });
+    const adapter = buildRuntimeWorkbenchAdapter({
+      bundle: fixture,
+      scope: visualAnnotationScope,
+      mode: "annotation",
+      clock,
+      tags: [root, overlappingRoot, child],
+      cameraLimit: 4,
+      cameraSlotCount: 4,
+      readOnly: false,
+    });
+
+    expect(adapter.cameraStreams).toHaveLength(4);
+    const tagTracks = adapter.timelineTracks.filter((track) =>
+      track.id.startsWith("tag-intervals"),
+    );
+    expect(tagTracks.map((track) => track.label)).toEqual([
+      "Tag L1",
+      "Tag L1 · 2",
+      "Tag L2",
+    ]);
+    expect(tagTracks.map((track) => track.segments[0]?.tone)).toEqual([
+      "tag-level-1",
+      "tag-level-1",
+      "tag-level-2",
+    ]);
+    expect(
+      tagTracks
+        .flatMap((track) => track.segments)
+        .every((segment) => Boolean(segment.activatePlayback)),
+    ).toBe(true);
+    expect(adapter.timelineTracks.map((track) => track.label)).not.toContain(
+      "30 Hz 对齐",
+    );
+    expect(adapter.timelineTracks.map((track) => track.label)).not.toContain(
+      "数据修订",
+    );
+    clock.dispose();
+  });
+
+  it("pads one real camera into the first slot of a four-camera annotation grid", () => {
+    const fixture = createVisualAnnotationBundle({
+      mode: "annotation",
+      cameraCount: 1,
+    });
+    const clock = createPlaybackClock({ startNs: "0", endNs: "1000000000" });
+    const adapter = buildRuntimeWorkbenchAdapter({
+      bundle: fixture,
+      scope: visualAnnotationScope,
+      mode: "annotation",
+      clock,
+      tags: fixture.draft?.tags ?? [],
+      cameraLimit: 4,
+      cameraSlotCount: 4,
+      readOnly: false,
+    });
+
+    expect(adapter.cameraStreams).toHaveLength(4);
+    expect(adapter.cameraStreams[0]).toMatchObject({
+      id: fixture.manifest?.cameras[0]?.camera_id,
+      availability: "ready",
+    });
+    expect(adapter.cameraStreams.slice(1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          semanticRole: "camera-slot-placeholder",
+          availability: "missing",
+        }),
+      ]),
+    );
+    clock.dispose();
+  });
+
   it("accepts the real SessionBootstrap scope when organization is absent", () => {
     expect(
       runtimeAnnotationScopeFromShell({
@@ -200,13 +309,53 @@ describe("P08 formal runtime annotation adapter", () => {
     );
   });
 
+  it("creates an annotation draft through the real task-claim operation", async () => {
+    const fixture = createVisualAnnotationBundle({ mode: "annotation" });
+    const unassignedTask = { ...fixture.task, assignee_id: null };
+    requestMock.mockResolvedValue({
+      ...unassignedTask,
+      assignee_id: "current-annotator",
+    } as never);
+
+    await claimRuntimeAnnotationTask(visualAnnotationScope, unassignedTask);
+
+    expect(requestMock).toHaveBeenCalledOnce();
+    expect(requestMock).toHaveBeenCalledWith({
+      method: "POST",
+      path: `/annotation-tasks/${fixture.task.task_id}/claim`,
+      scope: visualAnnotationScope,
+    });
+  });
+
+  it("only resolves the exact active submitted snapshot, never Schema publication alone", () => {
+    const bundle = createVisualAnnotationBundle({ mode: "tag-review" });
+    expect(resolveReviewSubmission(bundle)?.submission_id).toBe(
+      bundle.task.current_submission_id,
+    );
+    expect(
+      resolveReviewSubmission({
+        ...bundle,
+        task: { ...bundle.task, status: "DRAFT" },
+      }),
+    ).toBeNull();
+    expect(
+      resolveReviewSubmission({
+        ...bundle,
+        task: {
+          ...bundle.task,
+          current_submission_id: "stale-submission",
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("keeps a real Manifest network failure local and exposes its request ID", async () => {
     const fixture = installBundleResponses();
     requestMock.mockImplementation(async (options) => {
       if (options.path.endsWith("/manifest-discovery")) {
         throw createDomainError({
           code: "NETWORK_ERROR",
-          message: "Manifest 网络失败",
+          message: "数据清单网络失败",
           fieldErrors: [],
           operationErrors: [],
           blockedReasons: [],
@@ -226,6 +375,8 @@ describe("P08 formal runtime annotation adapter", () => {
       if (options.path.endsWith("/history")) return fixture.history as never;
       if (options.path.includes("/tag-schemas/"))
         return fixture.schema as never;
+      if (options.path.includes("/lance-versions/"))
+        return fixture.datasetVersion as never;
       throw new Error(`Unexpected request ${options.path}`);
     });
     const bundle = await loadRuntimeAnnotationBundle(
@@ -235,7 +386,7 @@ describe("P08 formal runtime annotation adapter", () => {
     );
     expect(bundle.manifest).toBeNull();
     expect(bundle.manifestIssue).toMatchObject({
-      message: "Manifest 网络失败",
+      message: "数据清单网络失败",
       requestId: "manifest-request-1",
     });
   });
@@ -261,6 +412,35 @@ describe("P08 formal runtime annotation adapter", () => {
         }),
       }),
     );
+  });
+
+  it("blocks annotation mutations before transport when the task is read-only", async () => {
+    const fixture = createVisualAnnotationBundle({ mode: "annotation" });
+    const submittedTask = { ...fixture.task, status: "SUBMITTED" as const };
+
+    await expect(
+      claimRuntimeAnnotationTask(visualAnnotationScope, fixture.task),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    await expect(
+      saveRuntimeAnnotationDraft(
+        visualAnnotationScope,
+        submittedTask,
+        fixture.draft!,
+        fixture.draft!.tags,
+      ),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    await expect(
+      restoreRuntimeAnnotationRevision(visualAnnotationScope, submittedTask, 1),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    await expect(
+      createRuntimeAutoAnnotationJob(visualAnnotationScope, submittedTask, {
+        provider: "vlm",
+        model: "vision-v1",
+        startStep: 0,
+        endStep: 10,
+      }),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it("restores a historical revision through the formal append-only endpoint", async () => {
@@ -439,9 +619,10 @@ describe("P08 formal runtime annotation adapter", () => {
         method: "POST",
         path: "/previews/sessions",
         body: expect.objectContaining({
-          camera_id: fixture.manifest?.cameras[0]?.camera_id,
-          annotation_revision: fixture.draft?.revision,
-          view_mode: "edited",
+          camera_id: fixture.manifest?.cameras[0]?.topic,
+          annotation_revision: 0,
+          view_mode: "original",
+          profile_id: "annotation-h264-720p-v1",
         }),
       }),
     );

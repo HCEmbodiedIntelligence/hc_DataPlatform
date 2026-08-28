@@ -314,6 +314,53 @@ def test_arrow_writer_streams_an_attempt_isolated_deterministic_fragment(
     assert denormalize_from_json(second_modalities)["camera"]["value"] == b"binary"
 
 
+def test_arrow_writer_batches_thousands_of_rows_instead_of_one_batch_per_row(
+    tmp_path: Path,
+) -> None:
+    pyarrow = pytest.importorskip("pyarrow")
+    ipc = pytest.importorskip("pyarrow.ipc")
+    writer = ArrowFragmentWriter(tmp_path)
+    writer.begin(rollout_id="rollout-batched", attempt_id="batch-attempt")
+    for index in range(4_097):
+        writer.write_row(
+            AlignedRowV1(
+                rollout_id="rollout-batched",
+                step_index=index,
+                timestamp_ns=index,
+                modalities={},
+                sample_valid=True,
+            )
+        )
+    uri = writer.commit(
+        row_count=4_097,
+        content_sha256="d" * 64,
+        schema_sha256="e" * 64,
+    )
+
+    with pyarrow.memory_map(str(Path(uri.removeprefix("file://"))), "r") as source:
+        reader = ipc.open_file(source)
+        assert reader.num_record_batches == 2
+        assert [reader.get_batch(index).num_rows for index in range(2)] == [4_096, 1]
+
+
+def test_arrow_writer_reuses_a_committed_attempt_on_activity_retry(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
+    data = _input(
+        end_ns=70_000_000,
+        streams={"camera": _stream(ModalityKind.IMAGE, [(0, b"binary")])},
+        attempt="retry-attempt",
+    )
+    profile = _profile(set(), default_tolerance_ns=100_000_000)
+    engine = AlignmentEngine()
+
+    first = engine.align_to_writer(data, profile, ArrowFragmentWriter(tmp_path))
+    second = engine.align_to_writer(data, profile, ArrowFragmentWriter(tmp_path))
+
+    assert second == first
+    assert len(list(tmp_path.rglob("*.arrow"))) == 1
+    assert list(tmp_path.rglob("*.part")) == []
+
+
 def test_canonical_binary_marker_round_trips_and_rejects_malformed_values() -> None:
     value = {"camera": {"frames": [b"jpeg-a", b"jpeg-b"]}}
 

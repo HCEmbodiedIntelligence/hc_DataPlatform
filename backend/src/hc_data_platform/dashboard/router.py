@@ -15,6 +15,7 @@ from .models import (
     DashboardIdentifier,
     DashboardPendingItemsResponse,
     DashboardSnapshotResponse,
+    DashboardTaskStatusResponse,
 )
 from .repository import DASHBOARD_CAPABILITY
 from .service import DashboardService
@@ -72,6 +73,7 @@ def _no_store(response: Response) -> None:
     "/snapshot",
     response_model=DashboardSnapshotResponse,
     operation_id="getDashboardSnapshot",
+    deprecated=True,
 )
 def get_dashboard_snapshot(
     project_id: DashboardIdentifier,
@@ -85,6 +87,10 @@ def get_dashboard_snapshot(
 ) -> DashboardSnapshotResponse:
     _authorize(auth, project_id, region_code)
     _no_store(response)
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = (
+        f'</api/v1/projects/{project_id}/dashboard/task-status>; rel="successor-version"'
+    )
     return service.snapshot(
         auth=auth,
         project_id=project_id,
@@ -92,6 +98,32 @@ def get_dashboard_snapshot(
         range_start=range_start,
         range_end=range_end,
         timezone_name=timezone_name,
+    )
+
+
+@router.get(
+    "/task-status",
+    response_model=DashboardTaskStatusResponse,
+    operation_id="getDashboardTaskStatus",
+)
+def get_dashboard_task_status(
+    project_id: DashboardIdentifier,
+    region_code: RegionCode,
+    response: Response,
+    auth: VerifiedAuth,
+    service: Service,
+    task_id: Annotated[
+        str | None,
+        Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$"),
+    ] = None,
+) -> DashboardTaskStatusResponse:
+    _authorize(auth, project_id, region_code)
+    _no_store(response)
+    return service.task_status(
+        auth=auth,
+        project_id=project_id,
+        region_code=region_code,
+        task_id=task_id,
     )
 
 

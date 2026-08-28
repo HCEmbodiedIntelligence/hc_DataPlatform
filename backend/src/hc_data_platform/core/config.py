@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     outbox_scopes: tuple[str, ...] = ()
     outbox_poll_interval_seconds: float = Field(default=0.5, gt=0, le=60)
     outbox_batch_size: int = Field(default=32, ge=1, le=1000)
+    storage_inventory_scopes: tuple[str, ...] = ()
+    storage_inventory_interval_seconds: float = Field(default=3_600, ge=10, le=86_400)
     object_store_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_public_endpoint: str | None = Field(default=None, repr=False)
     object_store_bucket: str = Field(default="hc-data-local", min_length=3, max_length=63)
@@ -47,6 +49,18 @@ class Settings(BaseSettings):
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
     preview_cache_root: str = "/tmp/hc-data/previews"
+    media_temporal_task_queue: str = Field(default="hc-media-pipeline", min_length=1)
+    preview_artifact_ttl_days: int = Field(default=30, ge=1, le=3650)
+    preview_session_ttl_minutes: int = Field(default=30, ge=1, le=1440)
+    preview_staging_ttl_hours: int = Field(default=24, ge=1, le=168)
+    preview_gc_interval_seconds: float = Field(default=300, ge=10, le=86_400)
+    preview_project_quota_bytes: int = Field(default=100 * 1024**3, ge=1)
+    preview_global_quota_bytes: int = Field(default=1024 * 1024**3, ge=1)
+    preview_high_watermark_percent: int = Field(default=85, ge=1, le=100)
+    preview_low_watermark_percent: int = Field(default=70, ge=1, le=99)
+    preview_allowed_profiles: tuple[str, ...] = ("annotation-h264-720p-v1",)
+    media_max_concurrent_generations: int = Field(default=2, ge=1, le=128)
+    media_ffmpeg_threads: int = Field(default=2, ge=1, le=64)
     artifact_prefix: str = "artifacts"
     auto_annotation_provider_name: str = Field(default="vlm", min_length=1, max_length=128)
     auto_annotation_provider_endpoint: str | None = None
@@ -141,9 +155,9 @@ class Settings(BaseSettings):
             raise ValueError("must contain a valid host:port")
         return value
 
-    @field_validator("outbox_scopes")
+    @field_validator("outbox_scopes", "storage_inventory_scopes")
     @classmethod
-    def validate_outbox_scopes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+    def validate_worker_scopes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         normalized = tuple(item.strip() for item in value)
         if any(
             not item
@@ -155,6 +169,13 @@ class Settings(BaseSettings):
         if len(normalized) != len(set(normalized)):
             raise ValueError("must not contain duplicate scope triples")
         return normalized
+
+    @field_validator("preview_allowed_profiles", mode="before")
+    @classmethod
+    def normalize_preview_profiles(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        return value
 
     @field_validator("object_store_endpoint", mode="before")
     @classmethod
@@ -309,6 +330,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_local_secrets_outside_local_environments(self) -> Settings:
+        if self.preview_low_watermark_percent >= self.preview_high_watermark_percent:
+            raise ValueError(
+                "HC_PREVIEW_LOW_WATERMARK_PERCENT must be below "
+                "HC_PREVIEW_HIGH_WATERMARK_PERCENT"
+            )
+        if self.preview_project_quota_bytes > self.preview_global_quota_bytes:
+            raise ValueError(
+                "HC_PREVIEW_PROJECT_QUOTA_BYTES must not exceed "
+                "HC_PREVIEW_GLOBAL_QUOTA_BYTES"
+            )
         if self.password_min_length > self.password_max_length:
             raise ValueError("HC_PASSWORD_MIN_LENGTH must not exceed HC_PASSWORD_MAX_LENGTH")
         if self.password_scrypt_n & (self.password_scrypt_n - 1):

@@ -14,6 +14,8 @@ interface ShellState {
   authorizationLoading: boolean;
   authorizationFailed: boolean;
   sessionScopes: readonly SessionScopeGrant[];
+  sessionOrganizations: readonly SessionOrganizationGrant[];
+  bootstrapLoaded: boolean;
   platformCapabilities: readonly string[];
   capabilityRevision: number | null;
   setSession: (principal: ActorSummary | null, token: string | null) => void;
@@ -27,6 +29,7 @@ interface ShellState {
     scopes: readonly SessionScopeGrant[],
     capabilityRevision: number,
     platformCapabilities?: readonly string[],
+    organizations?: readonly SessionOrganizationGrant[],
   ) => void;
   finishScopeChange: () => void;
   clearSensitiveState: () => void;
@@ -38,6 +41,12 @@ export interface SessionScopeGrant {
   readonly regionCodes: readonly string[];
   readonly projectWide: boolean;
   readonly capabilities: readonly string[];
+}
+
+export interface SessionOrganizationGrant {
+  readonly organizationId: string;
+  readonly organizationName: string;
+  readonly memberStatus: "ACTIVE";
 }
 
 const UNSCOPED_KEY = "unscoped/-/-" as ScopeKey;
@@ -54,6 +63,8 @@ export const useShellStore = create<ShellState>((set) => ({
   authorizationLoading: restoredSession !== null,
   authorizationFailed: false,
   sessionScopes: [],
+  sessionOrganizations: [],
+  bootstrapLoaded: false,
   platformCapabilities: [],
   capabilityRevision: null,
   setSession: (principal, sessionToken) =>
@@ -73,6 +84,8 @@ export const useShellStore = create<ShellState>((set) => ({
         authorizationLoading: false,
         authorizationFailed: false,
         sessionScopes: [],
+        sessionOrganizations: [],
+        bootstrapLoaded: false,
         platformCapabilities: [],
         capabilityRevision: null,
       };
@@ -117,7 +130,15 @@ export const useShellStore = create<ShellState>((set) => ({
     sessionScopes,
     capabilityRevision,
     platformCapabilities = [],
-  ) => set({ sessionScopes, capabilityRevision, platformCapabilities }),
+    sessionOrganizations = [],
+  ) =>
+    set({
+      sessionScopes,
+      sessionOrganizations,
+      capabilityRevision,
+      platformCapabilities,
+      bootstrapLoaded: true,
+    }),
   finishScopeChange: () => set({ scopeChanging: false }),
   clearSensitiveState: () =>
     set((state) => {
@@ -129,6 +150,7 @@ export const useShellStore = create<ShellState>((set) => ({
         authorizationLoading: false,
         authorizationFailed: false,
         sessionScopes: [],
+        sessionOrganizations: [],
         platformCapabilities: [],
         capabilityRevision: null,
       };

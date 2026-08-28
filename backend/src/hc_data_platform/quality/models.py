@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence, Set
+from datetime import datetime
 from enum import Enum
 from typing import Literal
 
@@ -652,3 +653,71 @@ class QualityCompletedV1(BaseModel):
             status=report.status,
             report_sha256=report.content_sha256,
         )
+
+
+class AutoQualityProblemV1(BaseModel):
+    """Latest failed automatic-QC result projected for the unified issue center."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["auto-quality-problem/v1"] = "auto-quality-problem/v1"
+    id: str = Field(pattern=r"^qc_[0-9a-f]{32}$")
+    source: Literal["AUTO_QC"] = "AUTO_QC"
+    session_id: str | None = Field(default=None, min_length=1, max_length=256)
+    rollout_id: str = Field(min_length=1, max_length=256)
+    data_package_id: str | None = Field(default=None, min_length=1, max_length=256)
+    status: Literal["RISK", "REJECT"]
+    severity: Literal["HIGH", "CRITICAL"]
+    start_ns: str = Field(pattern=r"^(?:0|[1-9][0-9]*)$")
+    end_ns: str = Field(pattern=r"^[1-9][0-9]*$")
+    message: str = Field(min_length=1, max_length=1_000)
+    finding_count: int = Field(gt=0)
+    finding_codes: tuple[QualityCode, ...] = Field(min_length=1)
+    topics: tuple[str, ...] = Field(min_length=1)
+    report_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_range(self) -> AutoQualityProblemV1:
+        if int(self.end_ns) <= int(self.start_ns):
+            raise ValueError("end_ns must be greater than start_ns")
+        return self
+
+    @classmethod
+    def from_report(
+        cls,
+        report: QcReportV1,
+        *,
+        session_id: str | None,
+        data_package_id: str | None,
+        updated_at: datetime,
+    ) -> AutoQualityProblemV1:
+        if report.status is QualityStatus.PASS or not report.findings:
+            raise ValueError("only failed QC reports with findings can become problem data")
+        first = report.findings[0]
+        start_ns = min(item.start_ns for item in report.findings)
+        end_ns = max(max(item.end_ns, item.start_ns + 1) for item in report.findings)
+        return cls(
+            id=f"qc_{report.content_sha256[:32]}",
+            session_id=session_id,
+            rollout_id=report.rollout_id,
+            data_package_id=data_package_id,
+            status=report.status.value,
+            severity="CRITICAL" if report.status is QualityStatus.REJECT else "HIGH",
+            start_ns=str(start_ns),
+            end_ns=str(end_ns),
+            message=first.message[:1_000],
+            finding_count=len(report.findings),
+            finding_codes=tuple(sorted({item.code for item in report.findings}, key=str)),
+            topics=tuple(sorted({item.topic for item in report.findings})),
+            report_sha256=report.content_sha256,
+            updated_at=updated_at,
+        )
+
+
+class AutoQualityProblemListV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["auto-quality-problem-list/v1"] = "auto-quality-problem-list/v1"
+    items: tuple[AutoQualityProblemV1, ...]
+    total: int = Field(ge=0)

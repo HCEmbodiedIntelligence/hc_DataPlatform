@@ -280,6 +280,57 @@ def test_mutual_exclusion_uses_half_open_overlap_property() -> None:
     assert captured.value.problem.details == {"check": ReviewCheckKind.MUTUAL_EXCLUSION.value}
 
 
+def test_manual_interval_tags_can_nest_without_a_preset_schema_node() -> None:
+    service = service_with_published_schema()
+    parent = AnnotationTag(
+        annotation_id="manual-basketball",
+        tag_id="manual-node-basketball",
+        label="打篮球",
+        parent_annotation_id=None,
+        path=("manual-node-basketball",),
+        start_step=10,
+        end_step=80,
+    )
+    child = AnnotationTag(
+        annotation_id="manual-dribbling",
+        tag_id="manual-node-dribbling",
+        label="运球",
+        parent_annotation_id=parent.annotation_id,
+        path=(*parent.path, "manual-node-dribbling"),
+        start_step=20,
+        end_step=40,
+    )
+
+    revision = save_tags(service, parent, child)
+
+    assert revision.tags == (parent, child)
+
+
+def test_manual_child_tag_can_cross_its_parent_interval() -> None:
+    service = service_with_published_schema()
+    parent = AnnotationTag(
+        annotation_id="manual-basketball",
+        tag_id="manual-node-basketball",
+        label="打篮球",
+        path=("manual-node-basketball",),
+        start_step=10,
+        end_step=80,
+    )
+    outside_child = AnnotationTag(
+        annotation_id="manual-dribbling",
+        tag_id="manual-node-dribbling",
+        label="运球",
+        parent_annotation_id=parent.annotation_id,
+        path=(*parent.path, "manual-node-dribbling"),
+        start_step=5,
+        end_step=40,
+    )
+
+    revision = save_tags(service, parent, outside_child)
+
+    assert revision.tags == (parent, outside_child)
+
+
 def test_submit_is_idempotent_and_contains_all_review_checks_and_fixed_versions() -> None:
     service = service_with_published_schema()
     revision = save_tags(service, tag("collision-1"))
@@ -299,6 +350,7 @@ def test_submit_is_idempotent_and_contains_all_review_checks_and_fixed_versions(
         idempotency_key="submit-1",
     )
     assert replay == first
+    assert first.episode_version == 1
     assert {check.kind for check in first.checks} == set(ReviewCheckKind)
     assert first.base_lance_version == 23
     assert (first.tag_schema_id, first.tag_schema_version) == ("quality", 1)

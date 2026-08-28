@@ -44,6 +44,11 @@ DecimalString = Annotated[str, Field(pattern=r"^(0|[1-9][0-9]*)$")]
 
 ManualIssueStatus: TypeAlias = Literal["OPEN", "IN_PROGRESS", "RESOLVED"]
 ManualIssueSeverity: TypeAlias = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+ManualIssueDiscoverySource: TypeAlias = Literal[
+    "DATA_VIEWER",
+    "ANNOTATOR",
+    "REVIEWER",
+]
 ManualIssueType: TypeAlias = Literal[
     "POSE_JITTER",
     "TIMESTAMP_DRIFT",
@@ -117,6 +122,8 @@ class ManualIssueRecord(_ManualCleaningModel):
     end_ns: DecimalString
     issue_type: ManualIssueType
     severity: ManualIssueSeverity
+    discovery_source: ManualIssueDiscoverySource = "DATA_VIEWER"
+    annotation_task_id: str | None = Field(default=None, min_length=1, max_length=256)
     status: ManualIssueStatus
     note: str = Field(max_length=8192)
     assignee: ManualIssuePrincipal | None = None
@@ -165,6 +172,8 @@ class ManualIssueListItem(_ManualCleaningModel):
     end_ns: DecimalString
     issue_type: ManualIssueType
     severity: ManualIssueSeverity
+    discovery_source: ManualIssueDiscoverySource = "DATA_VIEWER"
+    annotation_task_id: str | None = Field(default=None, min_length=1, max_length=256)
     status: ManualIssueStatus
     assignee: ManualIssuePrincipal | None = None
     related_draft_count: DecimalString
@@ -194,6 +203,7 @@ class ManualIssueFacets(_ManualCleaningModel):
     issue_types: tuple[ManualIssueType, ...] = ()
     severities: tuple[ManualIssueSeverity, ...] = ()
     statuses: tuple[ManualIssueStatus, ...] = ()
+    discovery_sources: tuple[ManualIssueDiscoverySource, ...] = ()
     assignees: tuple[ManualIssuePrincipal, ...] = ()
 
 
@@ -228,20 +238,60 @@ class ManualIssuePageEnvelope(_ManualCleaningModel):
 
 
 class CreateManualIssueCommand(_ManualCleaningModel):
-    origin_dataset_version_id: DatasetVersionId
-    episode_id: EpisodeId
-    episode_revision_id: EpisodeRevisionId
-    episode_stream_id: EpisodeStreamId
-    start_ns: DecimalString
-    end_ns: DecimalString
+    source_kind: Literal["DATASET", "ANNOTATION_TASK"] = "DATASET"
+    discovery_source: ManualIssueDiscoverySource = "DATA_VIEWER"
+    origin_dataset_version_id: DatasetVersionId | None = None
+    episode_id: EpisodeId | None = None
+    episode_revision_id: EpisodeRevisionId | None = None
+    episode_stream_id: EpisodeStreamId | None = None
+    start_ns: DecimalString | None = None
+    end_ns: DecimalString | None = None
+    annotation_task_id: str | None = Field(default=None, min_length=1, max_length=256)
+    stream_ref: str | None = Field(default=None, min_length=1, max_length=512)
+    relative_start_ns: DecimalString | None = None
+    relative_end_ns: DecimalString | None = None
     issue_type: ManualIssueType
     severity: ManualIssueSeverity
     note: str = Field(max_length=8192)
 
     @model_validator(mode="after")
     def _valid_range(self) -> CreateManualIssueCommand:
-        if int(self.start_ns) >= int(self.end_ns):
-            raise ValueError("ManualIssue range must be half-open and non-empty")
+        dataset_fields = (
+            self.origin_dataset_version_id,
+            self.episode_id,
+            self.episode_revision_id,
+            self.episode_stream_id,
+            self.start_ns,
+            self.end_ns,
+        )
+        annotation_fields = (
+            self.annotation_task_id,
+            self.stream_ref,
+            self.relative_start_ns,
+            self.relative_end_ns,
+        )
+        if self.source_kind == "DATASET":
+            if any(value is None for value in dataset_fields) or any(
+                value is not None for value in annotation_fields
+            ):
+                raise ValueError("DATASET ManualIssue requires only fixed Dataset source fields")
+            if self.discovery_source != "DATA_VIEWER":
+                raise ValueError("DATASET ManualIssue discovery_source must be DATA_VIEWER")
+            assert self.start_ns is not None and self.end_ns is not None
+            if int(self.start_ns) >= int(self.end_ns):
+                raise ValueError("ManualIssue range must be half-open and non-empty")
+            return self
+        if any(value is None for value in annotation_fields) or any(
+            value is not None for value in dataset_fields
+        ):
+            raise ValueError(
+                "ANNOTATION_TASK ManualIssue requires only task, stream, and relative range fields"
+            )
+        if self.discovery_source not in {"ANNOTATOR", "REVIEWER"}:
+            raise ValueError("ANNOTATION_TASK discovery_source must be ANNOTATOR or REVIEWER")
+        assert self.relative_start_ns is not None and self.relative_end_ns is not None
+        if int(self.relative_start_ns) >= int(self.relative_end_ns):
+            raise ValueError("ManualIssue relative range must be half-open and non-empty")
         return self
 
 

@@ -152,7 +152,7 @@ export const annotationViewerStreams = {
 
 export const annotationFormDefinitionWire = {
   schema_version_id: 'ontology_fx_assembly:2.1',
-  title: '装配动作 Schema',
+  title: '装配动作数据结构',
   fields: [
     { key: 'semanticType', label: '语义类型', type: 'enum', required: true, local_cache: true, options: ['ACTION','PHASE','OBJECT','EVENT','KEYFRAME'].map((value) => ({ value, label: value })) },
     { key: 'labelCode', label: '标签', type: 'string', required: true, max_length: 128, local_cache: true },

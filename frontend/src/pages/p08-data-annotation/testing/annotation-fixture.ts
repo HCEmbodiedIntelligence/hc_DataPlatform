@@ -20,7 +20,7 @@ export const visualSchema: RuntimeTagSchemaVersion = {
   project_id: visualAnnotationScope.projectId,
   schema_id: "robot-operation",
   version: 7,
-  name: "机器人操作阶段 Tag Schema",
+  name: "机器人操作阶段标签结构",
   status: "PUBLISHED",
   content_hash: "b".repeat(64),
   created_by: "schema-owner",
@@ -215,6 +215,7 @@ function historyForTask(task: RuntimeAnnotationTask): RuntimeAnnotationHistory {
     {
       submission_id: "submission-visual-2",
       task_id: task.task_id,
+      episode_version: 1,
       revision: 2,
       submitted_by: "visual-annotator",
       base_lance_version: task.base_lance_version,
@@ -225,7 +226,7 @@ function historyForTask(task: RuntimeAnnotationTask): RuntimeAnnotationHistory {
       created_at: "2026-08-18T08:42:00Z",
       checks: (
         [
-          ["HIERARCHY", "完整路径与已发布 Schema 一致"],
+          ["HIERARCHY", "完整路径与已发布数据结构一致"],
           ["BOUNDARY", "区间位于固定基线范围内"],
           ["REQUIRED_ATTRIBUTES", "继承的必填属性完整"],
           ["MUTUAL_EXCLUSION", "互斥集合无重叠冲突"],
@@ -353,6 +354,21 @@ export function createVisualAnnotationBundle(
   });
   return {
     task,
+    datasetVersion: {
+      schema_version: "1",
+      project_id: task.project_id,
+      dataset_id: task.dataset_id,
+      version: task.base_lance_version,
+      schema_snapshot_id: "visual-annotation-schema-v1",
+      schema_fingerprint: "4".repeat(64),
+      frequency_hz: 30,
+      content_hash: "5".repeat(64),
+      dataset_uri: "s3://visual-test/lance/annotation",
+      lance_version: task.base_lance_version,
+      storage_commit_id: "6".repeat(64),
+      committed_rollouts: [task.rollout_id],
+      created_at: "2026-08-18T08:40:00Z",
+    },
     draft: review ? null : draft,
     history,
     schema,

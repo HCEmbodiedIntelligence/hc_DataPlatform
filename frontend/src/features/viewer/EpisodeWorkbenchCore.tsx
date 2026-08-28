@@ -7,8 +7,17 @@ import type {
   ReactNode,
   RefObject,
 } from "react";
-import { Pause, Play, RotateCcw, StepBack, StepForward } from "lucide-react";
-import type { PlaybackClock } from "./PlaybackClock";
+import {
+  Activity,
+  Bot,
+  Pause,
+  Play,
+  RotateCcw,
+  StepBack,
+  StepForward,
+  VideoOff,
+} from "lucide-react";
+import type { PlaybackClock, PlaybackClockUpdate } from "./PlaybackClock";
 import { useClockText } from "./PlaybackClock";
 import { resolveViewerComposition } from "./ViewerCompositionResolver";
 import { RobotSceneCore } from "./RobotSceneCore";
@@ -83,6 +92,8 @@ export interface ViewerTimelineSegment {
   readonly label: string;
   readonly startNs: string;
   readonly endNs?: string;
+  /** Makes this segment start every shared-clock consumer from its first frame. */
+  readonly activatePlayback?: boolean;
   readonly tone?:
     | "phase"
     | "action"
@@ -90,7 +101,11 @@ export interface ViewerTimelineSegment {
     | "event"
     | "issue"
     | "signal"
-    | "quality-pass";
+    | "quality-pass"
+    | "tag-level-1"
+    | "tag-level-2"
+    | "tag-level-3"
+    | "tag-level-4";
 }
 
 export interface ViewerTimelineTrack {
@@ -120,7 +135,7 @@ function ClockReadout({ clock }: { clock: PlaybackClock }): JSX.Element {
     <output
       aria-live="off"
       data-testid="viewer-clock-text"
-      title={`${current} ns`}
+      title={formatElapsedNs(BigInt(current), BigInt(clock.startNs))}
     >
       {formatElapsedNs(BigInt(current), BigInt(clock.startNs))}
       <span aria-hidden="true">
@@ -165,7 +180,7 @@ export function ViewerPlaybackControls({
   return (
     <div
       className="viewer-playback-controls"
-      aria-label="播放控制；空格播放或暂停，J/L 前后跳转 1 秒"
+      aria-label="播放控制；空格播放或暂停，J/L 前后跳转 1.00s"
       onKeyDown={onKeyDown}
       tabIndex={0}
     >
@@ -178,14 +193,14 @@ export function ViewerPlaybackControls({
       <button
         type="button"
         onClick={() => directSeek(clock, -100_000_000n)}
-        aria-label="后退 100 毫秒"
+        aria-label="后退 0.10s"
       >
         <StepBack aria-hidden="true" size={15} />
       </button>
       <button
         type="button"
         onClick={() => directSeek(clock, 100_000_000n)}
-        aria-label="前进 100 毫秒"
+        aria-label="前进 0.10s"
       >
         <StepForward aria-hidden="true" size={15} />
       </button>
@@ -249,6 +264,7 @@ function StreamPanel({
   const videoRef = useRef<HTMLVideoElement>(null);
   const visible = usePanelVisibility(hostRef);
   const [error, setError] = useState<DomainError | null>(null);
+  const [mediaPreparing, setMediaPreparing] = useState(false);
   const [windowSummary, setWindowSummary] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const onResourceErrorRef = useRef(onResourceError);
@@ -261,6 +277,7 @@ function StreamPanel({
     if (!visible || panel.state === "missing" || panel.state === "unsupported")
       return;
     setError(null);
+    setMediaPreparing(false);
     setWindowSummary(null);
     const controller = new AbortController();
     const resources = new ViewerResourceRegistry();
@@ -269,6 +286,7 @@ function StreamPanel({
     let latestPayload: ViewerWindowPayload | null = null;
     let drawCanvas: ((ns: string) => void) | undefined;
     const fail = (cause: unknown) => {
+      if (controller.signal.aborted) return;
       const domainError = asDomainError(cause, "VIEWER_RESOURCE_ERROR");
       setError(domainError);
       onResourceErrorRef.current?.(domainError, mediaScope(panel.kind));
@@ -278,14 +296,99 @@ function StreamPanel({
       const video = videoRef.current;
       resources.trackMedia(video);
       let refreshed = false;
+      let mediaAttached = false;
+      let playRequested = false;
+      let latestClockNs = clock.currentNs();
       let detachMedia: (() => void) | undefined;
       let revokeDescriptor: (() => void) | undefined;
+      const streamRateHz = Math.max(stream.rateHz ?? 30, 1);
+      const playbackDriftToleranceSeconds = Math.max(0.25, 4 / streamRateHz);
+      const pausedDriftToleranceSeconds = 0.5 / streamRateHz;
+      const clockUpdate = () => ({
+        reason: "subscribe" as const,
+        playing: clock.isPlaying(),
+        rate: clock.playbackRate(),
+      });
+      const requestPlayback = () => {
+        if (playRequested || !video.paused) return;
+        playRequested = true;
+        try {
+          void video.play().catch(() => {
+            // Loading a replacement HLS descriptor can interrupt play(). The
+            // next media-ready event retries without surfacing a false failure.
+          });
+        } catch {
+          // Some test/legacy media implementations throw synchronously. A
+          // later loadedmetadata/canplay event is the safe retry boundary.
+        }
+      };
+      const synchronizeVideo = (
+        ns: string,
+        update: PlaybackClockUpdate,
+        forceSeek = false,
+      ) => {
+        latestClockNs = ns;
+        if (!mediaAttached) return;
+        const clockSeconds =
+          Number(BigInt(ns) - BigInt(clock.startNs)) / 1_000_000_000;
+        if (!Number.isFinite(clockSeconds)) return;
+        const duration = video.duration;
+        const seconds =
+          Number.isFinite(duration) &&
+          clockSeconds >= duration - 0.5 / streamRateHz
+            ? Math.max(0, duration - 1 / streamRateHz)
+            : clockSeconds;
+
+        if (Math.abs(video.playbackRate - update.rate) > 0.001)
+          video.playbackRate = update.rate;
+
+        const currentTime = video.currentTime;
+        const drift = Number.isFinite(currentTime)
+          ? Math.abs(currentTime - seconds)
+          : Number.POSITIVE_INFINITY;
+        const directClockMove =
+          forceSeek ||
+          update.reason === "subscribe" ||
+          update.reason === "seek";
+        const driftTolerance = update.playing
+          ? playbackDriftToleranceSeconds
+          : pausedDriftToleranceSeconds;
+        if (drift > (directClockMove ? 0.001 : driftTolerance)) {
+          try {
+            video.currentTime = seconds;
+          } catch {
+            // Metadata may not be available yet; the media-ready event retries.
+          }
+        }
+
+        if (update.playing) requestPlayback();
+        else {
+          playRequested = false;
+          if (!video.paused) video.pause();
+        }
+      };
+      const synchronizeWhenReady = () => {
+        playRequested = false;
+        synchronizeVideo(latestClockNs, clockUpdate(), true);
+      };
+      video.addEventListener("loadedmetadata", synchronizeWhenReady);
+      video.addEventListener("canplay", synchronizeWhenReady);
+      resources.add(() => {
+        video.removeEventListener("loadedmetadata", synchronizeWhenReady);
+        video.removeEventListener("canplay", synchronizeWhenReady);
+      });
       const installMedia = async (refresh: boolean): Promise<void> => {
         let descriptor;
         try {
           descriptor = await (refresh
-            ? stream.mediaSource!.refresh(controller.signal)
-            : stream.mediaSource!.authorize(controller.signal));
+            ? stream.mediaSource!.refresh(controller.signal, (status) => {
+                if (!controller.signal.aborted)
+                  setMediaPreparing(status === "preparing");
+              })
+            : stream.mediaSource!.authorize(controller.signal, (status) => {
+                if (!controller.signal.aborted)
+                  setMediaPreparing(status === "preparing");
+              }));
         } catch (cause) {
           if (!refresh && !refreshed && isSignedResourceExpired(cause)) {
             refreshed = true;
@@ -297,6 +400,8 @@ function StreamPanel({
           descriptor.revoke?.();
           return;
         }
+        mediaAttached = false;
+        playRequested = false;
         detachMedia?.();
         revokeDescriptor?.();
         revokeDescriptor = descriptor.revoke;
@@ -318,23 +423,23 @@ function StreamPanel({
           detachMedia = undefined;
           revokeDescriptor?.();
           revokeDescriptor = undefined;
+          return;
         }
+        mediaAttached = true;
+        synchronizeVideo(latestClockNs, clockUpdate(), true);
       };
-      void installMedia(false).catch(fail);
+      // Defer the first authorization past React StrictMode's synchronous
+      // mount/cleanup probe. The discarded effect is aborted before it can
+      // launch an expensive server-side transcode that cannot be cancelled.
+      queueMicrotask(() => {
+        if (!controller.signal.aborted) void installMedia(false).catch(fail);
+      });
       resources.add(() => {
         detachMedia?.();
         revokeDescriptor?.();
       });
       resources.add(
-        clock.subscribe((ns) => {
-          const seconds =
-            Number((BigInt(ns) - BigInt(clock.startNs)) / 1_000_000n) / 1000;
-          if (
-            Number.isFinite(seconds) &&
-            Math.abs(video.currentTime - seconds) > 0.08
-          )
-            video.currentTime = seconds;
-        }),
+        clock.subscribe((ns, update) => synchronizeVideo(ns, update)),
       );
     }
 
@@ -436,6 +541,8 @@ function StreamPanel({
   const pending = panel.state === "pending";
   const unavailable =
     panel.state === "missing" || panel.state === "unsupported";
+  const cameraSlotPlaceholder =
+    stream.semanticRole === "camera-slot-placeholder";
   const mediaUnauthorized =
     (panel.kind === "video" || panel.kind === "depth") && !stream.mediaSource;
   return (
@@ -444,12 +551,15 @@ function StreamPanel({
       className="viewer-panel"
       data-panel-kind={panel.kind}
       data-panel-state={panel.state}
+      data-resource-error={error ? true : undefined}
       data-panel-visible={visible || undefined}
       aria-labelledby={`${panel.panelId}-title`}
     >
       <header>
         <h3 id={`${panel.panelId}-title`}>{panel.title}</h3>
-        <span>{panelStateLabel(panel.state)}</span>
+        <span>
+          {cameraSlotPlaceholder ? "未接入" : panelStateLabel(panel.state)}
+        </span>
       </header>
       {error ? (
         <div className="viewer-panel__error" role="alert">
@@ -468,16 +578,27 @@ function StreamPanel({
       {pending ? (
         <div role="status">Preview 生成中，其他面板可继续使用。</div>
       ) : null}
+      {mediaPreparing && !pending ? (
+        <div role="status">预览准备中，完成后将自动播放。</div>
+      ) : null}
       {unavailable ? (
-        <div className="viewer-panel__unavailable" role="note">
-          {panel.state === "missing"
-            ? (stream.accessibleSummary ??
-              "Manifest 已声明此相机，但当前媒体流缺失。")
-            : "此 Stream 当前不支持。"}
-          <code>
-            {stream.schema.id}@{stream.schema.version}
-          </code>
-        </div>
+        cameraSlotPlaceholder ? (
+          <div className="viewer-camera-slot-placeholder" role="note">
+            <VideoOff aria-hidden="true" size={22} />
+            <strong>等待摄像头接入</strong>
+            <small>接入后将在此处同步显示</small>
+          </div>
+        ) : (
+          <div className="viewer-panel__unavailable" role="note">
+            {panel.state === "missing"
+              ? (stream.accessibleSummary ??
+                "数据清单已声明此相机，但当前媒体流缺失。")
+              : "此 Stream 当前不支持。"}
+            <code>
+              {stream.schema.id}@{stream.schema.version}
+            </code>
+          </div>
+        )
       ) : null}
       {mediaUnauthorized && !unavailable ? (
         <div className="viewer-resource-unavailable" role="status">
@@ -493,7 +614,7 @@ function StreamPanel({
           ref={videoRef}
           muted
           playsInline
-          preload="metadata"
+          preload="auto"
           aria-label={`${panel.title} 媒体`}
         />
       ) : null}
@@ -526,11 +647,36 @@ function panelStateLabel(state: ViewerPanelSpec["state"]): string {
   return labels[state];
 }
 
-function RobotScenePanel({
+export function ViewerRobotPosePanel({
   scene,
+  unavailableReason,
 }: {
-  scene: NonNullable<EpisodeWorkbenchCoreProps["robotScene"]>;
+  readonly scene?: EpisodeWorkbenchCoreProps["robotScene"];
+  readonly unavailableReason?: string;
 }): JSX.Element {
+  if (!scene)
+    return (
+      <article
+        className="viewer-panel viewer-robot-panel"
+        data-panel-kind="robot-scene"
+        data-panel-state="unavailable"
+        aria-labelledby="robot-scene-panel-title"
+      >
+        <header>
+          <h3 id="robot-scene-panel-title">机器人姿态</h3>
+          <span>共享时间轴</span>
+        </header>
+        <div className="viewer-robot-placeholder" role="status">
+          <span aria-hidden="true">
+            <Bot size={26} />
+          </span>
+          <strong>3D 姿态暂不可用</strong>
+          <small>
+            {unavailableReason ?? "当前任务没有可用的机器人姿态数据。"}
+          </small>
+        </div>
+      </article>
+    );
   const {
     title = "机器人 URDF",
     canonicalPath = "robot/model/urdf",
@@ -547,6 +693,503 @@ function RobotScenePanel({
         <span>{canonicalPath}</span>
       </header>
       <RobotSceneCore {...sceneProps} />
+    </article>
+  );
+}
+
+const jointCurveColors = [
+  "#2f6fed",
+  "#8b5cf6",
+  "#d97706",
+  "#0891b2",
+  "#db2777",
+  "#4f46e5",
+  "#0f766e",
+  "#b45309",
+  "#9333ea",
+  "#0369a1",
+  "#c2417b",
+  "#475569",
+  "#6d5bd0",
+  "#0e7490",
+] as const;
+
+interface JointCurveWindowState {
+  readonly status: "idle" | "loading" | "ready" | "error";
+  readonly payload: ViewerWindowPayload | null;
+  readonly startNs: string;
+  readonly endNs: string;
+  readonly error: DomainError | null;
+}
+
+function clampTimelinePosition(
+  valueNs: string,
+  startNs: string,
+  endNs: string,
+): number {
+  const start = BigInt(startNs);
+  const end = BigInt(endNs);
+  if (end <= start) return 0;
+  const value = BigInt(valueNs);
+  if (value <= start) return 0;
+  if (value >= end) return 1;
+  return Number(((value - start) * 100_000n) / (end - start)) / 100_000;
+}
+
+function smoothJointPath(points: readonly { x: number; y: number }[]): string {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0]!.x} ${points[0]!.y}`;
+  let path = `M ${points[0]!.x} ${points[0]!.y}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]!;
+    const point = points[index]!;
+    const middleX = (previous.x + point.x) / 2;
+    path += ` C ${middleX} ${previous.y}, ${middleX} ${point.y}, ${point.x} ${point.y}`;
+  }
+  return path;
+}
+
+function secondsLabel(ns: string): string {
+  return `${(Number(BigInt(ns)) / 1_000_000_000).toFixed(1)}s`;
+}
+
+export function ViewerJointAngleCurvePanel({
+  clock,
+  stream,
+  unavailableReason,
+  onResourceError,
+}: {
+  readonly clock: PlaybackClock;
+  readonly stream?: StreamDescriptor | null;
+  readonly unavailableReason?: string;
+  readonly onResourceError?: (error: DomainError) => void;
+}): JSX.Element {
+  const [retryKey, setRetryKey] = useState(0);
+  const [cursorNs, setCursorNs] = useState(clock.currentNs());
+  const [windowState, setWindowState] = useState<JointCurveWindowState>({
+    status: "idle",
+    payload: null,
+    startNs: clock.startNs,
+    endNs: clock.endNs,
+    error: null,
+  });
+
+  useEffect(() => {
+    const source = stream?.windowSource;
+    if (!source) {
+      setWindowState({
+        status: "idle",
+        payload: null,
+        startNs: clock.startNs,
+        endNs: clock.endNs,
+        error: null,
+      });
+      return;
+    }
+    const controller = new AbortController();
+    const fourSeconds = 4_000_000_000n;
+    const guardBand = 1_000_000_000n;
+    let loadedStart: bigint | null = null;
+    let loadedEnd: bigint | null = null;
+    let loadGeneration = 0;
+    let payloadDispose: (() => void) | undefined;
+    let inFlight: AbortController | null = null;
+    let pendingStart: bigint | null = null;
+    let pendingEnd: bigint | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const insideSafeWindow = (current: bigint, start: bigint, end: bigint) => {
+      const safeStart =
+        start === BigInt(clock.startNs) ? start : start + guardBand;
+      const safeEnd = end === BigInt(clock.endNs) ? end : end - guardBand;
+      return current >= safeStart && current < safeEnd;
+    };
+
+    const clearRetryTimer = () => {
+      if (retryTimer === null) return;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+
+    const loadWindow = (start: bigint, end: bigint, attempt: number) => {
+      clearRetryTimer();
+      inFlight?.abort();
+      const loadController = new AbortController();
+      inFlight = loadController;
+      pendingStart = start;
+      pendingEnd = end;
+      const stop = () => loadController.abort();
+      controller.signal.addEventListener("abort", stop, { once: true });
+      const generation = ++loadGeneration;
+      setWindowState((currentState) => ({
+        ...currentState,
+        status: currentState.payload ? "ready" : "loading",
+        error: null,
+      }));
+      source
+        .loadWindow(
+          { startNs: start.toString(), endNs: end.toString(), lod: 1 },
+          loadController.signal,
+        )
+        .then((payload) => {
+          if (controller.signal.aborted || generation !== loadGeneration) {
+            payload.dispose?.();
+            return;
+          }
+          payloadDispose?.();
+          payloadDispose = payload.dispose;
+          loadedStart = start;
+          loadedEnd = end;
+          pendingStart = null;
+          pendingEnd = null;
+          setWindowState({
+            status: "ready",
+            payload,
+            startNs: start.toString(),
+            endNs: end.toString(),
+            error: null,
+          });
+        })
+        .catch((cause) => {
+          if (
+            controller.signal.aborted ||
+            loadController.signal.aborted ||
+            generation !== loadGeneration
+          )
+            return;
+          pendingStart = null;
+          pendingEnd = null;
+          const error = isDomainError(cause)
+            ? cause
+            : createDomainError({
+                code: "SERVER_ERROR",
+                message:
+                  cause instanceof Error
+                    ? cause.message
+                    : "关节角窗口读取失败。",
+                fieldErrors: [],
+                operationErrors: [],
+                blockedReasons: [],
+                requestId: null,
+                retryable: true,
+                httpStatus: null,
+              });
+          if (error.retryable && attempt < 2) {
+            const delayMs = attempt === 0 ? 400 : 1_200;
+            pendingStart = start;
+            pendingEnd = end;
+            setWindowState((currentState) => ({
+              ...currentState,
+              status: currentState.payload ? "ready" : "loading",
+              error,
+            }));
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              if (!controller.signal.aborted)
+                loadWindow(start, end, attempt + 1);
+            }, delayMs);
+            return;
+          }
+          // Block clock ticks in the failed window from creating a request
+          // storm. A manual retry or a seek outside this window can try again.
+          pendingStart = start;
+          pendingEnd = end;
+          setWindowState((currentState) =>
+            currentState.payload
+              ? { ...currentState, status: "ready", error }
+              : {
+                  status: "error",
+                  payload: null,
+                  startNs: start.toString(),
+                  endNs: end.toString(),
+                  error,
+                },
+          );
+          onResourceError?.(error);
+        })
+        .finally(() => {
+          controller.signal.removeEventListener("abort", stop);
+          if (inFlight === loadController) inFlight = null;
+        });
+    };
+
+    const loadAround = (ns: string) => {
+      setCursorNs(ns);
+      const current = BigInt(ns);
+      if (
+        loadedStart !== null &&
+        loadedEnd !== null &&
+        insideSafeWindow(current, loadedStart, loadedEnd)
+      )
+        return;
+      if (
+        pendingStart !== null &&
+        pendingEnd !== null &&
+        insideSafeWindow(current, pendingStart, pendingEnd)
+      )
+        return;
+      const start =
+        current > BigInt(clock.startNs) + fourSeconds
+          ? current - fourSeconds
+          : BigInt(clock.startNs);
+      const end =
+        current + fourSeconds < BigInt(clock.endNs)
+          ? current + fourSeconds
+          : BigInt(clock.endNs);
+      if (end <= start) return;
+      loadWindow(start, end, 0);
+    };
+    const unsubscribe = clock.subscribe(loadAround);
+    return () => {
+      loadGeneration += 1;
+      clearRetryTimer();
+      controller.abort();
+      inFlight?.abort();
+      unsubscribe();
+      payloadDispose?.();
+    };
+  }, [clock, onResourceError, retryKey, stream]);
+
+  const chart = useMemo(() => {
+    const payload = windowState.payload;
+    const values = payload?.values ?? [];
+    if (!values.length) return null;
+    const dimension = Math.min(
+      16,
+      values.reduce((largest, sample) => Math.max(largest, sample.length), 0),
+    );
+    const finiteValues = values.flatMap((sample) =>
+      sample
+        .slice(0, dimension)
+        .filter((value) => typeof value === "number" && Number.isFinite(value)),
+    );
+    if (!dimension || !finiteValues.length) return null;
+    const rawLow = Math.min(...finiteValues);
+    const rawHigh = Math.max(...finiteValues);
+    const padding = Math.max(0.08, (rawHigh - rawLow) * 0.08);
+    const low = rawLow - padding;
+    const high = rawHigh + padding;
+    const span = high - low || 1;
+    const plot = { left: 52, right: 592, top: 14, bottom: 188 };
+    const stride = Math.max(1, Math.ceil(values.length / 260));
+    const paths = Array.from({ length: dimension }, (_, seriesIndex) => {
+      const points = values.flatMap((sample, sampleIndex) => {
+        if (sampleIndex % stride !== 0 && sampleIndex !== values.length - 1)
+          return [];
+        const value = sample[seriesIndex];
+        if (typeof value !== "number" || !Number.isFinite(value)) return [];
+        const timestamp =
+          payload?.timestampsNs[sampleIndex] ?? windowState.startNs;
+        const position = clampTimelinePosition(
+          timestamp,
+          windowState.startNs,
+          windowState.endNs,
+        );
+        return [
+          {
+            x: plot.left + position * (plot.right - plot.left),
+            y: plot.bottom - ((value - low) / span) * (plot.bottom - plot.top),
+          },
+        ];
+      });
+      return smoothJointPath(points);
+    });
+    return { dimension, high, low, paths, plot };
+  }, [windowState.endNs, windowState.payload, windowState.startNs]);
+
+  const nearestSampleIndex = useMemo(() => {
+    const timestamps = windowState.payload?.timestampsNs ?? [];
+    if (!timestamps.length) return -1;
+    const current = BigInt(cursorNs);
+    let nearestIndex = 0;
+    let nearestDistance =
+      BigInt(timestamps[0]!) > current
+        ? BigInt(timestamps[0]!) - current
+        : current - BigInt(timestamps[0]!);
+    for (let index = 1; index < timestamps.length; index += 1) {
+      const timestamp = BigInt(timestamps[index]!);
+      const distance =
+        timestamp > current ? timestamp - current : current - timestamp;
+      if (distance < nearestDistance) {
+        nearestIndex = index;
+        nearestDistance = distance;
+      }
+    }
+    return nearestIndex;
+  }, [cursorNs, windowState.payload]);
+
+  const series = windowState.payload?.series ?? [];
+  const currentValues =
+    nearestSampleIndex >= 0
+      ? (windowState.payload?.values?.[nearestSampleIndex] ?? [])
+      : [];
+  const cursorX = chart
+    ? chart.plot.left +
+      clampTimelinePosition(cursorNs, windowState.startNs, windowState.endNs) *
+        (chart.plot.right - chart.plot.left)
+    : 0;
+  const unavailable =
+    !stream || stream.availability === "missing" || !stream.windowSource;
+
+  return (
+    <article
+      className="viewer-joint-curves"
+      data-state={unavailable ? "unavailable" : windowState.status}
+      aria-labelledby="joint-angle-curves-title"
+    >
+      <header>
+        <span>
+          <Activity aria-hidden="true" size={15} />
+          <strong id="joint-angle-curves-title">关节角变化</strong>
+        </span>
+        <small>{stream?.canonicalPath ?? "共享时间轴"}</small>
+      </header>
+      {unavailable ? (
+        <div className="viewer-joint-curves__empty" role="status">
+          <Activity aria-hidden="true" size={24} />
+          <strong>关节曲线暂不可用</strong>
+          <span>
+            {unavailableReason ??
+              stream?.accessibleSummary ??
+              "当前任务未发现可读取的关节角 Topic。"}
+          </span>
+        </div>
+      ) : windowState.status === "loading" ? (
+        <div className="viewer-joint-curves__empty" role="status">
+          <span className="viewer-joint-curves__loading" aria-hidden="true" />
+          <strong>正在读取关节角</strong>
+          <span>从固定 Lance 版本加载当前光标附近的真实样本。</span>
+        </div>
+      ) : windowState.status === "error" ? (
+        <div className="viewer-joint-curves__empty" role="alert">
+          <Activity aria-hidden="true" size={24} />
+          <strong>关节角读取失败</strong>
+          <span>{windowState.error?.message ?? "请稍后重试。"}</span>
+          {windowState.error?.retryable ? (
+            <button type="button" onClick={() => setRetryKey((key) => key + 1)}>
+              <RotateCcw aria-hidden="true" size={13} />
+              重试
+            </button>
+          ) : null}
+        </div>
+      ) : chart ? (
+        <div className="viewer-joint-curves__body">
+          <svg
+            aria-label={`关节角时间序列，共 ${chart.dimension} 个关节，单位弧度，当前时间 ${secondsLabel(cursorNs)}`}
+            className="viewer-joint-curves__chart"
+            role="img"
+            viewBox="0 0 606 216"
+          >
+            <g className="viewer-joint-curves__grid">
+              {Array.from({ length: 5 }, (_, index) => {
+                const x =
+                  chart.plot.left +
+                  (index / 4) * (chart.plot.right - chart.plot.left);
+                return (
+                  <line
+                    key={`x-${index}`}
+                    x1={x}
+                    x2={x}
+                    y1={chart.plot.top}
+                    y2={chart.plot.bottom}
+                  />
+                );
+              })}
+              {Array.from({ length: 5 }, (_, index) => {
+                const y =
+                  chart.plot.top +
+                  (index / 4) * (chart.plot.bottom - chart.plot.top);
+                return (
+                  <line
+                    key={`y-${index}`}
+                    x1={chart.plot.left}
+                    x2={chart.plot.right}
+                    y1={y}
+                    y2={y}
+                  />
+                );
+              })}
+            </g>
+            <text x="6" y={chart.plot.top + 4}>
+              {chart.high.toFixed(2)}
+            </text>
+            <text x="6" y={(chart.plot.top + chart.plot.bottom) / 2 + 4}>
+              rad
+            </text>
+            <text x="6" y={chart.plot.bottom + 4}>
+              {chart.low.toFixed(2)}
+            </text>
+            <text x={chart.plot.left} y="207">
+              {secondsLabel(windowState.startNs)}
+            </text>
+            <text x={chart.plot.right} y="207" textAnchor="end">
+              {secondsLabel(windowState.endNs)}
+            </text>
+            {chart.paths.map((path, index) => (
+              <path
+                d={path}
+                fill="none"
+                key={`joint-path-${index}`}
+                stroke={jointCurveColors[index % jointCurveColors.length]}
+                strokeDasharray={
+                  index % 4 === 1
+                    ? "5 3"
+                    : index % 4 === 2
+                      ? "2 3"
+                      : index % 4 === 3
+                        ? "7 2 2 2"
+                        : undefined
+                }
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.6"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+            <line
+              className="viewer-joint-curves__cursor"
+              x1={cursorX}
+              x2={cursorX}
+              y1={chart.plot.top}
+              y2={chart.plot.bottom}
+            />
+          </svg>
+          <div
+            className="viewer-joint-curves__legend"
+            aria-label="关节角图例和当前值"
+          >
+            {Array.from({ length: chart.dimension }, (_, index) => (
+              <span key={series[index]?.id ?? `joint-${index + 1}`}>
+                <i
+                  aria-hidden="true"
+                  data-line-style={index % 4}
+                  style={{
+                    backgroundColor:
+                      jointCurveColors[index % jointCurveColors.length],
+                  }}
+                />
+                <b>{series[index]?.displayName ?? `J${index + 1}`}</b>
+                <code>
+                  {typeof currentValues[index] === "number"
+                    ? `${currentValues[index]!.toFixed(2)} ${series[index]?.unit ?? "rad"}`
+                    : "—"}
+                </code>
+              </span>
+            ))}
+          </div>
+          <p className="viewer-joint-curves__summary">
+            {windowState.payload?.values?.length.toLocaleString("zh-CN")}{" "}
+            个真实样本 · 8 秒滑动窗口 · 橙色竖线为共享光标
+            {windowState.error ? " · 最近一次刷新失败，已保留上一窗口" : ""}
+          </p>
+        </div>
+      ) : (
+        <div className="viewer-joint-curves__empty" role="status">
+          <Activity aria-hidden="true" size={24} />
+          <strong>当前窗口没有数值样本</strong>
+          <span>拖动共享光标后将重新读取附近的关节角窗口。</span>
+        </div>
+      )}
     </article>
   );
 }
@@ -606,11 +1249,10 @@ function timelinePercent(value: bigint, start: bigint, end: bigint): number {
 
 export function formatElapsedNs(value: bigint, origin: bigint): string {
   const elapsed = value > origin ? value - origin : 0n;
-  const totalMs = elapsed / 1_000_000n;
-  const minutes = totalMs / 60_000n;
-  const seconds = (totalMs % 60_000n) / 1_000n;
-  const milliseconds = totalMs % 1_000n;
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}.${milliseconds.toString().padStart(3, "0")}`;
+  const centiseconds = (elapsed + 5_000_000n) / 10_000_000n;
+  const seconds = centiseconds / 100n;
+  const fraction = centiseconds % 100n;
+  return `${seconds}.${fraction.toString().padStart(2, "0")}s`;
 }
 
 export function SharedSignalTimeline({
@@ -657,6 +1299,9 @@ export function SharedSignalTimeline({
   );
   const previewRef = useRef<ViewerTimelineSelection | null>(preview);
   const rangeEditing = Boolean(onRangeSelect) && !disabled;
+  const hasPlaybackSegments = tracks.some((track) =>
+    track.segments.some((segment) => segment.activatePlayback),
+  );
 
   const setPreview = (next: ViewerTimelineSelection | null) => {
     previewRef.current = next;
@@ -1000,7 +1645,7 @@ export function SharedSignalTimeline({
                   onKeyDown={(event) => adjustBoundary("start", event)}
                   onPointerDown={(event) => beginDrag("start", event)}
                 >
-                  <span aria-hidden="true">‹</span>
+                  <span aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -1023,7 +1668,7 @@ export function SharedSignalTimeline({
                   onKeyDown={(event) => adjustBoundary("end", event)}
                   onPointerDown={(event) => beginDrag("end", event)}
                 >
-                  <span aria-hidden="true">›</span>
+                  <span aria-hidden="true" />
                 </button>
               </div>
             ) : null}
@@ -1038,7 +1683,11 @@ export function SharedSignalTimeline({
           {tracks.length ? (
             <div className="viewer-timeline__tracks" aria-label="同步信号轨道">
               {tracks.map((track) => (
-                <div className="viewer-timeline__track" key={track.id}>
+                <div
+                  className="viewer-timeline__track"
+                  data-level={track.level}
+                  key={track.id}
+                >
                   <strong
                     style={{ paddingLeft: `${10 + (track.level ?? 0) * 12}px` }}
                   >
@@ -1047,12 +1696,18 @@ export function SharedSignalTimeline({
                   <div>
                     {track.segments.length ? (
                       track.segments.map((segment) => {
+                        const segmentStart = BigInt(segment.startNs);
+                        const segmentEnd = segment.endNs
+                          ? BigInt(segment.endNs)
+                          : segmentStart + 1n;
                         const left = timelinePercent(
-                          BigInt(segment.startNs),
+                          segmentStart,
                           boundsStart,
                           boundsEnd,
                         );
                         const isPoint = !segment.endNs;
+                        const isCurrent =
+                          current >= segmentStart && current < segmentEnd;
                         const width = isPoint
                           ? 0
                           : Math.max(
@@ -1063,23 +1718,45 @@ export function SharedSignalTimeline({
                                 boundsEnd,
                               ) - left,
                             );
-                        return (
-                          <span
-                            key={segment.id}
-                            className={
-                              isPoint
-                                ? "viewer-timeline__segment viewer-timeline__segment--point"
-                                : "viewer-timeline__segment"
-                            }
-                            data-tone={segment.tone}
-                            style={{
-                              left: `${left}%`,
-                              ...(isPoint ? {} : { width: `${width}%` }),
-                            }}
-                            title={segment.label}
-                          >
+                        const className = isPoint
+                          ? "viewer-timeline__segment viewer-timeline__segment--point"
+                          : "viewer-timeline__segment";
+                        const style = {
+                          left: `${left}%`,
+                          ...(isPoint ? {} : { width: `${width}%` }),
+                        };
+                        const content = (
+                          <>
                             {isPoint ? <i aria-hidden="true" /> : null}
                             {segment.label}
+                          </>
+                        );
+                        return segment.activatePlayback ? (
+                          <button
+                            aria-current={isCurrent ? "time" : undefined}
+                            aria-label={`从“${segment.label}”起点同步播放全部视频和关节数据`}
+                            key={segment.id}
+                            className={className}
+                            data-tone={segment.tone}
+                            style={style}
+                            title={`从“${segment.label}”起点同步播放全部视频和关节数据`}
+                            type="button"
+                            onClick={() => {
+                              clock.seek(segment.startNs);
+                              clock.play();
+                            }}
+                          >
+                            {content}
+                          </button>
+                        ) : (
+                          <span
+                            key={segment.id}
+                            className={className}
+                            data-tone={segment.tone}
+                            style={style}
+                            title={segment.label}
+                          >
+                            {content}
                           </span>
                         );
                       })
@@ -1131,7 +1808,7 @@ export function SharedSignalTimeline({
       </div>
       <footer className="viewer-timeline__hint">
         {variant === "signals"
-          ? "方向键微调 100 毫秒 · Home / End 跳转边界 · 只有一条视频播放时间轴"
+          ? `${hasPlaybackSegments ? "点击 Tag 从起点同步播放 · " : ""}方向键微调 0.10s · Home / End 跳转边界 · 只有一条视频播放时间轴`
           : "拖拽空白处新建区间 · 拖动两侧手柄调整入点/出点 · 拖动选区中部整体移动"}
       </footer>
     </section>
@@ -1142,6 +1819,7 @@ export interface ViewerMediaSurfaceProps {
   readonly clock: PlaybackClock;
   readonly streams: readonly StreamDescriptor[];
   readonly robotScene?: EpisodeWorkbenchCoreProps["robotScene"];
+  readonly robotSceneUnavailableReason?: string;
   readonly overlays?: readonly OverlayRenderer[];
   readonly renderPanel?: ViewerPanelRenderer;
   readonly onResourceError?: EpisodeWorkbenchCoreProps["onResourceError"];
@@ -1150,11 +1828,12 @@ export interface ViewerMediaSurfaceProps {
 
 export function ViewerMediaSurface({
   clock,
-  emptyMessage = "Manifest 未发现相机。关节、动作与质检轨道仍可独立诊断。",
+  emptyMessage = "数据清单中未发现相机。关节、动作与质检轨道仍可独立诊断。",
   onResourceError,
   overlays,
   renderPanel,
   robotScene,
+  robotSceneUnavailableReason,
   streams,
 }: ViewerMediaSurfaceProps): JSX.Element {
   const composition = useMemo(
@@ -1165,22 +1844,27 @@ export function ViewerMediaSurface({
     () => new Map(streams.map((stream) => [stream.id, stream])),
     [streams],
   );
-  const panelCount = composition.panels.length + (robotScene ? 1 : 0);
+  const hasRobotPanel = Boolean(robotScene || robotSceneUnavailableReason);
+  const panelCount =
+    composition.panels.length +
+    (hasRobotPanel ? 1 : 0) +
+    (composition.panels.length === 0 ? 1 : 0);
+  const cameraCount = composition.panels.length;
   const cameraLayout =
-    composition.panels.length === 0
+    cameraCount === 0
       ? "empty"
-      : composition.panels.length === 1
+      : cameraCount === 1
         ? "single"
-        : composition.panels.length === 2
+        : cameraCount === 2
           ? "pair"
-          : composition.panels.length <= 4
+          : cameraCount <= 4
             ? "quad"
             : "many";
 
   return (
     <section
       className="viewer-media-surface"
-      aria-label="Manifest 相机视图"
+      aria-label="数据清单相机视图"
       data-panel-count={panelCount}
     >
       <div
@@ -1209,8 +1893,13 @@ export function ViewerMediaSurface({
             </div>
           );
         })}
-        {robotScene ? <RobotScenePanel scene={robotScene} /> : null}
-        {panelCount === 0 ? (
+        {hasRobotPanel ? (
+          <ViewerRobotPosePanel
+            scene={robotScene}
+            unavailableReason={robotSceneUnavailableReason}
+          />
+        ) : null}
+        {composition.panels.length === 0 ? (
           <div className="viewer-media-empty" role="status">
             {emptyMessage}
           </div>

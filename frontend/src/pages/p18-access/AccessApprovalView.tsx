@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Input, Pagination, Tabs } from "antd";
+import { Alert, Badge, Button, Input, Pagination, Select, Tabs } from "antd";
 import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
@@ -9,7 +9,6 @@ import {
   type PageStateKind,
 } from "../../shared/ui";
 import type { AccessDecisionInput } from "./access-api";
-import { AccessRequestDetails } from "./components/AccessRequestDetails";
 import { AccessRequestList } from "./components/AccessRequestList";
 import { ApprovalDrawer } from "./components/ApprovalDrawer";
 import type { AccessRequestRow } from "./contracts";
@@ -91,9 +90,7 @@ function matchesSearch(row: AccessRequestRow, search: AccessSearch): boolean {
   const query = search.q?.trim().toLocaleLowerCase("zh-CN");
   if (!query) return true;
   return [
-    row.requestId,
     row.requesterId,
-    row.projectId,
     row.reason ?? "",
     row.decisionReason ?? "",
     ...row.capabilityKeys,
@@ -119,8 +116,13 @@ export function AccessApprovalView({
   userManagement,
 }: Readonly<AccessApprovalViewProps>) {
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
+  const lastTriggerRef = useRef<HTMLElement>(null);
   const refreshButtonRef = useRef<HTMLButtonElement>(null);
   const successDismissRef = useRef<HTMLButtonElement>(null);
+  const onSearchChangeRef = useRef(onSearchChange);
+  useEffect(() => {
+    onSearchChangeRef.current = onSearchChange;
+  }, [onSearchChange]);
   const operationalTab: Exclude<AccessTab, "users"> =
     search.tab === "capability-requests"
       ? "capability-requests"
@@ -137,7 +139,7 @@ export function AccessApprovalView({
             (Date.parse(left.createdAt) - Date.parse(right.createdAt))
           );
         }),
-    [active.rows, search],
+    [active.rows, search.order, search.q, search.status],
   );
   const pageCount = Math.max(
     1,
@@ -148,26 +150,37 @@ export function AccessApprovalView({
     (page - 1) * search.pageSize,
     page * search.pageSize,
   );
-  const selected =
-    pageRows.find((row) => row.requestId === search.requestId) ??
-    pageRows[0] ??
-    null;
-  const drawerOpen = search.drawer === "open" && selected !== null;
+  const selectionRequested =
+    search.drawer === "open" && Boolean(search.requestId);
+  const selected = selectionRequested
+    ? (filteredRows.find((row) => row.requestId === search.requestId) ?? null)
+    : null;
+  const drawerOpen = selected !== null;
+  const drawerRowRef = useRef<AccessRequestRow | null>(null);
+  if (selected) drawerRowRef.current = selected;
+  const drawerRow = drawerRowRef.current;
   const selectedDecisionMatches =
     selected !== null && selected.requestId === decisionRequestId;
 
   const restoreDrawerFocus = useCallback(() => {
+    const trigger = selectedTriggerRef.current ?? lastTriggerRef.current;
     globalThis.requestAnimationFrame(() => {
-      const selectedTrigger = selectedTriggerRef.current;
-      if (selectedTrigger?.isConnected) selectedTrigger.focus();
-      else if (successDismissRef.current?.isConnected)
-        successDismissRef.current.focus();
-      else refreshButtonRef.current?.focus();
+      globalThis.requestAnimationFrame(() => {
+        if (trigger?.isConnected) trigger.focus();
+        else if (successDismissRef.current?.isConnected)
+          successDismissRef.current.focus();
+        else refreshButtonRef.current?.focus();
+      });
     });
   }, []);
 
+  useEffect(() => {
+    if (drawerOpen && selectedTriggerRef.current)
+      lastTriggerRef.current = selectedTriggerRef.current;
+  }, [drawerOpen, selected]);
+
   const closeDrawer = useCallback(() => {
-    onSearchChange({ drawer: "closed" });
+    onSearchChange({ requestId: undefined, drawer: "closed" });
     restoreDrawerFocus();
   }, [onSearchChange, restoreDrawerFocus]);
 
@@ -179,13 +192,34 @@ export function AccessApprovalView({
   }, [drawerOpen, restoreDrawerFocus]);
 
   useEffect(() => {
-    if (!drawerOpen) return undefined;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeDrawer();
-    };
-    globalThis.addEventListener("keydown", closeOnEscape);
-    return () => globalThis.removeEventListener("keydown", closeOnEscape);
-  }, [closeDrawer, drawerOpen]);
+    if (
+      search.tab === "users" ||
+      search.drawer !== "open" ||
+      active.loading ||
+      active.fetching
+    )
+      return;
+    if (!search.requestId || selected === null) {
+      onSearchChangeRef.current({ requestId: undefined, drawer: "closed" });
+    }
+  }, [
+    active.fetching,
+    active.loading,
+    search.drawer,
+    search.requestId,
+    search.tab,
+    selected,
+  ]);
+
+  const closeForContextChange = useCallback(
+    (patch: Partial<AccessSearch>) =>
+      onSearchChange({
+        ...patch,
+        requestId: undefined,
+        drawer: "closed",
+      }),
+    [onSearchChange],
+  );
 
   const tabs = [
     ...(canReadPlatformAccounts
@@ -213,62 +247,66 @@ export function AccessApprovalView({
   const filters =
     search.tab === "users" || !canReadProjectRequests ? null : (
       <div className={styles.filters} role="search" aria-label="申请筛选">
-        <label className={styles.filterField}>
-          <span>搜索申请</span>
+        <label className={`${styles.filterField} ${styles.searchFilterField}`}>
+          <span className={styles.visuallyHidden}>搜索申请</span>
           <Input
+            size="large"
             name="access-request-search"
+            aria-label="搜索申请"
             autoComplete="off"
-            prefix={<Search aria-hidden="true" size={15} />}
-            placeholder="申请人 ID、说明或 capability…"
+            spellCheck={false}
+            prefix={<Search aria-hidden="true" size={16} />}
+            placeholder="搜索申请人、说明或 capability…"
             value={search.q ?? ""}
             allowClear
             onChange={(event) =>
-              onSearchChange({ q: event.target.value || undefined, page: 1 })
+              closeForContextChange({
+                q: event.target.value || undefined,
+                page: 1,
+              })
             }
           />
         </label>
         <label className={styles.filterField}>
-          <span>状态</span>
-          <select
-            name="access-request-status"
+          <span className={styles.visuallyHidden}>状态</span>
+          <Select
+            size="large"
+            aria-label="状态"
             value={search.status}
-            onChange={(event) =>
-              onSearchChange({
-                status: event.target.value as AccessSearch["status"],
-                page: 1,
-              })
-            }
-          >
-            <option value="ALL">全部状态</option>
-            <option value="PENDING">待审批</option>
-            <option value="APPROVED">已批准</option>
-            <option value="REJECTED">已拒绝</option>
-            <option value="WITHDRAWN">已撤回</option>
-            <option value="REVOKED">已撤销</option>
-          </select>
+            options={[
+              { value: "ALL", label: "全部状态" },
+              { value: "PENDING", label: "待审批" },
+              { value: "APPROVED", label: "已批准" },
+              { value: "REJECTED", label: "已拒绝" },
+              { value: "WITHDRAWN", label: "已撤回" },
+              { value: "REVOKED", label: "已撤销" },
+            ]}
+            onChange={(status) => closeForContextChange({ status, page: 1 })}
+          />
         </label>
         <label className={styles.filterField}>
-          <span>排序</span>
-          <select
-            name="access-request-order"
+          <span className={styles.visuallyHidden}>排序</span>
+          <Select
+            size="large"
+            aria-label="排序"
             value={search.order}
-            onChange={(event) =>
-              onSearchChange({
-                order: event.target.value as AccessSearch["order"],
-                page: 1,
-              })
-            }
-          >
-            <option value="recent">最近提交</option>
-            <option value="oldest">最早提交</option>
-          </select>
+            options={[
+              { value: "recent", label: "最近提交" },
+              { value: "oldest", label: "最早提交" },
+            ]}
+            onChange={(order) => closeForContextChange({ order, page: 1 })}
+          />
         </label>
         <Button
           ref={refreshButtonRef}
           className={styles.refreshButton}
+          size="large"
           icon={<RefreshCw aria-hidden="true" size={16} />}
           loading={active.fetching}
-          onClick={() => onRefresh(operationalTab)}
+          onClick={() => {
+            closeForContextChange({});
+            onRefresh(operationalTab);
+          }}
         >
           刷新
         </Button>
@@ -325,43 +363,46 @@ export function AccessApprovalView({
       />
     );
   } else {
+    const hasActiveFilter = Boolean(search.q) || search.status !== "ALL";
     content = (
-      <div
-        className={drawerOpen ? styles.workspaceWithDrawer : styles.workspace}
-      >
-        <section
-          className={styles.requestWorkspace}
-          data-e09-main
-          aria-label="申请列表与详情"
-        >
-          {active.error ? (
-            <PageState
-              state="partial"
-              label="访问申请"
-              description="刷新失败，仍保留上次成功加载的申请。"
-              onRetry={() => onRefresh(operationalTab)}
-            >
-              <div />
-            </PageState>
-          ) : null}
-          <section
-            className={styles.listPanel}
-            aria-labelledby="request-list-heading"
+      <div className={styles.requestStack}>
+        {active.error ? (
+          <PageState
+            state="partial"
+            label="访问申请"
+            description="刷新失败，仍保留上次成功加载的申请。"
+            onRetry={() => onRefresh(operationalTab)}
           >
-            <header className={styles.panelHeader}>
-              <div>
-                <h2 id="request-list-heading">申请列表</h2>
-                <span>当前可见 {filteredRows.length} 条</span>
-              </div>
-            </header>
-            <AccessRequestList
-              rows={pageRows}
-              selectedId={selected?.requestId}
-              selectedTriggerRef={selectedTriggerRef}
-              onSelect={(row) =>
-                onSearchChange({ requestId: row.requestId, drawer: "open" })
-              }
-            />
+            <div />
+          </PageState>
+        ) : null}
+        <section
+          className={styles.requestQueue}
+          data-e09-main
+          aria-labelledby="request-list-heading"
+        >
+          <header className={styles.queueHeader}>
+            <div>
+              <h2 id="request-list-heading">申请列表</h2>
+              <span>
+                {hasActiveFilter ? "筛选结果" : "已加载"} {filteredRows.length}{" "}
+                条
+              </span>
+            </div>
+          </header>
+          <AccessRequestList
+            rows={pageRows}
+            selectedId={selected?.requestId}
+            selectedTriggerRef={selectedTriggerRef}
+            summaryLabel={
+              search.tab === "membership-requests" ? "申请说明" : "权限摘要"
+            }
+            onSelect={(row, trigger) => {
+              lastTriggerRef.current = trigger;
+              onSearchChange({ requestId: row.requestId, drawer: "open" });
+            }}
+          />
+          {filteredRows.length > search.pageSize ? (
             <div className={styles.paginationBlock}>
               <Pagination
                 current={page}
@@ -369,52 +410,17 @@ export function AccessApprovalView({
                 total={filteredRows.length}
                 showSizeChanger
                 pageSizeOptions={[10, 20]}
-                showTotal={(total) => `共 ${total} 条`}
+                showTotal={(total) => `${total} 条筛选结果`}
                 onChange={(nextPage, nextPageSize) =>
-                  onSearchChange({
+                  closeForContextChange({
                     page: nextPageSize === search.pageSize ? nextPage : 1,
                     pageSize: nextPageSize === 20 ? 20 : 10,
-                    requestId: undefined,
                   })
                 }
               />
-              <small>
-                正式列表合同暂未提供
-                cursor；当前分页只作用于服务端已返回的可见申请。
-              </small>
             </div>
-          </section>
-          <section
-            className={styles.detailPanel}
-            aria-labelledby="request-detail-heading"
-          >
-            <header className={styles.panelHeader}>
-              <div>
-                <h2 id="request-detail-heading">申请详情</h2>
-                <span>服务端安全投影</span>
-              </div>
-            </header>
-            <AccessRequestDetails row={selected} />
-          </section>
+          ) : null}
         </section>
-        {drawerOpen && selected ? (
-          <ApprovalDrawer
-            key={`${selected.kind}:${selected.requestId}`}
-            row={selected}
-            canManage={canManage}
-            principalId={principalId}
-            pending={selectedDecisionMatches && decisionPending}
-            error={
-              selectedDecisionMatches && !decisionSuccessMessage
-                ? decisionError
-                : null
-            }
-            settled={selectedDecisionMatches && Boolean(decisionSuccessMessage)}
-            onClose={closeDrawer}
-            onReload={() => onRefresh(operationalTab)}
-            onDecision={onDecision}
-          />
-        ) : null}
       </div>
     );
   }
@@ -424,8 +430,7 @@ export function AccessApprovalView({
       <StandardPageScaffold
         header={{
           title: "账户与权限",
-          description:
-            "管理平台用户与账户安全，并在当前项目作用域处理加入项目和 capability 申请；注册账户不进入审批队列。",
+          description: "管理平台账户，并处理当前项目的成员加入与能力授权申请。",
           breadcrumbs: [
             { key: "security", label: "安全与审计" },
             { key: "access", label: "账户与权限" },
@@ -438,13 +443,11 @@ export function AccessApprovalView({
               aria-label="账户与权限功能"
               items={tabs}
               onChange={(value) =>
-                onSearchChange({
+                closeForContextChange({
                   tab: value as AccessTab,
                   q: undefined,
                   status: "ALL",
                   page: 1,
-                  requestId: undefined,
-                  drawer: "open",
                 })
               }
             />
@@ -475,6 +478,29 @@ export function AccessApprovalView({
         ) : null}
         {content}
       </StandardPageScaffold>
+
+      {drawerRow ? (
+        <ApprovalDrawer
+          key={`${drawerRow.kind}:${drawerRow.requestId}`}
+          row={drawerRow}
+          open={drawerOpen}
+          canManage={canManage}
+          principalId={principalId}
+          pending={selectedDecisionMatches && decisionPending}
+          error={
+            selectedDecisionMatches && !decisionSuccessMessage
+              ? decisionError
+              : null
+          }
+          settled={selectedDecisionMatches && Boolean(decisionSuccessMessage)}
+          onClose={closeDrawer}
+          onAfterOpenChange={(open) => {
+            if (!open) restoreDrawerFocus();
+          }}
+          onReload={() => onRefresh(operationalTab)}
+          onDecision={onDecision}
+        />
+      ) : null}
     </div>
   );
 }

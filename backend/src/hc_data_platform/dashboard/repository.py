@@ -161,6 +161,53 @@ class SignalPipelineSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class TaskStatusTaskFact:
+    task_id: str
+    task_code: str
+    name: str
+    lifecycle: str
+    target_package_count: int | None = None
+    target_duration_seconds: float | None = None
+    registered_count: int = 0
+    received_count: int = 0
+    device_captured_count: int = 0
+    device_saved_count: int = 0
+    confirmed_duration_seconds: float = 0
+
+
+@dataclass(frozen=True, slots=True)
+class TaskStatusPackageFact:
+    task_id: str
+    rollout_id: str
+    data_package_id: str
+    rollout_status: str
+    duplicate_of_rollout_id: str | None = None
+    upload_status: str | None = None
+    upload_failure_code: str | None = None
+    raw_committed: bool = False
+    verification_status: str | None = None
+    verification_reason_code: str | None = None
+    qc_status: str | None = None
+    alignment_status: str | None = None
+    lance_ready: bool = False
+    annotation_task_id: str | None = None
+    annotation_status: str | None = None
+    review_decision: str | None = None
+    published: bool = False
+    workflow_status: str | None = None
+    workflow_stage: str | None = None
+    workflow_error_code: str | None = None
+    technical_state_available: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class TaskStatusProjectionFacts:
+    tasks: tuple[TaskStatusTaskFact, ...] = ()
+    packages: tuple[TaskStatusPackageFact, ...] = ()
+    unavailable_sources: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardQueryAudit:
     principal_id: str
     project_id: str
@@ -215,6 +262,14 @@ class DashboardRepository(Protocol):
         window: DashboardWindow,
     ) -> SignalPipelineSummary: ...
 
+    def task_status_projection(
+        self,
+        *,
+        auth: AuthContext,
+        scope: DashboardScope,
+        task_id: str | None = None,
+    ) -> TaskStatusProjectionFacts: ...
+
     def committed_objects(
         self,
         *,
@@ -260,6 +315,7 @@ class InMemoryDashboardRepository:
         pending_facts: tuple[DashboardPendingFact, ...] = (),
         publication_summary: PublicationLineageSummary | None = None,
         signal_pipeline_summary: SignalPipelineSummary | None = None,
+        task_status_projection: TaskStatusProjectionFacts | None = None,
         unavailable_activity_sources: tuple[str, ...] = (),
         unavailable_pending_sources: tuple[DashboardPendingItemType, ...] = (),
     ) -> None:
@@ -269,6 +325,7 @@ class InMemoryDashboardRepository:
         self._pending_facts = pending_facts
         self._publication_summary = publication_summary or PublicationLineageSummary(True)
         self._signal_pipeline_summary = signal_pipeline_summary or SignalPipelineSummary()
+        self._task_status_projection = task_status_projection or TaskStatusProjectionFacts()
         self._unavailable_activity_sources = unavailable_activity_sources
         self._unavailable_pending_sources = unavailable_pending_sources
         self.audits: list[DashboardQueryAudit] = []
@@ -373,6 +430,24 @@ class InMemoryDashboardRepository:
         self.enforce_scope(auth, scope)
         del window
         return self._signal_pipeline_summary
+
+    def task_status_projection(
+        self,
+        *,
+        auth: AuthContext,
+        scope: DashboardScope,
+        task_id: str | None = None,
+    ) -> TaskStatusProjectionFacts:
+        self.enforce_scope(auth, scope)
+        if task_id is None:
+            return self._task_status_projection
+        return TaskStatusProjectionFacts(
+            tasks=self._task_status_projection.tasks,
+            packages=tuple(
+                item for item in self._task_status_projection.packages if item.task_id == task_id
+            ),
+            unavailable_sources=self._task_status_projection.unavailable_sources,
+        )
 
     def committed_objects(
         self,

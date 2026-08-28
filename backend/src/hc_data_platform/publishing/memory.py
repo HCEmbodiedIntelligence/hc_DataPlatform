@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import zipfile
 from collections.abc import Sequence
 from threading import RLock
 from urllib.parse import quote
@@ -194,7 +196,11 @@ class InMemoryArtifactSink:
 
 # Keep the dependency-free deterministic reference exporters. Native storage
 # implementations live in ``publishing.exporters``.
-from .exporters import _publish_validated, collect_and_validate_export_steps  # noqa: E402
+from .exporters import (  # noqa: E402
+    _publish_validated,
+    _zip_files,
+    collect_and_validate_export_steps,
+)
 
 
 class InMemoryLanceSnapshotExporter:
@@ -218,23 +224,33 @@ class InMemoryLanceSnapshotExporter:
                 quote(manifest.dataset_id, safe=""),
                 quote(manifest.dataset_version, safe=""),
                 self.format.value,
-                "artifact.json",
+                "aligned-steps.lance.zip",
             )
         )
 
         def build() -> bytes:
-            return canonical_json_bytes(
+            return _zip_files(
                 {
-                    "format": self.format.value,
-                    "manifest_content_hash": manifest.content_hash,
-                    "rows": [step.model_dump(mode="json") for step in steps],
+                    "lance-snapshot.json": canonical_json_bytes(
+                        {
+                            "format": self.format.value,
+                            "manifest_content_hash": manifest.content_hash,
+                            "rows": [step.model_dump(mode="json") for step in steps],
+                        }
+                    )
                 }
             )
 
         def validate(content: bytes) -> None:
             try:
-                payload = json.loads(content)
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    payload = json.loads(archive.read("lance-snapshot.json"))
+            except (
+                KeyError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                zipfile.BadZipFile,
+            ) as exc:
                 raise problem(
                     status=409,
                     code="LANCE_SNAPSHOT_VALIDATION_FAILED",
@@ -258,7 +274,7 @@ class InMemoryLanceSnapshotExporter:
             sink=sink,
             attempt_id=attempt_id,
             artifact_uri=artifact_uri,
-            media_type="application/vnd.hc.lance-snapshot+json",
+            media_type="application/zip",
             build=build,
             validate=validate,
         )
@@ -285,7 +301,7 @@ class InMemoryLeRobotV3Exporter:
                 quote(manifest.dataset_id, safe=""),
                 quote(manifest.dataset_version, safe=""),
                 self.format.value,
-                "artifact.json",
+                "dataset.lerobot-v3.zip",
             )
         )
         expected_episodes = [
@@ -302,18 +318,28 @@ class InMemoryLeRobotV3Exporter:
         ]
 
         def build() -> bytes:
-            return canonical_json_bytes(
+            return _zip_files(
                 {
-                    "format": self.format.value,
-                    "manifest_content_hash": manifest.content_hash,
-                    "episodes": expected_episodes,
+                    "lerobot-v3.json": canonical_json_bytes(
+                        {
+                            "format": self.format.value,
+                            "manifest_content_hash": manifest.content_hash,
+                            "episodes": expected_episodes,
+                        }
+                    )
                 }
             )
 
         def validate(content: bytes) -> None:
             try:
-                payload = json.loads(content)
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    payload = json.loads(archive.read("lerobot-v3.json"))
+            except (
+                KeyError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                zipfile.BadZipFile,
+            ) as exc:
                 raise problem(
                     status=409,
                     code="LEROBOT_VALIDATION_FAILED",
@@ -338,7 +364,7 @@ class InMemoryLeRobotV3Exporter:
             sink=sink,
             attempt_id=attempt_id,
             artifact_uri=artifact_uri,
-            media_type="application/vnd.hc.lerobot-v3+json",
+            media_type="application/zip",
             build=build,
             validate=validate,
         )

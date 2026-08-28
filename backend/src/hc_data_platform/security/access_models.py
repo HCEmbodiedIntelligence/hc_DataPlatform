@@ -70,6 +70,7 @@ class AccessRequestStatus(str, Enum):
 
 
 class AccessRequestKind(str, Enum):
+    ORGANIZATION = "ORGANIZATION"
     MEMBERSHIP = "MEMBERSHIP"
     CAPABILITY = "CAPABILITY"
 
@@ -268,10 +269,21 @@ class AvailableScope(BaseModel):
         return value
 
 
+class AvailableOrganization(BaseModel):
+    """An active organization relationship that does not imply project access."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    organization_id: str = Field(min_length=1, max_length=256)
+    organization_name: str = Field(min_length=1, max_length=256)
+    member_status: Literal["ACTIVE"] = "ACTIVE"
+
+
 class SessionBootstrap(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     principal: AccountPrincipal
+    available_organizations: tuple[AvailableOrganization, ...] = ()
     available_scopes: tuple[AvailableScope, ...]
     platform_capabilities: tuple[NonEmptyScopeValue, ...] = Field(
         default=(), json_schema_extra={"uniqueItems": True}
@@ -290,6 +302,20 @@ class MembershipRequestCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str | None = Field(default=None, max_length=MAX_ACCESS_REASON_CHARS)
+
+
+class OrganizationMembershipRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_id_or_join_code: str = Field(min_length=1, max_length=256)
+    reason: str = Field(min_length=1, max_length=MAX_ACCESS_REASON_CHARS)
+
+    @field_validator("organization_id_or_join_code", "reason")
+    @classmethod
+    def reject_surrounding_whitespace(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("value must not contain surrounding whitespace")
+        return value
 
 
 class CapabilityRequestCreate(BaseModel):
@@ -362,6 +388,48 @@ class CapabilityRequestList(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     items: tuple[CapabilityRequest, ...]
+
+
+class AccountOrganizationMembership(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    organization_id: str = Field(min_length=1, max_length=256)
+    organization_name: str = Field(min_length=1, max_length=256)
+    member_status: Literal["ACTIVE"] = "ACTIVE"
+
+
+class AccountProjectMembership(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    organization_id: str = Field(min_length=1, max_length=256)
+    organization_name: str = Field(min_length=1, max_length=256)
+    project_id: str = Field(min_length=1, max_length=256)
+    project_name: str = Field(min_length=1, max_length=256)
+    member_status: Literal["ACTIVE"] = "ACTIVE"
+
+
+class AccountAccessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: str = Field(min_length=1)
+    kind: Literal["ORGANIZATION", "PROJECT", "CAPABILITY"]
+    organization_id: str = Field(min_length=1, max_length=256)
+    project_id: str | None = Field(default=None, max_length=256)
+    capability_keys: tuple[str, ...] = ()
+    status: AccessRequestStatus
+    reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    revision: int = Field(ge=1)
+
+
+class AccountAccessOverview(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    organizations: tuple[AccountOrganizationMembership, ...]
+    projects: tuple[AccountProjectMembership, ...]
+    requests: tuple[AccountAccessRequest, ...]
+    pending_request_count: int = Field(ge=0)
 
 
 class AccessAuditEvent(BaseModel):

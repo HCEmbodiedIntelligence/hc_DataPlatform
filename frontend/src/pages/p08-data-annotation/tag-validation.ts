@@ -27,12 +27,12 @@ export interface TagReviewCheckResult {
 }
 
 const checkLabels: Readonly<Record<RuntimeReviewCheckKind, string>> = {
-  HIERARCHY: "多级标签层级正确",
+  HIERARCHY: "多级区间层级正确",
   BOUNDARY: "标签区间边界准确",
   REQUIRED_ATTRIBUTES: "必填属性完整",
   MUTUAL_EXCLUSION: "标签互斥 / 冲突",
   OBJECT_RELATIONS: "动作与对象关系合理",
-  SCHEMA_VERSION: "Tag Schema 版本匹配",
+  SCHEMA_VERSION: "标签结构版本匹配",
 };
 
 function nonEmpty(value: unknown): boolean {
@@ -101,7 +101,7 @@ export function buildTagSchemaIndex(
     while (current) {
       if (seen.has(current.tag_id)) {
         errors.push(
-          `Tag Schema 存在循环：${[...seen, current.tag_id].join(" → ")}`,
+          `标签结构存在循环：${[...seen, current.tag_id].join(" → ")}`,
         );
         return null;
       }
@@ -173,7 +173,27 @@ export function evaluateAnnotationTags(input: {
   const { task, schema, tags } = input;
   const index = buildTagSchemaIndex(schema);
   const hierarchyErrors = [...index.errors];
+  const tagByAnnotationId = new Map(
+    tags.map((tag) => [tag.annotation_id, tag]),
+  );
+  if (tagByAnnotationId.size !== tags.length)
+    hierarchyErrors.push("同一修订中的 Tag 区间 ID 必须唯一");
   for (const tag of tags) {
+    if (tag.label !== null && tag.label !== undefined) {
+      if (!tag.label.trim() || tag.label !== tag.label.trim())
+        hierarchyErrors.push(`${tag.annotation_id} 的手工标签名称无效`);
+      const parent = tag.parent_annotation_id
+        ? tagByAnnotationId.get(tag.parent_annotation_id)
+        : undefined;
+      if (tag.parent_annotation_id && !parent) {
+        hierarchyErrors.push(`${tag.annotation_id} 引用了不存在的父区间`);
+        continue;
+      }
+      const expectedPath = parent ? [...parent.path, tag.tag_id] : [tag.tag_id];
+      if (tag.path.join("\u0000") !== expectedPath.join("\u0000"))
+        hierarchyErrors.push(`${tag.annotation_id} 的路径与区间父子关系不一致`);
+      continue;
+    }
     const row = index.byId.get(tag.tag_id);
     if (!row)
       hierarchyErrors.push(`${tag.annotation_id} 使用未知 Tag ${tag.tag_id}`);
@@ -181,6 +201,21 @@ export function evaluateAnnotationTags(input: {
       hierarchyErrors.push(
         `${tag.annotation_id} 路径应为 ${row.displayPath.join(" / ")}`,
       );
+    }
+  }
+  for (const tag of tags) {
+    if (tag.label === null || tag.label === undefined) continue;
+    const seen = new Set<string>();
+    let current: RuntimeAnnotationTag | undefined = tag;
+    while (current?.label !== null && current?.label !== undefined) {
+      if (seen.has(current.annotation_id)) {
+        hierarchyErrors.push("手工 Tag 区间层级存在循环");
+        break;
+      }
+      seen.add(current.annotation_id);
+      current = current.parent_annotation_id
+        ? tagByAnnotationId.get(current.parent_annotation_id)
+        : undefined;
     }
   }
 
@@ -207,6 +242,7 @@ export function evaluateAnnotationTags(input: {
 
   const attributeErrors: string[] = [];
   for (const tag of tags) {
+    if (tag.label !== null && tag.label !== undefined) continue;
     const row = index.byId.get(tag.tag_id);
     if (!row) continue;
     for (const definition of inheritedAttributes(row, index)) {
@@ -244,6 +280,7 @@ export function evaluateAnnotationTags(input: {
 
   const relationErrors: string[] = [];
   for (const tag of tags) {
+    if (tag.label !== null && tag.label !== undefined) continue;
     for (const constraint of schema.document.object_relations) {
       if (
         !constraint.required ||
@@ -277,7 +314,11 @@ export function evaluateAnnotationTags(input: {
 
   const result = (
     [
-      ["HIERARCHY", hierarchyErrors, `已核对 ${tags.length} 个 Tag 的完整路径`],
+      [
+        "HIERARCHY",
+        hierarchyErrors,
+        `已核对 ${tags.length} 个 Tag 的区间父子关系与完整路径`,
+      ],
       [
         "BOUNDARY",
         boundaryErrors,

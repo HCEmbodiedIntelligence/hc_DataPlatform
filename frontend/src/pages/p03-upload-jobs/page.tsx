@@ -5,12 +5,12 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { dataUploadRoutes } from "../../app/shell/navigation-routes";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState, UiPageHeader } from "../../shared/ui";
 import { UploadConfirmationDialog } from "./components/UploadConfirmationDialog";
 import {
   UploadMethodPanel,
   type BrowserSelectionMode,
-  type UploadSourceChoice,
 } from "./components/UploadMethodPanel";
 import { UploadPrecheckPanel } from "./components/UploadPrecheckPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
@@ -84,6 +84,12 @@ export default function UploadJobsPage() {
     ],
   );
   const capabilities = useCapabilities();
+  const unscopedAccount = useShellStore(
+    (state) =>
+      state.bootstrapLoaded &&
+      !state.authorizationFailed &&
+      state.scope === null,
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const newUploadTabRef = useRef<HTMLAnchorElement>(null);
@@ -93,15 +99,10 @@ export default function UploadJobsPage() {
     location.pathname === dataUploadRoutes.records ? "records" : "new";
   const online = useNetworkStatus();
 
-  const [sourceType, setSourceType] =
-    useState<UploadSourceChoice>("BROWSER_MULTIPART");
-  const [browserSelectionMode, setBrowserSelectionMode] =
-    useState<BrowserSelectionMode>("folder");
-  const [files, setFiles] = useState<readonly File[]>([]);
-  const [objectStorageUri, setObjectStorageUri] = useState("");
   const [flow, setFlow] = useState<UploadFlowState>({ phase: "idle" });
   const [packageFilter, setPackageFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<UploadStatus>();
+  const [scopeRequiredOpen, setScopeRequiredOpen] = useState(false);
 
   const queueItems = useUploadQueueStore((state) => state.items);
   const recovering = useUploadQueueStore((state) => state.recovering);
@@ -185,7 +186,6 @@ export default function UploadJobsPage() {
 
   const resetSelection = useCallback(() => {
     localInspectionNonce.current += 1;
-    setFiles([]);
     setFlow({ phase: "idle" });
   }, []);
 
@@ -220,8 +220,6 @@ export default function UploadJobsPage() {
   const inspectFiles = useCallback(
     async (nextFiles: readonly File[], mode: BrowserSelectionMode) => {
       const nonce = ++localInspectionNonce.current;
-      setBrowserSelectionMode(mode);
-      setFiles(nextFiles);
       if (nextFiles.length === 0) {
         setFlow({ phase: "idle" });
         return;
@@ -231,34 +229,27 @@ export default function UploadJobsPage() {
         folderName: folderNameFromFiles(nextFiles),
       });
       const selection = await inspectLocalUploadSelection({
-        sourceType,
+        sourceType: "BROWSER_MULTIPART",
         browserSelectionMode: mode,
         files: nextFiles,
-        objectStorageUri,
+        objectStorageUri: "",
       });
       if (localInspectionNonce.current !== nonce) return;
       setFlow({ phase: "confirming", selection });
     },
-    [objectStorageUri, sourceType],
+    [],
   );
-
-  const changeSourceType = useCallback((value: UploadSourceChoice) => {
-    localInspectionNonce.current += 1;
-    setSourceType(value);
-    setBrowserSelectionMode(
-      value === "BROWSER_MULTIPART" ? "folder" : "package",
-    );
-    setFiles([]);
-    setFlow({ phase: "idle" });
-  }, []);
 
   const performServerPrecheck = useCallback(
     async (
       selection: LocalUploadSelection,
       previouslyPreparedItemIds: readonly string[] = [],
     ) => {
-      if (!scope || !canManage || !online || selection.problems.length > 0)
+      if (!scope) {
+        if (unscopedAccount) setScopeRequiredOpen(true);
         return;
+      }
+      if (!canManage || !online || selection.problems.length > 0) return;
       setFlow({
         phase: "folder_selected",
         folderName: selection.folderName,
@@ -336,7 +327,6 @@ export default function UploadJobsPage() {
           });
         }
 
-        setFiles([]);
         setFlow({ phase: "queue_ready" });
         void (async () => {
           for (const itemId of preparedIds) {
@@ -353,7 +343,14 @@ export default function UploadJobsPage() {
         });
       }
     },
-    [beginPreparedUpload, canManage, online, prepareUpload, scope],
+    [
+      beginPreparedUpload,
+      canManage,
+      online,
+      prepareUpload,
+      scope,
+      unscopedAccount,
+    ],
   );
 
   const handleTabKeyDown = (
@@ -367,7 +364,7 @@ export default function UploadJobsPage() {
     queueMicrotask(() => targetRef.current?.focus());
   };
 
-  if (!scope) {
+  if (!scope && !unscopedAccount) {
     return (
       <main className={styles.page}>
         <PageState
@@ -385,7 +382,7 @@ export default function UploadJobsPage() {
       </main>
     );
   }
-  if (!canRead) {
+  if (!canRead && !unscopedAccount) {
     return (
       <main className={styles.page}>
         <PageState state="forbidden" label="数据上传" />
@@ -456,7 +453,7 @@ export default function UploadJobsPage() {
           role="tabpanel"
           aria-label="新建上传"
         >
-          {!canManage && selectionVisible ? (
+          {!canManage && !unscopedAccount && selectionVisible ? (
             <Alert
               type="warning"
               showIcon
@@ -468,23 +465,19 @@ export default function UploadJobsPage() {
           {selectionVisible ? (
             <div className={styles.serialWorkspace}>
               <UploadMethodPanel
-                sourceType={sourceType}
-                browserSelectionMode={browserSelectionMode}
-                files={files}
-                objectStorageUri={objectStorageUri}
                 disabled={flow.phase === "folder_selected"}
+                scopeRequired={unscopedAccount}
                 localChecking={flow.phase === "folder_selected"}
-                onSourceTypeChange={changeSourceType}
                 onFilesChange={(nextFiles, mode) =>
                   void inspectFiles(nextFiles, mode)
                 }
-                onObjectStorageUriChange={setObjectStorageUri}
+                onScopeRequired={() => setScopeRequiredOpen(true)}
               />
               <div className={styles.idleQueueHint} aria-live="polite">
                 <strong>上传队列为空</strong>
                 <span>确认上传并通过服务端预检后，队列才会开始处理。</span>
               </div>
-              {flow.phase === "confirming" ? (
+              {flow.phase === "confirming" && scope ? (
                 <UploadConfirmationDialog
                   open
                   selection={flow.selection}
@@ -539,7 +532,14 @@ export default function UploadJobsPage() {
                 onCancel={(id) => void cancelUpload(id)}
                 onReattach={(id, file) => void reattachAndResume(id, file)}
                 onClearSettled={clearSettled}
-                onRecover={() => void recoverQueue(scope)}
+                onContinueUpload={() => {
+                  clearSettled();
+                  resetSelection();
+                }}
+                onViewRecords={() => void navigate(dataUploadRoutes.records)}
+                onRecover={() => {
+                  if (scope) void recoverQueue(scope);
+                }}
               />
             </div>
           ) : null}
@@ -554,16 +554,31 @@ export default function UploadJobsPage() {
           <UploadRecordsPanel
             items={records.data?.items ?? []}
             total={records.data?.total ?? 0}
-            loading={records.isPending || records.isFetching}
+            loading={Boolean(scope) && (records.isPending || records.isFetching)}
             problem={records.isError ? uploadProblemCopy(records.error) : null}
             packageFilter={packageFilter}
             statusFilter={statusFilter}
             onPackageFilterChange={setPackageFilter}
             onStatusFilterChange={setStatusFilter}
-            onRefresh={() => void records.refetch()}
+            onRefresh={() => {
+              if (scope) void records.refetch();
+            }}
           />
         </section>
       )}
+
+      <Modal
+        cancelText="暂不上传"
+        okText="前往账户设置"
+        open={scopeRequiredOpen}
+        title="上传前需要加入组织和项目"
+        onCancel={() => setScopeRequiredOpen(false)}
+        onOk={() => void navigate("/account/settings?tab=memberships")}
+      >
+        <p>
+          当前账号尚未关联组织、项目和区域，平台无法确定数据应写入哪个存储位置，因此暂时不能创建上传任务。
+        </p>
+      </Modal>
     </main>
   );
 }

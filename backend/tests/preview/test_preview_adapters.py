@@ -1,3 +1,7 @@
+import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Lock
+
 from hc_data_platform.annotation.models import (
     AnnotationActor,
     AnnotationOperation,
@@ -29,7 +33,7 @@ def test_lance_adapter_consumes_step_reader_window_and_camera_fields() -> None:
         FakeStepReader("dataset-1", 7, records, project_id="project-1")
     )
 
-    frames = adapter.read_steps(
+    frames = list(adapter.read_steps(
         project_id="project-1",
         dataset_id="dataset-1",
         rollout_id="rollout-1",
@@ -37,7 +41,7 @@ def test_lance_adapter_consumes_step_reader_window_and_camera_fields() -> None:
         camera_id="front",
         start_step=0,
         end_step=3,
-    )
+    ))
 
     assert [frame.step_index for frame in frames] == [0, 1, 2]
     assert frames[0].image_ref == "file:///frames/0.png"
@@ -74,6 +78,64 @@ def test_lance_adapter_pages_an_open_ended_preview_without_a_huge_provider_range
     assert [frame.step_index for frame in frames] == [0, 1, 2, 3, 4]
 
 
+def test_lance_adapter_prefetches_s3_images_in_order_with_a_hard_bound() -> None:
+    prefetch = 4
+    first_release = Event()
+    queue_filled = Event()
+    lock = Lock()
+    started: list[int] = []
+
+    def resolve(value: object) -> bytes:
+        assert isinstance(value, int)
+        with lock:
+            started.append(value)
+            if len(started) == prefetch:
+                queue_filled.set()
+        if value == 0:
+            assert first_release.wait(timeout=2)
+        return f"image-{value}".encode()
+
+    records = [
+        StepRecord(
+            rollout_id="rollout-1",
+            step_index=index,
+            timestamp_ns=index,
+            modalities={"camera.front": index},
+        )
+        for index in range(20)
+    ]
+    adapter = LanceStepReaderAdapter(
+        FakeStepReader("dataset-1", 3, records, project_id="project-1"),
+        image_ref_resolver=resolve,
+        image_prefetch=prefetch,
+        image_fetch_workers=prefetch,
+    )
+    frames = iter(adapter.read_steps(
+        project_id="project-1",
+        dataset_id="dataset-1",
+        rollout_id="rollout-1",
+        lance_version="3",
+        camera_id="front",
+        start_step=0,
+        end_step=len(records),
+    ))
+
+    with ThreadPoolExecutor(max_workers=1) as consumer:
+        first = consumer.submit(next, frames)
+        assert queue_filled.wait(timeout=2)
+        time.sleep(0.05)
+        with lock:
+            assert len(started) == prefetch
+        first_release.set()
+        assert first.result(timeout=2).step_index == 0
+
+    remaining = list(frames)
+    assert [frame.step_index for frame in remaining] == list(range(1, len(records)))
+    assert [frame.image_ref for frame in remaining] == [
+        f"image-{index}".encode() for index in range(1, len(records))
+    ]
+
+
 def test_lance_adapter_preserves_embedded_image_bytes_for_ffmpeg() -> None:
     image = b"\x89PNG\r\n\x1a\nembedded"
     adapter = LanceStepReaderAdapter(
@@ -92,7 +154,7 @@ def test_lance_adapter_preserves_embedded_image_bytes_for_ffmpeg() -> None:
         )
     )
 
-    frame = adapter.read_steps(
+    frame = next(adapter.read_steps(
         project_id="project-1",
         dataset_id="dataset-1",
         rollout_id="rollout-1",
@@ -100,7 +162,7 @@ def test_lance_adapter_preserves_embedded_image_bytes_for_ffmpeg() -> None:
         camera_id="front",
         start_step=0,
         end_step=1,
-    )[0]
+    ))
 
     assert frame.valid is True
     assert frame.image_ref == image
@@ -123,7 +185,7 @@ def test_lance_adapter_turns_an_empty_corrupt_camera_sample_into_a_placeholder()
         )
     )
 
-    frame = adapter.read_steps(
+    frame = next(adapter.read_steps(
         project_id="project-1",
         dataset_id="dataset-1",
         rollout_id="rollout-1",
@@ -131,11 +193,48 @@ def test_lance_adapter_turns_an_empty_corrupt_camera_sample_into_a_placeholder()
         camera_id="front",
         start_step=0,
         end_step=1,
-    )[0]
+    ))
 
     assert frame.valid is False
     assert frame.image_ref is None
     assert frame.invalid_reason == "camera.front image reference is missing or unsupported"
+
+
+def test_lance_adapter_keeps_a_valid_camera_when_another_required_modality_is_invalid() -> None:
+    adapter = LanceStepReaderAdapter(
+        FakeStepReader(
+            "dataset-1",
+            3,
+            [
+                StepRecord(
+                    rollout_id="rollout-1",
+                    step_index=0,
+                    timestamp_ns=1_200_000_000,
+                    modalities={
+                        "camera.front": "file:///frames/0.png",
+                        "joint.position": [0.1, 0.2],
+                    },
+                    valid={"camera.front": True, "joint.position": False},
+                    sample_valid=False,
+                )
+            ],
+            project_id="project-1",
+        )
+    )
+
+    frame = next(adapter.read_steps(
+        project_id="project-1",
+        dataset_id="dataset-1",
+        rollout_id="rollout-1",
+        lance_version="3",
+        camera_id="front",
+        start_step=0,
+        end_step=1,
+    ))
+
+    assert frame.valid is True
+    assert frame.image_ref == "file:///frames/0.png"
+    assert frame.invalid_reason is None
 
 
 def test_s3_image_resolver_reads_only_the_configured_bucket_and_closes_response_body() -> None:
@@ -203,7 +302,7 @@ def test_s3_image_resolver_rejects_oversized_or_unavailable_objects_as_explicit_
         ),
         image_ref_resolver=resolver,
     )
-    frame = adapter.read_steps(
+    frame = next(adapter.read_steps(
         project_id="project-1",
         dataset_id="dataset-1",
         rollout_id="rollout-1",
@@ -211,7 +310,7 @@ def test_s3_image_resolver_rejects_oversized_or_unavailable_objects_as_explicit_
         camera_id="front",
         start_step=0,
         end_step=1,
-    )[0]
+    ))
 
     assert frame.valid is False
     assert frame.invalid_reason == "camera.front image reference is missing or unsupported"

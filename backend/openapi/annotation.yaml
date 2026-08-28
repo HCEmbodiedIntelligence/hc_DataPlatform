@@ -472,6 +472,12 @@ components:
             type: integer
           - type: 'null'
           title: Approved Revision
+        current_episode_version:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Current Episode Version
         current_submission_id:
           anyOf:
           - minLength: 1
@@ -600,7 +606,14 @@ components:
       title: AnnotationStatus
       type: string
     AnnotationSubmission:
-      description: Immutable, reviewable snapshot produced from one exact draft revision.
+      description: 'Immutable Episode business version produced by submit-for-review.
+
+
+        Draft saves append editor revisions.  ``episode_version`` advances only at
+
+        this review boundary, so callers never have to infer business versions from
+
+        autosaves or from the underlying Lance revision.'
       properties:
         base_lance_version:
           minimum: 1.0
@@ -615,6 +628,11 @@ components:
           format: date-time
           title: Created At
           type: string
+        episode_version:
+          default: 1
+          minimum: 1.0
+          title: Episode Version
+          type: integer
         revision:
           minimum: 0.0
           title: Revision
@@ -661,7 +679,18 @@ components:
       title: AnnotationSubmission
       type: object
     AnnotationTag:
-      description: A Tag instance pinned to an exact schema path and half-open Lance range.
+      description: 'A schema-backed or manually named Tag on a half-open Lance range.
+
+
+        ``label`` and ``parent_annotation_id`` identify manually-created interval
+
+        nodes.  The parent is a semantic relationship only: every interval keeps
+
+        an independent time range and may extend beyond or cross parent ranges.
+
+        Both fields are optional so revisions created by the original schema-preset
+
+        editor remain readable and reviewable.'
       properties:
         annotation_id:
           maxLength: 256
@@ -681,6 +710,20 @@ components:
           exclusiveMinimum: 0.0
           title: End Step
           type: integer
+        label:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Label
+        parent_annotation_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Parent Annotation Id
         path:
           items:
             type: string
@@ -1019,6 +1062,10 @@ components:
           minLength: 1
           title: Region Code
           type: string
+        sampling_reference:
+          anyOf:
+          - $ref: '#/components/schemas/AutoAnnotationSamplingReference'
+          - type: 'null'
         source_revision:
           minimum: 0.0
           title: Source Revision
@@ -1115,6 +1162,64 @@ components:
       required:
       - revision
       title: AutoAnnotationRequest
+      type: object
+    AutoAnnotationSamplingReference:
+      additionalProperties: false
+      description: 'Immutable ingest-produced candidate selection consumed by providers.
+
+
+        The reference is server-owned and deliberately separate from the public
+
+        range/modality selection so clients cannot inject arbitrary object keys.'
+      properties:
+        camera_set:
+          items:
+            type: string
+          maxItems: 16
+          minItems: 1
+          title: Camera Set
+          type: array
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Sha256
+          type: string
+        object_key:
+          maxLength: 2048
+          minLength: 1
+          title: Object Key
+          type: string
+        sampling_version:
+          maxLength: 128
+          minLength: 1
+          title: Sampling Version
+          type: string
+        selected_group_count:
+          minimum: 1.0
+          title: Selected Group Count
+          type: integer
+        size_bytes:
+          maximum: 8388608.0
+          minimum: 1.0
+          title: Size Bytes
+          type: integer
+        source_frame_count:
+          minimum: 1.0
+          title: Source Frame Count
+          type: integer
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Source Sha256
+          type: string
+      required:
+      - object_key
+      - content_sha256
+      - size_bytes
+      - source_sha256
+      - sampling_version
+      - camera_set
+      - source_frame_count
+      - selected_group_count
+      title: AutoAnnotationSamplingReference
       type: object
     AutoAnnotationUsage:
       additionalProperties: false

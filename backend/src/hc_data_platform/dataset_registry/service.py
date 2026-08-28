@@ -20,6 +20,7 @@ from hc_data_platform.security.versioning import ResourceVersion
 
 from .models import (
     CreateDatasetCommand,
+    DatasetPageActor,
     DatasetPageAllowedAction,
     DatasetPageApproveReviewCommand,
     DatasetPageApproveReviewMutationRecord,
@@ -310,6 +311,7 @@ class DatasetPageService:
                 robots=_facets(record.metadata.robot_id for record in records),
                 robot_models=_facets(record.metadata.robot_model_id for record in records),
                 tasks=_facets(record.metadata.task for record in records),
+                tags=_facets(label for record in records for label in record.labels),
                 scenes=_facets(record.metadata.scene for record in records),
                 asset_states=_facets(record.metadata.asset_state for record in records),
                 storage_classes=_facets(record.metadata.storage_class for record in records),
@@ -392,11 +394,15 @@ class DatasetPageService:
             record = DatasetPageRecord(
                 scope=scope,
                 dataset_id=dataset_id,
+                folder_path=command.folder_path,
                 name=command.name.strip(),
                 description=command.description,
                 labels=labels,
                 availability="ACTIVE",
-                owner={"id": auth.subject_id, "display_name": auth.subject_id},
+                owner=DatasetPageActor(
+                    id=auth.subject_id,
+                    display_name=auth.subject_id,
+                ),
                 created_at=now,
                 updated_at=now,
                 activity_at=now,
@@ -416,7 +422,11 @@ class DatasetPageService:
                 outcome="SUCCEEDED",
                 occurred_at=now,
                 after_hash=canonical_hash(record.model_dump(mode="json")),
-                details={"label_count": len(labels), "version_created": False},
+                details={
+                    "label_count": len(labels),
+                    "folder_depth": len(command.folder_path),
+                    "version_created": False,
+                },
             )
             try:
                 saved = self._repository.create_record(record=record, audit_event=audit)
@@ -459,6 +469,17 @@ class DatasetPageService:
             dataset_id=dataset_id,
             filters=DatasetPageVersionFilters(),
         )
+        all_versions = self._repository.list_versions(
+            scope=scope,
+            dataset_id=dataset_id,
+            filters=DatasetPageVersionFilters(include_internal=True),
+        )
+        internal_versions = tuple(
+            version
+            for version in all_versions
+            if version.version_id.startswith("version_lance_")
+        )
+        working_version_id = self._suggested_version_id(internal_versions)
         facts = self._repository.detail_facts(scope=scope, dataset_id=dataset_id)
         now = self._clock()
         self._audit(
@@ -475,7 +496,10 @@ class DatasetPageService:
                 scope=scope,
                 dataset=self._dataset(record, auth),
                 current_ready_version=self._current_ready_version(versions),
-                suggested_version_id=self._suggested_version_id(versions),
+                working_version_id=working_version_id,
+                suggested_version_id=(
+                    self._suggested_version_id(versions) or working_version_id
+                ),
                 summary=self._detail_summary(record=record, facts=facts),
             ),
             meta=self._meta(request_id=request_id, now=now),
@@ -2052,6 +2076,7 @@ class DatasetPageService:
         return DatasetPageDataset(
             scope=record.scope,
             dataset_id=record.dataset_id,
+            folder_path=record.folder_path,
             name=record.name,
             description=record.description,
             labels=record.labels,
@@ -2323,7 +2348,7 @@ class DatasetPageService:
         for version in self._repository.list_versions(
             scope=scope,
             dataset_id=dataset_id,
-            filters=DatasetPageVersionFilters(),
+            filters=DatasetPageVersionFilters(include_internal=True),
         ):
             if version.version_id == version_id:
                 return version
@@ -2808,7 +2833,10 @@ class DatasetPageService:
         return DatasetPageListItem(
             scope=record.scope,
             dataset_id=record.dataset_id,
+            folder_path=record.folder_path,
+            collection_task_id=record.metadata.collection_task_id,
             name=record.name,
+            availability=record.availability,
             dataset_created_at=record.created_at,
             dataset_activity_at=record.activity_at,
             current_version=record.current_ready_version,
@@ -3195,6 +3223,13 @@ def _dataset_id(scope: DatasetPageScope, idempotency_key: str) -> str:
 
 
 def _validated_filters(filters: DatasetPageFilters) -> DatasetPageFilters:
+    if filters.workflow_state not in {None, "pendingReview", "returned", "actionableDraft"}:
+        raise problem(
+            status=422,
+            code="WORKFLOW_STATE_INVALID",
+            title="Invalid workflow state",
+            detail="Workflow state is not supported.",
+        )
     if filters.channel_match not in {"all", "any"}:
         raise problem(
             status=422,
@@ -3227,9 +3262,12 @@ def _validated_filters(filters: DatasetPageFilters) -> DatasetPageFilters:
         query=_clean(filters.query),
         robot_model_id=_clean(filters.robot_model_id),
         robot_id=_clean(filters.robot_id),
+        collection_task_id=_clean(filters.collection_task_id),
         task=_clean(filters.task),
+        tag=_bounded_clean(filters.tag, maximum=256, code="TAG_FILTER_INVALID"),
         scene=_clean(filters.scene),
         asset_state=_clean(filters.asset_state),
+        workflow_state=filters.workflow_state,
         storage_class=_clean(filters.storage_class),
         channels=channels,
         channel_match=filters.channel_match,
@@ -3412,9 +3450,12 @@ def _filters_document(filters: DatasetPageFilters) -> dict[str, object]:
         "q": filters.query,
         "robot_model_id": filters.robot_model_id,
         "robot_id": filters.robot_id,
+        "collection_task_id": filters.collection_task_id,
         "task": filters.task,
+        "tag": filters.tag,
         "scene": filters.scene,
         "asset_state": filters.asset_state,
+        "workflow_state": filters.workflow_state,
         "storage_class": filters.storage_class,
         "channels": list(filters.channels),
         "channel_match": filters.channel_match,

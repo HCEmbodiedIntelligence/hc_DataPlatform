@@ -46,7 +46,7 @@ const job = {
     attempt_id: "attempt-a",
     artifact_content_hash: "b".repeat(64),
     row_count: 4,
-    media_type: "application/vnd.hc.lance-snapshot+json",
+    media_type: "application/zip",
   },
   error_code: null,
   error_message: null,
@@ -148,7 +148,7 @@ describe("P07 published export API", () => {
               "https://object.example.test/export?X-Amz-Signature=opaque",
             expires_at: "2026-08-20T00:16:00Z",
             artifact_content_hash: "b".repeat(64),
-            media_type: "application/vnd.hc.lance-snapshot+json",
+            media_type: "application/zip",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );

@@ -93,6 +93,7 @@ podDisruptionBudget:
   frontendMinAvailable: 1
   apiMinAvailable: 1
   workerMinAvailable: 1
+  mediaWorkerMinAvailable: 1
 
 nodeSelector: {}
 tolerations: []
@@ -172,14 +173,50 @@ backend:
         failureThreshold: 3
         periodSeconds: 15
         timeoutSeconds: 3
+  mediaWorker:
+    image:
+      repository: registry.example.invalid/hc-data-platform/worker
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullPolicy: IfNotPresent
+    replicaCount: 1
+    taskQueue: hc-media-pipeline
+    maxConcurrentGenerations: 2
+    ffmpegThreads: 2
+    strategy:
+      maxUnavailable: 0
+      maxSurge: 1
+    terminationGracePeriodSeconds: 120
+    resources:
+      requests:
+        cpu: "2"
+        memory: 2Gi
+      limits:
+        cpu: "4"
+        memory: 6Gi
+    stagingSizeLimit: 20Gi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
   config:
     environment: production
     serviceVersion: unreleased
     temporalTarget: temporal-frontend.temporal.svc:7233
     # Exact organization/project/region scopes consumed by the durable outbox dispatcher.
     outboxScopes: '[]'
+    # Exact scopes whose registered S3 objects are periodically sealed into P12 snapshots.
+    storageInventoryScopes: '[]'
+    storageInventoryIntervalSeconds: "3600"
     artifactPrefix: artifacts
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
+    previewArtifactTtlDays: "30"
+    previewSessionTtlMinutes: "30"
+    previewStagingTtlHours: "24"
+    previewGcIntervalSeconds: "300"
+    previewProjectQuotaBytes: "107374182400"
+    previewGlobalQuotaBytes: "1099511627776"
+    previewHighWatermarkPercent: "85"
+    previewLowWatermarkPercent: "70"
+    previewAllowedProfiles: annotation-h264-720p-v1
     objectStoreEndpoint: https://object-store.example.invalid
     # Required deployment input: browser-reachable HTTPS S3 endpoint used only for presigning.
     objectStorePublicEndpoint: ""

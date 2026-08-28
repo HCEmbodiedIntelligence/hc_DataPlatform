@@ -554,13 +554,7 @@ export function LifecycleExecutionPanel({
             placeholder="填写原因或审批意见（至少 8 个字符）"
             onChange={(event) => setReason(event.target.value)}
           />
-        ) : (
-          <Alert
-            type="warning"
-            showIcon
-            title="将按已审批的不可变计划执行对象迁移或可恢复清理"
-          />
-        )}
+        ) : null}
       </Modal>
 
       <Modal
@@ -659,11 +653,6 @@ export function LifecycleExecutionPanel({
             />
           </label>
         </div>
-        <Alert
-          type="info"
-          showIcon
-          title="到期只生成新的 dry-run；生产动作仍需另一位成员审批并启动。"
-        />
       </Modal>
     </>
   );

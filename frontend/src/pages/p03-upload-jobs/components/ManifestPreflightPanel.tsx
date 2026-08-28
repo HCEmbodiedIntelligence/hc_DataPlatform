@@ -48,7 +48,7 @@ export function ManifestPreflightPanel(props: {
         </span>
         <div>
           <h2 id="manifest-preflight-heading">
-            Manifest 预检 <small>（自动解析）</small>
+            数据清单预检 <small>（自动解析）</small>
           </h2>
         </div>
         {props.status === "ready" ? (
@@ -61,7 +61,7 @@ export function ManifestPreflightPanel(props: {
       {props.status === "loading" ? (
         <div
           className={styles.preflightSkeleton}
-          aria-label="Manifest 正在预检"
+          aria-label="数据清单正在预检"
         >
           <Skeleton active paragraph={{ rows: 8 }} title={{ width: "42%" }} />
         </div>
@@ -95,7 +95,7 @@ export function ManifestPreflightPanel(props: {
           />
           <div className={styles.preflightEmptyGuide}>
             <FileCheck2 size={32} aria-hidden="true" />
-            <strong>修正 Manifest 后重新选择数据包</strong>
+            <strong>修正数据清单后重新选择数据包</strong>
             <span>
               空文件、未知字段、路径穿越、重复键、过深 JSON 和超限包都会被拒绝。
             </span>
@@ -104,9 +104,9 @@ export function ManifestPreflightPanel(props: {
       ) : !result ? (
         <div className={styles.preflightEmpty}>
           <ScanSearch size={38} aria-hidden="true" />
-          <strong>等待 Manifest</strong>
+          <strong>等待数据清单</strong>
           <span>
-            选择浏览器数据包或对象地址对应的 Manifest
+            选择浏览器数据包或对象地址对应的数据清单
             后，这里会展示只读预检事实。
           </span>
           <ol className={styles.signalRail} aria-label="上传处理阶段">
@@ -162,7 +162,7 @@ export function ManifestPreflightPanel(props: {
               <h3 id="manifest-integrity-heading">校验信息</h3>
               <dl>
                 <div>
-                  <dt>Manifest 指纹</dt>
+                  <dt>数据清单指纹</dt>
                   <dd>
                     <Fingerprint size={12} aria-hidden="true" />{" "}
                     <code title={result.manifest_fingerprint}>
@@ -197,7 +197,7 @@ export function ManifestPreflightPanel(props: {
                   <dd>{result.manifest.compression}</dd>
                 </div>
                 <div>
-                  <dt>Schema</dt>
+                  <dt>数据结构</dt>
                   <dd>{result.schema_version}</dd>
                 </div>
               </dl>
@@ -210,7 +210,7 @@ export function ManifestPreflightPanel(props: {
           >
             <div className={styles.sectionHeadingRow}>
               <h3 id="manifest-discovery-heading">自动发现的相机 / Topic</h3>
-              <Tag variant="filled">来源：Manifest · 只读</Tag>
+              <Tag variant="filled">来源：数据清单 · 只读</Tag>
             </div>
             <div className={styles.discoveryGroups}>
               <div>

@@ -16,6 +16,7 @@ from hc_data_platform.annotation.models import (
     AnnotationOperation,
     AnnotationRevision,
     AnnotationTaskKind,
+    AutoAnnotationSamplingReference,
     TagSchemaStatus,
     TagSchemaVersion,
 )
@@ -25,7 +26,7 @@ from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
 )
 from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1, StepRecord
-from hc_data_platform.preview.models import PreviewDescriptorV1, PreviewRequestV1
+from hc_data_platform.preview.models import PreviewArtifactV1, PreviewRequestV1
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
@@ -102,6 +103,16 @@ class JobListV1(BaseModel):
     total: int = Field(ge=0)
 
 
+class WorkflowJobPersistenceActivityInput(BaseModel):
+    """Verified tenant scope plus the latest durable workflow job snapshot."""
+
+    model_config = ConfigDict(frozen=True)
+
+    organization_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    job: JobRecord
+
+
 def _workflow_part(value: str | Enum) -> str:
     raw = value.value if isinstance(value, Enum) else value
     if not isinstance(raw, str) or not raw:
@@ -137,6 +148,9 @@ def parse_workflow_id(value: str) -> tuple[str, str, str, str]:
 class VerificationActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    # Optional only so historical Temporal payloads remain replay-decodable. New ingest
+    # plans always carry the verified tenant identity into persistence activities.
+    organization_id: str | None = Field(default=None, min_length=1)
     project_id: str | None = Field(default=None, min_length=1)
     region_code: str | None = Field(default=None, min_length=1)
     rollout_id: str = Field(min_length=1)
@@ -170,6 +184,38 @@ class ManifestActivityOutput(BaseModel):
     preflight: ManifestPreflightResultV1
 
 
+class FrameSelectionManifestRefV1(BaseModel):
+    """Small immutable reference; candidate frames never enter Temporal history."""
+
+    model_config = ConfigDict(frozen=True)
+
+    object_key: str = Field(min_length=1, max_length=2048)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1)
+    sampling_version: str = Field(default="adaptive-2fps-v1", min_length=1)
+    source_frame_count: int = Field(ge=0)
+    selected_group_count: int = Field(ge=0)
+    camera_set: tuple[str, ...] = ()
+
+
+class ProjectionMaterializationV1(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    object_key: str = Field(min_length=1, max_length=2048)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1)
+    projection_version: str = Field(default="arrow-projection-v1", min_length=1)
+    created_at: datetime
+    expires_at: datetime
+    frame_selection: FrameSelectionManifestRefV1
+
+    @model_validator(mode="after")
+    def validate_expiry(self) -> ProjectionMaterializationV1:
+        if self.expires_at <= self.created_at:
+            raise ValueError("projection materialization must expire after creation")
+        return self
+
+
 class IngestProjectionSourceV1(BaseModel):
     """Compact immutable locator resolved inside Worker activities.
 
@@ -190,6 +236,31 @@ class IngestProjectionSourceV1(BaseModel):
     manifest_key: str = Field(min_length=1, max_length=2048)
     manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    materialization: ProjectionMaterializationV1 | None = None
+
+
+class ProjectionMaterializationActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: IngestProjectionSourceV1
+
+
+class ProjectionMaterializationActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: IngestProjectionSourceV1
+
+
+class ProjectionCleanupActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: IngestProjectionSourceV1
+
+
+class ProjectionCleanupActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    deleted: bool = True
 
 
 class QualityActivityInput(BaseModel):
@@ -308,6 +379,7 @@ class AutomaticAnnotationActivityInput(BaseModel):
     base_step_count: int = Field(gt=0)
     source_workflow_id: str = Field(min_length=1)
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
+    frame_selection: AutoAnnotationSamplingReference | None = None
 
 
 class LegacyAutomaticAnnotationActivityInput(BaseModel):
@@ -337,13 +409,16 @@ class AutomaticAnnotationActivityOutput(BaseModel):
 class PreviewActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    organization_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    job_id: str | None = Field(default=None, min_length=1)
     request: PreviewRequestV1
 
 
 class PreviewActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    descriptor: PreviewDescriptorV1
+    artifact: PreviewArtifactV1
 
 
 class PublishActivityInput(BaseModel):
@@ -450,6 +525,9 @@ class IngestRolloutWorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=1)
     rollout_id: str = Field(min_length=1)
     automatic_qc_run_id: str = Field(default="initial", min_length=1, max_length=128)
+    # Historical histories used the workflow's own queue. New production plans
+    # persist the dedicated media queue explicitly so replay never reads env vars.
+    media_task_queue: str | None = Field(default=None, min_length=1, max_length=255)
     manifest: ManifestActivityInput
     verification: VerificationActivityInput
     quality: QualityActivityInput
@@ -510,6 +588,11 @@ class IngestRolloutWorkflowInput(BaseModel):
             and source_organizations != {self.organization_id}
         ):
             raise ValueError("ingest organization_id must match every projection source")
+        if (
+            self.organization_id is not None
+            and self.verification.organization_id != self.organization_id
+        ):
+            raise ValueError("verification organization_id must match workflow organization_id")
         return self
 
 
@@ -525,6 +608,9 @@ class DatasetWriterWorkflowInput(BaseModel):
 class PreviewWorkflowInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    organization_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
     request: PreviewRequestV1
 
 

@@ -1,35 +1,36 @@
-import type { ColumnDef } from '@tanstack/react-table';
-import { Button, Space } from 'antd';
-import { Eye } from 'lucide-react';
-import { useMemo } from 'react';
-import type { DatasetId } from '../../../entities/dataset';
-import type { CursorPageVm, DatasetListItemVm } from '../../../features/datasets/api';
-import { DataTable, StatusTag } from '../../../shared/ui';
-import styles from '../styles.module.css';
+import type { ColumnDef } from "@tanstack/react-table";
+import { Button, Space } from "antd";
+import { useMemo } from "react";
+import type { DatasetId } from "../../../entities/dataset";
+import type { DatasetListItemVm } from "../../../features/datasets/api";
+import { DataTable, StatusTag } from "../../../shared/ui";
+import styles from "../styles.module.css";
 
-const datasetActivityFormatter = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
+const datasetActivityFormatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
   hour12: false,
 });
 
 function actionAllowed(item: DatasetListItemVm, action: string): boolean {
-  return item.allowedActions.some((candidate) => candidate.action === action && candidate.allowed);
+  return item.allowedActions.some(
+    (candidate) => candidate.action === action && candidate.allowed,
+  );
 }
 
 export function DatasetTable({
-  page,
+  items,
   selectedDatasetId,
   canReadEpisodes,
   onSelect,
   onOpen,
   onOpenEpisodes,
 }: Readonly<{
-  page: CursorPageVm<DatasetListItemVm>;
-  selectedDatasetId: DatasetId;
+  items: readonly DatasetListItemVm[];
+  selectedDatasetId: DatasetId | null;
   canReadEpisodes: boolean;
   onSelect: (datasetId: DatasetId) => void;
   onOpen: (datasetId: DatasetId) => void;
@@ -38,112 +39,86 @@ export function DatasetTable({
   const columns = useMemo<readonly ColumnDef<DatasetListItemVm, unknown>[]>(
     () => [
       {
-        id: 'identity',
-        header: '数据集',
-        size: 155,
+        id: "identity",
+        header: "数据集",
+        size: 280,
         cell: ({ row }) => (
-          <Button
-            type="link"
-            className={styles.identityButton}
-            disabled={!actionAllowed(row.original, 'OPEN_DATASET')}
-            onClick={() => onOpen(row.original.datasetId)}
-          >
-            <span className={styles.identity}>
-              <strong>{row.original.name}</strong>
-              <code>{row.original.datasetId}</code>
-            </span>
-          </Button>
+          <span className={styles.identity}>
+            <strong>{row.original.name}</strong>
+            <code>{row.original.datasetId}</code>
+          </span>
         ),
       },
       {
-        id: 'currentVersion',
-        header: '当前 Ready',
+        id: "currentVersion",
+        header: "当前 Ready",
         size: 165,
         cell: ({ row }) => {
           const current = row.original.currentVersion;
           if (!current) {
-            return <StatusTag status="PENDING_INGEST" label="待导入" tone="warning" known />;
+            return (
+              <StatusTag
+                status="PENDING_INGEST"
+                label="待导入"
+                tone="warning"
+                known
+              />
+            );
           }
-          const known = current.kind !== 'UNKNOWN';
+          const known = current.kind !== "UNKNOWN";
           return (
             <span className={styles.versionCell}>
               <StatusTag
                 status={current.kind}
-                label={known ? current.displayVersion : `未知类型 · ${current.displayVersion}`}
-                tone={known ? 'success' : 'warning'}
+                label={
+                  known
+                    ? current.displayVersion
+                    : `未知类型 · ${current.displayVersion}`
+                }
+                tone={known ? "success" : "warning"}
                 known={known}
               />
-              <code>{current.versionId}</code>
             </span>
           );
         },
       },
       {
-        id: 'episodes',
-        header: 'Episodes',
+        id: "episodes",
+        header: "Episodes",
         size: 70,
-        meta: { responsive: ['md'] },
+        meta: { responsive: ["md"] },
         cell: ({ row }) => row.original.episodeCount,
       },
       {
-        id: 'pendingReview',
-        header: '待复核',
-        size: 70,
-        meta: { responsive: ['lg'] },
-        cell: ({ row }) => row.original.pendingReviewVersionCount,
-      },
-      {
-        id: 'returned',
-        header: '已退回',
-        size: 70,
-        meta: { responsive: ['lg'] },
-        cell: ({ row }) => row.original.returnedVersionCount,
-      },
-      {
-        id: 'drafts',
-        header: '可处理草稿',
-        size: 86,
-        meta: { responsive: ['lg'] },
-        cell: ({ row }) => row.original.actionableDraftCount,
-      },
-      {
-        id: 'activityAt',
-        header: '活动时间',
-        size: 170,
-        meta: { responsive: ['xl'] },
+        id: "activityAt",
+        header: "最近活动",
+        size: 155,
+        meta: { responsive: ["lg"] },
         cell: ({ row }) => (
           <time dateTime={row.original.datasetActivityAt}>
-            {datasetActivityFormatter.format(new Date(row.original.datasetActivityAt))}
+            {datasetActivityFormatter.format(
+              new Date(row.original.datasetActivityAt),
+            )}
           </time>
         ),
       },
       {
-        id: 'actions',
-        header: '操作',
-        size: 165,
-        meta: { responsive: ['lg'] },
+        id: "actions",
+        header: "操作",
+        size: 160,
+        meta: { responsive: ["md"] },
         cell: ({ row }) => (
           <Space size="small" wrap>
             <Button
               type="link"
-              icon={<Eye aria-hidden="true" size={14} />}
-              className={styles.inspectButton}
-              aria-pressed={row.original.datasetId === selectedDatasetId}
-              data-row-selected={row.original.datasetId === selectedDatasetId}
-              onClick={() => onSelect(row.original.datasetId)}
-            >
-              摘要
-            </Button>
-            <Button
-              type="link"
-              disabled={!actionAllowed(row.original, 'OPEN_DATASET')}
+              disabled={!actionAllowed(row.original, "OPEN_DATASET")}
               onClick={() => onOpen(row.original.datasetId)}
             >
               打开
             </Button>
             {row.original.currentVersion &&
             canReadEpisodes &&
-            actionAllowed(row.original, 'OPEN_EPISODE') ? (
+            actionAllowed(row.original, "OPEN_EPISODE") ? (
               <Button type="link" onClick={() => onOpenEpisodes(row.original)}>
                 Episodes
               </Button>
@@ -152,15 +127,21 @@ export function DatasetTable({
         ),
       },
     ],
-    [canReadEpisodes, onOpen, onOpenEpisodes, onSelect, selectedDatasetId],
+    [canReadEpisodes, onOpen, onOpenEpisodes],
   );
 
   return (
     <DataTable
-      data={page.items}
+      data={items}
       columns={columns}
       getRowId={(item) => item.datasetId}
       caption="数据集结果"
+      columnLayout="stable"
+      rowInteraction={{
+        activeRowId: selectedDatasetId,
+        onActivate: (item) => onSelect(item.datasetId),
+        getActivationLabel: (item) => `选择 ${item.name} 并查看摘要`,
+      }}
     />
   );
 }

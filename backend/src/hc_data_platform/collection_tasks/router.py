@@ -9,6 +9,7 @@ from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .models import (
     CollectionTask,
+    CollectionTaskPackageList,
     CollectionTaskPage,
     CollectionTaskProgress,
     CollectionTaskStatus,
@@ -285,3 +286,28 @@ def get_collection_task_progress(
     )
     _no_store(response)
     return service.progress(organization_id, project_id, collection_task_id, region_code)
+
+
+@router.get(
+    "/projects/{project_id}/collection-tasks/{collection_task_id}/packages",
+    response_model=CollectionTaskPackageList,
+    operation_id="listCollectionTaskPackages",
+)
+def list_collection_task_packages(
+    project_id: Identifier,
+    collection_task_id: Identifier,
+    region_code: RegionCode,
+    response: Response,
+    service: Service,
+    auth: VerifiedAuth,
+    organization_id: OrganizationId,
+) -> CollectionTaskPackageList:
+    authorize_scope(
+        auth,
+        project_id,
+        Permission.READ,
+        region_code,
+        organization_id=organization_id,
+    )
+    _no_store(response)
+    return service.packages(organization_id, project_id, collection_task_id, region_code)

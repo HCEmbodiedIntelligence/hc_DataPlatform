@@ -21,6 +21,7 @@ from .models import (
     RobotModelAssetUploadSession,
     RobotModelBinding,
     RobotModelBindingStatus,
+    RobotModelDraftScope,
     RobotModelJointMapping,
     RobotModelPublishCheck,
     RobotModelSummary,
@@ -150,6 +151,36 @@ class RegistryRepository(Protocol):
     def get_robot_model_version(
         self, *, organization_id: str, project_id: str, version_id: str
     ) -> RobotModelVersion | None: ...
+
+    def create_robot_model(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        model_id: str,
+        version_id: str,
+        manufacturer: str,
+        model_code: str,
+        display_name: str,
+        version_label: str,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> RobotModelVersion: ...
+
+    def create_robot_model_draft(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        source_version_id: str,
+        new_version_id: str,
+        version_label: str,
+        update_scope: RobotModelDraftScope,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> RobotModelVersion: ...
 
     def find_asset_upload_by_idempotency(
         self,
@@ -319,6 +350,166 @@ class InMemoryRegistryRepository:
         with self._lock:
             candidate = self._versions.get((organization_id, version_id))
             return candidate
+
+    def create_robot_model(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        model_id: str,
+        version_id: str,
+        manufacturer: str,
+        model_code: str,
+        display_name: str,
+        version_label: str,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> RobotModelVersion:
+        with self._lock:
+            prior = next(
+                (
+                    receipt
+                    for key, receipt in self._command_receipts.items()
+                    if key[0] == organization_id
+                    and key[1] == project_id
+                    and key[3] == "CREATE_MODEL_DRAFT"
+                    and key[4] == idempotency_key
+                ),
+                None,
+            )
+            if prior is not None:
+                if prior[0] != request_fingerprint:
+                    raise ValueError("robot model idempotency key was reused")
+                return prior[1]
+            if any(
+                candidate_organization == organization_id
+                and candidate.manufacturer.casefold() == manufacturer.casefold()
+                and candidate.model_code.casefold() == model_code.casefold()
+                for candidate_organization, candidate in self._models
+            ):
+                raise ValueError("robot model identity already exists")
+            model = RobotModelSummary(
+                id=model_id,
+                manufacturer=manufacturer,
+                model_code=model_code,
+                display_name=display_name,
+                current_published_version_id=None,
+            )
+            draft = RobotModelVersion(
+                id=version_id,
+                robot_model_id=model_id,
+                version_label=version_label,
+                lifecycle="DRAFT",
+                asset_availability="MISSING",
+                publish_readiness="CONFIGURATION_REQUIRED",
+                asset_manifest_hash=None,
+                validation_input_hash=None,
+                etag=f'"registry:{version_id}:1"',
+                allowed_actions=("VIEW", "EDIT_ASSETS", "EDIT_MAPPING", "PREFLIGHT_PUBLISH"),
+                blocked_reasons=(),
+            )
+            self._models.append((organization_id, model))
+            self._versions[(organization_id, version_id)] = draft
+            self._joint_mappings[(organization_id, project_id, version_id)] = ()
+            self._command_receipts[
+                (organization_id, project_id, version_id, "CREATE_MODEL_DRAFT", idempotency_key)
+            ] = (request_fingerprint, draft)
+            return draft
+
+    def create_robot_model_draft(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        source_version_id: str,
+        new_version_id: str,
+        version_label: str,
+        update_scope: RobotModelDraftScope,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> RobotModelVersion:
+        receipt_key = (
+            organization_id,
+            project_id,
+            source_version_id,
+            "CREATE_DRAFT",
+            idempotency_key,
+        )
+        with self._lock:
+            prior = self._command_receipts.get(receipt_key)
+            if prior is not None:
+                if prior[0] != request_fingerprint:
+                    raise ValueError("robot model draft idempotency key was reused")
+                return prior[1]
+            source = self._versions.get((organization_id, source_version_id))
+            if source is None:
+                raise KeyError(source_version_id)
+            if source.lifecycle != "PUBLISHED":
+                raise ValueError("robot model draft source is not published")
+            if any(
+                candidate.robot_model_id == source.robot_model_id
+                and candidate.version_label == version_label
+                for (candidate_organization, _), candidate in self._versions.items()
+                if candidate_organization == organization_id
+            ):
+                raise ValueError("robot model version label already exists")
+            copied_assets = [
+                (object_key, asset)
+                for (candidate_organization, candidate_project, _), (
+                    object_key,
+                    candidate_version_id,
+                    asset,
+                ) in self._assets.items()
+                if candidate_organization == organization_id
+                and candidate_project == project_id
+                and candidate_version_id == source_version_id
+                and not (
+                    update_scope is RobotModelDraftScope.ASSETS
+                    and asset.role in {RobotAssetRole.URDF, RobotAssetRole.CONFIG}
+                )
+            ]
+            draft = RobotModelVersion(
+                id=new_version_id,
+                robot_model_id=source.robot_model_id,
+                version_label=version_label,
+                lifecycle="DRAFT",
+                asset_availability=(
+                    source.asset_availability
+                    if update_scope is RobotModelDraftScope.MAPPINGS
+                    else "MISSING"
+                ),
+                publish_readiness=(
+                    "MAPPING_REQUIRED"
+                    if update_scope is RobotModelDraftScope.MAPPINGS
+                    else "CONFIGURATION_REQUIRED"
+                ),
+                asset_manifest_hash=(
+                    source.asset_manifest_hash
+                    if update_scope is RobotModelDraftScope.MAPPINGS
+                    else None
+                ),
+                validation_input_hash=source.validation_input_hash,
+                etag=f'"registry:{new_version_id}:1"',
+                allowed_actions=("VIEW", "EDIT_ASSETS", "EDIT_MAPPING", "PREFLIGHT_PUBLISH"),
+                blocked_reasons=(),
+            )
+            self._versions[(organization_id, new_version_id)] = draft
+            for object_key, asset in copied_assets:
+                cloned = asset.model_copy(
+                    update={"asset_id": str(uuid4()), "created_at": created_at}
+                )
+                self._assets[(organization_id, project_id, cloned.asset_id)] = (
+                    object_key,
+                    new_version_id,
+                    cloned,
+                )
+            self._joint_mappings[(organization_id, project_id, new_version_id)] = (
+                self._joint_mappings.get((organization_id, project_id, source_version_id), ())
+            )
+            self._command_receipts[receipt_key] = (request_fingerprint, draft)
+            return draft
 
     def find_asset_upload_by_idempotency(
         self,
@@ -879,6 +1070,319 @@ class PostgresRegistryRepository:
                 (organization_id, project_id),
             )
             return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+            connection.close()
+
+    def create_robot_model(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        model_id: str,
+        version_id: str,
+        manufacturer: str,
+        model_code: str,
+        display_name: str,
+        version_label: str,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> RobotModelVersion:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT request_fingerprint, response
+                  FROM registry.robot_model_command_receipts
+                 WHERE organization_id = %s AND project_id = %s
+                   AND operation = 'CREATE_MODEL_DRAFT' AND idempotency_key = %s
+                """,
+                (organization_id, project_id, idempotency_key),
+            )
+            receipt_raw = cursor.fetchone()
+            if receipt_raw is not None:
+                receipt = _row(cursor, receipt_raw)
+                if str(receipt["request_fingerprint"]) != request_fingerprint:
+                    raise ValueError("robot model idempotency key was reused")
+                response = receipt["response"]
+                decoded = json.loads(response) if isinstance(response, str) else response
+                if not isinstance(decoded, Mapping):
+                    raise RuntimeError("robot model command receipt is malformed")
+                connection.commit()
+                return RobotModelVersion.model_validate(decoded)
+
+            cursor.execute(
+                """
+                SELECT 1
+                  FROM registry.robot_models
+                 WHERE organization_id = %s
+                   AND lower(manufacturer) = lower(%s)
+                   AND lower(model_code) = lower(%s)
+                """,
+                (organization_id, manufacturer, model_code),
+            )
+            if cursor.fetchone() is not None:
+                raise ValueError("robot model identity already exists")
+
+            draft = RobotModelVersion(
+                id=version_id,
+                robot_model_id=model_id,
+                version_label=version_label,
+                lifecycle="DRAFT",
+                asset_availability="MISSING",
+                publish_readiness="CONFIGURATION_REQUIRED",
+                asset_manifest_hash=None,
+                validation_input_hash=None,
+                etag=f'"registry:{version_id}:1"',
+                allowed_actions=("VIEW", "EDIT_ASSETS", "EDIT_MAPPING", "PREFLIGHT_PUBLISH"),
+                blocked_reasons=(),
+            )
+            cursor.execute(
+                """
+                INSERT INTO registry.robot_models (
+                    organization_id, model_id, manufacturer, model_code,
+                    display_name, current_published_version_id, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, NULL, %s, %s)
+                """,
+                (
+                    organization_id,
+                    model_id,
+                    manufacturer,
+                    model_code,
+                    display_name,
+                    created_at,
+                    created_at,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO registry.robot_model_versions (
+                    organization_id, version_id, robot_model_id, version_label,
+                    lifecycle, asset_availability, publish_readiness,
+                    asset_manifest_hash, validation_input_hash, etag,
+                    allowed_actions, blocked_reasons, revision, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, 'DRAFT', 'MISSING',
+                          'CONFIGURATION_REQUIRED', NULL, NULL, %s,
+                          %s::jsonb, '[]'::jsonb, 1, %s, %s)
+                """,
+                (
+                    organization_id,
+                    version_id,
+                    model_id,
+                    version_label,
+                    draft.etag,
+                    json.dumps(list(draft.allowed_actions)),
+                    created_at,
+                    created_at,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO registry.robot_model_command_receipts (
+                    organization_id, project_id, version_id, operation, idempotency_key,
+                    request_fingerprint, response, created_at
+                ) VALUES (%s, %s, %s, 'CREATE_MODEL_DRAFT', %s, %s, %s::jsonb, %s)
+                """,
+                (
+                    organization_id,
+                    project_id,
+                    version_id,
+                    idempotency_key,
+                    request_fingerprint,
+                    json.dumps(draft.model_dump(mode="json")),
+                    created_at,
+                ),
+            )
+            connection.commit()
+            return draft
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def create_robot_model_draft(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        source_version_id: str,
+        new_version_id: str,
+        version_label: str,
+        update_scope: RobotModelDraftScope,
+        idempotency_key: str,
+        request_fingerprint: str,
+        created_at: datetime,
+    ) -> RobotModelVersion:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT request_fingerprint, response
+                  FROM registry.robot_model_command_receipts
+                 WHERE organization_id = %s AND project_id = %s
+                   AND version_id = %s AND operation = 'CREATE_DRAFT'
+                   AND idempotency_key = %s
+                """,
+                (organization_id, project_id, source_version_id, idempotency_key),
+            )
+            receipt_raw = cursor.fetchone()
+            if receipt_raw is not None:
+                receipt = _row(cursor, receipt_raw)
+                if str(receipt["request_fingerprint"]) != request_fingerprint:
+                    raise ValueError("robot model draft idempotency key was reused")
+                response = receipt["response"]
+                decoded = json.loads(response) if isinstance(response, str) else response
+                if not isinstance(decoded, Mapping):
+                    raise RuntimeError("robot model draft command receipt is malformed")
+                connection.commit()
+                return RobotModelVersion.model_validate(decoded)
+
+            cursor.execute(
+                """
+                SELECT version_id, robot_model_id, version_label, lifecycle, asset_availability,
+                       publish_readiness, asset_manifest_hash, validation_input_hash, etag,
+                       allowed_actions, blocked_reasons
+                  FROM registry.robot_model_versions
+                 WHERE organization_id = %s AND version_id = %s
+                 FOR UPDATE
+                """,
+                (organization_id, source_version_id),
+            )
+            source_raw = cursor.fetchone()
+            if source_raw is None:
+                raise KeyError(source_version_id)
+            source = _version(_row(cursor, source_raw))
+            if source.lifecycle != "PUBLISHED":
+                raise ValueError("robot model draft source is not published")
+            cursor.execute(
+                """
+                SELECT 1
+                  FROM registry.robot_model_versions
+                 WHERE organization_id = %s AND robot_model_id = %s AND version_label = %s
+                """,
+                (organization_id, source.robot_model_id, version_label),
+            )
+            if cursor.fetchone() is not None:
+                raise ValueError("robot model version label already exists")
+
+            copy_assets = update_scope is RobotModelDraftScope.MAPPINGS
+            draft = RobotModelVersion(
+                id=new_version_id,
+                robot_model_id=source.robot_model_id,
+                version_label=version_label,
+                lifecycle="DRAFT",
+                asset_availability=source.asset_availability if copy_assets else "MISSING",
+                publish_readiness=("MAPPING_REQUIRED" if copy_assets else "CONFIGURATION_REQUIRED"),
+                asset_manifest_hash=source.asset_manifest_hash if copy_assets else None,
+                validation_input_hash=source.validation_input_hash,
+                etag=f'"registry:{new_version_id}:1"',
+                allowed_actions=("VIEW", "EDIT_ASSETS", "EDIT_MAPPING", "PREFLIGHT_PUBLISH"),
+                blocked_reasons=(),
+            )
+            cursor.execute(
+                """
+                INSERT INTO registry.robot_model_versions (
+                    organization_id, version_id, robot_model_id, version_label,
+                    lifecycle, asset_availability, publish_readiness,
+                    asset_manifest_hash, validation_input_hash, etag,
+                    allowed_actions, blocked_reasons, revision, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s,
+                          %s::jsonb, '[]'::jsonb, 1, %s, %s)
+                """,
+                (
+                    organization_id,
+                    new_version_id,
+                    source.robot_model_id,
+                    version_label,
+                    draft.asset_availability,
+                    draft.publish_readiness,
+                    draft.asset_manifest_hash,
+                    draft.validation_input_hash,
+                    draft.etag,
+                    json.dumps(list(draft.allowed_actions)),
+                    created_at,
+                    created_at,
+                ),
+            )
+            cursor.execute(
+                """
+                SELECT relative_path, role, media_type, size_bytes, sha256, object_key
+                  FROM registry.robot_model_assets
+                 WHERE organization_id = %s AND project_id = %s AND version_id = %s
+                   AND (%s OR role NOT IN ('URDF', 'CONFIG'))
+                 ORDER BY relative_path
+                """,
+                (organization_id, project_id, source_version_id, copy_assets),
+            )
+            copied_assets = [_row(cursor, asset_raw) for asset_raw in cursor.fetchall()]
+            for asset in copied_assets:
+                cursor.execute(
+                    """
+                    INSERT INTO registry.robot_model_assets (
+                        organization_id, project_id, asset_id, version_id, relative_path,
+                        role, media_type, size_bytes, sha256, object_key, created_at
+                    ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        organization_id,
+                        project_id,
+                        str(uuid4()),
+                        new_version_id,
+                        str(asset["relative_path"]),
+                        str(asset["role"]),
+                        str(asset["media_type"]),
+                        int(cast(int | str, asset["size_bytes"])),
+                        str(asset["sha256"]),
+                        str(asset["object_key"]),
+                        created_at,
+                    ),
+                )
+            cursor.execute(
+                """
+                INSERT INTO registry.robot_model_joint_mappings (
+                    organization_id, project_id, version_id, source_joint_name,
+                    target_joint_name, direction, created_at
+                )
+                SELECT organization_id, project_id, %s, source_joint_name,
+                       target_joint_name, direction, %s
+                  FROM registry.robot_model_joint_mappings
+                 WHERE organization_id = %s AND project_id = %s AND version_id = %s
+                """,
+                (
+                    new_version_id,
+                    created_at,
+                    organization_id,
+                    project_id,
+                    source_version_id,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO registry.robot_model_command_receipts (
+                    organization_id, project_id, version_id, operation, idempotency_key,
+                    request_fingerprint, response, created_at
+                ) VALUES (%s, %s, %s, 'CREATE_DRAFT', %s, %s, %s::jsonb, %s)
+                """,
+                (
+                    organization_id,
+                    project_id,
+                    source_version_id,
+                    idempotency_key,
+                    request_fingerprint,
+                    json.dumps(draft.model_dump(mode="json")),
+                    created_at,
+                ),
+            )
+            connection.commit()
+            return draft
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             cursor.close()
             connection.close()
@@ -1710,7 +2214,8 @@ class PostgresRegistryRepository:
             cursor.execute(
                 """
                 UPDATE robotics.robot_instances
-                   SET binding_id = %s, binding_scope_type = 'ROBOT', binding_scope_id = %s,
+                   SET binding_id = %s, binding_scope_type = 'ROBOT_INSTANCE',
+                       binding_scope_id = %s,
                        robot_model_version_id = %s, binding_valid_from = %s,
                        binding_valid_to = NULL, binding_etag = %s, etag = %s,
                        topology_revision = topology_revision || ':binding:' || %s

@@ -11,6 +11,7 @@ export type DatasetAssetState =
   | 'pending_ingest'
   | 'unknown';
 export type DatasetStorageClass = 'standard' | 'ia' | 'archive';
+export type DatasetWorkflowState = 'pendingReview' | 'returned' | 'actionableDraft';
 
 export type DatasetsRouteFilters = Readonly<{
   collectionTaskId?: string;
@@ -20,9 +21,8 @@ export type DatasetsRouteFilters = Readonly<{
   task?: string;
   scene?: string;
   assetState?: DatasetAssetState;
+  workflowState?: DatasetWorkflowState;
   storageClass?: DatasetStorageClass;
-  channels?: readonly string[];
-  channelMatch?: 'all' | 'any';
   datasetCreatedFrom?: string;
   datasetCreatedTo?: string;
   sort?: DatasetsSort;
@@ -100,16 +100,8 @@ function buildDatasets(filters: DatasetsRouteFilters = {}): string {
   appendText(search, 'task', filters.task);
   appendText(search, 'scene', filters.scene);
   if (filters.assetState) search.set('assetState', filters.assetState);
+  if (filters.workflowState) search.set('workflowState', filters.workflowState);
   if (filters.storageClass) search.set('storageClass', filters.storageClass);
-  for (const channel of [...new Set(filters.channels ?? [])]
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .sort()) {
-    search.append('channels', channel);
-  }
-  if (filters.channelMatch && filters.channelMatch !== 'all') {
-    search.set('channelMatch', filters.channelMatch);
-  }
   appendText(search, 'datasetCreatedFrom', filters.datasetCreatedFrom);
   appendText(search, 'datasetCreatedTo', filters.datasetCreatedTo);
   if (filters.sort && filters.sort !== 'activityDesc') search.set('sort', filters.sort);

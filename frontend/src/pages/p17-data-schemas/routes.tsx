@@ -1,9 +1,9 @@
-import type { RouteObject } from 'react-router-dom';
-import { registerPageRoutes } from '../../shared/routing/route-registry';
+import type { RouteObject } from "react-router-dom";
+import { registerPageRoutes } from "../../shared/routing/route-registry";
 
-export const routes: RouteObject[] = [
-  { path: '/settings/data-schemas', lazy: () => import('./page') },
-];
+// Schema contracts are registered by robot/configuration packages. The former
+// authoring screen intentionally has no UI route for any role.
+export const routes: RouteObject[] = [];
 
-registerPageRoutes('P17', routes);
+registerPageRoutes("P17", routes);
 export default routes;

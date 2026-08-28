@@ -39,8 +39,10 @@ from hc_data_platform.annotation.models import (
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.ingest.manifest import preflight_manifest
 from hc_data_platform.ingest.models import (
+    ManifestCameraV1,
     ManifestFileV1,
     ManifestPreflightResultV1,
+    ManifestTopicV1,
     RolloutManifestV1,
 )
 from hc_data_platform.lance_catalog.models import (
@@ -54,11 +56,13 @@ from hc_data_platform.lance_catalog.service import (
     compute_fragment_hash,
 )
 from hc_data_platform.preview.models import (
-    PreviewDescriptorV1,
+    PreviewArtifactStatus,
+    PreviewArtifactV1,
     PreviewRequestV1,
-    TimelineMappingV1,
+    PreviewScopeV1,
     ViewMode,
 )
+from hc_data_platform.preview.service import preview_artifact_key
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
@@ -98,6 +102,7 @@ from hc_data_platform.workflow.models import (
     PublishReconciliationWorkflowInput,
     QualityActivityInput,
     VerificationActivityInput,
+    WorkflowJobPersistenceActivityInput,
     workflow_id,
 )
 from hc_data_platform.workflow.names import INGEST_ROLLOUT_WORKFLOW
@@ -195,10 +200,22 @@ def _manifest_preflight(
             robot_id="robot-1",
             start_time=datetime(2026, 8, 14, tzinfo=timezone.utc),
             end_time=datetime(2026, 8, 14, 0, 0, 1, tzinfo=timezone.utc),
-            cameras=[],
-            topics=[],
+            cameras=[
+                ManifestCameraV1(
+                    camera_id="front",
+                    topic="/camera/front/image",
+                    encoding="jpeg",
+                )
+            ],
+            topics=[
+                ManifestTopicV1(
+                    name="/camera/front/image",
+                    message_encoding="cdr",
+                    schema_name="hc.camera.JpegEnvelope",
+                )
+            ],
             expected_topics=["/camera/required"],
-            actual_topics=[],
+            actual_topics=["/camera/front/image"],
             files=[
                 ManifestFileV1(
                     path="recording.mcap",
@@ -261,6 +278,7 @@ def _ingest_input() -> IngestRolloutWorkflowInput:
         rollout_id="r1",
         manifest=_manifest_input(),
         verification=VerificationActivityInput(
+            organization_id="organization-a",
             project_id="p1",
             region_code="cn",
             rollout_id="r1",
@@ -483,28 +501,45 @@ class PendingPublicationRecovery:
 
 
 class StaticPreview:
-    def create(self, request: PreviewRequestV1) -> PreviewDescriptorV1:
+    def __init__(self) -> None:
+        self.requests: list[PreviewRequestV1] = []
+
+    def generate(
+        self,
+        scope: PreviewScopeV1,
+        request: PreviewRequestV1,
+        *,
+        job_id: str | None = None,
+        cancelled: object = None,
+    ) -> PreviewArtifactV1:
+        del job_id, cancelled
         assert current_request_context().project_id == request.project_id
+        assert scope.project_id == request.project_id
+        self.requests.append(request)
         now = datetime(2026, 8, 14, tzinfo=timezone.utc)
-        return PreviewDescriptorV1(
-            session_id="preview-session",
-            cache_key="preview-cache-key",
-            project_id=request.project_id,
+        return PreviewArtifactV1(
+            artifact_id="preview-artifact",
+            artifact_key=preview_artifact_key(request),
+            scope=scope,
             dataset_id=request.dataset_id,
             rollout_id=request.rollout_id,
             lance_version=request.lance_version,
-            annotation_revision=request.annotation_revision,
             camera_id=request.camera_id,
-            view_mode=request.view_mode,
-            encoding_profile=request.encoding_profile,
-            playlist_url="https://preview.invalid/session.m3u8",
-            media_type="application/vnd.apple.mpegurl",
+            profile_id=request.profile_id,
+            pipeline_revision="test-v1",
+            source_start_step=request.start_step,
+            source_end_step=request.end_step,
+            status=PreviewArtifactStatus.READY,
+            object_prefix="derived/previews/p1/test",
+            playlist_key="derived/previews/p1/test/index.m3u8",
             frame_count=0,
-            placeholder_count=0,
             duration_seconds=0,
-            timeline=TimelineMappingV1(frequency_hz=request.frequency_hz),
-            cache_expires_at=now,
-            signed_url_expires_at=now,
+            content_sha256="a" * 64,
+            rebuild_source_id="lance:d1:1:r1",
+            created_at=now,
+            ready_at=now,
+            last_accessed_at=now,
+            expires_at=now,
         )
 
 
@@ -546,13 +581,26 @@ class StaticExporter:
         assert result.artifact_content_hash == "1" * 64
 
 
+class WorkflowJobRecorder:
+    def __init__(self) -> None:
+        self.jobs: list[JobRecord] = []
+
+    def put_job(self, request: WorkflowJobPersistenceActivityInput) -> None:
+        assert request.organization_id == "organization-a"
+        assert current_request_context().organization_id == request.organization_id
+        assert current_request_context().project_id == request.job.project_id
+        self.jobs.append(request.job)
+
+
 def _dependencies(
     *,
     verifier: StaticVerifier,
     quality: StaticQuality,
     catalog: InMemoryLanceCatalog,
+    preview: StaticPreview | None = None,
 ) -> tuple[ActivityDependencies, Writers]:
     writers = Writers()
+    workflow_jobs = WorkflowJobRecorder()
     annotations = InMemoryAutomaticAnnotationRepository()
     draft = TagSchemaVersion(
         schema_id="tag-schema-1",
@@ -599,7 +647,9 @@ def _dependencies(
             catalog_fragments=CatalogAdapter(writers, _schema()),
             catalog=catalog,
             catalog_reconciler=catalog,
+            preview=preview or StaticPreview(),
             annotation_tasks=AutomaticAnnotationTaskService(annotations),
+            workflow_jobs=workflow_jobs,
         ),
         writers,
     )
@@ -615,10 +665,12 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
         catalog.register_schema(_schema())
         verifier = StaticVerifier()
         quality = StaticQuality(QualityStatus.PASS, failures=2)
+        preview = StaticPreview()
         dependencies, writers = _dependencies(
             verifier=verifier,
             quality=quality,
             catalog=catalog,
+            preview=preview,
         )
         configure_activity_dependencies(dependencies)
 
@@ -643,6 +695,21 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             assert verifier.last_required_topics == {"/camera/required"}
             assert writers.calls == 1
             assert len(catalog.list_versions("d1", project_id="p1")) == 1
+            assert result.result["preview_count"] == 1
+            assert preview.requests == [
+                PreviewRequestV1(
+                    project_id="p1",
+                    dataset_id="d1",
+                    rollout_id="r1",
+                    lance_version="1",
+                    annotation_revision=0,
+                    camera_id="/camera/front/image",
+                    view_mode=ViewMode.ORIGINAL,
+                    frequency_hz=30,
+                    start_step=0,
+                    end_step=1,
+                )
+            ]
 
             history = await handle.fetch_history()
             await Replayer(
@@ -915,7 +982,12 @@ async def test_temporal_commit_retries_without_duplicate_version_and_reconciles(
             )
             preview_job = await environment.client.execute_workflow(
                 PreviewWorkflow.run,
-                PreviewWorkflowInput(request=preview_request),
+                PreviewWorkflowInput(
+                    organization_id="organization-1",
+                    region_code="cn-test",
+                    job_id="preview-job-1",
+                    request=preview_request,
+                ),
                 id=workflow_id("preview", "p1", "d1/r1/front"),
                 task_queue="workflow-tests",
             )
@@ -1017,8 +1089,11 @@ async def test_temporal_quality_reject_and_cancellation_never_start_alignment() 
             await handle.cancel()
             release.set()
             with pytest.raises(WorkflowFailureError):
-                await handle.result()
+                await asyncio.wait_for(handle.result(), timeout=10)
             assert cancel_quality.calls == 0
             assert cancel_writers.calls == 0
+            persisted_jobs = cast(WorkflowJobRecorder, cancel_dependencies.workflow_jobs).jobs
+            assert persisted_jobs[-1].status is JobStatus.CANCELLED
+            assert persisted_jobs[-1].stage == "cancelled"
     finally:
         await environment.shutdown()

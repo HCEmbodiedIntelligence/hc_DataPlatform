@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, TypeVar, cast
@@ -24,6 +25,7 @@ with workflow.unsafe.imports_passed_through():
         revision_content_hash,
         validate_tag_revision,
     )
+    from hc_data_platform.preview.models import PreviewRequestV1
     from hc_data_platform.quality.models import QualityStatus
     from hc_data_platform.verification.models import VerificationStatus
 
@@ -45,6 +47,7 @@ with workflow.unsafe.imports_passed_through():
         ExportPreflightActivityInput,
         ExportPreflightActivityOutput,
         ExportWorkflowInput,
+        IngestProjectionSourceV1,
         IngestRolloutWorkflowInput,
         JobRecord,
         JobStatus,
@@ -54,6 +57,10 @@ with workflow.unsafe.imports_passed_through():
         PreviewActivityInput,
         PreviewActivityOutput,
         PreviewWorkflowInput,
+        ProjectionCleanupActivityInput,
+        ProjectionCleanupActivityOutput,
+        ProjectionMaterializationActivityInput,
+        ProjectionMaterializationActivityOutput,
         PublishActivityInput,
         PublishActivityOutput,
         PublishDatasetWorkflowInput,
@@ -62,12 +69,14 @@ with workflow.unsafe.imports_passed_through():
         PublishReconciliationWorkflowInput,
         QualityActivityOutput,
         VerificationActivityOutput,
+        WorkflowJobPersistenceActivityInput,
         workflow_id,
     )
     from .names import (
         ALIGN_FRAGMENT_ACTIVITY,
         ANNOTATION_REVIEW_PREPARATION_WORKFLOW,
         CATALOG_RECONCILIATION_WORKFLOW,
+        CLEANUP_INGEST_PROJECTION_ACTIVITY,
         COMMIT_FRAGMENT_ACTIVITY,
         CREATE_ANNOTATION_TASK_ACTIVITY,
         CREATE_PREVIEW_ACTIVITY,
@@ -76,7 +85,9 @@ with workflow.unsafe.imports_passed_through():
         EXPORT_DATASET_ACTIVITY,
         EXPORT_WORKFLOW,
         INGEST_ROLLOUT_WORKFLOW,
+        MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
         PARSE_MANIFEST_ACTIVITY,
+        PERSIST_WORKFLOW_JOB_ACTIVITY,
         PREFLIGHT_EXPORT_ACTIVITY,
         PREVIEW_WORKFLOW,
         PUBLISH_DATASET_ACTIVITY,
@@ -89,7 +100,6 @@ with workflow.unsafe.imports_passed_through():
     )
 
 _ResultT = TypeVar("_ResultT")
-
 NON_RETRYABLE_ERROR_TYPES = (
     "WORKFLOW_PORT_NOT_CONFIGURED",
     "VALIDATION_FAILED",
@@ -140,6 +150,8 @@ async def _execute_activity(
     argument: Any,
     result_type: type[_ResultT],
     policy: ActivityPolicy,
+    *,
+    task_queue: str | None = None,
 ) -> _ResultT:
     result = await workflow.execute_activity(
         name,
@@ -150,6 +162,7 @@ async def _execute_activity(
         heartbeat_timeout=policy.heartbeat,
         retry_policy=ACTIVITY_RETRY_POLICY,
         cancellation_type=ActivityCancellationType.TRY_CANCEL,
+        task_queue=task_queue,
     )
     return cast(_ResultT, result)
 
@@ -206,7 +219,7 @@ class _JobLifecycle:
         self._job = self._record().model_copy(
             update={
                 "status": status,
-                "stage": "completed" if status is JobStatus.SUCCEEDED else status.value.lower(),
+                "stage": ("completed" if status is JobStatus.SUCCEEDED else self._record().stage),
                 "result": result,
                 "error_code": error_code,
                 "error_message": error_message,
@@ -235,6 +248,46 @@ class _JobLifecycle:
 
 @workflow.defn(name=INGEST_ROLLOUT_WORKFLOW)
 class IngestRolloutWorkflow(_JobLifecycle):
+    async def _persist_job(self, request: IngestRolloutWorkflowInput) -> None:
+        if not self._job_persistence_enabled:
+            return
+        if request.organization_id is None:
+            raise ApplicationError(
+                "ingest workflow has no verified organization scope for job persistence",
+                type="ORGANIZATION_SCOPE_MISSING",
+                non_retryable=True,
+            )
+        await workflow.execute_local_activity(
+            PERSIST_WORKFLOW_JOB_ACTIVITY,
+            WorkflowJobPersistenceActivityInput(
+                organization_id=request.organization_id,
+                region_code=request.region_code,
+                job=self._record(),
+            ),
+            result_type=JobRecord,
+            start_to_close_timeout=COMMIT_ACTIVITY.start_to_close,
+            retry_policy=ACTIVITY_RETRY_POLICY,
+            cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+        )
+
+    async def _finish_and_persist(
+        self,
+        request: IngestRolloutWorkflowInput,
+        status: JobStatus,
+        *,
+        result: dict[str, Any] | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> JobRecord:
+        job = self._finish(
+            status,
+            result=result,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        await self._persist_job(request)
+        return job
+
     @workflow.run
     async def run(self, request: IngestRolloutWorkflowInput) -> JobRecord:
         self._begin(
@@ -242,8 +295,11 @@ class IngestRolloutWorkflow(_JobLifecycle):
             project_id=request.project_id,
             resource_id=request.rollout_id,
         )
+        self._job_persistence_enabled = workflow.patched("persist-ingest-workflow-job-v1")
+        materialized_source: IngestProjectionSourceV1 | None = None
         try:
             self._stage("manifest")
+            await self._persist_job(request)
             parsed = await _execute_activity(
                 PARSE_MANIFEST_ACTIVITY,
                 request.manifest,
@@ -252,6 +308,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
             )
             manifest = parsed.preflight.manifest
             self._stage("verification")
+            await self._persist_job(request)
             verification_request = request.verification.model_copy(
                 update={
                     "required_topics": frozenset(manifest.expected_topics),
@@ -267,7 +324,8 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 STANDARD_ACTIVITY,
             )
             if verified.report.status is VerificationStatus.REJECTED:
-                return self._finish(
+                return await self._finish_and_persist(
+                    request,
                     JobStatus.QUALITY_REJECTED,
                     result={
                         "manifest": parsed.preflight.model_dump(mode="json"),
@@ -278,10 +336,37 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     error_code="RAW_VERIFICATION_REJECTED",
                 )
 
+            quality_request = request.quality
+            alignment_request = request.alignment
+            materialized_projection = None
+            if (
+                workflow.patched("single-pass-ingest-projection-v1")
+                and request.quality.source is not None
+            ):
+                self._stage("projection_materialization")
+                await self._persist_job(request)
+                projected = await _execute_activity(
+                    MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
+                    ProjectionMaterializationActivityInput(
+                        source=request.quality.source
+                    ),
+                    ProjectionMaterializationActivityOutput,
+                    LONG_ACTIVITY,
+                )
+                materialized_projection = projected.source.materialization
+                materialized_source = projected.source
+                quality_request = request.quality.model_copy(
+                    update={"source": projected.source}
+                )
+                alignment_request = request.alignment.model_copy(
+                    update={"source": projected.source}
+                )
+
             self._stage("quality")
+            await self._persist_job(request)
             quality = await _execute_activity(
                 EVALUATE_QUALITY_ACTIVITY,
-                request.quality,
+                quality_request,
                 QualityActivityOutput,
                 STANDARD_ACTIVITY,
             )
@@ -292,15 +377,22 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 "quality_decision_source": request.quality.decision_source,
                 "automatic_qc_run_id": request.automatic_qc_run_id,
                 "raw_preserved": True,
+                "frame_selection": (
+                    None
+                    if materialized_projection is None
+                    else materialized_projection.frame_selection.model_dump(mode="json")
+                ),
             }
             if quality.report.status is QualityStatus.REJECT:
-                return self._finish(
+                return await self._finish_and_persist(
+                    request,
                     JobStatus.QUALITY_REJECTED,
                     result={**common_result, "training_eligible": False},
                     error_code="QUALITY_REJECTED",
                 )
             if quality.report.status is QualityStatus.RISK:
-                return self._finish(
+                return await self._finish_and_persist(
+                    request,
                     JobStatus.QUALITY_RISK,
                     result={
                         **common_result,
@@ -310,13 +402,15 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 )
 
             self._stage("alignment")
+            await self._persist_job(request)
             aligned = await _execute_activity(
                 ALIGN_FRAGMENT_ACTIVITY,
-                request.alignment,
+                alignment_request,
                 result_type=AlignmentActivityOutput,
                 policy=LONG_ACTIVITY,
             )
             self._stage("lance_commit")
+            await self._persist_job(request)
             if aligned.dataset_version is not None and aligned.derived_ready is not None:
                 writer_result = {
                     "dataset_version": aligned.dataset_version.model_dump(mode="json"),
@@ -356,7 +450,8 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
                 )
                 if writer.status is not JobStatus.SUCCEEDED:
-                    return self._finish(
+                    return await self._finish_and_persist(
+                        request,
                         JobStatus.TECHNICAL_FAILED,
                         result={**common_result, "writer_job": writer.model_dump(mode="json")},
                         error_code=writer.error_code or "DATASET_WRITER_FAILED",
@@ -375,7 +470,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                         "derived_ready": derived_payload,
                     }
                 ).derived_ready
-            if request.alignment.source is not None and aligned.viewer_target is None:
+            if alignment_request.source is not None and aligned.viewer_target is None:
                 raise ApplicationError(
                     "ingest alignment did not publish a Dataset viewer target",
                     type="DATASET_VIEWER_PROJECTION_MISSING",
@@ -391,7 +486,48 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     type="VALIDATION_FAILED",
                     non_retryable=True,
                 )
+            preview_count = 0
+            if (
+                workflow.patched("prewarm-original-camera-previews-v1")
+                and manifest.cameras
+                and derived.step_count > 0
+            ):
+                # Camera media is an immutable derived asset. Materialize it before
+                # publishing the annotation task so opening a task never starts a
+                # foreground transcode. Cameras are deliberately processed in
+                # sequence to keep one rollout from saturating the worker.
+                self._stage("preview_prewarm")
+                await self._persist_job(request)
+                if request.organization_id is None:
+                    raise ApplicationError(
+                        "preview prewarm requires an exact organization scope",
+                        type="ORGANIZATION_SCOPE_MISSING",
+                        non_retryable=True,
+                    )
+                for camera in manifest.cameras:
+                    await _execute_activity(
+                        CREATE_PREVIEW_ACTIVITY,
+                        PreviewActivityInput(
+                            organization_id=request.organization_id,
+                            region_code=request.region_code,
+                            request=PreviewRequestV1(
+                                project_id=request.project_id,
+                                dataset_id=request.dataset_id,
+                                rollout_id=request.rollout_id,
+                                lance_version=str(derived.lance_version),
+                                camera_id=camera.topic,
+                                frequency_hz=aligned.staged_manifest.frequency_hz,
+                                start_step=0,
+                                end_step=derived.step_count,
+                            )
+                        ),
+                        PreviewActivityOutput,
+                        LONG_ACTIVITY,
+                        task_queue=request.media_task_queue,
+                    )
+                    preview_count += 1
             self._stage("annotation_task")
+            await self._persist_job(request)
             uses_organization_scope = workflow.patched("annotation-organization-scope-v1")
             if uses_organization_scope and request.organization_id is None:
                 raise ApplicationError(
@@ -411,6 +547,14 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
                     base_step_count=derived.step_count,
                     source_workflow_id=workflow.info().workflow_id,
+                    frame_selection=(
+                        None
+                        if materialized_projection is None
+                        else {
+                            **materialized_projection.frame_selection.model_dump(mode="json"),
+                            "source_sha256": request.verification.source_sha256,
+                        }
+                    ),
                 )
                 if uses_organization_scope
                 else LegacyAutomaticAnnotationActivityInput(
@@ -431,7 +575,8 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 AutomaticAnnotationActivityOutput,
                 STANDARD_ACTIVITY,
             )
-            return self._finish(
+            return await self._finish_and_persist(
+                request,
                 JobStatus.SUCCEEDED,
                 result={
                     **common_result,
@@ -440,14 +585,32 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "dataset_version": writer_result.get("dataset_version"),
                     "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
+                    "preview_count": preview_count,
                     "training_eligible": True,
                 },
             )
         except (asyncio.CancelledError, CancelledError):
             self._cancelled()
+            await self._persist_job(request)
             raise
         except (ActivityError, ChildWorkflowError, ApplicationError) as exc:
-            return self._technical_failure(exc)
+            failure = self._technical_failure(exc)
+            await self._persist_job(request)
+            return failure
+        finally:
+            if (
+                materialized_source is not None
+                and workflow.patched("cleanup-ingest-projection-v1")
+            ):
+                with suppress(ActivityError, asyncio.CancelledError, CancelledError):
+                    await asyncio.shield(
+                        _execute_activity(
+                            CLEANUP_INGEST_PROJECTION_ACTIVITY,
+                            ProjectionCleanupActivityInput(source=materialized_source),
+                            ProjectionCleanupActivityOutput,
+                            STANDARD_ACTIVITY,
+                        )
+                    )
 
     @workflow.query(name="job")
     def job(self) -> JobRecord:
@@ -500,9 +663,8 @@ class PreviewWorkflow(_JobLifecycle):
                 preview.dataset_id,
                 preview.rollout_id,
                 preview.lance_version,
-                str(preview.annotation_revision),
                 preview.camera_id,
-                preview.view_mode.value,
+                preview.profile_id,
             )
         )
         self._begin(
@@ -514,13 +676,18 @@ class PreviewWorkflow(_JobLifecycle):
             self._stage("preview")
             result = await _execute_activity(
                 CREATE_PREVIEW_ACTIVITY,
-                PreviewActivityInput(request=preview),
+                PreviewActivityInput(
+                    organization_id=request.organization_id,
+                    region_code=request.region_code,
+                    job_id=request.job_id,
+                    request=preview,
+                ),
                 PreviewActivityOutput,
                 LONG_ACTIVITY,
             )
             return self._finish(
                 JobStatus.SUCCEEDED,
-                result={"preview": result.descriptor.model_dump(mode="json")},
+                result={"preview": result.artifact.model_dump(mode="json")},
             )
         except (asyncio.CancelledError, CancelledError):
             self._cancelled()

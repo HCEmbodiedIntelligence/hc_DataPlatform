@@ -1344,8 +1344,11 @@ class PostgresCleaningWorkbenchRepository:
             INSERT INTO dataset_registry.dataset_versions (
                 organization_id, project_id, region_code, dataset_id, version_id,
                 display_version, version_kind, version_status, created_at, published_at,
-                version_document
-            ) VALUES (%s, %s, %s, %s, %s, %s, 'CLEANED', 'REVIEWING', %s, NULL, %s::jsonb)
+                version_document, version_scope
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                'CLEANED', 'REVIEWING', %s, NULL, %s::jsonb, 'INTERNAL'
+            )
             """,
             (
                 *_scope_key(scope),

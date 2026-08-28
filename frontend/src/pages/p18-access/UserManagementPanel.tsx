@@ -398,6 +398,10 @@ export function UserManagementPanel({
 
   return (
     <section className={styles.userManagement} aria-label="平台用户管理">
+      <p className={styles.userManagementNote}>
+        自助注册账户会直接成为 ACTIVE
+        的空权限主体，不进入项目审批队列；项目访问需另行申请。
+      </p>
       <div
         className={styles.securityRail}
         role="group"
@@ -693,11 +697,6 @@ export function UserManagementPanel({
         onOk={() => resetForm.submit()}
         destroyOnHidden
       >
-        <Alert
-          type="warning"
-          showIcon
-          title="无需原密码；完成后该用户所有已登录会话会立即失效。"
-        />
         {mutationErrorDescription ? (
           <Alert
             className={styles.dialogError}
@@ -709,7 +708,6 @@ export function UserManagementPanel({
           />
         ) : null}
         <Form<ResetFormValues>
-          className={styles.resetForm}
           form={resetForm}
           layout="vertical"
           onFinish={async (values) => {

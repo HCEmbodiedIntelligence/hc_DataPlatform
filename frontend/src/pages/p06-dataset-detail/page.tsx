@@ -1,5 +1,5 @@
-import { Button, Card, Tabs, Typography } from 'antd';
-import { Eye } from 'lucide-react';
+import { Alert, Button, Card, Input, Modal, Tabs, Typography } from 'antd';
+import { Eye, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isDatasetId, type DatasetId } from '../../entities/dataset';
@@ -11,13 +11,16 @@ import {
   useDatasetVersionSchemaSummaryQuery,
   useDatasetVersionSourceProvenanceQuery,
   useDatasetVersionsQuery,
+  usePublishDatasetVersionMutation,
   useVersionEpisodesQuery,
 } from '../../features/datasets/api';
 import { routes, type DatasetDetailTab } from '../../features/datasets/routing';
 import { isDomainError } from '../../shared/api/domain-error';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
+import { formatEffectiveDuration, formatStorageSize } from '../../shared/lib/metric-presentation';
 import {
   DetailPageScaffold,
+  CopyableId,
   EntityDrawer,
   FilterToolbar,
   PageState,
@@ -25,13 +28,9 @@ import {
   UiMetricCard,
   type PageStateKind,
 } from '../../shared/ui';
-import {
-  DatasetCursorPager,
-  EpisodeTable,
-  SourceTable,
-  VersionTable,
-} from './components/DatasetDetailTables';
+import { DatasetCursorPager, EpisodeTable, SourceTable, VersionTable } from './components/DatasetDetailTables';
 import datasetDetailQueryCodec, { type DatasetDetailSearch } from './query-codec';
+import { episodeInclusionLabel, episodeReviewPresentation, episodeSuccessPresentation } from './episode-presentation';
 import styles from './styles.module.css';
 
 const invalidDataset = 'dataset_invalid' as DatasetId;
@@ -40,7 +39,7 @@ const tabs: readonly { id: DatasetDetailTab; label: string }[] = [
   { id: 'overview', label: '概要' },
   { id: 'versions', label: '数据版本' },
   { id: 'episodes', label: 'Episodes' },
-  { id: 'schema', label: 'Schema' },
+  { id: 'schema', label: '数据结构' },
   { id: 'sources', label: '来源' },
   { id: 'capacity', label: '容量' },
 ];
@@ -120,17 +119,11 @@ function VersionFilters({
     >
       <label className={styles.filterField}>
         搜索
-        <input
-          value={draft.q}
-          onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))}
-        />
+        <input value={draft.q} onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))} />
       </label>
       <label className={styles.filterField}>
         类型
-        <select
-          value={draft.kind}
-          onChange={(event) => setDraft((value) => ({ ...value, kind: event.target.value }))}
-        >
+        <select value={draft.kind} onChange={(event) => setDraft((value) => ({ ...value, kind: event.target.value }))}>
           <option value="">全部</option>
           <option value="raw">原始基线 · RAW</option>
           <option value="cleaned">清洗视图 · CLEANED</option>
@@ -150,10 +143,7 @@ function VersionFilters({
       </label>
       <label className={styles.filterField}>
         排序
-        <select
-          value={draft.sort}
-          onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}
-        >
+        <select value={draft.sort} onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}>
           <option value="created-desc">最近创建</option>
           <option value="created-asc">最早创建</option>
           <option value="version-desc">版本降序</option>
@@ -165,7 +155,10 @@ function VersionFilters({
         <select
           value={draft.limit}
           onChange={(event) =>
-            setDraft((value) => ({ ...value, limit: Number(event.target.value) as 10 | 20 | 50 }))
+            setDraft((value) => ({
+              ...value,
+              limit: Number(event.target.value) as 10 | 20 | 50,
+            }))
           }
         >
           <option value="10">10</option>
@@ -200,14 +193,7 @@ function EpisodeFilters({
         sort: search.sort ?? 'ordinal-asc',
         limit: search.limit,
       }),
-    [
-      search.collectionTaskId,
-      search.limit,
-      search.q,
-      search.sort,
-      search.successState,
-      search.task,
-    ],
+    [search.collectionTaskId, search.limit, search.q, search.sort, search.successState, search.task],
   );
   return (
     <FilterToolbar
@@ -233,10 +219,7 @@ function EpisodeFilters({
     >
       <label className={styles.filterField}>
         搜索
-        <input
-          value={draft.q}
-          onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))}
-        />
+        <input value={draft.q} onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))} />
       </label>
       <label className={styles.filterField}>
         任务
@@ -245,9 +228,7 @@ function EpisodeFilters({
           title={search.collectionTaskId ? '此任务范围由入口 URL 锁定' : undefined}
           value={draft.task}
           onChange={(event) =>
-            search.collectionTaskId
-              ? undefined
-              : setDraft((value) => ({ ...value, task: event.target.value }))
+            search.collectionTaskId ? undefined : setDraft((value) => ({ ...value, task: event.target.value }))
           }
         />
       </label>
@@ -265,10 +246,7 @@ function EpisodeFilters({
       </label>
       <label className={styles.filterField}>
         排序
-        <select
-          value={draft.sort}
-          onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}
-        >
+        <select value={draft.sort} onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}>
           <option value="ordinal-asc">Ordinal</option>
           <option value="started-desc">最近开始</option>
           <option value="started-asc">最早开始</option>
@@ -279,7 +257,10 @@ function EpisodeFilters({
         <select
           value={draft.limit}
           onChange={(event) =>
-            setDraft((value) => ({ ...value, limit: Number(event.target.value) as 10 | 20 | 50 }))
+            setDraft((value) => ({
+              ...value,
+              limit: Number(event.target.value) as 10 | 20 | 50,
+            }))
           }
         >
           <option value="10">10</option>
@@ -305,30 +286,32 @@ function SourceFilters({
   }));
   useEffect(
     () =>
-      setDraft({ q: search.q ?? '', sort: search.sort ?? 'registered-desc', limit: search.limit }),
+      setDraft({
+        q: search.q ?? '',
+        sort: search.sort ?? 'registered-desc',
+        limit: search.limit,
+      }),
     [search.limit, search.q, search.sort],
   );
   return (
     <FilterToolbar
       label="来源筛选"
       onApply={() =>
-        onApply({ q: draft.q.trim() || undefined, sort: draft.sort, limit: draft.limit })
+        onApply({
+          q: draft.q.trim() || undefined,
+          sort: draft.sort,
+          limit: draft.limit,
+        })
       }
       onReset={() => onApply({ q: undefined, sort: 'registered-desc', limit: 20 })}
     >
       <label className={styles.filterField}>
         搜索
-        <input
-          value={draft.q}
-          onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))}
-        />
+        <input value={draft.q} onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))} />
       </label>
       <label className={styles.filterField}>
         排序
-        <select
-          value={draft.sort}
-          onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}
-        >
+        <select value={draft.sort} onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}>
           <option value="registered-desc">最近注册</option>
           <option value="registered-asc">最早注册</option>
           <option value="source-name-asc">来源名称</option>
@@ -339,7 +322,10 @@ function SourceFilters({
         <select
           value={draft.limit}
           onChange={(event) =>
-            setDraft((value) => ({ ...value, limit: Number(event.target.value) as 10 | 20 | 50 }))
+            setDraft((value) => ({
+              ...value,
+              limit: Number(event.target.value) as 10 | 20 | 50,
+            }))
           }
         >
           <option value="10">10</option>
@@ -356,25 +342,26 @@ export function DatasetDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [compactInspector, setCompactInspector] = useState(() => globalThis.innerWidth <= 1024);
+  const [compactInspector, setCompactInspector] = useState(() => globalThis.innerWidth <= 1440);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publicationVersion, setPublicationVersion] = useState('');
   const search = datasetDetailQueryCodec.parse(params);
   const rawCollectionTaskId = params.get('collectionTaskId');
-  const collectionTaskParamInvalid =
-    rawCollectionTaskId !== null && search.collectionTaskId === undefined;
+  const collectionTaskParamInvalid = rawCollectionTaskId !== null && search.collectionTaskId === undefined;
   const capabilities = useCapabilities();
   const valid = isDatasetId(rawDatasetId);
   const validRequest = valid && !collectionTaskParamInvalid;
   const datasetId = valid ? rawDatasetId : invalidDataset;
-  const bootstrap = useDatasetBootstrapQuery(
-    datasetId,
-    validRequest && capabilities.has('dataset.read'),
-  );
+  const bootstrap = useDatasetBootstrapQuery(datasetId, validRequest && capabilities.has('dataset.read'));
+  const publishVersion = usePublishDatasetVersionMutation();
   const chosenVersionId =
     search.versionId ??
     bootstrap.data?.suggestedVersionId ??
     bootstrap.data?.currentReadyVersion?.versionId ??
     invalidVersion;
   const hasChosenVersion = chosenVersionId !== invalidVersion;
+  const workingVersionId = bootstrap.data?.workingVersionId ?? null;
+  const baseLanceVersion = workingVersionId?.match(/^version_lance_([1-9][0-9]*)$/u)?.[1] ?? null;
   const versions = useDatasetVersionsQuery(
     datasetId,
     search,
@@ -384,40 +371,28 @@ export function DatasetDetailPage() {
     datasetId,
     chosenVersionId,
     search,
-    validRequest &&
-      search.tab === 'episodes' &&
-      hasChosenVersion &&
-      capabilities.has('episode.read'),
+    validRequest && search.tab === 'episodes' && hasChosenVersion && capabilities.has('episode.read'),
   );
   const schema = useDatasetVersionSchemaSummaryQuery(
     datasetId,
     chosenVersionId,
-    validRequest &&
-      search.tab === 'schema' &&
-      hasChosenVersion &&
-      capabilities.has('data_schema.read'),
+    validRequest && search.tab === 'schema' && hasChosenVersion && capabilities.has('data_schema.read'),
   );
   const sources = useDatasetVersionSourceProvenanceQuery(
     datasetId,
     chosenVersionId,
     search,
-    validRequest &&
-      search.tab === 'sources' &&
-      hasChosenVersion &&
-      capabilities.has('dataset_version.read'),
+    validRequest && search.tab === 'sources' && hasChosenVersion && capabilities.has('dataset_version.read'),
   );
   const capacity = useDatasetVersionCapacityQuery(
     datasetId,
     chosenVersionId,
-    validRequest &&
-      search.tab === 'capacity' &&
-      hasChosenVersion &&
-      capabilities.has('storage.overview.read'),
+    validRequest && search.tab === 'capacity' && hasChosenVersion && capabilities.has('storage.overview.read'),
   );
   const versionBoundTab = ['episodes', 'schema', 'sources', 'capacity'].includes(search.tab);
 
   useEffect(() => {
-    const media = globalThis.matchMedia('(max-width: 1024px)');
+    const media = globalThis.matchMedia('(max-width: 1440px)');
     const update = () => setCompactInspector(media.matches);
     update();
     media.addEventListener('change', update);
@@ -433,20 +408,15 @@ export function DatasetDetailPage() {
 
   useEffect(() => {
     if (!validRequest || !versionBoundTab || search.versionId || !hasChosenVersion) return;
-    const next = datasetDetailQueryCodec.withChanges(search, { versionId: chosenVersionId });
+    const next = datasetDetailQueryCodec.withChanges(search, {
+      versionId: chosenVersionId,
+    });
     const serialized = datasetDetailQueryCodec.build(next).toString();
     const base = routes.datasetDetail.build({ datasetId });
-    void navigate(serialized ? `${base}?${serialized}` : base, { replace: true });
-  }, [
-    chosenVersionId,
-    datasetId,
-    hasChosenVersion,
-    navigate,
-    search,
-    search.versionId,
-    validRequest,
-    versionBoundTab,
-  ]);
+    void navigate(serialized ? `${base}?${serialized}` : base, {
+      replace: true,
+    });
+  }, [chosenVersionId, datasetId, hasChosenVersion, navigate, search, search.versionId, validRequest, versionBoundTab]);
 
   useEffect(() => {
     if (
@@ -455,20 +425,20 @@ export function DatasetDetailPage() {
       episodes.data.items.some((item) => item.episodeId === search.episodeId)
     )
       return;
-    const next = datasetDetailQueryCodec.withChanges(search, { episodeId: undefined });
+    const next = datasetDetailQueryCodec.withChanges(search, {
+      episodeId: undefined,
+    });
     const serialized = datasetDetailQueryCodec.build(next).toString();
     const base = routes.datasetDetail.build({ datasetId });
-    void navigate(serialized ? `${base}?${serialized}` : base, { replace: true });
+    void navigate(serialized ? `${base}?${serialized}` : base, {
+      replace: true,
+    });
   }, [datasetId, episodes.data, episodes.isSuccess, navigate, search, search.episodeId]);
 
   if (!valid)
     return (
       <main className={styles.page} data-page-id="P06">
-        <PageState
-          state="not-found"
-          title="Dataset ID 格式无效"
-          description="必须使用稳定、不可变的 Dataset ID。"
-        />
+        <PageState state="not-found" title="Dataset ID 格式无效" description="必须使用稳定、不可变的 Dataset ID。" />
       </main>
     );
   if (collectionTaskParamInvalid)
@@ -533,23 +503,22 @@ export function DatasetDetailPage() {
                 known={data.dataset.availability !== 'UNKNOWN'}
               />
             </div>
-            <div className={styles.metricGrid}>
+            <div className={`${styles.metricGrid} ${styles.overviewMetricGrid}`}>
               <UiMetricCard label="Episodes" value={data.summary.episodeCount} basis="授权聚合" />
               <UiMetricCard
                 label="有效时长"
-                value={data.summary.effectiveDurationNs}
-                unit="ns"
+                value={formatEffectiveDuration(data.summary.effectiveDurationNs)}
                 basis="授权聚合"
               />
-              <UiMetricCard label="源字节" value={data.summary.sourceBytes} basis="授权聚合" />
+              <UiMetricCard label="源数据量" value={formatStorageSize(data.summary.sourceBytes)} basis="授权聚合" />
               <UiMetricCard
-                label="必需物理字节"
-                value={data.summary.requiredPhysicalBytes}
+                label="必需物理容量"
+                value={formatStorageSize(data.summary.requiredPhysicalBytes)}
                 basis="授权聚合"
               />
               <UiMetricCard
                 label="实际 OSS"
-                value={data.summary.actualOssBytes}
+                value={formatStorageSize(data.summary.actualOssBytes)}
                 state={data.summary.actualOssBytes === null ? 'unknown' : 'ready'}
                 basis="容量事实"
               />
@@ -563,7 +532,7 @@ export function DatasetDetailPage() {
             </div>
           </section>
           <Card
-            title="当前可用版本"
+            title="当前已发布版本"
             extra={
               data.currentReadyVersion ? (
                 <Button
@@ -585,11 +554,11 @@ export function DatasetDetailPage() {
           >
             {data.currentReadyVersion ? (
               <Typography.Paragraph>
-                <code>{data.currentReadyVersion.versionId}</code> · Manifest{' '}
+                <code>{data.currentReadyVersion.versionId}</code> · 数据清单{' '}
                 {data.currentReadyVersion.manifestSha256.slice(0, 12)}…
               </Typography.Paragraph>
             ) : (
-              <PageState state="empty" description="该数据集尚无 Ready 版本；没有创建伪造版本。" />
+              <PageState state="empty" description="该数据集尚无手动发布的数据集版本。" />
             )}
           </Card>
         </div>
@@ -599,11 +568,16 @@ export function DatasetDetailPage() {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <Typography.Title level={2}>Versions</Typography.Title>
+              <Typography.Title level={2}>数据集版本</Typography.Title>
               <Typography.Paragraph>
-                版本身份稳定且不可变；标注与清洗通过 Revision 表达，不接受 latest/current 等漂移指针。
+                仅展示手动发布且不可变的数据集版本；质检状态不会自动创建或推进版本号。
               </Typography.Paragraph>
             </div>
+            {capabilities.has('dataset_version.publish') ? (
+              <Button type="primary" disabled={!baseLanceVersion} onClick={() => setPublishOpen(true)}>
+                手动发布版本
+              </Button>
+            ) : null}
           </div>
           <VersionFilters search={search} onApply={applySearch} />
           {versions.isPending ? (
@@ -615,7 +589,11 @@ export function DatasetDetailPage() {
               onRetry={() => void versions.refetch()}
             />
           ) : versions.data.items.length === 0 ? (
-            <PageState state="filtered-empty" />
+            <PageState
+              state="empty"
+              title="尚未发布数据集版本"
+              description="Episode 与 Schema 可继续使用内部工作快照；只有点击“手动发布版本”才会生成数据集版本。"
+            />
           ) : (
             <>
               <VersionTable
@@ -631,11 +609,7 @@ export function DatasetDetailPage() {
                   )
                 }
               />
-              <DatasetCursorPager
-                page={versions.data}
-                busy={versions.isFetching}
-                onChange={applySearch}
-              />
+              <DatasetCursorPager page={versions.data} busy={versions.isFetching} onChange={applySearch} />
             </>
           )}
         </section>
@@ -685,31 +659,23 @@ export function DatasetDetailPage() {
                       items={episodes.data.items}
                       onInspect={(episode) => applySearch({ episodeId: episode.episodeId })}
                       onOpenViewer={openViewer}
+                      selectedEpisodeId={selectedEpisode?.episodeId}
                     />
                     <DatasetCursorPager
                       page={episodes.data}
                       busy={episodes.isFetching}
                       onChange={(cursor) => applySearch({ ...cursor, episodeId: undefined })}
                     />
-                    <section
-                      className={styles.episodeWindowSummary}
-                      aria-label="当前 Episode 数据窗口"
-                    >
+                    <section className={styles.episodeWindowSummary} aria-label="当前 Episode 数据窗口">
                       <div>
                         <span>当前窗口</span>
                         <strong>{episodes.data.items.length} 条</strong>
                       </div>
                       <div>
-                        <span>固定 Version</span>
+                        <span>固定工作快照</span>
                         <code title={chosenVersionId}>{chosenVersionId}</code>
                       </div>
-                      <div>
-                        <span>快照时间</span>
-                        <time dateTime={episodes.data.snapshotAt}>
-                          {new Date(episodes.data.snapshotAt).toLocaleString()}
-                        </time>
-                      </div>
-                      <p>仅展示当前授权快照中的真实记录，不以推测行填充稀疏窗口。</p>
+                      <p>仅展示当前授权范围内的真实记录，不以推测行填充稀疏窗口。</p>
                     </section>
                   </>
                 )}
@@ -720,11 +686,11 @@ export function DatasetDetailPage() {
       );
     if (search.tab === 'schema')
       return !capabilities.has('data_schema.read') ? (
-        <PageState state="forbidden" description="Schema 摘要需要 data_schema.read。" />
+        <PageState state="forbidden" description="数据结构摘要需要 data_schema.read 权限。" />
       ) : !hasChosenVersion ? (
         <PageState state="empty" />
       ) : schema.isPending ? (
-        <PageState state="loading" label="Schema" />
+        <PageState state="loading" label="数据结构" />
       ) : schema.isError ? (
         <PageState
           state={pageStateForError(schema.error)}
@@ -733,9 +699,8 @@ export function DatasetDetailPage() {
         />
       ) : (
         <section className={styles.section}>
-          <Typography.Title level={2}>Schema Snapshot</Typography.Title>
+          <Typography.Title level={2}>数据结构快照</Typography.Title>
           <div className={styles.metricGrid}>
-            <UiMetricCard label="Snapshot" value={schema.data.snapshot.id} />
             <UiMetricCard label="Version" value={schema.data.snapshot.version} />
             <UiMetricCard
               label="Channels"
@@ -768,11 +733,7 @@ export function DatasetDetailPage() {
           ) : (
             <>
               <SourceTable items={sources.data.items} />
-              <DatasetCursorPager
-                page={sources.data}
-                busy={sources.isFetching}
-                onChange={applySearch}
-              />
+              <DatasetCursorPager page={sources.data} busy={sources.isFetching} onChange={applySearch} />
             </>
           )}
         </section>
@@ -809,24 +770,23 @@ export function DatasetDetailPage() {
         ) : null}
         <div className={styles.metricGrid}>
           <UiMetricCard
-            label="源字节"
-            value={capacity.data.sourceBytes}
+            label="源数据量"
+            value={formatStorageSize(capacity.data.sourceBytes)}
             state={capacity.data.sourceBytes === null ? 'unknown' : 'ready'}
           />
           <UiMetricCard
-            label="必需物理字节"
-            value={capacity.data.requiredPhysicalBytes}
+            label="必需物理容量"
+            value={formatStorageSize(capacity.data.requiredPhysicalBytes)}
             state={capacity.data.requiredPhysicalBytes === null ? 'unknown' : 'ready'}
           />
           <UiMetricCard
-            label="实际 OSS 字节"
-            value={capacity.data.actualOssBytes}
+            label="实际 OSS 容量"
+            value={formatStorageSize(capacity.data.actualOssBytes)}
             state={capacity.data.actualOssBytes === null ? 'unknown' : 'ready'}
           />
         </div>
         <Typography.Paragraph>
-          Basis <code>{capacity.data.basisRevision}</code> ·{' '}
-          {new Date(capacity.data.calculatedAt).toLocaleString()}
+          Basis <code>{capacity.data.basisRevision}</code> · {new Date(capacity.data.calculatedAt).toLocaleString()}
         </Typography.Paragraph>
       </section>
     );
@@ -852,7 +812,7 @@ export function DatasetDetailPage() {
           <div className={styles.tabBand}>
             <div className={styles.summaryBar}>
               <div>
-                <span>当前可用版本</span>
+                <span>当前已发布版本</span>
                 <strong>{data.currentReadyVersion?.displayVersion ?? '—'}</strong>
               </div>
               <div>
@@ -861,15 +821,15 @@ export function DatasetDetailPage() {
               </div>
               <div>
                 <span>有效时长</span>
-                <strong>{data.summary.effectiveDurationNs} ns</strong>
+                <strong>{formatEffectiveDuration(data.summary.effectiveDurationNs)}</strong>
               </div>
               <div>
-                <span>源字节</span>
-                <strong>{data.summary.sourceBytes}</strong>
+                <span>源数据量</span>
+                <strong>{formatStorageSize(data.summary.sourceBytes)}</strong>
               </div>
               <div>
                 <span>实际 OSS</span>
-                <strong>{data.summary.actualOssBytes ?? '未知'}</strong>
+                <strong>{formatStorageSize(data.summary.actualOssBytes)}</strong>
               </div>
             </div>
             <Tabs
@@ -896,16 +856,12 @@ export function DatasetDetailPage() {
           </div>
         }
         inspector={
-          !compactInspector && search.tab === 'episodes' ? (
-            selectedEpisode ? (
-              <EpisodeInspector episode={selectedEpisode} onOpenViewer={openViewer} />
-            ) : (
-              <PageState
-                state="empty"
-                title="未选择 Episode"
-                description="选择表格中的 Episode 查看稳定身份与快捷操作。"
-              />
-            )
+          !compactInspector && search.tab === 'episodes' && selectedEpisode ? (
+            <EpisodeInspector
+              episode={selectedEpisode}
+              onClose={() => applySearch({ episodeId: undefined })}
+              onOpenViewer={openViewer}
+            />
           ) : undefined
         }
         inspectorLabel="选中 Episode"
@@ -914,62 +870,131 @@ export function DatasetDetailPage() {
       </DetailPageScaffold>
       <EntityDrawer
         open={Boolean(selectedEpisode) && compactInspector}
-        title={<Typography.Title level={2}>Episode Inspector</Typography.Title>}
+        title={<Typography.Title level={2}>Episode 详情</Typography.Title>}
+        width="min(360px, 100vw)"
         onClose={() => applySearch({ episodeId: undefined })}
       >
         {selectedEpisode ? (
-          <EpisodeInspector episode={selectedEpisode} onOpenViewer={openViewer} />
+          <EpisodeInspector
+            episode={selectedEpisode}
+            onClose={() => applySearch({ episodeId: undefined })}
+            onOpenViewer={openViewer}
+          />
         ) : null}
       </EntityDrawer>
+      <Modal
+        title="手动发布数据集版本"
+        open={publishOpen}
+        okText="发布并定版"
+        cancelText="取消"
+        confirmLoading={publishVersion.isPending}
+        okButtonProps={{ disabled: !publicationVersion.trim() || !baseLanceVersion }}
+        onCancel={() => {
+          if (publishVersion.isPending) return;
+          setPublishOpen(false);
+          publishVersion.reset();
+        }}
+        onOk={() => {
+          if (!baseLanceVersion || !publicationVersion.trim()) return;
+          void publishVersion
+            .mutateAsync({
+              datasetId,
+              datasetVersion: publicationVersion.trim(),
+              baseLanceVersion,
+            })
+            .then(() => {
+              setPublishOpen(false);
+              setPublicationVersion('');
+              publishVersion.reset();
+            })
+            .catch(() => undefined);
+        }}
+      >
+        <Typography.Paragraph>
+          发布会冻结当前工作快照 <code>{workingVersionId ?? '—'}</code> 及其已审核 Episode
+          版本；不会复制底层 Lance 数据，也不以质检结果生成版本号。
+        </Typography.Paragraph>
+        <label className={styles.filterField}>
+          版本名称
+          <Input
+            autoFocus
+            maxLength={64}
+            placeholder="例如 v1.0.0"
+            value={publicationVersion}
+            onChange={(event) => {
+              setPublicationVersion(event.target.value);
+              if (publishVersion.isError) publishVersion.reset();
+            }}
+          />
+        </label>
+        {publishVersion.isError ? (
+          <Alert
+            type="error"
+            showIcon
+            message="发布失败"
+            description={publishVersion.error instanceof Error ? publishVersion.error.message : '请检查发布条件后重试。'}
+          />
+        ) : null}
+      </Modal>
     </main>
   );
 }
 
 function EpisodeInspector({
   episode,
+  onClose,
   onOpenViewer,
-}: Readonly<{ episode: EpisodeListItemVm; onOpenViewer: (episode: EpisodeListItemVm) => void }>) {
+}: Readonly<{
+  episode: EpisodeListItemVm;
+  onClose: () => void;
+  onOpenViewer: (episode: EpisodeListItemVm) => void;
+}>) {
+  const success = episodeSuccessPresentation(episode.successState);
+  const review = episodeReviewPresentation(episode.reviewStatus, episode.reviewFindingCount);
   return (
     <div className={styles.drawerBody}>
       <header className={styles.inspectorHero}>
         <span className={styles.episodeOrdinal}>#{episode.ordinal + 1}</span>
         <div>
           <span>选中 Episode</span>
-          <Typography.Title level={3}>{episode.episodeId}</Typography.Title>
+          <Typography.Title level={3}>Episode #{episode.ordinal + 1}</Typography.Title>
+          <code title={episode.episodeId}>{episode.episodeId}</code>
         </div>
-        <StatusTag
-          status={episode.successState}
-          tone={
-            episode.successState === 'SUCCEEDED'
-              ? 'success'
-              : episode.successState === 'FAILED'
-                ? 'danger'
-                : 'warning'
-          }
-          known={episode.successState !== 'UNKNOWN'}
+        <Button
+          className={styles.inspectorCloseButton}
+          type="text"
+          icon={<X aria-hidden="true" size={18} />}
+          aria-label="关闭 Episode 详情"
+          onClick={onClose}
         />
       </header>
+      <section className={styles.inspectorStatusGrid} aria-label="Episode 有效性状态">
+        <div>
+          <span>处理结果</span>
+          <StatusTag status={episode.successState} label={success.label} tone={success.tone} known={success.known} />
+        </div>
+        <div>
+          <span>复核结果</span>
+          <StatusTag status={episode.reviewStatus} label={review.label} tone={review.tone} known={review.known} />
+        </div>
+      </section>
       <dl>
         <dt>Revision</dt>
         <dd>
-          <code>{episode.selectedRevisionId}</code>
+          <CopyableId value={episode.selectedRevisionId} label="Revision ID" />
         </dd>
         <dt>Version</dt>
         <dd>
-          <code>{episode.versionId}</code>
+          <CopyableId value={episode.versionId} label="Version ID" />
         </dd>
         <dt>任务</dt>
-        <dd>{episode.task ?? '—'}</dd>
+        <dd title={episode.task ?? undefined}>{episode.task ?? '未关联'}</dd>
         <dt>机器人</dt>
-        <dd>
-          <code>{episode.robotId ?? '—'}</code>
-        </dd>
-        <dt>Included</dt>
-        <dd>{episode.included ? '是' : '否'}</dd>
-        <dt>复核投影</dt>
-        <dd>
-          {episode.reviewStatus} · {episode.reviewFindingCount}
-        </dd>
+        <dd>{episode.robotId ? <CopyableId value={episode.robotId} label="机器人 ID" /> : '未绑定'}</dd>
+        <dt>存储区域</dt>
+        <dd>{episode.storageRegionCode ?? '未知'}</dd>
+        <dt>版本纳入</dt>
+        <dd>{episodeInclusionLabel(episode.included)}</dd>
       </dl>
       <div className={styles.drawerActions}>
         <Button type="primary" icon={<Eye size={16} />} block onClick={() => onOpenViewer(episode)}>

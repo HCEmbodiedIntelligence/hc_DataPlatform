@@ -98,10 +98,15 @@ def collect_and_validate_export_steps(
 
 def _zip_files(files: dict[str, bytes]) -> bytes:
     output = io.BytesIO()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
+    with zipfile.ZipFile(
+        output,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+    ) as archive:
         for name in sorted(files):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_STORED
+            info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
             info.external_attr = 0o100644 << 16
             archive.writestr(info, files[name])
@@ -247,7 +252,7 @@ class LanceSnapshotExporter:
             sink=sink,
             attempt_id=attempt_id,
             artifact_uri=artifact_uri,
-            media_type="application/vnd.apache.lance.dataset+zip",
+            media_type="application/zip",
             build=lambda: self._build(manifest, steps),
             validate=lambda content: self._validate(content, manifest, steps),
         )
@@ -397,7 +402,7 @@ class LeRobotV3Exporter:
             sink=sink,
             attempt_id=attempt_id,
             artifact_uri=artifact_uri,
-            media_type="application/vnd.lerobot.v3+zip",
+            media_type="application/zip",
             build=lambda: self._build(manifest, steps),
             validate=lambda content: self._validate(content, manifest, steps),
         )

@@ -13,9 +13,11 @@ class FakeHls {
   readonly loadSource = vi.fn();
   readonly attachMedia = vi.fn();
   readonly destroy = vi.fn();
+  readonly config: Record<string, unknown>;
   private errorHandler: ErrorHandler | null = null;
 
-  constructor() {
+  constructor(config: Record<string, unknown>) {
+    this.config = config;
     instances.push(this);
   }
 
@@ -53,6 +55,14 @@ describe("attachAuthorizedMedia", () => {
       "/api/v1/previews/a/media/index.m3u8?sig=x",
     );
     expect(instances[0]?.attachMedia).toHaveBeenCalledWith(video);
+    expect(instances[0]?.config).toMatchObject({
+      preferManagedMediaSource: false,
+      maxBufferLength: 20,
+      maxMaxBufferLength: 20,
+      backBufferLength: 20,
+      maxBufferSize: 32 * 1024 * 1024,
+      startFragPrefetch: true,
+    });
     instances[0]?.fatal();
     expect(fatal).toHaveBeenCalledTimes(1);
 

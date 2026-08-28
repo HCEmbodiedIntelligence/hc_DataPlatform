@@ -9,22 +9,45 @@ components:
     CreateManualIssueCommand:
       additionalProperties: false
       properties:
+        annotation_task_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Annotation Task Id
+        discovery_source:
+          default: DATA_VIEWER
+          enum:
+          - DATA_VIEWER
+          - ANNOTATOR
+          - REVIEWER
+          title: Discovery Source
+          type: string
         end_ns:
-          pattern: ^(0|[1-9][0-9]*)$
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
           title: End Ns
-          type: string
         episode_id:
-          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          anyOf:
+          - pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
           title: Episode Id
-          type: string
         episode_revision_id:
-          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          anyOf:
+          - pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
           title: Episode Revision Id
-          type: string
         episode_stream_id:
-          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          anyOf:
+          - pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+            type: string
+          - type: 'null'
           title: Episode Stream Id
-          type: string
         issue_type:
           enum:
           - POSE_JITTER
@@ -41,9 +64,23 @@ components:
           title: Note
           type: string
         origin_dataset_version_id:
-          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          anyOf:
+          - pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
           title: Origin Dataset Version Id
-          type: string
+        relative_end_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Relative End Ns
+        relative_start_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Relative Start Ns
         severity:
           enum:
           - LOW
@@ -52,17 +89,27 @@ components:
           - CRITICAL
           title: Severity
           type: string
-        start_ns:
-          pattern: ^(0|[1-9][0-9]*)$
-          title: Start Ns
+        source_kind:
+          default: DATASET
+          enum:
+          - DATASET
+          - ANNOTATION_TASK
+          title: Source Kind
           type: string
+        start_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Start Ns
+        stream_ref:
+          anyOf:
+          - maxLength: 512
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Stream Ref
       required:
-      - origin_dataset_version_id
-      - episode_id
-      - episode_revision_id
-      - episode_stream_id
-      - start_ns
-      - end_ns
       - issue_type
       - severity
       - note
@@ -368,6 +415,16 @@ components:
             $ref: '#/components/schemas/ManualIssuePrincipal'
           title: Assignees
           type: array
+        discovery_sources:
+          default: []
+          items:
+            enum:
+            - DATA_VIEWER
+            - ANNOTATOR
+            - REVIEWER
+            type: string
+          title: Discovery Sources
+          type: array
         issue_types:
           default: []
           items:
@@ -456,6 +513,13 @@ components:
             type: string
           title: Allowed Actions
           type: array
+        annotation_task_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Annotation Task Id
         assignee:
           anyOf:
           - $ref: '#/components/schemas/ManualIssuePrincipal'
@@ -463,6 +527,14 @@ components:
         dataset_id:
           pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
           title: Dataset Id
+          type: string
+        discovery_source:
+          default: DATA_VIEWER
+          enum:
+          - DATA_VIEWER
+          - ANNOTATOR
+          - REVIEWER
+          title: Discovery Source
           type: string
         end_ns:
           pattern: ^(0|[1-9][0-9]*)$
@@ -686,6 +758,13 @@ components:
             type: string
           title: Allowed Actions
           type: array
+        annotation_task_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Annotation Task Id
         assignee:
           anyOf:
           - $ref: '#/components/schemas/ManualIssuePrincipal'
@@ -715,6 +794,14 @@ components:
         dataset_id:
           pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
           title: Dataset Id
+          type: string
+        discovery_source:
+          default: DATA_VIEWER
+          enum:
+          - DATA_VIEWER
+          - ANNOTATOR
+          - REVIEWER
+          title: Discovery Source
           type: string
         end_ns:
           pattern: ^(0|[1-9][0-9]*)$
@@ -1059,6 +1146,20 @@ paths:
             type: array
           - type: 'null'
           title: Severity
+      - in: query
+        name: discovery_source
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - DATA_VIEWER
+              - ANNOTATOR
+              - REVIEWER
+              type: string
+            type: array
+          - type: 'null'
+          title: Discovery Source
       - in: query
         name: assignee_id
         required: false
@@ -1854,6 +1955,20 @@ paths:
             type: array
           - type: 'null'
           title: Severity
+      - in: query
+        name: discovery_source
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - DATA_VIEWER
+              - ANNOTATOR
+              - REVIEWER
+              type: string
+            type: array
+          - type: 'null'
+          title: Discovery Source
       - in: query
         name: assignee_id
         required: false

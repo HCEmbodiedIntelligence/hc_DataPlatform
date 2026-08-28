@@ -1,9 +1,5 @@
 import { useSearchParams } from "react-router-dom";
 import { AuthLayout } from "./AuthLayout";
-import {
-  EmptyAccountStatus,
-  type EmptyAccountIntent,
-} from "./EmptyAccountStatus";
 import { LoginPanel } from "./LoginPanel";
 import { RegistrationSuccessStatus } from "./RegistrationSuccessStatus";
 import styles from "./styles.module.css";
@@ -15,22 +11,15 @@ const fixtureErrors: Readonly<Record<string, string>> = {
 };
 
 export function VisualFixtureRoute() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const errorCode = searchParams.get("error");
   const error = errorCode ? (fixtureErrors[errorCode] ?? null) : null;
-
-  function selectIntent(intent: EmptyAccountIntent): void {
-    const next = new URLSearchParams(searchParams);
-    next.set("intent", intent);
-    setSearchParams(next, { replace: true });
-  }
 
   return (
     <AuthLayout
       rail={
         <div className={styles.fixtureRail}>
           <RegistrationSuccessStatus compact />
-          <EmptyAccountStatus compact onIntent={selectIntent} />
         </div>
       }
     >

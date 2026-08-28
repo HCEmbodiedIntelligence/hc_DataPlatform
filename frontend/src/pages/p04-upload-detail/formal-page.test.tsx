@@ -265,6 +265,10 @@ function renderPage(path = "/ingest/uploads/session-a?from=pending#quality") {
             path="/ingest/uploads/:uploadId"
             element={<FormalUploadDetailPage />}
           />
+          <Route
+            path="/manual/issues/raw-diagnostic/:uploadId"
+            element={<FormalUploadDetailPage />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -346,6 +350,31 @@ describe("P04 formal upload detail page", () => {
     );
   });
 
+  it("keeps upload facts visible while the quality report is still being generated", async () => {
+    loadDetailMock.mockResolvedValue({
+      ...detailFixture("PASS", 1),
+      quality: null,
+    });
+    loadWorkflowMock.mockResolvedValue(workflowFixture("RUNNING"));
+    renderPage();
+
+    expect(
+      await screen.findByRole("heading", { name: "上传详情" }),
+    ).toBeVisible();
+    expect(screen.getByText("自动质检处理中")).toBeVisible();
+    expect(screen.getByText("自动质检报告尚未生成")).toBeVisible();
+    expect(await screen.findByText(/后台处理中 · alignment/u)).toBeVisible();
+    expect(screen.getByText("数据清单发现")).toBeVisible();
+    expect(screen.getByText("camera-1")).toBeVisible();
+    expect(
+      await screen.findByRole("link", { name: "下载 Raw MCAP" }),
+    ).toBeVisible();
+    expect(screen.queryByText("资源不存在")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新质检状态" }));
+    await waitFor(() => expect(loadDetailMock).toHaveBeenCalledTimes(2));
+  });
+
   it.each([0, 1, 4, 8])(
     "enters read-only Raw diagnostics with %i Manifest cameras for a real RISK result",
     async (cameraCount) => {
@@ -364,6 +393,9 @@ describe("P04 formal upload detail page", () => {
       expect(workbench).toHaveAttribute("data-finding-count", "1");
       expect(screen.getByText("自动质检：RISK")).toBeVisible();
       expect(
+        screen.getByRole("link", { name: "返回问题数据" }),
+      ).toHaveAttribute("href", "/manual/issues");
+      expect(
         await screen.findByRole("link", { name: "下载 Raw MCAP" }),
       ).toHaveAttribute("href", "https://object.example.test/raw/signed");
       expect(loadRawMediaMock).toHaveBeenCalledWith(
@@ -376,6 +408,20 @@ describe("P04 formal upload detail page", () => {
       );
     },
   );
+
+  it("returns a problem-data diagnostic to the exact filtered list", async () => {
+    loadDetailMock.mockResolvedValue(detailFixture("REJECT", 3));
+    renderPage(
+      "/manual/issues/raw-diagnostic/session-a?returnTo=%2Fmanual%2Fissues%3Fsource%3DAUTO_QC%26severity%3DCRITICAL",
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "返回问题数据" }),
+    ).toHaveAttribute(
+      "href",
+      "/manual/issues?source=AUTO_QC&severity=CRITICAL",
+    );
+  });
 
   it("keeps cameras in a generating state while the durable workflow is running", async () => {
     loadDetailMock.mockResolvedValue(detailFixture("PASS", 1));

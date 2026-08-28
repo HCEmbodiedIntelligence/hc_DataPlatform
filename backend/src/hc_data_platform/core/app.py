@@ -86,7 +86,7 @@ _PUBLIC_API_OPERATIONS = frozenset(
         ("/api/v1/auth/password-recovery-requests", "post"),
         ("/api/v1/auth/password-recovery-confirmations", "post"),
         ("/api/v1/capabilities/auto-annotation", "get"),
-        ("/api/v1/previews/sessions/{session_id}/media/{asset_name}", "get"),
+        ("/api/v1/previews/sessions/{session_id}/media/index.m3u8", "get"),
     }
 )
 _SESSION_LOGOUT_OPERATION = ("/api/v1/auth/session:logout", "POST")

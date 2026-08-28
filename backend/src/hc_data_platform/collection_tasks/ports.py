@@ -3,10 +3,23 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from .models import CollectionTaskRecord, CollectionTaskStatus, ProgressFacts
+from .models import (
+    CollectionTaskPackage,
+    CollectionTaskRecord,
+    CollectionTaskStatus,
+    ProgressFacts,
+)
 
 
 class CollectionTaskRepositoryPort(Protocol):
+    def is_dataset_assignable(
+        self, organization_id: str, project_id: str, dataset_id: str
+    ) -> bool: ...
+
+    def has_received_packages(
+        self, organization_id: str, project_id: str, collection_task_id: str
+    ) -> bool: ...
+
     def create(self, task: CollectionTaskRecord) -> CollectionTaskRecord: ...
 
     def list(
@@ -70,3 +83,12 @@ class CollectionTaskRepositoryPort(Protocol):
         collection_task_id: str,
         region_code: str,
     ) -> ProgressFacts: ...
+
+    def packages(
+        self,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        region_code: str,
+        assigned_dataset_id: str,
+    ) -> tuple[CollectionTaskPackage, ...]: ...

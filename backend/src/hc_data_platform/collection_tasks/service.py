@@ -16,6 +16,7 @@ from hc_data_platform.security.versioning import ResourceVersion
 from .models import (
     CollectionTaskAttainment,
     CollectionTaskAttainmentStatus,
+    CollectionTaskPackageList,
     CollectionTaskPage,
     CollectionTaskProgress,
     CollectionTaskQcProgress,
@@ -29,6 +30,8 @@ from .models import (
     ManifestObservedSources,
     ProgressFacts,
     UpdateCollectionTask,
+    dataset_id_for_collection_task,
+    utc_now,
 )
 from .ports import CollectionTaskRepositoryPort
 from .repository import InMemoryCollectionTaskRepository, task_not_found
@@ -75,11 +78,31 @@ class CollectionTaskService:
         )
 
         def create_once() -> CollectionTaskRecord:
+            dataset_id = command.dataset_id or dataset_id_for_collection_task(
+                organization_id,
+                project_id,
+                task_id,
+            )
+            if command.dataset_id is not None and not self.repository.is_dataset_assignable(
+                organization_id,
+                project_id,
+                command.dataset_id,
+            ):
+                raise problem(
+                    status=422,
+                    code="COLLECTION_TASK_DATASET_NOT_ASSIGNABLE",
+                    title="Dataset cannot receive this task",
+                    detail=(
+                        "Select an active dataset in the current organization and project, "
+                        "or let the task create a new dataset."
+                    ),
+                )
             return self.repository.create(
                 CollectionTaskRecord(
                     collection_task_id=task_id,
                     organization_id=organization_id,
                     project_id=project_id,
+                    dataset_id=dataset_id,
                     created_by=created_by,
                     name=command.name,
                     type=command.type,
@@ -167,6 +190,34 @@ class CollectionTaskService:
                 title="Collection task update is empty",
                 detail="At least one editable task field must be supplied.",
             )
+        current = self.detail(organization_id, project_id, collection_task_id)
+        requested_dataset_id = changes.get("dataset_id")
+        if isinstance(requested_dataset_id, str) and requested_dataset_id != current.dataset_id:
+            if not self.repository.is_dataset_assignable(
+                organization_id,
+                project_id,
+                requested_dataset_id,
+            ):
+                raise problem(
+                    status=422,
+                    code="COLLECTION_TASK_DATASET_NOT_ASSIGNABLE",
+                    title="Dataset cannot receive this task",
+                    detail=("Select an active dataset in the current organization and project."),
+                )
+            if self.repository.has_received_packages(
+                organization_id,
+                project_id,
+                collection_task_id,
+            ):
+                raise problem(
+                    status=409,
+                    code="COLLECTION_TASK_DATASET_REASSIGNMENT_BLOCKED",
+                    title="Dataset assignment is locked",
+                    detail=(
+                        "This task already has received data. Use an explicit data migration "
+                        "or split workflow instead of changing its dataset."
+                    ),
+                )
         expected_version = ResourceVersion.from_etag(if_match).value
         return self.repository.update(
             organization_id=organization_id,
@@ -332,6 +383,34 @@ class CollectionTaskService:
                 camera_ids=facts.camera_ids,
                 topic_names=facts.topic_names,
             ),
+        )
+
+    def packages(
+        self,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        region_code: str,
+    ) -> CollectionTaskPackageList:
+        task = self.detail(organization_id, project_id, collection_task_id)
+        items = self.repository.packages(
+            organization_id,
+            project_id,
+            collection_task_id,
+            region_code,
+            task.dataset_id
+            or dataset_id_for_collection_task(
+                organization_id,
+                project_id,
+                collection_task_id,
+            ),
+        )
+        return CollectionTaskPackageList(
+            collection_task_id=collection_task_id,
+            organization_id=organization_id,
+            project_id=project_id,
+            as_of=utc_now(),
+            items=items,
         )
 
     @staticmethod

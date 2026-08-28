@@ -99,4 +99,40 @@ describe("P08 Tag hierarchy and review checks", () => {
     }).find((item) => item.kind === "MUTUAL_EXCLUSION");
     expect(check?.status).toBe("PASS");
   });
+
+  it("allows a manual child interval to extend beyond and cross its semantic parent", () => {
+    const bundle = createVisualAnnotationBundle({ mode: "tag-review" });
+    const basketball: RuntimeAnnotationTag = {
+      annotation_id: "manual-basketball",
+      tag_id: "manual-node-basketball",
+      label: "打篮球",
+      parent_annotation_id: null,
+      path: ["manual-node-basketball"],
+      start_step: 60,
+      end_step: 120,
+      attributes: {},
+      relations: [],
+      subject: null,
+    };
+    const dribbling: RuntimeAnnotationTag = {
+      annotation_id: "manual-dribbling",
+      tag_id: "manual-node-dribbling",
+      label: "运球",
+      parent_annotation_id: basketball.annotation_id,
+      path: [...basketball.path, "manual-node-dribbling"],
+      start_step: 30,
+      end_step: 180,
+      attributes: {},
+      relations: [],
+      subject: null,
+    };
+
+    const checks = evaluateAnnotationTags({
+      task: bundle.task,
+      schema: bundle.schema,
+      tags: [basketball, dribbling],
+    });
+
+    expect(checks.every((check) => check.status === "PASS")).toBe(true);
+  });
 });

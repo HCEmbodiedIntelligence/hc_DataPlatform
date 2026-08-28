@@ -13,6 +13,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { createDomainError } from "../../shared/api/domain-error";
+import { makeScopeKey } from "../../entities/scope";
+import { useShellStore } from "../../shared/scope/shell-store";
 import type { ManifestPreflight } from "./formal-client";
 import UploadJobsPage from "./page";
 import {
@@ -25,21 +27,29 @@ import { UploadQueuePanel } from "./components/UploadQueuePanel";
 const {
   createSessionMock,
   grantedCapabilities,
+  ingestScopeState,
   listSessionsMock,
   preflightMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   grantedCapabilities: new Set<string>(["upload.read", "upload.manage"]),
+  ingestScopeState: {
+    current: {
+      organizationId: "org-e05",
+      projectId: "project-e05",
+      regionCode: "cn-shanghai",
+    } as {
+      organizationId: string;
+      projectId: string;
+      regionCode: string;
+    } | null,
+  },
   listSessionsMock: vi.fn(),
   preflightMock: vi.fn(),
 }));
 
 vi.mock("../../features/ingest/use-ingest-scope", () => ({
-  useIngestScope: () => ({
-    organizationId: "org-e05",
-    projectId: "project-e05",
-    regionCode: "cn-shanghai",
-  }),
+  useIngestScope: () => ingestScopeState.current,
 }));
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
@@ -224,6 +234,11 @@ beforeEach(() => {
   grantedCapabilities.clear();
   grantedCapabilities.add("upload.read");
   grantedCapabilities.add("upload.manage");
+  ingestScopeState.current = {
+    organizationId: "org-e05",
+    projectId: "project-e05",
+    regionCode: "cn-shanghai",
+  };
   resetUploadQueueStoreForTests();
 });
 
@@ -231,6 +246,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  useShellStore.getState().clearSensitiveState();
+  useShellStore.setState({ bootstrapLoaded: false, authorizationFailed: false });
   resetUploadQueueStoreForTests();
 });
 
@@ -259,6 +276,49 @@ describe("P03 serial data upload page", () => {
     ]);
     return screen.findByRole("dialog", { name: "确认上传" });
   }
+
+  it("explains the missing storage scope instead of reporting a permission error", async () => {
+    const user = userEvent.setup();
+    ingestScopeState.current = null;
+    grantedCapabilities.clear();
+    useShellStore.setState({
+      scope: null,
+      scopeKey: makeScopeKey({ organizationId: "unscoped" }),
+      authorization: null,
+      authorizationLoading: false,
+      authorizationFailed: false,
+      bootstrapLoaded: true,
+    });
+
+    renderPage();
+
+    expect(screen.getByRole("heading", { name: "数据上传" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "新建上传" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "选择采集文件夹" }),
+    ).toBeVisible();
+    expect(screen.getByText("上传队列为空")).toBeVisible();
+    expect(screen.queryByText("暂无上传记录")).toBeNull();
+    expect(screen.queryByText("无权访问")).toBeNull();
+
+    await user.click(
+      screen.getByText("选择采集文件夹", { selector: "strong" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "上传前需要加入组织和项目",
+    });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText(/平台无法确定数据应写入哪个存储位置/u),
+      ).toBeVisible(),
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "前往账户设置" }),
+    ).toBeEnabled();
+    expect(preflightMock).not.toHaveBeenCalled();
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
 
   it("starts with only the folder gate and no precheck or processing progress", () => {
     renderPage();
@@ -293,7 +353,9 @@ describe("P03 serial data upload page", () => {
     const { container } = renderPage();
     const dialog = await chooseValidFolder(user, container);
 
-    expect(within(dialog).getByText("浏览器本地检查")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("浏览器本地检查"),
+    ).not.toBeInTheDocument();
     expect(within(dialog).getByText("factory")).toBeInTheDocument();
     expect(within(dialog).getByText("project-e05")).toBeInTheDocument();
     expect(within(dialog).getByText("cn-shanghai")).toBeInTheDocument();
@@ -342,7 +404,16 @@ describe("P03 serial data upload page", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
 
     resolvePreflight(preflight);
-    expect(await screen.findByText("Raw 已提交")).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "上传已完成" }),
+    ).toBeVisible();
+    expect(screen.getByText("已上传 1 / 1")).toBeVisible();
+    expect(screen.queryByText("清除已完成")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "继续上传" }));
+    expect(
+      await screen.findByRole("heading", { name: "选择采集文件夹" }),
+    ).toBeVisible();
   });
 
   it("reflects queue creation from the real pending request without fake percentages", async () => {
@@ -364,7 +435,14 @@ describe("P03 serial data upload page", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
 
     resolveCreate(uploadGrant);
-    expect(await screen.findByText("Raw 已提交")).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "上传已完成" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "查看上传记录" }));
+    expect(screen.getByRole("tab", { name: "上传记录" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   it("stays on the error result and never enters the queue after precheck failure", async () => {
@@ -386,7 +464,7 @@ describe("P03 serial data upload page", () => {
     const dialog = await chooseValidFolder(user, container);
     await user.click(within(dialog).getByRole("button", { name: "确认上传" }));
 
-    expect(await screen.findByText("Manifest 预检失败")).toBeVisible();
+    expect(await screen.findByText("数据清单预检失败")).toBeVisible();
     expect(screen.getByText("MANIFEST_PATH_TRAVERSAL")).toBeVisible();
     expect(screen.getByRole("button", { name: "重新检查" })).toBeEnabled();
     expect(
@@ -527,7 +605,10 @@ describe("P03 serial data upload page", () => {
     expect(
       await screen.findByRole("heading", { name: /上传队列/u }),
     ).toBeVisible();
-    expect(screen.getAllByText("Raw 已提交")).toHaveLength(2);
+    expect(
+      await screen.findByRole("heading", { name: "上传已完成" }),
+    ).toBeVisible();
+    expect(screen.getByText("已上传 2 / 2")).toBeVisible();
   });
 
   it("disables confirmation without upload.manage but allows local inspection", async () => {
@@ -621,6 +702,8 @@ describe("P03 upload queue copy", () => {
         onCancel={vi.fn()}
         onReattach={vi.fn()}
         onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
         onRecover={onRecover}
       />,
     );
@@ -667,6 +750,8 @@ describe("P03 upload queue copy", () => {
         onCancel={vi.fn()}
         onReattach={vi.fn()}
         onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
         onRecover={vi.fn()}
       />,
     );
@@ -700,6 +785,8 @@ describe("P03 upload queue copy", () => {
         onCancel={vi.fn()}
         onReattach={vi.fn()}
         onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
         onRecover={vi.fn()}
       />,
     );
@@ -732,6 +819,8 @@ describe("P03 upload queue copy", () => {
         onCancel={vi.fn()}
         onReattach={vi.fn()}
         onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
         onRecover={vi.fn()}
       />,
     );
@@ -786,6 +875,8 @@ describe("P03 upload queue copy", () => {
         onCancel={vi.fn()}
         onReattach={vi.fn()}
         onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
         onRecover={vi.fn()}
       />,
     );
@@ -850,6 +941,8 @@ describe("P03 upload queue copy", () => {
         onCancel={onCancel}
         onReattach={vi.fn()}
         onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
         onRecover={vi.fn()}
       />,
     );
@@ -872,22 +965,12 @@ describe("P03 upload queue copy", () => {
 
 describe("P03 upload method form semantics", () => {
   const commonProps = {
-    browserSelectionMode: "package" as const,
-    files: [] as const,
-    objectStorageUri: "",
-    projectId: "project-e05",
-    regionCode: "cn-shanghai",
-    preflight: null,
     disabled: false,
-    onSourceTypeChange: vi.fn(),
     onFilesChange: vi.fn(),
-    onObjectStorageUriChange: vi.fn(),
   };
 
   it("names the browser package input and enables recursive directory selection", () => {
-    const { container } = render(
-      <UploadMethodPanel {...commonProps} sourceType="BROWSER_MULTIPART" />,
-    );
+    const { container } = render(<UploadMethodPanel {...commonProps} />);
 
     expect(container.querySelector("#browser-upload-package")).toHaveAttribute(
       "name",
@@ -902,36 +985,16 @@ describe("P03 upload method form semantics", () => {
       "",
     );
     expect(
-      screen.getByText("支持包含多个独立 Manifest 数据包的多级目录"),
+      screen.getByText("支持包含多个独立数据清单的数据包多级目录"),
     ).toBeVisible();
   });
 
-  it("names object-reference controls and uses autocomplete off and an ellipsis", () => {
-    const { container } = render(
-      <UploadMethodPanel
-        {...commonProps}
-        sourceType="OBJECT_STORAGE_REFERENCE"
-      />,
-    );
+  it("does not expose a manual object-storage address", () => {
+    render(<UploadMethodPanel {...commonProps} />);
 
-    expect(screen.getByLabelText("已授权对象地址")).toHaveAttribute(
-      "name",
-      "object-storage-uri",
-    );
-    expect(screen.getByLabelText("已授权对象地址")).toHaveAttribute(
-      "autocomplete",
-      "off",
-    );
-    expect(screen.getByLabelText("已授权对象地址")).toHaveAttribute(
-      "placeholder",
-      "s3://受管存储桶/raw/v1/…/recording.mcap",
-    );
-    expect(container.querySelector("#object-upload-manifest")).toHaveAttribute(
-      "name",
-      "object-upload-manifest",
-    );
-    expect(
-      screen.queryByRole("heading", { name: "目标信息" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("授权对象地址")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("已授权对象地址")).not.toBeInTheDocument();
+    expect(document.querySelector("#object-storage-uri")).toBeNull();
+    expect(document.querySelector("#object-upload-manifest")).toBeNull();
   });
 });

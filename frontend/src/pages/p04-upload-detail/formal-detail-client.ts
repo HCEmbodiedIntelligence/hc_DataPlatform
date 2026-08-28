@@ -4,7 +4,10 @@ import type { DatasetVersionId } from "../../entities/dataset-version";
 import type { IngestScope } from "../../entities/data-source";
 import type { EpisodeId, EpisodeRevisionId } from "../../entities/episode";
 import type { components } from "../../shared/api/generated/platform";
-import { createDomainError } from "../../shared/api/domain-error";
+import {
+  createDomainError,
+  isDomainError,
+} from "../../shared/api/domain-error";
 import { request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 
@@ -19,7 +22,7 @@ export type FormalUploadProcessingStatus =
 export interface FormalUploadDetail {
   readonly session: FormalUploadSession;
   readonly manifest: FormalManifestPreflight;
-  readonly quality: FormalQcReport;
+  readonly quality: FormalQcReport | null;
 }
 
 const uploadPreviewTargetSchema = z
@@ -152,7 +155,7 @@ function assertManifestIdentity(
     manifest.manifest.project_id !== session.project_id ||
     manifest.manifest.rollout_id !== session.rollout_id
   ) {
-    throw contractMismatch("Manifest 响应与当前上传会话不匹配。");
+    throw contractMismatch("数据清单响应与当前上传会话不匹配。");
   }
 }
 
@@ -313,12 +316,21 @@ export async function loadFormalUploadDetail(
     scope,
     session.rollout_id,
     signal,
-  );
+  ).catch((error: unknown) => {
+    if (
+      isDomainError(error) &&
+      error.code === "NOT_FOUND" &&
+      error.problemCode === "QUALITY_REPORT_NOT_FOUND"
+    ) {
+      return null;
+    }
+    throw error;
+  });
   const [manifest, quality] = await Promise.all([
     manifestPromise,
     qualityPromise,
   ]);
   assertManifestIdentity(manifest, session);
-  assertQualityIdentity(quality, session);
+  if (quality) assertQualityIdentity(quality, session);
   return { session, manifest, quality };
 }

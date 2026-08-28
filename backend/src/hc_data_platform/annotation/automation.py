@@ -18,6 +18,7 @@ from .models import (
     AnnotationTask,
     AnnotationTaskCreationSource,
     AnnotationTaskKind,
+    AutoAnnotationSamplingReference,
     TagSchemaVersion,
 )
 from .ports import AnnotationAggregate
@@ -42,6 +43,7 @@ class AutomaticAnnotationRequest:
     base_step_count: int
     source_workflow_id: str
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
+    frame_selection: AutoAnnotationSamplingReference | None = None
 
     def __post_init__(self) -> None:
         string_values = (
@@ -208,6 +210,7 @@ class InMemoryAutomaticAnnotationRepository(InMemoryAnnotationRepository):
         super().__init__()
         self.automatic_triggers: dict[str, dict[str, object]] = {}
         self.automatic_audit: list[dict[str, object]] = []
+        self.frame_selections: dict[str, AutoAnnotationSamplingReference] = {}
         self._automatic_lock = RLock()
 
     def record_automatic_blocked(self, request: AutomaticAnnotationRequest) -> None:
@@ -239,6 +242,12 @@ class InMemoryAutomaticAnnotationRepository(InMemoryAnnotationRepository):
     ) -> AnnotationTask:
         with self._automatic_lock:
             persisted = self.create(aggregate).task
+            if request.frame_selection is not None:
+                existing_selection = self.frame_selections.setdefault(
+                    persisted.task_id, request.frame_selection
+                )
+                if existing_selection != request.frame_selection:
+                    raise RuntimeError("automatic annotation sampling identity conflict")
             current = self.automatic_triggers.get(request.trigger_id, {})
             previous_attempts = current.get("attempts", 0)
             self.automatic_triggers[request.trigger_id] = {
@@ -426,6 +435,65 @@ class PostgresAutomaticAnnotationRepository:
                 values = tuple(raw)
                 if str(values[0]) != task.task_id:
                     raise RuntimeError("automatic annotation target has another winner")
+                if request.frame_selection is not None:
+                    selection = request.frame_selection
+                    cursor.execute(
+                        """
+                        INSERT INTO annotation.frame_selection_manifests (
+                            organization_id, project_id, region_code, task_id,
+                            source_sha256, object_key, content_sha256, size_bytes,
+                            sampling_version, camera_set, source_frame_count,
+                            selected_group_count, created_at
+                        ) VALUES (
+                            NULLIF(current_setting('app.organization_id', true), ''),
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
+                        ) ON CONFLICT (task_id) DO NOTHING
+                        """,
+                        (
+                            request.project_id,
+                            request.region_code,
+                            task.task_id,
+                            selection.source_sha256,
+                            selection.object_key,
+                            selection.content_sha256,
+                            selection.size_bytes,
+                            selection.sampling_version,
+                            json.dumps(selection.camera_set),
+                            selection.source_frame_count,
+                            selection.selected_group_count,
+                            now,
+                        ),
+                    )
+                    cursor.execute(
+                        """
+                        SELECT source_sha256, object_key, content_sha256, size_bytes,
+                               sampling_version, camera_set,
+                               source_frame_count, selected_group_count
+                        FROM annotation.frame_selection_manifests
+                        WHERE task_id = %s AND project_id = %s AND region_code = %s
+                        """,
+                        (task.task_id, request.project_id, request.region_code),
+                    )
+                    selection_row = cursor.fetchone()
+                    if selection_row is None:
+                        raise RuntimeError("automatic annotation sampling was not persisted")
+                    selection_values = tuple(selection_row)
+                    persisted_selection = AutoAnnotationSamplingReference(
+                        source_sha256=str(selection_values[0]),
+                        object_key=str(selection_values[1]),
+                        content_sha256=str(selection_values[2]),
+                        size_bytes=int(selection_values[3]),
+                        sampling_version=str(selection_values[4]),
+                        camera_set=tuple(
+                            json.loads(selection_values[5])
+                            if isinstance(selection_values[5], str)
+                            else selection_values[5]
+                        ),
+                        source_frame_count=int(selection_values[6]),
+                        selected_group_count=int(selection_values[7]),
+                    )
+                    if persisted_selection != selection:
+                        raise RuntimeError("automatic annotation sampling identity conflict")
                 cursor.execute(
                     """
                     INSERT INTO annotation.annotation_task_triggers (

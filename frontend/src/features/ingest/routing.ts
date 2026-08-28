@@ -39,9 +39,15 @@ export const routes = {
     },
   },
   uploadJobs: {
-    path: '/ingest/uploads',
+    path: '/ingest/uploads/new',
     build(query: IngestQueryInput = {}): IngestUrl {
-      return appendQuery('/ingest/uploads', query);
+      return appendQuery('/ingest/uploads/new', query);
+    },
+  },
+  uploadRecords: {
+    path: '/ingest/uploads/records',
+    build(query: IngestQueryInput = {}): IngestUrl {
+      return appendQuery('/ingest/uploads/records', query);
     },
   },
   uploads: {

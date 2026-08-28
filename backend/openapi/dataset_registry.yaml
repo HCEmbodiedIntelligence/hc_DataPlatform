@@ -7,6 +7,16 @@ components:
           maxLength: 4096
           title: Description
           type: string
+        folder_path:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[^/\\]+$
+            type: string
+          maxItems: 16
+          title: Folder Path
+          type: array
         labels:
           default: []
           items:
@@ -440,6 +450,16 @@ components:
           minLength: 3
           title: Etag
           type: string
+        folder_path:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[^/\\]+$
+            type: string
+          maxItems: 16
+          title: Folder Path
+          type: array
         labels:
           default: []
           items:
@@ -847,6 +867,13 @@ components:
           $ref: '#/components/schemas/DatasetPageScope'
         selected_revision:
           $ref: '#/components/schemas/DatasetPageRevisionSnapshotReference'
+        storage_region_code:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Storage Region Code
         success_state:
           maxLength: 64
           minLength: 1
@@ -1208,6 +1235,12 @@ components:
             $ref: '#/components/schemas/DatasetPageFacetValue'
           title: Storage Classes
           type: array
+        tags:
+          default: []
+          items:
+            $ref: '#/components/schemas/DatasetPageFacetValue'
+          title: Tags
+          type: array
         tasks:
           default: []
           items:
@@ -1343,6 +1376,18 @@ components:
             $ref: '#/components/schemas/DatasetPageAllowedAction'
           title: Allowed Actions
           type: array
+        availability:
+          maxLength: 64
+          minLength: 1
+          title: Availability
+          type: string
+        collection_task_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Collection Task Id
         current_version:
           anyOf:
           - $ref: '#/components/schemas/DatasetPageCurrentReadyVersion'
@@ -1363,6 +1408,16 @@ components:
           pattern: ^(0|[1-9][0-9]*)$
           title: Episode Count
           type: string
+        folder_path:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[^/\\]+$
+            type: string
+          maxItems: 16
+          title: Folder Path
+          type: array
         name:
           maxLength: 256
           minLength: 1
@@ -1382,6 +1437,7 @@ components:
       - scope
       - dataset_id
       - name
+      - availability
       - dataset_created_at
       - dataset_activity_at
       - episode_count
@@ -2535,6 +2591,13 @@ components:
           pattern: ^[a-fA-F0-9]{64}$
           title: Source Manifest Sha256
           type: string
+        storage_region_code:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Storage Region Code
         upload_id:
           maxLength: 128
           minLength: 1
@@ -3050,7 +3113,21 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - in: query
+      - description: Exact immutable collection-task identity owned by the Dataset.
+        in: query
+        name: collection_task_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          description: Exact immutable collection-task identity owned by the Dataset.
+          title: Collection Task Id
+      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+          Episode task.
+        in: query
         name: task
         required: false
         schema:
@@ -3059,7 +3136,19 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
+          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+            Episode task.
           title: Task
+      - in: query
+        name: tag
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Tag
       - in: query
         name: scene
         required: false
@@ -3080,6 +3169,20 @@ paths:
             type: string
           - type: 'null'
           title: Asset State
+      - description: Require the selected workflow count to be greater than zero.
+        in: query
+        name: workflow_state
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - pendingReview
+            - returned
+            - actionableDraft
+            type: string
+          - type: 'null'
+          description: Require the selected workflow count to be greater than zero.
+          title: Workflow State
       - in: query
         name: storage_class
         required: false
@@ -5796,7 +5899,9 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - in: query
+      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+          Episode task.
+        in: query
         name: task
         required: false
         schema:
@@ -5805,7 +5910,19 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
+          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+            Episode task.
           title: Task
+      - in: query
+        name: tag
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Tag
       - in: query
         name: scene
         required: false
@@ -5826,6 +5943,20 @@ paths:
             type: string
           - type: 'null'
           title: Asset State
+      - description: Require the selected workflow count to be greater than zero.
+        in: query
+        name: workflow_state
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - pendingReview
+            - returned
+            - actionableDraft
+            type: string
+          - type: 'null'
+          description: Require the selected workflow count to be greater than zero.
+          title: Workflow State
       - in: query
         name: storage_class
         required: false
@@ -6076,7 +6207,9 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - in: query
+      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+          Episode task.
+        in: query
         name: task
         required: false
         schema:
@@ -6085,7 +6218,19 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
+          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+            Episode task.
           title: Task
+      - in: query
+        name: tag
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Tag
       - in: query
         name: scene
         required: false
@@ -6106,6 +6251,20 @@ paths:
             type: string
           - type: 'null'
           title: Asset State
+      - description: Require the selected workflow count to be greater than zero.
+        in: query
+        name: workflow_state
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - pendingReview
+            - returned
+            - actionableDraft
+            type: string
+          - type: 'null'
+          description: Require the selected workflow count to be greater than zero.
+          title: Workflow State
       - in: query
         name: storage_class
         required: false

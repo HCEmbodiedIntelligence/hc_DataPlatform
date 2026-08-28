@@ -131,6 +131,14 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
         "value": None,
     }
 
+    packages = client.get(
+        f"/api/v1/projects/project-a/collection-tasks/{task_id}/packages",
+        headers={"X-Region-Code": "cn-test"},
+    )
+    assert packages.status_code == 200
+    assert packages.headers["Cache-Control"] == "no-store"
+    assert packages.json()["items"] == []
+
     closed = client.post(
         f"/api/v1/projects/project-a/collection-tasks/{task_id}:close",
         headers={"If-Match": updated.headers["ETag"], "Idempotency-Key": "close-1"},

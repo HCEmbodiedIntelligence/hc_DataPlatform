@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
@@ -8,19 +9,27 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.preview.audit import InMemoryPreviewAuditRecorder
 from hc_data_platform.preview.memory import (
     HmacUrlSigner,
+    InMemoryExclusionReader,
     InMemoryMediaEncoder,
-    InMemoryPreviewCache,
-    InMemoryPreviewMediaReader,
+    InMemoryPreviewArtifactStore,
+    InMemoryPreviewRepository,
     InMemoryStepReader,
 )
-from hc_data_platform.preview.models import PreviewFrameV1, StepRangeV1
+from hc_data_platform.preview.models import (
+    PreviewFrameV1,
+    PreviewPendingDescriptorV1,
+    PreviewRequestV1,
+    PreviewScopeV1,
+)
 from hc_data_platform.preview.router import router
-from hc_data_platform.preview.service import PreviewService
+from hc_data_platform.preview.service import (
+    PreviewControlPlaneService,
+    PreviewGenerationService,
+)
 from hc_data_platform.security import AuthContext
 
 
@@ -37,30 +46,48 @@ def _payload() -> dict[str, object]:
     }
 
 
-def _service() -> PreviewService:
-    class ScopedExclusions:
-        def effective_ranges(self, **_: object) -> tuple[StepRangeV1, ...]:
-            assert current_request_context().region_code == "cn-test"
-            return ()
-
-    return PreviewService(
+def _service() -> PreviewControlPlaneService:
+    repository = InMemoryPreviewRepository()
+    store = InMemoryPreviewArtifactStore()
+    def clock() -> datetime:
+        return datetime(2026, 8, 20, tzinfo=timezone.utc)
+    control = PreviewControlPlaneService(
+        repository=repository,
+        store=store,
+        signer=HmacUrlSigner(b"preview-audit-test-secret"),
+        clock=clock,
+    )
+    generation = PreviewGenerationService(
         step_reader=InMemoryStepReader(
             [
                 PreviewFrameV1(
                     rollout_id="rollout-a",
                     step_index=0,
                     timestamp_ns=0,
-                    image_ref=b"preview-audit-frame",
+                    image_ref=b"\xff\xd8preview-audit-frame\xff\xd9",
                 )
             ]
         ),
-        exclusions=ScopedExclusions(),
+        exclusions=InMemoryExclusionReader(),
         encoder=InMemoryMediaEncoder(),
-        cache=InMemoryPreviewCache(),
-        signer=HmacUrlSigner(b"preview-audit-test-secret"),
-        media_reader=InMemoryPreviewMediaReader(),
-        clock=lambda: datetime(2026, 8, 20, tzinfo=timezone.utc),
+        repository=repository,
+        store=store,
+        clock=clock,
     )
+    request = PreviewRequestV1.model_validate(_payload())
+    scope = PreviewScopeV1(
+        organization_id="organization-a",
+        project_id="project-a",
+        region_code="cn-test",
+    )
+    pending = asyncio.run(control.create_session(scope, request))
+    assert isinstance(pending, PreviewPendingDescriptorV1)
+    generation.generate(
+        scope,
+        request.model_copy(update={"annotation_revision": 0}),
+        job_id=pending.job_id,
+    )
+    return control
 
 
 @pytest.fixture
@@ -82,6 +109,10 @@ def audited_preview_api(
             project_ids=frozenset({"project-a"}),
             region_codes=frozenset({"cn-test"}),
             roles=frozenset({"uploader"}),
+            organization_ids=frozenset({"organization-a"}),
+            organization_scope_triples=frozenset(
+                {("organization-a", "project-a", "cn-test")}
+            ),
         )
         return await call_next(request)
 
@@ -105,13 +136,19 @@ def test_authenticated_descriptor_create_and_refresh_are_redacted_and_audited(
     created = client.post(
         "/api/v1/previews/sessions",
         json=_payload(),
-        headers={"X-Region-Code": "cn-test"},
+        headers={
+            "X-Organization-Id": "organization-a",
+            "X-Region-Code": "cn-test",
+        },
     )
     assert created.status_code == 201
     session_id = created.json()["session_id"]
     refreshed = client.get(
-        f"/api/v1/previews/sessions/{session_id}",
-        headers={"X-Region-Code": "cn-test"},
+        f"/api/v1/previews/sessions/{session_id}?project_id=project-a",
+        headers={
+            "X-Organization-Id": "organization-a",
+            "X-Region-Code": "cn-test",
+        },
     )
     assert refreshed.status_code == 200
 
@@ -148,7 +185,10 @@ def test_preview_descriptor_is_not_returned_when_the_audit_ledger_fails(
     response = client.post(
         "/api/v1/previews/sessions",
         json=_payload(),
-        headers={"X-Region-Code": "cn-test"},
+        headers={
+            "X-Organization-Id": "organization-a",
+            "X-Region-Code": "cn-test",
+        },
     )
 
     assert response.status_code == 500

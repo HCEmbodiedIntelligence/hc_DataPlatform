@@ -1,40 +1,41 @@
-import { Alert, Button, Descriptions, Input, Space } from "antd";
-import { KeyRound, UserRoundPlus, X } from "lucide-react";
+import { Alert, Button, Drawer, Input, Modal, Space } from "antd";
+import { X } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { isDomainError } from "../../../shared/api/domain-error";
+import { StatusTag } from "../../../shared/ui";
 import type { AccessDecisionInput } from "../access-api";
 import type { AccessDecision, AccessRequestRow } from "../contracts";
 import {
   availableDecisions,
-  capabilityLabel,
   decisionLabel,
-  elevatedImpactNotes,
-  formatDateTime,
-  shortIdentity,
+  statusLabel,
+  statusTone,
 } from "../presentation";
 import styles from "../styles.module.css";
+import { AccessRequestDetails } from "./AccessRequestDetails";
 
 export interface ApprovalDrawerProps {
   readonly row: AccessRequestRow;
+  readonly open: boolean;
   readonly canManage: boolean;
   readonly principalId: string | null;
   readonly pending: boolean;
   readonly error: unknown;
   readonly settled: boolean;
   readonly onClose: () => void;
+  readonly onAfterOpenChange: (open: boolean) => void;
   readonly onReload: () => void;
   readonly onDecision: (input: AccessDecisionInput) => void;
 }
 
 function decisionRequiresReason(decision: AccessDecision | null): boolean {
-  return (
-    decision === "reject" || decision === "revoke" || decision === "withdraw"
-  );
+  return decision === "reject" || decision === "revoke";
 }
 
 export function ApprovalDrawer({
   canManage,
   error,
+  onAfterOpenChange,
   onClose,
   onDecision,
   onReload,
@@ -42,22 +43,23 @@ export function ApprovalDrawer({
   principalId,
   row,
   settled,
+  open,
 }: Readonly<ApprovalDrawerProps>) {
   const options = availableDecisions(row, canManage, principalId);
-  const [decision, setDecision] = useState<AccessDecision | null>(
-    options[0] ?? null,
-  );
+  const [decision, setDecision] = useState<AccessDecision | null>(null);
   const [reason, setReason] = useState("");
   const [showValidation, setShowValidation] = useState(false);
+  const [confirmMembershipRevoke, setConfirmMembershipRevoke] = useState(false);
+  const formId = useId();
   const reasonId = useId();
-  const impacts = elevatedImpactNotes(row);
+  const drawerTitleId = useId();
+  const revokeTitleId = useId();
   const reasonMissing =
     decisionRequiresReason(decision) && reason.trim().length === 0;
+  const domainError = isDomainError(error) ? error : null;
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setShowValidation(true);
-    if (!decision || reasonMissing) return;
+  const emitDecision = () => {
+    if (!decision) return;
     onDecision({
       kind: row.kind,
       action: decision,
@@ -67,262 +69,220 @@ export function ApprovalDrawer({
     });
   };
 
-  const domainError = isDomainError(error) ? error : null;
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setShowValidation(true);
+    if (!decision || reasonMissing || pending || settled) return;
+    if (decision === "revoke" && row.kind === "membership") {
+      setConfirmMembershipRevoke(true);
+      return;
+    }
+    emitDecision();
+  };
+
+  const title = row.kind === "membership" ? "项目加入申请" : "权限申请";
 
   return (
-    <div
-      className={styles.approvalDrawer}
-      data-e09-drawer
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby="p18-approval-title"
-    >
-      <header className={styles.drawerHeader}>
-        <div>
-          <span className={styles.drawerEyebrow}>当前项目作用域</span>
-          <h2 id="p18-approval-title">审批申请</h2>
-        </div>
-        <Button
-          type="text"
-          icon={<X aria-hidden="true" size={19} />}
-          aria-label="关闭审批抽屉"
-          onClick={onClose}
-        />
-      </header>
-
-      <form className={styles.drawerForm} onSubmit={submit}>
-        <section className={styles.approvalStep}>
-          <header>
-            <span>1</span>
-            <h3>{row.kind === "membership" ? "请求加入项目" : "权限申请人"}</h3>
-          </header>
-          <Descriptions column={1} size="small" colon={false}>
-            <Descriptions.Item label="申请人">
-              <code title={row.requesterId} translate="no">
-                {shortIdentity(row.requesterId)}
-              </code>
-            </Descriptions.Item>
-            <Descriptions.Item label="项目">
-              <code title={row.projectId} translate="no">
-                {row.projectId}
-              </code>
-            </Descriptions.Item>
-            <Descriptions.Item label="申请类型">
-              <Space size="small">
-                {row.kind === "membership" ? (
-                  <UserRoundPlus aria-hidden="true" size={15} />
-                ) : (
-                  <KeyRound aria-hidden="true" size={15} />
-                )}
-                {row.kind === "membership" ? "项目加入申请" : "权限申请"}
-              </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label="申请说明">
-              {row.reason || "申请人未填写说明"}
-            </Descriptions.Item>
-            <Descriptions.Item label="提交时间">
-              <time dateTime={row.createdAt}>
-                {formatDateTime(row.createdAt)}
-              </time>
-            </Descriptions.Item>
-          </Descriptions>
-        </section>
-
-        <section className={styles.approvalStep}>
-          <header>
-            <span>2</span>
-            <h3>请求权限与数据范围</h3>
-          </header>
-          <Descriptions column={1} size="small" colon={false}>
-            <Descriptions.Item label="权限模板">
-              {row.kind === "membership"
-                ? "正式合同未提供默认角色或模板字段"
-                : "正式合同按 capability keys 直接申请，无模板字段"}
-            </Descriptions.Item>
-            <Descriptions.Item label="请求权限">
-              {row.kind === "membership" ? (
-                "仅建立当前项目成员关系"
-              ) : (
-                <ul className={styles.drawerCapabilityList}>
-                  {row.capabilityKeys.map((key) => (
-                    <li key={key}>
-                      <strong>{capabilityLabel(key)}</strong>
-                      <code translate="no">{key}</code>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Descriptions.Item>
-            <Descriptions.Item label="数据范围">
-              当前项目 <code translate="no">{row.projectId}</code>
-              ；申请合同未提供 region 或资源谓词
-            </Descriptions.Item>
-            <Descriptions.Item label="有效期">
-              长期有效，直到显式撤销；正式合同无到期时间字段
-            </Descriptions.Item>
-          </Descriptions>
-        </section>
-
-        <section className={styles.approvalStep}>
-          <header>
-            <span>3</span>
-            <h3>风险上下文</h3>
-          </header>
-          <Descriptions column={1} size="small" colon={false}>
-            <Descriptions.Item label="服务端风险等级">
-              正式 runtime 合同未返回风险字段
-            </Descriptions.Item>
-            <Descriptions.Item label="申请修订">
-              v{row.revision}
-            </Descriptions.Item>
-          </Descriptions>
-          {impacts.length > 0 ? (
-            <Alert
-              type="warning"
-              showIcon
-              title="请求包含高影响能力"
-              description={
-                <ul className={styles.impactList}>
-                  {impacts.map((impact) => (
-                    <li key={impact}>{impact}</li>
-                  ))}
-                </ul>
-              }
-            />
-          ) : (
-            <Alert
-              type="info"
-              showIcon
-              title="未从 capability keys 识别到已知高影响动作；这不是服务端风险评级。"
-            />
-          )}
-        </section>
-
-        <section
-          className={styles.decisionSection}
-          aria-labelledby="decision-heading"
-        >
-          <h3 id="decision-heading">审批决策</h3>
-          {options.length > 0 ? (
-            <>
-              <div className={styles.decisionOptions}>
-                {options.map((option) => (
-                  <Button
-                    key={option}
-                    type={
-                      decision === option && option === "approve"
-                        ? "primary"
-                        : "default"
-                    }
-                    danger={option !== "approve"}
-                    aria-pressed={decision === option}
-                    disabled={pending || settled}
-                    onClick={() => {
-                      setDecision(option);
-                      setShowValidation(false);
-                    }}
-                  >
-                    {decisionLabel(option)}
-                  </Button>
-                ))}
-              </div>
-              <label className={styles.reasonField} htmlFor={reasonId}>
-                <span>
-                  {decisionRequiresReason(decision)
-                    ? "处理原因（必填）"
-                    : "审批说明（选填）"}
-                </span>
-                <Input.TextArea
-                  id={reasonId}
-                  name="access-decision-reason"
-                  autoComplete="off"
-                  value={reason}
-                  maxLength={2_000}
-                  showCount
-                  rows={3}
-                  status={showValidation && reasonMissing ? "error" : undefined}
-                  aria-invalid={showValidation && reasonMissing}
-                  aria-describedby={
-                    showValidation && reasonMissing
-                      ? `${reasonId}-error`
-                      : undefined
-                  }
-                  placeholder="说明批准依据，或填写拒绝/撤销原因…"
-                  disabled={pending || settled}
-                  onChange={(event) => setReason(event.target.value)}
-                />
-              </label>
-              {showValidation && reasonMissing ? (
-                <p
-                  id={`${reasonId}-error`}
-                  className={styles.fieldError}
-                  role="alert"
-                >
-                  拒绝、撤销或撤回必须填写原因。
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <Alert
-              type="info"
-              showIcon
-              title="当前申请为只读"
-              description="当前 scope/capability 或申请状态没有允许的动作。服务端仍是最终授权边界。"
-            />
-          )}
-        </section>
-
-        {error ? (
-          <div role="alert" className={styles.mutationMessage}>
-            <Alert
-              type="error"
-              showIcon
-              title={
-                domainError?.httpStatus === 409
-                  ? "申请状态已变化"
-                  : domainError?.httpStatus === 429
-                    ? "审批请求频率受限"
-                    : "审批未完成"
-              }
-              description={
-                <Space orientation="vertical" size="small">
-                  <span>
-                    {domainError?.message ?? "发生未知错误，请重新加载申请。"}
-                  </span>
-                  {domainError?.problemCode ? (
-                    <code translate="no">{domainError.problemCode}</code>
-                  ) : null}
-                  {domainError?.requestId ? (
-                    <span>
-                      请求 ID：
-                      <code translate="no">{domainError.requestId}</code>
-                    </span>
-                  ) : null}
-                  <Button size="small" onClick={onReload}>
-                    重新加载申请
-                  </Button>
-                </Space>
-              }
+    <>
+      <Drawer
+        rootClassName={styles.approvalDrawerRoot}
+        className={styles.approvalDrawer}
+        data-e09-drawer
+        size={560}
+        open={open}
+        mask
+        keyboard
+        aria-labelledby={drawerTitleId}
+        closable={false}
+        destroyOnHidden
+        title={
+          <div className={styles.drawerTitle}>
+            <h2 id={drawerTitleId}>{title}</h2>
+            <StatusTag
+              status={row.status}
+              label={statusLabel(row.status)}
+              tone={statusTone(row.status)}
             />
           </div>
-        ) : null}
-        <footer className={styles.drawerFooter}>
-          <Button disabled={pending} onClick={onClose}>
-            取消
-          </Button>
-          {decision ? (
-            <Button
-              type={decision === "approve" ? "primary" : "default"}
-              danger={decision !== "approve"}
-              htmlType="submit"
-              loading={pending}
-              disabled={options.length === 0 || settled}
-            >
-              {pending ? "提交中…" : `提交${decisionLabel(decision)}`}
+        }
+        extra={
+          <Button
+            type="text"
+            icon={<X aria-hidden="true" size={19} />}
+            aria-label="关闭申请详情"
+            onClick={onClose}
+          />
+        }
+        footer={
+          <div className={styles.drawerFooter}>
+            <Button disabled={pending} onClick={onClose}>
+              {options.length === 0 ? "关闭" : "取消"}
             </Button>
+            {decision ? (
+              <Button
+                form={formId}
+                type={decision === "approve" ? "primary" : "default"}
+                danger={decision !== "approve"}
+                htmlType="submit"
+                loading={pending}
+                disabled={pending || settled}
+              >
+                {pending ? "提交中…" : `提交${decisionLabel(decision)}`}
+              </Button>
+            ) : null}
+          </div>
+        }
+        afterOpenChange={onAfterOpenChange}
+        onClose={onClose}
+      >
+        <form id={formId} className={styles.drawerForm} onSubmit={submit}>
+          <AccessRequestDetails row={row} />
+
+          <section
+            className={styles.decisionSection}
+            aria-labelledby="decision-heading"
+          >
+            <h3 id="decision-heading">可执行操作</h3>
+            {options.length > 0 ? (
+              <>
+                {row.kind === "membership" && options.includes("approve") ? (
+                  <p className={styles.decisionContext}>
+                    批准只建立当前项目成员关系，不会自动授予业务能力。
+                  </p>
+                ) : null}
+                <div className={styles.decisionOptions}>
+                  {options.map((option) => (
+                    <Button
+                      key={option}
+                      type={option === "approve" ? "primary" : "default"}
+                      danger={option !== "approve"}
+                      aria-pressed={decision === option}
+                      disabled={pending || settled}
+                      onClick={() => {
+                        setDecision(option);
+                        setShowValidation(false);
+                      }}
+                    >
+                      {decisionLabel(option)}
+                    </Button>
+                  ))}
+                </div>
+                {decision ? (
+                  <div className={styles.reasonGroup}>
+                    <label className={styles.reasonField} htmlFor={reasonId}>
+                      <span>
+                        {decisionRequiresReason(decision)
+                          ? "处理原因（必填）"
+                          : "审批说明（选填）"}
+                      </span>
+                      <Input.TextArea
+                        id={reasonId}
+                        name="access-decision-reason"
+                        autoComplete="off"
+                        value={reason}
+                        maxLength={2_000}
+                        showCount
+                        rows={3}
+                        status={
+                          showValidation && reasonMissing ? "error" : undefined
+                        }
+                        aria-invalid={showValidation && reasonMissing}
+                        aria-describedby={
+                          showValidation && reasonMissing
+                            ? `${reasonId}-error`
+                            : undefined
+                        }
+                        placeholder="填写处理依据或原因…"
+                        disabled={pending || settled}
+                        onChange={(event) => setReason(event.target.value)}
+                      />
+                    </label>
+                    {showValidation && reasonMissing ? (
+                      <p
+                        id={`${reasonId}-error`}
+                        className={styles.fieldError}
+                        role="alert"
+                      >
+                        拒绝或撤销必须填写原因。
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className={styles.decisionHint}>
+                    选择操作后再填写说明并提交；页面不会自动执行决策。
+                  </p>
+                )}
+                <p className={styles.decisionBoundary}>
+                  提交后由服务端再次校验权限与申请状态。
+                </p>
+              </>
+            ) : (
+              <p className={styles.readOnlyNote}>
+                当前身份或申请状态没有可执行操作，此申请仅供查看。
+              </p>
+            )}
+          </section>
+
+          {error ? (
+            <div role="alert" className={styles.mutationMessage}>
+              <Alert
+                type="error"
+                showIcon
+                title={
+                  domainError?.httpStatus === 409
+                    ? "申请状态已变化"
+                    : domainError?.httpStatus === 429
+                      ? "审批请求频率受限"
+                      : domainError?.httpStatus === 403
+                        ? "当前权限无法完成操作"
+                        : "审批未完成"
+                }
+                description={
+                  <Space orientation="vertical" size="small">
+                    <span>
+                      {domainError?.message ??
+                        "发生未知错误，请重新加载申请后重试。"}
+                    </span>
+                    {domainError?.problemCode ? (
+                      <code translate="no">{domainError.problemCode}</code>
+                    ) : null}
+                    {domainError?.requestId ? (
+                      <span>
+                        请求 ID：
+                        <code translate="no">{domainError.requestId}</code>
+                      </span>
+                    ) : null}
+                    <Button size="small" onClick={onReload}>
+                      重新加载申请
+                    </Button>
+                  </Space>
+                }
+              />
+            </div>
           ) : null}
-        </footer>
-      </form>
-    </div>
+        </form>
+      </Drawer>
+
+      <Modal
+        rootClassName={styles.revokeDialog}
+        title={<span id={revokeTitleId}>确认撤销项目成员关系</span>}
+        aria-labelledby={revokeTitleId}
+        open={confirmMembershipRevoke}
+        okText="撤销成员及相关权限"
+        cancelText="取消"
+        closable={{ "aria-label": "关闭撤销确认" }}
+        okButtonProps={{ danger: true }}
+        onCancel={() => setConfirmMembershipRevoke(false)}
+        onOk={() => {
+          setConfirmMembershipRevoke(false);
+          emitDecision();
+        }}
+      >
+        <p>
+          撤销后将停用该用户在当前项目的成员关系，并同时停用该项目内相关
+          capability 授权。这是高影响操作，请确认影响范围。
+        </p>
+      </Modal>
+    </>
   );
 }

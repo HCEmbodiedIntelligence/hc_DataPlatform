@@ -7,19 +7,32 @@ import {
   Modal,
   Skeleton,
   Space,
+  TreeSelect,
   Typography,
 } from "antd";
 import type { InputRef } from "antd";
-import { Info, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { RefreshCw, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { isDomainError } from "../../../shared/api/domain-error";
 import { PageState } from "../../../shared/ui/state/PageState";
 import type { PageStateKind } from "../../../shared/ui/state/contracts";
-import type { CollectionTask, CreateCollectionTask } from "../api";
+import type {
+  AssignableDataset,
+  CollectionTask,
+  CreateCollectionTask,
+} from "../api";
 import styles from "../styles.module.css";
 
 interface TaskFormValues {
   name: string;
+  datasetId: string;
   type: string;
   scenario: string;
   description: string;
@@ -35,15 +48,86 @@ export interface CollectionTaskDrawerProps {
   readonly loading?: boolean;
   readonly pending?: boolean;
   readonly error?: unknown;
+  readonly datasets?: readonly AssignableDataset[];
+  readonly datasetsLoading?: boolean;
+  readonly datasetError?: unknown;
   readonly onClose: () => void;
   readonly onReload?: () => void;
+  readonly onReloadDatasets?: () => void;
   readonly onFormChanged?: () => void;
   readonly onSubmit: (command: CreateCollectionTask) => Promise<void>;
+}
+
+const NEW_DATASET_VALUE = "__new_dataset__";
+
+interface DatasetTreeNode {
+  title: string;
+  value: string;
+  selectable?: boolean;
+  children?: DatasetTreeNode[];
+}
+
+function datasetTreeData(
+  datasets: readonly AssignableDataset[],
+  currentDatasetId?: string,
+): DatasetTreeNode[] {
+  const roots: DatasetTreeNode[] = [
+    {
+      title: "新建专属数据集（系统生成）",
+      value: NEW_DATASET_VALUE,
+    },
+  ];
+  const folders = new Map<string, DatasetTreeNode>();
+  const sorted = [...datasets].sort((left, right) =>
+    [...left.folderPath, left.name, left.datasetId]
+      .join("/")
+      .localeCompare(
+        [...right.folderPath, right.name, right.datasetId].join("/"),
+        "zh-CN",
+      ),
+  );
+
+  for (const dataset of sorted) {
+    let children = roots;
+    const path: string[] = [];
+    for (const segment of dataset.folderPath) {
+      path.push(segment);
+      const key = path.join("\u001f");
+      let folder = folders.get(key);
+      if (!folder) {
+        folder = {
+          title: segment,
+          value: `__folder__:${key}`,
+          selectable: false,
+          children: [],
+        };
+        folders.set(key, folder);
+        children.push(folder);
+      }
+      children = folder.children as DatasetTreeNode[];
+    }
+    children.push({
+      title: `${dataset.name} · ${dataset.datasetId}`,
+      value: dataset.datasetId,
+    });
+  }
+
+  if (
+    currentDatasetId &&
+    !datasets.some((dataset) => dataset.datasetId === currentDatasetId)
+  ) {
+    roots.push({
+      title: `当前关联 · ${currentDatasetId}`,
+      value: currentDatasetId,
+    });
+  }
+  return roots;
 }
 
 function initialValues(task: CollectionTask | undefined): TaskFormValues {
   return {
     name: task?.name ?? "",
+    datasetId: task?.dataset_id ?? NEW_DATASET_VALUE,
     type: task?.type ?? "",
     scenario: task?.scenario ?? "",
     description: task?.description ?? "",
@@ -66,6 +150,9 @@ function commandFromValues(values: TaskFormValues): CreateCollectionTask {
   const hasDurationTarget = typeof durationHours === "number";
   return {
     name: values.name.trim(),
+    ...(values.datasetId === NEW_DATASET_VALUE
+      ? {}
+      : { dataset_id: values.datasetId }),
     type: values.type.trim(),
     scenario: values.scenario.trim(),
     description: values.description.trim(),
@@ -95,6 +182,12 @@ function errorTitle(error: unknown): string {
   }
   if (error.code === "RATE_LIMITED") return "请求频率受限";
   if (error.code === "VALIDATION_ERROR") return "请检查任务字段";
+  if (error.problemCode === "COLLECTION_TASK_DATASET_NOT_ASSIGNABLE") {
+    return "关联数据集不可用";
+  }
+  if (error.problemCode === "COLLECTION_TASK_DATASET_REASSIGNMENT_BLOCKED") {
+    return "不能更改关联数据集";
+  }
   if (error.code === "FORBIDDEN" || error.code === "UNAUTHENTICATED") {
     return "当前授权不允许此操作";
   }
@@ -121,6 +214,7 @@ function drawerErrorState(error: unknown): PageStateKind {
 
 const fieldNames: Readonly<Record<string, keyof TaskFormValues>> = {
   name: "name",
+  dataset_id: "datasetId",
   type: "type",
   scenario: "scenario",
   description: "description",
@@ -131,12 +225,16 @@ const fieldNames: Readonly<Record<string, keyof TaskFormValues>> = {
 
 export function CollectionTaskDrawer({
   error,
+  datasetError,
+  datasets = [],
+  datasetsLoading = false,
   initialTask,
   loading = false,
   mode,
   onClose,
   onFormChanged,
   onReload,
+  onReloadDatasets,
   onSubmit,
   pending = false,
   projectId,
@@ -147,6 +245,10 @@ export function CollectionTaskDrawer({
   const headingId = useId();
   const firstInputRef = useRef<InputRef>(null);
   const submitLock = useRef(false);
+  const datasetOptions = useMemo(
+    () => datasetTreeData(datasets, initialTask?.dataset_id),
+    [datasets, initialTask?.dataset_id],
+  );
 
   useEffect(() => {
     form.resetFields();
@@ -156,6 +258,7 @@ export function CollectionTaskDrawer({
   }, [
     form,
     initialTask?.collection_task_id,
+    initialTask?.dataset_id,
     initialTask?.description,
     initialTask?.name,
     initialTask?.quality_threshold,
@@ -233,8 +336,8 @@ export function CollectionTaskDrawer({
           </Typography.Title>
           <p>
             {mode === "create"
-              ? "定义持续有效的采集目标，编号将在创建后生成。"
-              : "保存后立即更新任务定义，历史数据仍保留原有关联。"}
+              ? "可关联已有数据集，也可让系统新建专属数据集；多个任务可以汇入同一数据集。"
+              : "尚未收到数据时可以调整关联；已有数据的任务会保留原关联，避免历史数据混乱。"}
           </p>
         </div>
         <Button
@@ -282,7 +385,7 @@ export function CollectionTaskDrawer({
             initialValues={initialValues(initialTask)}
             layout="vertical"
             name="collection-task-editor"
-            requiredMark="optional"
+            requiredMark
             onFinish={(values) => void submit(values)}
             onFinishFailed={({ errorFields }) => {
               const first = errorFields[0]?.name[0];
@@ -339,6 +442,41 @@ export function CollectionTaskDrawer({
                 value={initialTask?.task_code ?? "保存后由系统生成"}
               />
             </Form.Item>
+
+            {datasetError ? (
+              <Alert
+                action={
+                  onReloadDatasets ? (
+                    <Button size="small" onClick={onReloadDatasets}>
+                      重试
+                    </Button>
+                  ) : undefined
+                }
+                showIcon
+                title="数据集列表加载失败，仍可选择新建专属数据集。"
+                type="warning"
+              />
+            ) : null}
+            <Form.Item
+              label="关联数据集"
+              name="datasetId"
+              rules={[{ required: true, message: "请选择关联数据集。" }]}
+            >
+              <TreeSelect
+                aria-label="关联数据集"
+                disabled={pending}
+                loading={datasetsLoading}
+                placeholder="选择已有数据集或新建专属数据集"
+                showSearch
+                treeData={datasetOptions}
+                treeLine
+                treeNodeFilterProp="title"
+              />
+            </Form.Item>
+            <div className={styles.fieldHint}>
+              目录节点用于分组；任务属于所选数据集的一部分。同一数据集可接收多个任务的数据。
+              {mode === "edit" ? " 任务收到首个数据包后不能改关联。" : ""}
+            </div>
 
             <Form.Item
               label="采集类型"
@@ -485,13 +623,6 @@ export function CollectionTaskDrawer({
                 suffix="%"
               />
             </Form.Item>
-
-            <Alert
-              icon={<Info aria-hidden="true" size={16} />}
-              showIcon
-              title="数据源明细由已接收的数据包自动识别，任务定义中无需预设。"
-              type="info"
-            />
 
             {error ? (
               <Alert

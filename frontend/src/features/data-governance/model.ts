@@ -18,7 +18,7 @@ export const DATA_ASSET_STAGES: readonly DataAssetStage[] = [
     id: 'raw',
     code: 'RAW',
     title: '原始数据',
-    description: 'MCAP 与 Manifest 原样保留，作为可追溯事实源。',
+    description: 'MCAP 与数据清单原样保留，作为可追溯事实源。',
     policy: '不可覆盖',
   },
   {

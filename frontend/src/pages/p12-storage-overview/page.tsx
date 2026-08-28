@@ -21,6 +21,7 @@ import {
   type PageStateKind,
 } from "../../shared/ui";
 import { ManagedStorageObjectsPanel } from "./components/ManagedStorageObjectsPanel";
+import { CapacityInventoryPanel } from "./components/CapacityInventoryPanel";
 import styles from "./styles.module.css";
 
 type BusinessCapacityCategory =
@@ -66,6 +67,11 @@ function formatPercent(value: string, total: string): string {
 
 function stateFromError(error: unknown): PageStateKind {
   if (!isDomainError(error)) return "contract-mismatch";
+  if (
+    error.code === "NOT_FOUND" &&
+    error.problemCode === "CAPACITY_SNAPSHOT_NOT_FOUND"
+  )
+    return "empty";
   switch (String(error.code)) {
     case "AUTHENTICATION_REQUIRED":
     case "CAPABILITY_REQUIRED":
@@ -74,7 +80,6 @@ function stateFromError(error: unknown): PageStateKind {
     case "FORBIDDEN":
     case "UNAUTHENTICATED":
       return "forbidden";
-    case "CAPACITY_SNAPSHOT_NOT_FOUND":
     case "NOT_FOUND":
       return "not-found";
     case "GONE":
@@ -88,6 +93,40 @@ function stateFromError(error: unknown): PageStateKind {
     default:
       return "error";
   }
+}
+
+function isCapacitySnapshotMissing(error: unknown): boolean {
+  return (
+    isDomainError(error) &&
+    error.code === "NOT_FOUND" &&
+    error.problemCode === "CAPACITY_SNAPSHOT_NOT_FOUND"
+  );
+}
+
+export function CapacityErrorState({
+  error,
+  label,
+  onRetry,
+}: Readonly<{
+  error: unknown;
+  label: string;
+  onRetry?: () => void;
+}>) {
+  const waitingForFirstInventory = isCapacitySnapshotMissing(error);
+  return (
+    <PageState
+      state={stateFromError(error)}
+      label={label}
+      title={waitingForFirstInventory ? "暂无容量快照" : undefined}
+      description={
+        waitingForFirstInventory
+          ? "等待首次存储盘点完成后，这里将显示容量事实。"
+          : undefined
+      }
+      requestId={requestId(error)}
+      onRetry={onRetry}
+    />
+  );
 }
 
 function requestId(error: unknown): string | null {
@@ -134,7 +173,7 @@ export function CapacityOverview({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-overview-title">容量总览</h3>
-          <p>四类互斥业务口径 · 单位：IEC 字节</p>
+          <p>四类互斥业务口径 · 容量自动换算为易读单位</p>
         </div>
         <StatusTag
           status={snapshot.reconciliation.balanced ? "BALANCED" : "UNBALANCED"}
@@ -292,7 +331,7 @@ export function CapacityTrend({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-trend-title">增长趋势</h3>
-          <p>按 UTC 日保留当天最新快照 · 单位：IEC 字节</p>
+          <p>按 UTC 日保留当天最终容量记录 · 容量自动换算为易读单位</p>
         </div>
         <div
           className={styles.trendRange}
@@ -318,21 +357,16 @@ export function CapacityTrend({
       {isPending ? (
         <PageState state="loading" label="容量趋势" />
       ) : error ? (
-        <PageState
-          state={stateFromError(error)}
-          label="容量趋势"
-          requestId={requestId(error)}
-          onRetry={onRetry}
-        />
+        <CapacityErrorState error={error} label="容量趋势" onRetry={onRetry} />
       ) : !history?.items.length ? (
         <PageState
           state="empty"
           label="容量趋势"
-          description="所选时间范围内没有已封存的容量快照。"
+          description="所选时间范围内没有已封存的容量记录。"
         />
       ) : (
         <>
-          <ol className={styles.trendPlot} aria-label={`近 ${days} 天容量快照`}>
+          <ol className={styles.trendPlot} aria-label={`近 ${days} 天容量记录`}>
             {history.items.map((item) => (
               <li key={item.snapshot_id} className={styles.trendColumn}>
                 <strong>
@@ -374,7 +408,7 @@ export function CapacityTrend({
                   。
                 </>
               ) : (
-                "仅有一个可用快照，尚无法计算增长率。"
+                "仅有一条可用记录，尚无法计算增长率。"
               )}
             </span>
           </figcaption>
@@ -554,7 +588,7 @@ export function ProjectCapacityTable({
         <PageState
           state={loading ? "loading" : "empty"}
           label="跨项目容量汇总"
-          description="所选项目还没有已封存的容量快照。"
+          description="所选项目还没有已封存的容量记录。"
         />
       )}
     </section>
@@ -679,14 +713,24 @@ export function CapacityPane() {
               setSelectedProjectIds(next);
           }}
         />
+        <CapacityInventoryPanel
+          key={capacity.data.snapshot_id}
+          scope={scope!}
+          snapshotId={capacity.data.snapshot_id}
+          enabled={canRead}
+        />
         <ManagedStorageObjectsPanel scope={scope} enabled={canRead} />
       </div>
+    ) : capacity.isError ? (
+      <CapacityErrorState
+        error={capacity.error}
+        label="容量管理"
+        onRetry={() => void capacity.refetch()}
+      />
     ) : (
       <PageState
         state={pageState === "ready" ? "empty" : pageState}
         label="容量管理"
-        requestId={requestId(capacity.error)}
-        onRetry={capacity.isError ? () => void capacity.refetch() : undefined}
       />
     );
 
@@ -711,7 +755,7 @@ export function CapacityPane() {
             size="small"
             type="text"
             icon={<RefreshCw aria-hidden="true" size={15} />}
-            aria-label="刷新容量快照"
+            aria-label="刷新容量数据"
             disabled={!canRead || !projectId}
             loading={capacity.isFetching || history.isFetching}
             onClick={() => {
@@ -722,7 +766,7 @@ export function CapacityPane() {
         </div>
       </header>
       {capacity.isFetching && capacity.data ? (
-        <PageState state="refreshing" label="容量快照">
+        <PageState state="refreshing" label="容量数据">
           {content}
         </PageState>
       ) : (

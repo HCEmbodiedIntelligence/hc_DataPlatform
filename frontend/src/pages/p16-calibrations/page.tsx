@@ -411,7 +411,7 @@ export function Component() {
       },
       {
         id: "status",
-        header: "快照",
+        header: "数据状态",
         size: 90,
         cell: ({ row }) => (
           <StatusTag
@@ -577,7 +577,7 @@ export function Component() {
             <header className={workspace.paneHeader}>
               <div>
                 <h2>机器人 / 标定集</h2>
-                <p>固定关系与服务端快照</p>
+                <p>固定关系与服务端记录</p>
               </div>
               <span className={workspace.inlineMeta}>共 {items.length} 项</span>
             </header>
@@ -1015,11 +1015,6 @@ export function Component() {
           </Button>
         }
       >
-        <p className={workspace.safeNote}>
-          {editorMode === "RECALIBRATE"
-            ? "原版本不可编辑；此操作只会把新的真实测量保存为后继草稿，并使旧验证与发布证明失效。"
-            : "仅接受真实测量或导入得到的 JSON 文档。保存后会得到不可变内容哈希，随后必须由服务端校验。"}
-        </p>
         <Input
           aria-label="标定集 ID"
           placeholder="标定集 ID，例如 camera-front-20260821"
@@ -1118,9 +1113,6 @@ export function Component() {
           </Button>
         }
       >
-        <p className={workspace.safeNote}>
-          只允许将当前已发布且已通过校验的标定版本，关联到同一项目和区域内就绪的数据集版本。关联后会保留当前版本号，未来重新标定不会改写历史数据的标定事实。
-        </p>
         <Input
           aria-label="数据集 ID"
           placeholder="dataset_…"

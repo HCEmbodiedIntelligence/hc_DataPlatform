@@ -57,8 +57,8 @@ export function UploadPrecheckPanel(props: {
           <li data-state={currentIndex > 0 ? "done" : "current"}>
             <FileJson2 size={18} aria-hidden="true" />
             <div>
-              <strong>提交 Manifest</strong>
-              <span>将用户确认的 Manifest 和目标作用域提交到平台。</span>
+              <strong>提交数据清单</strong>
+              <span>将用户确认的数据清单和目标作用域提交到平台。</span>
             </div>
             {currentIndex > 0 ? <Check size={17} aria-hidden="true" /> : null}
           </li>
@@ -73,7 +73,7 @@ export function UploadPrecheckPanel(props: {
           >
             <ServerCog size={18} aria-hidden="true" />
             <div>
-              <strong>服务端解析与校验 Manifest</strong>
+              <strong>服务端解析与校验数据清单</strong>
               <span>
                 校验声明、目标信息、文件清单、大小和校验值声明；服务端以同步结果返回，不暴露内部子阶段。
               </span>

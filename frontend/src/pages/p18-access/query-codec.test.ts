@@ -15,7 +15,7 @@ describe("P18 access query codec", () => {
           ["page", "3"],
           ["pageSize", "20"],
           ["requestId", "request-42"],
-          ["drawer", "closed"],
+          ["drawer", "open"],
         ]),
       ),
     ).toEqual({
@@ -28,7 +28,7 @@ describe("P18 access query codec", () => {
       page: 3,
       pageSize: 20,
       requestId: "request-42",
-      drawer: "closed",
+      drawer: "open",
     });
   });
 
@@ -45,7 +45,7 @@ describe("P18 access query codec", () => {
       order: "recent",
       page: 1,
       pageSize: 10,
-      drawer: "open",
+      drawer: "closed",
     });
   });
 
@@ -58,11 +58,19 @@ describe("P18 access query codec", () => {
           accountState: "ACTIVE",
           accountRole: "USER",
           page: 2,
-          drawer: "closed",
+          drawer: "open",
         }),
       ),
     ).toBe(
-      "tab=capability-requests&status=REVOKED&accountState=ACTIVE&accountRole=USER&page=2&drawer=closed",
+      "tab=capability-requests&status=REVOKED&accountState=ACTIVE&accountRole=USER&page=2&drawer=open",
     );
+  });
+
+  it("keeps a request ID closed unless the deep link explicitly opens the drawer", () => {
+    expect(accessQueryCodec.parse("requestId=request-42")).toMatchObject({
+      requestId: "request-42",
+      drawer: "closed",
+    });
+    expect(String(accessQueryCodec.build(accessQueryCodec.parse("")))).toBe("");
   });
 });

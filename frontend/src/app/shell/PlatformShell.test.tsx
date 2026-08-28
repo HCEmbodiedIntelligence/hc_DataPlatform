@@ -1,36 +1,26 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { ProviderHarness } from "../providers";
 import { makeScopeKey } from "../../entities/scope";
-import * as authApi from "../../pages/auth/api";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
-import ProjectMembershipRequestDialog from "./ProjectMembershipRequestDialog";
 
 const scope = {
   organizationId: "org-shell-test",
   projectId: "project-shell-test",
   regionCode: "cn-shanghai",
 } as const;
-
-const membershipResult: Awaited<
-  ReturnType<typeof authApi.requestProjectMembership>
-> = {
-  request_id: "membership-shell-request",
-  organization_id: scope.organizationId,
-  project_id: "project-admin-provided",
-  requester_id: "actor-shell-test",
-  status: "PENDING",
-  reason: "需要参与标注",
-  created_at: "2026-08-24T00:00:00Z",
-  updated_at: "2026-08-24T00:00:00Z",
-  revision: 1,
-};
 
 function LocationProbe() {
   const location = useLocation();
@@ -113,10 +103,11 @@ const defaultScopeOptions = [
 function renderShell(
   onLogout?: () => void,
   scopeOptions: readonly ScopeOption[] = defaultScopeOptions,
+  initialPath = "/dashboard",
 ) {
   render(
     <ProviderHarness>
-      <MemoryRouter initialEntries={["/dashboard"]}>
+      <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
           <Route
             path="/"
@@ -153,22 +144,6 @@ function renderShell(
 }
 
 describe("PlatformShell", () => {
-  it("renders the membership request dialog accessibly", async () => {
-    render(
-      <ProviderHarness>
-        <ProjectMembershipRequestDialog
-          afterClose={vi.fn()}
-          open
-          organizationId={scope.organizationId}
-          onClose={vi.fn()}
-        />
-      </ProviderHarness>,
-    );
-
-    expect(await screen.findByText("申请加入项目")).toBeVisible();
-    expect(screen.getByRole("dialog", { name: "申请加入项目" })).toBeVisible();
-  });
-
   it("does not report a failed project snapshot in platform-only account mode", () => {
     useShellStore.setState({
       scope: null,
@@ -180,7 +155,7 @@ describe("PlatformShell", () => {
     renderShell();
 
     expect(
-      screen.queryByText("授权快照不可用，当前作用域已按失败关闭处理。"),
+      screen.queryByText("授权状态不可用，当前作用域已按失败关闭处理。"),
     ).not.toBeInTheDocument();
   });
 
@@ -191,7 +166,7 @@ describe("PlatformShell", () => {
       name: "杭叉集团 HC 数据平台工作台",
     });
     const logo = screen.getByRole("img", { name: "杭叉集团" });
-    expect(brandLink).toHaveAttribute("href", "/dashboard");
+    expect(brandLink).toHaveAttribute("href", "/");
     expect(logo).toHaveAttribute(
       "src",
       expect.stringContaining("hangcha-logo.png"),
@@ -272,122 +247,60 @@ describe("PlatformShell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("opens the project membership form from the project dropdown and restores focus", async () => {
-    const user = userEvent.setup();
-    renderShell();
-    const projectSelector = screen.getByRole("combobox", { name: "当前项目" });
-
-    await user.click(projectSelector);
-    const requestMembershipButton = await screen.findByRole("button", {
-      name: "申请加入其他项目",
+  it("keeps the full personal shell usable without a project scope", async () => {
+    useShellStore.setState({
+      scope: null,
+      authorization: null,
+      authorizationLoading: false,
+      authorizationFailed: false,
+      sessionScopes: [],
+      bootstrapLoaded: true,
     });
-    requestMembershipButton.focus();
-    expect(requestMembershipButton).toHaveFocus();
-    await user.keyboard("{Enter}");
-
-    expect(await screen.findByText("申请加入项目")).toBeVisible();
-    expect(screen.getByLabelText("当前组织 ID")).toHaveValue(
-      scope.organizationId,
-    );
-    expect(screen.getByLabelText("当前组织 ID")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("项目 ID")).toHaveFocus();
-    expect(screen.getByRole("button", { name: "提交加入申请" })).toBeDisabled();
-
-    await user.click(screen.getByRole("button", { name: /取\s*消/u }));
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-    );
-    expect(projectSelector).toHaveFocus();
-  });
-
-  it("submits the formal membership request once with scope, reason, and idempotency", async () => {
-    let resolveRequest: (
-      value: Awaited<ReturnType<typeof authApi.requestProjectMembership>>,
-    ) => void = () => undefined;
-    const pendingRequest = new Promise<
-      Awaited<ReturnType<typeof authApi.requestProjectMembership>>
-    >((resolve) => {
-      resolveRequest = resolve;
-    });
-    const requestSpy = vi
-      .spyOn(authApi, "requestProjectMembership")
-      .mockReturnValue(pendingRequest);
     const user = userEvent.setup();
-    renderShell();
+    renderShell(vi.fn(), []);
 
-    await user.click(screen.getByRole("combobox", { name: "当前项目" }));
-    await user.click(
-      await screen.findByRole("button", { name: "申请加入其他项目" }),
+    const scopeGroup = screen.getByRole("group", { name: "当前作用域" });
+    const scopeSlots = scopeGroup.querySelectorAll("[data-scope-slot]");
+    expect(scopeSlots).toHaveLength(2);
+    expect(scopeSlots[0]).toHaveAttribute("data-scope-slot", "project");
+    expect(scopeSlots[1]).toHaveAttribute("data-scope-slot", "region");
+    expect(
+      within(scopeGroup).getByLabelText("当前项目：尚未加入组织或项目"),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "个人主页" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(scopeGroup).getByRole("link", {
+        name: "到账户设置管理",
+      }),
+    ).toHaveAttribute("href", "/account/settings?tab=memberships");
+    expect(
+      screen.queryByRole("combobox", { name: "当前项目" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "全局搜索" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "工作台" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "数据上传" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "数据标注" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "问题数据" })).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "审计日志" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "通知" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "账户菜单" }));
+    expect(
+      await screen.findByRole("link", { name: "个人主页" }),
+    ).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "账户设置" })).toHaveAttribute(
+      "href",
+      "/account/settings",
     );
-    await user.type(
-      screen.getByLabelText("项目 ID"),
-      " project-admin-provided ",
-    );
-    await user.type(screen.getByLabelText("申请说明（选填）"), "需要参与标注");
-    const submit = screen.getByRole("button", { name: "提交加入申请" });
-    await user.click(submit);
-    await user.click(submit);
-
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    expect(requestSpy).toHaveBeenCalledWith(
-      scope.organizationId,
-      "project-admin-provided",
-      "需要参与标注",
-      expect.any(String),
-    );
-    expect(requestSpy.mock.calls[0]?.[3]).not.toHaveLength(0);
-    expect(submit).toBeDisabled();
-
-    resolveRequest(membershipResult);
-    expect(await screen.findByText("项目加入申请已提交")).toBeVisible();
-    expect(screen.getByText("membership-shell-request")).toBeVisible();
-    expect(screen.getByText(/刷新会话或重新登录/u)).toBeVisible();
-  });
-
-  it("keeps the membership form open and reports a service failure", async () => {
-    vi.spyOn(authApi, "requestProjectMembership").mockRejectedValue(
-      new Error("membership service unavailable"),
-    );
-    const user = userEvent.setup();
-    renderShell();
-
-    await user.click(screen.getByRole("combobox", { name: "当前项目" }));
-    await user.click(
-      await screen.findByRole("button", { name: "申请加入其他项目" }),
-    );
-    await user.type(screen.getByLabelText("项目 ID"), "project-failure");
-    await user.click(screen.getByRole("button", { name: "提交加入申请" }));
-
-    expect(await screen.findByText("加入申请未提交")).toBeVisible();
-    expect(screen.getByText("membership service unavailable")).toBeVisible();
-    expect(screen.getByRole("dialog")).toBeVisible();
-    expect(screen.getByRole("button", { name: "提交加入申请" })).toBeEnabled();
-  });
-
-  it("exposes the same membership request entry in the mobile project selector", async () => {
-    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }));
-    const user = userEvent.setup();
-    renderShell();
-
-    await user.click(screen.getByRole("button", { name: "打开导航" }));
-    await user.click(await screen.findByRole("combobox", { name: "当前项目" }));
-    await user.click(
-      await screen.findByRole("button", { name: "申请加入其他项目" }),
-    );
-
-    expect(await screen.findByText("申请加入项目")).toBeVisible();
-    expect(screen.getByLabelText("当前组织 ID")).toHaveValue(
-      scope.organizationId,
-    );
+    expect(
+      await screen.findByRole("menuitem", { name: "退出登录" }),
+    ).toBeEnabled();
   });
 
   it("opens the lazy global search dialog from the button and Ctrl+K", async () => {
@@ -426,11 +339,29 @@ describe("PlatformShell", () => {
     const user = userEvent.setup();
     renderShell();
 
+    expect(
+      screen.queryByRole("link", { name: "账户设置" }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "账户菜单" }));
 
     expect(
       await screen.findByRole("link", { name: "账户设置" }),
     ).toHaveAttribute("href", "/account/settings");
+  });
+
+  it("keeps problem data selected on its Raw diagnostic route", () => {
+    renderShell(
+      undefined,
+      defaultScopeOptions,
+      "/manual/issues/raw-diagnostic/session-a",
+    );
+
+    expect(
+      screen.getByRole("link", { name: "问题数据" }).closest("li"),
+    ).toHaveClass("ant-menu-item-selected");
+    expect(
+      screen.getByRole("link", { name: "数据上传" }).closest("li"),
+    ).not.toHaveClass("ant-menu-item-selected");
   });
 
   it("supports skip navigation and keyboard activation of navigation links", async () => {

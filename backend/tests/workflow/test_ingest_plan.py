@@ -17,7 +17,7 @@ from hc_data_platform.core.context import (
 )
 from hc_data_platform.ingest.manifest import preflight_manifest
 from hc_data_platform.ingest.models import RolloutManifestV1
-from hc_data_platform.lance_catalog import InMemoryLanceCatalog
+from hc_data_platform.lance_catalog import DatasetSchemaSnapshot, InMemoryLanceCatalog
 from hc_data_platform.quality import QualityProfileV1
 from hc_data_platform.verification import McapRos2DecoderProbe
 from hc_data_platform.workflow.ingest_dispatch import IngestWorkflowPlanBlocked
@@ -25,13 +25,18 @@ from hc_data_platform.workflow.ingest_plan import (
     PostgresIngestWorkflowInputResolver,
     _image_observation,
 )
+from hc_data_platform.workflow.projection_store import LocalProjectionArtifactStore
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "system/wave2/data"
 
 
 class _Storage:
+    def __init__(self) -> None:
+        self.open_count = 0
+
     def open_reader(self, object_key: str) -> Any:
         assert object_key == "raw/legal.mcap"
+        self.open_count += 1
         return (FIXTURE_ROOT / "packages/legal.mcap").open("rb")
 
 
@@ -39,6 +44,7 @@ class _Cursor:
     def __init__(self, responses: list[object]) -> None:
         self._responses = iter(responses)
         self._response: object = None
+        self.executions: list[tuple[str, tuple[object, ...]]] = []
 
     def __enter__(self) -> _Cursor:
         return self
@@ -47,6 +53,7 @@ class _Cursor:
         return None
 
     def execute(self, _query: str, _params: tuple[object, ...]) -> None:
+        self.executions.append((_query, _params))
         self._response = next(self._responses)
 
     def fetchone(self) -> object:
@@ -92,7 +99,9 @@ def _profile(manifest: RolloutManifestV1) -> QualityProfileV1:
     )
 
 
-def test_resolver_builds_exact_persisted_plan_and_registers_dataset_schema() -> None:
+def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
+    tmp_path: Path,
+) -> None:
     manifest = _manifest()
     preflight = preflight_manifest(manifest)
     plan_connection = _Connection(
@@ -105,27 +114,29 @@ def test_resolver_builds_exact_persisted_plan_and_registers_dataset_schema() -> 
                 preflight.model_dump(mode="json"),
             ),
             [(_profile(manifest).model_dump(mode="json"),)],
-            [("dataset-a", "snapshot-a")],
+            ("dataset_ab",),
+            [("snapshot-a",)],
         ]
     )
-    projection_connection = _Connection(
-        [
-            (
-                "raw/legal.mcap",
-                "raw/rollout_manifest.json",
-                manifest.sha256,
-                preflight.manifest_fingerprint,
-                preflight.model_dump(mode="json"),
-            )
-        ]
+    projection_row = (
+        "raw/legal.mcap",
+        "raw/rollout_manifest.json",
+        manifest.sha256,
+        preflight.manifest_fingerprint,
+        preflight.model_dump(mode="json"),
     )
-    connections = iter((plan_connection, projection_connection))
+    projection_connections = tuple(_Connection([projection_row]) for _ in range(3))
+    connections = iter((plan_connection, *projection_connections))
     catalog = InMemoryLanceCatalog()
+    storage = _Storage()
+    projection_store = LocalProjectionArtifactStore(tmp_path / "projection-store")
     resolver = PostgresIngestWorkflowInputResolver(
         lambda: next(connections),
-        _Storage(),
+        storage,
         catalog,
         decoder=McapRos2DecoderProbe(),
+        projection_store=projection_store,
+        projection_staging_root=tmp_path / "projection-staging",
     )
 
     token = bind_request_context(
@@ -145,14 +156,36 @@ def test_resolver_builds_exact_persisted_plan_and_registers_dataset_schema() -> 
             data_package_id="package-a",
         )
         assert request.alignment.source is not None
-        alignment = resolver.project_alignment(request.alignment.source)
+        materialized = resolver.materialize(request.alignment.source)
+        quality = resolver.project_quality(materialized)
+        alignment = resolver.project_alignment(materialized)
+        resolver.cleanup(materialized)
     finally:
         reset_request_context(token)
 
     assert plan_connection.closed
-    assert projection_connection.closed
-    assert request.dataset_id == "dataset-a"
+    assert all(connection.closed for connection in projection_connections)
+    assert storage.open_count == 1
+    assert materialized.materialization is not None
+    selection_ref = materialized.materialization.frame_selection
+    selection = projection_store.read_json(
+        selection_ref.object_key,
+        expected_sha256=selection_ref.content_sha256,
+    )
+    assert selection["schema_version"] == 1
+    assert selection["source_sha256"] == manifest.sha256
+    assert selection["source_frame_count"] == selection_ref.source_frame_count
+    assert len(selection["groups"]) == selection_ref.selected_group_count
+    assert 0 < selection_ref.selected_group_count <= selection_ref.source_frame_count
+    with pytest.raises(FileNotFoundError), projection_store.local_file(
+        materialized.materialization.object_key,
+        expected_sha256=materialized.materialization.content_sha256,
+        expected_size=materialized.materialization.size_bytes,
+    ):
+        pass
+    assert request.dataset_id == "dataset_ab"
     assert request.organization_id == "organization-a"
+    assert request.verification.organization_id == "organization-a"
     assert request.alignment.schema_snapshot_id == "snapshot-a"
     assert request.quality.profile.profile_id == "manifest-30hz"
     assert request.quality.data is None
@@ -162,6 +195,8 @@ def test_resolver_builds_exact_persisted_plan_and_registers_dataset_schema() -> 
     serialized = request.model_dump_json()
     assert len(serialized.encode()) < 16_384
     assert "JFIF" not in serialized
+    assert set(quality.topic_timestamps_ns) == set(manifest.actual_topics)
+    assert quality.images["/camera/front/image"]
     assert set(alignment.streams) == set(manifest.actual_topics)
     assert sum(len(stream.samples) for stream in alignment.streams.values()) == 90
     camera_samples = alignment.streams["/camera/front/image"].samples
@@ -180,10 +215,20 @@ def test_resolver_builds_exact_persisted_plan_and_registers_dataset_schema() -> 
         for topic in ("/joint_states", "/action")
         for sample in alignment.streams[topic].samples
     )
-    assert ("project-a", "dataset-a") in catalog._schemas
-    assert catalog._schemas[("project-a", "dataset-a")].fields["/camera/front/image"] == ("binary")
-    assert catalog._schemas[("project-a", "dataset-a")].fields["/joint_states"] == "json"
-    assert catalog._schemas[("project-a", "dataset-a")].fields["/action"] == "json"
+    assert ("project-a", "dataset_ab") in catalog._schemas
+    assert catalog._schemas[("project-a", "dataset_ab")].fields["/camera/front/image"] == ("binary")
+    assert catalog._schemas[("project-a", "dataset_ab")].fields["/joint_states"] == "json"
+    assert catalog._schemas[("project-a", "dataset_ab")].fields["/action"] == "json"
+    assert plan_connection._cursor.executions[2][1] == (
+        "organization-a",
+        "project-a",
+        manifest.task_id,
+    )
+    assert plan_connection._cursor.executions[3][1] == (
+        "project-a",
+        "region-a",
+        "dataset_ab",
+    )
 
 
 def test_resolver_fails_closed_when_quality_plan_is_ambiguous() -> None:
@@ -221,6 +266,115 @@ def test_resolver_fails_closed_when_quality_plan_is_ambiguous() -> None:
             resolver.resolve(
                 project_id="project-a",
                 region_code="region-a",
+                session_id="session-a",
+                rollout_id="rollout-a",
+                data_package_id="package-a",
+            )
+    finally:
+        reset_request_context(token)
+
+
+def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> None:
+    manifest = _manifest()
+    preflight = preflight_manifest(manifest)
+    connection = _Connection(
+        [
+            (
+                "raw/legal.mcap",
+                "raw/rollout_manifest.json",
+                manifest.sha256,
+                preflight.manifest_fingerprint,
+                preflight.model_dump(mode="json"),
+            ),
+            [(_profile(manifest).model_dump(mode="json"),)],
+            ("dataset_mcap",),
+            [("snapshot-mcap",)],
+        ]
+    )
+    catalog = InMemoryLanceCatalog()
+    catalog.register_schema(
+        DatasetSchemaSnapshot.create(
+            project_id="project-a",
+            dataset_id="dataset_old",
+            schema_snapshot_id="snapshot-old",
+            frequency_hz=30,
+            fields={"/legacy/topic": "json"},
+        )
+    )
+    resolver = PostgresIngestWorkflowInputResolver(
+        lambda: connection,
+        _Storage(),
+        catalog,
+    )
+
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a",
+            project_id="project-a",
+            region_code="region-a",
+            service_identity=True,
+        )
+    )
+    try:
+        request = resolver.resolve(
+            project_id="project-a",
+            region_code="region-a",
+            session_id="session-a",
+            rollout_id="rollout-a",
+            data_package_id="package-a",
+        )
+    finally:
+        reset_request_context(token)
+
+    assert request.dataset_id == "dataset_mcap"
+    assert request.alignment.schema_snapshot_id == "snapshot-mcap"
+    assert catalog.schema_for("project-a", "dataset_mcap") is not None
+    assert connection._cursor.executions[2][1] == (
+        "organization-a",
+        "project-a",
+        manifest.task_id,
+    )
+    assert connection._cursor.executions[3][1] == (
+        "project-a",
+        "region-a",
+        "dataset_mcap",
+    )
+
+
+def test_resolver_fails_closed_when_manifest_task_has_no_project_dataset() -> None:
+    manifest = _manifest()
+    preflight = preflight_manifest(manifest)
+    connection = _Connection(
+        [
+            (
+                "raw/legal.mcap",
+                "raw/rollout_manifest.json",
+                manifest.sha256,
+                preflight.manifest_fingerprint,
+                preflight.model_dump(mode="json"),
+            ),
+            [(_profile(manifest).model_dump(mode="json"),)],
+            None,
+        ]
+    )
+    resolver = PostgresIngestWorkflowInputResolver(
+        lambda: connection,
+        _Storage(),
+        InMemoryLanceCatalog(),
+    )
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a",
+            project_id="project-a",
+            region_code="storage-region-a",
+            service_identity=True,
+        )
+    )
+    try:
+        with pytest.raises(IngestWorkflowPlanBlocked, match="Manifest task"):
+            resolver.resolve(
+                project_id="project-a",
+                region_code="storage-region-a",
                 session_id="session-a",
                 rollout_id="rollout-a",
                 data_package_id="package-a",

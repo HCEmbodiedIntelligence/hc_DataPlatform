@@ -48,8 +48,8 @@ const detailTabs = [
 ] as const;
 
 const registryTabs = [
-  { id: "registry", label: "Schema Registry" },
-  { id: "snapshots", label: "数据集快照" },
+  { id: "registry", label: "数据结构注册表" },
+  { id: "snapshots", label: "版本结构" },
   { id: "compatibility", label: "兼容性检查" },
 ] as const;
 
@@ -315,7 +315,7 @@ export function Component() {
     try {
       const schemaDefinition = parseSchemaDefinition(definitionInput);
       const changeSummary = changeSummaryInput.trim();
-      if (!changeSummary) throw new Error("请说明本次 Schema 变更。");
+      if (!changeSummary) throw new Error("请说明本次数据结构变更。");
       if (editorMode === "EDIT") {
         if (!target || target.status !== "DRAFT") {
           throw new Error("只有当前草稿版本可以编辑。");
@@ -350,7 +350,7 @@ export function Component() {
         !familyIdInput.trim() ||
         !displayNameInput.trim()
       ) {
-        throw new Error("请填写 Schema ID、Family ID 与展示名称。");
+        throw new Error("请填写数据结构 ID、系列 ID 与展示名称。");
       }
       create.mutate(
         {
@@ -377,7 +377,7 @@ export function Component() {
       );
     } catch (error) {
       setEditorError(
-        error instanceof Error ? error.message : "Schema 定义无效。",
+        error instanceof Error ? error.message : "数据结构定义无效。",
       );
     }
   };
@@ -424,7 +424,7 @@ export function Component() {
         expectedHash: authoringTarget.hash.value,
         validationReportId: validationProof.report.id,
         compatibilityCheckId: validationProof.report.compatibility_check_id,
-        changeSummary: "通过 Schema Registry 确认发布已校验的固定版本。",
+        changeSummary: "通过数据结构注册表确认发布已校验的固定版本。",
         idempotencyKey,
       },
       {
@@ -477,7 +477,7 @@ export function Component() {
 
   const saveDatasetReference = () => {
     if (!authoringTarget || authoringTarget.status !== "PUBLISHED") {
-      setReferenceError("只能为已发布的固定 Schema 版本记录数据集引用。");
+      setReferenceError("只能为已发布的固定数据结构版本记录数据集引用。");
       return;
     }
     const datasetId = datasetIdInput.trim();
@@ -520,7 +520,7 @@ export function Component() {
     () => [
       {
         id: "displayName",
-        header: "Schema 名称",
+        header: "数据结构名称",
         size: 175,
         cell: ({ row }) => (
           <Button
@@ -586,7 +586,7 @@ export function Component() {
   );
 
   const pageState = list.isPending ? (
-    <PageState state="loading" label="数据 Schema" />
+    <PageState state="loading" label="数据结构" />
   ) : list.error && isDomainError(list.error) ? (
     <PageState
       state={list.error.httpStatus === 403 ? "forbidden" : "error"}
@@ -595,13 +595,13 @@ export function Component() {
   ) : mustResolveRelation && (strictRoute.kind === "not-found" || !relation) ? (
     <PageState
       state="not-found"
-      title="Schema 深链无效"
+      title="数据结构深链无效"
       description="schemaId/schemaVersion/componentId 必须完整，版本会移除 v 前缀后验证。"
     />
   ) : mustResolveRelation && routeResolution.error ? (
     <PageState
       state="not-found"
-      title="组件未引用此 Schema 版本"
+      title="组件未引用此数据结构版本"
       description="引用解析失败，不会替换为 latest/current。"
     />
   ) : null;
@@ -610,7 +610,7 @@ export function Component() {
     <main className={workspace.page} data-page-id="P17">
       <StandardPageScaffold
         header={{
-          title: "数据 Schema",
+          title: "数据结构",
           description: "管理 Channel 数据结构、语义角色与固定版本兼容性。",
           breadcrumbs: [
             {
@@ -618,7 +618,7 @@ export function Component() {
               label: "系统管理",
               to: "/settings/robot-models",
             },
-            { key: "schemas", label: "数据 Schema" },
+            { key: "schemas", label: "数据结构" },
           ],
           actions: (
             <>
@@ -627,7 +627,7 @@ export function Component() {
                 disabled={!capabilities.has("data_schema.create")}
                 onClick={() => openEditor("CREATE")}
               >
-                新建 Schema
+                新建数据结构
               </Button>
               <Button
                 disabled={!capabilities.has("data_schema.import")}
@@ -642,7 +642,7 @@ export function Component() {
           <div className={workspace.summaryStrip}>
             <SummaryItem
               icon={<Boxes size={20} />}
-              label="Schema 版本"
+              label="数据结构版本"
               value={String(items.length)}
             />
             <SummaryItem
@@ -674,7 +674,7 @@ export function Component() {
         }
         filters={
           <>
-            <nav aria-label="Schema 区域">
+            <nav aria-label="数据结构区域">
               <DetailTabs
                 tabs={registryTabs}
                 activeTab={search.tab}
@@ -724,14 +724,14 @@ export function Component() {
               }}
             >
               <label className={workspace.toolbarField}>
-                <span>Schema 名称</span>
+                <span>数据结构名称</span>
                 <Input.Search
                   className={workspace.toolbarSearch}
                   value={query}
-                  placeholder="搜索 Schema 名称"
+                  placeholder="搜索数据结构名称"
                   enterButton={
                     <Button
-                      aria-label="搜索 Schema 名称"
+                      aria-label="搜索数据结构名称"
                       icon={<Search aria-hidden="true" size={15} />}
                     />
                   }
@@ -773,8 +773,8 @@ export function Component() {
           id={`tabpanel-${search.tab}`}
           aria-labelledby={`tab-${search.tab}`}
         >
-          <nav className={workspace.categoryRail} aria-label="Schema 类别">
-            <div className={workspace.categoryTitle}>Schema 类别</div>
+          <nav className={workspace.categoryRail} aria-label="数据结构类别">
+            <div className={workspace.categoryTitle}>数据结构类别</div>
             {categories.map((entry) => (
               <Button
                 key={entry}
@@ -787,10 +787,10 @@ export function Component() {
             ))}
           </nav>
 
-          <section className={workspace.pane} aria-label="Schema Registry">
+          <section className={workspace.pane} aria-label="数据结构注册表">
             <header className={workspace.paneHeader}>
               <div>
-                <h2>Schema Registry</h2>
+                <h2>数据结构注册表</h2>
                 <p>{category} · 授权范围内固定版本</p>
               </div>
               <span className={workspace.inlineMeta}>共 {items.length} 项</span>
@@ -800,7 +800,7 @@ export function Component() {
                 data={items}
                 columns={columns}
                 getRowId={(item) => `${item.schemaId}:${item.version}`}
-                caption="Schema Registry"
+                caption="数据结构注册表"
                 state={items.length ? "ready" : "empty"}
                 empty={
                   <PageState state={search.q ? "filtered-empty" : "empty"} />
@@ -830,7 +830,7 @@ export function Component() {
             ) : null}
           </section>
 
-          <aside className={workspace.inspector} aria-label="Schema 版本详情">
+          <aside className={workspace.inspector} aria-label="数据结构版本详情">
             <header className={workspace.inspectorHeader}>
               <div>
                 <h2>
@@ -841,7 +841,7 @@ export function Component() {
                 <p>
                   {listSelected
                     ? `${listSelected.schemaId}/v${listSelected.version}`
-                    : "选择稳定 schemaId/version"}
+                    : "选择稳定的数据结构 ID/版本"}
                 </p>
               </div>
               <StatusTag
@@ -929,7 +929,7 @@ export function Component() {
               ) : null}
               <dl className={workspace.factList}>
                 <div className={workspace.factRow}>
-                  <dt>Schema ID</dt>
+                  <dt>数据结构 ID</dt>
                   <dd>
                     <code>
                       {selected?.schemaId ?? listSelected?.schemaId ?? "—"}
@@ -1034,7 +1034,7 @@ export function Component() {
                     <pre
                       className={workspace.codeBlock}
                       tabIndex={0}
-                      aria-label="Schema 定义，只读"
+                      aria-label="数据结构定义，只读"
                     >
                       {JSON.stringify(visibleDefinition, null, 2)}
                     </pre>
@@ -1068,7 +1068,7 @@ export function Component() {
                         </Button>
                       </div>
                       <p className={workspace.featureNote}>
-                        每条记录固定到已发布 Schema 与 READY
+                        每条记录固定到已发布数据结构与 READY
                         数据集版本；后续草稿或新版本不会 改写此来源事实。
                       </p>
                       {datasetReferences.isPending ? (
@@ -1114,7 +1114,7 @@ export function Component() {
                         <PageState
                           state="empty"
                           title="尚未关联数据集版本"
-                          description="关联一个 READY 数据集版本以记录其使用的固定 Schema。"
+                          description="关联一个 READY 数据集版本以记录其使用的固定数据结构。"
                         />
                       )}
                     </section>
@@ -1126,7 +1126,7 @@ export function Component() {
                 完成服务端校验和一次性预检；已发布版本不可编辑。
               </p>
               <p className={workspace.safeNote}>
-                Schema 原文只进入只读定义视图，永不进入遥测。
+                数据结构原文只进入只读定义视图，永不进入遥测。
               </p>
             </div>
           </aside>
@@ -1138,10 +1138,10 @@ export function Component() {
           size="large"
           title={
             editorMode === "EDIT"
-              ? "编辑 Schema 草稿"
+              ? "编辑数据结构草稿"
               : editorMode === "IMPORT"
-                ? "导入 Schema 定义"
-                : "新建 Schema"
+                ? "导入数据结构定义"
+                : "新建数据结构"
           }
           onClose={() => setEditorOpen(false)}
           extra={
@@ -1158,13 +1158,13 @@ export function Component() {
             <Alert
               type="error"
               showIcon
-              title="无法保存 Schema"
+              title="无法保存数据结构"
               description={editorError}
               style={{ marginBottom: 16 }}
             />
           ) : null}
           <label className={workspace.toolbarField}>
-            <span>Schema ID</span>
+            <span>数据结构 ID</span>
             <Input
               value={schemaIdInput}
               disabled={editorMode === "EDIT"}
@@ -1256,11 +1256,6 @@ export function Component() {
               style={{ marginBottom: 16 }}
             />
           ) : null}
-          <p className={workspace.featureNote}>
-            {authoringTarget
-              ? `${authoringTarget.schemaId}/v${authoringTarget.version}`
-              : "请选择一个已发布 Schema 版本。"}
-          </p>
           <label className={workspace.toolbarField}>
             <span>数据集 ID</span>
             <Input

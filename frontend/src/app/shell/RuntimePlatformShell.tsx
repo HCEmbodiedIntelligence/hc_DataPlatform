@@ -19,6 +19,7 @@ export function RuntimePlatformShell({
 }) {
   const sessionToken = useShellStore((state) => state.sessionToken);
   const sessionScopes = useShellStore((state) => state.sessionScopes);
+  const bootstrapLoaded = useShellStore((state) => state.bootstrapLoaded);
   const setAuthorizationLoading = useShellStore(
     (state) => state.setAuthorizationLoading,
   );
@@ -61,7 +62,7 @@ export function RuntimePlatformShell({
   }
 
   useEffect(() => {
-    if (!sessionToken || sessionScopes.length > 0) return;
+    if (!sessionToken || bootstrapLoaded) return;
     const controller = new AbortController();
     setAuthorizationLoading();
     void getSessionBootstrap({ signal: controller.signal })
@@ -77,7 +78,7 @@ export function RuntimePlatformShell({
       });
     return () => controller.abort();
   }, [
-    sessionScopes.length,
+    bootstrapLoaded,
     sessionToken,
     navigate,
     setAuthorizationFailed,

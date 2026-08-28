@@ -37,6 +37,7 @@ from .models import (
     DatasetPageVersionManifestEntryRecord,
     DatasetPageVersionSchemaDetail,
     DatasetPageVersionSchemaSummary,
+    DatasetWorkflowState,
 )
 
 
@@ -45,9 +46,12 @@ class DatasetPageFilters:
     query: str | None = None
     robot_model_id: str | None = None
     robot_id: str | None = None
+    collection_task_id: str | None = None
     task: str | None = None
+    tag: str | None = None
     scene: str | None = None
     asset_state: str | None = None
+    workflow_state: DatasetWorkflowState | None = None
     storage_class: str | None = None
     channels: tuple[str, ...] = ()
     channel_match: str = "all"
@@ -60,6 +64,7 @@ class DatasetPageVersionFilters:
     query: str | None = None
     kind: str | None = None
     status: str | None = None
+    include_internal: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,11 +343,15 @@ class InMemoryDatasetPageRepository:
                     filters,
                     task_matches=(
                         filters.task is None
-                        or record.metadata.task == filters.task
+                        or (
+                            record.metadata.task is not None
+                            and filters.task.casefold() in record.metadata.task.casefold()
+                        )
                         or any(
                             episode.scope == scope
                             and episode.dataset_id == record.dataset_id
-                            and episode.task == filters.task
+                            and episode.task is not None
+                            and filters.task.casefold() in episode.task.casefold()
                             for episode in self._episodes.values()
                         )
                     ),
@@ -366,6 +375,10 @@ class InMemoryDatasetPageRepository:
                 for version in self._versions.values()
                 if version.scope == scope
                 and version.dataset_id == dataset_id
+                and (
+                    filters.include_internal
+                    or not version.version_id.startswith("version_lance_")
+                )
                 and _matches_version(version, filters)
             )
 
@@ -820,9 +833,14 @@ def _matches(
         needle = filters.query.casefold()
         if needle not in record.name.casefold() and needle not in record.dataset_id.casefold():
             return False
+    if filters.tag:
+        needle = filters.tag.casefold()
+        if not any(needle in label.casefold() for label in record.labels):
+            return False
     values = (
         (filters.robot_model_id, metadata.robot_model_id),
         (filters.robot_id, metadata.robot_id),
+        (filters.collection_task_id, metadata.collection_task_id),
         (filters.scene, metadata.scene),
         (filters.asset_state, metadata.asset_state),
         (filters.storage_class, metadata.storage_class),
@@ -830,6 +848,13 @@ def _matches(
     if not task_matches or any(
         expected is not None and expected != actual for expected, actual in values
     ):
+        return False
+    workflow_counts = {
+        "pendingReview": record.pending_review_version_count,
+        "returned": record.returned_version_count,
+        "actionableDraft": record.actionable_draft_count,
+    }
+    if filters.workflow_state is not None and int(workflow_counts[filters.workflow_state]) <= 0:
         return False
     selected = set(filters.channels)
     channels = set(metadata.channels)
@@ -1397,6 +1422,7 @@ class PostgresDatasetPageRepository:
                    )
                    AND (%s::text IS NULL OR version_kind = %s)
                    AND (%s::text IS NULL OR version_status = %s)
+                   AND (%s OR version_scope = 'DATASET_RELEASE')
                 """,
                 (
                     scope.organization_id,
@@ -1410,6 +1436,7 @@ class PostgresDatasetPageRepository:
                     filters.kind,
                     filters.status,
                     filters.status,
+                    filters.include_internal,
                 ),
             )
             return tuple(
@@ -1647,11 +1674,28 @@ class PostgresDatasetPageRepository:
                         OR name ILIKE '%%' || %s || '%%'
                         OR dataset_id ILIKE '%%' || %s || '%%'
                    )
+                   AND (
+                        %s::text IS NULL
+                        OR EXISTS (
+                            SELECT 1
+                              FROM jsonb_array_elements_text(dataset.labels) AS dataset_label(value)
+                             WHERE STRPOS(LOWER(dataset_label.value), LOWER(%s)) > 0
+                        )
+                   )
                    AND (%s::text IS NULL OR robot_model_id = %s)
                    AND (%s::text IS NULL OR robot_id = %s)
                    AND (
                         %s::text IS NULL
-                        OR dataset.task = %s
+                        OR dataset_registry.dataset_has_collection_task(
+                            dataset.organization_id,
+                            dataset.project_id,
+                            dataset.dataset_id,
+                            %s
+                        )
+                   )
+                   AND (
+                        %s::text IS NULL
+                        OR STRPOS(LOWER(COALESCE(dataset.task, '')), LOWER(%s)) > 0
                         OR EXISTS (
                             SELECT 1
                               FROM dataset_registry.dataset_version_episodes AS episode
@@ -1659,11 +1703,20 @@ class PostgresDatasetPageRepository:
                                AND episode.project_id = dataset.project_id
                                AND episode.region_code = dataset.region_code
                                AND episode.dataset_id = dataset.dataset_id
-                               AND episode.task = %s
+                               AND STRPOS(LOWER(COALESCE(episode.task, '')), LOWER(%s)) > 0
                         )
                    )
                    AND (%s::text IS NULL OR scene = %s)
                    AND (%s::text IS NULL OR asset_state = %s)
+                   AND (
+                        %s::text IS NULL
+                        OR CASE %s
+                            WHEN 'pendingReview' THEN pending_review_version_count > 0
+                            WHEN 'returned' THEN returned_version_count > 0
+                            WHEN 'actionableDraft' THEN actionable_draft_count > 0
+                            ELSE FALSE
+                           END
+                   )
                    AND (%s::text IS NULL OR storage_class = %s)
                    AND (
                         cardinality(%s::text[]) = 0
@@ -1685,10 +1738,14 @@ class PostgresDatasetPageRepository:
                     filters.query,
                     filters.query,
                     filters.query,
+                    filters.tag,
+                    filters.tag,
                     filters.robot_model_id,
                     filters.robot_model_id,
                     filters.robot_id,
                     filters.robot_id,
+                    filters.collection_task_id,
+                    filters.collection_task_id,
                     filters.task,
                     filters.task,
                     filters.task,
@@ -1696,6 +1753,8 @@ class PostgresDatasetPageRepository:
                     filters.scene,
                     filters.asset_state,
                     filters.asset_state,
+                    filters.workflow_state,
+                    filters.workflow_state,
                     filters.storage_class,
                     filters.storage_class,
                     list(filters.channels),
@@ -1725,13 +1784,16 @@ class PostgresDatasetPageRepository:
             cursor.execute(
                 """
                 INSERT INTO dataset_registry.datasets (
-                    organization_id, project_id, region_code, dataset_id, name, description,
+                    organization_id, project_id, region_code, dataset_id, folder_path,
+                    name, description,
                     labels, availability, owner_id, owner_display_name, robot_model_id, robot_id,
-                    task, scene, asset_state, storage_class, channels, episode_count,
+                    collection_task_id, task, scene, asset_state, storage_class, channels,
+                    episode_count,
                     pending_review_version_count, returned_version_count, actionable_draft_count,
                     version, dataset_document, created_at, updated_at, activity_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s::text[], %s, %s, %s::jsonb,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
                 ) ON CONFLICT DO NOTHING
                 RETURNING dataset_id
@@ -1741,6 +1803,7 @@ class PostgresDatasetPageRepository:
                     record.scope.project_id,
                     record.scope.region_code,
                     record.dataset_id,
+                    list(record.folder_path),
                     record.name,
                     record.description,
                     _document(list(record.labels)),
@@ -1749,6 +1812,7 @@ class PostgresDatasetPageRepository:
                     record.owner.display_name,
                     metadata.robot_model_id,
                     metadata.robot_id,
+                    metadata.collection_task_id,
                     metadata.task,
                     metadata.scene,
                     metadata.asset_state,

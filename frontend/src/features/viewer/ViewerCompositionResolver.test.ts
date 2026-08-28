@@ -19,6 +19,29 @@ function jointStream(
 }
 
 describe("ViewerCompositionResolver joint-state fallback", () => {
+  it("keeps camera panels in the supplied Manifest slot order", () => {
+    const camera = (id: string): StreamDescriptor => ({
+      id,
+      canonicalPath: `/camera/${id}`,
+      displayName: id,
+      modality: "rgb",
+      schema: { id: "camera", version: "1" },
+      startNs: "0",
+      endNs: "1000",
+      availability: "ready",
+    });
+
+    const composition = resolveViewerComposition([
+      camera("z-first"),
+      camera("a-second"),
+    ]);
+
+    expect(composition.panels.map((panel) => panel.streamIds[0])).toEqual([
+      "z-first",
+      "a-second",
+    ]);
+  });
+
   it("keeps a real generic time-series panel when immutable data exists but axis metadata is absent", () => {
     const composition = resolveViewerComposition([jointStream()]);
 

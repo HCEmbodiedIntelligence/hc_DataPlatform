@@ -21,6 +21,8 @@ import { useIngestScope } from '../../features/ingest/use-ingest-scope';
 import { isDomainError } from '../../shared/api/domain-error';
 import { useCapabilities } from '../../shared/auth/use-capabilities';
 import { useAsyncJob } from '../../shared/jobs/use-async-job';
+import { formatStorageSize } from '../../shared/lib/metric-presentation';
+import { useShellStore } from '../../shared/scope/shell-store';
 import {
   DataCursorPager,
   EntityDrawer,
@@ -165,20 +167,52 @@ function sourceSummaryValue(
   return value ?? '—';
 }
 
-function formatBytes(value: string | undefined): string {
-  if (!value) return '—';
-  try {
-    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
-    let amount = BigInt(value);
-    let index = 0;
-    while (amount >= 1024n && index < units.length - 1) {
-      amount /= 1024n;
-      index += 1;
-    }
-    return `${amount.toString()} ${units[index]}`;
-  } catch {
-    return value;
-  }
+const sourceTypeLabels: Readonly<Record<string, string>> = {
+  ROBOT: '机器人',
+  EDGE_AGENT: '边缘代理',
+  OSS_IMPORT: 'OSS 导入',
+};
+
+const administrativeStateLabels: Readonly<Record<string, string>> = {
+  ENABLED: '已启用',
+  DISABLED: '已停用',
+};
+
+const connectivityLabels: Readonly<Record<string, string>> = {
+  ONLINE: '在线',
+  DEGRADED: '降级',
+  OFFLINE: '离线',
+  AUTH_FAILED: '认证失败',
+  CONFIG_ERROR: '配置错误',
+};
+
+const credentialStateLabels: Readonly<Record<string, string>> = {
+  CONFIGURED: '凭据已配置',
+  MISSING: '凭据缺失',
+  ROTATION_DUE: '凭据待轮换',
+  EXPIRED: '凭据已过期',
+  REVOKED: '凭据已撤销',
+  INVALID: '凭据无效',
+};
+
+const sortLabels: Readonly<Record<DataSourcesSearch['sort'], string>> = {
+  'updatedAt:desc': '最近更新',
+  'name:asc': '按名称',
+  'lastTestAt:desc': '最近测试',
+};
+
+function compactFilterSummary(search: DataSourcesSearch): string {
+  const parts = [
+    search.q ? `关键词“${search.q}”` : null,
+    sourceTypeLabels[search.sourceType[0] ?? ''],
+    administrativeStateLabels[search.administrativeState[0] ?? ''],
+    connectivityLabels[search.connectivity[0] ?? ''],
+    credentialStateLabels[search.credentialState[0] ?? ''],
+  ].filter((part): part is string => Boolean(part));
+
+  if (parts.length === 0) parts.push('全部数据源');
+  parts.push(sortLabels[search.sort], `${search.limit} 条/页`);
+  return parts.join(' · ');
 }
 
 function SourceMetricTile({
@@ -219,6 +253,12 @@ function SourceMetricTile({
 
 export default function DataSourcesPage() {
   const scope = useIngestScope();
+  const unscopedAccount = useShellStore(
+    (state) =>
+      state.bootstrapLoaded &&
+      !state.authorizationFailed &&
+      state.scope === null,
+  );
   const capabilities = useCapabilities();
   const [params, setParams] = useSearchParams();
   const search = useMemo(() => dataSourcesQueryCodec.parse(params), [params]);
@@ -375,10 +415,10 @@ export default function DataSourcesPage() {
     };
   }, [detail.data, detail.dataUpdatedAt, scopeKey]);
 
-  if (!scope) {
+  if (!scope && !unscopedAccount) {
     return <PageState state="feature-unavailable" label="数据源" />;
   }
-  if (!canRead && !capabilities.loading) {
+  if (!canRead && !capabilities.loading && !unscopedAccount) {
     return <PageState state="forbidden" label="数据源" />;
   }
 
@@ -389,17 +429,36 @@ export default function DataSourcesPage() {
       search.connectivity.length ||
       search.credentialState.length,
   );
-  const resolvedListState = listState(page, hasActiveFilters);
+  const activeFilterCount = [
+    search.q,
+    search.sourceType.length,
+    search.administrativeState.length,
+    search.connectivity.length,
+    search.credentialState.length,
+  ].filter(Boolean).length;
+  const resolvedListState = unscopedAccount
+    ? 'ready'
+    : listState(page, hasActiveFilters);
   const summaryError = page.data?.componentErrors.find((error) => error.component === 'summary');
-  const summaryState = summaryError
-    ? 'error'
-    : page.isPending
-      ? 'loading'
-      : page.isError
-        ? 'error'
-        : page.data
-          ? 'ready'
-          : 'unknown';
+  const summaryState = unscopedAccount
+    ? 'ready'
+    : summaryError
+      ? 'error'
+      : page.isPending
+        ? 'loading'
+        : page.isError
+          ? 'error'
+          : page.data
+            ? 'ready'
+            : 'unknown';
+  const sourceSummary = unscopedAccount
+    ? {
+        totalCount: '0',
+        onlineCount: '0',
+        verifiedBytesToday: '0',
+        abnormalCount: '0',
+      }
+    : page.data?.summary;
   const table = (
     <DataSourceTable
       items={page.data?.items ?? []}
@@ -411,7 +470,7 @@ export default function DataSourcesPage() {
     <DataCursorPager
       pageInfo={page.data.pageInfo}
       busy={page.isFetching}
-      windowLabel={`当前窗口 ${page.data.items.length} 条 · 快照 ${page.data.snapshotAt}`}
+      windowLabel={`当前窗口 ${page.data.items.length} 条`}
       onChange={(cursor) => applySearch(cursor)}
     />
   ) : null;
@@ -456,7 +515,7 @@ export default function DataSourcesPage() {
           title: '数据源',
           description: '管理机器人、边缘代理与 OSS 导入连接器。',
           breadcrumbs: [
-            { key: 'ingest', label: '数据接入', to: routes.uploadJobs.build() },
+            { key: 'ingest', label: '数据接入', to: routes.uploadRecords.build() },
             { key: 'sources', label: '数据源' },
           ],
           actions: (
@@ -487,24 +546,24 @@ export default function DataSourcesPage() {
             <SourceMetricTile
               eyebrow="CONNECTORS"
               label="数据源总数"
-              value={sourceSummaryValue(page.data?.summary.totalCount, summaryState)}
+              value={sourceSummaryValue(sourceSummary?.totalCount, summaryState)}
               detail="已接入连接器"
               icon={<Database size={30} strokeWidth={1.65} />}
             />
             <SourceMetricTile
               eyebrow="ONLINE"
               label="在线"
-              value={sourceSummaryValue(page.data?.summary.onlineCount, summaryState)}
+              value={sourceSummaryValue(sourceSummary?.onlineCount, summaryState)}
               detail="最近心跳正常"
               icon={<Radio size={30} strokeWidth={1.65} />}
               tone="success"
             />
             <SourceMetricTile
               eyebrow="VERIFIED"
-              label="今日验证字节"
+              label="今日验证数据量"
               value={
                 summaryState === 'ready'
-                  ? formatBytes(page.data?.summary.verifiedBytesToday)
+                  ? formatStorageSize(sourceSummary?.verifiedBytesToday)
                   : sourceSummaryValue(undefined, summaryState)
               }
               detail="通过完整性验证"
@@ -513,7 +572,7 @@ export default function DataSourcesPage() {
             <SourceMetricTile
               eyebrow="ISSUES"
               label="异常"
-              value={sourceSummaryValue(page.data?.summary.abnormalCount, summaryState)}
+              value={sourceSummaryValue(sourceSummary?.abnormalCount, summaryState)}
               detail="需要人工处理"
               icon={<TriangleAlert size={30} strokeWidth={1.65} />}
               tone="warning"
@@ -523,6 +582,10 @@ export default function DataSourcesPage() {
         filters={
           <FilterToolbar
             label="数据源筛选"
+            collapsible
+            collapseOnApply
+            activeFilterCount={activeFilterCount}
+            collapsedSummary={compactFilterSummary(search)}
             onApply={() =>
               applySearch({
                 q: draft.q || undefined,
@@ -535,7 +598,7 @@ export default function DataSourcesPage() {
               })
             }
             onReset={resetFilters}
-            disabled={page.isPending}
+            disabled={!unscopedAccount && page.isPending}
           >
             <label className={styles.filterField}>
               <span>搜索</span>
@@ -775,6 +838,7 @@ export default function DataSourcesPage() {
                   }
                   loading={testMutation.isPending}
                   onClick={() => {
+                    if (!scope) return;
                     testMutation.reset();
                     setConnectionJobId('');
                     testMutation.mutate(
@@ -857,7 +921,8 @@ export default function DataSourcesPage() {
           pending={rotateMutation.isPending}
           errorMessage={safeOperationError(rotateMutation.error)}
           onClose={() => setRotateDialog(false)}
-          onConfirm={(token, reason) =>
+          onConfirm={(token, reason) => {
+            if (!scope) return;
             rotateMutation.mutate(
               {
                 scope,
@@ -867,8 +932,8 @@ export default function DataSourcesPage() {
                 body: { credential_input: { kind: 'TOKEN', token }, reason },
               },
               { onSuccess: () => setRotateDialog(false) },
-            )
-          }
+            );
+          }}
         />
       ) : null}
       {detail.data ? (
@@ -886,7 +951,8 @@ export default function DataSourcesPage() {
             stateMutation.reset();
             void detail.refetch();
           }}
-          onConfirm={() =>
+          onConfirm={() => {
+            if (!scope) return;
             stateMutation.mutate(
               {
                 scope,
@@ -899,8 +965,8 @@ export default function DataSourcesPage() {
                 },
               },
               { onSuccess: () => setStateDialog(false) },
-            )
-          }
+            );
+          }}
         />
       ) : null}
       {detail.data ? (

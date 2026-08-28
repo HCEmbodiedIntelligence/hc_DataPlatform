@@ -1,19 +1,20 @@
-import type { ReactNode } from 'react';
-import type { PlaybackClock } from './PlaybackClock';
+import type { ReactNode } from "react";
+import type { PlaybackClock } from "./PlaybackClock";
+import type { RobotSceneCoreProps } from "./RobotSceneCore";
 import type {
   ViewerPanelRenderer,
   ViewerTimelineSelection,
   ViewerTimelineTrack,
-} from './EpisodeWorkbenchCore';
-import type { DomainError, StreamDescriptor } from './types';
+} from "./EpisodeWorkbenchCore";
+import type { DomainError, StreamDescriptor } from "./types";
 
 export type DataVisualizationWorkbenchMode =
-  | 'raw-diagnostic'
-  | 'lance-readonly'
-  | 'annotation'
-  | 'revision'
-  | 'tag-review'
-  | 'published-readonly';
+  | "raw-diagnostic"
+  | "lance-readonly"
+  | "annotation"
+  | "revision"
+  | "tag-review"
+  | "published-readonly";
 
 export interface WorkbenchFact {
   readonly label: string;
@@ -26,14 +27,14 @@ export interface WorkbenchCollectionItem {
   readonly label: string;
   readonly description?: string;
   readonly status: string;
-  readonly statusTone?: 'neutral' | 'info' | 'warning' | 'error' | 'success';
+  readonly statusTone?: "neutral" | "info" | "warning" | "error" | "success";
   readonly facts?: readonly WorkbenchFact[];
 }
 
 export interface WorkbenchFinding {
   readonly id: string;
   readonly title: string;
-  readonly severity: 'warning' | 'error';
+  readonly severity: "warning" | "error";
   readonly streamLabel?: string;
   readonly topic?: string;
   readonly startNs: string;
@@ -44,10 +45,10 @@ export interface WorkbenchFinding {
 }
 
 export type WorkbenchActionKind =
-  | 'preserve-evidence'
-  | 'request-recollection'
-  | 'run-automated-check'
-  | 'custom';
+  | "preserve-evidence"
+  | "request-recollection"
+  | "run-automated-check"
+  | "custom";
 
 export interface WorkbenchAction {
   readonly id: string;
@@ -72,6 +73,13 @@ export interface DataVisualizationWorkbenchAdapter {
   readonly readOnly: boolean;
   readonly clock: PlaybackClock;
   readonly cameraStreams: readonly StreamDescriptor[];
+  /** Optional URDF scene driven by the same immutable playback clock. */
+  readonly robotScene?: RobotSceneCoreProps & {
+    readonly title?: string;
+    readonly canonicalPath?: string;
+  };
+  /** Keeps a stable robot-pose workspace when the runtime binding is unavailable. */
+  readonly robotSceneUnavailableReason?: string;
   readonly collectionItems: readonly WorkbenchCollectionItem[];
   readonly selectedCollectionItemId?: string;
   readonly onSelectCollectionItem?: (id: string) => void;
@@ -84,10 +92,13 @@ export interface DataVisualizationWorkbenchAdapter {
     readonly label: string;
     readonly title: string;
     readonly description: string;
-    readonly tone: 'warning' | 'error' | 'info';
+    readonly tone: "warning" | "error" | "info";
   };
   readonly onTimeRangeSelect?: (startNs: string, endNs: string) => void;
-  readonly onResourceError?: (error: DomainError, scope: 'video' | 'curve' | 'pointcloud' | 'scene3d') => void;
+  readonly onResourceError?: (
+    error: DomainError,
+    scope: "video" | "curve" | "pointcloud" | "scene3d",
+  ) => void;
 }
 
 export interface DataVisualizationWorkbenchSlotContext {
@@ -96,13 +107,29 @@ export interface DataVisualizationWorkbenchSlotContext {
 
 export interface DataVisualizationWorkbenchSlots {
   /** Replace the left object rail while preserving the shared 18/56/26 shell. */
-  readonly navigation?: (context: DataVisualizationWorkbenchSlotContext) => ReactNode;
+  readonly navigation?: (
+    context: DataVisualizationWorkbenchSlotContext,
+  ) => ReactNode;
+  /** Adds page-level mode navigation and contextual actions below the workbench title. */
+  readonly workspaceToolbar?: (
+    context: DataVisualizationWorkbenchSlotContext,
+  ) => ReactNode;
   /** Adds mode-specific controls above the Manifest camera surface. */
-  readonly mediaHeader?: (context: DataVisualizationWorkbenchSlotContext) => ReactNode;
+  readonly mediaHeader?: (
+    context: DataVisualizationWorkbenchSlotContext,
+  ) => ReactNode;
+  /** Adds compact, time-range-aware controls between playback and the shared tracks. */
+  readonly timelineTools?: (
+    context: DataVisualizationWorkbenchSlotContext,
+  ) => ReactNode;
   /** Replace quality findings with Tag tools/review without copying the viewer. */
-  readonly inspector?: (context: DataVisualizationWorkbenchSlotContext) => ReactNode;
+  readonly inspector?: (
+    context: DataVisualizationWorkbenchSlotContext,
+  ) => ReactNode;
   /** Replace the lower-right command dock; caller remains responsible for capability gates. */
-  readonly actionDock?: (context: DataVisualizationWorkbenchSlotContext) => ReactNode;
+  readonly actionDock?: (
+    context: DataVisualizationWorkbenchSlotContext,
+  ) => ReactNode;
   /** Render overlays or deterministic test surfaces while retaining one clock and grid. */
   readonly renderPanel?: ViewerPanelRenderer;
 }

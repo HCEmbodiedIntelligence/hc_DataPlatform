@@ -1,13 +1,57 @@
 paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/device-capture-facts:
+    post:
+      operationId: recordDeviceCaptureFact
+      tags: [ingest]
+      description: >-
+        Records an immutable CAPTURED or SAVED assertion from an authenticated device-agent
+        service identity. Cloud upload registration and Raw commit events never create this fact.
+      parameters:
+        - &authorization_parameter {name: Authorization, in: header, required: true, schema: {type: string, pattern: "^Bearer .+$"}}
+        - &project_parameter {name: project_id, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}}
+        - &region_parameter {name: region_code, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DeviceCaptureFactRequest"}
+      responses:
+        "200":
+          description: The newly persisted fact, or the identical existing fact on retry.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Device facts are never cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceCaptureFact"}
+        "401": &unauthorized_response
+          description: Verified AuthContext is absent.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "403": &forbidden_response
+          description: Exact service-identity organization/project/region scope is denied.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "409": &conflict_response
+          description: Immutable identity, content, state, or collection assignment conflict.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422": &validation_response
+          description: Request or raw-object integrity validation failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions:
     post:
       operationId: createUploadSession
       tags: [ingest]
       description: Creates, resumes, or returns the immutable package upload; supports browser multipart and an authorized canonical object-storage address.
       parameters:
-        - &authorization_parameter {name: Authorization, in: header, required: true, schema: {type: string, pattern: "^Bearer .+$"}}
-        - &project_parameter {name: project_id, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}}
-        - &region_parameter {name: region_code, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}}
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
         - name: Idempotency-Key
           in: header
           required: true
@@ -25,21 +69,9 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/UploadSessionGrant"}
-        "401": &unauthorized_response
-          description: Verified AuthContext is absent.
-          content:
-            application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
-        "403": &forbidden_response
-          description: Uploader role or project/region scope is denied.
-          content:
-            application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
-        "409": &conflict_response
-          description: Immutable identity, content, state, or multipart part conflict.
-          content:
-            application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "409": *conflict_response
         "413": &payload_too_large_response
           description: JSON request exceeds its bounded control-plane limit.
           content:
@@ -94,11 +126,7 @@ paths:
         "403": *forbidden_response
         "413": *payload_too_large_response
         "415": *unsupported_media_response
-        "422": &validation_response
-          description: Request or raw-object integrity validation failed.
-          content:
-            application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422": *validation_response
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:
     get:
       operationId: getUploadSession
@@ -374,6 +402,15 @@ components:
       maxLength: 20
       pattern: "^(?:0|[1-9][0-9]{0,19})$"
       description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose uint64 precision.
+    HuggingFaceEpisodeSourceV1:
+      type: object
+      additionalProperties: false
+      required: [repository, resolved_revision, episode_index]
+      properties:
+        kind: {type: string, const: HUGGING_FACE_EPISODE, default: HUGGING_FACE_EPISODE}
+        repository: {type: string, minLength: 3, maxLength: 256, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"}
+        resolved_revision: {type: string, minLength: 7, maxLength: 64, pattern: "^[A-Fa-f0-9]+$"}
+        episode_index: {type: integer, minimum: 0}
     RolloutManifestV1:
       type: object
       additionalProperties: false
@@ -402,6 +439,10 @@ components:
         crc64: {$ref: "#/components/schemas/Crc64Decimal"}
         compression: {type: string, enum: [none, zstd]}
         recorder_version: {type: string, minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9][A-Za-z0-9._/+:-]*$"}
+        source_recording:
+          anyOf:
+            - {$ref: "#/components/schemas/HuggingFaceEpisodeSourceV1"}
+            - {type: "null"}
     TopicName:
       type: string
       minLength: 1
@@ -515,6 +556,43 @@ components:
         part_number: {type: integer, minimum: 1, maximum: 10000}
         url: {type: string, format: uri, writeOnly: true}
         expires_at: {type: string, format: date-time}
+    DeviceCaptureFactRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_event_id, event_type, collection_task_id, collection_job_id, recording_request_id, data_package_id, robot_id, device_id, device_sequence_no, capture_started_at, capture_ended_at, saved_at, local_artifact_size, local_artifact_sha256, recorder_version, occurred_at]
+      properties:
+        schema_version: {type: string, const: device-capture-fact/v1, default: device-capture-fact/v1}
+        source_event_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        event_type: {type: string, enum: [CAPTURED, SAVED]}
+        collection_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_job_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        recording_request_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        robot_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_sequence_no: {type: integer, minimum: 0}
+        capture_started_at: {type: string, format: date-time}
+        capture_ended_at: {type: string, format: date-time}
+        saved_at: {type: [string, "null"], format: date-time}
+        local_artifact_size: {type: [integer, "null"], minimum: 1, maximum: 5497558138880}
+        local_artifact_sha256: {type: [string, "null"], pattern: "^[a-f0-9]{64}$"}
+        recorder_version: {type: string, minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9][A-Za-z0-9._/+:-]*$"}
+        occurred_at: {type: string, format: date-time}
+      description: >-
+        CAPTURED forbids saved_at and local artifact fields. SAVED requires saved_at,
+        local_artifact_size, and local_artifact_sha256. All timestamps require offsets.
+    DeviceCaptureFact:
+      allOf:
+        - {$ref: "#/components/schemas/DeviceCaptureFactRequest"}
+        - type: object
+          required: [fact_id, organization_id, project_id, region_code, producer_subject_id, received_at]
+          properties:
+            fact_id: {type: string, format: uuid}
+            organization_id: {$ref: "#/components/schemas/IngestIdentifier"}
+            project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+            region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+            producer_subject_id: {type: string, minLength: 1, maxLength: 512}
+            received_at: {type: string, format: date-time}
     UploadSession:
       type: object
       required: [session_id, project_id, region_code, rollout_id, data_package_id, object_key, source_type, expected_sha256, expected_size, expected_crc64, manifest_fingerprint, status, created_at, updated_at]
@@ -713,6 +791,10 @@ components:
       properties:
         schema_version: {type: string, const: manifest-preflight/v1}
         manifest_fingerprint: {type: string, pattern: "^[a-f0-9]{64}$"}
+        source_fingerprint:
+          anyOf:
+            - {type: string, pattern: "^[a-f0-9]{64}$"}
+            - {type: "null"}
         identifiers: {$ref: "#/components/schemas/ManifestIdentifiersV1"}
         time_range: {$ref: "#/components/schemas/ManifestTimeRangeV1"}
         files: {type: array, items: {$ref: "#/components/schemas/ManifestFileV1"}}

@@ -37,7 +37,7 @@ export function StatusTag({
   const { color, Icon } = isKnown
     ? toneConfig[resolvedTone]
     : { color: "warning" as const, Icon: CircleHelp };
-  const resolvedLabel = isKnown ? (label ?? normalized) : "未知状态";
+  const resolvedLabel = isKnown ? (label ?? normalized) : (label ?? "未知状态");
 
   return (
     <Tag

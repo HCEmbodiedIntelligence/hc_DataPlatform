@@ -21,7 +21,7 @@ export type ManagedAccountState = components["schemas"]["ManagedAccountState"];
 export type PlatformAccountRole = components["schemas"]["PlatformAccountRole"];
 
 export type AccessRequestKind = "membership" | "capability";
-export type AccessDecision = "approve" | "reject" | "revoke" | "withdraw";
+export type AccessDecision = "approve" | "reject" | "revoke";
 
 export interface AccessRequestRow {
   readonly kind: AccessRequestKind;

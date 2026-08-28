@@ -74,7 +74,7 @@ export function StorageVisualCharts({ overview }: Readonly<{ overview: StorageOv
             <div>
               <span className={styles.storageChartEyebrow}>容量趋势</span>
               <h2>最近容量趋势</h2>
-              <p>服务端快照中的对象角色物理量</p>
+              <p>服务端容量记录中的对象角色物理量</p>
             </div>
           </div>
           <span className={styles.storageChartBadge}>容量</span>

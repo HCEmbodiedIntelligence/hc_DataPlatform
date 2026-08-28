@@ -36,12 +36,20 @@ export interface ViewerWindowPayload {
   readonly generation: number;
   readonly timestampsNs: readonly string[];
   readonly values?: readonly (readonly number[])[];
+  /** Optional metadata for numeric vector dimensions such as robot joints. */
+  readonly series?: readonly ViewerSeriesDescriptor[];
   /** Discrete facts for an EVENT stream, keyed to the same immutable time base. */
   readonly events?: readonly ViewerEventSample[];
   readonly points?: Float32Array;
   /** One point-cloud sample per source step; the renderer selects by clock time. */
   readonly pointFrames?: readonly ViewerPointFrame[];
   readonly dispose?: () => void;
+}
+
+export interface ViewerSeriesDescriptor {
+  readonly id: string;
+  readonly displayName: string;
+  readonly unit?: string;
 }
 
 export interface ViewerEventSample {
@@ -69,8 +77,14 @@ export interface AuthorizedMediaDescriptor {
 }
 
 export interface ViewerMediaSource {
-  authorize(signal: AbortSignal): Promise<AuthorizedMediaDescriptor>;
-  refresh(signal: AbortSignal): Promise<AuthorizedMediaDescriptor>;
+  authorize(
+    signal: AbortSignal,
+    onStatus?: (status: "preparing" | "ready" | "failed") => void,
+  ): Promise<AuthorizedMediaDescriptor>;
+  refresh(
+    signal: AbortSignal,
+    onStatus?: (status: "preparing" | "ready" | "failed") => void,
+  ): Promise<AuthorizedMediaDescriptor>;
 }
 
 export interface StreamDescriptor {

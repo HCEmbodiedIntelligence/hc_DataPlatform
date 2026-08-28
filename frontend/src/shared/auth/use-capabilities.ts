@@ -76,9 +76,10 @@ export function useCapabilities(): CapabilitiesResult {
   );
   const failed =
     authorizationFailed ||
-    (!loading && snapshot === null) ||
-    (snapshot !== null && !scopeMatches) ||
-    expired;
+    (hasScope &&
+      ((!loading && snapshot === null) ||
+        (snapshot !== null && !scopeMatches) ||
+        expired));
   const has = useCallback(
     (capability: string) =>
       !loading &&

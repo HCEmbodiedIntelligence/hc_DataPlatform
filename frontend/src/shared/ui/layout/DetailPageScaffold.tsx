@@ -37,7 +37,10 @@ export function DetailPageScaffold({
           {tabs}
         </nav>
       ) : null}
-      <div className={styles.detailGrid}>
+      <div
+        className={styles.detailGrid}
+        data-has-inspector={inspector ? 'true' : undefined}
+      >
         <section className={styles.detailContent} aria-label={`${header.title}详情`}>
           {children}
         </section>

@@ -3,6 +3,7 @@ import { defineQueryCodec } from "../../shared/routing/route-registry";
 export type DashboardRange = "24h" | "7d" | "30d" | "custom";
 export type DashboardSearch = Readonly<{
   range: DashboardRange;
+  taskId?: string;
   from?: string;
   to?: string;
 }>;
@@ -16,6 +17,8 @@ function validInstant(value: string | null): value is string {
   );
 }
 
+const taskIdPattern = /^[A-Za-z0-9._-]{1,128}$/u;
+
 export const dashboardQueryCodec = defineQueryCodec<
   DashboardSearch,
   URLSearchParams
@@ -27,7 +30,12 @@ export const dashboardQueryCodec = defineQueryCodec<
       candidate && ranges.has(candidate as DashboardRange)
         ? (candidate as DashboardRange)
         : "24h";
-    if (range !== "custom") return { range };
+    const taskCandidate = searchParams.get("task_id");
+    const taskId =
+      taskCandidate && taskIdPattern.test(taskCandidate)
+        ? taskCandidate
+        : undefined;
+    if (range !== "custom") return { range, ...(taskId ? { taskId } : {}) };
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     if (
@@ -35,9 +43,10 @@ export const dashboardQueryCodec = defineQueryCodec<
       !validInstant(to) ||
       Date.parse(from) >= Date.parse(to)
     )
-      return defaults;
+      return { ...defaults, ...(taskId ? { taskId } : {}) };
     return {
       range,
+      ...(taskId ? { taskId } : {}),
       from: new Date(from).toISOString(),
       to: new Date(to).toISOString(),
     };
@@ -45,6 +54,8 @@ export const dashboardQueryCodec = defineQueryCodec<
   build(value) {
     const params = new URLSearchParams();
     const range = value.range ?? defaults.range;
+    if (value.taskId && taskIdPattern.test(value.taskId))
+      params.set("task_id", value.taskId);
     if (range !== "24h") params.set("range", range);
     if (
       range === "custom" &&

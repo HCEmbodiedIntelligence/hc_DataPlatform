@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -21,7 +21,6 @@ from .models import (
     DatasetPageActor,
     DatasetPageContentReference,
     DatasetPageContentSnapshot,
-    DatasetPageCurrentReadyVersion,
     DatasetPageDetailFacts,
     DatasetPageDetailSummary,
     DatasetPageEpisodeDataBinding,
@@ -69,21 +68,41 @@ def _version_id(version: int) -> str:
     return f"version_lance_{version}"
 
 
+def _numeric_sequence(value: object) -> tuple[float, ...] | None:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return None
+    if not value or not all(
+        isinstance(item, (int, float)) and not isinstance(item, bool) for item in value
+    ):
+        return None
+    return tuple(float(item) for item in value)
+
+
+def _numeric_vector_payload(value: object) -> tuple[float, ...] | None:
+    direct = _numeric_sequence(value)
+    if direct is not None:
+        return direct
+    if not isinstance(value, Mapping):
+        return None
+    for key in ("positions", "values"):
+        candidate = _numeric_sequence(value.get(key))
+        if candidate is not None:
+            return candidate
+    position = _numeric_sequence(value.get("position_xyz"))
+    orientation = _numeric_sequence(value.get("orientation_wxyz"))
+    if position is not None and orientation is not None:
+        return (*position, *orientation)
+    return None
+
+
 def _value_kind(values: Sequence[object]) -> DataValueKind:
     candidate = next((value for value in values if value is not None), None)
     if isinstance(candidate, bool):
         return "EVENT"
     if isinstance(candidate, (int, float)):
         return "SCALAR"
-    if isinstance(candidate, Sequence) and not isinstance(candidate, (str, bytes, bytearray)):
-        return (
-            "VECTOR"
-            if candidate
-            and all(
-                isinstance(item, (int, float)) and not isinstance(item, bool) for item in candidate
-            )
-            else "EVENT"
-        )
+    if _numeric_vector_payload(candidate) is not None:
+        return "VECTOR"
     return "EVENT"
 
 
@@ -93,7 +112,11 @@ def _stream_kind(topic: str, modality: ModalityKind, value_kind: DataValueKind) 
         return "POINTCLOUD"
     if value_kind == "EVENT":
         return "EVENT"
+    if "end_effector" in lowered and "state" in lowered:
+        return "POSE"
     if "joint" in lowered:
+        return "JOINT_STATE"
+    if "observation/state" in lowered or "raw_state" in lowered:
         return "JOINT_STATE"
     if modality is ModalityKind.ACTION or "action" in lowered or "command" in lowered:
         return "ACTION"
@@ -152,7 +175,7 @@ class PostgresDatasetIngestProjector:
             or ready.source_sha256 != source.source_sha256
             or ready.content_hash != version.content_hash
             or ready.step_count <= 0
-            or tuple(version.committed_rollouts)[-1:] != (source.rollout_id,)
+            or source.rollout_id not in version.committed_rollouts
             or len(version.committed_rollouts) != version.version
         ):
             raise DatasetIngestProjectionConflict(
@@ -191,6 +214,12 @@ class PostgresDatasetIngestProjector:
                     connection.commit()
                     return existing
                 preflight = self._preflight(cursor, source)
+                self._assert_task_dataset(
+                    cursor,
+                    source=source,
+                    collection_task_id=preflight.manifest.task_id,
+                    dataset_id=target.dataset_id,
+                )
                 self._insert_projection(
                     cursor,
                     source=source,
@@ -364,6 +393,29 @@ class PostgresDatasetIngestProjector:
             )
         return preflight
 
+    @staticmethod
+    def _assert_task_dataset(
+        cursor: Any,
+        *,
+        source: IngestProjectionSourceV1,
+        collection_task_id: str,
+        dataset_id: str,
+    ) -> None:
+        cursor.execute(
+            """
+            SELECT dataset_id
+              FROM collection_tasks.collection_tasks
+             WHERE organization_id = %s AND project_id = %s
+               AND collection_task_id = %s
+            """,
+            (source.organization_id, source.project_id, collection_task_id),
+        )
+        raw = cursor.fetchone()
+        if raw is None or str(raw[0]) != dataset_id:
+            raise DatasetIngestProjectionConflict(
+                "the Dataset does not belong to the Manifest collection task"
+            )
+
     def _insert_projection(
         self,
         cursor: Any,
@@ -406,6 +458,7 @@ class PostgresDatasetIngestProjector:
             dataset_id=target.dataset_id,
             version_id=target.version_id,
             episode_id=target.episode_id,
+            storage_region_code=scope.region_code,
             selected_revision=current_ref,
             included=True,
             success_state="SUCCEEDED",
@@ -559,6 +612,7 @@ class PostgresDatasetIngestProjector:
             scope=scope,
             dataset_id=target.dataset_id,
             version_id=target.version_id,
+            storage_region_code=scope.region_code,
             provenance_id=_stable_id("provenance", source.data_package_id),
             upload_id=source.session_id,
             source_id=preflight.manifest.robot_id,
@@ -915,14 +969,6 @@ class PostgresDatasetIngestProjector:
             ),
         )
         raw = cursor.fetchone()
-        current_ready = DatasetPageCurrentReadyVersion(
-            version_id=version.version_id,
-            display_version=version.display_version,
-            kind=version.kind,
-            status="READY",
-            published_at=version.published_at,
-            manifest_sha256=version.manifest.sha256,
-        )
         if raw is None:
             return DatasetPageRecord(
                 scope=scope,
@@ -937,19 +983,23 @@ class PostgresDatasetIngestProjector:
                 etag=ResourceVersion().etag,
                 metadata=DatasetPageMetadata(
                     robot_id=manifest.robot_id,
+                    collection_task_id=manifest.task_id,
                     task=manifest.task_id,
                     asset_state="READY",
                     storage_class="STANDARD",
                     channels=channels,
                 ),
                 episode_count=str(episode_count),
-                current_ready_version=current_ready,
+                # Ingest creates an INTERNAL working snapshot.  It must not be
+                # advertised as the dataset's manually published version.
+                current_ready_version=None,
             )
         existing = DatasetPageRecord.model_validate(_row_document(raw))
         resource_version = ResourceVersion.from_etag(existing.etag)
         metadata = existing.metadata.model_copy(
             update={
                 "robot_id": existing.metadata.robot_id or manifest.robot_id,
+                "collection_task_id": existing.metadata.collection_task_id or manifest.task_id,
                 "task": existing.metadata.task or manifest.task_id,
                 "asset_state": "READY",
                 "channels": tuple(dict.fromkeys((*existing.metadata.channels, *channels))),
@@ -962,7 +1012,9 @@ class PostgresDatasetIngestProjector:
                 "etag": ResourceVersion(resource_version.value + 1).etag,
                 "metadata": metadata,
                 "episode_count": str(episode_count),
-                "current_ready_version": current_ready,
+                # Preserve the last business release while the internal Lance
+                # working snapshot advances.
+                "current_ready_version": existing.current_ready_version,
             }
         )
 
@@ -972,19 +1024,24 @@ class PostgresDatasetIngestProjector:
         cursor.execute(
             """
             INSERT INTO dataset_registry.datasets (
-                organization_id, project_id, region_code, dataset_id, name, description,
+                organization_id, project_id, region_code, dataset_id, folder_path,
+                name, description,
                 labels, availability, owner_id, owner_display_name, robot_model_id, robot_id,
-                task, scene, asset_state, storage_class, channels, episode_count,
+                collection_task_id, task, scene, asset_state, storage_class, channels,
+                episode_count,
                 pending_review_version_count, returned_version_count, actionable_draft_count,
                 version, dataset_document, created_at, updated_at, activity_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
+                %s, %s, %s, %s, %s::text[], %s, %s, %s::jsonb,
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
             ) ON CONFLICT (organization_id, project_id, region_code, dataset_id) DO UPDATE SET
-                name = EXCLUDED.name, description = EXCLUDED.description, labels = EXCLUDED.labels,
+                folder_path = EXCLUDED.folder_path, name = EXCLUDED.name,
+                description = EXCLUDED.description, labels = EXCLUDED.labels,
                 availability = EXCLUDED.availability, owner_id = EXCLUDED.owner_id,
                 owner_display_name = EXCLUDED.owner_display_name,
                 robot_model_id = EXCLUDED.robot_model_id, robot_id = EXCLUDED.robot_id,
+                collection_task_id = EXCLUDED.collection_task_id,
                 task = EXCLUDED.task, scene = EXCLUDED.scene, asset_state = EXCLUDED.asset_state,
                 storage_class = EXCLUDED.storage_class, channels = EXCLUDED.channels,
                 episode_count = EXCLUDED.episode_count,
@@ -999,6 +1056,7 @@ class PostgresDatasetIngestProjector:
                 record.scope.project_id,
                 record.scope.region_code,
                 record.dataset_id,
+                list(record.folder_path),
                 record.name,
                 record.description,
                 _document(list(record.labels)),
@@ -1007,6 +1065,7 @@ class PostgresDatasetIngestProjector:
                 record.owner.display_name,
                 metadata.robot_model_id,
                 metadata.robot_id,
+                metadata.collection_task_id,
                 metadata.task,
                 metadata.scene,
                 metadata.asset_state,
@@ -1031,8 +1090,8 @@ class PostgresDatasetIngestProjector:
             INSERT INTO dataset_registry.dataset_versions (
                 organization_id, project_id, region_code, dataset_id, version_id,
                 display_version, version_kind, version_status, created_at, published_at,
-                version_document
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                version_document, version_scope
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, 'INTERNAL')
             """,
             (
                 version.scope.organization_id,
@@ -1080,11 +1139,12 @@ class PostgresDatasetIngestProjector:
             """
             INSERT INTO dataset_registry.dataset_version_episodes (
                 organization_id, project_id, region_code, dataset_id, version_id, episode_id,
-                revision_id, ordinal, started_at, started_at_ns, included, success_state,
+                storage_region_code, revision_id, ordinal, started_at, started_at_ns,
+                included, success_state,
                 task, robot_id, review_status, review_finding_count, has_finding, change_type,
                 episode_document
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                      %s, %s, %s, %s::jsonb)
+                      %s, %s, %s, %s, %s::jsonb)
             """,
             (
                 value.scope.organization_id,
@@ -1093,6 +1153,7 @@ class PostgresDatasetIngestProjector:
                 value.dataset_id,
                 value.version_id,
                 value.episode_id,
+                value.storage_region_code,
                 value.selected_revision.revision_id,
                 value.selected_revision.ordinal,
                 value.started_at,
@@ -1205,9 +1266,9 @@ class PostgresDatasetIngestProjector:
             """
             INSERT INTO dataset_registry.dataset_version_source_provenance (
                 organization_id, project_id, region_code, dataset_id, version_id,
-                provenance_id, upload_id, source_id, source_display_name,
+                provenance_id, storage_region_code, upload_id, source_id, source_display_name,
                 source_manifest_id, registered_at, provenance_document
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
             """,
             (
                 value.scope.organization_id,
@@ -1216,6 +1277,7 @@ class PostgresDatasetIngestProjector:
                 value.dataset_id,
                 value.version_id,
                 value.provenance_id,
+                value.storage_region_code,
                 value.upload_id,
                 value.source_id,
                 value.source_display_name,

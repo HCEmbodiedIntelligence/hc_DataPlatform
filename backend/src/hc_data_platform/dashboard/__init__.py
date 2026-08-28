@@ -11,6 +11,7 @@ from .models import (
     DashboardPendingSeverity,
     DashboardSectionStatus,
     DashboardSnapshotResponse,
+    DashboardTaskStatusResponse,
     SignalStage,
 )
 from .service import DashboardService
@@ -27,5 +28,6 @@ __all__ = [
     "DashboardSectionStatus",
     "DashboardService",
     "DashboardSnapshotResponse",
+    "DashboardTaskStatusResponse",
     "SignalStage",
 ]

@@ -6,13 +6,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Alert, Button, Input, Modal, Select, Space, Typography } from "antd";
-import { Plus, RefreshCw, Search } from "lucide-react";
+import { Plus, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useToast } from "../../app/providers/ToastProvider";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { FilterToolbar } from "../../shared/ui/layout/FilterToolbar";
 import { StandardPageScaffold } from "../../shared/ui/layout/StandardPageScaffold";
 import { PageState } from "../../shared/ui/state/PageState";
 import { StatusTag } from "../../shared/ui/state/StatusTag";
@@ -131,7 +131,14 @@ export function CollectionTaskPage({
   gateway = collectionTaskGateway,
 }: Readonly<CollectionTaskPageProps>) {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const shellScope = useShellStore((state) => state.scope);
+  const unscopedAccount = useShellStore(
+    (state) =>
+      state.bootstrapLoaded &&
+      !state.authorizationFailed &&
+      state.scope === null,
+  );
   const scopeKey = useShellStore((state) => state.scopeKey);
   const capabilities = useCapabilities();
   const [params, setParams] = useSearchParams();
@@ -223,7 +230,11 @@ export function CollectionTaskPage({
             {
               data: progress?.data,
               pending: progress?.isPending ?? true,
+              stale:
+                progress?.isStale === true ||
+                (progress?.isError === true && progress.data !== undefined),
               error: progress?.error ?? undefined,
+              retry: progress ? () => void progress.refetch() : undefined,
             },
           ];
         }),
@@ -246,6 +257,21 @@ export function CollectionTaskPage({
       canManage &&
       authorizationReady &&
       editingTaskId !== null,
+    retry: false,
+  });
+
+  const assignableDatasets = useQuery({
+    queryKey: ["collection-task-assignable-datasets", scopeKey],
+    queryFn: ({ signal }) =>
+      gateway.listAssignableDatasets?.(scope as CollectionTaskScope, signal) ??
+      Promise.resolve([]),
+    enabled:
+      scope !== null &&
+      canManage &&
+      authorizationReady &&
+      search.drawer !== undefined &&
+      gateway.listAssignableDatasets !== undefined,
+    staleTime: 30_000,
     retry: false,
   });
 
@@ -338,9 +364,19 @@ export function CollectionTaskPage({
         throw error;
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (_updatedTask, request) => {
       lifecycleAttempt.current = null;
       setLifecycleTarget(null);
+      showToast({
+        title:
+          request.action === "close"
+            ? "采集任务已关闭"
+            : request.action === "cancel"
+              ? "采集任务已取消"
+              : "采集任务已重新开启",
+        message: `${request.task.name}（${request.task.task_code}）状态已更新。`,
+        tone: "success",
+      });
       await queryClient.invalidateQueries({
         queryKey: ["collection-tasks", scopeKey],
       });
@@ -462,25 +498,28 @@ export function CollectionTaskPage({
     }
   };
 
-  const filtered = Boolean(search.query || search.type);
+  const locallyFiltered = Boolean(search.query || search.type);
+  const filtered = search.status !== "ALL" || locallyFiltered;
   const authorizationState: PageStateKind | "ready" =
     capabilities.loading && capabilityOverride === undefined
       ? "loading"
       : !authorizationReady
         ? "forbidden"
-        : scope === null
-          ? "feature-unavailable"
-          : list.isPending
-            ? "loading"
-            : list.error && list.data === undefined
-              ? errorState(list.error)
-              : "ready";
+        : unscopedAccount
+          ? "ready"
+          : scope === null
+            ? "feature-unavailable"
+            : list.isPending
+              ? "loading"
+              : list.error && list.data === undefined
+                ? errorState(list.error)
+                : "ready";
 
   const table = (
     <CollectionTaskTable
       canManage={canManage}
       filtered={filtered}
-      loading={list.isPending}
+      loading={!unscopedAccount && list.isPending}
       onCancel={requestCancelTask}
       onClose={requestCloseTask}
       onEdit={openEdit}
@@ -492,25 +531,145 @@ export function CollectionTaskPage({
 
   const content =
     authorizationState === "ready" ? (
-      <div className={styles.tableStack}>
-        {list.error ? (
-          <PageState
-            label="采集任务列表"
-            layout="list"
-            onRetry={() => void list.refetch()}
-            requestId={requestId(list.error)}
-            state="partial"
-            description={problemDescription(
-              list.error,
-              "刷新失败，仍保留上次成功加载的采集任务。",
-            )}
+      <section className={styles.listPanel} aria-label="采集任务列表">
+        <form
+          className={styles.embeddedToolbar}
+          aria-label="采集任务筛选"
+          onSubmit={(event) => event.preventDefault()}
+        >
+          <div className={styles.filterFields}>
+            <label
+              className={`${styles.filterField} ${styles.searchField}`}
+              htmlFor="collection-task-search"
+            >
+              <span>当前窗口搜索</span>
+              <Input
+                id="collection-task-search"
+                aria-label="当前窗口搜索任务名称或编号"
+                autoComplete="off"
+                maxLength={200}
+                name="collection-task-search"
+                placeholder="当前窗口搜索任务名称或编号"
+                prefix={<Search aria-hidden="true" size={16} />}
+                value={search.query}
+                onChange={(event) =>
+                  changeSearch({ query: event.currentTarget.value }, true)
+                }
+              />
+            </label>
+            <label
+              className={styles.filterField}
+              htmlFor="collection-task-status"
+            >
+              <span>状态</span>
+              <Select
+                id="collection-task-status"
+                aria-label="任务状态"
+                options={[
+                  { value: "ALL", label: "全部状态" },
+                  { value: "ACTIVE", label: "进行中" },
+                  { value: "CLOSED", label: "已关闭" },
+                  { value: "CANCELLED", label: "已取消" },
+                ]}
+                value={search.status}
+                onChange={(status) => changeSearch({ status }, true)}
+              />
+            </label>
+            <label
+              className={styles.filterField}
+              htmlFor="collection-task-type"
+            >
+              <span>采集类型</span>
+              <Input
+                id="collection-task-type"
+                aria-label="当前窗口筛选采集类型"
+                autoComplete="off"
+                maxLength={100}
+                name="collection-task-type"
+                placeholder="当前窗口筛选类型"
+                value={search.type}
+                onChange={(event) =>
+                  changeSearch({ type: event.currentTarget.value }, true)
+                }
+              />
+            </label>
+          </div>
+          <div className={styles.toolbarStatus}>
+            <output className={styles.windowCount} aria-live="polite">
+              当前窗口 {visibleTasks.length} 条
+            </output>
+            {filtered ? (
+              <Button
+                disabled={list.isFetching}
+                icon={<RotateCcw aria-hidden="true" size={16} />}
+                onClick={() =>
+                  changeSearch({ status: "ALL", query: "", type: "" }, true)
+                }
+              >
+                重置
+              </Button>
+            ) : null}
+            <Button
+              aria-label="刷新采集任务"
+              disabled={!scope || list.isFetching}
+              icon={<RefreshCw aria-hidden="true" size={16} />}
+              onClick={() => void list.refetch()}
+            >
+              {list.isFetching ? "刷新中…" : "刷新"}
+            </Button>
+          </div>
+        </form>
+        <div className={styles.listBody}>
+          {list.error ? (
+            <PageState
+              label="采集任务列表"
+              layout="list"
+              onRetry={() => void list.refetch()}
+              requestId={requestId(list.error)}
+              state="partial"
+              description={problemDescription(
+                list.error,
+                "刷新失败，仍保留上次成功加载的采集任务。",
+              )}
+            >
+              {table}
+            </PageState>
+          ) : (
+            table
+          )}
+        </div>
+        {list.data ? (
+          <nav
+            className={styles.paginationBar}
+            aria-label="采集任务数据窗口分页"
           >
-            {table}
-          </PageState>
-        ) : (
-          table
-        )}
-      </div>
+            <span className={styles.paginationHint}>按游标浏览任务窗口</span>
+            <Space wrap>
+              <Button
+                disabled={cursorTrail.length === 0 || list.isFetching}
+                onClick={() => {
+                  const previous = cursorTrail.at(-1);
+                  setCursorTrail((trail) => trail.slice(0, -1));
+                  changeSearch({ cursor: previous || undefined }, false);
+                }}
+              >
+                上一窗口
+              </Button>
+              <Button
+                disabled={!list.data.next_cursor || list.isFetching}
+                onClick={() => {
+                  setCursorTrail((trail) => [...trail, search.cursor ?? ""]);
+                  changeSearch({
+                    cursor: list.data?.next_cursor ?? undefined,
+                  });
+                }}
+              >
+                下一窗口
+              </Button>
+            </Space>
+          </nav>
+        ) : null}
+      </section>
     ) : (
       <PageState
         action={
@@ -540,9 +699,9 @@ export function CollectionTaskPage({
   const lifecycleAction = lifecycleTarget?.action ?? "close";
   const lifecycleTitle =
     lifecycleAction === "close"
-      ? "关闭采集任务"
+      ? "确认关闭任务？"
       : lifecycleAction === "cancel"
-        ? "取消采集任务"
+        ? "确认取消任务？"
         : "重新开启采集任务";
   const lifecycleConfirm =
     lifecycleAction === "close"
@@ -562,7 +721,7 @@ export function CollectionTaskPage({
           header={{
             title: "采集任务",
             description:
-              "定义采集目标与质量要求，跟踪已接收数据包和质量进度，任务持续有效直至关闭。",
+              "任务可关联已有数据集或新建专属数据集；多个任务可以汇入同一数据集。进度按当前存储区域汇总。",
             breadcrumbs: [
               { key: "ingest", label: "采集与接收" },
               { key: "tasks", label: "采集任务" },
@@ -579,117 +738,6 @@ export function CollectionTaskPage({
               <StatusTag label="只读" status="READ_ONLY" tone="neutral" />
             ),
           }}
-          filters={
-            authorizationState === "ready" ? (
-              <FilterToolbar
-                actions={
-                  <Button
-                    aria-label="刷新采集任务"
-                    disabled={list.isFetching}
-                    icon={<RefreshCw aria-hidden="true" size={16} />}
-                    onClick={() => void list.refetch()}
-                  >
-                    刷新
-                  </Button>
-                }
-                disabled={list.isFetching}
-                label="采集任务筛选"
-                onReset={
-                  search.status !== "ALL" || filtered
-                    ? () =>
-                        changeSearch(
-                          { status: "ALL", query: "", type: "" },
-                          true,
-                        )
-                    : undefined
-                }
-              >
-                <label className={styles.filterField}>
-                  状态
-                  <Select
-                    aria-label="任务状态"
-                    options={[
-                      { value: "ALL", label: "全部状态" },
-                      { value: "ACTIVE", label: "进行中" },
-                      { value: "CLOSED", label: "已关闭" },
-                      { value: "CANCELLED", label: "已取消" },
-                    ]}
-                    value={search.status}
-                    onChange={(status) => changeSearch({ status }, true)}
-                  />
-                </label>
-                <label className={styles.filterField}>
-                  项目
-                  <Input
-                    aria-label="当前项目"
-                    autoComplete="off"
-                    readOnly
-                    value={scope?.projectId ?? ""}
-                  />
-                </label>
-                <label className={styles.filterField}>
-                  采集类型
-                  <Input
-                    aria-label="筛选采集类型"
-                    autoComplete="off"
-                    maxLength={100}
-                    placeholder="当前窗口内筛选…"
-                    value={search.type}
-                    onChange={(event) =>
-                      changeSearch({ type: event.currentTarget.value }, true)
-                    }
-                  />
-                </label>
-                <label
-                  className={`${styles.filterField} ${styles.searchField}`}
-                >
-                  搜索
-                  <Input
-                    aria-label="搜索任务名称或编号"
-                    autoComplete="off"
-                    maxLength={200}
-                    placeholder="搜索任务名称或编号…"
-                    prefix={<Search aria-hidden="true" size={15} />}
-                    value={search.query}
-                    onChange={(event) =>
-                      changeSearch({ query: event.currentTarget.value }, true)
-                    }
-                  />
-                </label>
-              </FilterToolbar>
-            ) : undefined
-          }
-          pagination={
-            authorizationState === "ready" && list.data ? (
-              <Space className={styles.pagination} wrap>
-                <Typography.Text type="secondary">
-                  当前窗口 {visibleTasks.length} 条
-                  {filtered ? ` / 加载 ${list.data.items.length} 条` : ""}
-                </Typography.Text>
-                <Button
-                  disabled={cursorTrail.length === 0 || list.isFetching}
-                  onClick={() => {
-                    const previous = cursorTrail.at(-1);
-                    setCursorTrail((trail) => trail.slice(0, -1));
-                    changeSearch({ cursor: previous || undefined }, false);
-                  }}
-                >
-                  上一窗口
-                </Button>
-                <Button
-                  disabled={!list.data.next_cursor || list.isFetching}
-                  onClick={() => {
-                    setCursorTrail((trail) => [...trail, search.cursor ?? ""]);
-                    changeSearch({
-                      cursor: list.data?.next_cursor ?? undefined,
-                    });
-                  }}
-                >
-                  下一窗口
-                </Button>
-              </Space>
-            ) : undefined
-          }
           state={content}
         />
       </section>
@@ -702,6 +750,12 @@ export function CollectionTaskPage({
               : "create"
           }
           error={save.error ?? drawerLoadError}
+          datasetError={assignableDatasets.error}
+          datasets={assignableDatasets.data ?? []}
+          datasetsLoading={
+            assignableDatasets.isPending &&
+            gateway.listAssignableDatasets !== undefined
+          }
           initialTask={drawerTask}
           loading={drawerMode === "edit" && detail.isPending}
           mode={drawerMode}
@@ -722,6 +776,7 @@ export function CollectionTaskPage({
                 }
               : undefined
           }
+          onReloadDatasets={() => void assignableDatasets.refetch()}
           onSubmit={submitDrawer}
         />
       ) : null}
@@ -766,26 +821,15 @@ export function CollectionTaskPage({
       >
         {lifecycleTarget ? (
           <Space orientation="vertical" size="middle">
-            <Alert
-              showIcon
-              title={
-                lifecycleAction === "close"
-                  ? "关闭后不再接受新的数据包关联，历史数据仍可查询。"
-                  : lifecycleAction === "cancel"
-                    ? "取消后不再接受新的数据包关联；可由有权限成员明确重新开启。"
-                    : "重新开启后，任务可再次接受新的数据包关联。"
-              }
-              type="warning"
-            />
             <p className={styles.closeIdentity}>
               <strong>{lifecycleTarget.task.name}</strong>
               <code translate="no">{lifecycleTarget.task.task_code}</code>
             </p>
             <p>
               {lifecycleAction === "close"
-                ? "关闭后可由有权限成员明确重新开启；系统不会因进度达标而自动关闭。"
+                ? "关闭后将不再接受新的数据包关联，历史数据仍可查询；有权限成员可重新开启。"
                 : lifecycleAction === "cancel"
-                  ? "取消不是删除，历史数据与审计记录仍会保留。"
+                  ? "取消后将不再接受新的数据包关联；任务不会被删除，历史数据与审计记录仍会保留。"
                   : "重新开启不会修改已关联的数据包、质量事实或目标。"}
             </p>
             {lifecycleTask.error ? (

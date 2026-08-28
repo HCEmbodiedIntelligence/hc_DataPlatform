@@ -1,22 +1,20 @@
-# 预览模块（BE-10）
+# 持久化预览模块
 
-`PreviewService` 通过消费端口 `StepReaderPort` 读取逻辑步骤，通过消费端口
-`EffectiveExclusionPort` 读取不可变标注修订，再把明确的渲染帧交给
-`MediaEncoderPort`。`LanceStepReaderAdapter` 和 `AnnotationExclusionAdapter`
-用于衔接真实的 BE-08 与 BE-09 提供方签名，而不修改任何一个提供方。
+预览拆成两个明确边界：
 
-`FFmpegHlsEncoder` 会将每张图像标准化为选定配置，为对比模式下的排除帧添加醒目的红色边框，
-并生成使用 CMAF/fMP4 初始化片段和媒体片段的 H.264 HLS。它通过参数数组调用 FFmpeg，
-绝不使用 Shell。输出先在缓存根目录下的临时目录中构建，完成后再以原子方式重命名到目标位置；
-编码失败会清理临时目录，不可能发布播放列表或不完整的片段集。
+- `PreviewControlPlaneService` 只在 API 进程中查询 PostgreSQL、创建短 TTL session、
+  幂等创建 job，并返回 201 READY 或 202 PENDING。它没有 encoder 依赖。
+- `PreviewGenerationService` 只由独立 media Temporal queue 调用，按批从 Lance 读取、把 JPEG
+  迭代流送入单个 FFmpeg `image2pipe` 进程，再将 HLS 成员上传至 MinIO/S3。playlist 最后
+  上传且全部对象校验后，先持久化精确 publication receipt，再把 `preview.artifacts` 标记为
+  READY。Temporal 取消会传入线程安全信号，终止 FFmpeg 并清理该任务的 staging。
 
-缓存键包含项目、数据集、rollout、Lance 版本、标注修订、相机、视图模式、频率、请求窗口和
-完整编码配置。缓存产物默认保留 24 小时；签名 URL 的有效期最多为 15 分钟，并在查询会话时刷新。
-无效的图像步骤绝不会被静默丢弃：编码器会收到带有 `invalid_reason` 的醒目占位图，描述信息则返回
-其源步骤/播放帧。
+客户端只能提交 allowlist `profile_id`；宽高、码率、codec、preset 和 FFmpeg threads 均由服务端
+配置。ORIGINAL `artifact_key` 不包含 annotation revision，EDITED/COMPARE 默认复用 ORIGINAL
+媒体并由时间线/前端 overlay 表达排除区间。
 
-预览媒体和缓存记录只是临时运行产物。它们不是数据集版本、永久资产、发布输入或训练源。
-运行时镜像必须按照 `backend/docs/dep-requests/BE-10.md` 的要求提供 FFmpeg/FFprobe。
-
-使用 `pytest tests/preview` 运行隔离测试。当 FFmpeg 或 FFprobe 不可用时，
-真实媒体集成测试会被跳过。
+产物使用 `derived/previews/{project_id}/{artifact_key}/`，数据库保存每个对象的精确 checksum
+清单。GC 仅清理无活动引用、无 legal/governance/retention hold 的
+`REBUILDABLE_DERIVATIVE`，绝不扫描或删除 RAW、MANIFEST、PUBLISHED_MANIFEST。
+失败 publication 也保留精确清单并立即进入 orphan GC；`DELETING` 不能被并发授权请求复活。
+维护循环逐 scope 执行 TTL/项目配额，再跨配置的 RLS scope 汇总全局高低水位并选择全局 LRU。

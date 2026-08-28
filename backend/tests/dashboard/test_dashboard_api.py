@@ -77,18 +77,19 @@ def params(**changes: str) -> dict[str, str]:
     return values
 
 
-def test_four_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[Any, ...]) -> None:
+def test_five_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[Any, ...]) -> None:
     client, _, repository = api
     expected_sections = {
         "snapshot": "sections",
         "activity": "activity",
         "coverage": "coverage",
         "pending-items": "pending_items",
+        "task-status": "section",
     }
     for endpoint, section in expected_sections.items():
         response = client.get(
             f"/api/v1/projects/project-a/dashboard/{endpoint}",
-            params=params(),
+            params={"region_code": "cn-east"} if endpoint == "task-status" else params(),
         )
         assert response.status_code == 200
         assert response.headers["Cache-Control"] == "no-store"
@@ -96,8 +97,18 @@ def test_four_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[An
         assert body["as_of"].endswith("Z") or body["as_of"].endswith("+00:00")
         assert body["project_id"] == "project-a"
         assert body["region_code"] == "cn-east"
-        assert body["from"] == "2026-08-17T08:00:00Z"
-        if endpoint == "snapshot":
+        if endpoint != "task-status":
+            assert body["from"] == "2026-08-17T08:00:00Z"
+        if endpoint == "task-status":
+            assert body["section"]["status"] == "EMPTY"
+            assert body["tasks"] == []
+            assert body["pipeline"]["task_count"] == 0
+            assert body["pipeline"]["package_count"] == 0
+            assert len(body["pipeline"]["stages"]) == 8
+            assert body["selected"] is None
+        elif endpoint == "snapshot":
+            assert response.headers["Deprecation"] == "true"
+            assert 'rel="successor-version"' in response.headers["Link"]
             assert "storage" not in body[section]
             assert body[section]["signal_pipeline"]["status"] == "EMPTY"
             assert body[section]["episodes"]["status"] == "BLOCKED"
@@ -114,8 +125,7 @@ def test_four_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[An
                 "PUBLISHED",
             ]
             assert body[section]["signal_pipeline"]["stage_counts"] == [
-                {"stage": stage, "count": 0}
-                for stage in body[section]["signal_pipeline"]["stages"]
+                {"stage": stage, "count": 0} for stage in body[section]["signal_pipeline"]["stages"]
             ]
         elif endpoint == "coverage":
             assert body[section]["status"] == "BLOCKED"

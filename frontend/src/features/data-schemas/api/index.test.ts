@@ -87,7 +87,7 @@ beforeEach(() => {
   useShellStore.getState().setSession(
     {
       actorId: "schema-publisher",
-      displayName: "Schema 发布者",
+      displayName: "数据结构发布者",
       roleIds: [],
     },
     "p17-session",

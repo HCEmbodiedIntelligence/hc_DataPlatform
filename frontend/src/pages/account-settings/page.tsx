@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Avatar, Button, Form, Input } from "antd";
+import { Alert, Avatar, Button, Form, Input, Tabs } from "antd";
 import { CalendarClock, KeyRound, ShieldCheck, UserRound } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { useToast } from "../../app/providers/ToastProvider";
 import {
@@ -24,6 +24,11 @@ import { PageState } from "../../shared/ui/state/PageState";
 import { StatusTag } from "../../shared/ui/state/StatusTag";
 import { ControlledPasswordField } from "./components/ControlledPasswordField";
 import { RecoveryEmailForm } from "./components/RecoveryEmailForm";
+import {
+  CapabilityRequestsPanel,
+  MembershipsPanel,
+  RequestHistoryPanel,
+} from "./components/AccountAccessPanels";
 import styles from "./styles.module.css";
 
 const profileFormSchema = z
@@ -522,6 +527,8 @@ function SettingsContent({
   onChangePassword,
   onReload,
   onSessionExpired,
+  activeTab,
+  onTabChange,
 }: {
   readonly account: AccountSettings;
   readonly onSaveProfile: (displayName: string) => Promise<AccountSettings>;
@@ -531,6 +538,8 @@ function SettingsContent({
   ) => Promise<PasswordChangeResult>;
   readonly onReload: () => Promise<AccountSettings | undefined>;
   readonly onSessionExpired: () => void;
+  readonly activeTab: string;
+  readonly onTabChange: (tab: string) => void;
 }) {
   const active = account.profile.status === "ACTIVE";
   const initial = account.profile.display_name.trim().slice(0, 1) || "账";
@@ -585,20 +594,56 @@ function SettingsContent({
             type="warning"
           />
         ) : null}
-        <ProfileForm
-          account={account}
-          disabled={!active}
-          onReload={onReload}
-          onSave={onSaveProfile}
-        />
-        <PasswordChangeForm
-          account={account}
-          disabled={!active}
-          onChangePassword={onChangePassword}
-        />
-        <RecoveryEmailForm
-          disabled={!active}
-          onSessionExpired={onSessionExpired}
+        <Tabs
+          activeKey={activeTab}
+          className={styles.settingsTabs}
+          items={[
+            {
+              key: "profile",
+              label: "个人资料",
+              children: (
+                <ProfileForm
+                  account={account}
+                  disabled={!active}
+                  onReload={onReload}
+                  onSave={onSaveProfile}
+                />
+              ),
+            },
+            {
+              key: "security",
+              label: "安全设置",
+              children: (
+                <div className={styles.tabStack}>
+                  <PasswordChangeForm
+                    account={account}
+                    disabled={!active}
+                    onChangePassword={onChangePassword}
+                  />
+                  <RecoveryEmailForm
+                    disabled={!active}
+                    onSessionExpired={onSessionExpired}
+                  />
+                </div>
+              ),
+            },
+            {
+              key: "memberships",
+              label: "我的组织与项目",
+              children: <MembershipsPanel />,
+            },
+            {
+              key: "capabilities",
+              label: "权限申请",
+              children: <CapabilityRequestsPanel />,
+            },
+            {
+              key: "requests",
+              label: "申请记录",
+              children: <RequestHistoryPanel />,
+            },
+          ]}
+          onChange={onTabChange}
         />
       </div>
     </div>
@@ -609,6 +654,7 @@ export function AccountSettingsPage() {
   const query = useOwnAccountProfile();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
   const principal = useShellStore((state) => state.principal);
   const updatePrincipal = useShellStore((state) => state.updatePrincipal);
@@ -616,6 +662,16 @@ export function AccountSettingsPage() {
     (state) => state.clearSensitiveState,
   );
   const setSession = useShellStore((state) => state.setSession);
+  const requestedTab = searchParams.get("tab");
+  const activeTab = [
+    "profile",
+    "security",
+    "memberships",
+    "capabilities",
+    "requests",
+  ].includes(requestedTab ?? "")
+    ? requestedTab!
+    : "profile";
 
   const expireSession = useCallback(() => {
     clearSensitiveState();
@@ -704,11 +760,15 @@ export function AccountSettingsPage() {
   } else {
     const content = (
       <SettingsContent
+        activeTab={activeTab}
         account={query.data}
         onChangePassword={changePassword}
         onReload={async () => (await query.refetch()).data}
         onSaveProfile={saveProfile}
         onSessionExpired={expireSession}
+        onTabChange={(tab) =>
+          setSearchParams(tab === "profile" ? {} : { tab }, { replace: true })
+        }
       />
     );
     state = query.isFetching ? (
@@ -755,7 +815,7 @@ export function AccountSettingsPage() {
     <StandardPageScaffold
       header={{
         title: "账户设置",
-        description: "管理个人显示信息、登录密码和恢复邮箱。",
+        description: "管理个人资料、安全设置、组织与项目关系及权限申请。",
       }}
       state={state}
     />

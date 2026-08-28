@@ -3,159 +3,201 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from collections.abc import Sequence
+from io import BytesIO
 from pathlib import Path
-from typing import Literal
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 import pytest
+from PIL import Image
 
-from hc_data_platform.preview.adapters import FFmpegHlsEncoder, PreviewEncodingError
+from hc_data_platform.preview.adapters import (
+    FFmpegHlsEncoder,
+    PreviewEncodingError,
+    PreviewGenerationCancelled,
+)
 from hc_data_platform.preview.models import (
-    EncodingProfileV1,
     PlaceholderDescriptorV1,
     PreviewRequestV1,
     RenderFrameV1,
-    ViewMode,
 )
-from hc_data_platform.preview.service import preview_cache_key
+from hc_data_platform.preview.profiles import PreviewProfileCatalog
+from hc_data_platform.preview.service import preview_artifact_key
 
 
-def preview_request(codec: Literal["h264", "vp9"] = "h264") -> PreviewRequestV1:
+def preview_request() -> PreviewRequestV1:
     return PreviewRequestV1(
         project_id="project-1",
         dataset_id="dataset-1",
         rollout_id="rollout-1",
         lance_version="7",
-        annotation_revision=3,
         camera_id="front",
-        view_mode=ViewMode.ORIGINAL,
+        profile_id="quad-h264-360p-v1",
         frequency_hz=4,
-        encoding_profile=EncodingProfileV1(
-            name=f"{codec}-cmaf-preview-v1",
-            video_codec=codec,
-            width=64,
-            height=48,
-            video_bitrate_kbps=128,
-            segment_duration_seconds=0.5,
-            preset="ultrafast",
-        ),
     )
 
 
-def test_vp9_profile_selects_the_runtime_encoder(tmp_path: Path) -> None:
-    commands: list[tuple[str, ...]] = []
+def jpeg(color: tuple[int, int, int] = (200, 40, 20)) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (32, 24), color).save(output, "JPEG")
+    return output.getvalue()
 
-    def runner(command: Sequence[str]) -> None:
-        commands.append(tuple(command))
-        if "-frames:v" not in command:
-            Path(command[-1]).write_text("#EXTM3U\n#EXT-X-ENDLIST\n", encoding="utf-8")
 
-    request = preview_request("vp9")
-    FFmpegHlsEncoder(tmp_path, runner=runner).encode(
-        cache_key=preview_cache_key(request),
+class Sink:
+    def __init__(self) -> None:
+        self.content = bytearray()
+
+    def write(self, value: bytes) -> int:
+        self.content.extend(value)
+        return len(value)
+
+    def close(self) -> None:
+        return None
+
+
+class SuccessfulProcess:
+    def __init__(self, command: list[str], **_: Any) -> None:
+        self.command = command
+        self.stdin: Sink | None = Sink()
+        self.stderr = None
+        self.returncode = 0
+        target = Path(command[-1])
+        target.write_text(
+            '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:1,\nsegment_00000.m4s\n',
+            encoding="utf-8",
+        )
+        (target.parent / "init.mp4").write_bytes(b"init")
+        (target.parent / "segment_00000.m4s").write_bytes(b"segment")
+
+    def communicate(self, timeout: float) -> tuple[bytes, bytes]:
+        assert timeout > 0
+        return b"", b""
+
+    def kill(self) -> None:
+        self.returncode = -9
+
+
+def test_one_hundred_frames_use_one_h264_process_and_no_frame_directory(
+    tmp_path: Path,
+) -> None:
+    processes: list[SuccessfulProcess] = []
+
+    def process_factory(command: list[str], **kwargs: Any) -> SuccessfulProcess:
+        process = SuccessfulProcess(command, **kwargs)
+        processes.append(process)
+        return process
+
+    request = preview_request()
+    artifact = FFmpegHlsEncoder(
+        tmp_path,
+        process_factory=process_factory,
+        profiles=PreviewProfileCatalog(("quad-h264-360p-v1",)),
+    ).encode(
+        cache_key=preview_artifact_key(request),
         request=request,
         frames=(
             RenderFrameV1(
-                playback_frame=0,
-                step_index=0,
-                timestamp_ns=0,
-                placeholder=PlaceholderDescriptorV1(
-                    invalid_reason="test placeholder",
-                    playback_frame=0,
-                    step_index=0,
-                ),
-            ),
+                playback_frame=index,
+                step_index=index,
+                timestamp_ns=index * 250_000_000,
+                image_ref=jpeg(),
+            )
+            for index in range(100)
         ),
     )
 
-    encode_command = commands[-1]
-    assert "libvpx-vp9" in encode_command
-    assert "-deadline" in encode_command
-    assert "libx264" not in encode_command
+    assert len(processes) == 1
+    command = processes[0].command
+    assert command[command.index("-c:v") + 1] == "libx264"
+    assert command[command.index("-threads") + 1] == "2"
+    assert "libvpx-vp9" not in command
+    assert command[command.index("-vf") + 1].startswith("scale=640:360:")
+    assert processes[0].stdin is None
+    assert artifact.frame_count == 100
+    assert not (tmp_path / preview_artifact_key(request) / "frames").exists()
 
 
-def _ppm(path: Path, *, red: int, green: int, blue: int) -> None:
-    width, height = 32, 24
-    path.write_bytes(
-        f"P6\n{width} {height}\n255\n".encode("ascii") + bytes((red, green, blue)) * width * height
+def test_placeholder_jpeg_is_precomputed_and_reused(tmp_path: Path) -> None:
+    encoder = FFmpegHlsEncoder(
+        tmp_path,
+        process_factory=SuccessfulProcess,
+        profiles=PreviewProfileCatalog(("quad-h264-360p-v1",)),
     )
+    first = encoder._placeholder(width=640, height=360)
+    second = encoder._placeholder(width=640, height=360)
+
+    assert first is second
+    assert first.startswith(b"\xff\xd8") and first.endswith(b"\xff\xd9")
 
 
-def _render_frames(paths: Sequence[Path]) -> tuple[RenderFrameV1, ...]:
-    return tuple(
-        RenderFrameV1(
-            playback_frame=index,
-            step_index=index,
-            timestamp_ns=index * 250_000_000,
-            image_ref=str(path),
-        )
-        for index, path in enumerate(paths)
-    )
+def test_cancellation_kills_ffmpeg_and_removes_partial_staging(tmp_path: Path) -> None:
+    processes: list[SuccessfulProcess] = []
 
+    def process_factory(command: list[str], **kwargs: Any) -> SuccessfulProcess:
+        process = SuccessfulProcess(command, **kwargs)
+        processes.append(process)
+        return process
 
-def test_ffmpeg_failure_does_not_commit_a_partial_cache_directory(tmp_path: Path) -> None:
-    commands: list[tuple[str, ...]] = []
+    checks = 0
 
-    def fail(command: Sequence[str]) -> None:
-        commands.append(tuple(command))
-        raise PreviewEncodingError("intentional failure")
+    def cancelled() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks >= 2
 
     request = preview_request()
-    cache_key = preview_cache_key(request)
-    encoder = FFmpegHlsEncoder(tmp_path, runner=fail)
-    placeholder = PlaceholderDescriptorV1(
-        invalid_reason="camera decode failed",
-        playback_frame=0,
-        step_index=0,
-    )
+    cache_key = preview_artifact_key(request)
+    with pytest.raises(PreviewGenerationCancelled):
+        FFmpegHlsEncoder(
+            tmp_path,
+            process_factory=process_factory,
+            profiles=PreviewProfileCatalog(("quad-h264-360p-v1",)),
+        ).encode(
+            cache_key=cache_key,
+            request=request,
+            frames=(
+                RenderFrameV1(
+                    playback_frame=index,
+                    step_index=index,
+                    timestamp_ns=index * 250_000_000,
+                    image_ref=jpeg(),
+                )
+                for index in range(2)
+            ),
+            cancelled=cancelled,
+        )
+
+    assert len(processes) == 1
+    assert processes[0].returncode == -9
+    assert not (tmp_path / cache_key).exists()
+    assert not tuple(tmp_path.glob(f".{cache_key}.*"))
+
+
+def test_oversized_file_is_rejected_before_reading_or_committing(tmp_path: Path) -> None:
+    source = tmp_path / "too-large.jpg"
+    source.write_bytes(jpeg() + b"x" * 2_048)
+    request = preview_request()
+    cache_root = tmp_path / "cache"
     frame = RenderFrameV1(
         playback_frame=0,
         step_index=0,
         timestamp_ns=0,
-        placeholder=placeholder,
+        image_ref=str(source),
     )
 
-    with pytest.raises(PreviewEncodingError, match="intentional failure"):
-        encoder.encode(cache_key=cache_key, request=request, frames=(frame,))
+    with pytest.raises(PreviewEncodingError, match="size limit"):
+        FFmpegHlsEncoder(
+            cache_root,
+            process_factory=SuccessfulProcess,
+            profiles=PreviewProfileCatalog(("quad-h264-360p-v1",)),
+            max_embedded_image_bytes=1_024,
+        ).encode(
+            cache_key=preview_artifact_key(request),
+            request=request,
+            frames=(frame,),
+        )
 
-    assert commands
-    assert all(isinstance(command, tuple) for command in commands)
-    assert not (tmp_path / cache_key).exists()
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_embedded_lance_image_is_materialized_only_for_the_decode_call(tmp_path: Path) -> None:
-    embedded = b"P6\n1 1\n255\n\xff\x00\x00"
-    observed_sources: list[bytes] = []
-
-    def runner(command: Sequence[str]) -> None:
-        target = Path(command[-1])
-        if "-frames:v" in command:
-            source = Path(command[command.index("-i") + 1])
-            observed_sources.append(source.read_bytes())
-            _ppm(target, red=255, green=0, blue=0)
-        else:
-            target.write_text("#EXTM3U\n#EXT-X-ENDLIST\n", encoding="utf-8")
-
-    request = preview_request()
-    cache_key = preview_cache_key(request)
-    artifact = FFmpegHlsEncoder(tmp_path, runner=runner).encode(
-        cache_key=cache_key,
-        request=request,
-        frames=(
-            RenderFrameV1(
-                playback_frame=0,
-                step_index=0,
-                timestamp_ns=0,
-                image_ref=embedded,
-            ),
-        ),
-    )
-
-    assert observed_sources == [embedded]
-    assert artifact.frame_count == 1
-    assert list((tmp_path / cache_key / "frames").glob("*.source-image")) == []
+    assert not (cache_root / preview_artifact_key(request)).exists()
 
 
 @pytest.mark.integration
@@ -163,20 +205,22 @@ def test_embedded_lance_image_is_materialized_only_for_the_decode_call(tmp_path:
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="FFmpeg/FFprobe runtime dependency is unavailable",
 )
-@pytest.mark.parametrize("codec", ["h264", "vp9"])
-def test_ffmpeg_generates_probeable_hls_with_cmaf_segments(
-    tmp_path: Path, codec: Literal["h264", "vp9"]
-) -> None:
-    source_directory = tmp_path / "source"
-    source_directory.mkdir()
-    source_paths = [source_directory / f"frame-{index}.ppm" for index in range(6)]
-    for index, source_path in enumerate(source_paths):
-        _ppm(source_path, red=index * 30, green=40, blue=200 - index * 20)
-
-    request = preview_request(codec)
-    cache_root = tmp_path / "cache"
-    render_frames = list(_render_frames(source_paths[:5]))
-    render_frames[2] = render_frames[2].model_copy(update={"excluded": True})
+def test_real_ffmpeg_generates_probeable_h264_hls(tmp_path: Path) -> None:
+    request = preview_request()
+    encoder = FFmpegHlsEncoder(
+        tmp_path / "cache",
+        profiles=PreviewProfileCatalog(("quad-h264-360p-v1",)),
+        ffmpeg_threads=1,
+    )
+    render_frames = [
+        RenderFrameV1(
+            playback_frame=index,
+            step_index=index,
+            timestamp_ns=index * 250_000_000,
+            image_ref=jpeg((index * 30, 40, 200 - index * 20)),
+        )
+        for index in range(5)
+    ]
     render_frames.append(
         RenderFrameV1(
             playback_frame=5,
@@ -189,19 +233,18 @@ def test_ffmpeg_generates_probeable_hls_with_cmaf_segments(
             ),
         )
     )
-    artifact = FFmpegHlsEncoder(cache_root).encode(
-        cache_key=preview_cache_key(request),
+
+    artifact = encoder.encode(
+        cache_key=preview_artifact_key(request),
         request=request,
         frames=render_frames,
     )
     playlist = Path(unquote(urlparse(artifact.artifact_uri).path))
-    playlist_text = playlist.read_text(encoding="utf-8")
 
     assert artifact.frame_count == 6
-    assert artifact.duration_seconds == 1.5
-    assert '#EXT-X-MAP:URI="init.mp4"' in playlist_text
-    assert (playlist.parent / "init.mp4").is_file()
+    assert '#EXT-X-MAP:URI="init.mp4"' in playlist.read_text(encoding="utf-8")
     assert list(playlist.parent.glob("segment_*.m4s"))
+    assert not (playlist.parent / "frames").exists()
 
     probe = subprocess.run(
         [
@@ -218,32 +261,33 @@ def test_ffmpeg_generates_probeable_hls_with_cmaf_segments(
         capture_output=True,
         text=True,
     )
-    stream = json.loads(probe.stdout)["streams"][0]
-    assert stream == {"codec_name": codec, "width": 64, "height": 48}
+    assert json.loads(probe.stdout)["streams"][0] == {
+        "codec_name": "h264",
+        "width": 640,
+        "height": 360,
+    }
 
 
-@pytest.mark.integration
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None,
-    reason="FFmpeg runtime dependency is unavailable",
-)
-def test_real_ffmpeg_decode_failure_leaves_no_committed_artifact(tmp_path: Path) -> None:
+def test_cleanup_removes_only_the_exact_keyed_staging_directory(tmp_path: Path) -> None:
     request = preview_request()
-    cache_key = preview_cache_key(request)
-    cache_root = tmp_path / "cache"
-    frame = RenderFrameV1(
-        playback_frame=0,
-        step_index=0,
-        timestamp_ns=0,
-        image_ref=str(tmp_path / "does-not-exist.png"),
+    encoder = FFmpegHlsEncoder(
+        tmp_path,
+        process_factory=SuccessfulProcess,
+        profiles=PreviewProfileCatalog(("quad-h264-360p-v1",)),
+    )
+    artifact = encoder.encode(
+        cache_key=preview_artifact_key(request),
+        request=request,
+        frames=(
+            RenderFrameV1(
+                playback_frame=0,
+                step_index=0,
+                timestamp_ns=0,
+                image_ref=jpeg(),
+            ),
+        ),
     )
 
-    with pytest.raises(PreviewEncodingError):
-        FFmpegHlsEncoder(cache_root).encode(
-            cache_key=cache_key,
-            request=request,
-            frames=(frame,),
-        )
+    encoder.cleanup(artifact)
 
-    assert not (cache_root / cache_key).exists()
-    assert list(cache_root.iterdir()) == []
+    assert not Path(unquote(urlparse(artifact.artifact_uri).path)).parent.exists()

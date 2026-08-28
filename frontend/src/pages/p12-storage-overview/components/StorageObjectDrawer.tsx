@@ -1,4 +1,4 @@
-import { Alert, Button, Descriptions } from "antd";
+import { Button, Descriptions } from "antd";
 import type { RefObject } from "react";
 import type { StorageInventoryFact } from "../../../entities/storage-inventory";
 import { formatByteString } from "../../../features/storage-overview/metrics-contract";
@@ -48,12 +48,6 @@ export function StorageObjectDrawer({
         </Button>
       }
     >
-      <Alert
-        type="info"
-        showIcon
-        title="只读诊断"
-        description="这里只查看对象信息，不提供下载、删除、恢复、终止分片上传或生命周期操作。"
-      />
       {state !== "ready" && state !== "loading" ? (
         <PageState
           state={state}
@@ -68,9 +62,6 @@ export function StorageObjectDrawer({
           </Descriptions.Item>
           <Descriptions.Item label="对象 ID">
             <code>{object.objectId}</code>
-          </Descriptions.Item>
-          <Descriptions.Item label="快照">
-            <code>{object.snapshotId}</code>
           </Descriptions.Item>
           <Descriptions.Item label="角色">
             <span style={objectRoleStyle}>

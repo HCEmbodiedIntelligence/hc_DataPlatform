@@ -18,12 +18,15 @@ from .access_models import (
     AccessAuditEventList,
     AccessDecisionCommand,
     AccessRequestStatus,
+    AccountAccessOverview,
+    AccountAccessRequest,
     AccountNotificationPage,
     AccountNotificationState,
     AccountNotificationUnreadCount,
     AccountProfileRecord,
     AccountProfileUpdate,
     AccountSettings,
+    AvailableOrganization,
     CapabilityRequest,
     CapabilityRequestCreate,
     CapabilityRequestList,
@@ -31,6 +34,7 @@ from .access_models import (
     MembershipRequest,
     MembershipRequestCreate,
     MembershipRequestList,
+    OrganizationMembershipRequestCreate,
     PasswordChangeCommand,
     PasswordChangeResult,
     PublicAuthConfiguration,
@@ -356,6 +360,16 @@ class AccessService:
             )
         return SessionBootstrap(
             principal=resolved.principal,
+            available_organizations=tuple(
+                AvailableOrganization(
+                    organization_id=item.organization_id,
+                    organization_name=item.organization_name,
+                    member_status=item.member_status,
+                )
+                for item in self._repository.list_organization_memberships(
+                    principal_id=resolved.principal.principal_id
+                )
+            ),
             available_scopes=resolved.scopes,
             platform_capabilities=resolved.platform_capabilities,
             capability_revision=resolved.capability_revision,
@@ -541,6 +555,62 @@ class AccessService:
     def notification_unread_count(self, *, auth: AuthContext) -> AccountNotificationUnreadCount:
         return AccountNotificationUnreadCount(
             unread_count=self._repository.count_unread_notifications(principal_id=auth.subject_id)
+        )
+
+    def account_access_overview(self, *, auth: AuthContext) -> AccountAccessOverview:
+        return self._repository.account_access_overview(principal_id=auth.subject_id)
+
+    def create_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        command: OrganizationMembershipRequestCreate,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        self._abuse_protection.check_authenticated(
+            operation="organization-membership.create", subject_hint=auth.subject_id
+        )
+        return self._repository.create_organization_membership_request(
+            auth=auth,
+            organization_id_or_join_code=command.organization_id_or_join_code,
+            reason=command.reason,
+            idempotency_key=idempotency_key,
+            request_id=request_id,
+        )
+
+    def decide_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        target_status: AccessRequestStatus,
+        command: AccessDecisionCommand,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        return self._repository.decide_organization_membership_request(
+            auth=auth,
+            access_request_id=access_request_id,
+            target_status=target_status,
+            reason=command.reason,
+            idempotency_key=idempotency_key,
+            request_id=request_id,
+        )
+
+    def withdraw_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        return self._repository.withdraw_organization_membership_request(
+            auth=auth,
+            access_request_id=access_request_id,
+            idempotency_key=idempotency_key,
+            request_id=request_id,
         )
 
     def notifications(

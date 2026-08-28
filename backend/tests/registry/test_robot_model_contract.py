@@ -24,6 +24,7 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     assert robot_model_paths == {
         f"{root}/robot-models",
         f"{root}/robot-model-versions/{{version_id}}",
+        f"{root}/robot-model-versions/{{version_id}}:create-draft",
         f"{root}/robot-model-versions/{{version_id}}:preflight-publish",
         f"{root}/robot-model-versions/{{version_id}}:publish",
         f"{root}/robot-model-versions/{{version_id}}/joint-mappings",
@@ -35,6 +36,7 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
         f"{root}/robot-model-versions/{{version_id}}/assets/{{asset_id}}/download",
     }
     assert paths[f"{root}/robot-models"]["get"]["operationId"] == "listRobotModels"
+    assert paths[f"{root}/robot-models"]["post"]["operationId"] == "createRobotModel"
     assert (
         paths[f"{root}/robot-model-versions/{{version_id}}"]["get"]["operationId"]
         == "getRobotModelVersion"
@@ -107,3 +109,9 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     )
     receipt_text = receipt_migration.read_text(encoding="utf-8")
     assert "registry.robot_model_command_receipts" in receipt_text
+
+    creation_migration = (
+        Path(__file__).parents[2] / "migrations/registry/0006_robot_model_creation.sql"
+    )
+    creation_text = creation_migration.read_text(encoding="utf-8")
+    assert "CREATE_MODEL_DRAFT" in creation_text

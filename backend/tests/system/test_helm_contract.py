@@ -87,6 +87,9 @@ def test_api_and_worker_have_probes_resources_and_rolling_updates() -> None:
     assert "serviceVersion" in values["backend"]["config"]
     assert "HC_WORKFLOW_ACTIVITY_FACTORY" in configmap
     assert "HC_OUTBOX_SCOPES" in configmap
+    assert "HC_STORAGE_INVENTORY_SCOPES" in configmap
+    assert "HC_STORAGE_INVENTORY_INTERVAL_SECONDS" in configmap
+    assert "HC_PREVIEW_GC_INTERVAL_SECONDS" in configmap
     assert "HC_ARTIFACT_PREFIX" in configmap
     assert "HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT" in configmap
     assert "HC_AUTO_ANNOTATION_PROVIDER_MODELS" in configmap
@@ -125,6 +128,10 @@ def test_api_and_worker_have_probes_resources_and_rolling_updates() -> None:
         outbox_scopes = json.loads(session_config["outboxScopes"])
         assert outbox_scopes
         assert all(len(scope.split("/")) == 3 for scope in outbox_scopes)
+        inventory_scopes = json.loads(session_config["storageInventoryScopes"])
+        assert inventory_scopes == outbox_scopes
+        assert session_config["storageInventoryIntervalSeconds"] == "3600"
+        assert session_config["previewGcIntervalSeconds"] == "300"
         assert session_config["sessionIdleTtlSeconds"] == "1800"
         assert session_config["sessionAbsoluteTtlSeconds"] == "86400"
         assert session_config["sessionTouchIntervalSeconds"] == "60"

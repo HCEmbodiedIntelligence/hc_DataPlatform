@@ -58,8 +58,8 @@ const categoryLabels = {
 
 const roleLabels: Record<ObjectRole, string> = {
   RAW: "Raw",
-  MANIFEST: "Manifest",
-  PUBLISHED_MANIFEST: "已发布 Manifest",
+  MANIFEST: "数据清单",
+  PUBLISHED_MANIFEST: "已发布数据清单",
   REBUILDABLE_DERIVATIVE: "可重建衍生物",
   OTHER: "其他",
 };
@@ -212,8 +212,8 @@ interface PolicyFormValues extends LifecyclePolicyCommand {}
 export function LifecycleProtectionSummary() {
   const protectedObjects = [
     { key: "raw", label: "Raw", detail: "源数据不可物理清理" },
-    { key: "manifest", label: "Manifest", detail: "采集事实永久保留" },
-    { key: "published", label: "已发布 Manifest", detail: "发布血缘永久保留" },
+    { key: "manifest", label: "数据清单", detail: "采集事实永久保留" },
+    { key: "published", label: "已发布数据清单", detail: "发布血缘永久保留" },
   ] as const;
 
   return (

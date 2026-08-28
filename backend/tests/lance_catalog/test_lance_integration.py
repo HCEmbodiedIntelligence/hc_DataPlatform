@@ -110,6 +110,7 @@ def test_real_lance_shared_dataset_idempotency_and_compaction(tmp_path: Path) ->
     replayed_version, _ = service.commit_fragment(retry, first[1])
 
     assert replayed_version == first_version
+    assert not tuple((tmp_path / "_attempts").rglob("*.lance"))
     assert second_version.dataset_uri.endswith(
         "/project-a/dataset-a/schema-1/30hz/aligned_steps.lance"
     )

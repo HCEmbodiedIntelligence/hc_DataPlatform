@@ -44,6 +44,7 @@ import {
   episodeRevisionWireSchema,
   jobAcceptedWireSchema,
   operationalInventoryPageWireSchema,
+  publishedDatasetManifestWireSchema,
   requiredStoragePageWireSchema,
   returnReviewCommandWireSchema,
   returnReviewResultWireSchema,
@@ -64,8 +65,10 @@ export type DatasetListApiFilters = Readonly<{
   robotModelId?: string;
   robotId?: string;
   task?: string;
+  tag?: string;
   scene?: string;
   assetState?: string;
+  workflowState?: "pendingReview" | "returned" | "actionableDraft";
   storageClass?: string;
   channels?: readonly string[];
   channelMatch?: "all" | "any";
@@ -110,6 +113,12 @@ export type EpisodeRevisionHistoryApiFilters = Readonly<{
   after?: string;
   before?: string;
   limit?: 10 | 20 | 50;
+}>;
+
+export type PublishDatasetVersionCommand = Readonly<{
+  datasetId: DatasetId;
+  datasetVersion: string;
+  baseLanceVersion: string;
 }>;
 
 const datasetSort = {
@@ -248,9 +257,12 @@ function aggregateQuery(
     q: filters.q,
     robotModelId: filters.robotModelId,
     robotId: filters.robotId,
-    task: filters.collectionTaskId ?? filters.task,
+    collectionTaskId: filters.collectionTaskId,
+    task: filters.task,
+    tag: filters.tag,
     scene: filters.scene,
     assetState: filters.assetState,
+    workflowState: filters.workflowState,
     storageClass: filters.storageClass,
     channels: filters.channels,
     channelMatch: filters.channelMatch,
@@ -374,6 +386,29 @@ export async function fetchDatasetVersions(
     }
   });
   return adaptVersionPage(parsed);
+}
+
+export async function publishDatasetVersion(command: PublishDatasetVersionCommand) {
+  const endpoint = "/datasets/publications";
+  const raw = await request<unknown>({
+    method: "POST",
+    path: endpoint,
+    body: {
+      project_id: projectId(),
+      dataset_id: command.datasetId,
+      dataset_version: command.datasetVersion,
+      base_lance_version: command.baseLanceVersion,
+    },
+  });
+  const manifest = parse(publishedDatasetManifestWireSchema, raw, endpoint);
+  if (
+    manifest.dataset_id !== command.datasetId ||
+    manifest.dataset_version !== command.datasetVersion ||
+    manifest.base_lance_version !== command.baseLanceVersion
+  ) {
+    contractMismatch("发布结果与请求的数据集版本身份不一致");
+  }
+  return manifest;
 }
 
 export async function fetchDatasetVersionSchemaSummary(
@@ -647,7 +682,7 @@ export async function fetchVersionSchema(
     endpoint,
   );
   if (parsed.snapshot_token !== snapshotToken)
-    contractMismatch("Version Schema snapshot token 不一致");
+    contractMismatch("数据版本的数据结构固定标识不一致");
   return adaptVersionSchema(parsed);
 }
 

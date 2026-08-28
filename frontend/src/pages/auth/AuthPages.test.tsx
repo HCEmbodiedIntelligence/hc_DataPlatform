@@ -68,6 +68,7 @@ function renderLogin() {
           <Route path="/auth/login" element={<LoginRoute />} />
           <Route path="/auth/session-expired" element={<LocationProbe />} />
           <Route path="/account/empty" element={<LocationProbe />} />
+          <Route path="/account" element={<LocationProbe />} />
           <Route path="/" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
@@ -119,6 +120,7 @@ function renderEmptyAccount() {
       <MemoryRouter initialEntries={["/account/empty"]}>
         <Routes>
           <Route path="/account/empty" element={<EmptyAccountRoute />} />
+          <Route path="/account" element={<LocationProbe />} />
           <Route path="/" element={<LocationProbe />} />
           <Route path="/auth/login" element={<LocationProbe />} />
         </Routes>
@@ -562,7 +564,7 @@ describe("E01 authentication pages", () => {
     expect(submit).toBeEnabled();
     await user.click(submit);
     expect(await screen.findByTestId("location")).toHaveTextContent(
-      "/account/empty",
+      "/",
     );
 
     const challengeCall = fetchMock.mock.calls.find(([url, init]) => {
@@ -676,7 +678,7 @@ describe("E01 authentication pages", () => {
     await user.keyboard("{Enter}");
 
     expect(await screen.findByTestId("location")).toHaveTextContent(
-      "/account/empty",
+      "/",
     );
     expect(useShellStore.getState().sessionToken).toBe("session-token");
     expect(useShellStore.getState().principal?.displayName).toBe(
@@ -799,6 +801,7 @@ describe("E01 authentication pages", () => {
               }
             />
             <Route path="/account/empty" element={<LocationProbe />} />
+            <Route path="/account" element={<LocationProbe />} />
             <Route path="/auth/session-expired" element={<LocationProbe />} />
             <Route path="/" element={<LocationProbe />} />
           </Routes>
@@ -817,7 +820,7 @@ describe("E01 authentication pages", () => {
     await user.type(screen.getByLabelText("密码"), "password-b");
     await user.click(screen.getByRole("button", { name: /^\s*登\s*录\s*$/u }));
     expect(await screen.findByTestId("location")).toHaveTextContent(
-      "/account/empty",
+      "/",
     );
     expect(useShellStore.getState().sessionToken).toBe("session-token-b");
 
@@ -869,7 +872,7 @@ describe("E01 authentication pages", () => {
     ).toBe("Bearer session-token-a");
     expect(useShellStore.getState().sessionToken).toBe("session-token-b");
     expect(useShellStore.getState().principal?.actorId).toBe("principal-b");
-    expect(screen.getByTestId("location")).toHaveTextContent("/account/empty");
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
   });
 
   it("revokes a safe token captured before a malformed session response is rejected", async () => {
@@ -1284,194 +1287,26 @@ describe("E01 authentication pages", () => {
     expect(screen.queryByText(/20–10/u)).not.toBeInTheDocument();
   });
 
-  it("logs out with only the opaque session when a stale project scope is persisted", async () => {
-    const user = userEvent.setup();
+  it("redirects the retired empty-account address to the shared landing when signed in", async () => {
     useShellStore
       .getState()
       .setSession(
         { actorId: "principal-empty", displayName: "Empty", roleIds: [] },
         "empty-session-token",
       );
-    useShellStore.getState().setScope({
-      organizationId: "stale-organization",
-      projectId: "stale-project",
-      regionCode: "stale-region",
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }));
-    vi.stubGlobal("fetch", fetchMock);
     renderEmptyAccount();
 
-    await user.click(screen.getByRole("button", { name: "退出登录" }));
+    expect(await screen.findByTestId("location")).toHaveTextContent(
+      "/",
+    );
+    expect(useShellStore.getState().sessionToken).toBe("empty-session-token");
+  });
+
+  it("redirects the retired empty-account address to login when signed out", async () => {
+    renderEmptyAccount();
+
     expect(await screen.findByTestId("location")).toHaveTextContent(
       "/auth/login",
     );
-
-    const headers = new Headers(
-      (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers,
-    );
-    expect(headers.get("Authorization")).toBe("Bearer empty-session-token");
-    expect(headers.get("X-Organization-Id")).toBeNull();
-    expect(headers.get("X-Project-Id")).toBeNull();
-    expect(headers.get("X-Region-Code")).toBeNull();
-  });
-
-  it("submits membership and capability requests through the formal organization-project endpoints", async () => {
-    const user = userEvent.setup();
-    useShellStore
-      .getState()
-      .setSession(
-        { actorId: "principal-empty", displayName: "empty-user", roleIds: [] },
-        "empty-session-token",
-      );
-    const membership = {
-      request_id: "membership-request-a",
-      organization_id: "organization-real-a",
-      project_id: "project-real-a",
-      requester_id: "principal-empty",
-      status: "PENDING",
-      reason: "加入采集项目",
-      created_at: "2026-08-18T00:00:00Z",
-      updated_at: "2026-08-18T00:00:00Z",
-      revision: 1,
-    };
-    const capability = {
-      ...membership,
-      request_id: "capability-request-a",
-      capability_keys: ["collection.upload", "annotation.write"],
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(membership), {
-          status: 201,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(capability), {
-          status: 201,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    renderEmptyAccount();
-
-    await user.click(screen.getByRole("button", { name: "申请加入项目" }));
-    await user.type(screen.getByLabelText("组织 ID"), "organization-real-a");
-    await user.type(screen.getByLabelText("项目 ID"), "project-real-a");
-    await user.type(screen.getByLabelText("申请说明（选填）"), "加入采集项目");
-    await user.click(screen.getByRole("button", { name: "提交加入申请" }));
-    expect(await screen.findByText("项目加入申请已提交")).toBeVisible();
-
-    await user.click(screen.getByRole("button", { name: "申请权限" }));
-    await user.type(
-      screen.getByLabelText(/Capability（逗号或换行分隔）/u),
-      "collection.upload, annotation.write, collection.upload",
-    );
-    await user.click(screen.getByRole("button", { name: "提交权限申请" }));
-    expect(await screen.findByText("权限申请已提交")).toBeVisible();
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/v1/organizations/organization-real-a/projects/project-real-a/membership-requests",
-    );
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "/api/v1/organizations/organization-real-a/projects/project-real-a/capability-requests",
-    );
-    const membershipBody = JSON.parse(
-      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
-    );
-    const capabilityBody = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
-    );
-    expect(membershipBody).toEqual({ reason: "加入采集项目" });
-    expect(capabilityBody).toEqual({
-      capability_keys: ["collection.upload", "annotation.write"],
-      reason: "加入采集项目",
-    });
-    for (const call of fetchMock.mock.calls) {
-      const headers = new Headers((call[1] as RequestInit).headers);
-      expect(headers.get("Authorization")).toBe("Bearer empty-session-token");
-      expect(headers.get("Idempotency-Key")).toBeTruthy();
-      expect(headers.get("X-Organization-Id")).toBeNull();
-      expect(headers.get("X-Project-Id")).toBeNull();
-    }
-  });
-
-  it("refreshes approved membership before capability and enters the shell only after grants exist", async () => {
-    const user = userEvent.setup();
-    useShellStore
-      .getState()
-      .setSession(
-        { actorId: "principal-empty", displayName: "empty-user", roleIds: [] },
-        "empty-session-token",
-      );
-    const principal = {
-      principal_id: "principal-empty",
-      username: "empty-user",
-      display_name: "Empty User",
-      status: "ACTIVE",
-      created_at: "2026-08-18T00:00:00Z",
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            principal,
-            available_scopes: [
-              {
-                organization_id: "organization-real-a",
-                project_id: "project-real-a",
-                region_codes: [],
-                project_wide: true,
-                capabilities: [],
-              },
-            ],
-            capability_revision: 1,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            principal,
-            available_scopes: [
-              {
-                organization_id: "organization-real-a",
-                project_id: "project-real-a",
-                region_codes: [],
-                project_wide: true,
-                capabilities: ["collection.upload", "annotation.write"],
-              },
-            ],
-            capability_revision: 2,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    renderEmptyAccount();
-
-    await user.click(screen.getByRole("button", { name: "申请加入项目" }));
-    await user.click(screen.getByRole("button", { name: "审批后刷新" }));
-    expect(
-      await screen.findByRole("heading", { name: "申请项目权限" }),
-    ).toBeVisible();
-    expect(screen.getByText(/项目加入已生效/u)).toBeVisible();
-    expect(useShellStore.getState().scope).toEqual({
-      organizationId: "organization-real-a",
-      projectId: "project-real-a",
-    });
-
-    await user.click(screen.getByRole("button", { name: "审批后刷新" }));
-    expect(await screen.findByTestId("location")).toHaveTextContent("/");
-    expect(useShellStore.getState().authorization?.capabilities).toEqual([
-      "collection.upload",
-      "annotation.write",
-    ]);
   });
 });

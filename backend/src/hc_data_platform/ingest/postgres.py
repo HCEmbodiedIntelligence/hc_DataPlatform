@@ -25,6 +25,7 @@ from .models import (
     UploadPart,
     UploadSession,
 )
+from .persistence import source_recording_duplicate
 
 
 class PostgresIngestPersistence:
@@ -100,6 +101,15 @@ class PostgresIngestPersistence:
             return cast(UploadSession, persisted)
         except Exception as exc:
             connection.rollback()
+            if (
+                rollout.source_fingerprint is not None
+                and _constraint_name(exc) == "rollouts_project_source_fingerprint_uidx"
+            ):
+                existing = self.get_rollout_by_source_fingerprint(
+                    rollout.project_id, rollout.source_fingerprint
+                )
+                if existing is not None:
+                    raise source_recording_duplicate(existing) from exc
             if _has_sqlstate(exc, "23505"):
                 raise problem(
                     status=409,
@@ -132,6 +142,7 @@ class PostgresIngestPersistence:
             SELECT project_id, region_code, collection_job_id, rollout_id,
                    collection_session_id, recording_request_id, data_package_id,
                    pico_instance_id, sequence_no, robot_id, source_sha256,
+                   source_fingerprint,
                    status, created_at, updated_at
             FROM ingest.rollouts WHERE project_id = %s AND rollout_id = %s
             """,
@@ -145,10 +156,29 @@ class PostgresIngestPersistence:
             SELECT project_id, region_code, collection_job_id, rollout_id,
                    collection_session_id, recording_request_id, data_package_id,
                    pico_instance_id, sequence_no, robot_id, source_sha256,
+                   source_fingerprint,
                    status, created_at, updated_at
             FROM ingest.rollouts WHERE project_id = %s AND data_package_id = %s
             """,
             (project_id, data_package_id),
+            Rollout,
+        )
+
+    def get_rollout_by_source_fingerprint(
+        self, project_id: str, source_fingerprint: str
+    ) -> Rollout | None:
+        return self._get_model(
+            """
+            SELECT project_id, region_code, collection_job_id, rollout_id,
+                   collection_session_id, recording_request_id, data_package_id,
+                   pico_instance_id, sequence_no, robot_id, source_sha256,
+                   source_fingerprint,
+                   status, created_at, updated_at
+            FROM ingest.rollouts
+            WHERE project_id = %s AND source_fingerprint = %s
+              AND duplicate_of_rollout_id IS NULL
+            """,
+            (project_id, source_fingerprint),
             Rollout,
         )
 
@@ -768,8 +798,10 @@ class PostgresIngestPersistence:
                 project_id, region_code, collection_job_id, rollout_id,
                 collection_session_id, recording_request_id, data_package_id,
                 pico_instance_id, sequence_no, robot_id, source_sha256,
-                status, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                source_fingerprint, status, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             ON CONFLICT (project_id, data_package_id) DO UPDATE SET
                 status = EXCLUDED.status, updated_at = EXCLUDED.updated_at
             WHERE ingest.rollouts.region_code = EXCLUDED.region_code
@@ -781,6 +813,8 @@ class PostgresIngestPersistence:
               AND ingest.rollouts.sequence_no = EXCLUDED.sequence_no
               AND ingest.rollouts.robot_id = EXCLUDED.robot_id
               AND ingest.rollouts.source_sha256 = EXCLUDED.source_sha256
+              AND ingest.rollouts.source_fingerprint IS NOT DISTINCT FROM
+                  EXCLUDED.source_fingerprint
             """,
             (
                 rollout.project_id,
@@ -794,6 +828,7 @@ class PostgresIngestPersistence:
                 rollout.sequence_no,
                 rollout.robot_id,
                 rollout.source_sha256,
+                rollout.source_fingerprint,
                 rollout.status.value,
                 rollout.created_at,
                 rollout.updated_at,
@@ -962,3 +997,15 @@ def _has_sqlstate(error: BaseException, expected: str) -> bool:
         cause = current.__cause__
         current = cause if isinstance(cause, BaseException) else None
     return False
+
+
+def _constraint_name(error: BaseException) -> str | None:
+    current: BaseException | None = error
+    while current is not None:
+        diagnostic = getattr(current, "diag", None)
+        constraint = getattr(diagnostic, "constraint_name", None)
+        if isinstance(constraint, str):
+            return constraint
+        cause = current.__cause__
+        current = cause if isinstance(cause, BaseException) else None
+    return None

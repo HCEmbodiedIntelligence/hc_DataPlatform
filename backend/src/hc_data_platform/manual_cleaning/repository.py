@@ -35,6 +35,7 @@ class ManualIssueFilters:
     statuses: tuple[str, ...] = ()
     issue_types: tuple[str, ...] = ()
     severities: tuple[str, ...] = ()
+    discovery_sources: tuple[str, ...] = ()
     assignee_id: str | None = None
 
 
@@ -63,6 +64,14 @@ class ManualIssueRepository(Protocol):
         episode_id: str,
         revision_id: str,
         stream_id: str,
+    ) -> ManualIssueSourceFacts | None: ...
+
+    def source_facts_for_annotation_task(
+        self,
+        *,
+        scope: ManualIssueScope,
+        task_id: str,
+        stream_ref: str,
     ) -> ManualIssueSourceFacts | None: ...
 
     def create_issue(
@@ -144,6 +153,8 @@ def _matches(record: ManualIssueRecord, filters: ManualIssueFilters) -> bool:
         return False
     if filters.severities and record.severity not in filters.severities:
         return False
+    if filters.discovery_sources and record.discovery_source not in filters.discovery_sources:
+        return False
     return (
         filters.assignee_id is None
         or record.assignee is not None
@@ -160,6 +171,7 @@ class InMemoryManualIssueRepository:
         organization_projects: tuple[tuple[str, str], ...] = (),
         issues: tuple[ManualIssueRecord, ...] = (),
         source_facts: tuple[ManualIssueSourceFacts, ...] = (),
+        annotation_source_facts: tuple[tuple[str, str, ManualIssueSourceFacts], ...] = (),
         drafts: tuple[ManualCleaningDraftRecord, ...] = (),
         resolution_candidates: tuple[ManualIssueResolutionCandidate, ...] = (),
     ) -> None:
@@ -177,6 +189,10 @@ class InMemoryManualIssueRepository:
                 item.stream_id,
             ): item
             for item in source_facts
+        }
+        self._annotation_sources = {
+            (*_scope_key(item.scope), task_id, stream_ref): item
+            for task_id, stream_ref, item in annotation_source_facts
         }
         self._drafts = {_issue_key(item.scope, item.draft_id): item for item in drafts}
         self._resolution_candidates = {
@@ -217,6 +233,16 @@ class InMemoryManualIssueRepository:
             return self._sources.get(
                 _source_key(scope, version_id, episode_id, revision_id, stream_id)
             )
+
+    def source_facts_for_annotation_task(
+        self,
+        *,
+        scope: ManualIssueScope,
+        task_id: str,
+        stream_ref: str,
+    ) -> ManualIssueSourceFacts | None:
+        with self._lock:
+            return self._annotation_sources.get((*_scope_key(scope), task_id, stream_ref))
 
     def create_issue(
         self, *, record: ManualIssueRecord, audit_event: ManualIssueAuditEvent
@@ -400,6 +426,11 @@ class PostgresManualIssueRepository:
                    AND (cardinality(%s::text[]) = 0 OR status = ANY(%s::text[]))
                    AND (cardinality(%s::text[]) = 0 OR issue_type = ANY(%s::text[]))
                    AND (cardinality(%s::text[]) = 0 OR severity = ANY(%s::text[]))
+                   AND (
+                        cardinality(%s::text[]) = 0
+                        OR COALESCE(issue_document ->> 'discovery_source', 'DATA_VIEWER')
+                           = ANY(%s::text[])
+                   )
                    AND (%s::text IS NULL OR assignee_id = %s)
                 """,
                 (
@@ -420,6 +451,8 @@ class PostgresManualIssueRepository:
                     list(filters.issue_types),
                     list(filters.severities),
                     list(filters.severities),
+                    list(filters.discovery_sources),
+                    list(filters.discovery_sources),
                     filters.assignee_id,
                     filters.assignee_id,
                 ),
@@ -503,6 +536,86 @@ class PostgresManualIssueRepository:
                 stream_end_ns=stream.t_end_ns,
                 schema_snapshot_id=str(row["schema_snapshot_id"]),
             )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def source_facts_for_annotation_task(
+        self,
+        *,
+        scope: ManualIssueScope,
+        task_id: str,
+        stream_ref: str,
+    ) -> ManualIssueSourceFacts | None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT task.rollout_id, revision.revision_document,
+                       schema.schema_snapshot_id
+                  FROM annotation.annotation_tasks AS task
+                  JOIN dataset_registry.dataset_version_episode_revisions AS revision
+                    ON revision.organization_id = %s
+                   AND revision.project_id = task.project_id
+                   AND revision.region_code = task.region_code
+                   AND revision.dataset_id = task.dataset_id
+                   AND revision.version_id = 'version_lance_' || task.dataset_version::text
+                  JOIN dataset_registry.dataset_version_schema_details AS schema
+                    ON schema.organization_id = revision.organization_id
+                   AND schema.project_id = revision.project_id
+                   AND schema.region_code = revision.region_code
+                   AND schema.dataset_id = revision.dataset_id
+                   AND schema.version_id = revision.version_id
+                 WHERE task.task_id = %s
+                   AND task.project_id = %s
+                   AND task.region_code = %s
+                 ORDER BY revision.ordinal DESC
+                """,
+                (scope.organization_id, task_id, scope.project_id, scope.region_code),
+            )
+            for raw in cursor.fetchall():
+                row = _row(cursor, raw)
+                rollout_id = str(row["rollout_id"])
+                revision = DatasetPageEpisodeRevision.model_validate(
+                    _decode_json(row["revision_document"])
+                )
+                stream = next(
+                    (
+                        item
+                        for item in revision.streams
+                        if (
+                            item.episode_stream_id == stream_ref
+                            or item.channel_path == stream_ref
+                            or item.preview_binding is not None
+                            and item.preview_binding.camera_id == stream_ref
+                            or item.data_binding is not None
+                            and item.data_binding.modality_key == stream_ref
+                        )
+                        and (
+                            item.preview_binding is not None
+                            and item.preview_binding.rollout_id == rollout_id
+                            or item.data_binding is not None
+                            and item.data_binding.rollout_id == rollout_id
+                        )
+                    ),
+                    None,
+                )
+                if stream is None:
+                    continue
+                return ManualIssueSourceFacts(
+                    scope=scope,
+                    dataset_id=revision.dataset_id,
+                    version_id=revision.version_id,
+                    episode_id=revision.episode_id,
+                    revision_id=revision.revision_id,
+                    stream_id=stream.episode_stream_id,
+                    stream_channel_path=stream.channel_path,
+                    stream_start_ns=stream.t_start_ns,
+                    stream_end_ns=stream.t_end_ns,
+                    schema_snapshot_id=str(row["schema_snapshot_id"]),
+                )
+            return None
         finally:
             cursor.close()
             connection.close()

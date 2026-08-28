@@ -70,7 +70,7 @@ def test_formal_fragment_matches_runtime_router_and_resolves_local_refs() -> Non
     app.include_router(router)
     generated = app.openapi()
     assert operations(fragment) == operations(generated)
-    assert len(operations(fragment)) == 8
+    assert len(operations(fragment)) == 9
 
     for ref in local_refs(fragment):
         current: object = fragment
@@ -85,7 +85,18 @@ def test_formal_fragment_matches_runtime_router_and_resolves_local_refs() -> Non
 
 def test_formal_schema_contains_only_confirmed_task_fields() -> None:
     fragment = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
-    names = property_names(fragment["components"]["schemas"])
+    schemas = fragment["components"]["schemas"]
+    names = property_names(
+        {
+            name: schemas[name]
+            for name in (
+                "CollectionTask",
+                "CreateCollectionTask",
+                "UpdateCollectionTask",
+                "CollectionTarget",
+            )
+        }
+    )
     forbidden = {
         "assignment",
         "assignee",
@@ -112,6 +123,7 @@ def test_formal_schema_contains_only_confirmed_task_fields() -> None:
         "collection_task_id",
         "organization_id",
         "project_id",
+        "dataset_id",
         "task_code",
         "name",
         "type",
@@ -222,4 +234,5 @@ def test_explicit_task_lifecycle_operations_are_limited_to_close_cancel_and_reop
         "cancelCollectionTask",
         "reopenCollectionTask",
         "getCollectionTaskProgress",
+        "listCollectionTaskPackages",
     }

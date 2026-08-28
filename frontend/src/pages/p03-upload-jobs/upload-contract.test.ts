@@ -27,7 +27,11 @@ function folderFile(
   return file;
 }
 
-function folderManifest(dataPackageId: string, rawPath = "recording.mcap") {
+function folderManifest(
+  dataPackageId: string,
+  rawPath = "recording.mcap",
+  sourceEpisode?: number,
+) {
   return JSON.stringify({
     project_id: "project-folder",
     task_id: "task-folder",
@@ -58,6 +62,16 @@ function folderManifest(dataPackageId: string, rawPath = "recording.mcap") {
     crc64: "1",
     compression: "none",
     recorder_version: "folder-test",
+    ...(sourceEpisode === undefined
+      ? {}
+      : {
+          source_recording: {
+            kind: "HUGGING_FACE_EPISODE",
+            repository: "aractingi/droid_100",
+            resolved_revision: "e86f5657cac0cd48c509543e4c14c6a31352b0cc",
+            episode_index: sourceEpisode,
+          },
+        }),
   });
 }
 
@@ -220,6 +234,31 @@ describe("P03 formal upload contract helpers", () => {
       expect.objectContaining({
         relativePath: "factory/a/rollout_manifest.json",
         code: "RAW_FILE_MISSING",
+      }),
+    ]);
+  });
+
+  it("rejects two converter artifacts for the same source episode in one selection", async () => {
+    const result = await discoverFolderUploadBundles([
+      folderFile(
+        [folderManifest("package-converter-v1", "recording.mcap", 0)],
+        "rollout_manifest.json",
+        "factory/v1/rollout_manifest.json",
+      ),
+      folderFile(["v1"], "recording.mcap", "factory/v1/recording.mcap"),
+      folderFile(
+        [folderManifest("package-converter-v2", "recording.mcap", 0)],
+        "rollout_manifest.json",
+        "factory/v2/rollout_manifest.json",
+      ),
+      folderFile(["v2"], "recording.mcap", "factory/v2/recording.mcap"),
+    ]);
+
+    expect(result.bundles).toHaveLength(1);
+    expect(result.failures).toEqual([
+      expect.objectContaining({
+        code: "SOURCE_RECORDING_DUPLICATE",
+        detail: expect.stringContaining("package-converter-v1"),
       }),
     ]);
   });

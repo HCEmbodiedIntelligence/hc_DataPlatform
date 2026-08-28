@@ -163,7 +163,7 @@ function AccessApprovalVisualFixture({
     order: "recent",
     page: 1,
     pageSize: 10,
-    drawer: "open",
+    drawer: "closed",
   });
   const [memberships, setMemberships] = useState(membershipRows);
   const [capabilities, setCapabilities] = useState(capabilityRows);

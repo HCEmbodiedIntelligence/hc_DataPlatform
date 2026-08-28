@@ -32,4 +32,21 @@ describe("dashboardQueryCodec", () => {
       ),
     ).toEqual({ range: "24h" });
   });
+
+  it("round-trips an allowlisted task selection without losing the range", () => {
+    const params = dashboardQueryCodec.build({
+      range: "7d",
+      taskId: "task.alpha-01",
+    });
+    expect(params.toString()).toBe("task_id=task.alpha-01&range=7d");
+    expect(dashboardQueryCodec.parse(params)).toEqual({
+      range: "7d",
+      taskId: "task.alpha-01",
+    });
+    expect(
+      dashboardQueryCodec.parse(
+        new URLSearchParams("task_id=../unsafe&range=30d"),
+      ),
+    ).toEqual({ range: "30d" });
+  });
 });

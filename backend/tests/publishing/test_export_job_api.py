@@ -19,9 +19,13 @@ from hc_data_platform.publishing.memory import (
     InMemoryPublishedManifestRepository,
 )
 from hc_data_platform.publishing.models import (
+    ApprovedAnnotationSnapshotV1,
+    CatalogRolloutSnapshotV1,
+    DerivedStatus,
     ExportStepV1,
     PublishedDatasetManifestV1,
     PublishedRolloutV1,
+    QualityStatus,
     StepRangeV1,
 )
 from hc_data_platform.publishing.router import router as publishing_router
@@ -121,8 +125,27 @@ def export_api(
     manifests = InMemoryPublishedManifestRepository()
     manifests.create_immutable(_manifest())
     publisher = DatasetPublisher(
-        catalog=InMemoryCatalogSnapshot(),
-        annotations=InMemoryAnnotationSnapshot(),
+        catalog=InMemoryCatalogSnapshot(
+            (
+                CatalogRolloutSnapshotV1(
+                    rollout_id="rollout-a",
+                    source_mcap_sha256="d" * 64,
+                    total_steps=1,
+                    quality_status=QualityStatus.PASS,
+                    derived_status=DerivedStatus.DERIVED_READY,
+                    quality_profile_version="quality-v1",
+                    converter_version="converter-v1",
+                ),
+            )
+        ),
+        annotations=InMemoryAnnotationSnapshot(
+            (
+                ApprovedAnnotationSnapshotV1(
+                    rollout_id="rollout-a",
+                    annotation_revision=2,
+                ),
+            )
+        ),
         repository=manifests,
         artifact_sink=sink,
     )
@@ -173,6 +196,40 @@ def _publisher_auth(project_id: str = "project-a") -> AuthContext:
 def _export_url(job_id: str | None = None) -> str:
     base = "/api/v1/datasets/dataset-a/versions/v1/exports"
     return base if job_id is None else f"{base}/{job_id}"
+
+
+def test_first_export_materializes_missing_ready_lance_manifest(
+    export_api: tuple[TestClient, dict[str, AuthContext | None], InMemoryExportAuditRecorder],
+) -> None:
+    client, current, _audit = export_api
+    current["auth"] = _publisher_auth()
+
+    created = client.post(
+        "/api/v1/datasets/dataset-a/versions/version_lance_1/exports",
+        json={"project_id": "project-a", "format": "lance_snapshot"},
+        headers={"Idempotency-Key": "first-ready-export"},
+    )
+
+    assert created.status_code == 202
+    assert created.json()["status"] == "SUCCEEDED"
+    assert created.json()["dataset_version"] == "version_lance_1"
+    assert created.json()["result"]["media_type"] == "application/zip"
+
+
+def test_missing_non_lance_publication_is_not_inferred(
+    export_api: tuple[TestClient, dict[str, AuthContext | None], InMemoryExportAuditRecorder],
+) -> None:
+    client, current, _audit = export_api
+    current["auth"] = _publisher_auth()
+
+    response = client.post(
+        "/api/v1/datasets/dataset-a/versions/custom-version/exports",
+        json={"project_id": "project-a", "format": "lance_snapshot"},
+        headers={"Idempotency-Key": "unknown-version-export"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "DATASET_VERSION_NOT_FOUND"
 
 
 def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_download(
@@ -228,6 +285,8 @@ def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_downl
     assert download.status_code == 200
     assert download.headers["cache-control"] == "no-store"
     assert download.json()["download_url"].startswith("memory://download/")
+    assert download.json()["media_type"] == "application/zip"
+    assert ".zip" in download.json()["download_url"]
     assert len(audit.events) == 1
     event = audit.events[0]
     assert event.job_id == job_id

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import {
   fetchDatasetFacets,
@@ -104,6 +105,41 @@ describe("dataset page query pipeline", () => {
     expect(summary.datasetCount).toBe("2");
     expect(facets.tasks.length).toBeGreaterThan(0);
     expect(capabilities.allowedActions).toContain("CREATE_DATASET");
+  });
+
+  it("maps task and workflowState consistently across list, summary, and facets", async () => {
+    const seen: URLSearchParams[] = [];
+    const capture = (request: Request) => {
+      seen.push(new URL(request.url).searchParams);
+    };
+    server.use(
+      http.get("*/projects/:projectId/datasets", ({ request }) => {
+        capture(request);
+        return HttpResponse.json(datasetListFixture);
+      }),
+      http.get("*/projects/:projectId/datasets\\:summary", ({ request }) => {
+        capture(request);
+        return HttpResponse.json(datasetSummaryFixture);
+      }),
+      http.get("*/projects/:projectId/datasets\\:facets", ({ request }) => {
+        capture(request);
+        return HttpResponse.json(datasetFacetsFixture);
+      }),
+    );
+
+    await Promise.all([
+      fetchDatasets({ task: "pick", workflowState: "returned" }),
+      fetchDatasetSummary({ task: "pick", workflowState: "returned" }),
+      fetchDatasetFacets({ task: "pick", workflowState: "returned" }),
+    ]);
+
+    expect(seen).toHaveLength(3);
+    for (const query of seen) {
+      expect(query.get("task")).toBe("pick");
+      expect(query.get("workflow_state")).toBe("returned");
+      expect(query.has("channels")).toBe(false);
+      expect(query.has("channel_match")).toBe(false);
+    }
   });
 });
 

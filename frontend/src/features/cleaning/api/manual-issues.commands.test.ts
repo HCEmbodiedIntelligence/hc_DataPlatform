@@ -9,6 +9,7 @@ import {
 } from "../../../mocks/fixtures/cleaning";
 import {
   createCleaningDraftFromManualIssueCommand,
+  createAnnotationManualIssueCommand,
   createManualIssueCommand,
   resolveManualIssueCommand,
   triageManualIssueCommand,
@@ -67,6 +68,8 @@ describe("P09 ManualIssue command ownership", () => {
           "Idempotency-Key": "p09-create-command-test",
         }),
         body: {
+          source_kind: "DATASET",
+          discovery_source: "DATA_VIEWER",
           origin_dataset_version_id: cleaningFixtureIds.baseVersion,
           episode_id: cleaningFixtureIds.episode,
           episode_revision_id: cleaningFixtureIds.baseRevision,
@@ -83,6 +86,44 @@ describe("P09 ManualIssue command ownership", () => {
       (create.calls[0]?.body as Record<string, unknown>).dataset_id,
     ).toBeUndefined();
     expect(create.calls[0]?.headers["If-Match"]).toBeUndefined();
+
+    const annotationReport = capture(
+      makeManualIssueEnvelope({
+        ...cleaningManualIssues.open,
+        discovery_source: "ANNOTATOR",
+        annotation_task_id: "annotation_task_fx_01",
+      }),
+    );
+    const reported = await createAnnotationManualIssueCommand(
+      {
+        ...scope,
+        annotationTaskId: "annotation_task_fx_01",
+        streamRef: "/camera/front",
+        relativeStartNs: "100000000",
+        relativeEndNs: "400000000",
+        discoverySource: "ANNOTATOR",
+        issueType: "MISSING_FRAME",
+        severity: "HIGH",
+        note: "Automatic QC missed this frame gap.",
+        idempotencyKey: "p08-report-data-issue",
+      },
+      annotationReport.transport,
+    );
+    expect(reported.discoverySource).toBe("ANNOTATOR");
+    expect(annotationReport.calls[0]).toMatchObject({
+      operationId: "createManualIssue",
+      body: {
+        source_kind: "ANNOTATION_TASK",
+        discovery_source: "ANNOTATOR",
+        annotation_task_id: "annotation_task_fx_01",
+        stream_ref: "/camera/front",
+        relative_start_ns: "100000000",
+        relative_end_ns: "400000000",
+        issue_type: "MISSING_FRAME",
+        severity: "HIGH",
+        note: "Automatic QC missed this frame gap.",
+      },
+    });
 
     const draft = capture(makeCreateDraftEnvelope());
     const draftResult = await createCleaningDraftFromManualIssueCommand(

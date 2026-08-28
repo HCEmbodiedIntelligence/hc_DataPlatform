@@ -1,4 +1,4 @@
-import { Alert, Button, Modal, Tag } from "antd";
+import { Alert, Button, Modal } from "antd";
 import {
   FileJson2,
   FolderOpen,
@@ -47,24 +47,13 @@ export function UploadConfirmationDialog(props: {
       footer={
         <>
           <Button onClick={props.onCancel}>取消</Button>
-          <Button
-            type="primary"
-            disabled={blocked}
-            onClick={props.onConfirm}
-          >
+          <Button type="primary" disabled={blocked} onClick={props.onConfirm}>
             确认上传
           </Button>
         </>
       }
     >
       <div className={styles.confirmDialogBody}>
-        <div className={styles.localCheckBanner}>
-          <Tag color="blue">浏览器本地检查</Tag>
-          <span>
-            尚未创建服务端任务，也没有执行平台预检或上传任何文件。
-          </span>
-        </div>
-
         {props.selection.problems.length > 0 ? (
           <Alert
             type="error"
@@ -112,7 +101,7 @@ export function UploadConfirmationDialog(props: {
           </div>
           <div>
             <dt>
-              <FileJson2 size={14} aria-hidden="true" /> Manifest
+              <FileJson2 size={14} aria-hidden="true" /> 数据清单
             </dt>
             <dd>
               {props.selection.manifestFiles.length === 0
@@ -134,7 +123,7 @@ export function UploadConfirmationDialog(props: {
             <dt>总文件大小</dt>
             <dd>
               {props.selection.sourceType === "OBJECT_STORAGE_REFERENCE"
-                ? `${formatBytes(props.selection.declaredRawBytes)}（Manifest 声明）`
+                ? `${formatBytes(props.selection.declaredRawBytes)}（数据清单声明）`
                 : formatBytes(props.selection.totalLocalBytes)}
             </dd>
           </div>

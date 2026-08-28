@@ -38,6 +38,12 @@ import { routes, type VersionDetailTab } from "../../features/datasets/routing";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useAsyncJob } from "../../shared/jobs/use-async-job";
+import {
+  formatEffectiveDuration,
+  formatTimeRange,
+  nanosecondsToSecondsInput,
+  secondsInputToNanoseconds,
+} from "../../shared/lib/metric-presentation";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
   DangerConfirmModal,
@@ -77,8 +83,8 @@ const tabs: readonly { id: VersionDetailTab; label: string }[] = [
   { id: "revisions", label: "Episodes" },
   { id: "changes", label: "变更" },
   { id: "review", label: "Review" },
-  { id: "manifest", label: "Manifest" },
-  { id: "schema", label: "Schema" },
+  { id: "manifest", label: "数据清单" },
+  { id: "schema", label: "数据结构" },
   { id: "capacity", label: "容量" },
   { id: "exports", label: "导出" },
 ];
@@ -173,7 +179,7 @@ function formText(form: FormData, key: string): string {
 function triggerExportDownload(url: string): void {
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "";
+  anchor.download = "data-export.zip";
   anchor.rel = "noreferrer";
   anchor.style.display = "none";
   document.body.append(anchor);
@@ -271,8 +277,10 @@ export function VersionDetailPage() {
   const [findingType, setFindingType] = useState("");
   const [selectedRevisionId, setSelectedRevisionId] = useState("");
   const [selectedStreamId, setSelectedStreamId] = useState("");
-  const [startNs, setStartNs] = useState("0");
-  const [endNs, setEndNs] = useState("1");
+  const [startSeconds, setStartSeconds] = useState("0");
+  const [endSeconds, setEndSeconds] = useState("0.000000001");
+  const startNs = secondsInputToNanoseconds(startSeconds) ?? "";
+  const endNs = secondsInputToNanoseconds(endSeconds) ?? "";
   const [jobId, setJobId] = useState<string | null>(null);
   const [compareTo, setCompareTo] = useState("");
   const [checksPreparedAt, setChecksPreparedAt] = useState<string | null>(null);
@@ -410,7 +418,7 @@ export function VersionDetailPage() {
     onSuccess: (authorization) => {
       triggerExportDownload(authorization.download_url);
       setDownloadFeedback(
-        `已申请新的短期下载授权，过期时间：${new Date(authorization.expires_at).toLocaleString()}。`,
+        `ZIP 压缩包已开始下载，短期授权过期时间：${new Date(authorization.expires_at).toLocaleString()}。`,
       );
     },
   });
@@ -523,7 +531,7 @@ export function VersionDetailPage() {
     ...(stream &&
     !rangeIsValid(startNs, endNs, stream.t_start_ns, stream.t_end_ns)
       ? [
-          `时间范围必须位于 [${stream.t_start_ns}, ${stream.t_end_ns}) 且 start < end`,
+          `时间范围必须位于 ${formatTimeRange(stream.t_start_ns, stream.t_end_ns)} 内，且开始时间早于结束时间`,
         ]
       : []),
   ];
@@ -545,8 +553,8 @@ export function VersionDetailPage() {
           const firstType = result.finding_catalog.finding_types[0];
           setSelectedRevisionId(firstTarget?.output_revision_id ?? "");
           setSelectedStreamId(firstStream?.episode_stream_id ?? "");
-          setStartNs(firstStream?.t_start_ns ?? "0");
-          setEndNs(firstStream?.t_end_ns ?? "1");
+          setStartSeconds(nanosecondsToSecondsInput(firstStream?.t_start_ns ?? "0"));
+          setEndSeconds(nanosecondsToSecondsInput(firstStream?.t_end_ns ?? "1"));
           setFindingType(firstType?.code ?? "");
           setSeverity(
             firstType?.allowed_severities[0] ??
@@ -678,13 +686,13 @@ export function VersionDetailPage() {
         <dd title={datasetId}>
           <code>{datasetId}</code>
         </dd>
-        <dt>Manifest Token</dt>
+        <dt>清单标识</dt>
         <dd title={data.snapshotToken}>
           <code>{data.snapshotToken}</code>
         </dd>
-        <dt>Schema</dt>
-        <dd title={schema.data?.snapshot.id ?? "切换到 Schema 后加载"}>
-          {schema.data?.snapshot.id ?? "切换到 Schema 后加载"}
+        <dt>数据结构</dt>
+        <dd title={schema.data?.snapshot.id ?? "切换到“数据结构”后加载"}>
+          {schema.data?.snapshot.id ?? "切换到“数据结构”后加载"}
         </dd>
         <dt>Operational</dt>
         <dd title={data.operationalRevision}>
@@ -710,10 +718,10 @@ export function VersionDetailPage() {
         block
         onClick={() => applySearch({ tab: "manifest" })}
       >
-        查看 Manifest
+        查看数据清单
       </Button>
       <Button block onClick={() => applySearch({ tab: "schema" })}>
-        查看 Schema
+        查看数据结构
       </Button>
     </div>
   );
@@ -724,8 +732,7 @@ export function VersionDetailPage() {
         resourceId={versionId}
         header={{
           title: version.displayVersion,
-          description:
-            "内容快照与 operational revision 分离，均绑定固定 Version。",
+          description: "固定内容版本与运行修订分离，均绑定指定数据版本。",
           breadcrumbs: [
             { key: "assets", label: "数据资产", to: routes.datasets.build() },
             {
@@ -1112,8 +1119,10 @@ export function VersionDetailPage() {
 
           {search.tab === "manifest" ? (
             <section className={styles.section}>
-              <h2>Manifest 摘要</h2>
-              <p>Manifest 原文、对象路径和授权 URL 不进入遥测或 Query Key。</p>
+              <h2>数据清单摘要</h2>
+              <p>
+                为保护数据安全，清单原文、对象路径和授权地址不会被记录到遥测数据或查询缓存标识中。
+              </p>
               {manifest.isPending ? (
                 <RegionState state="first-loading" />
               ) : manifest.isError ? (
@@ -1135,7 +1144,6 @@ export function VersionDetailPage() {
                       <ManifestCursorPager
                         pageInfo={manifest.data.page_info}
                         count={manifest.data.items.length}
-                        snapshotAt={manifest.data.snapshot_at}
                         busy={manifest.isFetching}
                         onChange={applySearch}
                       />
@@ -1177,10 +1185,9 @@ export function VersionDetailPage() {
           ) : null}
           {search.tab === "schema" ? (
             <section className={styles.section}>
-              <h2>Schema Snapshot</h2>
+              <h2>数据结构快照</h2>
               <p>
-                Schema 与当前固定 Version 的内容快照绑定；合同不匹配时整区 fail
-                closed。
+                此数据结构与当前固定版本绑定。如果返回的数据结构与约定不一致，本区域将停止展示，以避免显示错误数据。
               </p>
               {schema.isPending ? (
                 <RegionState state="first-loading" />
@@ -1193,15 +1200,15 @@ export function VersionDetailPage() {
                 <>
                   <div className={styles.metricGrid}>
                     <UiMetricCard
-                      label="Reference"
+                      label="结构引用"
                       value={`${schema.data.snapshot.type} / ${schema.data.snapshot.id}`}
                     />
                     <UiMetricCard
-                      label="Schema Version"
+                      label="结构版本"
                       value={schema.data.snapshot.version}
                     />
                     <UiMetricCard
-                      label="Channels"
+                      label="通道数"
                       value={schema.data.channelCount}
                     />
                     <UiMetricCard
@@ -1222,7 +1229,7 @@ export function VersionDetailPage() {
             <section className={styles.section}>
               <h2>容量与运营库存</h2>
               <p>
-                Required storage 绑定内容快照，operational inventory 绑定{" "}
+                必需存储绑定固定内容版本，运行清单绑定{" "}
                 <code>{data.operationalRevision}</code>
                 ；两者不会在前端合并推算。
               </p>
@@ -1273,7 +1280,7 @@ export function VersionDetailPage() {
               <div className={styles.sectionHeader}>
                 <div>
                   <h2>导出</h2>
-                  <p>任务状态、产物可用性和每次下载授权分别以真实 API 为准。</p>
+                  <p>按所选数据格式生成内容，完成后统一下载 ZIP 压缩包。</p>
                 </div>
                 <div className={styles.actions}>
                   <label className={styles.filterField}>
@@ -1288,7 +1295,7 @@ export function VersionDetailPage() {
                         )
                       }
                     >
-                      <option value="lance_snapshot">Lance Snapshot</option>
+                      <option value="lance_snapshot">Lance 数据文件</option>
                       <option value="lerobot_v3">LeRobot v3</option>
                     </select>
                   </label>
@@ -1427,7 +1434,7 @@ export function VersionDetailPage() {
                       >
                         {downloadExport.isPending
                           ? "正在申请下载授权…"
-                          : "下载导出文件"}
+                          : "下载导出压缩包"}
                       </Button>
                     )}
                   </div>
@@ -1485,8 +1492,8 @@ export function VersionDetailPage() {
               <dd>{revision.data.episode_id}</dd>
               <dt>Ordinal</dt>
               <dd>{revision.data.ordinal}</dd>
-              <dt>Duration ns</dt>
-              <dd>{revision.data.duration_ns}</dd>
+              <dt>时长</dt>
+              <dd>{formatEffectiveDuration(revision.data.duration_ns)}</dd>
               <dt>SHA-256</dt>
               <dd>{revision.data.content_sha256.slice(0, 16)}…</dd>
             </dl>
@@ -1502,7 +1509,7 @@ export function VersionDetailPage() {
         resourceId={versionId}
         impact={[
           "创建不可变 ReviewDecision",
-          "启动 Manifest/发布异步任务",
+          "启动数据清单/发布异步任务",
           "Version 保持 REVIEWING，直到完整 Bootstrap 证明 READY",
         ]}
         blockers={checks.data?.blockers}
@@ -1620,7 +1627,7 @@ export function VersionDetailPage() {
         ]}
       >
         <Typography.Paragraph>
-          异步任务只比较两个固定 Version 的当前内容快照，不会改写 Version 事实。
+          异步任务只比较两个固定数据版本的内容，不会改写版本事实。
         </Typography.Paragraph>
         <Typography.Paragraph>
           <code>{versionId}</code> → <code>{compareTo}</code>
@@ -1674,8 +1681,8 @@ export function VersionDetailPage() {
                     : undefined;
                 setSelectedRevisionId(event.target.value);
                 setSelectedStreamId(nextStream?.episode_stream_id ?? "");
-                setStartNs(nextStream?.t_start_ns ?? "0");
-                setEndNs(nextStream?.t_end_ns ?? "1");
+                setStartSeconds(nanosecondsToSecondsInput(nextStream?.t_start_ns ?? "0"));
+                setEndSeconds(nanosecondsToSecondsInput(nextStream?.t_end_ns ?? "1"));
               }}
             >
               <option value="">请选择固定 Revision</option>
@@ -1698,8 +1705,8 @@ export function VersionDetailPage() {
                   (item) => item.episode_stream_id === event.target.value,
                 );
                 setSelectedStreamId(event.target.value);
-                setStartNs(nextStream?.t_start_ns ?? "0");
-                setEndNs(nextStream?.t_end_ns ?? "1");
+                setStartSeconds(nanosecondsToSecondsInput(nextStream?.t_start_ns ?? "0"));
+                setEndSeconds(nanosecondsToSecondsInput(nextStream?.t_end_ns ?? "1"));
               }}
             >
               <option value="">请选择稳定 Stream</option>
@@ -1748,19 +1755,19 @@ export function VersionDetailPage() {
             </select>
           </label>
           <label>
-            开始 ns
+            开始时间（秒）
             <input
-              inputMode="numeric"
-              value={startNs}
-              onChange={(event) => setStartNs(event.target.value)}
+              inputMode="decimal"
+              value={startSeconds}
+              onChange={(event) => setStartSeconds(event.target.value)}
             />
           </label>
           <label>
-            结束 ns
+            结束时间（秒）
             <input
-              inputMode="numeric"
-              value={endNs}
-              onChange={(event) => setEndNs(event.target.value)}
+              inputMode="decimal"
+              value={endSeconds}
+              onChange={(event) => setEndSeconds(event.target.value)}
             />
           </label>
           <label>
@@ -1775,7 +1782,7 @@ export function VersionDetailPage() {
           </label>
           {stream ? (
             <small>
-              合法范围：[{stream.t_start_ns}, {stream.t_end_ns})
+              合法范围：{formatTimeRange(stream.t_start_ns, stream.t_end_ns)}
             </small>
           ) : null}
           {returnBlockedReasons.length ? (

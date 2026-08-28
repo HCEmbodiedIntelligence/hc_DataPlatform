@@ -117,8 +117,8 @@ describe("P18 platform user management", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByText(/无需原密码.*所有已登录会话会立即失效/u),
-    ).toBeInTheDocument();
+      within(dialog).queryByText(/无需原密码.*所有已登录会话会立即失效/u),
+    ).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("新密码")).toHaveAttribute(
       "autocomplete",
       "new-password",

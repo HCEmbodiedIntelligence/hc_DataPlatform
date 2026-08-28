@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -7,6 +8,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -152,6 +154,77 @@ class IngestTriggerStatus(str, Enum):
     RETRY_WAIT = "RETRY_WAIT"
 
 
+class DeviceCaptureEventType(str, Enum):
+    CAPTURED = "CAPTURED"
+    SAVED = "SAVED"
+
+
+class DeviceCaptureFactRequest(BaseModel):
+    """Immutable device-agent assertion; never inferred from a cloud upload."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["device-capture-fact/v1"]
+    source_event_id: Identifier
+    event_type: DeviceCaptureEventType
+    collection_task_id: Identifier
+    collection_job_id: Identifier
+    recording_request_id: Identifier
+    data_package_id: Identifier
+    robot_id: Identifier
+    device_id: Identifier
+    device_sequence_no: int = Field(ge=0)
+    capture_started_at: AwareDatetime
+    capture_ended_at: AwareDatetime
+    saved_at: AwareDatetime | None
+    local_artifact_size: int | None = Field(gt=0, le=5 * 1024**4)
+    local_artifact_sha256: Sha256 | None
+    recorder_version: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._/+:-]*$",
+    )
+    occurred_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def validate_event_semantics(self) -> DeviceCaptureFactRequest:
+        if self.capture_ended_at <= self.capture_started_at:
+            raise ValueError("capture_ended_at must be after capture_started_at")
+        if self.occurred_at < self.capture_ended_at:
+            raise ValueError("occurred_at must not precede capture_ended_at")
+        saved_fields = (
+            self.saved_at,
+            self.local_artifact_size,
+            self.local_artifact_sha256,
+        )
+        if self.event_type is DeviceCaptureEventType.CAPTURED:
+            if any(value is not None for value in saved_fields):
+                raise ValueError("CAPTURED must not claim local persistence fields")
+        else:
+            if any(value is None for value in saved_fields):
+                raise ValueError("SAVED requires time, size, and SHA256 of the local artifact")
+            if self.saved_at is not None and self.saved_at < self.capture_ended_at:
+                raise ValueError("saved_at must not precede capture_ended_at")
+            if self.saved_at is not None and self.occurred_at < self.saved_at:
+                raise ValueError("occurred_at must not precede saved_at")
+        return self
+
+    @property
+    def capture_duration_seconds(self) -> float:
+        return (self.capture_ended_at - self.capture_started_at).total_seconds()
+
+
+class DeviceCaptureFact(DeviceCaptureFactRequest):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    fact_id: UUID
+    organization_id: Identifier
+    project_id: Identifier
+    region_code: Identifier
+    producer_subject_id: str = Field(min_length=1, max_length=512)
+    received_at: AwareDatetime
+
+
 class IngestWorkflowLocator(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -204,6 +277,30 @@ class ManifestTopicV1(BaseModel):
     schema_name: str | None = Field(default=None, max_length=256)
 
 
+class HuggingFaceEpisodeSourceV1(BaseModel):
+    """Stable source recording identity, separate from converter artifact identity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["HUGGING_FACE_EPISODE"] = "HUGGING_FACE_EPISODE"
+    repository: str = Field(
+        min_length=3,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+    )
+    resolved_revision: str = Field(
+        min_length=7,
+        max_length=64,
+        pattern=r"^[A-Fa-f0-9]+$",
+    )
+    episode_index: int = Field(ge=0)
+
+    @field_validator("repository", "resolved_revision")
+    @classmethod
+    def normalize_source_locator(cls, value: str) -> str:
+        return value.lower()
+
+
 class RolloutManifestV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -234,6 +331,7 @@ class RolloutManifestV1(BaseModel):
         max_length=256,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._/+:-]*$",
     )
+    source_recording: HuggingFaceEpisodeSourceV1 | None = None
 
     @model_validator(mode="after")
     def validate_time_range(self) -> RolloutManifestV1:
@@ -272,6 +370,28 @@ class RolloutManifestV1(BaseModel):
     def rollout_date(self) -> date:
         return self.start_time.astimezone(timezone.utc).date()
 
+    @property
+    def source_fingerprint(self) -> str | None:
+        """Return the logical recording identity without revision or converter version.
+
+        A source revision is retained as provenance, but a revised conversion of the
+        same repository episode must use an explicit replacement flow instead of
+        silently registering another business package in the same task.
+        """
+
+        if self.source_recording is None:
+            return None
+        canonical = "\n".join(
+            (
+                "source-recording/v1",
+                self.task_id,
+                self.source_recording.kind,
+                self.source_recording.repository,
+                str(self.source_recording.episode_index),
+            )
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
 
 class CollectionJob(BaseModel):
     project_id: Identifier
@@ -296,6 +416,7 @@ class Rollout(BaseModel):
     sequence_no: int = Field(ge=1)
     robot_id: Identifier
     source_sha256: Sha256
+    source_fingerprint: Sha256 | None = None
     status: RolloutStatus = RolloutStatus.REGISTERED
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -405,6 +526,7 @@ class ManifestDiscoveryV1(BaseModel):
 
     source: Literal["MANIFEST"] = "MANIFEST"
     read_only: Literal[True] = True
+    robot_id: Identifier | None = None
     cameras: tuple[ManifestCameraV1, ...]
     topics: tuple[ManifestTopicV1, ...]
     missing_expected_topics: tuple[TopicName, ...] = ()
@@ -415,6 +537,7 @@ class ManifestPreflightResultV1(BaseModel):
 
     schema_version: Literal["manifest-preflight/v1"] = "manifest-preflight/v1"
     manifest_fingerprint: Sha256
+    source_fingerprint: Sha256 | None = None
     identifiers: ManifestIdentifiersV1
     time_range: ManifestTimeRangeV1
     files: tuple[ManifestFileV1, ...]

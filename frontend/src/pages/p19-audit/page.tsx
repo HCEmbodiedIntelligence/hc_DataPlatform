@@ -392,14 +392,6 @@ export function AuditPage() {
             <strong>{events.data.items.length}</strong>
           </div>
           <div>
-            <span>快照时间</span>
-            <strong>
-              <time dateTime={events.data.snapshotAt}>
-                {events.data.snapshotAt}
-              </time>
-            </strong>
-          </div>
-          <div>
             <span>脱敏策略</span>
             <strong>{events.data.redactionPolicyVersion}</strong>
           </div>
@@ -495,7 +487,7 @@ export function AuditPage() {
               <DataCursorPager
                 pageInfo={events.data.pageInfo}
                 busy={events.isFetching}
-                windowLabel={`当前窗口 ${events.data.items.length} 条 · 快照 ${events.data.snapshotAt}`}
+                windowLabel={`当前窗口 ${events.data.items.length} 条`}
                 onChange={(cursor) => change({ ...cursor, eventId: undefined })}
               />
             ) : undefined

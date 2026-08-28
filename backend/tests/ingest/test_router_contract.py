@@ -16,6 +16,10 @@ from hc_data_platform.core.context import (
 )
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.openapi import aggregate_fragments
+from hc_data_platform.ingest.device_facts import (
+    DeviceCaptureFactService,
+    InMemoryDeviceCaptureFactRepository,
+)
 from hc_data_platform.ingest.models import (
     CompletedPart,
     ManifestFileV1,
@@ -24,7 +28,12 @@ from hc_data_platform.ingest.models import (
 )
 from hc_data_platform.ingest.persistence import InMemoryIngestPersistence
 from hc_data_platform.ingest.ports import InMemoryObjectStorage, crc64_ecma
-from hc_data_platform.ingest.router import configure_ingest_job_status, get_service, router
+from hc_data_platform.ingest.router import (
+    configure_device_capture_facts,
+    configure_ingest_job_status,
+    get_service,
+    router,
+)
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import CAPABILITY_PLATFORM_ADMIN
 from hc_data_platform.workflow.models import JobRecord, JobStatus
@@ -79,7 +88,17 @@ def app_with_auth(auth: AuthContext | None) -> FastAPI:
         async def install_auth(request: Request, call_next: Any) -> Any:
             request.state.auth_context = auth
             token = bind_request_context(
-                RequestContext(subject_id=auth.subject_id, request_id="test-request-id")
+                RequestContext(
+                    organization_id=(
+                        next(iter(auth.organization_ids))
+                        if len(auth.organization_ids) == 1
+                        else None
+                    ),
+                    subject_id=auth.subject_id,
+                    request_id="test-request-id",
+                    roles=auth.roles,
+                    service_identity=auth.service_identity,
+                )
             )
             try:
                 return await call_next(request)
@@ -88,6 +107,71 @@ def app_with_auth(auth: AuthContext | None) -> FastAPI:
 
     app.include_router(router)
     return app
+
+
+def device_fact_payload() -> dict[str, Any]:
+    start = datetime(2026, 8, 24, 8, tzinfo=timezone.utc)
+    return {
+        "schema_version": "device-capture-fact/v1",
+        "source_event_id": "device-event-1",
+        "event_type": "CAPTURED",
+        "collection_task_id": "t1",
+        "collection_job_id": "j1",
+        "recording_request_id": "request1",
+        "data_package_id": "package1",
+        "robot_id": "robot1",
+        "device_id": "pico1",
+        "device_sequence_no": 1,
+        "capture_started_at": start.isoformat(),
+        "capture_ended_at": (start + timedelta(seconds=30)).isoformat(),
+        "saved_at": None,
+        "local_artifact_size": None,
+        "local_artifact_sha256": None,
+        "recorder_version": "recorder-1.2.3",
+        "occurred_at": (start + timedelta(seconds=30)).isoformat(),
+    }
+
+
+def test_device_capture_facts_require_service_identity_and_are_immutable() -> None:
+    configure_device_capture_facts(DeviceCaptureFactService(InMemoryDeviceCaptureFactRepository()))
+    path = "/api/v1/projects/p1/regions/cn-hz/device-capture-facts"
+    scope = {
+        "project_ids": frozenset({"p1"}),
+        "region_codes": frozenset({"cn-hz"}),
+        "roles": frozenset({"uploader"}),
+        "organization_ids": frozenset({"org-a"}),
+        "organization_scope_triples": frozenset({("org-a", "p1", "cn-hz")}),
+    }
+
+    human = TestClient(app_with_auth(AuthContext(subject_id="human-uploader", **scope))).post(
+        path, json=device_fact_payload()
+    )
+    assert human.status_code == 403
+    assert human.json()["code"] == "DEVICE_SERVICE_IDENTITY_REQUIRED"
+
+    client = TestClient(
+        app_with_auth(AuthContext(subject_id="device-agent:pico1", service_identity=True, **scope))
+    )
+    first = client.post(path, json=device_fact_payload())
+    retried = client.post(path, json=device_fact_payload())
+    assert first.status_code == retried.status_code == 200
+    assert first.headers["Cache-Control"] == "no-store"
+    assert first.json() == retried.json()
+    assert first.json()["event_type"] == "CAPTURED"
+    assert first.json()["producer_subject_id"] == "device-agent:pico1"
+
+    changed = client.post(
+        path,
+        json={**device_fact_payload(), "recorder_version": "recorder-1.2.4"},
+    )
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "DEVICE_CAPTURE_FACT_IMMUTABLE"
+
+    invalid_saved = client.post(
+        path,
+        json={**device_fact_payload(), "source_event_id": "device-event-2", "event_type": "SAVED"},
+    )
+    assert invalid_saved.status_code == 422
 
 
 def test_router_requires_be02_auth_context_role_and_scope() -> None:
@@ -526,6 +610,7 @@ def test_openapi_fragment_covers_full_resumable_lifecycle_and_direct_upload() ->
         f"{prefix}/{{session_id}}:cancel",
         f"{prefix}/{{session_id}}:commit-manifest",
         "/api/v1/projects/{project_id}/regions/{region_code}/upload-manifests:preflight",
+        "/api/v1/projects/{project_id}/regions/{region_code}/device-capture-facts",
     }
     assert set(paths) == expected_paths
     assert set(paths[prefix]) == {"get", "post"}

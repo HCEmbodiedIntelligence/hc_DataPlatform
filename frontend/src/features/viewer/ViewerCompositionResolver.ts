@@ -40,6 +40,9 @@ export function resolveViewerComposition(
   streams: readonly StreamDescriptor[],
 ): ResolvedViewerComposition {
   const panels: ViewerPanelSpec[] = [];
+  const inputOrder = new Map(
+    streams.map((stream, index) => [stream.id, index] as const),
+  );
   const jointGroups: ResolvedViewerComposition["jointGroups"][number][] = [];
   const diagnostics: ResolvedViewerComposition["diagnostics"][number][] = [];
 
@@ -103,6 +106,8 @@ export function resolveViewerComposition(
     b: T,
   ) =>
     a.priority - b.priority ||
+    (inputOrder.get(a.streamIds[0] ?? "") ?? Number.MAX_SAFE_INTEGER) -
+      (inputOrder.get(b.streamIds[0] ?? "") ?? Number.MAX_SAFE_INTEGER) ||
     a.streamIds.join(":").localeCompare(b.streamIds.join(":"));
   panels.sort(stable);
   jointGroups.sort((a, b) => a.streamId.localeCompare(b.streamId));

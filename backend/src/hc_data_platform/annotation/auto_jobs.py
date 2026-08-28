@@ -27,6 +27,7 @@ from .models import (
     AnnotationTask,
     AutoAnnotationCapability,
     AutoAnnotationProviderDescriptor,
+    AutoAnnotationSamplingReference,
 )
 from .service import AnnotationService
 
@@ -76,6 +77,7 @@ class AutoAnnotationProviderRequest(BaseModel):
     tag_schema_version: int = Field(ge=1)
     model: str = Field(min_length=1, max_length=256)
     input_selection: AutoAnnotationInputSelection
+    sampling_reference: AutoAnnotationSamplingReference | None = None
 
 
 class AutoAnnotationProviderResult(BaseModel):
@@ -97,6 +99,7 @@ class AutoAnnotationJob(BaseModel):
     provider: str = Field(min_length=1, max_length=128)
     model: str = Field(min_length=1, max_length=256)
     input_selection: AutoAnnotationInputSelection
+    sampling_reference: AutoAnnotationSamplingReference | None = None
     status: Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "APPLIED"]
     progress_percent: int = Field(ge=0, le=100)
     estimated_cost_micros: int = Field(ge=0)
@@ -336,6 +339,20 @@ class AutoAnnotationJobRepository(Protocol):
     ) -> None: ...
 
 
+class AutoAnnotationSamplingRepository(Protocol):
+    def get_for_task(self, task: AnnotationTask) -> AutoAnnotationSamplingReference | None: ...
+
+
+class InMemoryAutoAnnotationSamplingRepository:
+    def __init__(
+        self, references: Mapping[str, AutoAnnotationSamplingReference] | None = None
+    ) -> None:
+        self.references = dict(references or {})
+
+    def get_for_task(self, task: AnnotationTask) -> AutoAnnotationSamplingReference | None:
+        return self.references.get(task.task_id)
+
+
 class InMemoryAutoAnnotationJobRepository:
     def __init__(self) -> None:
         self.jobs: dict[str, AutoAnnotationJob] = {}
@@ -473,6 +490,8 @@ class AutoAnnotationJobService:
         max_concurrent_jobs_per_project: int = 4,
         max_jobs_per_hour: int = 60,
         daily_cost_limit_micros: int = 5_000_000,
+        sampling_repository: AutoAnnotationSamplingRepository | None = None,
+        require_sampling_manifest: bool = False,
         clock: Clock = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._annotation = annotation
@@ -483,6 +502,8 @@ class AutoAnnotationJobService:
         self._max_concurrent = max_concurrent_jobs_per_project
         self._max_hourly = max_jobs_per_hour
         self._daily_cost = daily_cost_limit_micros
+        self._sampling = sampling_repository
+        self._require_sampling = require_sampling_manifest
         self._clock = clock
 
     def capability(self) -> AutoAnnotationCapability:
@@ -532,6 +553,19 @@ class AutoAnnotationJobService:
                 detail="The selected step range must fit the task's immutable Lance snapshot.",
             )
         normalized_selection = input_selection.model_copy(update={"end_step": end_step})
+        sampling_reference = (
+            None if self._sampling is None else self._sampling.get_for_task(task)
+        )
+        if self._require_sampling and sampling_reference is None:
+            raise problem(
+                status=409,
+                code="AUTO_ANNOTATION_SAMPLING_UNAVAILABLE",
+                title="Automatic annotation sampling is unavailable",
+                detail=(
+                    "This task has no verified ingest FrameSelectionManifest; "
+                    "full-rate inference is disabled."
+                ),
+            )
         estimated = provider.estimate_cost_micros(
             model=model,
             selection=normalized_selection,
@@ -546,6 +580,11 @@ class AutoAnnotationJobService:
                     "provider": provider_name,
                     "model": model,
                     "selection": normalized_selection.model_dump(mode="json"),
+                    "sampling_reference": (
+                        None
+                        if sampling_reference is None
+                        else sampling_reference.model_dump(mode="json")
+                    ),
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -560,6 +599,7 @@ class AutoAnnotationJobService:
             provider=provider_name,
             model=model,
             input_selection=normalized_selection,
+            sampling_reference=sampling_reference,
             status="QUEUED",
             progress_percent=0,
             estimated_cost_micros=estimated,
@@ -652,6 +692,7 @@ class AutoAnnotationJobService:
                     tag_schema_version=task.tag_schema_version,
                     model=job.model,
                     input_selection=job.input_selection,
+                    sampling_reference=job.sampling_reference,
                 )
             )
             current = self._repository.get(
@@ -930,6 +971,52 @@ def _state_conflict(code: str) -> Exception:
     )
 
 
+class PostgresAutoAnnotationSamplingRepository:
+    """Tenant-scoped lookup for the immutable ingest sampling reference."""
+
+    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+        self._factory = connection_factory
+
+    def get_for_task(self, task: AnnotationTask) -> AutoAnnotationSamplingReference | None:
+        connection = self._factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT source_sha256, object_key, content_sha256, size_bytes,
+                       sampling_version, camera_set, source_frame_count,
+                       selected_group_count
+                FROM annotation.frame_selection_manifests
+                WHERE task_id = %s AND project_id = %s AND region_code = %s
+                """,
+                (task.task_id, task.project_id, task.region_code),
+            )
+            raw = cursor.fetchone()
+            if raw is None:
+                return None
+            if isinstance(raw, Mapping):
+                row = raw
+            else:
+                names = tuple(str(column[0]) for column in cursor.description)
+                row = dict(zip(names, cast(Sequence[object], raw), strict=True))
+            camera_set = row["camera_set"]
+            if isinstance(camera_set, str):
+                camera_set = json.loads(camera_set)
+            return AutoAnnotationSamplingReference(
+                source_sha256=str(row["source_sha256"]),
+                object_key=str(row["object_key"]),
+                content_sha256=str(row["content_sha256"]),
+                size_bytes=int(str(row["size_bytes"])),
+                sampling_version=str(row["sampling_version"]),
+                camera_set=tuple(cast(Sequence[str], camera_set)),
+                source_frame_count=int(str(row["source_frame_count"])),
+                selected_group_count=int(str(row["selected_group_count"])),
+            )
+        finally:
+            cursor.close()
+            connection.close()
+
+
 class PostgresAutoAnnotationJobRepository:
     def __init__(self, connection_factory: Callable[[], Any]) -> None:
         self._factory = connection_factory
@@ -959,6 +1046,11 @@ class PostgresAutoAnnotationJobRepository:
             provider=str(row["provider"]),
             model=str(row["model_name"]),
             input_selection=AutoAnnotationInputSelection.model_validate(row["input_selection"]),
+            sampling_reference=(
+                None
+                if row.get("sampling_reference") is None
+                else AutoAnnotationSamplingReference.model_validate(row["sampling_reference"])
+            ),
             status=cast(Any, str(row["status"])),
             progress_percent=int(str(row["progress_percent"])),
             estimated_cost_micros=int(str(row["estimated_cost_micros"])),
@@ -1042,10 +1134,13 @@ class PostgresAutoAnnotationJobRepository:
             cursor.execute(
                 """INSERT INTO annotation.auto_annotation_jobs (
                        job_id, project_id, region_code, task_id, source_revision,
-                       provider, model_name, input_selection, idempotency_key,
+                       provider, model_name, input_selection, sampling_reference, idempotency_key,
                        request_fingerprint, status, progress_percent,
                        estimated_cost_micros, created_by, created_at, updated_at
-                   ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,'QUEUED',0,%s,%s,%s,%s)
+                   ) VALUES (
+                       %s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,
+                       'QUEUED',0,%s,%s,%s,%s
+                   )
                    RETURNING *""",
                 (
                     job.job_id,
@@ -1056,6 +1151,11 @@ class PostgresAutoAnnotationJobRepository:
                     job.provider,
                     job.model,
                     job.input_selection.model_dump_json(),
+                    (
+                        None
+                        if job.sampling_reference is None
+                        else job.sampling_reference.model_dump_json()
+                    ),
                     idempotency_key,
                     request_fingerprint,
                     job.estimated_cost_micros,

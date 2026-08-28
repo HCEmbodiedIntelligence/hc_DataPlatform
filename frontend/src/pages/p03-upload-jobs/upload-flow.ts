@@ -1,9 +1,6 @@
 import type { IngestScope } from "../../entities/data-source";
 import type { ManifestPreflight, UploadManifest } from "./formal-client";
-import type {
-  BrowserSelectionMode,
-  UploadSourceChoice,
-} from "./components/UploadMethodPanel";
+import type { BrowserSelectionMode } from "./components/UploadMethodPanel";
 import {
   discoverFolderUploadBundles,
   findManifestFiles,
@@ -23,6 +20,10 @@ export type UploadFlowPhase =
   | "queue_ready"
   | "uploading"
   | "completed";
+
+export type UploadSourceChoice =
+  | "BROWSER_MULTIPART"
+  | "OBJECT_STORAGE_REFERENCE";
 
 export type ServerPrecheckStage =
   | "submitting_manifest"
@@ -125,7 +126,7 @@ function inspectParsedPackage(
     problems.push(
       problem(
         "RAW_DECLARATION_INVALID",
-        `Manifest 必须且只能声明 1 个 RAW_MCAP，当前为 ${rawDeclarations.length} 个。`,
+        `数据清单必须且只能声明 1 个 RAW_MCAP，当前为 ${rawDeclarations.length} 个。`,
         manifestFile.name,
       ),
     );
@@ -135,7 +136,7 @@ function inspectParsedPackage(
     problems.push(
       problem(
         "RAW_FILE_MISSING",
-        "未找到 Manifest 声明的 RAW/MCAP 文件。",
+        "未找到数据清单声明的 RAW/MCAP 文件。",
         manifestFile.name,
       ),
     );
@@ -148,7 +149,7 @@ function inspectParsedPackage(
       problems.push(
         problem(
           "RAW_FILE_SIZE_MISMATCH",
-          `本地文件 ${rawFile.name} 的大小与 Manifest 声明不一致。`,
+          `本地文件 ${rawFile.name} 的大小与数据清单声明不一致。`,
           rawFile.name,
         ),
       );
@@ -180,7 +181,7 @@ export async function inspectLocalUploadSelection(
     problems.push(
       problem(
         "MANIFEST_FILE_MISSING",
-        "所选内容中没有找到可识别的 Manifest 文件。",
+        "所选内容中没有找到可识别的数据清单文件。",
       ),
     );
   }
@@ -216,7 +217,7 @@ export async function inspectLocalUploadSelection(
         problems.push(
           problem(
             "RAW_FILE_SIZE_MISMATCH",
-            `本地文件 ${unit.rawFile.name} 的大小与 Manifest 声明不一致。`,
+            `本地文件 ${unit.rawFile.name} 的大小与数据清单声明不一致。`,
             selectedRelativePath(unit.rawFile),
           ),
         );
@@ -226,7 +227,7 @@ export async function inspectLocalUploadSelection(
     problems.push(
       problem(
         "MANIFEST_FILE_AMBIGUOUS",
-        `当前上传单元找到 ${manifestFiles.length} 个 Manifest，请只保留一个。`,
+        `当前上传单元找到 ${manifestFiles.length} 个数据清单文件，请只保留一个。`,
       ),
     );
   } else if (manifestFiles[0]) {
@@ -260,7 +261,7 @@ export async function inspectLocalUploadSelection(
           error instanceof LocalManifestError ? error.code : "MANIFEST_INVALID",
           error instanceof Error
             ? error.message
-            : "Manifest 无法在浏览器本地解析。",
+            : "数据清单无法在浏览器本地解析。",
           manifestFiles[0].name,
         ),
       );

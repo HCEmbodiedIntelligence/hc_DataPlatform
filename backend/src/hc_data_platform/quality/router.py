@@ -10,7 +10,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.security.auth import Permission
 from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
 
-from .models import QcReportV1, QualityProfileV1
+from .models import AutoQualityProblemListV1, AutoQualityProblemV1, QcReportV1, QualityProfileV1
 
 
 class QualityRepository(Protocol):
@@ -23,6 +23,10 @@ class QualityRepository(Protocol):
     def get_report(
         self, *, project_id: str, region_code: str, rollout_id: str
     ) -> QcReportV1 | None: ...
+
+    def list_problem_reports(
+        self, *, project_id: str, region_code: str
+    ) -> tuple[AutoQualityProblemV1, ...]: ...
 
 
 router = APIRouter(prefix="/api/v1", tags=["quality"])
@@ -116,3 +120,25 @@ def get_rollout_quality(
             detail="No persisted quality report exists for this rollout.",
         )
     return report
+
+
+@router.get(
+    "/projects/{project_id}/regions/{region_code}/quality-problems",
+    response_model=AutoQualityProblemListV1,
+    operation_id="listAutoQualityProblems",
+)
+def list_auto_quality_problems(
+    project_id: str,
+    region_code: str,
+    response: Response,
+    auth: VerifiedAuth,
+) -> AutoQualityProblemListV1:
+    """Expose latest RISK/REJECT reports as read-only unified issue-center rows."""
+
+    _no_store(response)
+    authorize_read(auth, project_id, region_code)
+    items = _required_repository().list_problem_reports(
+        project_id=project_id,
+        region_code=region_code,
+    )
+    return AutoQualityProblemListV1(items=items, total=len(items))

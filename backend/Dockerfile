@@ -72,6 +72,9 @@ USER 0:0
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+RUN install -d -o 65532 -g 65532 -m 0750 \
+    /tmp/hc-data/alignment \
+    /tmp/hc-data/previews
 RUN ffmpeg -hide_banner -encoders 2>&1 | grep --quiet libx264 \
     && ffmpeg -hide_banner -encoders 2>&1 | grep --quiet libvpx-vp9 \
     && ffmpeg -hide_banner -muxers 2>&1 | grep --quiet hls \

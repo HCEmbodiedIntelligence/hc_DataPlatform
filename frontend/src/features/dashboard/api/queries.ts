@@ -1,16 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
-import type { DashboardScope } from '../types';
+import { useQuery } from "@tanstack/react-query";
+import type { DashboardScope } from "../types";
 import {
   getDashboardActivity,
   getDashboardSnapshot,
+  getDashboardTaskStatus,
   listDashboardPendingItems,
   type DashboardWindow,
-} from './client';
-import { dashboardQueryKeys } from './query-keys';
+} from "./client";
+import { dashboardQueryKeys } from "./query-keys";
 
-export function useDashboardActivity(scope: DashboardScope | null, window: DashboardWindow | null, enabled: boolean) {
+export function useDashboardActivity(
+  scope: DashboardScope | null,
+  window: DashboardWindow | null,
+  enabled: boolean,
+) {
   return useQuery({
-    queryKey: scope && window ? dashboardQueryKeys.activity(scope, window) : ['dashboard', 'disabled', 'activity'],
+    queryKey:
+      scope && window
+        ? dashboardQueryKeys.activity(scope, window)
+        : ["dashboard", "disabled", "activity"],
     queryFn: ({ signal }) => getDashboardActivity(scope!, window!, signal),
     enabled: enabled && scope !== null && window !== null,
     staleTime: 60_000,
@@ -18,9 +26,16 @@ export function useDashboardActivity(scope: DashboardScope | null, window: Dashb
   });
 }
 
-export function useDashboardSnapshot(scope: DashboardScope | null, window: DashboardWindow | null, enabled: boolean) {
+export function useDashboardSnapshot(
+  scope: DashboardScope | null,
+  window: DashboardWindow | null,
+  enabled: boolean,
+) {
   return useQuery({
-    queryKey: scope && window ? dashboardQueryKeys.snapshot(scope, window) : ['dashboard', 'disabled', 'snapshot'],
+    queryKey:
+      scope && window
+        ? dashboardQueryKeys.snapshot(scope, window)
+        : ["dashboard", "disabled", "snapshot"],
     queryFn: ({ signal }) => getDashboardSnapshot(scope!, window!, signal),
     enabled: enabled && scope !== null && window !== null,
     staleTime: 300_000,
@@ -28,11 +43,35 @@ export function useDashboardSnapshot(scope: DashboardScope | null, window: Dashb
   });
 }
 
-export function useDashboardPending(scope: DashboardScope | null, window: DashboardWindow | null, enabled: boolean) {
+export function useDashboardTaskStatus(
+  scope: DashboardScope | null,
+  taskId: string | undefined,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: scope
+      ? dashboardQueryKeys.taskStatus(scope, taskId)
+      : ["dashboard", "disabled", "task-status"],
+    queryFn: ({ signal }) => getDashboardTaskStatus(scope!, taskId, signal),
+    enabled: enabled && scope !== null,
+    staleTime: 60_000,
+    retry: 2,
+  });
+}
+
+export function useDashboardPending(
+  scope: DashboardScope | null,
+  window: DashboardWindow | null,
+  enabled: boolean,
+) {
   const input = { limit: 5 } as const;
   return useQuery({
-    queryKey: scope && window ? dashboardQueryKeys.pending(scope, window, input) : ['dashboard', 'disabled', 'pending'],
-    queryFn: ({ signal }) => listDashboardPendingItems(scope!, window!, input, signal),
+    queryKey:
+      scope && window
+        ? dashboardQueryKeys.pending(scope, window, input)
+        : ["dashboard", "disabled", "pending"],
+    queryFn: ({ signal }) =>
+      listDashboardPendingItems(scope!, window!, input, signal),
     enabled: enabled && scope !== null && window !== null,
     staleTime: 60_000,
     retry: 2,
@@ -46,8 +85,12 @@ export function useDashboardPendingPage(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: scope && window ? dashboardQueryKeys.pending(scope, window, input) : ['dashboard', 'disabled', 'pending-page'],
-    queryFn: ({ signal }) => listDashboardPendingItems(scope!, window!, input, signal),
+    queryKey:
+      scope && window
+        ? dashboardQueryKeys.pending(scope, window, input)
+        : ["dashboard", "disabled", "pending-page"],
+    queryFn: ({ signal }) =>
+      listDashboardPendingItems(scope!, window!, input, signal),
     enabled: enabled && scope !== null && window !== null,
     staleTime: 60_000,
     retry: 2,

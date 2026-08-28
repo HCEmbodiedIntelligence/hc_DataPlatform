@@ -298,6 +298,7 @@ class PostgresAnnotationRepository:
                     task.status,
                     task.submitted_revision,
                     task.current_submission_id,
+                    submission.episode_version AS current_episode_version,
                     task.approved_revision,
                     task.approved_review_id,
                     task.updated_at,
@@ -311,6 +312,9 @@ class PostgresAnnotationRepository:
                 INNER JOIN annotation.annotation_revisions AS revision
                   ON revision.task_id = task.task_id
                  AND revision.revision = task.current_revision
+                LEFT JOIN annotation.annotation_submissions AS submission
+                  ON submission.task_id = task.task_id
+                 AND submission.submission_id = task.current_submission_id
                 LEFT JOIN LATERAL (
                     SELECT NULLIF(legacy_revision.legacy_audit ->> 'draft_id', '')
                         AS legacy_draft_id
@@ -807,7 +811,7 @@ class PostgresAnnotationRepository:
             mutation_rows = _rows(cursor, cursor.fetchall())
             cursor.execute(
                 """
-                SELECT submission_id, task_id, revision, submitted_by,
+                SELECT submission_id, task_id, episode_version, revision, submitted_by,
                        base_lance_version, tag_schema_id, tag_schema_version,
                        tag_schema_hash, revision_content_hash, checks, created_at
                 FROM annotation.annotation_submissions
@@ -912,6 +916,7 @@ class PostgresAnnotationRepository:
             AnnotationSubmission(
                 submission_id=str(row["submission_id"]),
                 task_id=str(row["task_id"]),
+                episode_version=_as_int(row["episode_version"]),
                 revision=_as_int(row["revision"]),
                 submitted_by=str(row["submitted_by"]),
                 base_lance_version=_as_int(row["base_lance_version"]),
@@ -1013,6 +1018,11 @@ class PostgresAnnotationRepository:
             ),
             current_submission_id=(
                 None if row["current_submission_id"] is None else str(row["current_submission_id"])
+            ),
+            current_episode_version=(
+                None
+                if row["current_episode_version"] is None
+                else _as_int(row["current_episode_version"])
             ),
             approved_revision=(
                 None if row["approved_revision"] is None else _as_int(row["approved_revision"])
@@ -1248,17 +1258,18 @@ class PostgresAnnotationRepository:
             cursor.execute(
                 """
                 INSERT INTO annotation.annotation_submissions (
-                    submission_id, task_id, revision, submitted_by,
+                    submission_id, task_id, episode_version, revision, submitted_by,
                     base_lance_version, tag_schema_id, tag_schema_version,
                     tag_schema_hash, revision_content_hash, checks, created_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
                 )
                 ON CONFLICT (submission_id) DO NOTHING
                 """,
                 (
                     submission.submission_id,
                     submission.task_id,
+                    submission.episode_version,
                     submission.revision,
                     submission.submitted_by,
                     submission.base_lance_version,

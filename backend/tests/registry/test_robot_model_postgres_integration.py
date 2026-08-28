@@ -516,8 +516,8 @@ def test_postgres_registry_asset_ledger_is_project_scoped_and_manifested(
             command=ReplaceRobotModelJointMappingsRequest(
                 mappings=(
                     RobotModelJointMapping(
-                        source_joint_name="joint_1",
-                        target_joint_name="actuator_1",
+                        source_joint_name="actuator_1",
+                        target_joint_name="joint_1",
                         direction=RobotJointDirection.SAME,
                     ),
                 )
@@ -595,7 +595,7 @@ def test_postgres_registry_asset_ledger_is_project_scoped_and_manifested(
             assert cursor.fetchone() == (
                 DRAFT_VERSION_ID,
                 binding.binding_id,
-                "ROBOT",
+                "ROBOT_INSTANCE",
                 ROBOT_ID,
             )
 

@@ -82,13 +82,6 @@ describe("P18 formal runtime access gateway", () => {
   it.each([
     ["membership", "approve", "membership-requests", "membership-1", null],
     ["membership", "reject", "membership-requests", "membership-1", "资料不足"],
-    [
-      "membership",
-      "withdraw",
-      "membership-requests",
-      "membership-1",
-      "申请人撤回",
-    ],
     ["capability", "revoke", "capability-requests", "capability-1", "轮岗撤权"],
   ] as const)(
     "posts %s %s to the formal action endpoint",

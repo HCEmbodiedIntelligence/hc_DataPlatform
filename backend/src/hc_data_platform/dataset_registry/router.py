@@ -41,6 +41,7 @@ from .models import (
     DatasetPageVersionManifestEnvelope,
     DatasetPageVersionSchemaEnvelope,
     DatasetPageVersionSchemaSummaryEnvelope,
+    DatasetWorkflowState,
 )
 from .repository import (
     DatasetPageEpisodeFilters,
@@ -79,6 +80,25 @@ RegionHeader = Annotated[str, Header(alias="X-Region-Code", min_length=1, max_le
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=256)]
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=3, max_length=256)]
 OptionalQueryText = Annotated[str | None, Query(min_length=1, max_length=256)]
+DatasetTaskQuery = Annotated[
+    str | None,
+    Query(
+        min_length=1,
+        max_length=256,
+        description=(
+            "Case-insensitive plain-text substring matched against the dataset task "
+            "or any dataset Episode task."
+        ),
+    ),
+]
+CollectionTaskQuery = Annotated[
+    str | None,
+    Query(
+        min_length=1,
+        max_length=128,
+        description="Exact immutable collection-task identity owned by the Dataset.",
+    ),
+]
 OptionalDate = Annotated[date | None, Query()]
 OptionalDateTime = Annotated[datetime | None, Query()]
 OptionalCursor = Annotated[str | None, Query(min_length=1, max_length=16_384)]
@@ -92,6 +112,10 @@ DatasetSort = Literal[
     "name:asc,dataset_id:asc",
 ]
 ChannelMatch = Literal["all", "any"]
+WorkflowStateQuery = Annotated[
+    DatasetWorkflowState | None,
+    Query(description="Require the selected workflow count to be greater than zero."),
+]
 DatasetVersionSort = Literal[
     "created_at:desc,version_id:desc",
     "created_at:asc,version_id:asc",
@@ -127,21 +151,27 @@ def _filters(
     robot_model_id: str | None,
     robot_id: str | None,
     task: str | None,
+    tag: str | None,
     scene: str | None,
     asset_state: str | None,
+    workflow_state: DatasetWorkflowState | None,
     storage_class: str | None,
     channels: list[str] | None,
     channel_match: ChannelMatch,
     created_from: date | None,
     created_to: date | None,
+    collection_task_id: str | None = None,
 ) -> DatasetPageFilters:
     return DatasetPageFilters(
         query=q,
         robot_model_id=robot_model_id,
         robot_id=robot_id,
+        collection_task_id=collection_task_id,
         task=task,
+        tag=tag,
         scene=scene,
         asset_state=asset_state,
+        workflow_state=workflow_state,
         storage_class=storage_class,
         channels=tuple(channels or ()),
         channel_match=channel_match,
@@ -167,9 +197,12 @@ def list_datasets(
     q: OptionalQueryText = None,
     robot_model_id: OptionalQueryText = None,
     robot_id: OptionalQueryText = None,
-    task: OptionalQueryText = None,
+    collection_task_id: CollectionTaskQuery = None,
+    task: DatasetTaskQuery = None,
+    tag: OptionalQueryText = None,
     scene: OptionalQueryText = None,
     asset_state: OptionalQueryText = None,
+    workflow_state: WorkflowStateQuery = None,
     storage_class: OptionalQueryText = None,
     channels: RepeatedQuery = None,
     channel_match: ChannelMatch = "all",
@@ -190,9 +223,12 @@ def list_datasets(
             q=q,
             robot_model_id=robot_model_id,
             robot_id=robot_id,
+            collection_task_id=collection_task_id,
             task=task,
+            tag=tag,
             scene=scene,
             asset_state=asset_state,
+            workflow_state=workflow_state,
             storage_class=storage_class,
             channels=channels,
             channel_match=channel_match,
@@ -249,9 +285,11 @@ def get_dataset_summary(
     q: OptionalQueryText = None,
     robot_model_id: OptionalQueryText = None,
     robot_id: OptionalQueryText = None,
-    task: OptionalQueryText = None,
+    task: DatasetTaskQuery = None,
+    tag: OptionalQueryText = None,
     scene: OptionalQueryText = None,
     asset_state: OptionalQueryText = None,
+    workflow_state: WorkflowStateQuery = None,
     storage_class: OptionalQueryText = None,
     channels: RepeatedQuery = None,
     channel_match: ChannelMatch = "all",
@@ -269,8 +307,10 @@ def get_dataset_summary(
             robot_model_id=robot_model_id,
             robot_id=robot_id,
             task=task,
+            tag=tag,
             scene=scene,
             asset_state=asset_state,
+            workflow_state=workflow_state,
             storage_class=storage_class,
             channels=channels,
             channel_match=channel_match,
@@ -298,9 +338,11 @@ def get_dataset_facets(
     q: OptionalQueryText = None,
     robot_model_id: OptionalQueryText = None,
     robot_id: OptionalQueryText = None,
-    task: OptionalQueryText = None,
+    task: DatasetTaskQuery = None,
+    tag: OptionalQueryText = None,
     scene: OptionalQueryText = None,
     asset_state: OptionalQueryText = None,
+    workflow_state: WorkflowStateQuery = None,
     storage_class: OptionalQueryText = None,
     channels: RepeatedQuery = None,
     channel_match: ChannelMatch = "all",
@@ -318,8 +360,10 @@ def get_dataset_facets(
             robot_model_id=robot_model_id,
             robot_id=robot_id,
             task=task,
+            tag=tag,
             scene=scene,
             asset_state=asset_state,
+            workflow_state=workflow_state,
             storage_class=storage_class,
             channels=channels,
             channel_match=channel_match,

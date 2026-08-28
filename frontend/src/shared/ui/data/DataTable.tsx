@@ -23,6 +23,7 @@ declare module '@tanstack/react-table' {
 }
 
 export type DataTableState = 'ready' | 'loading' | 'empty' | 'error';
+export type DataTableColumnLayout = 'responsive' | 'stable';
 
 export interface DataTableSelection<TData> {
   selectedRowIds: readonly string[];
@@ -32,17 +33,25 @@ export interface DataTableSelection<TData> {
   selectAllLabel?: string;
 }
 
+export interface DataTableRowInteraction<TData> {
+  activeRowId: string | null;
+  onActivate: (row: TData) => void;
+  getActivationLabel?: (row: TData) => string;
+}
+
 export interface DataTableProps<TData> {
   data: readonly TData[];
   columns: readonly ColumnDef<TData, unknown>[];
   getRowId: (row: TData) => string;
   caption?: string;
   state?: DataTableState;
+  columnLayout?: DataTableColumnLayout;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   columnFilters?: ColumnFiltersState;
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   selection?: DataTableSelection<TData>;
+  rowInteraction?: DataTableRowInteraction<TData>;
   empty?: ReactNode;
   error?: ReactNode;
   loading?: ReactNode;
@@ -67,11 +76,13 @@ export function DataTable<TData>({
   getRowId,
   caption = '数据表格',
   state,
+  columnLayout = 'responsive',
   sorting = [],
   onSortingChange,
   columnFilters = [],
   onColumnFiltersChange,
   selection,
+  rowInteraction,
   empty,
   error,
   loading,
@@ -83,6 +94,7 @@ export function DataTable<TData>({
     [selection?.selectedRowIds],
   );
   const resolvedState = state ?? (tableData.length === 0 ? 'empty' : 'ready');
+  const stableColumnLayout = columnLayout === 'stable';
 
   const table = useReactTable({
     data: tableData,
@@ -118,8 +130,12 @@ export function DataTable<TData>({
 
       return {
         key: column.id,
-        ...(column.columnDef.size === undefined ? {} : { width: column.columnDef.size }),
-        ...(column.columnDef.meta?.responsive
+        ...(stableColumnLayout
+          ? { width: column.getSize() }
+          : column.columnDef.size === undefined
+            ? {}
+            : { width: column.columnDef.size }),
+        ...(!stableColumnLayout && column.columnDef.meta?.responsive
           ? { responsive: [...column.columnDef.meta.responsive] }
           : {}),
         title:
@@ -151,6 +167,10 @@ export function DataTable<TData>({
       };
     });
 
+  const stableScrollWidth = table
+    .getVisibleLeafColumns()
+    .reduce((width, column) => width + column.getSize(), selection ? 48 : 0);
+
   const antRowSelection: TableProps<Row<TData>>['rowSelection'] = selection
     ? {
         selectedRowKeys: [...selection.selectedRowIds],
@@ -165,6 +185,7 @@ export function DataTable<TData>({
         getTitleCheckboxProps: () => ({
           'aria-label': selection.selectAllLabel ?? '选择当前数据窗口全部行',
         }),
+        ...(stableColumnLayout ? { columnWidth: 48 } : {}),
       }
     : undefined;
 
@@ -182,6 +203,7 @@ export function DataTable<TData>({
       aria-label={caption}
       aria-busy={resolvedState === 'loading'}
       data-pagination-contract="cursor-only"
+      data-column-layout={columnLayout}
     >
       <Table<Row<TData>>
         rootClassName="hc-data-table"
@@ -189,11 +211,44 @@ export function DataTable<TData>({
         dataSource={rows}
         rowKey={(row) => row.id}
         rowSelection={antRowSelection}
+        onRow={
+          rowInteraction
+            ? (row) => {
+                const active = row.id === rowInteraction.activeRowId;
+                return {
+                  className: 'hc-data-table-interactive-row',
+                  tabIndex: 0,
+                  'aria-label': rowInteraction.getActivationLabel?.(row.original),
+                  'aria-selected': active,
+                  'data-row-selected': active ? 'true' : undefined,
+                  onClick: (event) => {
+                    const target = event.target;
+                    if (
+                      target instanceof Element &&
+                      target.closest(
+                        'a, button, input, select, textarea, [role="button"], [role="link"], [contenteditable="true"]',
+                      )
+                    ) {
+                      return;
+                    }
+                    rowInteraction.onActivate(row.original);
+                  },
+                  onKeyDown: (event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    rowInteraction.onActivate(row.original);
+                  },
+                };
+              }
+            : undefined
+        }
         loading={resolvedState === 'loading'}
         locale={{ emptyText }}
         pagination={false}
         size="small"
-        scroll={{ x: 'max-content' }}
+        tableLayout={stableColumnLayout ? 'fixed' : undefined}
+        scroll={{ x: stableColumnLayout ? stableScrollWidth : 'max-content' }}
       />
     </section>
   );

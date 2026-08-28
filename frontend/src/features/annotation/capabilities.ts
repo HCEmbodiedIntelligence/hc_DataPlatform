@@ -40,7 +40,7 @@ export function decideAnnotationCapability(
   required: AnnotationCapability,
   signedCapabilities: ReadonlySet<string> = ownerSignedCapabilities,
 ): CapabilityDecision {
-  if (!capabilities) return { state: 'feature-unavailable', reason: '授权快照不可用' };
+  if (!capabilities) return { state: 'feature-unavailable', reason: '授权状态不可用' };
   if (!annotationCapabilities.includes(required)) return { state: 'feature-unavailable', reason: '未知 capability' };
   if (pendingOwnerCapabilities.has(required) && !signedCapabilities.has(required)) {
     return { state: 'feature-unavailable', reason: '能力角色分配尚未由 Owner 签署' };

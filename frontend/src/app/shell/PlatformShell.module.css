@@ -133,6 +133,45 @@
   display: flex;
 }
 
+.unscopedScopePanel {
+  flex: 0 1 auto;
+}
+
+.unscopedScopeField {
+  min-height: 38px;
+  overflow: hidden;
+  padding: 0 10px 0 36px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-sm);
+  background: var(--hc-color-surface-muted);
+  color: var(--hc-color-text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.unscopedScopeField > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unscopedManageLink {
+  color: var(--hc-color-primary) !important;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.unscopedManageLink:hover {
+  border-color: var(--hc-color-primary);
+  background: var(--hc-color-surface-tint);
+  color: var(--hc-color-primary-hover) !important;
+}
+
+.unscopedManageLink:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+
 .scopePanel {
   display: flex;
   min-width: 0;
@@ -189,65 +228,6 @@
   pointer-events: none;
 }
 
-.projectRequestFooter {
-  margin-top: 4px;
-  padding: 7px 6px 3px;
-  border-top: 1px solid var(--hc-color-border-subtle);
-}
-
-.projectRequestFooter :global(.ant-btn) {
-  min-height: 38px;
-  justify-content: flex-start;
-  color: var(--hc-color-primary);
-  font-weight: 650;
-}
-
-.projectRequestFooter :global(.ant-btn:hover) {
-  background: var(--hc-color-surface-tint) !important;
-  color: var(--hc-color-primary-hover) !important;
-}
-
-.projectRequestFooter :global(.ant-btn:focus-visible) {
-  outline: 2px solid var(--hc-color-focus);
-  outline-offset: -2px;
-}
-
-.membershipRequestModal :global(.ant-modal-content) {
-  border: 1px solid var(--hc-color-border-subtle);
-  border-radius: var(--hc-radius-lg);
-  box-shadow: 0 28px 80px rgb(27 31 68 / 22%);
-}
-
-.membershipRequestIntro {
-  margin: 0 0 20px;
-  color: var(--hc-color-text-muted);
-  line-height: 1.7;
-}
-
-.membershipRequestModal :global(.ant-form-item-label > label) {
-  color: var(--hc-color-text);
-  font-weight: 650;
-}
-
-.membershipRequestModal :global(.ant-input[readonly]) {
-  background: var(--hc-color-surface-muted);
-  color: var(--hc-color-text-muted);
-}
-
-.membershipRequestFeedback {
-  margin-bottom: 20px;
-}
-
-.membershipRequestFeedback code {
-  overflow-wrap: anywhere;
-}
-
-.membershipRequestActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 .globalSearch {
   display: inline-flex;
   width: 172px;
@@ -282,6 +262,10 @@
 
 .headerActions {
   flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+
+.globalSearch + .headerActions {
   margin-inline-start: 4px;
 }
 

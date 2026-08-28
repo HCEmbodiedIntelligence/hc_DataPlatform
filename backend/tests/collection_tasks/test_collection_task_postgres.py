@@ -36,6 +36,7 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
     normalize_postgres_dsn,
     psycopg_connection_factory,
 )
+from hc_data_platform.core.errors import ProblemException  # noqa: E402
 from hc_data_platform.security.psycopg import PsycopgIdempotencyStore  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -437,13 +438,18 @@ def test_postgres_target_constraint_rejects_nonpositive_dimensions() -> None:
             connection.execute(
                 """
                 INSERT INTO collection_tasks.collection_tasks (
-                    collection_task_id, project_id, task_code, name, task_type, scenario,
+                    collection_task_id, project_id, dataset_id, task_code, name,
+                    task_type, scenario,
                     target_json, create_fingerprint
-                ) VALUES (%s, %s, %s, 'invalid target', 'COLLECTION', 'integration', %s::jsonb, %s)
+                ) VALUES (
+                    %s, %s, %s, %s, 'invalid target', 'COLLECTION', 'integration',
+                    %s::jsonb, %s
+                )
                 """,
                 (
                     f"invalid-target-{uuid4().hex}",
                     project_id,
+                    f"dataset_task_{uuid4().hex}",
                     str(uuid4().int % 100_000_000).zfill(8),
                     json.dumps({"package_count": 0}),
                     "f" * 64,
@@ -805,6 +811,18 @@ def test_postgres_progress_scope_idempotency_and_close_race() -> None:
         )
         assert progress.observed_sources.camera_ids == ("camera-0", "camera-1")
         assert progress.observed_sources.topic_names == ("/camera/front",)
+
+        # The database trigger closes the service pre-check race and the
+        # repository maps it back to the stable public problem code.
+        with request_scope(project_id, "another-region"), pytest.raises(ProblemException) as locked:
+            service.repository.update(
+                organization_id=organization_for(project_id),
+                project_id=project_id,
+                collection_task_id=task.collection_task_id,
+                expected_version=task.version,
+                changes={"dataset_id": "dataset_reassignment_blocked"},
+            )
+        assert locked.value.problem.code == "COLLECTION_TASK_DATASET_REASSIGNMENT_BLOCKED"
 
         with request_scope(project_id):
             race_task = create_task(service, project_id, "race-create")

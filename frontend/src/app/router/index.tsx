@@ -9,6 +9,10 @@ import type { PageAvailability } from "../shell/navigation-manifest";
 import { dataUploadRoutes } from "../shell/navigation-routes";
 import { RouteCapabilityGuard } from "./RouteCapabilityGuard";
 import { authRoutes } from "../../pages/auth/routes";
+import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
+import { filterNavigationManifest } from "../shell/navigation-manifest";
+import { isPageHidden } from "../page-visibility";
 
 type PageRouteModule = Record<string, unknown>;
 type OwnedRouteObject = RouteObject & {
@@ -134,10 +138,10 @@ const pageReadCapability: Readonly<Record<string, string | null>> = {
   P14: "robot_model.read",
   P15: "robot.read",
   P16: "calibration.read",
-  P17: "data_schema.read",
   P18: "access.read",
   P19: "audit.read",
   P20: "upload.read",
+  P21: "export.read",
 };
 
 function routeCapabilities(
@@ -163,7 +167,7 @@ function routeCapabilities(
 
 for (const [modulePath, routeModule] of Object.entries(modules)) {
   const pageId = pageIdFromModule(modulePath);
-  if (pageId === null) continue;
+  if (pageId === null || isPageHidden(pageId)) continue;
   const seen = new Set<readonly RouteObject[]>();
   for (const exported of Object.values(routeModule)) {
     if (!isRouteArray(exported) || seen.has(exported)) continue;
@@ -221,9 +225,25 @@ for (const page of lazyIngestPages) {
 export const aggregatedPageRoutes: readonly RouteObject[] = routeRecords;
 export const pageAvailability: PageAvailability = Object.freeze(availability);
 
-const firstRoute =
-  routeRecords.find((route) => typeof route.path === "string")?.path ??
-  "/dashboard";
+function RootLanding() {
+  const bootstrapLoaded = useShellStore((state) => state.bootstrapLoaded);
+  const authorizationFailed = useShellStore(
+    (state) => state.authorizationFailed,
+  );
+  const authorization = useShellStore((state) => state.authorization);
+  const platformCapabilities = useShellStore(
+    (state) => state.platformCapabilities,
+  );
+  if (!bootstrapLoaded && !authorizationFailed) return null;
+  const capabilities = expandGrantedCapabilities([
+    ...(authorization?.capabilities ?? []),
+    ...platformCapabilities,
+  ]);
+  const legalPath =
+    filterNavigationManifest(capabilities, pageAvailability)[0]?.items[0]
+      ?.path ?? "/dashboard";
+  return <Navigate replace to={legalPath} />;
+}
 
 export function createPlatformRouter() {
   return createBrowserRouter([
@@ -232,7 +252,13 @@ export function createPlatformRouter() {
       path: "/",
       element: <RuntimePlatformShell pageAvailability={pageAvailability} />,
       children: [
-        { index: true, element: <Navigate replace to={firstRoute} /> },
+        { index: true, element: <RootLanding /> },
+        {
+          path: "/account",
+          lazy: async () => ({
+            Component: (await import("../../pages/account/page")).default,
+          }),
+        },
         {
           path: "/account/settings",
           lazy: async () => ({

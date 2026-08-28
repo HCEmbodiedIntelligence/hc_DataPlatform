@@ -23,8 +23,13 @@ from hc_data_platform.annotation.auto_jobs import (
     DeterministicAutoAnnotationProvider,
     HttpAutoAnnotationProvider,
     InMemoryAutoAnnotationJobRepository,
+    InMemoryAutoAnnotationSamplingRepository,
 )
-from hc_data_platform.annotation.models import AnnotationOperation, OperationKind
+from hc_data_platform.annotation.models import (
+    AnnotationOperation,
+    AutoAnnotationSamplingReference,
+    OperationKind,
+)
 from hc_data_platform.annotation.router import (
     get_annotation_auth,
     get_annotation_service,
@@ -131,6 +136,71 @@ def test_job_runs_provider_and_human_explicitly_applies_suggestion() -> None:
     assert applied.status == "APPLIED"
     assert applied.applied_revision == 1
     assert repository.audit_events[-1]["action"] == "annotation.auto_job.applied"
+
+
+def test_provider_receives_server_owned_ingest_sampling_reference() -> None:
+    _, annotation, repository, provider = _fixture()
+    sampling = AutoAnnotationSamplingReference(
+        object_key="derived/frame-selections/project/source/adaptive-2fps-v1.json",
+        content_sha256="a" * 64,
+        size_bytes=2048,
+        source_sha256="b" * 64,
+        sampling_version="adaptive-2fps-v1",
+        camera_set=("front", "left", "right", "wrist"),
+        source_frame_count=7_200,
+        selected_group_count=180,
+    )
+    service = AutoAnnotationJobService(
+        annotation,
+        repository,
+        (provider,),
+        sampling_repository=InMemoryAutoAnnotationSamplingRepository({"task-a": sampling}),
+        require_sampling_manifest=True,
+        clock=lambda: NOW,
+    )
+    job = service.create(
+        auth=_auth(),
+        task_id="task-a",
+        source_revision=0,
+        provider_name="deterministic-fake",
+        model="fake-v1",
+        input_selection=AutoAnnotationInputSelection(start_step=10, end_step=80),
+        idempotency_key="sampled-once",
+        request_id="sampled-once",
+    )
+
+    assert job.sampling_reference == sampling
+    service.run(auth=_auth(), task_id="task-a", job_id=job.job_id, request_id="run")
+    assert provider.requests[0].sampling_reference == sampling
+    assert provider.requests[0].input_selection == AutoAnnotationInputSelection(
+        start_step=10, end_step=80
+    )
+
+
+def test_production_policy_rejects_full_rate_fallback_without_sampling() -> None:
+    _, annotation, repository, provider = _fixture()
+    service = AutoAnnotationJobService(
+        annotation,
+        repository,
+        (provider,),
+        sampling_repository=InMemoryAutoAnnotationSamplingRepository(),
+        require_sampling_manifest=True,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(ProblemException) as rejected:
+        service.create(
+            auth=_auth(),
+            task_id="task-a",
+            source_revision=0,
+            provider_name="deterministic-fake",
+            model="fake-v1",
+            input_selection=AutoAnnotationInputSelection(),
+            idempotency_key="no-full-rate-fallback",
+            request_id="no-full-rate-fallback",
+        )
+
+    assert rejected.value.problem.code == "AUTO_ANNOTATION_SAMPLING_UNAVAILABLE"
 
 
 def test_reclaimed_outbox_delivery_resumes_a_running_job() -> None:

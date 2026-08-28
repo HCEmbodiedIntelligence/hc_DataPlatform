@@ -125,7 +125,10 @@ PostgreSQL
     `-- lance_pending_reconciliation
 ```
 
-表数量：32；视图数量：2。`preview` 模块只使用带 TTL 的缓存，没有 PostgreSQL 业务表。
+`preview` schema 现在包含 `artifacts`、`jobs` 和 `sessions` 三张持久表。预览媒体仍存放在
+对象存储，PostgreSQL 保存精确对象清单、租户身份、状态、血缘、TTL、LRU 和回收保护。
+`annotation.frame_selection_manifests` 保存 ingest 生成的不可变抽帧引用；候选清单本体在
+对象存储，自动标注 job 固化同一引用，避免 provider 回退到全量视频解码。
 
 ## 4. 主要关系图
 
@@ -348,8 +351,12 @@ publishing.dataset_versions
 + ingest.rollouts
 | PK: (project_id, rollout_id)
 | UK: (project_id, collection_job_id, sequence_no)
+| UK(partial): (project_id, source_fingerprint)
+|              WHERE source_fingerprint IS NOT NULL AND duplicate_of_rollout_id IS NULL
 | FK: (project_id, collection_job_id)
 |     -> ingest.collection_jobs(project_id, collection_job_id)
+| FK: (project_id, duplicate_of_rollout_id)
+|     -> ingest.rollouts(project_id, rollout_id)
 | RLS: 是，project_id + region_code
 |
 +-- project_id        text         NN PK(1) FK  项目/租户
@@ -359,12 +366,17 @@ publishing.dataset_versions
 +-- sequence_no       integer      NN UK CK      任务内序号，必须大于 0
 +-- robot_id          text         NN            机器人 ID
 +-- source_sha256     char(64)     NN CK         原始数据哈希
++-- source_fingerprint char(64)       CK         与转换器版本无关的源录制身份
++-- duplicate_of_rollout_id text      FK CK      历史重复包所指向的 canonical Rollout
 +-- status            text         NN CK         REGISTERED/UPLOADING/
 |                                                 RAW_COMMITTED/VERIFYING/
 |                                                 RAW_VERIFIED/FAILED/CANCELLED
 +-- created_at        timestamptz  NN            创建时间
 `-- updated_at        timestamptz  NN            更新时间
 ```
+
+历史数据兼容：源录制身份上线前已经完成质检的旧转换结果继续作为历史质检事实保留；只有未完成
+质检的旧同源包会标记 `duplicate_of_rollout_id`。canonical 源指纹仍会拦截之后再次上传同一源。
 
 ### 6.3 `ingest.upload_sessions`
 
@@ -477,11 +489,40 @@ publishing.dataset_versions
 `-- committed_at  timestamptz   NN           提交时间
 ```
 
+### 6.7 `ingest.device_capture_facts`
+
+用途：保存经过 device-agent 服务身份认证的设备端 `CAPTURED/SAVED` 追加式事实。云端
+rollout 登记、Manifest 时间和 Raw 对象提交都不得生成此表记录。
+
+```text
++ ingest.device_capture_facts
+| PK: fact_id
+| UK: (organization_id, project_id, region_code, device_id, source_event_id)
+| FK: (organization_id, project_id, collection_task_id) -> collection_tasks.collection_tasks
+| RLS: 是，organization_id + project_id + region_code；UPDATE/DELETE 被触发器拒绝
+|
++-- event_type            text          NN CK  CAPTURED/SAVED
++-- collection_job_id     text          NN     设备收到的采集作业
++-- recording_request_id  text          NN     录制请求
++-- data_package_id       text          NN     数据包
++-- device_sequence_no    bigint        NN CK  设备单调事件序号
++-- capture_started_at    timestamptz   NN     设备采集起点
++-- capture_ended_at      timestamptz   NN     设备采集终点
++-- saved_at              timestamptz          SAVED 本地持久化时间
++-- local_artifact_size   bigint               SAVED 本地文件大小
++-- local_artifact_sha256 char(64)             SAVED 本地文件摘要
++-- producer_subject_id   text          NN     已认证设备服务主体
++-- source_fingerprint    char(64)      NN     幂等内容指纹
+`-- received_at           timestamptz   NN     云端接收事实时间
+```
+
 ## 7. workflow：工作流与恢复
 
 ### 7.1 `workflow.jobs`
 
-用途：记录 Temporal 工作流对应的平台作业和执行状态。
+用途：记录 Temporal 工作流对应的平台作业和执行状态。Ingest workflow 通过带 replay patch
+保护的幂等 local activity 在各阶段、质量终态、技术终态和取消终态更新此投影；Temporal history
+仍是编排事实源，本表服务于查询和恢复。
 
 ```text
 + workflow.jobs
@@ -1106,6 +1147,15 @@ lance_datasets / lance_dataset_versions
     +-- LOGICAL -> annotation.annotation_tasks(dataset_id, dataset_version)
     `-- LOGICAL -> publishing.dataset_versions(dataset_id, base_lance_version)
 
+collection_tasks.collection_tasks
+    +-- UK: (organization_id, project_id, dataset_id)
+    +-- 1:1 -> 一个项目内的采集任务唯一拥有一个逻辑 Dataset
+    `-- dataset_id 不包含 region_code；region_code 仅保存在上传、Episode 和对象存储血缘
+
+dataset_registry.datasets
+    `-- FK: (organization_id, project_id, collection_task_id, dataset_id)
+        -> collection_tasks.collection_tasks
+
 workflow.jobs.resource_id
     `-- LOGICAL -> 任意流水线业务资源，由 job_type 决定具体表
 ```
@@ -1115,7 +1165,7 @@ workflow.jobs.resource_id
 ```text
 租户隔离
   project_id              项目级租户边界
-  region_code             项目内区域边界
+  region_code             项目内物理存储/数据驻留边界，不参与任务 Dataset 身份
   core.scope_matches()    读取事务中的 app.project_id/app.region_code
   app.platform_admin      已验证 platform.admin；只在 API 证明真实项目后绕过行 scope
   core.apply_project_rls  为带 project_id 的表启用并强制 RLS

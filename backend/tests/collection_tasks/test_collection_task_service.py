@@ -131,6 +131,81 @@ def test_create_is_idempotent_and_exploratory_tasks_remain_explicitly_untargeted
     assert_problem(reused, "IDEMPOTENCY_KEY_REUSED")
 
 
+def test_tasks_can_share_an_existing_dataset_and_reassignment_locks_after_upload() -> None:
+    first_dataset = "dataset_shared_collection"
+    second_dataset = "dataset_other_collection"
+    repository = InMemoryCollectionTaskRepository(
+        assignable_datasets=(
+            (ORGANIZATION_ID, "project-a", first_dataset),
+            (ORGANIZATION_ID, "project-a", second_dataset),
+        )
+    )
+    service = CollectionTaskService(repository)
+
+    first = service.create(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        command=command().model_copy(update={"dataset_id": first_dataset}),
+        idempotency_key="shared-dataset-first",
+    ).record
+    second = service.create(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        command=command(name="Second task").model_copy(update={"dataset_id": first_dataset}),
+        idempotency_key="shared-dataset-second",
+    ).record
+
+    assert first.dataset_id == second.dataset_id == first_dataset
+    reassigned = service.update(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=second.collection_task_id,
+        command=UpdateCollectionTask(dataset_id=second_dataset),
+        if_match=service.etag(second),
+    )
+    assert reassigned.dataset_id == second_dataset
+
+    repository.record_received_package(
+        organization_id=ORGANIZATION_ID,
+        project_id="project-a",
+        collection_task_id=second.collection_task_id,
+        package_id="received-package",
+    )
+    with pytest.raises(ProblemException) as locked:
+        service.update(
+            organization_id=ORGANIZATION_ID,
+            project_id="project-a",
+            collection_task_id=second.collection_task_id,
+            command=UpdateCollectionTask(dataset_id=first_dataset),
+            if_match=service.etag(reassigned),
+        )
+    assert_problem(locked, "COLLECTION_TASK_DATASET_REASSIGNMENT_BLOCKED")
+
+
+def test_dataset_assignment_rejects_unknown_scope_and_explicit_null() -> None:
+    service = CollectionTaskService()
+    with pytest.raises(ProblemException) as unavailable:
+        service.create(
+            organization_id=ORGANIZATION_ID,
+            project_id="project-a",
+            command=command().model_copy(update={"dataset_id": "dataset_unknown_scope"}),
+            idempotency_key="unknown-dataset",
+        )
+    assert_problem(unavailable, "COLLECTION_TASK_DATASET_NOT_ASSIGNABLE")
+
+    with pytest.raises(ValueError):
+        CreateCollectionTask.model_validate(
+            {
+                "dataset_id": None,
+                "name": "Invalid null",
+                "type": "COLLECTION",
+                "scenario": "general",
+            }
+        )
+    with pytest.raises(ValueError):
+        UpdateCollectionTask.model_validate({"dataset_id": None})
+
+
 @pytest.mark.parametrize(
     ("initial_status", "action", "allowed", "final_status"),
     [
@@ -481,6 +556,35 @@ def test_progress_rate_is_unknown_without_an_evaluated_denominator() -> None:
     assert progress.qc.pass_rate.denominator == 0
     assert progress.qc.pass_rate.value is None
     assert progress.qc.pending_count == 1
+
+
+def test_packages_lists_every_received_package_with_its_current_gate() -> None:
+    repository = InMemoryCollectionTaskRepository()
+    service = CollectionTaskService(repository)
+    task_id, _ = create_task(service)
+    for package_id, outcome in (
+        ("pending", None),
+        ("passing", QcOutcome.PASS),
+        ("risky", QcOutcome.RISK),
+        ("rejected", QcOutcome.REJECT),
+    ):
+        repository.record_received_package(
+            organization_id=ORGANIZATION_ID,
+            project_id="project-a",
+            collection_task_id=task_id,
+            package_id=package_id,
+            qc_outcome=outcome,
+        )
+
+    packages = service.packages(ORGANIZATION_ID, "project-a", task_id, "cn-test")
+    assert len(packages.items) == 4
+    assert {item.data_package_id: item.state.value for item in packages.items} == {
+        "passing": "PROCESSING",
+        "pending": "PENDING_QC",
+        "rejected": "QUALITY_REJECTED",
+        "risky": "QUALITY_RISK",
+    }
+    assert all(item.visualizable is False for item in packages.items)
 
 
 def test_close_and_new_package_association_are_linearized() -> None:

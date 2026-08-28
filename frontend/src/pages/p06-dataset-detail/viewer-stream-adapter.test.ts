@@ -135,6 +135,54 @@ describe("P06 viewer stream adapter", () => {
     expect(stream?.accessibleSummary).toContain("固定 Lance 版本");
   });
 
+  it("keeps legacy Unitree EVENT revisions browsable as numeric streams", () => {
+    const streams = adaptP06ViewerStreams(
+      revision([
+        {
+          episode_stream_id: "stream_p06legacy_state",
+          channel_path: "/humanoid/observation/state",
+          kind: "EVENT",
+          t_start_ns: "100",
+          t_end_ns: "1100",
+          preview_binding: null,
+          data_binding: {
+            rollout_id: "rollout-p06",
+            lance_version: 1,
+            modality_key: "/humanoid/observation/state",
+            value_kind: "EVENT",
+            start_step: 0,
+            end_step: 30,
+          },
+        },
+        {
+          episode_stream_id: "stream_p06legacy_pose",
+          channel_path: "/robot/base_pose",
+          kind: "EVENT",
+          t_start_ns: "100",
+          t_end_ns: "1100",
+          preview_binding: null,
+          data_binding: {
+            rollout_id: "rollout-p06",
+            lance_version: 1,
+            modality_key: "/robot/base_pose",
+            value_kind: "EVENT",
+            start_step: 0,
+            end_step: 30,
+          },
+        },
+      ]),
+      "dataset_p06fixture",
+    );
+
+    expect(streams).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modality: "joint_state", availability: "ready" }),
+        expect.objectContaining({ modality: "pose", availability: "ready" }),
+      ]),
+    );
+    expect(streams.every((stream) => stream.windowSource !== undefined)).toBe(true);
+  });
+
   it("fails closed on a malformed non-camera preview binding before it can reach the viewer", () => {
     expect(
       episodeStreamWireSchema.safeParse({

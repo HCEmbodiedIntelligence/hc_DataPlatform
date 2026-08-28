@@ -45,6 +45,10 @@ class IngestPersistencePort(Protocol):
 
     def get_rollout_by_package(self, project_id: str, data_package_id: str) -> Rollout | None: ...
 
+    def get_rollout_by_source_fingerprint(
+        self, project_id: str, source_fingerprint: str
+    ) -> Rollout | None: ...
+
     def save_rollout(self, rollout: Rollout) -> None: ...
 
     def get_session(self, session_id: str) -> UploadSession | None: ...
@@ -113,6 +117,7 @@ class InMemoryIngestPersistence:
         self._rollouts: dict[tuple[str, str], Rollout] = {}
         self._rollout_by_package: dict[tuple[str, str], str] = {}
         self._rollout_by_sequence: dict[tuple[str, str, int], str] = {}
+        self._rollout_by_source_fingerprint: dict[tuple[str, str], str] = {}
         self._sessions: dict[str, UploadSession] = {}
         self._session_by_rollout: dict[tuple[str, str], str] = {}
         self._session_by_package: dict[tuple[str, str], str] = {}
@@ -151,6 +156,15 @@ class InMemoryIngestPersistence:
                 )
                 if existing_session is not None:
                     return existing_session
+            if rollout.source_fingerprint is not None:
+                existing_source = self.get_rollout_by_source_fingerprint(
+                    rollout.project_id, rollout.source_fingerprint
+                )
+                if (
+                    existing_source is not None
+                    and existing_source.rollout_id != rollout.rollout_id
+                ):
+                    raise source_recording_duplicate(existing_source)
             self.save_collection_job(job)
             self.save_rollout(rollout)
             self.save_session(session)
@@ -187,6 +201,15 @@ class InMemoryIngestPersistence:
             rollout_id = self._rollout_by_package.get((project_id, data_package_id))
             return None if rollout_id is None else self._rollouts[(project_id, rollout_id)]
 
+    def get_rollout_by_source_fingerprint(
+        self, project_id: str, source_fingerprint: str
+    ) -> Rollout | None:
+        with self._lock:
+            rollout_id = self._rollout_by_source_fingerprint.get(
+                (project_id, source_fingerprint)
+            )
+            return None if rollout_id is None else self._rollouts[(project_id, rollout_id)]
+
     def save_rollout(self, rollout: Rollout) -> None:
         key = (rollout.project_id, rollout.rollout_id)
         sequence_key = (rollout.project_id, rollout.collection_job_id, rollout.sequence_no)
@@ -208,6 +231,7 @@ class InMemoryIngestPersistence:
                 or existing.recording_request_id != rollout.recording_request_id
                 or existing.data_package_id != rollout.data_package_id
                 or existing.pico_instance_id != rollout.pico_instance_id
+                or existing.source_fingerprint != rollout.source_fingerprint
             ):
                 raise _identity_conflict("Rollout")
             package_key = (rollout.project_id, rollout.data_package_id)
@@ -227,9 +251,19 @@ class InMemoryIngestPersistence:
                     title="Rollout sequence conflict",
                     detail="A collection job sequence number identifies exactly one rollout.",
                 )
+            if rollout.source_fingerprint is not None:
+                source_key = (rollout.project_id, rollout.source_fingerprint)
+                source_owner = self._rollout_by_source_fingerprint.get(source_key)
+                if source_owner is not None and source_owner != rollout.rollout_id:
+                    existing_source = self._rollouts[(rollout.project_id, source_owner)]
+                    raise source_recording_duplicate(existing_source)
             self._rollouts[key] = rollout
             self._rollout_by_package[package_key] = rollout.rollout_id
             self._rollout_by_sequence[sequence_key] = rollout.rollout_id
+            if rollout.source_fingerprint is not None:
+                self._rollout_by_source_fingerprint[
+                    (rollout.project_id, rollout.source_fingerprint)
+                ] = rollout.rollout_id
 
     def get_session(self, session_id: str) -> UploadSession | None:
         with self._lock:
@@ -402,6 +436,7 @@ class InMemoryIngestPersistence:
                 dict(self._sessions),
                 dict(self._objects),
                 dict(self._rollouts),
+                dict(self._rollout_by_source_fingerprint),
                 dict(self._workflow_triggers),
             )
             try:
@@ -448,6 +483,7 @@ class InMemoryIngestPersistence:
                     self._sessions,
                     self._objects,
                     self._rollouts,
+                    self._rollout_by_source_fingerprint,
                     self._workflow_triggers,
                 ) = snapshots
                 raise
@@ -467,4 +503,21 @@ def _identity_conflict(resource: str) -> Exception:
         code="IMMUTABLE_IDENTITY_CONFLICT",
         title=f"{resource} identity conflict",
         detail=f"The immutable identity fields of this {resource.lower()} cannot be changed.",
+    )
+
+
+def source_recording_duplicate(existing: Rollout) -> Exception:
+    return problem(
+        status=409,
+        code="SOURCE_RECORDING_DUPLICATE",
+        title="Source recording already uploaded",
+        detail=(
+            "This source episode already exists as data package "
+            f"{existing.data_package_id}. Select a different episode instead of "
+            "uploading another converter version."
+        ),
+        details={
+            "existing_data_package_id": existing.data_package_id,
+            "existing_rollout_id": existing.rollout_id,
+        },
     )

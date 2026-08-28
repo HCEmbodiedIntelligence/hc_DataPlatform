@@ -21,6 +21,7 @@ function initialTasks(
     {
       schema_version: "1",
       collection_task_id: "collection-task-fx-01",
+      dataset_id: "dataset_task_fx_01",
       organization_id: organizationId,
       project_id: projectId,
       task_code: "00000042",
@@ -35,6 +36,7 @@ function initialTasks(
     {
       schema_version: "1",
       collection_task_id: "collection-task-fx-02",
+      dataset_id: "dataset_task_fx_02",
       organization_id: organizationId,
       project_id: projectId,
       task_code: "00000039",
@@ -181,12 +183,14 @@ export const collectionTaskHandlers = [
     const body =
       (await request.json()) as components["schemas"]["CreateCollectionTask"];
     const tasks = tasksFor(organizationId, projectId);
+    const collectionTaskId = `collection-task-fx-${tasks.length + 1}`;
     const task: CollectionTask = {
       ...body,
       quality_threshold: body.quality_threshold ?? null,
       target: body.target ?? null,
       schema_version: "1",
-      collection_task_id: `collection-task-fx-${tasks.length + 1}`,
+      collection_task_id: collectionTaskId,
+      dataset_id: `dataset_task_fx_${tasks.length + 1}`,
       organization_id: organizationId,
       project_id: projectId,
       task_code: String(43 + tasks.length).padStart(8, "0"),

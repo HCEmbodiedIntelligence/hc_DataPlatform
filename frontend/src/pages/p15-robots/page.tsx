@@ -1,131 +1,173 @@
+import type { ColumnDef } from "@tanstack/react-table";
 import {
   Alert,
   Button,
   Form,
   Input,
-  InputNumber,
   Modal,
   Select,
   Space,
+  Spin,
+  Steps,
 } from "antd";
-import type { ColumnDef } from "@tanstack/react-table";
-import { Box, Boxes, Radio, Search, ShieldCheck } from "lucide-react";
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+  Box,
+  CheckCircle2,
+  CircleDot,
+  File as FileIcon,
+  FolderOpen,
+  Radio,
+  Search,
+  Upload,
+  UploadCloud,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { ComponentTreeNode } from "../../entities/component";
-import { routes as calibrationRoutes } from "../../features/calibrations/routing";
-import { routes as dataSchemaRoutes } from "../../features/data-schemas/routing";
+import type { RobotModelVersion } from "../../entities/robot-model";
+import type { Robot } from "../../entities/robot";
 import {
-  useComponentChannels,
-  useComponentFrames,
+  authorizeRobotModelAssetDownload,
+  authorizeRobotModelViewerAssets,
+  getRobotModelVersion,
+  useBindRobotModelVersion,
+  useCreateRobotModel,
+  useCreateRobotModelDraft,
+  usePreflightRobotModelPublish,
+  usePublishRobotModelVersion,
+  useReplaceRobotModelJointMappings,
+  useRobotModelAssets,
+  useRobotModelJointMappings,
+  useRobotModelVersion,
+  useUploadRobotModelAssets,
+  type RobotModelJointMapping,
+} from "../../features/robot-models/api";
+import {
   useCreateRobot,
-  useCreateRobotComponent,
-  useCreateRobotMaintenanceRecord,
   useRobotBootstrap,
-  useRobotComponents,
-  useRobotMaintenanceRecords,
   useRobots,
-  useTransitionRobotLifecycle,
-  useTransitionRobotComponentLifecycle,
-  useUpdateRobot,
-  useUpdateRobotComponent,
 } from "../../features/robots/api";
-import { buildComponentTree } from "../../features/robots/constraints";
+import {
+  createLazyThreeRobotSceneLoader,
+  RobotSceneCore,
+} from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   DataCursorPager,
   DataTable,
-  DetailTabs,
   FilterToolbar,
   PageState,
   StandardPageScaffold,
   StatusTag,
 } from "../../shared/ui";
 import workspace from "../ui-011e/workspace.module.css";
+import {
+  classifyRobotModelFiles,
+  modelAssetSelectionError,
+  robotModelFilesFromDrop,
+  type PendingRobotModelAsset,
+  type RobotModelFileCandidate,
+} from "./model-file-selection";
+import uploadStyles from "./model-upload.module.css";
 import { robotsQueryCodec, type RobotsSearch } from "./query-codec";
+import styles from "./robot-assets.module.css";
+import {
+  buildRobotConfigurationAsset,
+  createLocalRobotPreview,
+  mappingsCoverUrdf,
+  parseRobotModelAssets,
+  replaceRobotConfigurationAsset,
+  type LocalRobotPreview,
+  type ParsedRobotModel,
+} from "./urdf-import";
 
 type LifecycleFilter = "all" | NonNullable<RobotsSearch["lifecycleStatus"]>;
 type ConnectivityFilter =
   | "all"
   | NonNullable<RobotsSearch["connectivityState"]>;
-
 type RobotRow = NonNullable<
   ReturnType<typeof useRobots>["data"]
 >["items"][number];
-
-type RobotDialog =
-  | "create"
-  | "edit"
-  | "transition"
-  | "maintenance"
-  | "component-create"
-  | "component-edit"
-  | "component-transition"
-  | null;
+type ImportStage = "files" | "review" | "saving" | "saved";
 
 interface CreateRobotFormValues {
   readonly displayName: string;
   readonly serialNo: string;
-  readonly lifecycleStatus: "DRAFT" | "ACTIVE" | "MAINTENANCE";
-  readonly connectivityState: "ONLINE" | "OFFLINE" | "DEGRADED";
-  readonly connectivitySource?: string;
-  readonly connectivityReasonCode?: string;
 }
 
-interface EditRobotFormValues {
-  readonly displayName: string;
-  readonly connectivityState: "ONLINE" | "OFFLINE" | "DEGRADED";
-  readonly connectivitySource?: string;
-  readonly connectivityReasonCode?: string;
+interface ModelMetadataFormValues {
+  readonly manufacturer?: string;
+  readonly modelCode?: string;
+  readonly displayName?: string;
+  readonly versionLabel: string;
 }
 
-interface TransitionRobotFormValues {
-  readonly lifecycleStatus: "ACTIVE" | "MAINTENANCE" | "DISABLED" | "RETIRED";
-  readonly reason: string;
+const EMPTY_MAPPING: Readonly<Record<string, string>> = {};
+
+const modelFileAccept = [
+  ".urdf",
+  ".xml",
+  ".stl",
+  ".obj",
+  ".dae",
+  ".glb",
+  ".gltf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".ktx2",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+].join(",");
+
+const modelAssetRoleLabels: Record<PendingRobotModelAsset["role"], string> = {
+  URDF: "URDF",
+  MESH: "网格",
+  TEXTURE: "纹理",
+  CONFIG: "配置",
+  DOCUMENTATION: "文档",
+};
+
+const parseErrorLabels: Readonly<Record<string, string>> = {
+  URDF_MISSING: "没有找到 URDF 文件，请选择一个 .urdf 或 .xml 文件。",
+  URDF_MULTIPLE: "检测到多个 URDF，请只保留一个入口 URDF。",
+  URDF_XML_INVALID: "URDF 不是有效 XML，或根节点不是 <robot>。",
+  URDF_ROBOT_NAME_MISSING: "URDF 的 <robot> 缺少 name。",
+  URDF_LINKS_MISSING: "URDF 中没有 link，无法构成机器人模型。",
+  URDF_LINKS_DUPLICATED: "URDF 中存在重复 link 名称。",
+  URDF_JOINT_NAME_MISSING: "URDF 中存在没有 name 的 joint。",
+  URDF_JOINTS_DUPLICATED: "URDF 中存在重复 joint 名称。",
+  CONFIG_JSON_OBJECT_REQUIRED: "JSON 配置文件的根节点必须是对象。",
+};
+
+async function sha256File(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await file.arrayBuffer(),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
-interface MaintenanceRecordFormValues {
-  readonly summary: string;
-  readonly details?: string;
+function uniqueVersionLabel(prefix: string): string {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:TZ.]/gu, "")
+    .slice(0, 14);
+  return `${prefix}-${stamp}`;
 }
 
-interface CreateComponentFormValues {
-  readonly parentComponentId?: string;
-  readonly componentModelId: string;
-  readonly componentType: string;
-  readonly displayName: string;
-  readonly serialNo: string;
-  readonly lifecycleStatus: "DRAFT" | "ACTIVE" | "MAINTENANCE";
-  readonly sortOrder: number;
+function importStep(stage: ImportStage): number {
+  if (stage === "files") return 0;
+  if (stage === "review") return 1;
+  return 2;
 }
-
-interface EditComponentFormValues {
-  readonly parentComponentId?: string;
-  readonly componentModelId: string;
-  readonly componentType: string;
-  readonly displayName: string;
-  readonly serialNo: string;
-  readonly sortOrder: number;
-}
-
-interface TransitionComponentFormValues {
-  readonly lifecycleStatus: "ACTIVE" | "MAINTENANCE" | "DISABLED" | "RETIRED";
-  readonly reason: string;
-}
-
-const detailTabs = [
-  { id: "overview", label: "基本信息" },
-  { id: "frames", label: "坐标系" },
-  { id: "channels", label: "Channel" },
-  { id: "history", label: "维护记录" },
-] as const;
 
 function SummaryItem({
   icon,
@@ -143,136 +185,24 @@ function SummaryItem({
   );
 }
 
-function flattenVisible(
-  nodes: readonly ComponentTreeNode[],
-  expanded: ReadonlySet<string>,
-  depth = 1,
-): readonly { readonly node: ComponentTreeNode; readonly depth: number }[] {
-  return nodes.flatMap((node) => [
-    { node, depth },
-    ...(expanded.has(node.id)
-      ? flattenVisible(node.children, expanded, depth + 1)
-      : []),
-  ]);
-}
-
-function AccessibleComponentTree({
-  roots,
-  selectedId,
-  onSelect,
-}: Readonly<{
-  roots: readonly ComponentTreeNode[];
-  selectedId?: string;
-  onSelect: (id: string) => void;
-}>) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(roots.map((root) => root.id)),
-  );
-  const visible = useMemo(
-    () => flattenVisible(roots, expanded),
-    [expanded, roots],
-  );
-  const [focusedId, setFocusedId] = useState(
-    selectedId ?? visible[0]?.node.id ?? "",
-  );
-  const refs = useRef(new Map<string, HTMLElement>());
-
-  const focusAt = (index: number) => {
-    const item = visible[Math.max(0, Math.min(index, visible.length - 1))];
-    if (!item) return;
-    setFocusedId(item.node.id);
-    queueMicrotask(() => refs.current.get(item.node.id)?.focus());
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>, id: string) => {
-    const index = visible.findIndex((item) => item.node.id === id);
-    const item = visible[index];
-    if (!item) return;
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      focusAt(index + 1);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      focusAt(index - 1);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      focusAt(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      focusAt(visible.length - 1);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      if (item.node.children.length > 0 && !expanded.has(id))
-        setExpanded(new Set([...expanded, id]));
-      else if (item.node.children.length > 0) focusAt(index + 1);
-    } else if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      if (expanded.has(id)) {
-        const next = new Set(expanded);
-        next.delete(id);
-        setExpanded(next);
-      } else if (item.node.parentComponentId)
-        refs.current.get(item.node.parentComponentId)?.focus();
-    } else if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(id);
-    }
-  };
-
-  return (
-    <div className={workspace.tree} role="tree" aria-label="组件拓扑">
-      {visible.map(({ node, depth }) => (
-        <div
-          className={workspace.treeItem}
-          role="treeitem"
-          key={node.id}
-          aria-level={depth}
-          aria-selected={node.id === selectedId}
-          aria-expanded={
-            node.children.length ? expanded.has(node.id) : undefined
-          }
-        >
-          <Button
-            className={`${workspace.treeButton} ${workspace[`treeLevel${Math.min(depth, 4)}` as keyof typeof workspace]} ${node.id === selectedId ? workspace.treeSelected : ""}`}
-            ref={(element) => {
-              if (element) refs.current.set(node.id, element);
-              else refs.current.delete(node.id);
-            }}
-            type="text"
-            tabIndex={node.id === focusedId ? 0 : -1}
-            onFocus={() => setFocusedId(node.id)}
-            onKeyDown={(event) => onKeyDown(event, node.id)}
-            onClick={() => onSelect(node.id)}
-          >
-            <span aria-hidden="true">
-              {node.children.length ? (expanded.has(node.id) ? "▾" : "▸") : "•"}
-            </span>
-            {node.displayName}
-          </Button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function Component() {
   const [params, setParams] = useSearchParams();
   const search = robotsQueryCodec.parse(params);
-  const [dialog, setDialog] = useState<RobotDialog>(null);
-  const [createForm] = Form.useForm<CreateRobotFormValues>();
-  const [editForm] = Form.useForm<EditRobotFormValues>();
-  const [transitionForm] = Form.useForm<TransitionRobotFormValues>();
-  const [maintenanceForm] = Form.useForm<MaintenanceRecordFormValues>();
-  const [createComponentForm] = Form.useForm<CreateComponentFormValues>();
-  const [editComponentForm] = Form.useForm<EditComponentFormValues>();
-  const [transitionComponentForm] =
-    Form.useForm<TransitionComponentFormValues>();
+  const scope = useShellStore((state) => state.scope);
+  const capabilities = useCapabilities();
+  const canManageRobots = capabilities.has("robot.manage");
+  const canManageModels = capabilities.has("robot_model.manage");
+
   const [query, setQuery] = useState(search.q ?? "");
   const [lifecycleStatus, setLifecycleStatus] = useState<LifecycleFilter>(
     search.lifecycleStatus ?? "all",
   );
   const [connectivityState, setConnectivityState] =
     useState<ConnectivityFilter>(search.connectivityState ?? "all");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm] = Form.useForm<CreateRobotFormValues>();
+  const [modelForm] = Form.useForm<ModelMetadataFormValues>();
+
   const robots = useRobots({
     ...(search.q ? { q: search.q } : {}),
     ...(search.lifecycleStatus
@@ -282,204 +212,564 @@ export function Component() {
       ? { connectivity_state: search.connectivityState }
       : {}),
   });
-  const bootstrap = useRobotBootstrap(search.robotId ?? null);
-  const components = useRobotComponents(search.robotId ?? null);
-  const maintenanceRecords = useRobotMaintenanceRecords(
-    search.tab === "history" ? (search.robotId ?? null) : null,
-  );
-  const frames = useComponentFrames(search.componentId ?? null);
-  const channels = useComponentChannels(search.componentId ?? null);
-  const createRobot = useCreateRobot();
-  const updateRobot = useUpdateRobot();
-  const transitionRobot = useTransitionRobotLifecycle();
-  const createMaintenanceRecord = useCreateRobotMaintenanceRecord();
-  const createRobotComponent = useCreateRobotComponent();
-  const updateRobotComponent = useUpdateRobotComponent();
-  const transitionRobotComponent = useTransitionRobotComponentLifecycle();
-  const capabilities = useCapabilities();
-  const canManage = capabilities.has("robot.manage");
   const robotItems = robots.data?.items ?? [];
   const selectedRobot =
     robotItems.find((robot) => robot.id === search.robotId) ?? robotItems[0];
-  const tree = buildComponentTree(components.data?.items ?? []);
-  const selected = components.data?.items.find(
-    (component) => component.id === search.componentId,
-  );
-  const calibrationReference = frames.data?.items[0];
-  const schemaReference = channels.data?.items[0];
+  const selectedRobotId = selectedRobot?.id ?? null;
+  const bootstrap = useRobotBootstrap(selectedRobotId);
   const selectedBootstrap = bootstrap.data;
-  const mutationError =
-    createRobot.error ??
-    updateRobot.error ??
-    transitionRobot.error ??
-    createMaintenanceRecord.error ??
-    createRobotComponent.error ??
-    updateRobotComponent.error ??
-    transitionRobotComponent.error;
+  const boundVersionId =
+    selectedBootstrap?.effectiveModelBinding?.robotModelVersionId ?? null;
+  const boundVersion = useRobotModelVersion(boundVersionId);
+  const currentAssets = useRobotModelAssets(boundVersionId);
+  const currentMappings = useRobotModelJointMappings(boundVersionId);
+  const currentUrdf = currentAssets.data?.find(
+    (asset) => asset.role === "URDF",
+  );
+
+  const createRobot = useCreateRobot();
+  const createRobotModel = useCreateRobotModel();
+  const createModelDraft = useCreateRobotModelDraft();
+  const uploadModelAssets = useUploadRobotModelAssets();
+  const replaceModelMappings = useReplaceRobotModelJointMappings();
+  const publishPreflight = usePreflightRobotModelPublish();
+  const publishVersion = usePublishRobotModelVersion();
+  const bindVersion = useBindRobotModelVersion();
+
+  const [importOpen, setImportOpen] = useState(false);
+  const [importStage, setImportStage] = useState<ImportStage>("files");
+  const [importRobot, setImportRobot] = useState<Robot | null>(null);
+  const [importSourceVersion, setImportSourceVersion] =
+    useState<RobotModelVersion | null>(null);
+  const [modelMetadata, setModelMetadata] =
+    useState<ModelMetadataFormValues | null>(null);
+  const [modelAssets, setModelAssets] = useState<
+    readonly PendingRobotModelAsset[]
+  >([]);
+  const [analysis, setAnalysis] = useState<ParsedRobotModel | null>(null);
+  const [mappings, setMappings] = useState<readonly RobotModelJointMapping[]>(
+    [],
+  );
+  const [localPreview, setLocalPreview] = useState<LocalRobotPreview | null>(
+    null,
+  );
+  const [configurationPreview, setConfigurationPreview] = useState("");
+  const [modelCommandId, setModelCommandId] = useState("");
+  const [modelDropActive, setModelDropActive] = useState(false);
+  const [readingDroppedFiles, setReadingDroppedFiles] = useState(false);
+  const [loadingExistingModel, setLoadingExistingModel] = useState(false);
+  const [parsingModel, setParsingModel] = useState(false);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [savedVersionId, setSavedVersionId] = useState<string | null>(null);
+  const modelFileInputRef = useRef<HTMLInputElement>(null);
+  const modelFolderInputRef = useRef<HTMLInputElement>(null);
+
+  const modelSelectionError = modelAssetSelectionError(modelAssets);
+  const modelAssetCounts = useMemo(
+    () =>
+      modelAssets.reduce(
+        (counts, asset) => ({
+          ...counts,
+          [asset.role]: counts[asset.role] + 1,
+        }),
+        {
+          URDF: 0,
+          MESH: 0,
+          TEXTURE: 0,
+          CONFIG: 0,
+          DOCUMENTATION: 0,
+        } satisfies Record<PendingRobotModelAsset["role"], number>,
+      ),
+    [modelAssets],
+  );
+  const mappingsValid = Boolean(
+    analysis && mappingsCoverUrdf(mappings, analysis.actuatedJointNames),
+  );
+  const modelSavePending =
+    importStage === "saving" ||
+    createRobotModel.isPending ||
+    createModelDraft.isPending ||
+    uploadModelAssets.isPending ||
+    replaceModelMappings.isPending ||
+    publishPreflight.isPending ||
+    publishVersion.isPending ||
+    bindVersion.isPending;
 
   useEffect(() => {
-    if (dialog !== "edit" || !selectedBootstrap) return;
-    editForm.setFieldsValue({
-      displayName: selectedBootstrap.displayName,
-      connectivityState:
-        selectedBootstrap.connectivity.state === "UNKNOWN"
-          ? "OFFLINE"
-          : selectedBootstrap.connectivity.state,
-      connectivitySource: selectedBootstrap.connectivity.source ?? undefined,
-      connectivityReasonCode:
-        selectedBootstrap.connectivity.reasonCode ?? undefined,
+    if (!selectedRobot || search.robotId === selectedRobot.id) return;
+    setParams(
+      robotsQueryCodec.build(
+        {
+          ...search,
+          robotId: selectedRobot.id,
+          componentId: undefined,
+          tab: "overview",
+        },
+        search,
+      ),
+      { replace: true },
+    );
+  }, [search, selectedRobot, setParams]);
+
+  useEffect(
+    () => () => {
+      localPreview?.dispose();
+    },
+    [localPreview],
+  );
+
+  const currentModelRef = useMemo(
+    () =>
+      boundVersion.data
+        ? {
+            modelId: boundVersion.data.robotModelId,
+            modelVersion: boundVersion.data.id,
+          }
+        : null,
+    [boundVersion.data],
+  );
+  const currentJointMapping = useMemo(
+    () =>
+      Object.fromEntries(
+        (currentMappings.data ?? []).map((mapping) => [
+          mapping.source_joint_name,
+          mapping.target_joint_name,
+        ]),
+      ),
+    [currentMappings.data],
+  );
+  const currentRuntimeLoader = useMemo(() => {
+    if (!boundVersion.data || !currentUrdf || !scope?.organizationId) return;
+    const organizationId = scope.organizationId;
+    const versionId = boundVersion.data.id;
+    const modelId = boundVersion.data.robotModelId;
+    const requiredJoints = (currentMappings.data ?? []).map(
+      (mapping) => mapping.source_joint_name,
+    );
+    return createLazyThreeRobotSceneLoader(async (_props, signal) => {
+      const viewerAssets = await authorizeRobotModelViewerAssets(
+        organizationId,
+        versionId,
+        currentAssets.data ?? [],
+        signal,
+      );
+      return {
+        manifest: { modelId, modelVersion: versionId, requiredJoints },
+        ...viewerAssets,
+        background: "#f5f7fc",
+      };
     });
-  }, [dialog, editForm, selectedBootstrap]);
+  }, [
+    boundVersion.data,
+    currentAssets.data,
+    currentMappings.data,
+    currentUrdf,
+    scope?.organizationId,
+  ]);
+
+  const localModelRef = useMemo(
+    () => ({
+      modelId: importRobot?.id ?? "local-robot",
+      modelVersion: modelCommandId || "local-preview",
+    }),
+    [importRobot?.id, modelCommandId],
+  );
+  const localRuntimeLoader = useMemo(() => {
+    if (!localPreview) return;
+    return createLazyThreeRobotSceneLoader(async () => ({
+      manifest: {
+        modelId: localModelRef.modelId,
+        modelVersion: localModelRef.modelVersion,
+        requiredJoints: [],
+      },
+      urdfUrl: localPreview.urdfUrl,
+      background: "#f5f7fc",
+    }));
+  }, [localModelRef, localPreview]);
 
   useEffect(() => {
-    if (dialog !== "component-edit" || !selected) return;
-    editComponentForm.setFieldsValue({
-      parentComponentId: selected.parentComponentId ?? undefined,
-      componentModelId: selected.componentModelId,
-      componentType: selected.componentType,
-      displayName: selected.displayName,
-      serialNo: selected.serialNo,
-      sortOrder: Number(selected.sortOrder),
+    if (!analysis || !importRobot) {
+      setConfigurationPreview("");
+      return;
+    }
+    const asset = buildRobotConfigurationAsset(analysis, mappings, {
+      robotId: importRobot.id,
+      displayName: importRobot.displayName,
+      serialNo: importRobot.serialNo,
     });
-  }, [dialog, editComponentForm, selected]);
+    let active = true;
+    void asset.file.text().then((content) => {
+      if (active) setConfigurationPreview(content);
+    });
+    return () => {
+      active = false;
+    };
+  }, [analysis, importRobot, mappings]);
 
   const selectRobot = (robotId: string) => {
     setParams(
       robotsQueryCodec.build(
-        { ...search, robotId, componentId: undefined, tab: "overview" },
+        {
+          ...search,
+          robotId,
+          componentId: undefined,
+          tab: "overview",
+        },
         search,
       ),
     );
   };
 
-  const submitCreate = (values: CreateRobotFormValues) => {
-    createRobot.mutate(
-      { ...values, idempotencyKey: crypto.randomUUID() },
-      {
-        onSuccess: (robot) => {
-          setDialog(null);
-          createForm.resetFields();
-          selectRobot(robot.id);
-        },
-      },
-    );
+  const clearAnalysis = () => {
+    setAnalysis(null);
+    setMappings([]);
+    setLocalPreview(null);
+    setConfigurationPreview("");
+    setImportStage("files");
+    setSavedVersionId(null);
   };
 
-  const submitEdit = (values: EditRobotFormValues) => {
-    if (!selectedBootstrap) return;
-    updateRobot.mutate(
-      {
-        robotId: selectedBootstrap.id,
-        etag: selectedBootstrap.etag,
-        ...values,
-        idempotencyKey: crypto.randomUUID(),
-      },
-      { onSuccess: () => setDialog(null) },
-    );
+  const resetImport = () => {
+    clearAnalysis();
+    setImportRobot(null);
+    setImportSourceVersion(null);
+    setModelMetadata(null);
+    setModelAssets([]);
+    setModelNotice(null);
+    setModelError(null);
+    setModelDropActive(false);
+    setReadingDroppedFiles(false);
+    setLoadingExistingModel(false);
+    setParsingModel(false);
+    setModelCommandId("");
+    modelForm.resetFields();
   };
 
-  const submitTransition = (values: TransitionRobotFormValues) => {
-    if (!selectedBootstrap) return;
-    transitionRobot.mutate(
-      {
-        robotId: selectedBootstrap.id,
-        etag: selectedBootstrap.etag,
-        ...values,
-        idempotencyKey: crypto.randomUUID(),
-      },
-      { onSuccess: () => setDialog(null) },
-    );
+  const defaultModelMetadata = (
+    robot: Robot,
+    sourceVersion: RobotModelVersion | null,
+  ): ModelMetadataFormValues => ({
+    ...(sourceVersion
+      ? {}
+      : {
+          manufacturer: "HC Robotics",
+          modelCode: robot.serialNo,
+          displayName: `${robot.displayName} 模型`,
+        }),
+    versionLabel: uniqueVersionLabel(sourceVersion ? "update" : "1.0.0"),
+  });
+
+  const beginImport = (
+    robot: Robot,
+    sourceVersion: RobotModelVersion | null,
+  ) => {
+    resetImport();
+    const metadata = defaultModelMetadata(robot, sourceVersion);
+    setImportRobot(robot);
+    setImportSourceVersion(sourceVersion);
+    setModelMetadata(metadata);
+    setModelCommandId(crypto.randomUUID());
+    modelForm.setFieldsValue(metadata);
+    setImportOpen(true);
   };
 
-  const submitMaintenance = (values: MaintenanceRecordFormValues) => {
-    if (!selectedBootstrap) return;
-    createMaintenanceRecord.mutate(
-      {
-        robotId: selectedBootstrap.id,
-        ...values,
-        idempotencyKey: crypto.randomUUID(),
-      },
-      {
-        onSuccess: () => {
-          maintenanceForm.resetFields();
-          setDialog(null);
-        },
-      },
-    );
+  const analyseSelectedFiles = async (
+    assets: readonly PendingRobotModelAsset[] = modelAssets,
+    preferredMappings: readonly RobotModelJointMapping[] = [],
+  ) => {
+    setParsingModel(true);
+    setModelError(null);
+    try {
+      const parsed = await parseRobotModelAssets(assets);
+      const nextMappings = mappingsCoverUrdf(
+        preferredMappings,
+        parsed.actuatedJointNames,
+      )
+        ? preferredMappings
+        : parsed.mappings;
+      const preview = createLocalRobotPreview(parsed, assets);
+      setAnalysis(parsed);
+      setMappings(nextMappings);
+      setLocalPreview(preview);
+      setImportStage("review");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setModelError(
+        parseErrorLabels[code] ??
+          (error instanceof SyntaxError
+            ? "JSON 配置文件格式错误，请修正后重新选择。"
+            : "模型文件解析失败，请检查 URDF 与配置文件。"),
+      );
+    } finally {
+      setParsingModel(false);
+    }
   };
 
-  const submitCreateComponent = (values: CreateComponentFormValues) => {
-    if (!selectedBootstrap) return;
-    createRobotComponent.mutate(
-      {
-        robotId: selectedBootstrap.id,
-        etag: selectedBootstrap.etag,
-        parentComponentId: values.parentComponentId?.trim() || null,
-        componentModelId: values.componentModelId,
-        componentType: values.componentType,
-        displayName: values.displayName,
-        serialNo: values.serialNo,
-        lifecycleStatus: values.lifecycleStatus,
-        sortOrder: values.sortOrder,
-        idempotencyKey: crypto.randomUUID(),
-      },
-      {
-        onSuccess: (result) => {
-          createComponentForm.resetFields();
-          setDialog(null);
-          setParams(
-            robotsQueryCodec.build(
-              { ...search, componentId: result.component.id, tab: "overview" },
-              search,
-            ),
+  const reviewSelectedFiles = async () => {
+    try {
+      const metadata = await modelForm.validateFields();
+      setModelMetadata(metadata);
+      await analyseSelectedFiles();
+    } catch {
+      setModelError("请先补全模型名称和版本信息。");
+    }
+  };
+
+  const editCurrentModel = async () => {
+    if (
+      !selectedBootstrap ||
+      !boundVersion.data ||
+      !currentAssets.data ||
+      !scope?.organizationId
+    ) {
+      return;
+    }
+    beginImport(selectedBootstrap, boundVersion.data);
+    setLoadingExistingModel(true);
+    try {
+      const downloaded = await Promise.all(
+        currentAssets.data.map(async (asset) => {
+          const authorization = await authorizeRobotModelAssetDownload(
+            scope.organizationId,
+            boundVersion.data!.id,
+            asset.asset_id,
           );
+          const response = await fetch(authorization.download_url, {
+            cache: "no-store",
+            credentials: "omit",
+          });
+          if (!response.ok) throw new Error("ASSET_DOWNLOAD_FAILED");
+          const blob = await response.blob();
+          return {
+            file: new File([blob], asset.relative_path.split("/").at(-1)!, {
+              type: asset.media_type,
+            }),
+            relativePath: asset.relative_path,
+          } satisfies RobotModelFileCandidate;
+        }),
+      );
+      const classified = classifyRobotModelFiles(downloaded);
+      setModelAssets(classified.assets);
+      await analyseSelectedFiles(classified.assets, currentMappings.data ?? []);
+    } catch (error) {
+      setModelError(
+        isDomainError(error)
+          ? error.message
+          : "当前模型文件读取失败，请稍后重试。",
+      );
+    } finally {
+      setLoadingExistingModel(false);
+    }
+  };
+
+  const addModelFileCandidates = (
+    candidates: readonly RobotModelFileCandidate[],
+  ) => {
+    const incoming = classifyRobotModelFiles(candidates);
+    setModelAssets((current) => {
+      const replacesUrdf = incoming.assets.some(
+        (asset) => asset.role === "URDF",
+      );
+      const replacesJsonConfig = incoming.assets.some(
+        (asset) =>
+          asset.role === "CONFIG" &&
+          asset.relativePath.toLowerCase().endsWith(".json"),
+      );
+      const retained = current.filter(
+        (asset) =>
+          !(replacesUrdf && asset.role === "URDF") &&
+          !(
+            replacesJsonConfig &&
+            asset.role === "CONFIG" &&
+            asset.relativePath.toLowerCase().endsWith(".json")
+          ),
+      );
+      return classifyRobotModelFiles([
+        ...retained.map((asset) => ({
+          file: asset.file,
+          relativePath: asset.relativePath,
+        })),
+        ...incoming.assets.map((asset) => ({
+          file: asset.file,
+          relativePath: asset.relativePath,
+        })),
+      ]).assets;
+    });
+    clearAnalysis();
+    setModelNotice(
+      incoming.rejectedPaths.length
+        ? `已忽略 ${incoming.rejectedPaths.length} 个不支持、空文件或路径不安全的文件。`
+        : null,
+    );
+    setModelError(null);
+  };
+
+  const addModelFilesFromPicker = (files: FileList | null) => {
+    if (!files) return;
+    addModelFileCandidates(
+      Array.from(files).map((file) => ({
+        file,
+        relativePath: file.webkitRelativePath || file.name,
+      })),
+    );
+  };
+
+  const handleModelFilesDrop = async (dataTransfer: DataTransfer) => {
+    setModelDropActive(false);
+    setReadingDroppedFiles(true);
+    setModelError(null);
+    try {
+      const candidates = await robotModelFilesFromDrop(dataTransfer);
+      addModelFileCandidates(candidates);
+      if (!candidates.length) {
+        setModelNotice("没有读取到文件，请改用“选择文件夹”。");
+      }
+    } catch {
+      setModelError("无法读取拖入的文件夹，请改用“选择文件夹”重试。");
+    } finally {
+      setReadingDroppedFiles(false);
+    }
+  };
+
+  const saveRobotModel = async () => {
+    if (
+      !analysis ||
+      !importRobot ||
+      !scope?.organizationId ||
+      !scope.regionCode ||
+      !modelCommandId ||
+      !modelMetadata ||
+      !mappingsValid
+    ) {
+      return;
+    }
+    const values = modelMetadata;
+    setImportStage("saving");
+    setModelError(null);
+    try {
+      const configurationAsset = buildRobotConfigurationAsset(
+        analysis,
+        mappings,
+        {
+          robotId: importRobot.id,
+          displayName: importRobot.displayName,
+          serialNo: importRobot.serialNo,
         },
-      },
-    );
+      );
+      const assetsToSave = replaceRobotConfigurationAsset(
+        modelAssets,
+        configurationAsset,
+      );
+      const draft = importSourceVersion
+        ? await createModelDraft.mutateAsync({
+            sourceVersionId: importSourceVersion.id,
+            versionLabel: values.versionLabel.trim(),
+            updateScope: "ASSETS",
+            idempotencyKey: modelCommandId,
+          })
+        : await createRobotModel.mutateAsync({
+            manufacturer: values.manufacturer?.trim() ?? "",
+            modelCode: values.modelCode?.trim() ?? "",
+            displayName: values.displayName?.trim() ?? "",
+            versionLabel: values.versionLabel.trim(),
+            idempotencyKey: modelCommandId,
+          });
+      const files: Array<PendingRobotModelAsset & { readonly sha256: string }> =
+        [];
+      for (const asset of assetsToSave) {
+        files.push({ ...asset, sha256: await sha256File(asset.file) });
+      }
+      await uploadModelAssets.mutateAsync({
+        versionId: draft.id,
+        files,
+        idempotencyKey: `${modelCommandId}:assets`,
+      });
+      const uploadedDraft = await getRobotModelVersion(
+        scope.organizationId,
+        draft.id,
+      );
+      const configuredDraft = await replaceModelMappings.mutateAsync({
+        versionId: draft.id,
+        etag: uploadedDraft.etag,
+        mappings,
+        idempotencyKey: `${modelCommandId}:mappings`,
+      });
+      const preflight = await publishPreflight.mutateAsync({
+        versionId: draft.id,
+        etag: configuredDraft.etag,
+        // The publish token is bound to the command identity that consumes it.
+        // Reusing the same key across preflight and publish is therefore part of
+        // the backend contract, not an accidental retry collision.
+        idempotencyKey: `${modelCommandId}:publish`,
+      });
+      if (!preflight.allowed || !preflight.preflight_token) {
+        const failed = preflight.checks.filter((check) => !check.passed);
+        throw new Error(
+          failed.length
+            ? failed.map((check) => check.message).join("；")
+            : "服务端校验未通过。",
+        );
+      }
+      const published = await publishVersion.mutateAsync({
+        versionId: draft.id,
+        etag: preflight.expected_etag,
+        preflightToken: preflight.preflight_token,
+        idempotencyKey: `${modelCommandId}:publish`,
+      });
+      await bindVersion.mutateAsync({
+        versionId: published.id,
+        regionCode: scope.regionCode,
+        robotId: importRobot.id,
+        robotEtag: importRobot.etag,
+        idempotencyKey: `${modelCommandId}:bind`,
+      });
+      setSavedVersionId(published.id);
+      setImportStage("saved");
+      await bootstrap.refetch();
+    } catch (error) {
+      setImportStage("review");
+      setModelError(
+        isDomainError(error)
+          ? error.message
+          : error instanceof Error && error.message
+            ? `保存失败：${error.message}`
+            : "模型保存失败，请检查文件后重试。",
+      );
+    }
   };
 
-  const submitEditComponent = (values: EditComponentFormValues) => {
-    if (!selected || !selectedBootstrap) return;
-    updateRobotComponent.mutate(
-      {
-        componentId: selected.id,
-        etag: selectedBootstrap.etag,
-        parentComponentId: values.parentComponentId?.trim() || null,
-        componentModelId: values.componentModelId,
-        componentType: values.componentType,
-        displayName: values.displayName,
-        serialNo: values.serialNo,
-        sortOrder: values.sortOrder,
+  const submitCreateRobot = async (values: CreateRobotFormValues) => {
+    try {
+      const robot = await createRobot.mutateAsync({
+        displayName: values.displayName.trim(),
+        serialNo: values.serialNo.trim(),
+        lifecycleStatus: "DRAFT",
+        connectivityState: "OFFLINE",
         idempotencyKey: crypto.randomUUID(),
-      },
-      { onSuccess: () => setDialog(null) },
-    );
-  };
-
-  const submitTransitionComponent = (values: TransitionComponentFormValues) => {
-    if (!selected || !selectedBootstrap) return;
-    transitionRobotComponent.mutate(
-      {
-        componentId: selected.id,
-        etag: selectedBootstrap.etag,
-        lifecycleStatus: values.lifecycleStatus,
-        reason: values.reason,
-        idempotencyKey: crypto.randomUUID(),
-      },
-      { onSuccess: () => setDialog(null) },
-    );
+      });
+      setCreateOpen(false);
+      createForm.resetFields();
+      selectRobot(robot.id);
+      beginImport(robot, null);
+    } catch {
+      return;
+    }
   };
 
   const columns = useMemo<ColumnDef<RobotRow, unknown>[]>(
     () => [
       {
         id: "displayName",
-        header: "名称",
-        size: 145,
+        header: "机器人",
+        size: 180,
         cell: ({ row }) => (
           <Button
             className={workspace.recordButton}
             type="link"
+            aria-current={
+              row.original.id === selectedRobotId ? "true" : undefined
+            }
             onClick={() => selectRobot(row.original.id)}
           >
             {row.original.displayName}
@@ -494,34 +784,24 @@ export function Component() {
       },
       {
         id: "connectivity",
-        header: "在线状态",
-        size: 95,
+        header: "状态",
+        size: 90,
         cell: ({ row }) => (
           <StatusTag
             status={row.original.connectivity}
-            label={
-              row.original.connectivity === "ONLINE"
-                ? "在线"
-                : row.original.connectivity
-            }
+            label={row.original.connectivity === "ONLINE" ? "在线" : "离线"}
             tone={
-              row.original.connectivity === "ONLINE" ? "success" : "warning"
+              row.original.connectivity === "ONLINE" ? "success" : "neutral"
             }
           />
         ),
       },
-      {
-        id: "lifecycle",
-        header: "生命周期",
-        size: 100,
-        cell: ({ row }) => row.original.lifecycle,
-      },
     ],
-    [selectRobot],
+    [selectedRobotId],
   );
 
   const pageState = robots.isPending ? (
-    <PageState state="loading" label="机器人与组件" />
+    <PageState state="loading" label="机器人资产" />
   ) : robots.error && isDomainError(robots.error) ? (
     <PageState
       state={robots.error.httpStatus === 403 ? "forbidden" : "error"}
@@ -529,51 +809,50 @@ export function Component() {
     />
   ) : null;
 
+  const configurationAsset =
+    analysis && importRobot
+      ? buildRobotConfigurationAsset(analysis, mappings, {
+          robotId: importRobot.id,
+          displayName: importRobot.displayName,
+          serialNo: importRobot.serialNo,
+        })
+      : null;
+
   return (
     <main className={workspace.page} data-page-id="P15">
       <StandardPageScaffold
         header={{
-          title: "机器人与组件",
+          title: "机器人资产",
           description:
-            "管理机器人实例、组件拓扑以及固定 Frame、Calibration 与 Schema 引用。",
+            "每台机器人独立持有一套 URDF 模型文件和描述配置；导入后先解析与预览，确认无误再保存。",
           breadcrumbs: [
             {
               key: "settings",
               label: "系统管理",
               to: "/settings/robot-models",
             },
-            { key: "robots", label: "机器人与组件" },
+            { key: "robots", label: "机器人资产" },
           ],
           actions: (
             <>
               <Button
                 type="primary"
+                disabled={!canManageRobots}
                 onClick={() => {
                   createForm.resetFields();
-                  createForm.setFieldsValue({
-                    lifecycleStatus: "DRAFT",
-                    connectivityState: "OFFLINE",
-                  });
-                  setDialog("create");
+                  setCreateOpen(true);
                 }}
-                disabled={!canManage}
               >
-                新建机器人
+                添加机器人
               </Button>
               <Button
-                disabled={!selectedBootstrap || !canManage}
+                icon={<Upload aria-hidden="true" size={16} />}
+                disabled={!selectedBootstrap || !canManageModels}
                 onClick={() => {
-                  if (!selectedBootstrap) return;
-                  createComponentForm.resetFields();
-                  createComponentForm.setFieldsValue({
-                    parentComponentId: selected?.id,
-                    lifecycleStatus: "DRAFT",
-                    sortOrder: components.data?.items.length ?? 0,
-                  });
-                  setDialog("component-create");
+                  if (selectedBootstrap) beginImport(selectedBootstrap, null);
                 }}
               >
-                添加组件
+                导入 URDF / 配置
               </Button>
             </>
           ),
@@ -581,27 +860,27 @@ export function Component() {
         summary={
           <div className={workspace.summaryStrip}>
             <SummaryItem
-              icon={<Boxes size={20} />}
-              label="机器人实例"
+              icon={<Box aria-hidden="true" size={20} />}
+              label="机器人"
               value={String(robotItems.length)}
             />
             <SummaryItem
-              icon={<Radio size={20} />}
+              icon={<Radio aria-hidden="true" size={20} />}
               label="在线"
               value={String(
-                robotItems.filter((item) => item.connectivity === "ONLINE")
+                robotItems.filter((robot) => robot.connectivity === "ONLINE")
                   .length,
               )}
             />
             <SummaryItem
-              icon={<Box size={20} />}
-              label="已加载组件"
-              value={String(components.data?.items.length ?? 0)}
+              icon={<FileIcon aria-hidden="true" size={20} />}
+              label="当前模型"
+              value={boundVersionId ? "已配置" : "未配置"}
             />
             <SummaryItem
-              icon={<ShieldCheck size={20} />}
-              label="关系语义"
-              value="[from, to)"
+              icon={<CircleDot aria-hidden="true" size={20} />}
+              label="操作流程"
+              value="解析 → 预览 → 保存"
             />
           </div>
         }
@@ -665,7 +944,7 @@ export function Component() {
               <Select
                 value={lifecycleStatus}
                 options={[
-                  { value: "all", label: "全部生命周期" },
+                  { value: "all", label: "全部" },
                   { value: "DRAFT", label: "草稿" },
                   { value: "ACTIVE", label: "启用" },
                   { value: "MAINTENANCE", label: "维护中" },
@@ -680,7 +959,7 @@ export function Component() {
               <Select
                 value={connectivityState}
                 options={[
-                  { value: "all", label: "全部连接状态" },
+                  { value: "all", label: "全部" },
                   { value: "ONLINE", label: "在线" },
                   { value: "OFFLINE", label: "离线" },
                   { value: "DEGRADED", label: "降级" },
@@ -692,15 +971,15 @@ export function Component() {
         }
         state={pageState}
       >
-        <div className={workspace.threePane}>
-          <section className={workspace.pane} aria-label="机器人实例列表">
+        <div className={styles.assetWorkspace}>
+          <section className={styles.assetList} aria-label="机器人列表">
             <header className={workspace.paneHeader}>
               <div>
-                <h2>机器人实例</h2>
-                <p>稳定 ID 与服务端连接事实</p>
+                <h2>机器人</h2>
+                <p>选择后查看或修改模型</p>
               </div>
               <span className={workspace.inlineMeta}>
-                共 {robotItems.length} 项
+                共 {robotItems.length} 台
               </span>
             </header>
             <div className={workspace.tableBody}>
@@ -708,10 +987,14 @@ export function Component() {
                 data={robotItems}
                 columns={columns}
                 getRowId={(robot) => robot.id}
-                caption="机器人列表"
+                caption="机器人资产列表"
                 state={robotItems.length ? "ready" : "empty"}
                 empty={
-                  <PageState state={search.q ? "filtered-empty" : "empty"} />
+                  <PageState
+                    state={search.q ? "filtered-empty" : "empty"}
+                    title={search.q ? "没有匹配的机器人" : "还没有机器人"}
+                    description="添加机器人后即可导入 URDF 和描述配置。"
+                  />
                 }
               />
             </div>
@@ -729,417 +1012,182 @@ export function Component() {
                       robotsQueryCodec.build({ ...search, ...cursor }, search),
                     )
                   }
-                  windowLabel={`当前 ${robotItems.length} 项`}
+                  windowLabel={`当前 ${robotItems.length} 台`}
                 />
               </footer>
             ) : null}
           </section>
 
-          <section
-            className={workspace.pane}
-            aria-label="组件拓扑面板"
-            aria-busy={components.isFetching}
-          >
-            <header className={workspace.paneHeader}>
+          <section className={styles.assetDetail} aria-label="机器人模型详情">
+            <header className={styles.detailHeader}>
               <div>
-                <h2>组件拓扑</h2>
-                <p>{selectedRobot?.displayName ?? "选择机器人"}</p>
-              </div>
-              <Button
-                type="text"
-                onClick={() => void components.refetch()}
-                disabled={!search.robotId}
-              >
-                刷新
-              </Button>
-            </header>
-            <div className={workspace.paneBody}>
-              {tree.diagnostics.map((diagnostic, index) => (
-                <p
-                  className={workspace.warningNote}
-                  role="alert"
-                  key={`${diagnostic.kind}-${index}`}
-                >
-                  {diagnostic.kind}
-                  ：服务端返回了不完整的组件拓扑；请刷新后再试，
-                  不会依据该本地诊断写入。
+                <h2>{selectedRobot?.displayName ?? "选择机器人"}</h2>
+                <p>
+                  {selectedRobot
+                    ? `${selectedRobot.serialNo} · 每台机器人独立保存模型与配置`
+                    : "从左侧选择机器人"}
                 </p>
-              ))}
-              {tree.roots.length ? (
-                <AccessibleComponentTree
-                  roots={tree.roots}
-                  selectedId={search.componentId}
-                  onSelect={(componentId) =>
-                    setParams(
-                      robotsQueryCodec.build(
-                        { ...search, componentId },
-                        search,
-                      ),
-                    )
+              </div>
+              {selectedBootstrap ? (
+                <StatusTag
+                  status={selectedBootstrap.connectivity.state}
+                  label={
+                    selectedBootstrap.connectivity.state === "ONLINE"
+                      ? "在线"
+                      : "离线"
+                  }
+                  tone={
+                    selectedBootstrap.connectivity.state === "ONLINE"
+                      ? "success"
+                      : "neutral"
                   }
                 />
-              ) : search.robotId && components.isError ? (
-                <div className={workspace.pageStateCompact}>
-                  <PageState
-                    state="feature-unavailable"
-                    title="组件拓扑暂时不可用"
-                    description="服务端未返回当前机器人已授权的组件；不会生成示意组件。"
-                  />
+              ) : null}
+            </header>
+
+            <div className={styles.previewStage}>
+              {bootstrap.isPending ||
+              (Boolean(boundVersionId) &&
+                (boundVersion.isPending || currentAssets.isPending)) ? (
+                <div className={styles.emptyPreview} role="status">
+                  <Spin />
+                  <strong>正在读取机器人模型…</strong>
                 </div>
+              ) : currentModelRef && currentRuntimeLoader ? (
+                <RobotSceneCore
+                  modelRef={currentModelRef}
+                  jointMapping={currentJointMapping}
+                  runtimeLoader={currentRuntimeLoader}
+                />
               ) : (
-                <div className={workspace.visualStage}>
-                  <div className={workspace.visualStageCopy}>
-                    <Boxes aria-hidden="true" size={44} />
-                    <strong>
-                      {selectedRobot?.displayName ?? "选择机器人"}
-                    </strong>
-                    <span>
-                      选择固定 robotId
-                      后加载授权组件树；键盘支持方向键、Home、End、Enter 与
-                      Space。
-                    </span>
-                  </div>
+                <div className={styles.emptyPreview}>
+                  <Box aria-hidden="true" size={48} />
+                  <strong>尚未导入机器人模型</strong>
+                  <span>
+                    导入 URDF 和描述配置后，系统会先解析结构并显示 3D
+                    预览；确认正常后再保存。
+                  </span>
+                  {selectedBootstrap ? (
+                    <Button
+                      type="primary"
+                      icon={<Upload aria-hidden="true" size={16} />}
+                      disabled={!canManageModels}
+                      onClick={() => beginImport(selectedBootstrap, null)}
+                    >
+                      导入 URDF / 配置
+                    </Button>
+                  ) : null}
                 </div>
               )}
             </div>
-          </section>
 
-          <aside className={workspace.inspector} aria-label="机器人组件详情">
-            <header className={workspace.inspectorHeader}>
-              <div>
-                <h2>
-                  {selected?.displayName ??
-                    selectedRobot?.displayName ??
-                    "组件详情"}
-                </h2>
-                <p>{selected ? selected.componentType : "机器人列表事实"}</p>
+            <dl className={styles.modelFacts}>
+              <div className={styles.modelFact}>
+                <dt>机器人 ID</dt>
+                <dd title={selectedRobot?.id}>{selectedRobot?.id ?? "—"}</dd>
               </div>
-              <StatusTag
-                status={
-                  selected?.lifecycle ??
-                  selectedRobot?.connectivity ??
-                  "UNKNOWN"
-                }
-                label={
-                  selected?.lifecycle ??
-                  (selectedRobot?.connectivity === "ONLINE"
-                    ? "在线"
-                    : selectedRobot?.connectivity)
-                }
-                tone={
-                  selected?.lifecycle === "ACTIVE" ||
-                  selectedRobot?.connectivity === "ONLINE"
-                    ? "success"
-                    : "neutral"
-                }
-              />
-            </header>
-            <div className={workspace.inspectorBody}>
-              <dl className={workspace.factList}>
-                <div className={workspace.factRow}>
-                  <dt>稳定 ID</dt>
-                  <dd>
-                    <code>{selected?.id ?? selectedRobot?.id ?? "—"}</code>
-                  </dd>
-                </div>
-                <div className={workspace.factRow}>
-                  <dt>序列号</dt>
-                  <dd>
-                    {selected?.serialNo ?? selectedRobot?.serialNo ?? "—"}
-                  </dd>
-                </div>
-                <div className={workspace.factRow}>
-                  <dt>父组件</dt>
-                  <dd>
-                    <code>
-                      {selected?.parentComponentId ?? "根节点 / 未加载"}
-                    </code>
-                  </dd>
-                </div>
-                <div className={workspace.factRow}>
-                  <dt>模型引用</dt>
-                  <dd>
-                    <code>
-                      {selected?.componentModelId ??
-                        bootstrap.data?.effectiveModelBinding
-                          ?.robotModelVersionId ??
-                        "需 Bootstrap 授权"}
-                    </code>
-                  </dd>
-                </div>
-              </dl>
-              <DetailTabs
-                tabs={detailTabs}
-                activeTab={search.tab}
-                panelIdForTab={(tabId) => `p15-tabpanel-${tabId}`}
-                onChange={(tab) =>
-                  setParams(
-                    robotsQueryCodec.build(
-                      { ...search, tab: tab as typeof search.tab },
-                      search,
-                    ),
-                  )
-                }
-              />
-              <section
-                className={workspace.tabContent}
-                role="tabpanel"
-                id="p15-tabpanel-overview"
-                aria-labelledby="tab-overview"
-                hidden={search.tab !== "overview"}
-              >
-                <p className={workspace.safeNote}>
-                  关系区间统一使用 <code>[validFrom, validTo)</code>
-                  ；本地重叠只作预校验，409/422 始终以服务端事实为准。
-                </p>
-                {selectedBootstrap ? (
-                  <Space wrap className={workspace.actionRow}>
-                    <Button
-                      onClick={() => setDialog("edit")}
-                      disabled={
-                        !canManage ||
-                        !selectedBootstrap.allowedActions.includes("EDIT")
-                      }
-                    >
-                      编辑机器人
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        transitionForm.resetFields();
-                        setDialog("transition");
-                      }}
-                      disabled={
-                        !canManage ||
-                        !selectedBootstrap.allowedActions.includes(
-                          "TRANSITION",
-                        ) ||
-                        selectedBootstrap.lifecycle === "RETIRED"
-                      }
-                    >
-                      变更状态
-                    </Button>
-                  </Space>
-                ) : null}
-                {selected && selectedBootstrap ? (
-                  <Space wrap className={workspace.actionRow}>
-                    <Button
-                      onClick={() => setDialog("component-edit")}
-                      disabled={!canManage}
-                    >
-                      编辑组件
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        transitionComponentForm.resetFields();
-                        setDialog("component-transition");
-                      }}
-                      disabled={!canManage || selected.lifecycle === "RETIRED"}
-                    >
-                      变更组件状态
-                    </Button>
-                  </Space>
-                ) : null}
-              </section>
-              <section
-                className={workspace.tabContent}
-                role="tabpanel"
-                id="p15-tabpanel-frames"
-                aria-labelledby="tab-frames"
-                hidden={search.tab !== "frames"}
-              >
-                <p className={workspace.featureNote}>
-                  Frame 列表：{frames.data?.items.length ?? 0}
-                  ；未授权时保持空，不推断坐标系。
-                </p>
-              </section>
-              <section
-                className={workspace.tabContent}
-                role="tabpanel"
-                id="p15-tabpanel-channels"
-                aria-labelledby="tab-channels"
-                hidden={search.tab !== "channels"}
-              >
-                <p className={workspace.featureNote}>
-                  Channel 列表：{channels.data?.items.length ?? 0}；Schema
-                  版本必须是固定引用。
-                </p>
-              </section>
-              <section
-                className={workspace.tabContent}
-                role="tabpanel"
-                id="p15-tabpanel-history"
-                aria-labelledby="tab-history"
-                hidden={search.tab !== "history"}
-              >
-                {maintenanceRecords.isPending ? (
-                  <PageState state="loading" label="维护记录" />
-                ) : maintenanceRecords.isError ? (
-                  <PageState
-                    state={
-                      isDomainError(maintenanceRecords.error) &&
-                      maintenanceRecords.error.httpStatus === 403
-                        ? "forbidden"
-                        : "error"
+              <div className={styles.modelFact}>
+                <dt>URDF</dt>
+                <dd>{currentUrdf?.relative_path ?? "未配置"}</dd>
+              </div>
+              <div className={styles.modelFact}>
+                <dt>描述配置</dt>
+                <dd>
+                  {currentAssets.data?.find((asset) => asset.role === "CONFIG")
+                    ?.relative_path ?? "未配置"}
+                </dd>
+              </div>
+              <div className={styles.modelFact}>
+                <dt>关节映射</dt>
+                <dd>{currentMappings.data?.length ?? 0} 项</dd>
+              </div>
+            </dl>
+
+            {selectedBootstrap ? (
+              <div className={styles.modelActions}>
+                {boundVersion.data ? (
+                  <Button
+                    type="primary"
+                    icon={<FileIcon aria-hidden="true" size={16} />}
+                    loading={loadingExistingModel}
+                    disabled={
+                      !canManageModels ||
+                      !currentAssets.data?.length ||
+                      currentMappings.isPending
                     }
-                    onRetry={() => void maintenanceRecords.refetch()}
-                  />
-                ) : maintenanceRecords.data?.items.length ? (
-                  <ol className={workspace.factList} aria-label="维护记录">
-                    {maintenanceRecords.data.items.map((record) => (
-                      <li className={workspace.factRow} key={record.id}>
-                        <span>
-                          {record.event_type === "LIFECYCLE_TRANSITION"
-                            ? "状态流转"
-                            : "维护"}
-                        </span>
-                        <strong>{record.summary}</strong>
-                        <small>
-                          {new Date(record.occurred_at).toLocaleString("zh-CN")}
-                        </small>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <PageState
-                    state="empty"
-                    title="尚无维护记录"
-                    description="记录检查、保养或现场处置，供后续排查与审计使用。"
-                  />
-                )}
-                <Button
-                  type="primary"
-                  onClick={() => {
-                    maintenanceForm.resetFields();
-                    setDialog("maintenance");
-                  }}
-                  disabled={!selectedBootstrap || !canManage}
-                >
-                  新增维护记录
-                </Button>
-              </section>
-              <div className={workspace.actionRow}>
-                {calibrationReference ? (
-                  <Button
-                    href={calibrationRoutes.calibrations.build({
-                      robotId: selected?.robotId ?? selectedRobot?.id ?? "",
-                      componentId: selected?.id ?? "",
-                      setId: calibrationReference.calibration_set_id,
-                    })}
+                    onClick={() => void editCurrentModel()}
                   >
-                    查看标定
+                    可视化检查 / 修改模型
                   </Button>
                 ) : (
-                  <Button disabled>标定管理</Button>
-                )}
-                {schemaReference ? (
                   <Button
-                    href={dataSchemaRoutes.dataSchemas.build({
-                      schemaId: schemaReference.schema_id,
-                      schemaVersion: schemaReference.schema_version,
-                      componentId: selected?.id ?? "",
-                      detailTab: "references",
-                    })}
+                    type="primary"
+                    icon={<Upload aria-hidden="true" size={16} />}
+                    disabled={!canManageModels}
+                    onClick={() => beginImport(selectedBootstrap, null)}
                   >
-                    查看 Schema
+                    导入 URDF / 配置
                   </Button>
-                ) : (
-                  <Button disabled>Data Schema</Button>
                 )}
+                <span className={workspace.inlineMeta}>
+                  修改 URDF 或关节映射后会重写描述配置文件，并在保存前重新校验。
+                </span>
               </div>
-            </div>
-          </aside>
+            ) : null}
+          </section>
         </div>
       </StandardPageScaffold>
+
       <Modal
-        open={dialog === "create"}
-        title="新建机器人"
+        open={createOpen}
+        title="添加机器人"
+        footer={null}
         destroyOnHidden
         onCancel={() => {
-          if (!createRobot.isPending) setDialog(null);
+          if (!createRobot.isPending) setCreateOpen(false);
         }}
-        footer={null}
       >
+        <Alert
+          type="info"
+          showIcon
+          title="机器人是模型文件与描述配置的唯一载体"
+          description="创建后会立即进入 URDF 导入流程。"
+        />
         <Form<CreateRobotFormValues>
           form={createForm}
           layout="vertical"
-          onFinish={submitCreate}
+          onFinish={(values) => void submitCreateRobot(values)}
           requiredMark="optional"
         >
           <Form.Item
             name="displayName"
-            label="显示名称"
-            rules={[
-              {
-                required: true,
-                whitespace: true,
-                max: 256,
-                message: "请输入 1–256 个字符的名称",
-              },
-            ]}
+            label="机器人名称"
+            rules={[{ required: true, whitespace: true, max: 256 }]}
           >
             <Input autoFocus autoComplete="off" maxLength={256} />
           </Form.Item>
           <Form.Item
             name="serialNo"
             label="序列号"
-            rules={[
-              {
-                required: true,
-                whitespace: true,
-                max: 128,
-                message: "请输入 1–128 个字符的序列号",
-              },
-            ]}
+            rules={[{ required: true, whitespace: true, max: 128 }]}
           >
             <Input autoComplete="off" maxLength={128} />
           </Form.Item>
-          <Form.Item
-            name="lifecycleStatus"
-            label="初始生命周期"
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={[
-                { value: "DRAFT", label: "草稿" },
-                { value: "ACTIVE", label: "启用" },
-                { value: "MAINTENANCE", label: "维护中" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="connectivityState"
-            label="连接状态"
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={[
-                { value: "ONLINE", label: "在线" },
-                { value: "OFFLINE", label: "离线" },
-                { value: "DEGRADED", label: "降级" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="connectivitySource" label="连接事实来源">
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item name="connectivityReasonCode" label="状态原因代码">
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          {dialog === "create" && mutationError ? (
+          {createRobot.error ? (
             <Alert
               type="error"
               showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "新建机器人失败，请检查连接后重试。"
+              title={
+                isDomainError(createRobot.error)
+                  ? createRobot.error.message
+                  : "机器人创建失败，请稍后重试。"
               }
             />
           ) : null}
           <Space>
             <Button
-              onClick={() => setDialog(null)}
               disabled={createRobot.isPending}
+              onClick={() => setCreateOpen(false)}
             >
               取消
             </Button>
@@ -1148,460 +1196,482 @@ export function Component() {
               htmlType="submit"
               loading={createRobot.isPending}
             >
-              创建机器人
+              创建并导入模型
             </Button>
           </Space>
         </Form>
       </Modal>
+
       <Modal
-        open={dialog === "edit"}
-        title="编辑机器人"
-        destroyOnHidden
-        onCancel={() => {
-          if (!updateRobot.isPending) setDialog(null);
-        }}
+        open={importOpen}
+        width={1040}
+        title={importSourceVersion ? "检查并修改机器人模型" : "导入机器人模型"}
         footer={null}
-      >
-        <Form<EditRobotFormValues>
-          form={editForm}
-          layout="vertical"
-          onFinish={submitEdit}
-          requiredMark="optional"
-        >
-          <Form.Item
-            name="displayName"
-            label="显示名称"
-            rules={[{ required: true, whitespace: true, max: 256 }]}
-          >
-            <Input autoFocus autoComplete="off" maxLength={256} />
-          </Form.Item>
-          <Form.Item
-            name="connectivityState"
-            label="连接状态"
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={[
-                { value: "ONLINE", label: "在线" },
-                { value: "OFFLINE", label: "离线" },
-                { value: "DEGRADED", label: "降级" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="connectivitySource" label="连接事实来源">
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item name="connectivityReasonCode" label="状态原因代码">
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          {dialog === "edit" && mutationError ? (
-            <Alert
-              type="error"
-              showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "更新机器人失败，请重新加载后重试。"
-              }
-            />
-          ) : null}
-          <Space>
-            <Button
-              onClick={() => setDialog(null)}
-              disabled={updateRobot.isPending}
-            >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={updateRobot.isPending}
-            >
-              保存更改
-            </Button>
-          </Space>
-        </Form>
-      </Modal>
-      <Modal
-        open={dialog === "transition"}
-        title="变更生命周期"
         destroyOnHidden
+        mask={{ closable: !modelSavePending }}
         onCancel={() => {
-          if (!transitionRobot.isPending) setDialog(null);
+          if (modelSavePending) return;
+          setImportOpen(false);
+          resetImport();
         }}
-        footer={null}
       >
-        <Form<TransitionRobotFormValues>
-          form={transitionForm}
-          layout="vertical"
-          onFinish={submitTransition}
-          requiredMark="optional"
-        >
-          <Form.Item
-            name="lifecycleStatus"
-            label="目标状态"
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={[
-                { value: "ACTIVE", label: "启用" },
-                { value: "MAINTENANCE", label: "维护中" },
-                { value: "DISABLED", label: "已停用" },
-                { value: "RETIRED", label: "已退役" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="reason"
-            label="变更原因"
-            rules={[{ required: true, whitespace: true, max: 512 }]}
-          >
-            <Input.TextArea
-              autoFocus
-              maxLength={512}
-              autoSize={{ minRows: 3, maxRows: 6 }}
-            />
-          </Form.Item>
-          {dialog === "transition" && mutationError ? (
+        <Steps
+          className={styles.wizardSteps}
+          current={importStep(importStage)}
+          items={[
+            { title: "导入文件", content: "URDF + 描述配置" },
+            { title: "解析与预览", content: "检查结构和映射" },
+            { title: "保存", content: "校验、发布并绑定" },
+          ]}
+        />
+
+        {loadingExistingModel ? (
+          <div className={styles.savingState} role="status">
+            <div className={styles.savingCopy}>
+              <Spin size="large" />
+              <h3>正在读取当前模型文件…</h3>
+              <p>文件读取完成后会自动解析，并进入可视化检查。</p>
+            </div>
+          </div>
+        ) : importStage === "files" ? (
+          <div className={styles.wizardSection}>
             <Alert
-              type="error"
+              type="info"
               showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "状态变更失败，请重新加载后重试。"
-              }
+              title="先导入，解析成功后才能预览和保存"
+              description="必须包含一个入口 URDF。描述配置使用 JSON；如果没有提供，系统会根据 URDF 自动生成 robot.config.json。"
             />
-          ) : null}
-          <Space>
-            <Button
-              onClick={() => setDialog(null)}
-              disabled={transitionRobot.isPending}
+            <Form<ModelMetadataFormValues>
+              form={modelForm}
+              layout="vertical"
+              requiredMark="optional"
             >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={transitionRobot.isPending}
+              {!importSourceVersion ? (
+                <div className={styles.wizardMeta}>
+                  <Form.Item
+                    name="manufacturer"
+                    label="制造商"
+                    rules={[{ required: true, whitespace: true, max: 256 }]}
+                  >
+                    <Input autoComplete="organization" maxLength={256} />
+                  </Form.Item>
+                  <Form.Item
+                    name="modelCode"
+                    label="型号代码"
+                    rules={[{ required: true, whitespace: true, max: 128 }]}
+                  >
+                    <Input autoComplete="off" maxLength={128} />
+                  </Form.Item>
+                  <Form.Item
+                    name="displayName"
+                    label="模型名称"
+                    rules={[{ required: true, whitespace: true, max: 256 }]}
+                  >
+                    <Input autoComplete="off" maxLength={256} />
+                  </Form.Item>
+                </div>
+              ) : null}
+              <Form.Item
+                name="versionLabel"
+                label="保存版本"
+                rules={[{ required: true, whitespace: true, max: 128 }]}
+              >
+                <Input autoComplete="off" maxLength={128} />
+              </Form.Item>
+            </Form>
+            <div
+              className={`${uploadStyles.dropZone} ${modelDropActive ? uploadStyles.dropZoneActive : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-label="拖拽或选择 URDF 和机器人配置文件"
+              aria-busy={readingDroppedFiles}
+              onClick={(event) => {
+                const target = event.target;
+                if (
+                  target instanceof Element &&
+                  target.closest("button, input")
+                )
+                  return;
+                modelFileInputRef.current?.click();
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  modelFileInputRef.current?.click();
+                }
+              }}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setModelDropActive(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                setModelDropActive(true);
+              }}
+              onDragLeave={(event) => {
+                if (
+                  !event.currentTarget.contains(
+                    event.relatedTarget as Node | null,
+                  )
+                ) {
+                  setModelDropActive(false);
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void handleModelFilesDrop(event.dataTransfer);
+              }}
             >
-              确认变更
-            </Button>
-          </Space>
-        </Form>
-      </Modal>
-      <Modal
-        open={dialog === "maintenance"}
-        title="新增维护记录"
-        destroyOnHidden
-        onCancel={() => {
-          if (!createMaintenanceRecord.isPending) setDialog(null);
-        }}
-        footer={null}
-      >
-        <Form<MaintenanceRecordFormValues>
-          form={maintenanceForm}
-          layout="vertical"
-          onFinish={submitMaintenance}
-          requiredMark="optional"
-        >
-          <Form.Item
-            name="summary"
-            label="维护摘要"
-            rules={[{ required: true, whitespace: true, max: 256 }]}
-          >
-            <Input autoFocus autoComplete="off" maxLength={256} />
-          </Form.Item>
-          <Form.Item name="details" label="详细说明">
-            <Input.TextArea
-              maxLength={4000}
-              autoSize={{ minRows: 4, maxRows: 10 }}
-            />
-          </Form.Item>
-          {dialog === "maintenance" && mutationError ? (
-            <Alert
-              type="error"
-              showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "维护记录保存失败，请检查后重试。"
-              }
-            />
-          ) : null}
-          <Space>
-            <Button
-              onClick={() => setDialog(null)}
-              disabled={createMaintenanceRecord.isPending}
-            >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={createMaintenanceRecord.isPending}
-            >
-              保存记录
-            </Button>
-          </Space>
-        </Form>
-      </Modal>
-      <Modal
-        open={dialog === "component-create"}
-        title="添加组件"
-        destroyOnHidden
-        onCancel={() => {
-          if (!createRobotComponent.isPending) setDialog(null);
-        }}
-        footer={null}
-      >
-        <Form<CreateComponentFormValues>
-          form={createComponentForm}
-          layout="vertical"
-          onFinish={submitCreateComponent}
-          requiredMark="optional"
-        >
-          <Form.Item name="parentComponentId" label="父组件 ID（留空为根节点）">
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="componentModelId"
-            label="组件模型 ID"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input autoFocus maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="componentType"
-            label="组件类型"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input
-              maxLength={128}
-              autoComplete="off"
-              placeholder="例如 CAMERA、ARM 或 GRIPPER"
-            />
-          </Form.Item>
-          <Form.Item
-            name="displayName"
-            label="显示名称"
-            rules={[{ required: true, whitespace: true, max: 256 }]}
-          >
-            <Input maxLength={256} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="serialNo"
-            label="序列号"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="lifecycleStatus"
-            label="初始生命周期"
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={[
-                { value: "DRAFT", label: "草稿" },
-                { value: "ACTIVE", label: "启用" },
-                { value: "MAINTENANCE", label: "维护中" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="sortOrder"
-            label="拓扑排序"
-            rules={[{ required: true, type: "number", min: 0 }]}
-          >
-            <InputNumber
-              min={0}
-              max={2_147_483_647}
-              precision={0}
-              style={{ width: "100%" }}
-            />
-          </Form.Item>
-          {dialog === "component-create" && mutationError ? (
-            <Alert
-              type="error"
-              showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "添加组件失败，请重新加载拓扑后重试。"
-              }
-            />
-          ) : null}
-          <Space>
-            <Button
-              onClick={() => setDialog(null)}
-              disabled={createRobotComponent.isPending}
-            >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={createRobotComponent.isPending}
-            >
-              添加组件
-            </Button>
-          </Space>
-        </Form>
-      </Modal>
-      <Modal
-        open={dialog === "component-edit"}
-        title="编辑组件"
-        destroyOnHidden
-        onCancel={() => {
-          if (!updateRobotComponent.isPending) setDialog(null);
-        }}
-        footer={null}
-      >
-        <Form<EditComponentFormValues>
-          form={editComponentForm}
-          layout="vertical"
-          onFinish={submitEditComponent}
-          requiredMark="optional"
-        >
-          <Form.Item name="parentComponentId" label="父组件 ID（留空为根节点）">
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="componentModelId"
-            label="组件模型 ID"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input autoFocus maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="componentType"
-            label="组件类型"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="displayName"
-            label="显示名称"
-            rules={[{ required: true, whitespace: true, max: 256 }]}
-          >
-            <Input maxLength={256} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="serialNo"
-            label="序列号"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input maxLength={128} autoComplete="off" />
-          </Form.Item>
-          <Form.Item
-            name="sortOrder"
-            label="拓扑排序"
-            rules={[{ required: true, type: "number", min: 0 }]}
-          >
-            <InputNumber
-              min={0}
-              max={2_147_483_647}
-              precision={0}
-              style={{ width: "100%" }}
-            />
-          </Form.Item>
-          {dialog === "component-edit" && mutationError ? (
-            <Alert
-              type="error"
-              showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "更新组件失败，请重新加载拓扑后重试。"
-              }
-            />
-          ) : null}
-          <Space>
-            <Button
-              onClick={() => setDialog(null)}
-              disabled={updateRobotComponent.isPending}
-            >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={updateRobotComponent.isPending}
-            >
-              保存组件
-            </Button>
-          </Space>
-        </Form>
-      </Modal>
-      <Modal
-        open={dialog === "component-transition"}
-        title="变更组件状态"
-        destroyOnHidden
-        onCancel={() => {
-          if (!transitionRobotComponent.isPending) setDialog(null);
-        }}
-        footer={null}
-      >
-        <Form<TransitionComponentFormValues>
-          form={transitionComponentForm}
-          layout="vertical"
-          onFinish={submitTransitionComponent}
-          requiredMark="optional"
-        >
-          <Form.Item
-            name="lifecycleStatus"
-            label="目标状态"
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={[
-                { value: "ACTIVE", label: "启用" },
-                { value: "MAINTENANCE", label: "维护中" },
-                { value: "DISABLED", label: "已停用" },
-                { value: "RETIRED", label: "软移除（退役，保留历史引用）" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="reason"
-            label="变更原因"
-            rules={[{ required: true, whitespace: true, max: 512 }]}
-          >
-            <Input.TextArea
-              autoFocus
-              maxLength={512}
-              autoSize={{ minRows: 3, maxRows: 6 }}
-            />
-          </Form.Item>
-          {dialog === "component-transition" && mutationError ? (
-            <Alert
-              type="error"
-              showIcon
-              message={
-                isDomainError(mutationError)
-                  ? mutationError.message
-                  : "组件状态变更失败；存在子组件时需先逐个退役。"
-              }
-            />
-          ) : null}
-          <Space>
-            <Button
-              onClick={() => setDialog(null)}
-              disabled={transitionRobotComponent.isPending}
-            >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={transitionRobotComponent.isPending}
-            >
-              确认变更
-            </Button>
-          </Space>
-        </Form>
+              <div className={uploadStyles.dropZoneContent}>
+                <span className={uploadStyles.dropZoneIcon}>
+                  <UploadCloud aria-hidden="true" size={24} />
+                </span>
+                <strong>
+                  {readingDroppedFiles
+                    ? "正在读取文件夹…"
+                    : "拖拽 URDF、配置文件或整个模型文件夹"}
+                </strong>
+                <span className={uploadStyles.dropZoneCopy}>
+                  选择新的 URDF 或 JSON
+                  配置时会替换同类型旧文件；网格和纹理会保留目录结构。
+                </span>
+                <div className={uploadStyles.uploadActions}>
+                  <Button
+                    icon={<FileIcon aria-hidden="true" size={16} />}
+                    disabled={readingDroppedFiles}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      modelFileInputRef.current?.click();
+                    }}
+                  >
+                    选择文件
+                  </Button>
+                  <Button
+                    icon={<FolderOpen aria-hidden="true" size={16} />}
+                    disabled={readingDroppedFiles}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      modelFolderInputRef.current?.click();
+                    }}
+                  >
+                    选择文件夹
+                  </Button>
+                </div>
+              </div>
+              <input
+                ref={modelFileInputRef}
+                className={uploadStyles.hiddenInput}
+                aria-label="选择机器人模型文件"
+                type="file"
+                multiple
+                accept={modelFileAccept}
+                onChange={(event) => {
+                  addModelFilesFromPicker(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={(element) => {
+                  modelFolderInputRef.current = element;
+                  element?.setAttribute("webkitdirectory", "");
+                  element?.setAttribute("directory", "");
+                }}
+                className={uploadStyles.hiddenInput}
+                aria-label="选择机器人模型文件夹"
+                type="file"
+                multiple
+                accept={modelFileAccept}
+                onChange={(event) => {
+                  addModelFilesFromPicker(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+
+            {modelAssets.length ? (
+              <>
+                <div
+                  className={uploadStyles.selectionSummary}
+                  aria-live="polite"
+                >
+                  <strong>已选择 {modelAssets.length} 个文件</strong>
+                  <span>URDF {modelAssetCounts.URDF}</span>
+                  <span>网格 {modelAssetCounts.MESH}</span>
+                  <span>纹理 {modelAssetCounts.TEXTURE}</span>
+                  <span>配置 {modelAssetCounts.CONFIG}</span>
+                </div>
+                <ul
+                  className={uploadStyles.fileList}
+                  aria-label="待解析模型文件"
+                >
+                  {modelAssets.map((asset) => (
+                    <li
+                      className={uploadStyles.fileRow}
+                      key={asset.relativePath}
+                    >
+                      <span
+                        className={uploadStyles.filePath}
+                        title={asset.relativePath}
+                      >
+                        {asset.relativePath}
+                      </span>
+                      <span className={uploadStyles.fileRole}>
+                        {modelAssetRoleLabels[asset.role]}
+                      </span>
+                      <button
+                        className={uploadStyles.removeButton}
+                        type="button"
+                        aria-label={`移除 ${asset.relativePath}`}
+                        onClick={() => {
+                          setModelAssets((current) =>
+                            current.filter(
+                              (item) =>
+                                item.relativePath !== asset.relativePath,
+                            ),
+                          );
+                          clearAnalysis();
+                          setModelError(null);
+                        }}
+                      >
+                        <X aria-hidden="true" size={15} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {modelNotice ? (
+              <Alert type="warning" showIcon title={modelNotice} />
+            ) : null}
+            {modelError ? (
+              <Alert type="error" showIcon title={modelError} />
+            ) : null}
+            <div className={styles.wizardFooter}>
+              <Button
+                onClick={() => {
+                  setImportOpen(false);
+                  resetImport();
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                type="primary"
+                loading={parsingModel}
+                disabled={!modelAssets.length || Boolean(modelSelectionError)}
+                onClick={() => void reviewSelectedFiles()}
+              >
+                解析文件并预览
+              </Button>
+            </div>
+          </div>
+        ) : importStage === "review" && analysis && importRobot ? (
+          <div className={styles.wizardSection}>
+            <div className={styles.wizardMeta}>
+              <div>
+                <span>入口 URDF</span>
+                <strong title={analysis.urdfPath}>{analysis.urdfPath}</strong>
+              </div>
+              <div>
+                <span>机器人名称</span>
+                <strong>{analysis.robotName}</strong>
+              </div>
+              <div>
+                <span>描述配置</span>
+                <strong>{configurationAsset?.relativePath}</strong>
+              </div>
+              <div>
+                <span>Link</span>
+                <strong>{analysis.linkNames.length}</strong>
+              </div>
+              <div>
+                <span>Joint</span>
+                <strong>{analysis.joints.length}</strong>
+              </div>
+              <div>
+                <span>活动关节</span>
+                <strong>{analysis.actuatedJointNames.length}</strong>
+              </div>
+            </div>
+
+            {analysis.missingMeshReferences.length ? (
+              <Alert
+                type="warning"
+                showIcon
+                title="URDF 引用的部分资源未找到"
+                description={analysis.missingMeshReferences.join("、")}
+              />
+            ) : (
+              <Alert
+                type="success"
+                showIcon
+                title="URDF 结构解析通过"
+                description="请旋转、缩放 3D 模型检查方向和结构，再确认关节映射。"
+              />
+            )}
+
+            <div className={styles.reviewGrid}>
+              <div className={styles.wizardPreview}>
+                {localRuntimeLoader ? (
+                  <RobotSceneCore
+                    modelRef={localModelRef}
+                    jointMapping={EMPTY_MAPPING}
+                    runtimeLoader={localRuntimeLoader}
+                  />
+                ) : (
+                  <div className={styles.emptyPreview}>3D 预览正在准备…</div>
+                )}
+              </div>
+              <section
+                className={styles.mappingPanel}
+                aria-label="关节映射配置"
+              >
+                <header className={styles.mappingHeader}>
+                  <div>
+                    <h3>关节映射</h3>
+                    <p>修改后会直接写入 {configurationAsset?.relativePath}</p>
+                  </div>
+                  <StatusTag
+                    status={mappingsValid ? "VALID" : "INVALID"}
+                    label={mappingsValid ? "完整" : "需修正"}
+                    tone={mappingsValid ? "success" : "warning"}
+                  />
+                </header>
+                {mappings.length ? (
+                  <ul className={styles.mappingList}>
+                    {mappings.map((mapping, index) => (
+                      <li
+                        className={styles.mappingRow}
+                        key={`${mapping.target_joint_name}-${index}`}
+                      >
+                        <Input
+                          aria-label={`${mapping.target_joint_name} 的数据关节名`}
+                          value={mapping.source_joint_name}
+                          placeholder="数据关节名"
+                          onChange={(event) =>
+                            setMappings((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      source_joint_name: event.target.value,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                        <span
+                          className={styles.mappingArrow}
+                          aria-hidden="true"
+                        >
+                          →
+                        </span>
+                        <Select
+                          aria-label={`${mapping.source_joint_name} 对应的 URDF 关节`}
+                          value={mapping.target_joint_name}
+                          options={analysis.actuatedJointNames.map(
+                            (jointName) => ({
+                              value: jointName,
+                              label: jointName,
+                            }),
+                          )}
+                          onChange={(targetJointName) =>
+                            setMappings((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      target_joint_name: targetJointName,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                        <Select
+                          aria-label={`${mapping.source_joint_name} 的方向`}
+                          value={mapping.direction}
+                          options={[
+                            { value: "SAME", label: "同向" },
+                            { value: "INVERTED", label: "反向" },
+                          ]}
+                          onChange={(direction: "SAME" | "INVERTED") =>
+                            setMappings((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, direction }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={workspace.safeNote}>该 URDF 没有活动关节。</p>
+                )}
+                <details>
+                  <summary>查看将要保存的描述配置</summary>
+                  <pre className={styles.configurationPreview}>
+                    {configurationPreview}
+                  </pre>
+                </details>
+              </section>
+            </div>
+            {modelError ? (
+              <Alert type="error" showIcon title={modelError} />
+            ) : null}
+            <div className={styles.wizardFooter}>
+              <Button onClick={() => clearAnalysis()}>返回重新选择</Button>
+              <Button
+                type="primary"
+                disabled={
+                  !mappingsValid ||
+                  Boolean(analysis.missingMeshReferences.length)
+                }
+                onClick={() => void saveRobotModel()}
+              >
+                保存机器人模型
+              </Button>
+            </div>
+          </div>
+        ) : importStage === "saving" ? (
+          <div className={styles.savingState} role="status">
+            <div className={styles.savingCopy}>
+              <Spin size="large" />
+              <h3>正在保存机器人模型…</h3>
+              <p>
+                正在写入
+                URDF、描述配置和关节映射，并执行服务端校验、发布与机器人绑定。
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className={styles.savingState} role="status">
+            <div className={styles.savingCopy}>
+              <CheckCircle2 aria-hidden="true" color="#389e0d" size={52} />
+              <h3>机器人模型已保存</h3>
+              <p>
+                URDF、描述配置和关节映射已通过校验并绑定到机器人。
+                {savedVersionId ? `版本：${savedVersionId}` : ""}
+              </p>
+              <Button
+                type="primary"
+                onClick={() => {
+                  setImportOpen(false);
+                  resetImport();
+                }}
+              >
+                完成
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </main>
   );

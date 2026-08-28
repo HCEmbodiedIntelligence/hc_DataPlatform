@@ -93,6 +93,33 @@ describe("P06 immutable Lance window source", () => {
     );
   });
 
+  it("decodes Unitree named vectors and pose objects without flattening their metadata", async () => {
+    requestMock.mockResolvedValue(
+      stepWindow({}, vectorBinding.modality_key, [
+        { names: ["joint_a", "joint_b"], positions: [1, 2] },
+        { names: ["joint_a", "joint_b"], values: [3, 4] },
+      ]) as never,
+    );
+    await expect(
+      source().loadWindow(
+        { startNs: "200", endNs: "400", lod: 1 },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ values: [[1, 2], [3, 4]] });
+
+    requestMock.mockResolvedValue(
+      stepWindow({}, vectorBinding.modality_key, [
+        { position_xyz: [1, 2, 3], orientation_wxyz: [1, 0, 0, 0] },
+      ]) as never,
+    );
+    await expect(
+      source().loadWindow(
+        { startNs: "200", endNs: "400", lod: 1 },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ values: [[1, 2, 3, 1, 0, 0, 0]] });
+  });
+
   it("fails closed when a response crosses the immutable rollout/version/window identity", async () => {
     requestMock.mockResolvedValue(stepWindow({ dataset_version: 8 }) as never);
 
@@ -147,6 +174,20 @@ describe("P06 immutable Lance window source", () => {
     ).resolves.toMatchObject({
       events: [{ timestampNs: "9007199254740990", label: "抓取" }],
     });
+
+    requestMock.mockResolvedValue(
+      stepWindow({ start_step: 30, end_step: 50 }, eventBinding.modality_key, [
+        { source_format: "lerobot", repository: "unitree/example" },
+      ]) as never,
+    );
+    await expect(
+      source(eventBinding).loadWindow(
+        { startNs: "200", endNs: "400", lod: 1 },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      events: [{ timestampNs: "9007199254740990", label: "lerobot" }],
+    });
   });
 
   it("rejects malformed, unavailable and undeclared sample values rather than silently synthesizing a curve", async () => {
@@ -159,5 +200,31 @@ describe("P06 immutable Lance window source", () => {
         new AbortController().signal,
       ),
     ).rejects.toMatchObject({ problemCode: "P06_NUMERIC_VALUE_INVALID" });
+  });
+
+  it("uses channel validity and skips gaps even when the aggregate row is invalid", async () => {
+    const payload = stepWindow() as ReturnType<typeof stepWindow>;
+    const first = payload.steps[0]!;
+    const second = payload.steps[1]!;
+    payload.steps[0] = {
+      ...first,
+      sample_valid: false,
+      valid: { [vectorBinding.modality_key]: true },
+    };
+    payload.steps[1] = {
+      ...second,
+      valid: { [vectorBinding.modality_key]: false },
+    };
+    requestMock.mockResolvedValue(payload as never);
+
+    await expect(
+      source().loadWindow(
+        { startNs: "200", endNs: "400", lod: 1 },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      timestampsNs: ["9007199254740990"],
+      values: [[1, 2]],
+    });
   });
 });

@@ -331,6 +331,7 @@ class ApprovedAnnotationSnapshotAdapter:
             rollout_id=rollout_id,
             annotation_revision=revision_number,
             annotation_task_id=task_id,
+            annotation_submission_id=task.current_submission_id,
             excluded_step_ranges=tuple(
                 StepRangeV1(start_step=item.start_step, end_step=item.end_step)
                 for item in effective

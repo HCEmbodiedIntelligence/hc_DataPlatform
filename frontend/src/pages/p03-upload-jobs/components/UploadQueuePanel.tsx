@@ -34,7 +34,7 @@ const transferLabels: Readonly<
   paused: "传输已暂停",
   offline: "断网，传输已停止",
   failed: "传输失败",
-  finalizing: "正在提交 Manifest",
+  finalizing: "正在提交数据清单",
   committed: "Raw 已提交",
   cancelled: "上传已取消",
   "needs-file": "等待重新选择原文件",
@@ -288,11 +288,30 @@ export function UploadQueuePanel(props: {
   readonly onCancel: (id: string) => void;
   readonly onReattach: (id: string, file: File) => void;
   readonly onClearSettled: () => void;
+  readonly onContinueUpload: () => void;
+  readonly onViewRecords: () => void;
   readonly onRecover: () => void;
 }) {
+  const totalCount = props.items.length;
+  const uploadedCount = props.items.filter(
+    (item) => item.transferStatus === "committed",
+  ).length;
+  const cancelledCount = props.items.filter(
+    (item) => item.transferStatus === "cancelled",
+  ).length;
   const settled = props.items.some((item) =>
     ["committed", "cancelled"].includes(item.transferStatus),
   );
+  const allSettled =
+    totalCount > 0 && uploadedCount + cancelledCount === totalCount;
+  const allUploaded = totalCount > 0 && uploadedCount === totalCount;
+  const hasFailed = props.items.some(
+    (item) => item.transferStatus === "failed",
+  );
+  const overallPercent =
+    totalCount > 0
+      ? Number(((uploadedCount / totalCount) * 100).toFixed(1))
+      : 0;
   return (
     <section
       className={`${styles.uploadPanel} ${styles.queuePanel}`}
@@ -304,10 +323,29 @@ export function UploadQueuePanel(props: {
         </span>
         <div>
           <h2 id="upload-queue-heading">
-            上传队列 <small>（{props.items.length}）</small>
+            上传队列 <small>（{totalCount}）</small>
           </h2>
         </div>
       </header>
+      {totalCount > 0 ? (
+        <div className={styles.queueOverall} aria-live="polite">
+          <div className={styles.queueOverallHeader}>
+            <strong>{allUploaded ? "上传已完成" : "上传进度"}</strong>
+            <span className={styles.queueOverallCount}>
+              已上传 {uploadedCount} / {totalCount}
+            </span>
+          </div>
+          <Progress
+            aria-label={`整批上传进度：已上传 ${uploadedCount} / ${totalCount}`}
+            percent={overallPercent}
+            showInfo={false}
+            size="small"
+            status={
+              allUploaded ? "success" : hasFailed ? "exception" : "active"
+            }
+          />
+        </div>
+      ) : null}
       {props.recoveryProblem ? (
         <div className={styles.queueFailure} role="alert">
           <CircleAlert size={14} aria-hidden="true" />
@@ -351,34 +389,68 @@ export function UploadQueuePanel(props: {
           浏览器刷新或关闭会中断正在进行的直传。服务端会保留已成功分片；重新进入后可恢复任务状态，并在重新选择同一原文件后断点续传。
         </p>
       ) : null}
-      <div className={styles.queueList} aria-live="polite">
-        {props.items.map((item) => (
-          <QueueItemCard
-            key={item.id}
-            item={item}
-            canManage={props.canManage}
-            onPause={() => props.onPause(item.id)}
-            onResume={() => props.onResume(item.id)}
-            onRetry={() => props.onRetry(item.id)}
-            onCancel={() => props.onCancel(item.id)}
-            onReattach={(file) => props.onReattach(item.id, file)}
-          />
-        ))}
-        {props.items.length === 0 ? (
-          <div className={styles.queueEmpty}>
-            <UploadCloud size={30} aria-hidden="true" />
-            <strong>
-              {props.recovering ? "正在恢复上传队列" : "队列为空"}
-            </strong>
-            <span>
-              {props.recovering
-                ? "正在核对服务端已确认分片…"
-                : "选择并确认采集文件夹后，平台预检通过的任务会出现在这里。"}
-            </span>
+      {allSettled ? (
+        <div
+          className={styles.queueCompletion}
+          data-outcome={allUploaded ? "success" : "partial"}
+          role="status"
+          aria-live="polite"
+        >
+          <span className={styles.queueCompletionIcon} aria-hidden="true">
+            {allUploaded ? (
+              <CircleCheck size={32} />
+            ) : (
+              <CircleAlert size={32} />
+            )}
+          </span>
+          <div>
+            <h3>{allUploaded ? "上传已完成" : "本批上传已结束"}</h3>
+            <p>
+              {allUploaded
+                ? `本批 ${totalCount} 个数据包均已提交到服务端并进入摄取工作流。`
+                : `本批已上传 ${uploadedCount} 个，已取消 ${cancelledCount} 个。`}
+            </p>
+            <small>
+              提交记录可在“上传记录”查看；摄取完成后的数据可在“数据集”查看。
+            </small>
           </div>
-        ) : null}
-      </div>
-      {settled ? (
+          <div className={styles.queueCompletionActions}>
+            <Button type="primary" onClick={props.onViewRecords}>
+              查看上传记录
+            </Button>
+            <Button onClick={props.onContinueUpload}>继续上传</Button>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.queueList} aria-live="polite">
+          {props.items.map((item) => (
+            <QueueItemCard
+              key={item.id}
+              item={item}
+              canManage={props.canManage}
+              onPause={() => props.onPause(item.id)}
+              onResume={() => props.onResume(item.id)}
+              onRetry={() => props.onRetry(item.id)}
+              onCancel={() => props.onCancel(item.id)}
+              onReattach={(file) => props.onReattach(item.id, file)}
+            />
+          ))}
+          {props.items.length === 0 ? (
+            <div className={styles.queueEmpty}>
+              <UploadCloud size={30} aria-hidden="true" />
+              <strong>
+                {props.recovering ? "正在恢复上传队列" : "队列为空"}
+              </strong>
+              <span>
+                {props.recovering
+                  ? "正在核对服务端已确认分片…"
+                  : "选择并确认采集文件夹后，平台预检通过的任务会出现在这里。"}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
+      {settled && !allSettled ? (
         <Button
           className={styles.clearQueueButton}
           type="text"

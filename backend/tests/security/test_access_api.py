@@ -34,7 +34,10 @@ from hc_data_platform.security.access_models import (
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
 from hc_data_platform.security.auth import AuthContext, Role
-from hc_data_platform.security.capabilities import CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE
+from hc_data_platform.security.capabilities import (
+    CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE,
+    CAPABILITY_PLATFORM_ADMIN,
+)
 from hc_data_platform.security.passwords import PasswordPolicy
 
 
@@ -182,6 +185,77 @@ def _headers(token: str, key: str | None = None) -> dict[str, str]:
     if key is not None:
         result["Idempotency-Key"] = key
     return result
+
+
+def test_zero_scope_account_can_join_organization_without_reauthentication() -> None:
+    repository = InMemoryAccessRepository(organization_projects=(("org-a", "project-a"),))
+    service = AccessService(repository)
+    with _client(service=service) as client:
+        token, principal = _register_and_login(client, "personal-mode-user")
+
+        initial = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token))
+        assert initial.status_code == 200
+        assert initial.json()["available_organizations"] == []
+        assert initial.json()["available_scopes"] == []
+
+        requested = client.post(
+            "/api/v1/account/organization-membership-requests",
+            headers=_headers(token, "join-org-a"),
+            json={
+                "organization_id_or_join_code": "org-a",
+                "reason": "需要参与组织内的数据质量工作",
+            },
+        )
+        assert requested.status_code == 201, requested.text
+        assert requested.json()["kind"] == "ORGANIZATION"
+        assert requested.json()["status"] == "PENDING"
+
+        platform_admin = AuthContext(
+            subject_id="platform-admin",
+            project_ids=frozenset(),
+            region_codes=frozenset(),
+            roles=frozenset(),
+            capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
+        )
+        service.decide_organization_membership_request(
+            auth=platform_admin,
+            access_request_id=requested.json()["request_id"],
+            target_status=AccessRequestStatus.APPROVED,
+            command=AccessDecisionCommand(reason="approved"),
+            idempotency_key="approve-org-a",
+            request_id="approve-org-a",
+        )
+
+        refreshed = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token))
+        assert refreshed.status_code == 200
+        assert refreshed.json()["principal"]["principal_id"] == principal["principal_id"]
+        assert refreshed.json()["available_organizations"] == [
+            {
+                "organization_id": "org-a",
+                "organization_name": "org-a",
+                "member_status": "ACTIVE",
+            }
+        ]
+        assert refreshed.json()["available_scopes"] == []
+
+        overview = client.get("/api/v1/account/access-overview", headers=_headers(token))
+        assert overview.status_code == 200
+        assert overview.json()["pending_request_count"] == 0
+        assert overview.json()["projects"] == []
+
+        service.decide_organization_membership_request(
+            auth=platform_admin,
+            access_request_id=requested.json()["request_id"],
+            target_status=AccessRequestStatus.REVOKED,
+            command=AccessDecisionCommand(reason="access no longer required"),
+            idempotency_key="revoke-org-a",
+            request_id="revoke-org-a",
+        )
+        after_revoke = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token))
+        assert after_revoke.status_code == 200
+        assert after_revoke.json()["principal"]["principal_id"] == principal["principal_id"]
+        assert after_revoke.json()["available_organizations"] == []
+        assert after_revoke.json()["available_scopes"] == []
 
 
 def _resolve_local_reference(document: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:

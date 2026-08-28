@@ -21,7 +21,7 @@ export function FolderBatchPreflightPanel(props: {
         </span>
         <div>
           <h2 id="folder-batch-preflight-heading">
-            目录数据包识别 <small>（按 Manifest 分组）</small>
+            目录数据包识别 <small>（按数据清单分组）</small>
           </h2>
         </div>
         {props.status === "ready" ? (
@@ -58,7 +58,7 @@ export function FolderBatchPreflightPanel(props: {
                   ) : null}
                 </ul>
               ) : (
-                "每个数据包必须在同一目录树中包含一个 Manifest 及其声明的 RAW_MCAP。"
+                "每个数据包必须在同一目录树中包含一个数据清单文件及其声明的 RAW_MCAP。"
               )
             }
           />
@@ -73,12 +73,12 @@ export function FolderBatchPreflightPanel(props: {
         <div className={styles.preflightContent}>
           <ol className={styles.signalRail} aria-label="目录批量上传处理阶段">
             <li data-state="done">扫描目录</li>
-            <li data-state="done">匹配 Manifest 与 RAW</li>
+            <li data-state="done">匹配数据清单与 RAW</li>
             <li data-state="current">逐包服务端预检与上传</li>
             <li>全部提交</li>
           </ol>
           <p className={styles.folderBatchSummary}>
-            将按目录中的 Manifest
+            将按目录中的数据清单
             逐条建立独立上传会话。单条失败只进入失败清单，其余数据包继续；
             网络恢复后会从服务端已确认分片续传。
           </p>

@@ -18,6 +18,29 @@ function grantsFromBootstrap(
   }));
 }
 
+function organizationsFromBootstrap(bootstrap: SessionBootstrap) {
+  const organizations = new Map(
+    (bootstrap.available_organizations ?? []).map((organization) => [
+      organization.organization_id,
+      {
+        organizationId: organization.organization_id,
+        organizationName: organization.organization_name,
+        memberStatus: organization.member_status,
+      } as const,
+    ]),
+  );
+  for (const scope of bootstrap.available_scopes) {
+    if (!organizations.has(scope.organization_id)) {
+      organizations.set(scope.organization_id, {
+        organizationId: scope.organization_id,
+        organizationName: scope.organization_id,
+        memberStatus: "ACTIVE",
+      });
+    }
+  }
+  return [...organizations.values()];
+}
+
 function scopeAllowed(scope: Scope, grant: SessionScopeGrant): boolean {
   if (scope.organizationId !== grant.organizationId) return false;
   if (scope.projectId !== grant.projectId) return false;
@@ -68,6 +91,7 @@ export function installSessionBootstrap(bootstrap: SessionBootstrap): void {
     grants,
     bootstrap.capability_revision,
     bootstrap.platform_capabilities,
+    organizationsFromBootstrap(bootstrap),
   );
   if (grants.length === 0) {
     store.clearSensitiveState();
@@ -75,6 +99,7 @@ export function installSessionBootstrap(bootstrap: SessionBootstrap): void {
       grants,
       bootstrap.capability_revision,
       bootstrap.platform_capabilities,
+      organizationsFromBootstrap(bootstrap),
     );
     return;
   }
@@ -120,6 +145,7 @@ export async function loadRuntimeAuthorization(
     grants,
     bootstrap.capability_revision,
     bootstrap.platform_capabilities,
+    organizationsFromBootstrap(bootstrap),
   );
   const grant = grants.find((candidate) => scopeAllowed(scope, candidate));
   if (!grant) throw new Error("SESSION_SCOPE_NOT_GRANTED");

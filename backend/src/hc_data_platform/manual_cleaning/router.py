@@ -74,9 +74,11 @@ ManualIssueType = Literal[
     "OTHER",
 ]
 ManualIssueSeverity = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+ManualIssueDiscoverySource = Literal["DATA_VIEWER", "ANNOTATOR", "REVIEWER"]
 RepeatedStatus = Annotated[list[ManualIssueStatus] | None, Query()]
 RepeatedIssueType = Annotated[list[ManualIssueType] | None, Query()]
 RepeatedSeverity = Annotated[list[ManualIssueSeverity] | None, Query()]
+RepeatedDiscoverySource = Annotated[list[ManualIssueDiscoverySource] | None, Query()]
 
 
 def _request_id(request: Request) -> str:
@@ -119,6 +121,7 @@ def _filters(
     status: list[ManualIssueStatus] | None,
     issue_type: list[ManualIssueType] | None,
     severity: list[ManualIssueSeverity] | None,
+    discovery_source: list[ManualIssueDiscoverySource] | None,
     assignee_id: str | None,
 ) -> ManualIssueFilters:
     return ManualIssueFilters(
@@ -129,6 +132,7 @@ def _filters(
         statuses=tuple(status or ()),
         issue_types=tuple(issue_type or ()),
         severities=tuple(severity or ()),
+        discovery_sources=tuple(discovery_source or ()),
         assignee_id=assignee_id,
     )
 
@@ -154,6 +158,7 @@ def get_manual_issues_page(
     status: RepeatedStatus = None,
     issue_type: RepeatedIssueType = None,
     severity: RepeatedSeverity = None,
+    discovery_source: RepeatedDiscoverySource = None,
     assignee_id: OptionalQueryText = None,
 ) -> ManualIssuePageEnvelope:
     _no_store(response)
@@ -170,6 +175,7 @@ def get_manual_issues_page(
             status=status,
             issue_type=issue_type,
             severity=severity,
+            discovery_source=discovery_source,
             assignee_id=assignee_id,
         ),
         request_id=_request_id(request),
@@ -197,6 +203,7 @@ def list_manual_issues(
     status: RepeatedStatus = None,
     issue_type: RepeatedIssueType = None,
     severity: RepeatedSeverity = None,
+    discovery_source: RepeatedDiscoverySource = None,
     assignee_id: OptionalQueryText = None,
     sort: ManualIssueSort = "updated_at:desc,id:desc",
     after: OptionalCursor = None,
@@ -217,6 +224,7 @@ def list_manual_issues(
             status=status,
             issue_type=issue_type,
             severity=severity,
+            discovery_source=discovery_source,
             assignee_id=assignee_id,
         ),
         sort=sort,

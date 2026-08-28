@@ -42,7 +42,11 @@ from .models import (
     raw_object_key,
     utc_now,
 )
-from .persistence import IngestPersistencePort, InMemoryIngestPersistence
+from .persistence import (
+    IngestPersistencePort,
+    InMemoryIngestPersistence,
+    source_recording_duplicate,
+)
 from .ports import ObjectMetadata, ObjectStoragePort, crc64_ecma, normalize_etag
 
 _SESSION_CURSOR_VERSION = 1
@@ -82,6 +86,13 @@ class UploadSessionService:
         self._cursor = CursorCodec(cursor_secret)
         self._lock = RLock()
 
+    def preflight_upload_manifest(
+        self, manifest: RolloutManifestV1
+    ) -> ManifestPreflightResultV1:
+        result = preflight_manifest(manifest)
+        self._assert_source_recording_available(manifest, result)
+        return result
+
     def create_session(
         self,
         *,
@@ -91,7 +102,7 @@ class UploadSessionService:
     ) -> UploadSession:
         def create() -> UploadSession:
             with self._lock:
-                preflight = preflight_manifest(manifest)
+                preflight = self.preflight_upload_manifest(manifest)
                 existing_rollout = self.persistence.get_rollout_by_package(
                     manifest.project_id,
                     manifest.data_package_id,
@@ -187,7 +198,7 @@ class UploadSessionService:
 
         def register() -> UploadSession:
             with self._lock:
-                preflight = preflight_manifest(manifest)
+                preflight = self.preflight_upload_manifest(manifest)
                 key = raw_object_key(manifest)
                 metadata = self.storage.authorize_existing_object(object_storage_uri, key)
                 if metadata.size != manifest.file_size:
@@ -788,7 +799,8 @@ class UploadSessionService:
                 title="Upload session not found",
                 detail="No upload session exists for this rollout in the selected Region.",
             )
-        return self.get_manifest_preflight(session.session_id).discovery
+        preflight = self.get_manifest_preflight(session.session_id)
+        return preflight.discovery.model_copy(update={"robot_id": preflight.identifiers.robot_id})
 
     def authorize_raw_media(
         self,
@@ -970,6 +982,7 @@ class UploadSessionService:
             sequence_no=manifest.sequence_no,
             robot_id=manifest.robot_id,
             source_sha256=manifest.sha256,
+            source_fingerprint=preflight.source_fingerprint,
             status=RolloutStatus.UPLOADING,
         )
         upload_object = UploadObject(
@@ -993,6 +1006,19 @@ class UploadSessionService:
                 }
             )
         return self.persistence.register_upload(job, rollout, session, upload_object, preflight)
+
+    def _assert_source_recording_available(
+        self,
+        manifest: RolloutManifestV1,
+        preflight: ManifestPreflightResultV1,
+    ) -> None:
+        if preflight.source_fingerprint is None:
+            return
+        existing = self.persistence.get_rollout_by_source_fingerprint(
+            manifest.project_id, preflight.source_fingerprint
+        )
+        if existing is not None and existing.data_package_id != manifest.data_package_id:
+            raise source_recording_duplicate(existing)
 
     def _write_or_reconcile_manifest(
         self,

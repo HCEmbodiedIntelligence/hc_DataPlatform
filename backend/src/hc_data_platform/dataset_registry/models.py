@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 DatasetId = Annotated[
     str,
@@ -41,6 +41,12 @@ ReviewFindingId = Annotated[
     Field(pattern=r"^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"),
 ]
 DecimalString = Annotated[str, Field(pattern=r"^(0|[1-9][0-9]*)$")]
+DatasetWorkflowState = Literal["pendingReview", "returned", "actionableDraft"]
+DatasetFolderSegment = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=128, pattern=r"^[^/\\]+$"),
+]
+DatasetFolderPath = Annotated[tuple[DatasetFolderSegment, ...], Field(max_length=16)]
 
 
 class _DatasetPageModel(BaseModel):
@@ -83,6 +89,7 @@ class DatasetPageMetadata(_DatasetPageModel):
 
     robot_model_id: str | None = Field(default=None, min_length=1, max_length=256)
     robot_id: str | None = Field(default=None, min_length=1, max_length=256)
+    collection_task_id: str | None = Field(default=None, min_length=1, max_length=128)
     task: str | None = Field(default=None, min_length=1, max_length=256)
     scene: str | None = Field(default=None, min_length=1, max_length=256)
     asset_state: str = Field(min_length=1, max_length=64)
@@ -95,6 +102,7 @@ class DatasetPageRecord(_DatasetPageModel):
 
     scope: DatasetPageScope
     dataset_id: DatasetId
+    folder_path: DatasetFolderPath = ()
     name: str = Field(min_length=1, max_length=256)
     description: str = Field(max_length=4096)
     labels: tuple[str, ...] = ()
@@ -115,6 +123,7 @@ class DatasetPageRecord(_DatasetPageModel):
 class DatasetPageDataset(_DatasetPageModel):
     scope: DatasetPageScope
     dataset_id: DatasetId
+    folder_path: DatasetFolderPath = ()
     name: str = Field(min_length=1, max_length=256)
     description: str = Field(max_length=4096)
     labels: tuple[str, ...] = ()
@@ -129,7 +138,10 @@ class DatasetPageDataset(_DatasetPageModel):
 class DatasetPageListItem(_DatasetPageModel):
     scope: DatasetPageScope
     dataset_id: DatasetId
+    folder_path: DatasetFolderPath = ()
+    collection_task_id: str | None = Field(default=None, min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
+    availability: str = Field(min_length=1, max_length=64)
     dataset_created_at: datetime
     dataset_activity_at: datetime
     current_version: DatasetPageCurrentReadyVersion | None = None
@@ -180,6 +192,7 @@ class DatasetPageFacets(_DatasetPageModel):
     robots: tuple[DatasetPageFacetValue, ...] = ()
     robot_models: tuple[DatasetPageFacetValue, ...] = ()
     tasks: tuple[DatasetPageFacetValue, ...] = ()
+    tags: tuple[DatasetPageFacetValue, ...] = ()
     scenes: tuple[DatasetPageFacetValue, ...] = ()
     asset_states: tuple[DatasetPageFacetValue, ...] = ()
     storage_classes: tuple[DatasetPageFacetValue, ...] = ()
@@ -227,6 +240,7 @@ class CreateDatasetCommand(_DatasetPageModel):
     name: str = Field(min_length=1, max_length=256)
     description: str = Field(max_length=4096)
     labels: tuple[str, ...] = Field(default=(), max_length=64)
+    folder_path: DatasetFolderPath = ()
 
 
 class DatasetPageMutationRecord(_DatasetPageModel):
@@ -338,6 +352,7 @@ class DatasetPageBootstrapData(_DatasetPageModel):
     scope: DatasetPageScope
     dataset: DatasetPageDataset
     current_ready_version: DatasetPageCurrentReadyVersion | None = None
+    working_version_id: DatasetVersionId | None = None
     suggested_version_id: DatasetVersionId | None = None
     summary: DatasetPageDetailSummary
 
@@ -374,6 +389,7 @@ class DatasetPageSourceProvenance(_DatasetPageModel):
     scope: DatasetPageScope
     dataset_id: DatasetId
     version_id: DatasetVersionId
+    storage_region_code: str | None = Field(default=None, min_length=1, max_length=64)
     provenance_id: str = Field(min_length=1, max_length=128)
     upload_id: str = Field(min_length=1, max_length=128)
     source_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -416,6 +432,7 @@ class DatasetPageEpisodeListItem(_DatasetPageModel):
     dataset_id: DatasetId
     version_id: DatasetVersionId
     episode_id: EpisodeId
+    storage_region_code: str | None = Field(default=None, min_length=1, max_length=64)
     selected_revision: DatasetPageRevisionSnapshotReference
     included: bool
     success_state: str = Field(min_length=1, max_length=64)

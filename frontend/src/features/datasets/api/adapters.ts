@@ -67,7 +67,10 @@ export type ResourceActionVm = Readonly<{
 
 export type DatasetListItemVm = Readonly<{
   datasetId: DatasetId;
+  folderPath: readonly string[];
+  collectionTaskId: string | null;
   name: string;
+  availability: DatasetAvailability;
   datasetCreatedAt: string;
   datasetActivityAt: string;
   currentVersion: null | Readonly<{
@@ -102,6 +105,7 @@ export type DatasetBootstrapVm = Readonly<{
   scope: ScopeVm;
   dataset: Dataset;
   currentReadyVersion: DatasetListItemVm["currentVersion"];
+  workingVersionId: DatasetVersionId | null;
   suggestedVersionId: DatasetVersionId | null;
   summary: Readonly<{
     episodeCount: string;
@@ -139,6 +143,7 @@ export type DatasetFacetsVm = Readonly<{
   robots: DatasetFacetsWire["robots"];
   robotModels: DatasetFacetsWire["robot_models"];
   tasks: DatasetFacetsWire["tasks"];
+  tags: DatasetFacetsWire["tags"];
   scenes: DatasetFacetsWire["scenes"];
   assetStates: DatasetFacetsWire["asset_states"];
   storageClasses: DatasetFacetsWire["storage_classes"];
@@ -167,6 +172,7 @@ export type DatasetVersionSchemaSummaryVm = Readonly<{
 export type SourceProvenanceVm = Readonly<{
   datasetId: DatasetId;
   versionId: DatasetVersionId;
+  storageRegionCode: string | null;
   provenanceId: string;
   uploadId: string;
   sourceId: string | null;
@@ -231,12 +237,13 @@ export type EpisodeListItemVm = Readonly<{
   datasetId: DatasetId;
   versionId: DatasetVersionId;
   episodeId: EpisodeId;
+  storageRegionCode: string | null;
   selectedRevisionId: EpisodeRevisionId;
   ordinal: number;
   included: boolean;
   successState: "SUCCEEDED" | "FAILED" | "UNKNOWN";
   reviewStatus: "UNREVIEWED" | "ACCEPTED" | "HAS_FINDING" | "UNKNOWN";
-  reviewFindingCount: string;
+  reviewFindingCount: string | null;
   task: string | null;
   robotId: string | null;
 }>;
@@ -412,7 +419,10 @@ export function adaptDatasetListEnvelope(
   return {
     items: wire.items.map((item) => ({
       datasetId: item.dataset_id as DatasetId,
+      folderPath: item.folder_path,
+      collectionTaskId: item.collection_task_id ?? null,
       name: item.name,
+      availability: adaptDatasetAvailability(item.availability),
       datasetCreatedAt: item.dataset_created_at,
       datasetActivityAt: item.dataset_activity_at,
       currentVersion: adaptCurrentReadyVersion(item.current_version),
@@ -456,6 +466,7 @@ export function adaptDatasetFacets(wire: DatasetFacetsWire): DatasetFacetsVm {
     robots: wire.robots,
     robotModels: wire.robot_models,
     tasks: wire.tasks,
+    tags: wire.tags,
     scenes: wire.scenes,
     assetStates: wire.asset_states,
     storageClasses: wire.storage_classes,
@@ -497,6 +508,7 @@ export function adaptSourceProvenancePage(
     items: wire.items.map((item) => ({
       datasetId: item.dataset_id as DatasetId,
       versionId: item.version_id as DatasetVersionId,
+      storageRegionCode: item.storage_region_code ?? null,
       provenanceId: item.provenance_id,
       uploadId: item.upload_id,
       sourceId: item.source_id ?? null,
@@ -645,6 +657,7 @@ export function adaptDatasetBootstrap(
     scope: adaptScope(wire.scope),
     dataset: {
       id: wire.dataset.dataset_id as DatasetId,
+      folderPath: wire.dataset.folder_path,
       name: wire.dataset.name,
       description: wire.dataset.description,
       labels: wire.dataset.labels.map((label) => ({
@@ -661,6 +674,7 @@ export function adaptDatasetBootstrap(
       etag: wire.dataset.etag,
     },
     currentReadyVersion: adaptCurrentReadyVersion(wire.current_ready_version),
+    workingVersionId: (wire.working_version_id ?? null) as DatasetVersionId | null,
     suggestedVersionId: wire.suggested_version_id as DatasetVersionId | null,
     summary: {
       episodeCount: wire.summary.episode_count,
@@ -704,6 +718,7 @@ export function adaptEpisodePage(
       datasetId: item.dataset_id as DatasetId,
       versionId: item.version_id as DatasetVersionId,
       episodeId: item.episode_id as EpisodeId,
+      storageRegionCode: item.storage_region_code ?? null,
       selectedRevisionId: item.selected_revision
         .revision_id as EpisodeRevisionId,
       ordinal: item.selected_revision.ordinal,
@@ -718,7 +733,7 @@ export function adaptEpisodePage(
         item.review_status === "HAS_FINDING"
           ? item.review_status
           : "UNKNOWN",
-      reviewFindingCount: item.review_finding_count ?? "0",
+      reviewFindingCount: item.review_finding_count ?? null,
       task: item.task,
       robotId: item.robot_id,
     })),

@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useEffect, useRef } from "react";
+import { StrictMode, useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { createPlaybackClock } from "./PlaybackClock";
 import { RawDiagnosticWorkbench } from "./RawDiagnosticWorkbench";
@@ -187,12 +187,12 @@ describe("DataVisualizationWorkbench camera composition", () => {
     (cameraCount, layout) => {
       render(<RawDiagnosticWorkbench {...baseProps(cameraCount)} />);
       const grid = screen
-        .getByLabelText("Manifest 相机视图")
+        .getByLabelText("数据清单相机视图")
         .querySelector(".viewer-media-grid");
       expect(grid).toHaveAttribute("data-camera-count", String(cameraCount));
       expect(grid).toHaveAttribute("data-camera-layout", layout);
       if (cameraCount === 0) {
-        expect(screen.getByText(/Manifest 未发现相机/)).toBeInTheDocument();
+        expect(screen.getByText(/数据清单中未发现相机/)).toBeInTheDocument();
       } else {
         expect(
           screen.getAllByRole("heading", { name: /相机 \d+/ }),
@@ -276,6 +276,139 @@ describe("DataVisualizationWorkbench camera composition", () => {
     await waitFor(() =>
       expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled(),
     );
+  });
+
+  it("uses native video playback and only corrects material running drift", async () => {
+    let animationFrame: FrameRequestCallback | undefined;
+    let mediaPlaying = false;
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        animationFrame = callback;
+        return 1;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.spyOn(HTMLMediaElement.prototype, "paused", "get").mockImplementation(
+      () => !mediaPlaying,
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(
+      () => undefined,
+    );
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockImplementation(() => {
+        mediaPlaying = true;
+        return Promise.resolve();
+      });
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(() => {
+        mediaPlaying = false;
+      });
+    const seek = vi.spyOn(HTMLMediaElement.prototype, "currentTime", "set");
+    const authorize = vi.fn().mockResolvedValue({
+      url: "https://media.invalid/camera-1.mp4",
+      expiresAt: "2099-01-01T00:00:00Z",
+      kind: "rgb-video" as const,
+    });
+    const props = baseProps(1);
+    render(
+      <RawDiagnosticWorkbench
+        {...props}
+        mediaStreamsByTopic={{
+          "/camera/1/image": {
+            ...stream(1),
+            mediaSource: { authorize, refresh: authorize },
+          },
+        }}
+      />,
+    );
+
+    const video = screen.getByLabelText("相机 1 媒体") as HTMLVideoElement;
+    await waitFor(() =>
+      expect(video).toHaveAttribute(
+        "src",
+        "https://media.invalid/camera-1.mp4",
+      ),
+    );
+    seek.mockClear();
+
+    act(() => props.clock.play());
+    expect(play).toHaveBeenCalledTimes(1);
+
+    act(() => props.clock.seek("1000000000"));
+    expect(seek).toHaveBeenLastCalledWith(1);
+
+    video.currentTime = 0.916;
+    seek.mockClear();
+    act(() => animationFrame?.(16));
+    expect(seek).not.toHaveBeenCalled();
+
+    video.currentTime = 0.5;
+    seek.mockClear();
+    act(() => animationFrame?.(32));
+    expect(seek).toHaveBeenLastCalledWith(1.032);
+
+    act(() => props.clock.setRate(2));
+    expect(video.playbackRate).toBe(2);
+    act(() => props.clock.pause());
+    expect(pause).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(video, "duration", {
+      configurable: true,
+      value: 10,
+    });
+    seek.mockClear();
+    act(() => props.clock.seek(props.clock.endNs));
+    expect(seek).toHaveBeenLastCalledWith(10 - 1 / 30);
+
+    seek.mockClear();
+    act(() => props.clock.play());
+    expect(seek).toHaveBeenLastCalledWith(0);
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not authorize media for StrictMode's discarded effect", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(
+      () => undefined,
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(
+      () => undefined,
+    );
+    const authorize = vi.fn().mockResolvedValue({
+      url: "https://media.invalid/camera-1.mp4",
+      expiresAt: "2099-01-01T00:00:00Z",
+      kind: "rgb-video" as const,
+    });
+    const props = baseProps(1);
+
+    render(
+      <StrictMode>
+        <RawDiagnosticWorkbench
+          {...props}
+          mediaStreamsByTopic={{
+            "/camera/1/image": {
+              ...stream(1),
+              mediaSource: { authorize, refresh: authorize },
+            },
+          }}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(authorize).toHaveBeenCalledTimes(1));
+    const video = screen.getByLabelText("相机 1 媒体");
+    await waitFor(() =>
+      expect(video).toHaveAttribute(
+        "src",
+        "https://media.invalid/camera-1.mp4",
+      ),
+    );
+    expect(screen.queryByText(/资源加载失败/u)).not.toBeInTheDocument();
   });
 
   it("refreshes a failed signed media descriptor once, then keeps the failure local to its panel", async () => {

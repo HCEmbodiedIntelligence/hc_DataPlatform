@@ -402,9 +402,7 @@ def test_coverage_is_always_blocked_without_versioned_denominator() -> None:
             ),
         ),
     )
-    coverage = DashboardService(repository, clock=lambda: NOW).coverage(
-        **common(auth())
-    ).coverage
+    coverage = DashboardService(repository, clock=lambda: NOW).coverage(**common(auth())).coverage
     assert coverage.status is DashboardSectionStatus.BLOCKED
     assert coverage.error is not None
     assert coverage.error.code == "P01_COVERAGE_DENOMINATOR_MISSING"
@@ -525,8 +523,7 @@ def test_section_invariants_and_stage_catalog_reject_ambiguous_states() -> None:
             error=DashboardSectionError(code="BLOCKED", message="blocked"),
             stages=(*SIGNAL_STAGES[:-1], SignalStage.ANNOTATION),
             stage_counts=tuple(
-                DashboardSignalStageCount(stage=stage, count=0)
-                for stage in SIGNAL_STAGES
+                DashboardSignalStageCount(stage=stage, count=0) for stage in SIGNAL_STAGES
             ),
             published_region=DashboardPublishedRegionState(
                 status=DashboardSectionStatus.EMPTY,

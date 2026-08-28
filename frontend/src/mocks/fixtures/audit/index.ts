@@ -32,7 +32,7 @@ export const auditEventSecondFixture = auditEvent({
   occurred_at: '2026-08-05T07:59:00Z',
   recorded_at: '2026-08-05T07:59:01Z',
   actor: { type: 'SYSTEM', principal_id: null, display_name: '存储服务', role_ids: [] },
-  resource: { type: 'STORAGE_OBJECT', id: 'storage_object_fx_01', display_name: '对象快照', parent_refs: [] },
+  resource: { type: 'STORAGE_OBJECT', id: 'storage_object_fx_01', display_name: '存储对象记录', parent_refs: [] },
   request: { request_id: 'req_fx_storage_01', job_id: 'job_fx_inventory_01', client_type: 'WORKER', ip_address: null, device_summary: null },
   outcome: { status: 'PARTIAL', reason_code: 'HAS_GAP', http_status: null },
   risk: { level: 'MEDIUM', signal_codes: ['RECONCILIATION_GAP'] },

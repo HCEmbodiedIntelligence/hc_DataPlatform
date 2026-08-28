@@ -54,6 +54,8 @@ spec:
           env:
             - name: OTEL_SERVICE_NAME
               value: hc-data-backend-worker
+            - name: HC_WORKER_ROLE
+              value: main
             {{- include "hc-data-platform.backendSecretEnv" . | nindent 12 }}
           startupProbe:
             exec:

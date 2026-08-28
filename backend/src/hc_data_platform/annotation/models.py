@@ -278,13 +278,22 @@ class AnnotationObjectRelation(BaseModel):
 
 
 class AnnotationTag(BaseModel):
-    """A Tag instance pinned to an exact schema path and half-open Lance range."""
+    """A schema-backed or manually named Tag on a half-open Lance range.
+
+    ``label`` and ``parent_annotation_id`` identify manually-created interval
+    nodes.  The parent is a semantic relationship only: every interval keeps
+    an independent time range and may extend beyond or cross parent ranges.
+    Both fields are optional so revisions created by the original schema-preset
+    editor remain readable and reviewable.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     annotation_id: str = Field(min_length=1, max_length=256)
     tag_id: str = Field(min_length=1, max_length=256)
     path: tuple[str, ...] = Field(min_length=1)
+    label: str | None = Field(default=None, min_length=1, max_length=256)
+    parent_annotation_id: str | None = Field(default=None, min_length=1, max_length=256)
     start_step: int = Field(ge=0)
     end_step: int = Field(gt=0)
     attributes: dict[str, TagAttributeValue] = Field(default_factory=dict)
@@ -295,6 +304,10 @@ class AnnotationTag(BaseModel):
     def validate_non_empty(self) -> AnnotationTag:
         if self.start_step >= self.end_step:
             raise ValueError("end_step must be greater than start_step")
+        if self.label is not None and self.label != self.label.strip():
+            raise ValueError("label must not start or end with whitespace")
+        if self.parent_annotation_id == self.annotation_id:
+            raise ValueError("a Tag interval cannot be its own parent")
         return self
 
 
@@ -319,12 +332,18 @@ class AnnotationReviewCheck(BaseModel):
 
 
 class AnnotationSubmission(BaseModel):
-    """Immutable, reviewable snapshot produced from one exact draft revision."""
+    """Immutable Episode business version produced by submit-for-review.
+
+    Draft saves append editor revisions.  ``episode_version`` advances only at
+    this review boundary, so callers never have to infer business versions from
+    autosaves or from the underlying Lance revision.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     submission_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
+    episode_version: int = Field(default=1, ge=1)
     revision: int = Field(ge=0)
     submitted_by: str = Field(min_length=1)
     base_lance_version: int = Field(ge=1)
@@ -461,6 +480,35 @@ class AnnotationReview(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class AutoAnnotationSamplingReference(BaseModel):
+    """Immutable ingest-produced candidate selection consumed by providers.
+
+    The reference is server-owned and deliberately separate from the public
+    range/modality selection so clients cannot inject arbitrary object keys.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    object_key: str = Field(min_length=1, max_length=2048)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1, le=8 * 1024 * 1024)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sampling_version: str = Field(min_length=1, max_length=128)
+    camera_set: tuple[str, ...] = Field(min_length=1, max_length=16)
+    source_frame_count: int = Field(ge=1)
+    selected_group_count: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_sampling_reference(self) -> AutoAnnotationSamplingReference:
+        if len(self.camera_set) != len(set(self.camera_set)):
+            raise ValueError("sampling camera_set must be unique")
+        if any(not camera or len(camera) > 256 for camera in self.camera_set):
+            raise ValueError("sampling camera_set must contain bounded names")
+        if self.selected_group_count > self.source_frame_count:
+            raise ValueError("selected groups cannot exceed source frames")
+        return self
+
+
 class AnnotationTask(BaseModel):
     """Task identity plus its current workflow pointers.
 
@@ -549,6 +597,7 @@ class AnnotationRevisionThread(BaseModel):
     latest_revision: AnnotationRevisionThreadRevision
     submitted_revision: int | None = Field(default=None, ge=0)
     current_submission_id: str | None = Field(default=None, min_length=1)
+    current_episode_version: int | None = Field(default=None, ge=1)
     approved_revision: int | None = Field(default=None, ge=0)
     approved_review_id: str | None = Field(default=None, min_length=1)
     # A public legacy-draft mapping is nullable for native tasks.  When present,

@@ -33,7 +33,8 @@ export interface FolderUploadDiscoveryFailure {
     | "RAW_FILE_MISSING"
     | "RAW_FILE_AMBIGUOUS"
     | "RAW_FILE_PATH_INVALID"
-    | "DATA_PACKAGE_DUPLICATE";
+    | "DATA_PACKAGE_DUPLICATE"
+    | "SOURCE_RECORDING_DUPLICATE";
   readonly detail: string;
 }
 
@@ -80,13 +81,13 @@ function assertDecimalCrc64(
 }
 
 function validateManifestCrc64Values(raw: Record<string, unknown>): void {
-  assertDecimalCrc64(raw, "Manifest crc64");
+  assertDecimalCrc64(raw, "数据清单 crc64");
   if (!Array.isArray(raw.files)) return;
   raw.files.forEach((item, index) => {
     if (typeof item === "object" && item !== null && !Array.isArray(item)) {
       assertDecimalCrc64(
         item as Record<string, unknown>,
-        `Manifest files[${index}].crc64`,
+        `数据清单 files[${index}].crc64`,
       );
     }
   });
@@ -94,7 +95,7 @@ function validateManifestCrc64Values(raw: Record<string, unknown>): void {
 
 export function planUploadParts(size: number): UploadPartPlan {
   if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_PACKAGE_BYTES) {
-    throw new RangeError("数据包大小必须在 1 字节到 5 TiB 之间。");
+    throw new RangeError("数据包不能为空，且大小不得超过 5 TiB。");
   }
   const partSize = Math.max(
     MIN_MULTIPART_BYTES,
@@ -121,13 +122,13 @@ export async function parseManifestFile(file: File): Promise<UploadManifest> {
   if (file.size === 0) {
     throw new LocalManifestError(
       "MANIFEST_EMPTY",
-      "Manifest 为空；请选择包含 JSON 内容的 Manifest。",
+      "数据清单为空；请选择包含 JSON 内容的数据清单文件。",
     );
   }
   if (file.size > MAX_MANIFEST_BYTES) {
     throw new LocalManifestError(
       "MANIFEST_TOO_LARGE",
-      "Manifest 超过正式合同的 1 MiB 上限。",
+      "数据清单超过正式约定的 1 MiB 上限。",
     );
   }
   let raw: unknown;
@@ -147,13 +148,13 @@ export async function parseManifestFile(file: File): Promise<UploadManifest> {
   } catch {
     throw new LocalManifestError(
       "MANIFEST_INVALID",
-      "Manifest 必须是有效的 UTF-8 JSON。",
+      "数据清单必须是有效的 UTF-8 JSON。",
     );
   }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new LocalManifestError(
       "MANIFEST_INVALID",
-      "Manifest 根节点必须是 JSON 对象。",
+      "数据清单根节点必须是 JSON 对象。",
     );
   }
   validateManifestCrc64Values(raw as Record<string, unknown>);
@@ -222,6 +223,7 @@ export async function discoverFolderUploadBundles(
   const bundles: FolderUploadBundle[] = [];
   const failures: FolderUploadDiscoveryFailure[] = [];
   const packageIds = new Set<string>();
+  const sourceOwners = new Map<string, string>();
   const ambiguousDirectories = new Set<string>();
   const manifestCountByDirectory = new Map<string, number>();
   for (const { path } of manifestFiles) {
@@ -237,7 +239,7 @@ export async function discoverFolderUploadBundles(
     failures.push({
       relativePath: directory || ".",
       code: "MANIFEST_AMBIGUOUS",
-      detail: `同一数据包目录中发现 ${count} 个 Manifest，无法确定上传声明。`,
+      detail: `同一数据包目录中发现 ${count} 个数据清单文件，无法确定上传声明。`,
     });
   }
   const claimedRawPaths = new Set<string>();
@@ -253,7 +255,7 @@ export async function discoverFolderUploadBundles(
         detail:
           error instanceof Error
             ? error.message
-            : "Manifest 无法在浏览器中安全解析。",
+            : "数据清单无法在浏览器中安全解析。",
       });
       continue;
     }
@@ -261,7 +263,17 @@ export async function discoverFolderUploadBundles(
       failures.push({
         relativePath: manifestPath,
         code: "DATA_PACKAGE_DUPLICATE",
-        detail: `数据包 ${manifest.data_package_id} 在所选目录中出现了多个 Manifest。`,
+        detail: `数据包 ${manifest.data_package_id} 在所选目录中出现了多个数据清单文件。`,
+      });
+      continue;
+    }
+    const sourceKey = manifestSourceKey(manifest);
+    const sourceOwner = sourceKey ? sourceOwners.get(sourceKey) : undefined;
+    if (sourceOwner) {
+      failures.push({
+        relativePath: manifestPath,
+        code: "SOURCE_RECORDING_DUPLICATE",
+        detail: `源 episode 已由数据包 ${sourceOwner} 声明，不能再作为 ${manifest.data_package_id} 重复上传。`,
       });
       continue;
     }
@@ -272,7 +284,7 @@ export async function discoverFolderUploadBundles(
       failures.push({
         relativePath: manifestPath,
         code: "RAW_FILE_MISSING",
-        detail: "Manifest 没有声明 RAW_MCAP 文件。",
+        detail: "数据清单没有声明 RAW_MCAP 文件。",
       });
       continue;
     }
@@ -282,7 +294,7 @@ export async function discoverFolderUploadBundles(
       failures.push({
         relativePath: manifestPath,
         code: "RAW_FILE_PATH_INVALID",
-        detail: "Manifest 的 RAW_MCAP 路径不能离开 Manifest 所在目录。",
+        detail: "数据清单中的 RAW_MCAP 路径不能离开数据清单所在目录。",
       });
       continue;
     }
@@ -299,7 +311,7 @@ export async function discoverFolderUploadBundles(
       failures.push({
         relativePath: manifestPath,
         code: "RAW_FILE_AMBIGUOUS",
-        detail: `RAW_MCAP ${rawDeclaration.path} 已被另一个 Manifest 引用。`,
+        detail: `RAW_MCAP ${rawDeclaration.path} 已被另一个数据清单引用。`,
       });
       continue;
     }
@@ -310,11 +322,12 @@ export async function discoverFolderUploadBundles(
       failures.push({
         relativePath: manifestPath,
         code: "RAW_FILE_AMBIGUOUS",
-        detail: "Manifest 声明的 RAW_MCAP 与 Manifest 文件冲突。",
+        detail: "数据清单声明的 RAW_MCAP 与数据清单文件冲突。",
       });
       continue;
     }
     packageIds.add(manifest.data_package_id);
+    if (sourceKey) sourceOwners.set(sourceKey, manifest.data_package_id);
     claimedRawPaths.add(rawPath);
     bundles.push({
       id: `${manifestPath}:${manifest.data_package_id}`,
@@ -325,6 +338,17 @@ export async function discoverFolderUploadBundles(
     });
   }
   return { bundles, failures };
+}
+
+function manifestSourceKey(manifest: UploadManifest): string | null {
+  const source = manifest.source_recording;
+  if (!source) return null;
+  return [
+    manifest.task_id,
+    source.kind,
+    source.repository.toLowerCase(),
+    String(source.episode_index),
+  ].join("\n");
 }
 
 function normalizeRelativePath(value: string): string | null {
@@ -402,8 +426,8 @@ export function uploadProblemCopy(error: unknown): UploadProblemCopy {
     return {
       title:
         error.code === "MANIFEST_EMPTY"
-          ? "未发现可用 Manifest"
-          : "Manifest 预检失败",
+          ? "未发现可用数据清单"
+          : "数据清单预检失败",
       detail: error.message,
       requestId: null,
       retryable: false,
@@ -421,6 +445,16 @@ export function uploadProblemCopy(error: unknown): UploadProblemCopy {
       problemCode: null,
     };
   }
+  if (error.problemCode === "SOURCE_RECORDING_DUPLICATE") {
+    return {
+      title: "发现重复源 episode",
+      detail: error.message,
+      requestId: error.requestId,
+      retryable: false,
+      status: error.httpStatus,
+      problemCode: error.problemCode,
+    };
+  }
   const statusCopy: Readonly<
     Record<number, { title: string; detail: string }>
   > = {
@@ -431,11 +465,11 @@ export function uploadProblemCopy(error: unknown): UploadProblemCopy {
     409: {
       title: "数据包事实发生冲突",
       detail:
-        "该数据包标识、内容或来源已存在冲突，请核对 Manifest 和上传记录。",
+        "该数据包标识、内容或来源已存在冲突，请核对数据清单和上传记录。",
     },
     422: {
-      title: "Manifest 预检失败",
-      detail: "Manifest 内容不满足正式上传合同，请根据错误码修正后重试。",
+      title: "数据清单预检失败",
+      detail: "数据清单内容不满足正式上传约定，请根据错误码修正后重试。",
     },
     429: {
       title: "请求频率受限",

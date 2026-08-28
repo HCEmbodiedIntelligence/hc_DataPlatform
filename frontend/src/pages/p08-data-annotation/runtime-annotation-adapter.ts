@@ -1,6 +1,10 @@
 import type { Scope } from "../../entities/scope";
 import { z } from "zod";
 import {
+  authorizePreview,
+  type PreviewPreparationStatus,
+} from "../../features/previews/authorize-preview";
+import {
   createDomainError,
   isDomainError,
 } from "../../shared/api/domain-error";
@@ -39,6 +43,7 @@ export type RuntimeAutoAnnotationJob =
 export type RuntimeTagSchemaVersion = components["schemas"]["TagSchemaVersion"];
 export type RuntimeManifestDiscovery =
   components["schemas"]["ManifestDiscoveryV1"];
+export type RuntimeDatasetVersion = components["schemas"]["DatasetVersionRef"];
 export type RuntimePreviewDescriptor =
   components["schemas"]["PreviewDescriptorV1"];
 export type RuntimeReviewDecision = components["schemas"]["ReviewDecision"];
@@ -78,6 +83,7 @@ const annotationRevisionThreadWireSchema = z
       .strict(),
     submitted_revision: z.number().int().nonnegative().nullable().optional(),
     current_submission_id: z.string().min(1).nullable().optional(),
+    current_episode_version: z.number().int().positive().nullable().optional(),
     approved_revision: z.number().int().nonnegative().nullable().optional(),
     approved_review_id: z.string().min(1).nullable().optional(),
     legacy_draft_id: z.string().min(1).nullable().optional(),
@@ -118,6 +124,7 @@ export function runtimeAnnotationScopeFromShell(
 
 export interface RuntimeAnnotationBundle {
   readonly task: RuntimeAnnotationTask;
+  readonly datasetVersion: RuntimeDatasetVersion;
   readonly draft: RuntimeAnnotationDraft | null;
   readonly history: RuntimeAnnotationHistory;
   readonly schema: RuntimeTagSchemaVersion;
@@ -151,8 +158,9 @@ export interface RuntimeAnnotationCommands {
   ) => Promise<RuntimeAnnotationRevision>;
 }
 
-const STEP_RATE_HZ = 30n;
+const DEFAULT_STEP_RATE_HZ = 30;
 const NS_PER_SECOND = 1_000_000_000n;
+const RATE_PRECISION = 1_000_000n;
 
 function encoded(value: string | number): string {
   return encodeURIComponent(String(value));
@@ -257,23 +265,50 @@ export function createClientMutationId(prefix: string): string {
   return `${prefix}-${suffix}`;
 }
 
-export function stepToTimelineNs(step: number): string {
-  const normalized = Number.isFinite(step) ? Math.max(0, Math.trunc(step)) : 0;
-  return ((BigInt(normalized) * NS_PER_SECOND) / STEP_RATE_HZ).toString();
+export function normalizeStepRateHz(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_STEP_RATE_HZ;
 }
 
-export function timelineNsToStep(value: string): number {
-  return Number((BigInt(value) * STEP_RATE_HZ) / NS_PER_SECOND);
+function scaledStepRate(value: number | null | undefined): bigint {
+  return BigInt(
+    Math.max(
+      1,
+      Math.round(normalizeStepRateHz(value) * Number(RATE_PRECISION)),
+    ),
+  );
+}
+
+export function stepToTimelineNs(
+  step: number,
+  frequencyHz: number = DEFAULT_STEP_RATE_HZ,
+): string {
+  const normalized = Number.isFinite(step) ? Math.max(0, Math.trunc(step)) : 0;
+  return (
+    (BigInt(normalized) * NS_PER_SECOND * RATE_PRECISION) /
+    scaledStepRate(frequencyHz)
+  ).toString();
+}
+
+export function timelineNsToStep(
+  value: string,
+  frequencyHz: number = DEFAULT_STEP_RATE_HZ,
+): number {
+  return Number(
+    (BigInt(value) * scaledStepRate(frequencyHz)) /
+      (NS_PER_SECOND * RATE_PRECISION),
+  );
 }
 
 export function annotationTaskStatusLabel(
   status: RuntimeAnnotationTask["status"],
 ): string {
   const labels: Readonly<Record<RuntimeAnnotationTask["status"], string>> = {
-    DRAFT: "草稿",
+    DRAFT: "待标注",
     SUBMITTED: "待审核",
-    APPROVED: "已通过",
-    NEEDS_REVISION: "需修改",
+    APPROVED: "标注完成",
+    NEEDS_REVISION: "待修改",
     REJECTED: "已拒绝",
   };
   return labels[status];
@@ -335,6 +370,9 @@ export async function claimRuntimeAnnotationTask(
   scope: RuntimeAnnotationScope,
   task: RuntimeAnnotationTask,
 ): Promise<RuntimeAnnotationTask> {
+  if (task.status !== "DRAFT" || task.assignee_id !== null) {
+    contractMismatch("当前任务状态或分配关系不允许创建标注草稿。");
+  }
   const result = await request<components["schemas"]["AnnotationTask"]>({
     method: "POST",
     path: `/annotation-tasks/${encoded(task.task_id)}/claim`,
@@ -370,6 +408,25 @@ async function getRuntimeAnnotationDraft(
     scope: scopeForRequest(scope),
     ...(signal ? { signal } : {}),
   });
+}
+
+async function getRuntimeAnnotationDraftOrNull(
+  scope: RuntimeAnnotationScope,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<RuntimeAnnotationDraft | null> {
+  try {
+    return await getRuntimeAnnotationDraft(scope, taskId, signal);
+  } catch (error) {
+    if (
+      isDomainError(error) &&
+      (error.code === "FORBIDDEN" ||
+        error.code === "NOT_FOUND" ||
+        error.code === "GONE")
+    )
+      return null;
+    throw error;
+  }
 }
 
 async function getRuntimeAnnotationHistory(
@@ -411,6 +468,19 @@ async function loadManifestForTask(
   });
 }
 
+async function getRuntimeDatasetVersion(
+  scope: RuntimeAnnotationScope,
+  task: RuntimeAnnotationTask,
+  signal?: AbortSignal,
+): Promise<RuntimeDatasetVersion> {
+  return request<RuntimeDatasetVersion>({
+    method: "GET",
+    path: `/projects/${encoded(scope.projectId)}/datasets/${encoded(task.dataset_id)}/lance-versions/${encoded(task.base_lance_version)}`,
+    scope: scopeForRequest(scope),
+    ...(signal ? { signal } : {}),
+  });
+}
+
 export async function loadRuntimeAnnotationBundle(
   scope: RuntimeAnnotationScope,
   taskId: string,
@@ -428,30 +498,36 @@ export async function loadRuntimeAnnotationBundle(
     }))
     .catch((error: unknown) => ({
       manifest: null,
-      manifestIssue: asDomainError(error, "Manifest 加载失败。"),
+      manifestIssue: asDomainError(error, "数据清单加载失败。"),
     }));
-  const [draft, history, schema, manifestResult] = await Promise.all([
-    mode === "annotation"
-      ? getRuntimeAnnotationDraft(scope, taskId, signal)
-      : Promise.resolve(null),
-    getRuntimeAnnotationHistory(scope, taskId, signal),
-    getRuntimeTagSchema(scope, task, signal),
-    manifestPromise,
-  ]);
+  const [draft, history, schema, manifestResult, datasetVersion] =
+    await Promise.all([
+      mode === "annotation"
+        ? getRuntimeAnnotationDraftOrNull(scope, taskId, signal)
+        : Promise.resolve(null),
+      getRuntimeAnnotationHistory(scope, taskId, signal),
+      getRuntimeTagSchema(scope, task, signal),
+      manifestPromise,
+      getRuntimeDatasetVersion(scope, task, signal),
+    ]);
   if (
     history.task.task_id !== task.task_id ||
     schema.project_id !== task.project_id ||
     schema.schema_id !== task.tag_schema_id ||
     schema.version !== task.tag_schema_version ||
+    datasetVersion.project_id !== task.project_id ||
+    datasetVersion.dataset_id !== task.dataset_id ||
+    datasetVersion.version !== task.base_lance_version ||
     (draft !== null &&
       (draft.task_id !== task.task_id ||
         draft.tag_schema_id !== task.tag_schema_id ||
         draft.tag_schema_version !== task.tag_schema_version))
   ) {
-    contractMismatch("标注任务、草稿、历史或 Tag Schema 的固定身份不一致。");
+    contractMismatch("标注任务、草稿、历史或标签结构的固定身份不一致。");
   }
   return {
     task,
+    datasetVersion,
     draft,
     history,
     schema,
@@ -467,6 +543,14 @@ export async function saveRuntimeAnnotationDraft(
   draft: RuntimeAnnotationDraft,
   tags: readonly RuntimeAnnotationTag[],
 ): Promise<RuntimeAnnotationRevision> {
+  if (
+    (task.status !== "DRAFT" && task.status !== "NEEDS_REVISION") ||
+    draft.task_id !== task.task_id ||
+    draft.revision !== task.current_revision ||
+    draft.etag !== task.etag
+  ) {
+    contractMismatch("当前任务状态、草稿修订或并发版本不允许保存修改。");
+  }
   const body = {
     client_mutation_id: createClientMutationId("save"),
     expected_revision: task.current_revision,
@@ -485,7 +569,7 @@ export async function saveRuntimeAnnotationDraft(
     revision.tag_schema_id !== task.tag_schema_id ||
     revision.tag_schema_version !== task.tag_schema_version
   ) {
-    contractMismatch("保存后的修订与当前任务或 Tag Schema 不一致。");
+    contractMismatch("保存后的修订与当前任务或标签结构不一致。");
   }
   return revision;
 }
@@ -495,6 +579,9 @@ export async function restoreRuntimeAnnotationRevision(
   task: RuntimeAnnotationTask,
   targetRevision: number,
 ): Promise<RuntimeAnnotationRevision> {
+  if (task.status !== "DRAFT" && task.status !== "NEEDS_REVISION") {
+    contractMismatch("当前任务状态不允许写入数据修订。");
+  }
   if (!Number.isSafeInteger(targetRevision) || targetRevision < 0) {
     contractMismatch("回退目标修订必须是非负整数。");
   }
@@ -520,7 +607,7 @@ export async function restoreRuntimeAnnotationRevision(
     revision.parent_revision !== task.current_revision ||
     revision.origin !== "ANNOTATION_RESTORE"
   ) {
-    contractMismatch("回退后的修订与任务、父修订或 Tag Schema 不一致。");
+    contractMismatch("回退后的修订与任务、父修订或标签结构不一致。");
   }
   return revision;
 }
@@ -549,6 +636,9 @@ export async function createRuntimeAutoAnnotationJob(
     readonly endStep: number;
   },
 ): Promise<RuntimeAutoAnnotationJob> {
+  if (task.status !== "DRAFT" && task.status !== "NEEDS_REVISION") {
+    contractMismatch("当前任务状态不允许启动自动标注写入。");
+  }
   const body = {
     revision: task.current_revision,
     provider: input.provider,
@@ -625,6 +715,13 @@ export async function applyRuntimeAutoAnnotationJob(
   task: RuntimeAnnotationTask,
   job: RuntimeAutoAnnotationJob,
 ): Promise<RuntimeAnnotationRevision> {
+  if (
+    (task.status !== "DRAFT" && task.status !== "NEEDS_REVISION") ||
+    job.status !== "SUCCEEDED" ||
+    job.source_revision !== task.current_revision
+  ) {
+    contractMismatch("当前任务或自动标注结果状态不允许应用新修订。");
+  }
   const body = {
     expected_revision: job.source_revision,
   } satisfies components["schemas"]["ApplyAutoAnnotationRequest"];
@@ -650,12 +747,16 @@ export async function submitRuntimeAnnotationRevision(
   task: RuntimeAnnotationTask,
   revision: number,
 ): Promise<RuntimeAnnotationSubmission> {
+  if (
+    (task.status !== "DRAFT" && task.status !== "NEEDS_REVISION") ||
+    revision !== task.current_revision
+  ) {
+    contractMismatch("当前任务状态或草稿修订不允许提交审核。");
+  }
   const body = {
     expected_revision: revision,
   } satisfies components["schemas"]["SubmitRequest"];
-  const submission = await request<
-    components["schemas"]["AnnotationSubmission"]
-  >({
+  const submission = await request<RuntimeAnnotationSubmission>({
     method: "POST",
     path: `/annotation-tasks/${encoded(task.task_id)}/submit`,
     scope: scopeForRequest(scope),
@@ -665,11 +766,13 @@ export async function submitRuntimeAnnotationRevision(
   });
   if (
     submission.task_id !== task.task_id ||
+    !Number.isInteger(submission.episode_version) ||
+    submission.episode_version < 1 ||
     submission.revision !== revision ||
     submission.tag_schema_id !== task.tag_schema_id ||
     submission.tag_schema_version !== task.tag_schema_version
   ) {
-    contractMismatch("提交快照与当前任务、修订或 Tag Schema 不一致。");
+    contractMismatch("提交版本与当前任务、修订或标签结构不一致。");
   }
   return submission;
 }
@@ -681,6 +784,14 @@ export async function reviewRuntimeAnnotationRevision(
   decision: RuntimeReviewDecision,
   comment: string,
 ): Promise<RuntimeAnnotationTask> {
+  if (
+    task.status !== "SUBMITTED" ||
+    task.current_submission_id !== submission.submission_id ||
+    task.submitted_revision !== submission.revision ||
+    (decision !== "APPROVE" && comment.trim().length === 0)
+  ) {
+    contractMismatch("当前任务、审核意见或提交版本不允许创建审核决定。");
+  }
   const body = {
     revision: submission.revision,
     submission_id: submission.submission_id,
@@ -726,33 +837,38 @@ function createPreviewMediaSource(
   cameraId: string,
   annotationRevision: number,
   viewMode: components["schemas"]["ViewMode"],
+  frequencyHz: number,
 ): ViewerMediaSource {
-  const authorize = async (signal: AbortSignal) => {
+  const authorize = async (
+    signal: AbortSignal,
+    onStatus?: (status: PreviewPreparationStatus) => void,
+  ) => {
     const body = {
       annotation_revision: annotationRevision,
       camera_id: cameraId,
       dataset_id: task.dataset_id,
-      frequency_hz: Number(STEP_RATE_HZ),
+      frequency_hz: normalizeStepRateHz(frequencyHz),
       lance_version: String(task.base_lance_version),
       project_id: task.project_id,
       rollout_id: task.rollout_id,
       view_mode: viewMode,
+      profile_id: "annotation-h264-720p-v1",
       ...(task.base_step_count === null || task.base_step_count === undefined
         ? {}
         : { start_step: 0, end_step: task.base_step_count }),
     } satisfies components["schemas"]["PreviewRequestV1"];
-    const descriptor = await request<RuntimePreviewDescriptor>({
-      method: "POST",
-      path: "/previews/sessions",
-      scope: scopeForRequest(scope),
+    const descriptor = await authorizePreview(
+      scopeForRequest(scope),
       body,
       signal,
-    });
+      onStatus,
+    );
     if (
       descriptor.project_id !== task.project_id ||
       descriptor.rollout_id !== task.rollout_id ||
       descriptor.camera_id !== cameraId ||
-      descriptor.annotation_revision !== annotationRevision
+      descriptor.annotation_revision !== annotationRevision ||
+      descriptor.profile_id !== "annotation-h264-720p-v1"
     ) {
       contractMismatch("预览授权与当前任务、相机或修订不一致。");
     }
@@ -776,16 +892,21 @@ export function resolveReviewSubmission(
   bundle: RuntimeAnnotationBundle,
 ): RuntimeAnnotationSubmission | null {
   const currentId = bundle.task.current_submission_id;
-  if (currentId) {
-    const current = bundle.history.submissions.find(
-      (item) => item.submission_id === currentId,
-    );
-    if (current) return current;
-  }
+  const submittedRevision = bundle.task.submitted_revision;
+  if (
+    bundle.task.status !== "SUBMITTED" ||
+    !currentId ||
+    submittedRevision === null ||
+    submittedRevision === undefined
+  )
+    return null;
   return (
-    [...bundle.history.submissions].sort(
-      (left, right) => right.revision - left.revision,
-    )[0] ?? null
+    bundle.history.submissions.find(
+      (item) =>
+        item.submission_id === currentId &&
+        item.task_id === bundle.task.task_id &&
+        item.revision === submittedRevision,
+    ) ?? null
   );
 }
 
@@ -823,8 +944,7 @@ function streamForCamera(
   scope: RuntimeAnnotationScope,
   task: RuntimeAnnotationTask,
   camera: RuntimeManifestDiscovery["cameras"][number],
-  revision: number,
-  mode: AnnotationWorkbenchMode,
+  frequencyHz: number,
 ): StreamDescriptor {
   const endStep = Math.max(1, task.base_step_count ?? 1);
   const modality = (camera.encoding ?? "").toLowerCase().includes("depth")
@@ -840,21 +960,47 @@ function streamForCamera(
       version: String(task.base_lance_version),
       ...(camera.encoding ? { encoding: camera.encoding } : {}),
     },
-    rateHz: Number(STEP_RATE_HZ),
+    rateHz: frequencyHz,
     startNs: "0",
-    endNs: stepToTimelineNs(endStep),
+    endNs: stepToTimelineNs(endStep, frequencyHz),
     ...(camera.frame_id
       ? { frame: { id: camera.frame_id, name: camera.frame_id } }
       : {}),
     availability: "ready",
-    accessibleSummary: `${camera.camera_id}，来自 Manifest 的只读相机流，与其他模态共享 30 Hz 时间光标。`,
+    accessibleSummary: `${camera.camera_id}，来自数据清单的只读相机流，与其他模态共享 ${frequencyHz} Hz 时间光标。`,
     mediaSource: createPreviewMediaSource(
       scope,
       task,
-      camera.camera_id,
-      revision,
-      mode === "tag-review" ? "compare" : "edited",
+      camera.topic,
+      0,
+      "original",
+      frequencyHz,
     ),
+  };
+}
+
+function placeholderCameraStream(
+  task: RuntimeAnnotationTask,
+  slotIndex: number,
+  frequencyHz: number,
+): StreamDescriptor {
+  const endStep = Math.max(1, task.base_step_count ?? 1);
+  const slotNumber = slotIndex + 1;
+  return {
+    id: `camera-slot-${slotNumber}`,
+    canonicalPath: `/camera-slots/${slotNumber}`,
+    displayName: `摄像头 ${slotNumber}`,
+    modality: "rgb",
+    semanticRole: "camera-slot-placeholder",
+    schema: {
+      id: "camera-slot-placeholder",
+      version: String(task.base_lance_version),
+    },
+    rateHz: frequencyHz,
+    startNs: "0",
+    endNs: stepToTimelineNs(endStep, frequencyHz),
+    availability: "missing",
+    accessibleSummary: `第 ${slotNumber} 个视频槽位尚未接入摄像头。真实视频会按数据清单顺序从第一格开始显示。`,
   };
 }
 
@@ -863,43 +1009,111 @@ function tagTracks(
   bundle: RuntimeAnnotationBundle,
   tags: readonly RuntimeAnnotationTag[],
 ): readonly ViewerTimelineTrack[] {
-  const intervalTrack = (
-    id: string,
-    label: string,
-    values: readonly RuntimeAnnotationTag[],
-    tone: "phase" | "action",
-  ) =>
-    ({
-      id,
-      label,
-      segments: values.map((tag) => ({
-        id: `${id}-${tag.annotation_id}`,
-        label: tag.path.join(" / "),
-        startNs: stepToTimelineNs(tag.start_step),
-        endNs: stepToTimelineNs(tag.end_step),
-        tone,
-      })),
-    }) satisfies ViewerTimelineTrack;
-  const coverageEnd = stepToTimelineNs(
-    Math.max(1, bundle.task.base_step_count ?? 1),
+  const frequencyHz = normalizeStepRateHz(bundle.datasetVersion.frequency_hz);
+  const schemaLabels = new Map(
+    bundle.schema.document.nodes.map((node) => [
+      node.tag_id,
+      node.display_name,
+    ]),
   );
-  const coverage = {
-    id: "aligned-30hz",
-    label: "30 Hz 对齐",
-    segments: [
-      {
-        id: "aligned-coverage",
-        label:
-          bundle.task.base_step_count === null ||
-          bundle.task.base_step_count === undefined
-            ? "边界事实未返回"
-            : `${bundle.task.base_step_count.toLocaleString("zh-CN")} 步`,
-        startNs: "0",
-        endNs: coverageEnd,
-        tone: "signal" as const,
-      },
-    ],
-  } satisfies ViewerTimelineTrack;
+  const intervalTracks = (
+    idPrefix: string,
+    labelPrefix: string,
+    values: readonly RuntimeAnnotationTag[],
+    tone: "phase" | "action" | "tag-level",
+  ): readonly ViewerTimelineTrack[] => {
+    const byId = new Map(values.map((tag) => [tag.annotation_id, tag]));
+    const depthCache = new Map<string, number>();
+    const pathCache = new Map<string, readonly string[]>();
+    const depthFor = (
+      tag: RuntimeAnnotationTag,
+      seen = new Set<string>(),
+    ): number => {
+      const cached = depthCache.get(tag.annotation_id);
+      if (cached !== undefined) return cached;
+      if (!tag.parent_annotation_id || seen.has(tag.annotation_id)) return 0;
+      const parent = byId.get(tag.parent_annotation_id);
+      if (!parent) return 0;
+      const depth = depthFor(parent, new Set(seen).add(tag.annotation_id)) + 1;
+      depthCache.set(tag.annotation_id, depth);
+      return depth;
+    };
+    const pathFor = (
+      tag: RuntimeAnnotationTag,
+      seen = new Set<string>(),
+    ): readonly string[] => {
+      const cached = pathCache.get(tag.annotation_id);
+      if (cached) return cached;
+      const label =
+        tag.label?.trim() ||
+        schemaLabels.get(tag.tag_id) ||
+        tag.path.at(-1) ||
+        tag.tag_id;
+      if (!tag.parent_annotation_id || seen.has(tag.annotation_id)) {
+        const path = tag.label
+          ? [label]
+          : tag.path.map((tagId) => schemaLabels.get(tagId) ?? tagId);
+        pathCache.set(tag.annotation_id, path);
+        return path;
+      }
+      const parent = byId.get(tag.parent_annotation_id);
+      const path = parent
+        ? [...pathFor(parent, new Set(seen).add(tag.annotation_id)), label]
+        : [label];
+      pathCache.set(tag.annotation_id, path);
+      return path;
+    };
+    const byDepth = new Map<number, RuntimeAnnotationTag[]>();
+    for (const tag of values) {
+      const depth = depthFor(tag);
+      const level = byDepth.get(depth) ?? [];
+      level.push(tag);
+      byDepth.set(depth, level);
+    }
+    const tagLevelTones = [
+      "tag-level-1",
+      "tag-level-2",
+      "tag-level-3",
+      "tag-level-4",
+    ] as const;
+    return [...byDepth.entries()]
+      .toSorted(([left], [right]) => left - right)
+      .flatMap(([depth, level]) => {
+        const lanes: RuntimeAnnotationTag[][] = [];
+        for (const tag of level.toSorted(
+          (left, right) =>
+            left.start_step - right.start_step ||
+            left.end_step - right.end_step,
+        )) {
+          const lane = lanes.find(
+            (candidate) =>
+              (candidate.at(-1)?.end_step ?? Number.NEGATIVE_INFINITY) <=
+              tag.start_step,
+          );
+          if (lane) lane.push(tag);
+          else lanes.push([tag]);
+        }
+        return lanes.map(
+          (lane, laneIndex) =>
+            ({
+              id: `${idPrefix}-level-${depth + 1}-lane-${laneIndex + 1}`,
+              label: `${labelPrefix} L${depth + 1}${laneIndex ? ` · ${laneIndex + 1}` : ""}`,
+              level: depth,
+              segments: lane.map((tag) => ({
+                id: `${idPrefix}-${tag.annotation_id}`,
+                label: pathFor(tag).join(" / "),
+                startNs: stepToTimelineNs(tag.start_step, frequencyHz),
+                endNs: stepToTimelineNs(tag.end_step, frequencyHz),
+                activatePlayback: true,
+                tone:
+                  tone === "tag-level"
+                    ? tagLevelTones[depth % tagLevelTones.length]
+                    : tone,
+              })),
+            }) satisfies ViewerTimelineTrack,
+        );
+      });
+  };
   const operations = {
     id: "revision-operations",
     label: "数据修订",
@@ -910,8 +1124,8 @@ function tagTracks(
     ).map((operation) => ({
       id: operation.operation_id,
       label: operation.kind === "EXCLUDE" ? "排除" : "恢复",
-      startNs: stepToTimelineNs(operation.start_step),
-      endNs: stepToTimelineNs(operation.end_step),
+      startNs: stepToTimelineNs(operation.start_step, frequencyHz),
+      endNs: stepToTimelineNs(operation.end_step, frequencyHz),
       tone:
         operation.kind === "EXCLUDE"
           ? ("issue" as const)
@@ -919,15 +1133,11 @@ function tagTracks(
     })),
   } satisfies ViewerTimelineTrack;
   if (mode === "annotation")
-    return [
-      intervalTrack("tag-intervals", "Tag 区间", tags, "action"),
-      coverage,
-      operations,
-    ];
+    return intervalTracks("tag-intervals", "Tag", tags, "tag-level");
   const original = resolveOriginalRevision(bundle)?.tags ?? [];
   return [
-    intervalTrack("original-tags", "原始标注", original, "phase"),
-    intervalTrack("revised-tags", "修订标注", tags, "action"),
+    ...intervalTracks("original-tags", "原始 Tag", original, "phase"),
+    ...intervalTracks("revised-tags", "修订 Tag", tags, "action"),
     operations,
   ];
 }
@@ -953,7 +1163,7 @@ function collectionItems(
         ? [
             { label: "任务 ID", value: task.task_id, technical: true },
             {
-              label: "Schema",
+              label: "数据结构",
               value: `${task.tag_schema_id} v${task.tag_schema_version}`,
             },
             { label: "Lance", value: `v${task.base_lance_version}` },
@@ -977,6 +1187,8 @@ export function buildRuntimeWorkbenchAdapter(input: {
   readonly clock: PlaybackClock;
   readonly tags: readonly RuntimeAnnotationTag[];
   readonly selectedCameraId?: string;
+  readonly cameraLimit?: number;
+  readonly cameraSlotCount?: number;
   readonly readOnly: boolean;
   readonly onSelectTask?: (taskId: string) => void;
   readonly timelineSelection?: ViewerTimelineSelection;
@@ -984,22 +1196,7 @@ export function buildRuntimeWorkbenchAdapter(input: {
   readonly onResourceError?: DataVisualizationWorkbenchAdapter["onResourceError"];
 }): DataVisualizationWorkbenchAdapter {
   const { bundle, mode } = input;
-  const revision =
-    mode === "tag-review"
-      ? (resolveReviewSubmission(bundle)?.revision ??
-        bundle.task.current_revision)
-      : (bundle.draft?.revision ?? bundle.task.current_revision);
-  const allCameras = bundle.manifest?.cameras ?? [];
-  const cameras =
-    mode === "tag-review"
-      ? allCameras
-          .filter(
-            (camera, index) =>
-              camera.camera_id === input.selectedCameraId ||
-              (!input.selectedCameraId && index === 0),
-          )
-          .slice(0, 1)
-      : allCameras;
+  const paddedCameraStreams = buildRuntimeCameraStreams(input);
   return {
     mode,
     id: `p08-${mode}-${bundle.task.task_id}`,
@@ -1007,9 +1204,7 @@ export function buildRuntimeWorkbenchAdapter(input: {
     description: `固定 Lance v${bundle.task.base_lance_version} · ${bundle.task.rollout_id}`,
     readOnly: input.readOnly,
     clock: input.clock,
-    cameraStreams: cameras.map((camera) =>
-      streamForCamera(input.scope, bundle.task, camera, revision, mode),
-    ),
+    cameraStreams: paddedCameraStreams,
     collectionItems: collectionItems(bundle),
     selectedCollectionItemId: bundle.task.task_id,
     onSelectCollectionItem: input.onSelectTask,
@@ -1023,7 +1218,7 @@ export function buildRuntimeWorkbenchAdapter(input: {
       ? {
           banner: {
             label: "局部加载失败",
-            title: "Manifest 相机暂不可用",
+            title: "数据清单相机暂不可用",
             description: `${bundle.manifestIssue.message}${bundle.manifestIssue.problemCode ? `（问题代码：${bundle.manifestIssue.problemCode}）` : ""}${bundle.manifestIssue.requestId ? `（请求 ${bundle.manifestIssue.requestId}）` : ""}${bundle.manifestIssue.retryable ? "；可重新加载任务重试。" : ""}`,
             tone: "warning" as const,
           },
@@ -1036,4 +1231,49 @@ export function buildRuntimeWorkbenchAdapter(input: {
       ? { onResourceError: input.onResourceError }
       : {}),
   };
+}
+
+export function buildRuntimeCameraStreams(input: {
+  readonly bundle: RuntimeAnnotationBundle;
+  readonly scope: RuntimeAnnotationScope;
+  readonly mode: AnnotationWorkbenchMode;
+  readonly selectedCameraId?: string;
+  readonly cameraLimit?: number;
+  readonly cameraSlotCount?: number;
+}): readonly StreamDescriptor[] {
+  const { bundle, mode } = input;
+  const frequencyHz = normalizeStepRateHz(bundle.datasetVersion.frequency_hz);
+  const allCameras = bundle.manifest?.cameras ?? [];
+  const cameras =
+    mode === "tag-review" || input.selectedCameraId
+      ? allCameras
+          .filter(
+            (camera, index) =>
+              camera.camera_id === input.selectedCameraId ||
+              (!input.selectedCameraId && index === 0),
+          )
+          .slice(0, 1)
+      : input.cameraLimit
+        ? allCameras.slice(0, input.cameraLimit)
+        : allCameras;
+  const cameraStreams = cameras.map((camera) =>
+    streamForCamera(
+      input.scope,
+      bundle.task,
+      camera,
+      frequencyHz,
+    ),
+  );
+  const slotCount = Math.max(cameraStreams.length, input.cameraSlotCount ?? 0);
+  const paddedCameraStreams = [
+    ...cameraStreams,
+    ...Array.from({ length: slotCount - cameraStreams.length }, (_, index) =>
+      placeholderCameraStream(
+        bundle.task,
+        cameraStreams.length + index,
+        frequencyHz,
+      ),
+    ),
+  ];
+  return paddedCameraStreams;
 }

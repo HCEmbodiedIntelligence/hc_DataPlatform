@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import shutil
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,24 +13,33 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.lance_catalog.models import StepRecord
 from hc_data_platform.lance_catalog.ports import FakeStepReader
 from hc_data_platform.preview.adapters import (
     FFmpegHlsEncoder,
-    FilePreviewMediaReader,
     LanceStepReaderAdapter,
     S3ImageRefResolver,
 )
+from hc_data_platform.preview.artifact_store import S3PreviewArtifactStore
 from hc_data_platform.preview.memory import (
     HmacUrlSigner,
     InMemoryExclusionReader,
-    InMemoryPreviewCache,
+    InMemoryPreviewRepository,
 )
-from hc_data_platform.preview.models import EncodingProfileV1, PreviewRequestV1, ViewMode
+from hc_data_platform.preview.models import (
+    PreviewDescriptorV1,
+    PreviewPendingDescriptorV1,
+    PreviewRequestV1,
+    PreviewScopeV1,
+)
 from hc_data_platform.preview.router import router
-from hc_data_platform.preview.service import PreviewService
+from hc_data_platform.preview.service import (
+    PreviewControlPlaneService,
+    PreviewGenerationService,
+)
 
 _NOW = datetime(2026, 8, 20, 8, 0, tzinfo=timezone.utc)
 
@@ -73,10 +84,12 @@ def test_minio_s3_frame_is_transcoded_and_streamed_only_through_signed_gateway(
     except Exception:
         client.create_bucket(Bucket=bucket)
 
-    object_key = f"integration/previews/{uuid4().hex}/camera-front.ppm"
-    image = b"P6\n32 24\n255\n" + bytes((32, 96, 224)) * (32 * 24)
+    object_key = f"integration/previews/{uuid4().hex}/camera-front.jpg"
+    buffer = BytesIO()
+    Image.new("RGB", (32, 24), (32, 96, 224)).save(buffer, "JPEG")
+    image = buffer.getvalue()
     client.put_object(
-        Bucket=bucket, Key=object_key, Body=image, ContentType="image/x-portable-pixmap"
+        Bucket=bucket, Key=object_key, Body=image, ContentType="image/jpeg"
     )
     try:
         descriptor, gateway = _create_signed_gateway(
@@ -91,17 +104,9 @@ def test_minio_s3_frame_is_transcoded_and_streamed_only_through_signed_gateway(
             assert playlist.status_code == 200
             assert f"s3://{bucket}" not in playlist.text
             assert object_key not in playlist.text
-            segment = re.search(
-                r"(?P<url>/api/v1/previews/.+/segment_[0-9]{5}\.m4s\?[^\n]+)",
-                playlist.text,
-            )
+            segment = re.search(r"(?P<url>https?://[^\n]+segment_[^\n]+)", playlist.text)
             assert segment is not None
-            streamed = gateway.get(segment.group("url"), headers={"Range": "bytes=0-31"})
-
-        assert streamed.status_code == 206
-        assert streamed.headers["content-type"].startswith("video/iso.segment")
-        assert re.fullmatch(r"bytes 0-31/[1-9][0-9]*", streamed.headers["content-range"])
-        assert len(streamed.content) == 32
+            assert object_key not in segment.group("url")
     finally:
         client.delete_object(Bucket=bucket, Key=object_key)
 
@@ -126,38 +131,52 @@ def _create_signed_gateway(
         for index in range(4)
     ]
     media_root = tmp_path / "media"
-    service = PreviewService(
+    repository = InMemoryPreviewRepository()
+    store = S3PreviewArtifactStore(s3_client, bucket)  # type: ignore[arg-type]
+    control = PreviewControlPlaneService(
+        repository=repository,
+        store=store,
+        signer=HmacUrlSigner(b"preview-minio-integration-test"),
+        clock=lambda: _NOW,
+    )
+    generation = PreviewGenerationService(
         step_reader=LanceStepReaderAdapter(
             FakeStepReader("dataset-1", 1, records, project_id="project-1"),
             image_ref_resolver=S3ImageRefResolver(s3_client, bucket),  # type: ignore[arg-type]
         ),
         exclusions=InMemoryExclusionReader(),
         encoder=FFmpegHlsEncoder(media_root),
-        cache=InMemoryPreviewCache(),
-        signer=HmacUrlSigner(b"preview-minio-integration-test"),
-        media_reader=FilePreviewMediaReader(media_root),
+        repository=repository,
+        store=store,
         clock=lambda: _NOW,
     )
-    descriptor = service.create(
-        PreviewRequestV1(
-            project_id="project-1",
-            dataset_id="dataset-1",
-            rollout_id="rollout-1",
-            lance_version="v1",
-            annotation_revision=1,
-            camera_id="front",
-            view_mode=ViewMode.ORIGINAL,
-            frequency_hz=4,
-            encoding_profile=EncodingProfileV1(
-                width=64,
-                height=48,
-                video_bitrate_kbps=128,
-                segment_duration_seconds=0.5,
-                preset="ultrafast",
-            ),
-        )
+    request = PreviewRequestV1(
+        project_id="project-1",
+        dataset_id="dataset-1",
+        rollout_id="rollout-1",
+        lance_version="v1",
+        camera_id="front",
+        frequency_hz=4,
     )
-    monkeypatch.setattr(preview_router, "_service", service)
+    scope = PreviewScopeV1(
+        organization_id="organization-1",
+        project_id="project-1",
+        region_code="cn-test",
+    )
+    pending = asyncio.run(control.create_session(scope, request))
+    assert isinstance(pending, PreviewPendingDescriptorV1)
+    generation.generate(scope, request, job_id=pending.job_id)
+    # Reconstruct the API control plane after the media worker has removed its
+    # local staging. Only the shared repository and MinIO store cross the boundary.
+    control = PreviewControlPlaneService(
+        repository=repository,
+        store=store,
+        signer=HmacUrlSigner(b"preview-minio-integration-test"),
+        clock=lambda: _NOW,
+    )
+    descriptor = asyncio.run(control.create_session(scope, request))
+    assert isinstance(descriptor, PreviewDescriptorV1)
+    monkeypatch.setattr(preview_router, "_service", control)
     app = FastAPI()
     app.include_router(router)
 

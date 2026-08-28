@@ -196,6 +196,24 @@ paths:
         '401': {description: A verified access token is required.}
         '403': {description: Project scope or read permission is missing.}
         '404': {description: No task is visible under this project identity.}
+  /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}/packages:
+    get:
+      operationId: listCollectionTaskPackages
+      tags: [collection-tasks]
+      parameters:
+        - $ref: '#/components/parameters/CollectionTaskProjectId'
+        - $ref: '#/components/parameters/CollectionTaskOrganizationId'
+        - $ref: '#/components/parameters/CollectionTaskId'
+        - $ref: '#/components/parameters/CollectionTaskRegionCode'
+      responses:
+        '200':
+          description: Every committed package with QC, workflow and published Episode lineage.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionTaskPackageList'}
+        '401': {description: A verified access token is required.}
+        '403': {description: Project scope or read permission is missing.}
+        '404': {description: No task is visible under this project identity.}
 components:
   parameters:
     CollectionTaskProjectId:
@@ -228,7 +246,7 @@ components:
       name: X-Region-Code
       in: header
       required: true
-      description: Selects the exact authorized region whose package and QC facts are aggregated.
+      description: Selects the exact authorized storage region whose package and QC facts are aggregated; it does not identify the robot work area or the logical dataset.
       schema:
         type: string
         minLength: 1
@@ -247,6 +265,14 @@ components:
       minLength: 1
       maxLength: 128
       pattern: '^[A-Za-z0-9._-]+$'
+    CollectionTaskDatasetIdentifier:
+      type: string
+      minLength: 10
+      maxLength: 104
+      pattern: '^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$'
+    CollectionTaskQcOutcome:
+      type: string
+      enum: [PASS, RISK, REJECT]
     CollectionTaskStatus:
       type: string
       enum: [ACTIVE, CLOSED, CANCELLED]
@@ -261,6 +287,10 @@ components:
       additionalProperties: false
       required: [name, type, scenario]
       properties:
+        dataset_id:
+          type: string
+          pattern: '^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$'
+          description: Existing active Dataset to receive this task; omission creates a dedicated Dataset identity.
         name: {type: string, minLength: 1, maxLength: 200}
         type: {type: string, minLength: 1, maxLength: 100}
         scenario: {type: string, minLength: 1, maxLength: 200}
@@ -274,6 +304,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        dataset_id:
+          type: string
+          pattern: '^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$'
+          description: New active Dataset; reassignment is rejected after the first package is received.
         name: {type: string, minLength: 1, maxLength: 200}
         type: {type: string, minLength: 1, maxLength: 100}
         scenario: {type: string, minLength: 1, maxLength: 200}
@@ -291,6 +325,7 @@ components:
         - collection_task_id
         - organization_id
         - project_id
+        - dataset_id
         - task_code
         - name
         - type
@@ -304,6 +339,10 @@ components:
         collection_task_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
         organization_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
         project_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        dataset_id:
+          type: string
+          pattern: '^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$'
+          description: Logical target Dataset. Multiple tasks may contribute to it; storage region is deliberately excluded from this identity.
         task_code: {type: string, pattern: '^[0-9]{8}$'}
         name: {type: string}
         type: {type: string}
@@ -414,6 +453,72 @@ components:
         qc: {$ref: '#/components/schemas/CollectionTaskQcProgress'}
         attainment: {$ref: '#/components/schemas/CollectionTaskAttainment'}
         observed_sources: {$ref: '#/components/schemas/ManifestObservedSources'}
+    CollectionTaskPackageState:
+      type: string
+      enum:
+        - PENDING_QC
+        - PROCESSING
+        - PUBLISHED
+        - QUALITY_RISK
+        - QUALITY_REJECTED
+        - TECHNICAL_FAILED
+        - DATASET_MISMATCH
+    CollectionTaskPackage:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - data_package_id
+        - rollout_id
+        - robot_id
+        - state
+        - visualizable
+        - received_at
+        - updated_at
+      properties:
+        schema_version: {type: string, const: '1', default: '1'}
+        data_package_id: {type: string, minLength: 1, maxLength: 256}
+        rollout_id: {type: string, minLength: 1, maxLength: 256}
+        robot_id: {type: string, minLength: 1, maxLength: 256}
+        state: {$ref: '#/components/schemas/CollectionTaskPackageState'}
+        qc_outcome:
+          oneOf:
+            - {$ref: '#/components/schemas/CollectionTaskQcOutcome'}
+            - {type: 'null'}
+          default: null
+        workflow_status: {type: [string, 'null'], maxLength: 128, default: null}
+        workflow_stage: {type: [string, 'null'], maxLength: 128, default: null}
+        error_code: {type: [string, 'null'], maxLength: 256, default: null}
+        dataset_id:
+          oneOf:
+            - {$ref: '#/components/schemas/CollectionTaskDatasetIdentifier'}
+            - {type: 'null'}
+          default: null
+        version_id: {type: [string, 'null'], maxLength: 128, default: null}
+        episode_id: {type: [string, 'null'], maxLength: 128, default: null}
+        revision_id: {type: [string, 'null'], maxLength: 128, default: null}
+        visualizable: {type: boolean}
+        received_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    CollectionTaskPackageList:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - collection_task_id
+        - organization_id
+        - project_id
+        - as_of
+        - items
+      properties:
+        schema_version: {type: string, const: '1', default: '1'}
+        collection_task_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        organization_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        project_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
+        as_of: {type: string, format: date-time}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CollectionTaskPackage'}
     ManifestObservedSources:
       type: object
       additionalProperties: false

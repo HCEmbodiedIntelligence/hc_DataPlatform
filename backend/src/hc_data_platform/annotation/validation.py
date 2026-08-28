@@ -139,7 +139,26 @@ def validate_tag_revision(
             ReviewCheckKind.HIERARCHY,
             "annotation_id must be unique within a revision",
         )
+    tag_by_annotation_id = {tag.annotation_id: tag for tag in tags}
     for tag in tags:
+        if tag.label is not None:
+            parent = (
+                tag_by_annotation_id.get(tag.parent_annotation_id)
+                if tag.parent_annotation_id is not None
+                else None
+            )
+            if tag.parent_annotation_id is not None and parent is None:
+                raise TagValidationIssue(
+                    ReviewCheckKind.HIERARCHY,
+                    f"Tag {tag.annotation_id!r} references a missing parent interval",
+                )
+            expected_path = (*parent.path, tag.tag_id) if parent else (tag.tag_id,)
+            if tag.path != expected_path:
+                raise TagValidationIssue(
+                    ReviewCheckKind.HIERARCHY,
+                    f"Tag {tag.annotation_id!r} path does not match its interval ancestry",
+                )
+            continue
         try:
             expected_path = schema.document.path_for(tag.tag_id)
         except KeyError as exc:
@@ -151,6 +170,24 @@ def validate_tag_revision(
             raise TagValidationIssue(
                 ReviewCheckKind.HIERARCHY,
                 f"Tag {tag.annotation_id!r} path does not match its schema ancestry",
+            )
+
+    for tag in tags:
+        if tag.label is None:
+            continue
+        seen: set[str] = set()
+        current: AnnotationTag | None = tag
+        while current is not None and current.label is not None:
+            if current.annotation_id in seen:
+                raise TagValidationIssue(
+                    ReviewCheckKind.HIERARCHY,
+                    "manual Tag interval hierarchy contains a cycle",
+                )
+            seen.add(current.annotation_id)
+            current = (
+                tag_by_annotation_id.get(current.parent_annotation_id)
+                if current.parent_annotation_id is not None
+                else None
             )
 
     ranged: list[tuple[str, int, int]] = [
@@ -173,6 +210,8 @@ def validate_tag_revision(
                 )
 
     for tag in tags:
+        if tag.label is not None:
+            continue
         definitions = _attributes_for_path(tag.path, node_by_id)
         unknown = set(tag.attributes).difference(definitions)
         if unknown:
@@ -213,6 +252,8 @@ def validate_tag_revision(
         for relation_constraint in schema.document.object_relations
     }
     for tag in tags:
+        if tag.label is not None:
+            continue
         for relation in tag.relations:
             relation_constraint = relation_by_type.get(relation.relation_type)
             if relation_constraint is None or tag.tag_id not in relation_constraint.source_tag_ids:
@@ -248,8 +289,12 @@ def validate_tag_revision(
                     ),
                 )
 
+    manual_count = sum(tag.label is not None for tag in tags)
     evidence = {
-        ReviewCheckKind.HIERARCHY: f"{len(tags)} Tag paths resolve in the pinned schema",
+        ReviewCheckKind.HIERARCHY: (
+            f"{len(tags)} Tag paths are valid; {manual_count} manually named intervals "
+            "use independent time ranges"
+        ),
         ReviewCheckKind.BOUNDARY: f"all intervals are valid inside {base_step_count} steps",
         ReviewCheckKind.REQUIRED_ATTRIBUTES: "required and typed attributes are satisfied",
         ReviewCheckKind.MUTUAL_EXCLUSION: "no mutually exclusive Tags overlap",

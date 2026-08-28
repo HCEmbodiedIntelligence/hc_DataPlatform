@@ -206,6 +206,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         idempotency_key="submit-restored-r2-postgres",
     )
     assert restored_submission.revision == 2
+    assert restored_submission.episode_version == 1
     assert (
         service.review(
             restore_task_id,
@@ -241,6 +242,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         if_match=service.get_task(restore_task_id).etag,
         idempotency_key="resubmit-after-reject-postgres",
     )
+    assert resubmitted_after_reject.episode_version == 2
     assert (
         service.review(
             restore_task_id,

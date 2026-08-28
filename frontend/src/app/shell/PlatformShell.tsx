@@ -17,6 +17,7 @@ import {
   CloudUpload,
   Crosshair,
   Database,
+  Download,
   FolderKanban,
   HardDrive,
   House,
@@ -24,10 +25,8 @@ import {
   LogOut,
   MapPin,
   Menu as MenuIcon,
-  Network,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
   Search,
   Settings,
   ShieldAlert,
@@ -49,7 +48,6 @@ import {
   Select,
   Space,
   type MenuProps,
-  type RefSelectProps,
 } from "antd";
 import {
   Link,
@@ -75,7 +73,6 @@ import hangchaLogo from "../../assets/hangcha-logo.png";
 import styles from "./PlatformShell.module.css";
 import { ShellLoadingPage } from "./ShellLoadingPage";
 import { datasetContextKind } from "./dataset-context";
-import ProjectMembershipRequestDialog from "./ProjectMembershipRequestDialog";
 import { useUnreadNotificationCount } from "../../features/notifications/api";
 
 const { Content, Header, Sider } = Layout;
@@ -140,13 +137,13 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P03: <CloudUpload aria-hidden="true" size={18} strokeWidth={1.8} />,
   P05: <Box aria-hidden="true" size={18} strokeWidth={1.8} />,
   P08: <Tags aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P21: <Download aria-hidden="true" size={18} strokeWidth={1.8} />,
   P09: <ShieldAlert aria-hidden="true" size={18} strokeWidth={1.8} />,
   P10Q: <ListChecks aria-hidden="true" size={18} strokeWidth={1.8} />,
   P12: <HardDrive aria-hidden="true" size={18} strokeWidth={1.8} />,
   P13: <Clock3 aria-hidden="true" size={18} strokeWidth={1.8} />,
   P14: <Bot aria-hidden="true" size={18} strokeWidth={1.8} />,
   P16: <Crosshair aria-hidden="true" size={18} strokeWidth={1.8} />,
-  P17: <Network aria-hidden="true" size={18} strokeWidth={1.8} />,
   P18: <UserRound aria-hidden="true" size={18} strokeWidth={1.8} />,
   P19: <ScrollText aria-hidden="true" size={18} strokeWidth={1.8} />,
 };
@@ -301,10 +298,6 @@ interface ScopeSelectorsProps {
   disabled: boolean;
   scope: Scope | null;
   scopeOptions: readonly ScopeOption[];
-  onRequestMembership: (
-    organizationId: string,
-    restoreFocus: () => void,
-  ) => void;
   onSelect: (scope: Scope) => void;
 }
 
@@ -328,12 +321,9 @@ function ScopeSelectors({
   disabled,
   scope,
   scopeOptions,
-  onRequestMembership,
   onSelect,
 }: ScopeSelectorsProps) {
   const [manualRegion, setManualRegion] = useState(scope?.regionCode ?? "");
-  const [projectSelectOpen, setProjectSelectOpen] = useState(false);
-  const projectSelectRef = useRef<RefSelectProps>(null);
   useEffect(
     () => setManualRegion(scope?.regionCode ?? ""),
     [scope?.regionCode],
@@ -389,12 +379,6 @@ function ScopeSelectors({
     if (!scope || !regionCode || regionCode === scope.regionCode) return;
     onSelect({ ...scope, regionCode });
   };
-  const requestMembership = () => {
-    if (selectedProject === undefined) return;
-    onRequestMembership(selectedProject.organizationId, () =>
-      projectSelectRef.current?.focus(),
-    );
-  };
   if (
     acceptsManualRegion &&
     scope?.regionCode &&
@@ -405,7 +389,10 @@ function ScopeSelectors({
 
   return (
     <div aria-label="当前作用域" className={styles.scopePanel} role="group">
-      <label className={`${styles.scopeField} ${styles.projectField}`}>
+      <label
+        className={`${styles.scopeField} ${styles.projectField}`}
+        data-scope-slot="project"
+      >
         <FolderKanban
           aria-hidden="true"
           className={styles.scopeIcon}
@@ -414,50 +401,17 @@ function ScopeSelectors({
         />
         <span className={styles.srOnly}>当前项目</span>
         <Select
-          ref={projectSelectRef}
           aria-label="当前项目"
           disabled={disabled}
           loading={disabled && scope !== null}
           optionFilterProp="label"
           options={projectOptions}
-          open={projectSelectOpen}
           placeholder="请选择项目"
-          popupRender={(menu) => (
-            <>
-              {menu}
-              <div
-                className={styles.projectRequestFooter}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-              >
-                <Button
-                  block
-                  disabled={selectedProject === undefined}
-                  icon={<Plus aria-hidden="true" size={16} />}
-                  type="text"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setProjectSelectOpen(false);
-                    globalThis.setTimeout(requestMembership, 0);
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                >
-                  申请加入其他项目
-                </Button>
-              </div>
-            </>
-          )}
           showSearch
           virtual={false}
           value={
             selectedProject ? projectOptionKey(selectedProject) : undefined
           }
-          onOpenChange={setProjectSelectOpen}
           onChange={(selectedProjectKey: string) => {
             const candidate =
               scopeOptions.find(
@@ -472,7 +426,10 @@ function ScopeSelectors({
           }}
         />
       </label>
-      <label className={`${styles.scopeField} ${styles.regionField}`}>
+      <label
+        className={`${styles.scopeField} ${styles.regionField}`}
+        data-scope-slot="region"
+      >
         <MapPin
           aria-hidden="true"
           className={styles.scopeIcon}
@@ -544,22 +501,16 @@ export function PlatformShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
-  const [membershipRequest, setMembershipRequest] = useState<{
-    readonly open: boolean;
-    readonly organizationId: string;
-  }>({ open: false, organizationId: "" });
   const [navigationCollapsed, setNavigationCollapsed] = useState(
     readNavigationCollapsedPreference,
   );
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
   const previousPathnameRef = useRef(location.pathname);
-  const restoreMembershipRequestFocusRef = useRef<(() => void) | null>(null);
-  const principal = e02VisualFixtureEnabled
-    ? e02VisualPrincipal
-    : storedPrincipal;
-  const scope = e02VisualFixtureEnabled ? e02VisualScope : storedScope;
-  const availableScopeOptions = e02VisualFixtureEnabled
+  const useVisualFixture = e02VisualFixtureEnabled && storedPrincipal === null;
+  const principal = useVisualFixture ? e02VisualPrincipal : storedPrincipal;
+  const scope = useVisualFixture ? e02VisualScope : storedScope;
+  const availableScopeOptions = useVisualFixture
     ? e02VisualScopeOptions
     : scopeOptions;
   const unreadNotifications = useUnreadNotificationCount();
@@ -570,11 +521,12 @@ export function PlatformShell({
     viewportMode === "compact" || desktopNavigationCollapsed;
   const grantedCapabilities = useMemo(() => {
     const expanded = new Set(
-      expandGrantedCapabilities(
-        capabilitiesLoading || capabilitiesFailed
+      expandGrantedCapabilities([
+        ...(capabilitiesLoading || capabilitiesFailed
           ? []
-          : (authorization?.capabilities ?? []),
-      ),
+          : (authorization?.capabilities ?? [])),
+        ...platformCapabilities,
+      ]),
     );
     if (
       platformCapabilities.includes("platform.account.read") ||
@@ -592,14 +544,13 @@ export function PlatformShell({
     capabilitiesLoading,
     platformCapabilities,
   ]);
-  const visibleManifest = useMemo(
-    () =>
-      e02VisualFixtureEnabled
-        ? navigationManifest
-        : filterNavigationManifest(grantedCapabilities, pageAvailability),
-    [grantedCapabilities, pageAvailability],
-  );
-  const showDatasetSelector = datasetContextKind(location.pathname) !== null;
+  const visibleManifest = useMemo(() => {
+    if (useVisualFixture) return navigationManifest;
+    return filterNavigationManifest(grantedCapabilities, pageAvailability);
+  }, [grantedCapabilities, pageAvailability, useVisualFixture]);
+  const showProjectFeatures = scope?.projectId !== undefined;
+  const showDatasetSelector =
+    showProjectFeatures && datasetContextKind(location.pathname) !== null;
 
   useEffect(() => {
     if (viewportMode !== "mobile") setMobileOpen(false);
@@ -628,11 +579,11 @@ export function PlatformShell({
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k")
         return;
       event.preventDefault();
-      setGlobalSearchOpen(true);
+      if (showProjectFeatures) setGlobalSearchOpen(true);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [showProjectFeatures]);
 
   const closeMobileNavigation = () => {
     setMobileOpen(false);
@@ -640,11 +591,11 @@ export function PlatformShell({
   };
 
   const selectScope = async (next: Scope) => {
-    if (e02VisualFixtureEnabled) return;
+    if (useVisualFixture) return;
     if (authorizationLoader === undefined) {
       showToast({
         title: "无法切换作用域",
-        message: "授权快照加载器尚未配置",
+        message: "授权状态加载器尚未配置",
         tone: "error",
       });
       return;
@@ -656,7 +607,7 @@ export function PlatformShell({
           const allowed = new Set(snapshot.capabilities);
           return (
             filterNavigationManifest(allowed, pageAvailability)[0]?.items[0]
-              ?.path ?? null
+              ?.path ?? "/dashboard"
           );
         },
         navigate: (path) => void navigate(path),
@@ -670,21 +621,51 @@ export function PlatformShell({
     }
   };
 
-  const scopeSelectors = (
-    <ScopeSelectors
-      disabled={
-        scopeChanging ||
-        (authorizationLoader === undefined && !e02VisualFixtureEnabled)
-      }
-      scope={scope}
-      scopeOptions={availableScopeOptions}
-      onRequestMembership={(organizationId, restoreFocus) => {
-        restoreMembershipRequestFocusRef.current = restoreFocus;
-        setMembershipRequest({ open: true, organizationId });
-      }}
-      onSelect={(next) => void selectScope(next)}
-    />
-  );
+  const scopeSelectors =
+    showProjectFeatures && availableScopeOptions.length > 0 ? (
+      <ScopeSelectors
+        disabled={
+          scopeChanging ||
+          (authorizationLoader === undefined && !useVisualFixture)
+        }
+        scope={scope}
+        scopeOptions={availableScopeOptions}
+        onSelect={(next) => void selectScope(next)}
+      />
+    ) : (
+      <div
+        aria-label="当前作用域"
+        className={`${styles.scopePanel} ${styles.unscopedScopePanel}`}
+        role="group"
+      >
+        <div
+          aria-label="当前项目：尚未加入组织或项目"
+          className={`${styles.scopeField} ${styles.projectField} ${styles.unscopedScopeField}`}
+          data-scope-slot="project"
+        >
+          <FolderKanban
+            aria-hidden="true"
+            className={styles.scopeIcon}
+            size={17}
+            strokeWidth={1.8}
+          />
+          <span>尚未加入组织或项目</span>
+        </div>
+        <Link
+          className={`${styles.scopeField} ${styles.regionField} ${styles.unscopedScopeField} ${styles.unscopedManageLink}`}
+          data-scope-slot="region"
+          to="/account/settings?tab=memberships"
+        >
+          <MapPin
+            aria-hidden="true"
+            className={styles.scopeIcon}
+            size={17}
+            strokeWidth={1.8}
+          />
+          <span>到账户设置管理</span>
+        </Link>
+      </div>
+    );
 
   return (
     <Layout
@@ -716,7 +697,7 @@ export function PlatformShell({
         <Link
           aria-label="杭叉集团 HC 数据平台工作台"
           className={`${styles.brand} ${shellNavigationCollapsed ? styles.brandCollapsed : ""}`}
-          to="/dashboard"
+          to="/"
         >
           <BrandMark />
           <span className={styles.brandFull}>HC 数据平台</span>
@@ -739,7 +720,7 @@ export function PlatformShell({
           </div>
         ) : null}
 
-        {viewportMode !== "mobile" ? (
+        {showProjectFeatures && viewportMode !== "mobile" ? (
           <Button
             aria-expanded={globalSearchOpen}
             aria-haspopup="dialog"
@@ -782,6 +763,21 @@ export function PlatformShell({
           <Dropdown
             menu={{
               items: [
+                {
+                  key: "account",
+                  label: <Link to="/account">个人主页</Link>,
+                  icon: <House aria-hidden="true" />,
+                },
+                ...(viewportMode === "mobile"
+                  ? [
+                      {
+                        key: "notifications",
+                        label: "通知",
+                        icon: <Bell aria-hidden="true" />,
+                        onClick: () => setNotificationsOpen(true),
+                      },
+                    ]
+                  : []),
                 {
                   key: "settings",
                   label: <Link to="/account/settings">账户设置</Link>,
@@ -872,16 +868,16 @@ export function PlatformShell({
           role="main"
           tabIndex={-1}
         >
-          {scope !== null && capabilitiesFailed && !e02VisualFixtureEnabled ? (
+          {scope !== null && capabilitiesFailed && !useVisualFixture ? (
             <Alert
               className={styles.authorizationWarning}
               role="alert"
               showIcon
-              title="授权快照不可用，当前作用域已按失败关闭处理。"
+              title="授权状态不可用，当前作用域已按失败关闭处理。"
               type="warning"
             />
           ) : null}
-          {e02VisualFixtureEnabled ? <ShellLoadingPage /> : <Outlet />}
+          {useVisualFixture ? <ShellLoadingPage /> : <Outlet />}
         </Content>
       </Layout>
 
@@ -945,28 +941,13 @@ export function PlatformShell({
         </Suspense>
       </Drawer>
 
-      {globalSearchOpen ? (
+      {showProjectFeatures && globalSearchOpen ? (
         <Suspense fallback={null}>
           <GlobalRobotSearchDialog
             open={globalSearchOpen}
             onClose={() => setGlobalSearchOpen(false)}
           />
         </Suspense>
-      ) : null}
-
-      {membershipRequest.open ? (
-        <ProjectMembershipRequestDialog
-          afterClose={() => undefined}
-          open
-          organizationId={membershipRequest.organizationId}
-          onClose={() => {
-            setMembershipRequest((current) => ({ ...current, open: false }));
-            globalThis.setTimeout(() => {
-              restoreMembershipRequestFocusRef.current?.();
-              restoreMembershipRequestFocusRef.current = null;
-            }, 0);
-          }}
-        />
       ) : null}
     </Layout>
   );

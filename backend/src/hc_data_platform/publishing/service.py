@@ -19,7 +19,6 @@ from .models import (
     PublishedDatasetManifestV1,
     PublishedRolloutV1,
     PublishPreflightReportV1,
-    QualityStatus,
     StepRangeV1,
 )
 from .ports import (
@@ -216,8 +215,6 @@ class DatasetPublisher:
         excluded: list[ExcludedRolloutV1] = []
         for snapshot in sorted(snapshots, key=lambda item: item.rollout_id):
             reasons: list[str] = []
-            if snapshot.quality_status is not QualityStatus.PASS:
-                reasons.append(f"QUALITY_{snapshot.quality_status.value}")
             if snapshot.derived_status is not DerivedStatus.DERIVED_READY:
                 reasons.append(f"DERIVED_{snapshot.derived_status.value}")
             approval = self._annotations.get_approved_revision(
@@ -269,6 +266,7 @@ class DatasetPublisher:
                     base_lance_version=request.base_lance_version,
                     annotation_revision=approval.annotation_revision,
                     annotation_task_id=approval.annotation_task_id,
+                    annotation_submission_id=approval.annotation_submission_id,
                     quality_profile_version=snapshot.quality_profile_version,
                     alignment_profile_version=snapshot.alignment_profile_version,
                     alignment_frequency_hz=snapshot.alignment_frequency_hz,
@@ -294,7 +292,7 @@ class DatasetPublisher:
                 code="NO_ELIGIBLE_ROLLOUTS",
                 title="No eligible rollouts",
                 detail=(
-                    "Publication requires PASS, DERIVED_READY and an approved annotation revision."
+                    "Publication requires materialized data and an approved Episode version."
                 ),
                 details={
                     "excluded_rollouts": [

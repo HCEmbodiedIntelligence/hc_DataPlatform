@@ -163,6 +163,18 @@ def test_capacity_reports_physical_and_candidate_mutually_exclusive_totals() -> 
     assert persisted.reconciliation.duplicate_inventory_rows_ignored == 1
 
 
+def test_capacity_without_snapshot_remains_not_found_and_unknown() -> None:
+    service = StorageGovernanceService(InMemoryStorageRepository())
+
+    with pytest.raises(ProblemException) as snapshot_missing:
+        service.capacity_snapshot(project_id="project-a", actor=reader())
+    with pytest.raises(ProblemException) as history_missing:
+        service.capacity_history(project_id="project-a", actor=reader())
+
+    assert snapshot_missing.value.problem.code == "CAPACITY_SNAPSHOT_NOT_FOUND"
+    assert history_missing.value.problem.code == "CAPACITY_SNAPSHOT_NOT_FOUND"
+
+
 def test_capacity_rejects_conflicting_duplicate_physical_and_logical_facts() -> None:
     service = StorageGovernanceService(InMemoryStorageRepository())
     physical_conflict = (

@@ -25,6 +25,9 @@ backend:
     serviceVersion: platform-v2026.08.17.1
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     outboxScopes: '["staging-organization/staging-project/staging-region"]'
+    storageInventoryScopes: '["staging-organization/staging-project/staging-region"]'
+    storageInventoryIntervalSeconds: "3600"
+    previewGcIntervalSeconds: "300"
     # Internal/provider gateway credentials are referenced via
     # backend.existingSecrets.application.autoAnnotationProviderApiKey.
     autoAnnotationProviderEndpoint: https://annotation-gateway.staging.example.com/v1/annotate

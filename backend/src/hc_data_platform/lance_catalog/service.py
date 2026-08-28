@@ -227,6 +227,9 @@ class InMemoryLanceCatalog:
                 )
             self._schemas[key] = snapshot
 
+    def schema_for(self, project_id: str, dataset_id: str) -> DatasetSchemaSnapshot | None:
+        return self._schemas.get((project_id, dataset_id))
+
     def commit_fragment(
         self,
         manifest: AlignedFragmentManifestV1,
@@ -490,6 +493,9 @@ class LanceCatalogService:
         self._repository.register_schema(snapshot, self._storage.dataset_uri(snapshot))
         self._known_projects.setdefault(snapshot.dataset_id, set()).add(snapshot.project_id)
 
+    def schema_for(self, project_id: str, dataset_id: str) -> DatasetSchemaSnapshot | None:
+        return self._repository.schema_for(project_id, dataset_id)
+
     def _project(self, dataset_id: str, project_id: str | None) -> str:
         if project_id is not None:
             return project_id
@@ -517,7 +523,9 @@ class LanceCatalogService:
                 manifest.project_id, manifest.dataset_id, manifest.idempotency_key
             )
             if existing is not None:
-                return self._return_existing(existing, manifest)
+                result = self._return_existing(existing, manifest)
+                self._storage.cleanup_attempt(schema, manifest)
+                return result
 
             stored = self._storage.find_commit(schema, manifest.idempotency_key)
             if stored is not None:
@@ -525,6 +533,7 @@ class LanceCatalogService:
                 # Rebuild in logical order so a retry can also recover an empty
                 # or partially restored PostgreSQL catalog.
                 self._reconcile_locked(schema)
+                self._storage.cleanup_attempt(schema, manifest)
                 return stored.version_ref, _ready_event(stored)
 
             self._reconcile_locked(schema)
@@ -532,6 +541,7 @@ class LanceCatalogService:
             self._storage.validate_staged(schema, manifest, stage_uri)
             receipt = self._storage.commit_staged(schema, manifest, stage_uri)
             self._record_or_pending(receipt)
+            self._storage.cleanup_attempt(schema, manifest)
             return receipt.version_ref, _ready_event(receipt)
 
     def _return_existing(

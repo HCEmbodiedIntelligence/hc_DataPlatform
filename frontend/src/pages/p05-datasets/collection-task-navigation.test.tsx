@@ -21,8 +21,43 @@ import { datasetHandlers } from '../../mocks/handlers/datasets.handlers';
 import { DatasetDetailPage } from '../p06-dataset-detail/page';
 import { DatasetsPage } from './page';
 
-const server = setupServer(...datasetHandlers);
 const collectionTaskId = 'assembly';
+
+function packageItem(index: number) {
+  return {
+    schema_version: '1',
+    data_package_id: `package-${index}`,
+    rollout_id: `rollout-${index}`,
+    robot_id: 'robot-1',
+    state: 'PUBLISHED',
+    qc_outcome: 'PASS',
+    workflow_status: 'SUCCEEDED',
+    workflow_stage: 'completed',
+    error_code: null,
+    dataset_id: datasetListFixture.items[0].dataset_id,
+    version_id: datasetListFixture.items[0].current_version?.version_id,
+    episode_id: datasetIds.episode,
+    revision_id: episodePageFixture.items[0].selected_revision.revision_id,
+    visualizable: true,
+    received_at: '2026-08-24T00:00:00Z',
+    updated_at: '2026-08-24T00:01:00Z',
+  };
+}
+
+const collectionPackageHandler = http.get(
+  '*/projects/:projectId/collection-tasks/:collectionTaskId/packages',
+  ({ params }) =>
+    HttpResponse.json({
+      schema_version: '1',
+      collection_task_id: String(params.collectionTaskId),
+      organization_id: 'org_fx_01',
+      project_id: 'prj_fx_01',
+      as_of: '2026-08-24T00:01:00Z',
+      items: params.collectionTaskId === 'task-without-data' ? [] : [packageItem(1)],
+    }),
+);
+
+const server = setupServer(...datasetHandlers, collectionPackageHandler);
 
 function createRouter(initialEntry: string) {
   return createMemoryRouter(
@@ -99,7 +134,7 @@ afterAll(() => {
 
 describe('collection task dataset navigation', () => {
   it('shows every linked dataset and keeps the task filter on every Episode request', async () => {
-    let listTask: string | null = null;
+    let listCollectionTask: string | null = null;
     const episodeTasks: string[] = [];
     let listRequests = 0;
     let episodeRequests = 0;
@@ -107,9 +142,21 @@ describe('collection task dataset navigation', () => {
     const secondVersionId = 'version_fx_ready_02';
     const secondEpisodeId = 'episode_fx_02';
     server.use(
+      http.get(
+        '*/projects/:projectId/collection-tasks/:taskId/packages',
+        ({ params }) =>
+          HttpResponse.json({
+            schema_version: '1',
+            collection_task_id: String(params.taskId),
+            organization_id: 'org_fx_01',
+            project_id: 'prj_fx_01',
+            as_of: '2026-08-24T00:01:00Z',
+            items: [packageItem(1), packageItem(2)],
+          }),
+      ),
       http.get('*/projects/:projectId/datasets', ({ request }) => {
         listRequests += 1;
-        listTask = new URL(request.url).searchParams.get('task');
+        listCollectionTask = new URL(request.url).searchParams.get('collection_task_id');
         return HttpResponse.json({
           ...datasetListFixture,
           items: [
@@ -163,9 +210,9 @@ describe('collection task dataset navigation', () => {
     expect(await screen.findByText(secondEpisodeId)).toBeVisible();
     expect(screen.getByText('Assembly dataset')).toBeVisible();
     expect(screen.getByText('Second collection dataset')).toBeVisible();
-    expect(screen.getByText('采集任务关联 2 个可浏览数据集')).toBeVisible();
+    expect(screen.getByText('任务接收 2 个数据包，其中 2 个已可视化')).toBeVisible();
     await waitFor(() => {
-      expect(listTask).toBe(collectionTaskId);
+      expect(listCollectionTask).toBe(collectionTaskId);
       expect(listRequests).toBe(1);
       expect(episodeRequests).toBe(2);
       expect(episodeTasks).toEqual([collectionTaskId, collectionTaskId]);
@@ -184,7 +231,7 @@ describe('collection task dataset navigation', () => {
     );
 
     expect(await screen.findByText(datasetIds.episode)).toBeVisible();
-    expect(screen.getByText('采集任务关联 1 个可浏览数据集')).toBeVisible();
+    expect(screen.getByText('任务接收 1 个数据包，其中 1 个已可视化')).toBeVisible();
     expect(router.state.location.pathname).toBe('/datasets');
     expect(router.state.location.search).toContain(`collectionTaskId=${collectionTaskId}`);
   });
@@ -196,7 +243,7 @@ describe('collection task dataset navigation', () => {
         <RouterProvider router={emptyRouter} />
       </ProviderHarness>,
     );
-    expect(await screen.findByText('该采集任务暂无数据')).toBeVisible();
+    expect(await screen.findByText('该任务尚无已发布 Episode')).toBeVisible();
     expect(screen.getByRole('heading', { name: '采集任务数据' })).toBeVisible();
     expect(screen.queryByText(/正在解析采集任务/)).not.toBeInTheDocument();
     expect(screen.queryByText('已锁定采集任务范围')).not.toBeInTheDocument();

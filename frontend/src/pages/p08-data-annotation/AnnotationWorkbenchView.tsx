@@ -1,40 +1,61 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, JSX, ReactNode } from "react";
+import type {
+  CSSProperties,
+  JSX,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+  RefObject,
+} from "react";
+import { Alert, Form, Input, Modal, Select, Tooltip } from "antd";
 import {
   AlertTriangle,
   Check,
   ChevronRight,
   CircleAlert,
   Database,
+  Eye,
+  FilePlus2,
   GitCompareArrows,
-  Link2,
+  Info,
   ListTree,
   LoaderCircle,
   LockKeyhole,
+  PencilLine,
   Plus,
   RotateCcw,
   Save,
   Send,
   ShieldCheck,
-  Trash2,
+  Tags,
+  Wrench,
   X,
 } from "lucide-react";
 import {
   DataVisualizationWorkbench,
+  ViewerJointAngleCurvePanel,
+  ViewerRobotPosePanel,
   WorkbenchCollectionPanel,
 } from "../../features/viewer";
 import type {
   DomainError,
+  RobotSceneCoreProps,
+  StreamDescriptor,
   ViewerPanelRenderer,
   ViewerTimelineSelection,
 } from "../../features/viewer";
 import { createPlaybackClock } from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
+import type {
+  ManualIssueSeverity,
+  ManualIssueType,
+} from "../../entities/manual-issue";
 import { DangerousActionDialog } from "../../features/annotation";
 import { EntityDrawer } from "../../shared/ui/layout/EntityDrawer";
 import {
+  buildRuntimeCameraStreams,
   buildRuntimeWorkbenchAdapter,
   createClientMutationId,
+  normalizeStepRateHz,
   resolveOriginalRevision,
   resolveReviewRevision,
   resolveReviewSubmission,
@@ -48,22 +69,25 @@ import type {
   RuntimeAnnotationTag,
   RuntimeReviewDecision,
 } from "./runtime-annotation-adapter";
-import {
-  buildTagSchemaIndex,
-  emptyAttributesForRow,
-  evaluateAnnotationTags,
-  inheritedAttributes,
-} from "./tag-validation";
-import type { TagReviewCheckResult, TagSchemaTreeRow } from "./tag-validation";
+import { buildTagSchemaIndex, evaluateAnnotationTags } from "./tag-validation";
+import type { TagReviewCheckResult } from "./tag-validation";
+import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
 import "./p08.css";
 import styles from "./workbench.module.css";
 
 export interface AnnotationWorkbenchPermissions {
+  readonly hasAnnotationDraft: boolean;
+  readonly canCreate: boolean;
   readonly canEdit: boolean;
   readonly canSave: boolean;
   readonly canSubmit: boolean;
   readonly canReview: boolean;
+  readonly canRevise: boolean;
   readonly readOnlyReason?: string;
+  readonly createUnavailableReason?: string;
+  readonly annotationUnavailableReason?: string;
+  readonly reviewUnavailableReason?: string;
+  readonly revisionUnavailableReason?: string;
 }
 
 export interface AnnotationWorkbenchViewProps {
@@ -75,9 +99,16 @@ export interface AnnotationWorkbenchViewProps {
   readonly permissions: AnnotationWorkbenchPermissions;
   readonly recoveryAvailable?: boolean;
   readonly renderPanel?: ViewerPanelRenderer;
+  readonly robotScene?: Omit<RobotSceneCoreProps, "clock">;
+  readonly robotSceneUnavailableReason?: string;
+  readonly jointAngleStream?: StreamDescriptor;
   readonly autoAnnotationPanel?: ReactNode;
   readonly externalError?: unknown;
+  readonly canReportDataIssue?: boolean;
+  readonly reportDataIssueUnavailableReason?: string;
   readonly onTagsChange: (tags: readonly RuntimeAnnotationTag[]) => void;
+  readonly onCreateAnnotation?: () => Promise<void>;
+  readonly onDiscardChanges?: () => void;
   readonly onSave: () => Promise<void>;
   readonly onPreSubmitCheck?: () => Promise<readonly TagReviewCheckResult[]>;
   readonly onSubmit: () => Promise<void>;
@@ -91,6 +122,16 @@ export interface AnnotationWorkbenchViewProps {
   readonly onOpenRevisions?: () => void;
   readonly onSelectTask?: (taskId: string) => void;
   readonly onSwitchMode?: (mode: AnnotationWorkbenchMode) => void;
+  readonly onReportDataIssue?: (input: DataIssueReportInput) => Promise<void>;
+}
+
+export interface DataIssueReportInput {
+  readonly streamRef: string;
+  readonly relativeStartNs: string;
+  readonly relativeEndNs: string;
+  readonly issueType: ManualIssueType;
+  readonly severity: ManualIssueSeverity;
+  readonly note: string;
 }
 
 interface StepSelection {
@@ -99,6 +140,7 @@ interface StepSelection {
 }
 
 type PendingAction =
+  | "create"
   | "save"
   | "precheck"
   | "submit"
@@ -111,7 +153,11 @@ type DialogDecision =
   | "RESTORE"
   | RuntimeReviewDecision
   | null;
-type AnnotationSurface = "view" | "annotation" | "revisions";
+export type AnnotationWorkspaceMode =
+  | "view"
+  | "annotation"
+  | "tag-review"
+  | "revisions";
 type PreSubmitCheckState =
   | { readonly status: "idle" }
   | {
@@ -145,7 +191,31 @@ const reviewDecisionLabels: Readonly<Record<RuntimeReviewDecision, string>> = {
   REJECT: "拒绝",
 };
 
-function displayRevisionTime(value: string): string {
+const dataIssueTypeOptions: readonly {
+  readonly value: ManualIssueType;
+  readonly label: string;
+}[] = [
+  { value: "MISSING_FRAME", label: "画面缺帧" },
+  { value: "STREAM_GAP", label: "数据流中断" },
+  { value: "TIMESTAMP_DRIFT", label: "时间偏移" },
+  { value: "POSE_JITTER", label: "姿态抖动" },
+  { value: "CALIBRATION_MISMATCH", label: "标定不匹配" },
+  { value: "INVALID_MASK", label: "无效区间" },
+  { value: "OTHER", label: "其他数据问题" },
+];
+
+const dataIssueSeverityOptions: readonly {
+  readonly value: ManualIssueSeverity;
+  readonly label: string;
+}[] = [
+  { value: "LOW", label: "低" },
+  { value: "MEDIUM", label: "中" },
+  { value: "HIGH", label: "高" },
+  { value: "CRITICAL", label: "紧急" },
+];
+
+function displayRevisionTime(value: string | undefined): string {
+  if (!value) return "时间未返回";
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return value;
   return new Intl.DateTimeFormat("zh-CN", {
@@ -154,15 +224,8 @@ function displayRevisionTime(value: string): string {
   }).format(date);
 }
 
-function tagIdentity(): string {
-  return createClientMutationId("tag").replaceAll(":", "-");
-}
-
-function selectedTagById(
-  tags: readonly RuntimeAnnotationTag[],
-  id: string | null,
-): RuntimeAnnotationTag | null {
-  return tags.find((tag) => tag.annotation_id === id) ?? tags[0] ?? null;
+function tagIdentity(prefix = "tag"): string {
+  return createClientMutationId(prefix).replaceAll(":", "-");
 }
 
 function PathCrumbs({
@@ -212,114 +275,135 @@ function CheckList({
   );
 }
 
-function TagTree(props: {
-  readonly rows: readonly TagSchemaTreeRow[];
-  readonly activeTagId: string | null;
-  readonly onSelect: (tagId: string) => void;
-}): JSX.Element {
+interface IntervalTagRow {
+  readonly tag: RuntimeAnnotationTag;
+  readonly depth: number;
+  readonly displayPath: readonly string[];
+  readonly hasChildren: boolean;
+}
+
+function buildReviewComment(
+  issueRows: readonly IntervalTagRow[],
+  reviewerComment: string,
+): string {
+  const note = reviewerComment.trim();
+  if (!issueRows.length) return note;
+  const issueLines = issueRows.map((row, index) => {
+    const path = row.displayPath.join(" / ").slice(0, 300);
+    const annotationId = row.tag.annotation_id.slice(0, 200);
+    return `${index + 1}. ${path} · 步区间 [${row.tag.start_step}, ${row.tag.end_step}) · 标注 ID ${annotationId}`;
+  });
+  return [
+    `标注问题：${issueRows.length} 处`,
+    ...issueLines,
+    ...(note ? ["", `补充说明：${note}`] : []),
+  ]
+    .join("\n")
+    .slice(0, 10_000);
+}
+
+function bundleFrequencyHz(bundle: RuntimeAnnotationBundle): number {
+  return normalizeStepRateHz(bundle.datasetVersion.frequency_hz);
+}
+
+function stepTime(step: number, frequencyHz: number): string {
+  return `${(Math.max(0, step) / frequencyHz).toFixed(2)}s`;
+}
+
+function stepRange(
+  startStep: number,
+  endStep: number,
+  frequencyHz: number,
+): string {
+  return `${stepTime(startStep, frequencyHz)} – ${stepTime(endStep, frequencyHz)}`;
+}
+
+function intervalTagLabel(
+  tag: RuntimeAnnotationTag,
+  schemaIndex: ReturnType<typeof buildTagSchemaIndex>,
+): string {
   return (
-    <div
-      className={styles.tagTree}
-      role="tree"
-      aria-label="多级 Tag Schema 层级"
-    >
-      {props.rows.map((row) => (
-        <button
-          aria-level={row.depth + 1}
-          aria-selected={row.node.tag_id === props.activeTagId}
-          className={styles.treeItem}
-          key={row.node.tag_id}
-          role="treeitem"
-          style={{ "--tag-depth": row.depth } as CSSProperties}
-          type="button"
-          onClick={() => props.onSelect(row.node.tag_id)}
-        >
-          <span aria-hidden="true" className={styles.treeBranch}>
-            {row.hasChildren ? "├" : "└"}
-          </span>
-          <span>{row.node.display_name}</span>
-          <code>{row.node.code}</code>
-        </button>
-      ))}
-    </div>
+    tag.label?.trim() ||
+    schemaIndex.byId.get(tag.tag_id)?.node.display_name ||
+    tag.path.at(-1) ||
+    tag.tag_id
   );
 }
 
-function AttributeField(props: {
-  readonly definition: TagSchemaTreeRow["node"]["attributes"][number];
-  readonly value: string | number | boolean | undefined;
-  readonly disabled: boolean;
-  readonly onChange: (value: string | number | boolean) => void;
-}): JSX.Element {
-  const { definition } = props;
-  const id = `tag-attribute-${definition.key}`;
-  if (definition.value_type === "BOOLEAN") {
-    return (
-      <label className={styles.checkboxField} htmlFor={id}>
-        <input
-          checked={props.value === true}
-          disabled={props.disabled}
-          id={id}
-          type="checkbox"
-          onChange={(event) => props.onChange(event.target.checked)}
-        />
-        <span>
-          {definition.display_name}
-          {definition.required ? " *" : ""}
-        </span>
-      </label>
-    );
+function intervalHierarchyRows(
+  tags: readonly RuntimeAnnotationTag[],
+  schemaIndex: ReturnType<typeof buildTagSchemaIndex>,
+): readonly IntervalTagRow[] {
+  const byId = new Map(tags.map((tag) => [tag.annotation_id, tag]));
+  const children = new Map<string | null, RuntimeAnnotationTag[]>();
+  for (const tag of tags) {
+    const parentId =
+      tag.parent_annotation_id && byId.has(tag.parent_annotation_id)
+        ? tag.parent_annotation_id
+        : null;
+    const siblings = children.get(parentId) ?? [];
+    siblings.push(tag);
+    children.set(parentId, siblings);
   }
-  if (definition.value_type === "ENUM") {
-    return (
-      <label htmlFor={id}>
-        <span>
-          {definition.display_name}
-          {definition.required ? " *" : ""}
-        </span>
-        <select
-          disabled={props.disabled}
-          id={id}
-          name={id}
-          value={typeof props.value === "string" ? props.value : ""}
-          onChange={(event) => props.onChange(event.target.value)}
-        >
-          <option value="">请选择</option>
-          {definition.enum_values.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-      </label>
+  for (const siblings of children.values())
+    siblings.sort(
+      (left, right) =>
+        left.start_step - right.start_step ||
+        left.end_step - right.end_step ||
+        intervalTagLabel(left, schemaIndex).localeCompare(
+          intervalTagLabel(right, schemaIndex),
+          "zh-CN",
+        ),
     );
-  }
-  const numeric =
-    definition.value_type === "INTEGER" || definition.value_type === "NUMBER";
+
+  const rows: IntervalTagRow[] = [];
+  const visited = new Set<string>();
+  const visit = (
+    tag: RuntimeAnnotationTag,
+    depth: number,
+    parentDisplayPath: readonly string[],
+  ) => {
+    if (visited.has(tag.annotation_id)) return;
+    visited.add(tag.annotation_id);
+    const label = intervalTagLabel(tag, schemaIndex);
+    const displayPath = tag.parent_annotation_id
+      ? [...parentDisplayPath, label]
+      : tag.label
+        ? [label]
+        : (schemaIndex.byId.get(tag.tag_id)?.displayPath ?? [label]);
+    const childTags = children.get(tag.annotation_id) ?? [];
+    rows.push({
+      tag,
+      depth,
+      displayPath,
+      hasChildren: childTags.length > 0,
+    });
+    for (const child of childTags) visit(child, depth + 1, displayPath);
+  };
+  for (const root of children.get(null) ?? []) visit(root, 0, []);
+  for (const tag of tags) visit(tag, 0, []);
+  return rows;
+}
+
+function automaticParentRow(
+  rows: readonly IntervalTagRow[],
+  selection: StepSelection | null,
+): IntervalTagRow | null {
+  if (!selection) return null;
   return (
-    <label htmlFor={id}>
-      <span>
-        {definition.display_name}
-        {definition.required ? " *" : ""}
-      </span>
-      <input
-        autoComplete="off"
-        disabled={props.disabled}
-        id={id}
-        name={id}
-        type={numeric ? "number" : "text"}
-        value={
-          typeof props.value === "string" || typeof props.value === "number"
-            ? props.value
-            : ""
-        }
-        onChange={(event) =>
-          props.onChange(
-            numeric ? Number(event.target.value) : event.target.value,
-          )
-        }
-      />
-    </label>
+    rows
+      .filter(
+        ({ tag }) =>
+          tag.start_step <= selection.startStep &&
+          tag.end_step >= selection.endStep &&
+          (tag.start_step < selection.startStep ||
+            tag.end_step > selection.endStep),
+      )
+      .toSorted((left, right) => {
+        const leftSpan = left.tag.end_step - left.tag.start_step;
+        const rightSpan = right.tag.end_step - right.tag.start_step;
+        return leftSpan - rightSpan || right.depth - left.depth;
+      })[0] ?? null
   );
 }
 
@@ -330,318 +414,131 @@ function TagEditorInspector(props: {
   readonly disabled: boolean;
   readonly onChange: (tags: readonly RuntimeAnnotationTag[]) => void;
 }): JSX.Element {
+  const frequencyHz = bundleFrequencyHz(props.bundle);
   const index = useMemo(
     () => buildTagSchemaIndex(props.bundle.schema),
     [props.bundle.schema],
   );
-  const [activeTagId, setActiveTagId] = useState<string | null>(
-    () => props.tags[0]?.tag_id ?? index.rows[0]?.node.tag_id ?? null,
+  const rows = useMemo(
+    () => intervalHierarchyRows(props.tags, index),
+    [index, props.tags],
   );
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
-    string | null
-  >(() => props.tags[0]?.annotation_id ?? null);
-  const selectedTag = selectedTagById(props.tags, selectedAnnotationId);
-  const activeRow = activeTagId ? (index.byId.get(activeTagId) ?? null) : null;
-  const selectedRow = selectedTag
-    ? (index.byId.get(selectedTag.tag_id) ?? null)
-    : null;
-  useEffect(() => {
-    if (selectedTag && selectedAnnotationId !== selectedTag.annotation_id)
-      setSelectedAnnotationId(selectedTag.annotation_id);
-  }, [selectedAnnotationId, selectedTag]);
-
-  const replaceSelected = (next: RuntimeAnnotationTag) => {
-    props.onChange(
-      props.tags.map((tag) =>
-        tag.annotation_id === next.annotation_id ? next : tag,
-      ),
-    );
-  };
+  const [newLabel, setNewLabel] = useState("");
+  const parentRow = useMemo(
+    () => automaticParentRow(rows, props.selection),
+    [props.selection, rows],
+  );
+  const selectionProblem = (() => {
+    if (!props.selection) return "先在下方共享时间轴拖选一个视频片段。";
+    return null;
+  })();
   const addInterval = () => {
-    if (!activeRow || props.disabled) return;
+    const label = newLabel.trim();
+    if (!label || !props.selection || selectionProblem || props.disabled)
+      return;
     const boundary = Math.max(1, props.bundle.task.base_step_count ?? 1);
     const startStep = Math.max(
       0,
-      Math.min(props.selection?.startStep ?? 0, boundary - 1),
+      Math.min(props.selection.startStep, boundary - 1),
     );
     const endStep = Math.max(
       startStep + 1,
-      Math.min(props.selection?.endStep ?? startStep + 1, boundary),
+      Math.min(props.selection.endStep, boundary),
     );
-    const relationConstraint =
-      props.bundle.schema.document.object_relations.find((constraint) =>
-        constraint.source_tag_ids.includes(activeRow.node.tag_id),
-      );
+    const annotationId = tagIdentity("tag");
+    const tagId = tagIdentity("manual-tag");
     const next: RuntimeAnnotationTag = {
-      annotation_id: tagIdentity(),
-      tag_id: activeRow.node.tag_id,
-      path: [...activeRow.path],
+      annotation_id: annotationId,
+      tag_id: tagId,
+      label,
+      parent_annotation_id: parentRow?.tag.annotation_id ?? null,
+      path: [...(parentRow?.tag.path ?? []), tagId],
       start_step: startStep,
       end_step: endStep,
-      attributes: emptyAttributesForRow(activeRow, index),
-      relations: relationConstraint
-        ? [
-            {
-              relation_type: relationConstraint.relation_type,
-              target: {
-                object_id: "",
-                object_type: relationConstraint.target_object_types[0] ?? "",
-              },
-            },
-          ]
-        : [],
+      attributes: {},
+      relations: [],
       subject: null,
     };
     props.onChange([...props.tags, next]);
-    setSelectedAnnotationId(next.annotation_id);
+    setNewLabel("");
   };
-  const deleteSelected = () => {
-    if (!selectedTag || props.disabled) return;
-    props.onChange(
-      props.tags.filter(
-        (tag) => tag.annotation_id !== selectedTag.annotation_id,
-      ),
-    );
-    setSelectedAnnotationId(null);
-  };
-  const relationConstraint = selectedTag
-    ? props.bundle.schema.document.object_relations.find((constraint) =>
-        constraint.source_tag_ids.includes(selectedTag.tag_id),
-      )
-    : undefined;
-  const relation = selectedTag?.relations.find(
-    (item) => item.relation_type === relationConstraint?.relation_type,
-  );
 
   return (
     <section
-      className={styles.inspectorPanel}
+      className={styles.timelineTagEditor}
       aria-labelledby="tag-editor-title"
     >
-      <header className={styles.inspectorHeader}>
-        <span>
+      <header className={styles.timelineTagEditorHeader}>
+        <span className={styles.timelineTagEditorIcon}>
           <ListTree aria-hidden="true" size={15} />
         </span>
-        <div>
-          <h2 id="tag-editor-title">多级 Tag 工具</h2>
-          <small>{props.bundle.schema.name}</small>
+        <div className={styles.timelineTagEditorTitle}>
+          <h2 id="tag-editor-title">多级 Tag</h2>
+          <small>拖选后自动分级</small>
         </div>
-        <em>
-          v{props.bundle.schema.version} · {props.bundle.schema.status}
-        </em>
-      </header>
-      <div className={styles.inspectorScroll}>
-        {index.errors.length ? (
-          <div className={styles.inlineError} role="alert">
-            <CircleAlert aria-hidden="true" size={15} />
-            <span>
-              <strong>Schema 层级不可安全编辑</strong>
-              {index.errors.join("；")}
-            </span>
-          </div>
-        ) : null}
-        <section className={styles.panelSection}>
-          <h3>标签路径</h3>
-          <PathCrumbs path={activeRow?.displayPath ?? ["请选择层级"]} />
-          <TagTree
-            rows={index.rows}
-            activeTagId={activeTagId}
-            onSelect={setActiveTagId}
+        <label className={styles.compactTagField} htmlFor="manual-tag-label">
+          <span>Tag 名称 *</span>
+          <input
+            autoComplete="off"
+            disabled={props.disabled}
+            id="manual-tag-label"
+            maxLength={256}
+            name="manual-tag-label"
+            placeholder="输入标签，按 Enter 创建"
+            value={newLabel}
+            onChange={(event) => setNewLabel(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") addInterval();
+            }}
           />
-          <button
-            className={styles.addTagButton}
-            disabled={!activeRow || props.disabled || index.errors.length > 0}
-            type="button"
-            onClick={addInterval}
-          >
-            <Plus aria-hidden="true" size={14} />
-            添加所选 Tag 区间
-          </button>
-        </section>
-        <section className={styles.panelSection}>
-          <h3>
-            标注区间 <span>共 {props.tags.length} 项</span>
-          </h3>
-          {props.tags.length ? (
-            <div className={styles.intervalList}>
-              {props.tags.map((tag) => {
-                const row = index.byId.get(tag.tag_id);
-                return (
-                  <button
-                    aria-current={
-                      tag.annotation_id === selectedTag?.annotation_id
-                        ? "true"
-                        : undefined
-                    }
-                    key={tag.annotation_id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedAnnotationId(tag.annotation_id);
-                      setActiveTagId(tag.tag_id);
-                    }}
-                  >
-                    <strong>
-                      {row?.displayPath.join(" / ") ?? tag.path.join(" / ")}
-                    </strong>
-                    <code>
-                      [{tag.start_step}, {tag.end_step})
-                    </code>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <p className={styles.emptyText}>
-              尚未添加 Tag 区间。先在共享时间轴选择范围，再选择层级。
-            </p>
-          )}
-        </section>
-        {selectedTag && selectedRow ? (
-          <section className={styles.panelSection}>
-            <div className={styles.sectionTitleRow}>
-              <h3>属性与关系</h3>
-              <button
-                aria-label="删除当前 Tag 区间"
-                disabled={props.disabled}
-                type="button"
-                onClick={deleteSelected}
-              >
-                <Trash2 aria-hidden="true" size={14} />
-              </button>
-            </div>
-            <PathCrumbs path={selectedRow.displayPath} />
-            <div className={styles.fieldGrid}>
-              <label htmlFor="tag-start-step">
-                <span>开始步 *</span>
-                <input
-                  autoComplete="off"
-                  disabled={props.disabled}
-                  id="tag-start-step"
-                  min={0}
-                  name="tag-start-step"
-                  type="number"
-                  value={selectedTag.start_step}
-                  onChange={(event) =>
-                    replaceSelected({
-                      ...selectedTag,
-                      start_step: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label htmlFor="tag-end-step">
-                <span>结束步（开区间）*</span>
-                <input
-                  autoComplete="off"
-                  disabled={props.disabled}
-                  id="tag-end-step"
-                  min={1}
-                  name="tag-end-step"
-                  type="number"
-                  value={selectedTag.end_step}
-                  onChange={(event) =>
-                    replaceSelected({
-                      ...selectedTag,
-                      end_step: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-              {inheritedAttributes(selectedRow, index).map((definition) => (
-                <AttributeField
-                  definition={definition}
-                  disabled={props.disabled}
-                  key={definition.key}
-                  value={selectedTag.attributes?.[definition.key]}
-                  onChange={(value) =>
-                    replaceSelected({
-                      ...selectedTag,
-                      attributes: {
-                        ...selectedTag.attributes,
-                        [definition.key]: value,
-                      },
-                    })
-                  }
-                />
-              ))}
-            </div>
-            {relationConstraint ? (
-              <div className={styles.relationEditor}>
-                <h4>
-                  <Link2 aria-hidden="true" size={13} />
-                  对象关系 · {relationConstraint.relation_type}
-                </h4>
-                <label htmlFor="tag-object-type">
-                  <span>对象类型{relationConstraint.required ? " *" : ""}</span>
-                  <select
-                    disabled={props.disabled}
-                    id="tag-object-type"
-                    name="tag-object-type"
-                    value={relation?.target.object_type ?? ""}
-                    onChange={(event) =>
-                      replaceSelected({
-                        ...selectedTag,
-                        relations: [
-                          {
-                            relation_type: relationConstraint.relation_type,
-                            target: {
-                              object_id: relation?.target.object_id ?? "",
-                              object_type: event.target.value,
-                            },
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    <option value="">请选择</option>
-                    {relationConstraint.target_object_types.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label htmlFor="tag-object-id">
-                  <span>对象 ID{relationConstraint.required ? " *" : ""}</span>
-                  <input
-                    autoComplete="off"
-                    disabled={props.disabled}
-                    id="tag-object-id"
-                    name="tag-object-id"
-                    value={relation?.target.object_id ?? ""}
-                    onChange={(event) =>
-                      replaceSelected({
-                        ...selectedTag,
-                        relations: [
-                          {
-                            relation_type: relationConstraint.relation_type,
-                            target: {
-                              object_id: event.target.value,
-                              object_type:
-                                relation?.target.object_type ??
-                                relationConstraint.target_object_types[0] ??
-                                "",
-                            },
-                          },
-                        ],
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-      </div>
+        </label>
+        <div
+          className={styles.compactSelectedRange}
+          data-invalid={Boolean(selectionProblem) || undefined}
+          role="status"
+        >
+          <span>当前选区</span>
+          <strong>
+            {props.selection
+              ? `${props.selection.startStep}–${props.selection.endStep} 步`
+              : "拖动时间轴选择"}
+          </strong>
+          <small>
+            {props.selection
+              ? parentRow
+                ? `自动 L${parentRow.depth + 2} · 父级 ${intervalTagLabel(parentRow.tag, index)} · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
+                : `自动 L1 · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
+              : "尚未选择"}
+          </small>
+        </div>
+        <button
+          className={styles.addTagButton}
+          disabled={
+            !newLabel.trim() || Boolean(selectionProblem) || props.disabled
+          }
+          type="button"
+          onClick={addInterval}
+          aria-label="创建 Tag"
+        >
+          <Plus aria-hidden="true" size={14} />
+          创建
+        </button>
+      </header>
     </section>
   );
 }
 
-function useCurrentStep(clock: ReturnType<typeof createPlaybackClock>): number {
-  const [step, setStep] = useState(() => timelineNsToStep(clock.currentNs()));
+function useCurrentStep(
+  clock: ReturnType<typeof createPlaybackClock>,
+  frequencyHz: number,
+): number {
+  const [step, setStep] = useState(() =>
+    timelineNsToStep(clock.currentNs(), frequencyHz),
+  );
   useEffect(
-    () => clock.subscribe((value) => setStep(timelineNsToStep(value))),
-    [clock],
+    () =>
+      clock.subscribe((value) => setStep(timelineNsToStep(value, frequencyHz))),
+    [clock, frequencyHz],
   );
   return step;
 }
@@ -651,9 +548,12 @@ function ReviewInspector(props: {
   readonly tags: readonly RuntimeAnnotationTag[];
   readonly clock: ReturnType<typeof createPlaybackClock>;
   readonly comment: string;
+  readonly selectedIssueIds: ReadonlySet<string>;
   readonly onCommentChange: (value: string) => void;
+  readonly onToggleIssue: (annotationId: string) => void;
 }): JSX.Element {
-  const currentStep = useCurrentStep(props.clock);
+  const frequencyHz = bundleFrequencyHz(props.bundle);
+  const currentStep = useCurrentStep(props.clock, frequencyHz);
   const schemaIndex = useMemo(
     () => buildTagSchemaIndex(props.bundle.schema),
     [props.bundle.schema],
@@ -663,20 +563,40 @@ function ReviewInspector(props: {
     schema: props.bundle.schema,
     tags: props.tags,
   });
+  const intervalRows = useMemo(
+    () => intervalHierarchyRows(props.tags, schemaIndex),
+    [props.tags, schemaIndex],
+  );
   const currentTag =
-    props.tags.find(
-      (tag) => tag.start_step <= currentStep && currentStep < tag.end_step,
-    ) ??
+    intervalRows
+      .filter(
+        (row) =>
+          row.tag.start_step <= currentStep && currentStep < row.tag.end_step,
+      )
+      .toSorted(
+        (left, right) =>
+          right.depth - left.depth ||
+          left.tag.end_step -
+            left.tag.start_step -
+            (right.tag.end_step - right.tag.start_step),
+      )[0]?.tag ??
     props.tags[0] ??
     null;
   const currentRow = currentTag
-    ? (schemaIndex.byId.get(currentTag.tag_id) ?? null)
+    ? (intervalRows.find(
+        (row) => row.tag.annotation_id === currentTag.annotation_id,
+      ) ?? null)
     : null;
   const original = resolveOriginalRevision(props.bundle);
   const revised = resolveReviewRevision(props.bundle);
   const originalTag = currentTag
     ? (original?.tags.find(
         (tag) => tag.annotation_id === currentTag.annotation_id,
+      ) ?? null)
+    : null;
+  const originalRow = originalTag
+    ? (intervalHierarchyRows(original?.tags ?? [], schemaIndex).find(
+        (row) => row.tag.annotation_id === originalTag.annotation_id,
       ) ?? null)
     : null;
   const serverSubmission = resolveReviewSubmission(props.bundle);
@@ -695,13 +615,68 @@ function ReviewInspector(props: {
         </span>
         <div>
           <h2 id="tag-review-title">Tag 审核</h2>
-          <small>修订 v{revised?.revision ?? "—"} · 提交快照</small>
+          <small>修订 v{revised?.revision ?? "—"} · 提交版本</small>
         </div>
         <em>
           {props.bundle.schema.schema_id} v{props.bundle.schema.version}
         </em>
       </header>
       <div className={styles.inspectorScroll}>
+        <section className={styles.panelSection}>
+          <h3>
+            标记问题位置
+            <span>{props.selectedIssueIds.size} 处</span>
+          </h3>
+          <p className={styles.reviewIssueHint}>
+            勾选存在问题的标注区间。未勾选任何问题时，提交后标注完成；勾选后进入待修改。
+          </p>
+          {intervalRows.length ? (
+            <ul className={styles.reviewIssueList} aria-label="标注问题位置">
+              {intervalRows.map((row) => {
+                const selected = props.selectedIssueIds.has(
+                  row.tag.annotation_id,
+                );
+                const active =
+                  currentTag?.annotation_id === row.tag.annotation_id;
+                const label = intervalTagLabel(row.tag, schemaIndex);
+                return (
+                  <li
+                    data-active={active || undefined}
+                    data-selected={selected || undefined}
+                    key={row.tag.annotation_id}
+                    style={{ "--tag-depth": row.depth } as CSSProperties}
+                  >
+                    <label>
+                      <input
+                        aria-label={`标记问题：${label}，${row.tag.start_step} 到 ${row.tag.end_step} 步`}
+                        checked={selected}
+                        type="checkbox"
+                        onChange={() => {
+                          props.clock.seek(
+                            stepToTimelineNs(row.tag.start_step, frequencyHz),
+                          );
+                          props.onToggleIssue(row.tag.annotation_id);
+                        }}
+                      />
+                      <span>
+                        <strong>{label}</strong>
+                        <small>
+                          {row.displayPath.join(" / ")} · [{row.tag.start_step},{" "}
+                          {row.tag.end_step})
+                        </small>
+                      </span>
+                      <em>{active ? "当前" : selected ? "有问题" : "正常"}</em>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className={styles.emptyText}>
+              提交版本中没有可标记的 Tag 区间。
+            </p>
+          )}
+        </section>
         <section className={styles.panelSection}>
           <h3>六项审核清单</h3>
           <CheckList
@@ -715,9 +690,15 @@ function ReviewInspector(props: {
           <h3>
             当前时间戳 <code>第 {currentStep.toLocaleString("zh-CN")} 步</code>
           </h3>
-          {currentTag && currentRow ? (
+          {currentTag ? (
             <>
-              <PathCrumbs path={currentRow.displayPath} />
+              <PathCrumbs
+                path={
+                  currentRow?.displayPath ?? [
+                    intervalTagLabel(currentTag, schemaIndex),
+                  ]
+                }
+              />
               <dl className={styles.propertyTable}>
                 <div>
                   <dt>区间</dt>
@@ -773,9 +754,11 @@ function ReviewInspector(props: {
             <div role="row">
               <span role="cell">层级路径</span>
               <span role="cell">
-                {originalTag?.path.join(" / ") ?? "无对应项"}
+                {originalRow?.displayPath.join(" / ") ?? "无对应项"}
               </span>
-              <span role="cell">{currentTag?.path.join(" / ") ?? "无"}</span>
+              <span role="cell">
+                {currentRow?.displayPath.join(" / ") ?? "无"}
+              </span>
             </div>
             <div role="row">
               <span role="cell">开始步</span>
@@ -800,13 +783,13 @@ function ReviewInspector(props: {
         </section>
         <section className={styles.panelSection}>
           <label className={styles.commentField} htmlFor="tag-review-comment">
-            <span>审核意见（要求修改或拒绝时必填）</span>
+            <span>补充审核意见（可选）</span>
             <textarea
               autoComplete="off"
               id="tag-review-comment"
               maxLength={500}
               name="tag-review-comment"
-              placeholder="说明需修订的 Tag、区间或关系…"
+              placeholder="补充说明问题原因或修改要求…"
               value={props.comment}
               onChange={(event) => props.onCommentChange(event.target.value)}
             />
@@ -862,7 +845,7 @@ function DataViewInspector(props: {
               <dd>{props.bundle.task.base_step_count ?? "未知"}</dd>
             </div>
             <div>
-              <dt>Tag Schema</dt>
+              <dt>标签结构</dt>
               <dd>
                 {props.bundle.schema.schema_id} v{props.bundle.schema.version}
               </dd>
@@ -1005,53 +988,548 @@ function PreSubmitCheckPanel(props: {
   );
 }
 
-function ActionDock(props: {
-  readonly bundle: RuntimeAnnotationBundle;
-  readonly mode: AnnotationWorkbenchMode;
-  readonly surface: AnnotationSurface;
-  readonly tags: readonly RuntimeAnnotationTag[];
-  readonly dirty: boolean;
+interface WorkspaceModeItem {
+  readonly id: AnnotationWorkspaceMode;
+  readonly label: string;
+  readonly description: string;
+  readonly icon: ReactNode;
+  readonly available: boolean;
+  readonly unavailableReason?: string;
+}
+
+function TooltipAction(props: {
+  readonly className?: string;
+  readonly busy?: boolean;
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly tooltip: string;
+  readonly children: ReactNode;
+  readonly onClick: () => void;
+}): JSX.Element {
+  return (
+    <Tooltip title={props.tooltip} trigger={["hover", "focus"]}>
+      <span
+        aria-label={
+          props.disabled ? `${props.label}：${props.tooltip}` : undefined
+        }
+        className={styles.actionTooltipTarget}
+        tabIndex={props.disabled ? 0 : undefined}
+      >
+        <button
+          aria-busy={props.busy || undefined}
+          className={props.className}
+          disabled={props.disabled}
+          type="button"
+          onClick={props.onClick}
+        >
+          {props.children}
+        </button>
+      </span>
+    </Tooltip>
+  );
+}
+
+function WorkspaceToolbar(props: {
+  readonly requestedRouteMode: AnnotationWorkbenchMode;
+  readonly mode: AnnotationWorkspaceMode;
+  readonly taskStatus: RuntimeAnnotationBundle["task"]["status"];
+  readonly navigationPermissions: AnnotationWorkbenchPermissions;
   readonly permissions: AnnotationWorkbenchPermissions;
-  readonly reviewChecks: readonly TagReviewCheckResult[];
-  readonly preSubmitCheck: PreSubmitCheckState;
-  readonly dialogOpen: boolean;
   readonly pending: PendingAction;
-  readonly reviewComment: string;
+  readonly dirty: boolean;
+  readonly reviewBlocked: boolean;
+  readonly reviewIssueCount: number;
   readonly restoreCandidates: readonly {
     readonly revision: number;
     readonly origin: string;
   }[];
   readonly restoreTargetRevision: number | null;
-  readonly autoAnnotationPanel?: ReactNode;
+  readonly createButtonRef: RefObject<HTMLSpanElement | null>;
+  readonly onRequestMode: (mode: AnnotationWorkspaceMode) => void;
+  readonly onCreate: () => void;
   readonly onOpenSave: () => void;
   readonly onOpenSubmit: () => void;
   readonly onOpenReview: (decision: RuntimeReviewDecision) => void;
   readonly onRestoreTargetChange: (revision: number | null) => void;
-  readonly onOpenRestore?: (targetRevision: number) => void;
+  readonly onOpenRestore: (revision: number) => void;
+}): JSX.Element {
+  const [lockedMessage, setLockedMessage] = useState<string | null>(null);
+  const modeRefs = useRef<
+    Partial<Record<AnnotationWorkspaceMode, HTMLButtonElement | null>>
+  >({});
+  const items: readonly WorkspaceModeItem[] = [
+    {
+      id: "view",
+      label: "查看",
+      description: "浏览原始数据",
+      icon: <Eye aria-hidden="true" size={18} />,
+      available: true,
+    },
+    {
+      id: "annotation",
+      label: "标注",
+      description: "创建或编辑标注",
+      icon: <Tags aria-hidden="true" size={18} />,
+      available:
+        props.navigationPermissions.hasAnnotationDraft &&
+        props.navigationPermissions.canEdit,
+      unavailableReason:
+        props.navigationPermissions.annotationUnavailableReason ??
+        "请先创建标注草稿。",
+    },
+    {
+      id: "tag-review",
+      label: "Tag 审核",
+      description: "检查并审批标注",
+      icon: <ShieldCheck aria-hidden="true" size={18} />,
+      available: props.navigationPermissions.canReview,
+      unavailableReason:
+        props.navigationPermissions.reviewUnavailableReason ??
+        "当前没有可审核的提交。",
+    },
+    {
+      id: "revisions",
+      label: "数据修订",
+      description: "修正数据问题",
+      icon: <Wrench aria-hidden="true" size={18} />,
+      available: props.navigationPermissions.canRevise,
+      unavailableReason:
+        props.navigationPermissions.revisionUnavailableReason ??
+        "当前状态不允许写入数据修订。",
+    },
+  ];
+  const status =
+    props.mode === "annotation"
+      ? { label: "编辑模式", icon: <PencilLine aria-hidden="true" size={14} /> }
+      : props.mode === "tag-review"
+        ? {
+            label: "审核模式",
+            icon: <ShieldCheck aria-hidden="true" size={14} />,
+          }
+        : props.mode === "revisions"
+          ? { label: "修订模式", icon: <Wrench aria-hidden="true" size={14} /> }
+          : props.taskStatus === "SUBMITTED"
+            ? {
+                label: "审核中",
+                icon: <ShieldCheck aria-hidden="true" size={14} />,
+              }
+            : props.taskStatus === "APPROVED"
+              ? {
+                  label: "已通过",
+                  icon: <Check aria-hidden="true" size={14} />,
+                }
+              : props.taskStatus === "NEEDS_REVISION"
+                ? {
+                    label: "要求修改",
+                    icon: <PencilLine aria-hidden="true" size={14} />,
+                  }
+                : props.taskStatus === "REJECTED"
+                  ? {
+                      label: "已拒绝",
+                      icon: <CircleAlert aria-hidden="true" size={14} />,
+                    }
+                  : {
+                      label: "查看模式",
+                      icon: <Eye aria-hidden="true" size={14} />,
+                    };
+  const hint =
+    props.requestedRouteMode === "tag-review" &&
+    !props.navigationPermissions.canReview
+      ? {
+          tone: "empty",
+          text: `当前没有待审核提交。${props.navigationPermissions.reviewUnavailableReason ?? ""}`,
+        }
+      : props.mode === "annotation"
+        ? {
+            tone: "edit",
+            text: "正在编辑标注草稿。请保存修改后再提交审核。",
+          }
+        : props.mode === "tag-review"
+          ? {
+              tone: "review",
+              text:
+                props.reviewIssueCount > 0
+                  ? `已标记 ${props.reviewIssueCount} 处问题，提交审核后任务进入待修改。`
+                  : "尚未标记问题，提交审核后任务将标注完成。",
+            }
+          : props.mode === "revisions"
+            ? {
+                tone: "revision",
+                text: "正在查看不可变数据修订。回退会创建新修订，不会覆盖历史版本。",
+              }
+            : {
+                tone: "view",
+                text: "当前处于查看模式，所有编辑操作均已锁定。创建标注后才能修改 Tag 区间和数据修订。",
+              };
+
+  const requestMode = (item: WorkspaceModeItem) => {
+    if (!item.available) {
+      const reason = item.unavailableReason ?? "当前模式不可用。";
+      setLockedMessage(reason);
+      if (
+        item.id === "annotation" &&
+        !props.navigationPermissions.hasAnnotationDraft &&
+        props.createButtonRef.current
+      ) {
+        const createButton =
+          props.createButtonRef.current.querySelector<HTMLButtonElement>(
+            "button",
+          );
+        if (createButton && !createButton.disabled) createButton.focus();
+        else props.createButtonRef.current.focus();
+      }
+      return;
+    }
+    setLockedMessage(null);
+    props.onRequestMode(item.id);
+  };
+  const onModeKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    for (let offset = 1; offset <= items.length; offset += 1) {
+      const index =
+        (currentIndex + direction * offset + items.length) % items.length;
+      const item = items[index];
+      if (!item?.available) continue;
+      modeRefs.current[item.id]?.focus();
+      requestMode(item);
+      break;
+    }
+  };
+  const busy = props.pending !== null;
+  const pendingAnnouncement =
+    props.pending === "create"
+      ? "正在创建标注草稿"
+      : props.pending === "save"
+        ? "正在保存标注修改"
+        : props.pending === "precheck"
+          ? "正在执行提交前检查"
+          : props.pending === "submit"
+            ? "正在提交审核"
+            : props.pending === "restore"
+              ? "正在写入数据修订"
+              : props.pending
+                ? `正在处理${reviewDecisionLabels[props.pending]}`
+                : "";
+
+  return (
+    <div className={styles.workspaceCard}>
+      <div className={styles.workspaceBar}>
+        <div
+          aria-label="数据标注工作模式"
+          className={styles.workspaceModes}
+          role="tablist"
+        >
+          {items.map((item, index) => (
+            <Tooltip
+              key={item.id}
+              title={item.available ? item.description : item.unavailableReason}
+              trigger={["hover", "focus"]}
+            >
+              <button
+                aria-disabled={!item.available || busy}
+                aria-selected={props.mode === item.id}
+                className={styles.workspaceMode}
+                data-locked={!item.available || undefined}
+                ref={(node) => {
+                  modeRefs.current[item.id] = node;
+                }}
+                role="tab"
+                tabIndex={props.mode === item.id || !item.available ? 0 : -1}
+                type="button"
+                onClick={() => {
+                  if (!busy) requestMode(item);
+                }}
+                onKeyDown={(event) => onModeKeyDown(event, index)}
+              >
+                <span className={styles.workspaceModeIcon}>
+                  {item.available ? (
+                    item.icon
+                  ) : (
+                    <LockKeyhole aria-hidden="true" size={17} />
+                  )}
+                </span>
+                <span className={styles.workspaceModeCopy}>
+                  <strong>{item.label}</strong>
+                  <small>{item.description}</small>
+                </span>
+                {props.mode === item.id ? (
+                  <Check
+                    aria-hidden="true"
+                    className={styles.workspaceModeCheck}
+                    size={14}
+                  />
+                ) : null}
+              </button>
+            </Tooltip>
+          ))}
+        </div>
+        <div className={styles.workspaceContext}>
+          <span
+            className={styles.workspaceStatus}
+            data-mode={props.mode}
+            data-task-status={props.taskStatus}
+          >
+            {status.icon}
+            {status.label}
+          </span>
+          <div className={styles.workspaceActions}>
+            {props.mode === "tag-review" ? (
+              <TooltipAction
+                busy={
+                  props.pending === "APPROVE" ||
+                  props.pending === "NEEDS_REVISION"
+                }
+                className={
+                  props.reviewIssueCount > 0
+                    ? styles.requestChangesAction
+                    : styles.approveAction
+                }
+                disabled={
+                  !props.permissions.canReview ||
+                  (props.reviewBlocked && props.reviewIssueCount === 0) ||
+                  busy
+                }
+                label="提交审核"
+                tooltip={
+                  props.reviewBlocked && props.reviewIssueCount === 0
+                    ? "自动检查未通过，请先标记对应的问题位置。"
+                    : props.reviewIssueCount > 0
+                      ? `提交后进入待修改（${props.reviewIssueCount} 处问题）。`
+                      : "未标记问题，提交后标注完成。"
+                }
+                onClick={() =>
+                  props.onOpenReview(
+                    props.reviewIssueCount > 0 ? "NEEDS_REVISION" : "APPROVE",
+                  )
+                }
+              >
+                {props.pending === "APPROVE" ||
+                props.pending === "NEEDS_REVISION" ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className={styles.loadingIcon}
+                    size={15}
+                  />
+                ) : (
+                  <Send aria-hidden="true" size={15} />
+                )}
+                提交审核
+              </TooltipAction>
+            ) : props.mode === "annotation" ? (
+              <>
+                <TooltipAction
+                  busy={props.pending === "save"}
+                  disabled={!props.permissions.canSave || !props.dirty || busy}
+                  label="保存修改"
+                  tooltip={
+                    !props.dirty
+                      ? "暂无需要保存的修改"
+                      : "保存当前修改为草稿，不会进入审核。"
+                  }
+                  onClick={props.onOpenSave}
+                >
+                  {props.pending === "save" ? (
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className={styles.loadingIcon}
+                      size={15}
+                    />
+                  ) : (
+                    <Save aria-hidden="true" size={15} />
+                  )}
+                  保存修改
+                </TooltipAction>
+                <TooltipAction
+                  busy={
+                    props.pending === "precheck" || props.pending === "submit"
+                  }
+                  className={styles.submitAction}
+                  disabled={!props.permissions.canSubmit || props.dirty || busy}
+                  label="提交审核"
+                  tooltip={
+                    props.dirty
+                      ? "请先保存当前修改"
+                      : "提交后将进入审核流程，可能无法继续编辑。"
+                  }
+                  onClick={props.onOpenSubmit}
+                >
+                  {props.pending === "precheck" ||
+                  props.pending === "submit" ? (
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className={styles.loadingIcon}
+                      size={15}
+                    />
+                  ) : (
+                    <Send aria-hidden="true" size={15} />
+                  )}
+                  提交审核
+                </TooltipAction>
+              </>
+            ) : props.mode === "revisions" ? (
+              <>
+                <label
+                  className={styles.restoreSelect}
+                  htmlFor="annotation-restore-revision"
+                >
+                  <span className={styles.srOnly}>回退目标修订</span>
+                  <select
+                    id="annotation-restore-revision"
+                    name="annotation-restore-revision"
+                    value={props.restoreTargetRevision ?? ""}
+                    onChange={(event) => {
+                      const selected = event.target.value;
+                      props.onRestoreTargetChange(
+                        selected === "" ? null : Number(selected),
+                      );
+                    }}
+                  >
+                    <option value="">选择历史修订</option>
+                    {props.restoreCandidates.map((revision) => (
+                      <option key={revision.revision} value={revision.revision}>
+                        r{revision.revision} · {revision.origin}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <TooltipAction
+                  busy={props.pending === "restore"}
+                  disabled={
+                    !props.permissions.canRevise ||
+                    props.dirty ||
+                    busy ||
+                    props.restoreTargetRevision === null
+                  }
+                  label="回退为该修订"
+                  tooltip={
+                    props.dirty
+                      ? "请先保存当前修改"
+                      : "回退会创建新的不可变数据修订。"
+                  }
+                  onClick={() => {
+                    if (props.restoreTargetRevision !== null)
+                      props.onOpenRestore(props.restoreTargetRevision);
+                  }}
+                >
+                  {props.pending === "restore" ? (
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className={styles.loadingIcon}
+                      size={15}
+                    />
+                  ) : (
+                    <RotateCcw aria-hidden="true" size={14} />
+                  )}
+                  回退为该修订
+                </TooltipAction>
+              </>
+            ) : !props.permissions.hasAnnotationDraft &&
+              props.requestedRouteMode === "annotation" &&
+              props.taskStatus === "DRAFT" ? (
+              <Tooltip
+                title={
+                  props.permissions.canCreate
+                    ? "创建标注草稿后可编辑 Tag 区间和数据修订。"
+                    : props.permissions.createUnavailableReason
+                }
+                trigger={["hover", "focus"]}
+              >
+                <span
+                  className={styles.actionTooltipTarget}
+                  ref={props.createButtonRef}
+                  tabIndex={props.permissions.canCreate ? -1 : 0}
+                >
+                  <button
+                    aria-disabled={!props.permissions.canCreate || busy}
+                    aria-busy={props.pending === "create" || undefined}
+                    className={styles.createAction}
+                    disabled={!props.permissions.canCreate || busy}
+                    type="button"
+                    onClick={() => {
+                      if (props.permissions.canCreate) props.onCreate();
+                      else
+                        setLockedMessage(
+                          props.permissions.createUnavailableReason ??
+                            "当前账号不能创建标注草稿。",
+                        );
+                    }}
+                  >
+                    {props.pending === "create" ? (
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className={styles.loadingIcon}
+                        size={15}
+                      />
+                    ) : (
+                      <FilePlus2 aria-hidden="true" size={15} />
+                    )}
+                    创建标注
+                  </button>
+                </span>
+              </Tooltip>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div
+        aria-live="polite"
+        className={styles.workspaceHint}
+        data-tone={lockedMessage ? "locked" : hint.tone}
+        role={lockedMessage || hint.tone === "empty" ? "status" : undefined}
+      >
+        {lockedMessage ? (
+          <LockKeyhole aria-hidden="true" size={15} />
+        ) : hint.tone === "empty" ? (
+          <CircleAlert aria-hidden="true" size={15} />
+        ) : (
+          <Info aria-hidden="true" size={15} />
+        )}
+        <span>{lockedMessage ?? hint.text}</span>
+      </div>
+      <span aria-live="polite" className={styles.srOnly}>
+        {pendingAnnouncement}
+      </span>
+    </div>
+  );
+}
+
+function ActionDock(props: {
+  readonly bundle: RuntimeAnnotationBundle;
+  readonly surface: AnnotationWorkspaceMode;
+  readonly tags: readonly RuntimeAnnotationTag[];
+  readonly dirty: boolean;
+  readonly permissions: AnnotationWorkbenchPermissions;
+  readonly preSubmitCheck: PreSubmitCheckState;
   readonly onOpenRevisionLedger?: () => void;
 }): JSX.Element {
-  const reviewBlocked = props.reviewChecks.some(
-    (check) => check.status === "FAIL",
-  );
   const tag = props.tags[0] ?? null;
   const schemaIndex = buildTagSchemaIndex(props.bundle.schema);
+  const hierarchyRows = intervalHierarchyRows(props.tags, schemaIndex);
   const displayPath = tag
-    ? (schemaIndex.byId.get(tag.tag_id)?.displayPath ?? tag.path)
+    ? (hierarchyRows.find((row) => row.tag.annotation_id === tag.annotation_id)
+        ?.displayPath ?? [intervalTagLabel(tag, schemaIndex)])
     : [];
   const summary = (
     <section
       className={styles.dockSummary}
       aria-label={
-        props.mode === "tag-review" ? "提交快照概要" : "当前 Tag 概要"
+        props.surface === "tag-review" ? "提交版本概要" : "当前 Tag 概要"
       }
     >
-      <h3>{props.mode === "tag-review" ? "提交快照概要" : "当前 Tag 概要"}</h3>
+      <h3>
+        {props.surface === "tag-review" ? "提交版本概要" : "当前 Tag 概要"}
+      </h3>
       {tag ? (
         <>
           <PathCrumbs path={displayPath} />
           <dl>
             <div>
-              <dt>Schema</dt>
+              <dt>数据结构</dt>
               <dd>
                 {props.bundle.schema.schema_id} v{props.bundle.schema.version}
               </dd>
@@ -1088,51 +1566,13 @@ function ActionDock(props: {
       )}
     </section>
   );
-  if (props.mode === "tag-review") {
+  if (props.surface === "tag-review") {
     return (
-      <section className={styles.actionDock} aria-label="Tag 审核决定">
+      <section className={styles.actionDock} aria-label="Tag 审核提交概要">
         {summary}
-        <div className={styles.reviewSecondaryActions}>
-          <button
-            disabled={
-              !props.permissions.canReview ||
-              props.pending !== null ||
-              !props.reviewComment.trim()
-            }
-            type="button"
-            onClick={() => props.onOpenReview("NEEDS_REVISION")}
-          >
-            要求修改
-          </button>
-          <button
-            className={styles.rejectButton}
-            disabled={
-              !props.permissions.canReview ||
-              props.pending !== null ||
-              !props.reviewComment.trim()
-            }
-            type="button"
-            onClick={() => props.onOpenReview("REJECT")}
-          >
-            拒绝
-          </button>
-        </div>
-        <button
-          className={styles.primaryAction}
-          disabled={
-            !props.permissions.canReview ||
-            props.pending !== null ||
-            reviewBlocked
-          }
-          type="button"
-          onClick={() => props.onOpenReview("APPROVE")}
-        >
-          <ShieldCheck aria-hidden="true" size={15} />
-          审核通过
-        </button>
         <p>
           <LockKeyhole aria-hidden="true" size={13} />
-          只对固定提交快照创建不可变审核记录。
+          审核主操作位于页面顶部工作台栏，只对固定提交版本创建不可变记录。
         </p>
         {props.permissions.readOnlyReason ? (
           <small>{props.permissions.readOnlyReason}</small>
@@ -1148,55 +1588,20 @@ function ActionDock(props: {
           <LockKeyhole aria-hidden="true" size={13} />
           查看状态不会修改 Tag、数据操作或不可变修订。
         </p>
+        {props.permissions.readOnlyReason ? (
+          <small>{props.permissions.readOnlyReason}</small>
+        ) : null}
       </section>
     );
   }
   if (props.surface === "revisions") {
     return (
-      <section className={styles.actionDock} aria-label="数据修订动作">
+      <section className={styles.actionDock} aria-label="数据修订概要">
         {summary}
-        {props.onOpenRestore && props.restoreCandidates.length > 0 ? (
-          <div className={styles.revisionRestoreControl}>
-            <label htmlFor="annotation-restore-revision">
-              <span>回退目标修订</span>
-              <select
-                id="annotation-restore-revision"
-                name="annotation-restore-revision"
-                value={props.restoreTargetRevision ?? ""}
-                onChange={(event) => {
-                  const selected = event.target.value;
-                  props.onRestoreTargetChange(
-                    selected === "" ? null : Number(selected),
-                  );
-                }}
-              >
-                <option value="">选择历史修订</option>
-                {props.restoreCandidates.map((revision) => (
-                  <option key={revision.revision} value={revision.revision}>
-                    r{revision.revision} · {revision.origin}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              disabled={
-                !props.permissions.canSave ||
-                props.dirty ||
-                props.pending !== null ||
-                props.restoreTargetRevision === null
-              }
-              type="button"
-              onClick={() => {
-                if (props.restoreTargetRevision !== null)
-                  props.onOpenRestore?.(props.restoreTargetRevision);
-              }}
-            >
-              <RotateCcw aria-hidden="true" size={14} />
-              {props.pending === "restore" ? "回退中…" : "回退为该修订"}
-            </button>
-            <small>回退会新建数据修订，不会覆盖任何历史版本。</small>
-          </div>
-        ) : null}
+        <p>
+          <LockKeyhole aria-hidden="true" size={13} />
+          修订选择与回退操作已集中到页面顶部工作台栏。
+        </p>
         {props.onOpenRevisionLedger ? (
           <button type="button" onClick={props.onOpenRevisionLedger}>
             打开全局修订列表
@@ -1208,38 +1613,10 @@ function ActionDock(props: {
   return (
     <section className={styles.actionDock} aria-label="标注草稿动作">
       {summary}
-      {props.autoAnnotationPanel}
       {props.preSubmitCheck.status !== "idle" &&
       props.preSubmitCheck.status !== "passed" ? (
         <PreSubmitCheckPanel state={props.preSubmitCheck} />
       ) : null}
-      <button
-        disabled={
-          !props.permissions.canSave ||
-          !props.dirty ||
-          props.pending !== null ||
-          props.dialogOpen
-        }
-        type="button"
-        onClick={props.onOpenSave}
-      >
-        <Save aria-hidden="true" size={15} />
-        {props.pending === "save" ? "保存中…" : "保存修改"}
-      </button>
-      <button
-        className={styles.primaryAction}
-        disabled={
-          !props.permissions.canSubmit ||
-          props.dirty ||
-          props.pending !== null ||
-          props.dialogOpen
-        }
-        type="button"
-        onClick={props.onOpenSubmit}
-      >
-        <Send aria-hidden="true" size={15} />
-        {props.pending === "precheck" ? "检查中…" : "提交审核"}
-      </button>
       <p data-dirty={props.dirty || undefined}>
         {props.dirty ? "有未保存的更改" : "草稿已与服务器同步"}
       </p>
@@ -1256,7 +1633,7 @@ function errorMessage(
   if (!error) return null;
   if (isDomainError(error)) {
     return {
-      message: `${error.message}${error.problemCode ? `（问题代码：${error.problemCode}）` : ""}${error.retryable ? "；服务端允许重试。" : ""}`,
+      message: `${error.message}${error.problemCode ? `（问题代码：${error.problemCode}）` : ""}${error.retryable ? "；当前数据已保留，可重试。" : "；当前数据已保留。"}`,
       ...(error.requestId ? { requestId: error.requestId } : {}),
       conflict:
         error.code === "VERSION_CONFLICT" ||
@@ -1264,7 +1641,7 @@ function errorMessage(
     };
   }
   return {
-    message: error instanceof Error ? error.message : "操作未完成。",
+    message: `${error instanceof Error ? error.message : "操作未完成。"}；当前数据已保留，可再次尝试。`,
     conflict: false,
   };
 }
@@ -1273,18 +1650,44 @@ export function AnnotationWorkbenchView(
   props: AnnotationWorkbenchViewProps,
 ): JSX.Element {
   const [selection, setSelection] = useState<StepSelection | null>(null);
-  const [selectedCameraId, setSelectedCameraId] = useState<string | undefined>(
-    props.bundle.manifest?.cameras[0]?.camera_id,
+  const [cameraView, setCameraView] = useState(
+    () =>
+      (props.mode === "tag-review"
+        ? props.bundle.manifest?.cameras[0]?.camera_id
+        : undefined) ?? "__quad__",
   );
   const [reviewComment, setReviewComment] = useState("");
+  const [reviewIssueIds, setReviewIssueIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [pending, setPending] = useState<PendingAction>(null);
   const [preSubmitCheckState, setPreSubmitCheckState] =
     useState<PreSubmitCheckState>(idlePreSubmitCheck);
   const [localError, setLocalError] = useState<unknown>(null);
   const [dialogDecision, setDialogDecision] = useState<DialogDecision>(null);
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportStreamRef, setReportStreamRef] = useState("");
+  const [reportIssueType, setReportIssueType] =
+    useState<ManualIssueType>("OTHER");
+  const [reportSeverity, setReportSeverity] =
+    useState<ManualIssueSeverity>("MEDIUM");
+  const [reportNote, setReportNote] = useState("");
+  const [reportPending, setReportPending] = useState(false);
+  const [reportError, setReportError] = useState<unknown>(null);
+  const [reportSuccess, setReportSuccess] = useState<string | null>(null);
   const dataInfoTriggerRef = useRef<HTMLButtonElement>(null);
-  const [surface, setSurface] = useState<AnnotationSurface>("annotation");
+  const createButtonRef = useRef<HTMLSpanElement>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<AnnotationWorkspaceMode>(
+    () =>
+      props.mode === "tag-review" && props.permissions.canReview
+        ? "tag-review"
+        : props.permissions.hasAnnotationDraft && props.permissions.canEdit
+          ? "annotation"
+          : "view",
+  );
+  const [modeSwitchTarget, setModeSwitchTarget] =
+    useState<AnnotationWorkspaceMode | null>(null);
   const [restoreTargetRevision, setRestoreTargetRevision] = useState<
     number | null
   >(null);
@@ -1304,28 +1707,68 @@ export function AnnotationWorkbenchView(
   const permissions = visibleError?.conflict
     ? {
         ...props.permissions,
+        canCreate: false,
         canEdit: false,
         canSave: false,
         canSubmit: false,
         canReview: false,
+        canRevise: false,
+        createUnavailableReason: "并发版本已变化，刷新真实任务后才能创建草稿。",
         readOnlyReason: "并发版本已变化；刷新真实任务后才能继续写入。",
       }
     : props.permissions;
+  useEffect(() => {
+    if (workspaceMode === "annotation" && !props.permissions.canEdit)
+      setWorkspaceMode("view");
+    else if (workspaceMode === "tag-review" && !props.permissions.canReview)
+      setWorkspaceMode("view");
+    else if (workspaceMode === "revisions" && !props.permissions.canRevise)
+      setWorkspaceMode("view");
+  }, [
+    props.permissions.canEdit,
+    props.permissions.canReview,
+    props.permissions.canRevise,
+    workspaceMode,
+  ]);
   const stepCount = Math.max(1, props.bundle.task.base_step_count ?? 1);
+  const frequencyHz = bundleFrequencyHz(props.bundle);
   const clock = useMemo(
     () =>
-      createPlaybackClock({ startNs: "0", endNs: stepToTimelineNs(stepCount) }),
-    [props.bundle.task.task_id, stepCount],
+      createPlaybackClock({
+        startNs: "0",
+        endNs: stepToTimelineNs(stepCount, frequencyHz),
+      }),
+    [frequencyHz, props.bundle.task.task_id, stepCount],
   );
-  useEffect(() => () => clock.dispose(), [clock]);
+  const clockDisposalTokens = useRef(
+    new Map<ReturnType<typeof createPlaybackClock>, symbol>(),
+  );
+  useEffect(() => {
+    const token = Symbol("annotation-clock-lifecycle");
+    const tokens = clockDisposalTokens.current;
+    tokens.set(clock, token);
+    return () => {
+      queueMicrotask(() => {
+        if (tokens.get(clock) !== token) return;
+        clock.dispose();
+        tokens.delete(clock);
+      });
+    };
+  }, [clock]);
   const reviewChecks =
-    props.mode === "tag-review"
+    workspaceMode === "tag-review"
       ? evaluateAnnotationTags({
           task: props.bundle.task,
           schema: props.bundle.schema,
           tags: props.tags,
         })
       : [];
+  const reviewIssueRows = useMemo(() => {
+    const index = buildTagSchemaIndex(props.bundle.schema);
+    return intervalHierarchyRows(props.tags, index).filter((row) =>
+      reviewIssueIds.has(row.tag.annotation_id),
+    );
+  }, [props.bundle.schema, props.tags, reviewIssueIds]);
   const restoreCandidates = props.bundle.history.revisions
     .filter(
       (revision) => revision.revision < props.bundle.task.current_revision,
@@ -1335,23 +1778,35 @@ export function AnnotationWorkbenchView(
     () =>
       selection
         ? {
-            startNs: stepToTimelineNs(selection.startStep),
-            endNs: stepToTimelineNs(selection.endStep),
-            label: `第 ${selection.startStep}–${selection.endStep} 步`,
+            startNs: stepToTimelineNs(selection.startStep, frequencyHz),
+            endNs: stepToTimelineNs(selection.endStep, frequencyHz),
+            label: `${selection.startStep}–${selection.endStep} 步`,
           }
         : undefined,
-    [selection],
+    [frequencyHz, selection],
   );
   const onTimeRangeSelect = useCallback(
-    (startNs: string, endNs: string) =>
+    (startNs: string, endNs: string) => {
+      if (!permissions.canEdit || workspaceMode !== "annotation") return;
+      const startStep = timelineNsToStep(startNs, frequencyHz);
       setSelection({
-        startStep: timelineNsToStep(startNs),
-        endStep: Math.max(
-          timelineNsToStep(startNs) + 1,
-          timelineNsToStep(endNs),
-        ),
-      }),
-    [],
+        startStep,
+        endStep: Math.max(startStep + 1, timelineNsToStep(endNs, frequencyHz)),
+      });
+    },
+    [frequencyHz, permissions.canEdit, workspaceMode],
+  );
+  const onTagsChange = useCallback(
+    (tags: readonly RuntimeAnnotationTag[]) => {
+      if (
+        !permissions.canEdit ||
+        workspaceMode !== "annotation" ||
+        actionInFlightRef.current
+      )
+        return;
+      props.onTagsChange(tags);
+    },
+    [permissions.canEdit, props.onTagsChange, workspaceMode],
   );
   const onResourceError = useCallback((error: DomainError) => {
     const message = `${error.message}${error.requestId ? `（${error.requestId}）` : ""}`;
@@ -1359,55 +1814,119 @@ export function AnnotationWorkbenchView(
       current.includes(message) ? current : [...current, message],
     );
   }, []);
-  const adapter = useMemo(
-    () =>
-      buildRuntimeWorkbenchAdapter({
+  const cameraStreams = useMemo(() => {
+    const adapterMode: AnnotationWorkbenchMode =
+      workspaceMode === "tag-review" ? "tag-review" : "annotation";
+    return buildRuntimeCameraStreams({
+      bundle: props.bundle,
+      scope: props.scope,
+      mode: adapterMode,
+      ...(cameraView !== "__quad__" && cameraView !== "__all__"
+        ? { selectedCameraId: cameraView }
+        : {}),
+      ...(cameraView === "__quad__" ? { cameraLimit: 4 } : {}),
+      ...(cameraView === "__quad__" ? { cameraSlotCount: 4 } : {}),
+    });
+  }, [cameraView, props.bundle, props.scope, workspaceMode]);
+  const adapter = useMemo(() => {
+    const adapterMode: AnnotationWorkbenchMode =
+      workspaceMode === "tag-review" ? "tag-review" : "annotation";
+    return {
+      ...buildRuntimeWorkbenchAdapter({
         bundle: props.bundle,
         scope: props.scope,
-        mode: props.mode,
+        mode: adapterMode,
         clock,
         tags: props.tags,
-        selectedCameraId,
-        readOnly:
-          props.mode === "tag-review" ||
-          surface !== "annotation" ||
-          !permissions.canEdit,
+        ...(cameraView !== "__quad__" && cameraView !== "__all__"
+          ? { selectedCameraId: cameraView }
+          : {}),
+        ...(cameraView === "__quad__" ? { cameraLimit: 4 } : {}),
+        ...(cameraView === "__quad__" ? { cameraSlotCount: 4 } : {}),
+        readOnly: workspaceMode !== "annotation" || !permissions.canEdit,
         ...(props.onSelectTask && pending === null
           ? { onSelectTask: props.onSelectTask }
           : {}),
         ...(timelineSelection ? { timelineSelection } : {}),
-        ...(!permissions.canEdit ||
-        props.mode === "tag-review" ||
-        surface !== "annotation"
+        ...(!permissions.canEdit || workspaceMode !== "annotation"
           ? {}
           : { onTimeRangeSelect }),
         onResourceError,
       }),
+      cameraStreams,
+    };
+  }, [
+    cameraStreams,
+    clock,
+    onResourceError,
+    onTimeRangeSelect,
+    permissions.canEdit,
+    pending,
+    props.bundle,
+    props.onSelectTask,
+    props.scope,
+    props.tags,
+    cameraView,
+    workspaceMode,
+    timelineSelection,
+  ]);
+  const jointTopic = props.bundle.manifest?.topics.find((topic) =>
+    /(^|[/_.-])joint([/_\s.-]|$)/iu.test(topic.name),
+  );
+  const jointAngleStream = useMemo<StreamDescriptor | null>(
+    () =>
+      props.jointAngleStream ??
+      buildRuntimeJointAngleStream({
+        bundle: props.bundle,
+        scope: props.scope,
+      }),
+    [props.bundle, props.jointAngleStream, props.scope],
+  );
+  const visualAdapter = useMemo(
+    () => ({
+      ...adapter,
+      ...(props.robotScene
+        ? { robotScene: { ...props.robotScene, clock } }
+        : {
+            robotSceneUnavailableReason: jointTopic
+              ? (props.robotSceneUnavailableReason ??
+                `已发现关节角数据 ${jointTopic.name}，但当前采集机器人尚未解析到已发布 URDF 绑定。请管理员完成机器人模型绑定。`)
+              : "当前数据未发现关节角 Topic。绑定已发布 URDF 并写入关节角数据后，此处会随时间轴同步显示机器人姿态。",
+          }),
+    }),
     [
+      adapter,
       clock,
-      onResourceError,
-      onTimeRangeSelect,
-      permissions.canEdit,
-      pending,
-      props.bundle,
-      props.mode,
-      props.onSelectTask,
-      props.scope,
-      props.tags,
-      selectedCameraId,
-      surface,
-      timelineSelection,
+      jointTopic,
+      props.robotScene,
+      props.robotSceneUnavailableReason,
     ],
   );
-  const invoke = async (action: PendingAction, task: () => Promise<void>) => {
-    if (!action || pending || actionInFlightRef.current) return;
+  const workbenchAdapter = useMemo(
+    () =>
+      workspaceMode === "annotation"
+        ? {
+            ...visualAdapter,
+            robotScene: undefined,
+            robotSceneUnavailableReason: undefined,
+          }
+        : visualAdapter,
+    [visualAdapter, workspaceMode],
+  );
+  const invoke = async (
+    action: PendingAction,
+    task: () => Promise<void>,
+  ): Promise<boolean> => {
+    if (!action || pending || actionInFlightRef.current) return false;
     actionInFlightRef.current = true;
     setPending(action);
     setLocalError(null);
     try {
       await task();
+      return true;
     } catch (error) {
       setLocalError(error);
+      return false;
     } finally {
       setPending(null);
       actionInFlightRef.current = false;
@@ -1463,87 +1982,196 @@ export function AnnotationWorkbenchView(
   const confirmDecision = () => {
     const decision = dialogDecision;
     setDialogDecision(null);
-    if (decision === "SAVE") void invoke("save", props.onSave);
+    if (decision === "SAVE" && permissions.canSave && props.dirty)
+      void invoke("save", props.onSave);
     else if (decision === "SUBMIT") {
-      if (preSubmitCheck.status === "passed") {
+      if (permissions.canSubmit && preSubmitCheck.status === "passed") {
         setPreSubmitCheckState(idlePreSubmitCheck);
         void invoke("submit", props.onSubmit);
       }
     } else if (decision === "RESTORE") {
-      if (restoreTargetRevision !== null && props.onRestoreRevision)
+      if (
+        permissions.canRevise &&
+        restoreTargetRevision !== null &&
+        props.onRestoreRevision
+      )
         void invoke(
           "restore",
           () =>
             props.onRestoreRevision?.(restoreTargetRevision) ??
             Promise.resolve(),
         );
-    } else if (decision)
+    } else if (
+      (decision === "APPROVE" ||
+        decision === "NEEDS_REVISION" ||
+        decision === "REJECT") &&
+      permissions.canReview
+    )
       void invoke(decision, () =>
-        props.onReview(decision, reviewComment.trim()),
+        props.onReview(
+          decision,
+          buildReviewComment(reviewIssueRows, reviewComment),
+        ),
       );
   };
+  const activateWorkspaceMode = (nextMode: AnnotationWorkspaceMode) => {
+    setWorkspaceMode(nextMode);
+    if (nextMode === "tag-review" && props.mode !== "tag-review")
+      props.onSwitchMode?.("tag-review");
+    else if (nextMode === "annotation" && props.mode !== "annotation")
+      props.onSwitchMode?.("annotation");
+  };
+  const requestWorkspaceMode = (nextMode: AnnotationWorkspaceMode) => {
+    if (nextMode === workspaceMode) return;
+    if (workspaceMode === "annotation" && props.dirty) {
+      setModeSwitchTarget(nextMode);
+      return;
+    }
+    activateWorkspaceMode(nextMode);
+  };
+  const createAnnotation = () => {
+    if (!permissions.canCreate || !props.onCreateAnnotation) return;
+    void (async () => {
+      const created = await invoke("create", props.onCreateAnnotation!);
+      if (created) activateWorkspaceMode("annotation");
+    })();
+  };
+  const discardAndSwitch = () => {
+    const target = modeSwitchTarget;
+    if (!target) return;
+    props.onDiscardChanges?.();
+    setPreSubmitCheckState(idlePreSubmitCheck);
+    setModeSwitchTarget(null);
+    activateWorkspaceMode(target);
+  };
+  const saveAndSwitch = () => {
+    const target = modeSwitchTarget;
+    if (!target || !permissions.canSave) return;
+    void (async () => {
+      const saved = await invoke("save", props.onSave);
+      if (!saved) return;
+      setModeSwitchTarget(null);
+      activateWorkspaceMode(target);
+    })();
+  };
   const cameras = props.bundle.manifest?.cameras ?? [];
+  const reportSelection = (() => {
+    if (selection) return selection;
+    const selectedTags = props.tags.filter((tag) =>
+      reviewIssueIds.has(tag.annotation_id),
+    );
+    if (!selectedTags.length) return null;
+    return {
+      startStep: Math.min(...selectedTags.map((tag) => tag.start_step)),
+      endStep: Math.max(...selectedTags.map((tag) => tag.end_step)),
+    };
+  })();
+  const reportStreamOptions = [
+    ...cameras.map((camera) => ({
+      value: camera.topic,
+      label: `${camera.camera_id} · ${camera.topic}`,
+    })),
+    ...(props.bundle.manifest?.topics ?? []).map((topic) => ({
+      value: topic.name,
+      label: topic.name,
+    })),
+  ].filter(
+    (item, index, items) =>
+      items.findIndex((candidate) => candidate.value === item.value) === index,
+  );
+  const reportProblem = errorMessage(reportError);
+  const openReportDialog = () => {
+    setReportError(null);
+    setReportSuccess(null);
+    setReportStreamRef(
+      (current) => current || reportStreamOptions[0]?.value || "",
+    );
+    setReportDialogOpen(true);
+  };
+  const submitDataIssue = async () => {
+    if (
+      !props.onReportDataIssue ||
+      !props.canReportDataIssue ||
+      !reportSelection ||
+      !reportStreamRef ||
+      !reportNote.trim()
+    )
+      return;
+    setReportPending(true);
+    setReportError(null);
+    try {
+      await props.onReportDataIssue({
+        streamRef: reportStreamRef,
+        relativeStartNs: stepToTimelineNs(
+          reportSelection.startStep,
+          frequencyHz,
+        ),
+        relativeEndNs: stepToTimelineNs(reportSelection.endStep, frequencyHz),
+        issueType: reportIssueType,
+        severity: reportSeverity,
+        note: reportNote.trim(),
+      });
+      setReportDialogOpen(false);
+      setReportNote("");
+      setReportSuccess("已登记为问题数据，可到“问题数据”页面继续分诊和处理。");
+    } catch (error) {
+      setReportError(error);
+    } finally {
+      setReportPending(false);
+    }
+  };
+  const latestNeedsRevisionReview = props.bundle.history.reviews.findLast(
+    (review) => review.decision === "NEEDS_REVISION",
+  );
+  const connectedCameraCount = workbenchAdapter.cameraStreams.filter(
+    (stream) => stream.semanticRole !== "camera-slot-placeholder",
+  ).length;
   const mediaHeader = (): ReactNode => (
-    <div className={styles.modeStrip}>
-      <nav aria-label="数据标注模式">
-        <button
-          aria-current={
-            props.mode === "annotation" && surface === "view"
-              ? "page"
-              : undefined
-          }
-          disabled={pending !== null || props.mode === "tag-review"}
-          type="button"
-          onClick={() => setSurface("view")}
-        >
-          查看
-        </button>
-        <button
-          aria-current={
-            props.mode === "annotation" && surface === "annotation"
-              ? "page"
-              : undefined
-          }
-          disabled={pending !== null}
-          type="button"
-          onClick={() => {
-            setSurface("annotation");
-            props.onSwitchMode?.("annotation");
-          }}
-        >
-          标注
-        </button>
-        <button
-          aria-current={props.mode === "tag-review" ? "page" : undefined}
-          disabled={pending !== null}
-          type="button"
-          onClick={() => props.onSwitchMode?.("tag-review")}
-        >
-          Tag 审核
-        </button>
-        <button
-          aria-current={
-            props.mode === "annotation" && surface === "revisions"
-              ? "page"
-              : undefined
-          }
-          disabled={pending !== null || props.mode === "tag-review"}
-          type="button"
-          onClick={() => setSurface("revisions")}
-        >
-          数据修订
-        </button>
-      </nav>
-      <div className={styles.modeStripTools}>
-        {props.mode === "tag-review" ? (
-          <label htmlFor="review-camera-select">
-            <span>Manifest {cameras.length} 路 · 当前相机</span>
+    <div className={styles.cameraToolbar}>
+      <div className={styles.cameraToolbarSummary}>
+        <span>
+          {workspaceMode === "annotation" && cameraView === "__quad__"
+            ? `四宫格 · 已接入 ${connectedCameraCount} / 4 路`
+            : `视频视图 · 当前 ${connectedCameraCount} / ${cameras.length} 路`}
+        </span>
+        <small>保持原始画面比例；视频、机器人姿态和信号共用时间轴。</small>
+      </div>
+      <div className={styles.cameraToolbarTools}>
+        {cameras.length ? (
+          <label
+            htmlFor={
+              workspaceMode === "tag-review"
+                ? "review-camera-select"
+                : "annotation-camera-select"
+            }
+          >
+            <span>
+              {workspaceMode === "tag-review" ? "当前相机" : "显示视频"}
+            </span>
             <select
-              id="review-camera-select"
-              name="review-camera-select"
-              value={selectedCameraId ?? ""}
-              onChange={(event) => setSelectedCameraId(event.target.value)}
+              aria-label={
+                workspaceMode === "tag-review" ? "当前相机" : "显示视频"
+              }
+              id={
+                workspaceMode === "tag-review"
+                  ? "review-camera-select"
+                  : "annotation-camera-select"
+              }
+              name="camera-view-select"
+              value={
+                workspaceMode === "tag-review" &&
+                (cameraView === "__quad__" || cameraView === "__all__")
+                  ? (cameras[0]?.camera_id ?? "")
+                  : cameraView
+              }
+              onChange={(event) => setCameraView(event.target.value)}
             >
+              {workspaceMode !== "tag-review" ? (
+                <>
+                  <option value="__quad__">四宫格（固定 4 格）</option>
+                  <option value="__all__">全部视频（{cameras.length}）</option>
+                </>
+              ) : null}
               {cameras.map((camera) => (
                 <option key={camera.camera_id} value={camera.camera_id}>
                   {camera.camera_id}
@@ -1551,9 +2179,32 @@ export function AnnotationWorkbenchView(
               ))}
             </select>
           </label>
-        ) : (
-          <span>自动发现 {cameras.length} 路相机 · 同一共享时间轴</span>
-        )}
+        ) : null}
+        {props.onReportDataIssue ? (
+          <Tooltip
+            title={
+              !props.canReportDataIssue
+                ? (props.reportDataIssueUnavailableReason ??
+                  "当前账号没有报告数据问题的权限。")
+                : !reportSelection
+                  ? "先在时间轴拖选异常片段；审核时也可以先勾选有问题的 Tag 区间。"
+                  : "将当前异常片段登记到统一问题数据中心。"
+            }
+            trigger={["hover", "focus"]}
+          >
+            <span className={styles.reportIssueTooltipTarget}>
+              <button
+                className={styles.reportIssueTrigger}
+                disabled={!props.canReportDataIssue || !reportSelection}
+                type="button"
+                onClick={openReportDialog}
+              >
+                <CircleAlert aria-hidden="true" size={13} />
+                报告数据问题
+              </button>
+            </span>
+          </Tooltip>
+        ) : null}
         <button
           aria-expanded={dataInfoOpen}
           aria-haspopup="dialog"
@@ -1572,7 +2223,7 @@ export function AnnotationWorkbenchView(
   );
 
   return (
-    <main className={styles.page} data-p08-mode={props.mode}>
+    <div className={styles.page} data-p08-mode={props.mode}>
       {props.recoveryAvailable ? (
         <section className={styles.recoveryBanner} role="status">
           <RotateCcw aria-hidden="true" size={15} />
@@ -1608,6 +2259,29 @@ export function AnnotationWorkbenchView(
           </span>
         </section>
       ) : null}
+      {reportSuccess ? (
+        <section className={styles.reportSuccessNotice} role="status">
+          <Check aria-hidden="true" size={15} />
+          <span>{reportSuccess}</span>
+        </section>
+      ) : null}
+      {props.bundle.task.status === "NEEDS_REVISION" &&
+      latestNeedsRevisionReview ? (
+        <section className={styles.reviewFeedbackNotice} role="status">
+          <CircleAlert aria-hidden="true" size={16} />
+          <span>
+            <strong>审核待修改</strong>
+            <small>
+              审核人 {latestNeedsRevisionReview.reviewer_id} ·
+              {displayRevisionTime(latestNeedsRevisionReview.created_at)}
+            </small>
+            <span>
+              {latestNeedsRevisionReview.comment ||
+                "请修改标注后重新提交审核。"}
+            </span>
+          </span>
+        </section>
+      ) : null}
       {resourceErrors.length ? (
         <section className={styles.resourceNotice} role="status">
           <AlertTriangle aria-hidden="true" size={14} />
@@ -1616,67 +2290,125 @@ export function AnnotationWorkbenchView(
       ) : null}
       <div className={styles.workbenchFrame}>
         <DataVisualizationWorkbench
-          adapter={adapter}
+          adapter={workbenchAdapter}
           showNavigation={false}
           slots={{
             mediaHeader,
-            inspector: () =>
-              props.mode === "tag-review" ? (
-                <ReviewInspector
-                  bundle={props.bundle}
-                  clock={clock}
-                  comment={reviewComment}
-                  tags={props.tags}
-                  onCommentChange={setReviewComment}
-                />
-              ) : surface === "view" ? (
-                <DataViewInspector bundle={props.bundle} tags={props.tags} />
-              ) : surface === "revisions" ? (
-                <RevisionHistoryInspector
-                  bundle={props.bundle}
-                  disabled={pending !== null || !permissions.canSave}
-                  selectedRevision={restoreTargetRevision}
-                  onSelectRevision={setRestoreTargetRevision}
-                />
-              ) : (
-                <TagEditorInspector
-                  bundle={props.bundle}
-                  disabled={!permissions.canEdit || pending !== null}
-                  selection={selection}
-                  tags={props.tags}
-                  onChange={props.onTagsChange}
-                />
-              ),
-            actionDock: () => (
-              <ActionDock
-                bundle={props.bundle}
-                autoAnnotationPanel={props.autoAnnotationPanel}
-                dialogOpen={dialogDecision !== null}
+            ...(workspaceMode === "annotation"
+              ? {
+                  timelineTools: () => (
+                    <div className={styles.timelineTagTools}>
+                      <TagEditorInspector
+                        bundle={props.bundle}
+                        disabled={!permissions.canEdit || pending !== null}
+                        selection={selection}
+                        tags={props.tags}
+                        onChange={onTagsChange}
+                      />
+                    </div>
+                  ),
+                }
+              : {}),
+            workspaceToolbar: () => (
+              <WorkspaceToolbar
+                createButtonRef={createButtonRef}
                 dirty={props.dirty}
-                mode={props.mode}
-                surface={surface}
+                mode={workspaceMode}
+                navigationPermissions={props.permissions}
                 pending={pending}
                 permissions={permissions}
-                preSubmitCheck={preSubmitCheck}
-                reviewComment={reviewComment}
-                reviewChecks={reviewChecks}
+                requestedRouteMode={props.mode}
                 restoreCandidates={restoreCandidates}
                 restoreTargetRevision={restoreTargetRevision}
-                tags={props.tags}
-                onOpenReview={setDialogDecision}
-                onOpenRevisionLedger={props.onOpenRevisions}
-                onOpenRestore={(targetRevision) => {
-                  setRestoreTargetRevision(targetRevision);
+                reviewBlocked={reviewChecks.some(
+                  (check) => check.status === "FAIL",
+                )}
+                reviewIssueCount={reviewIssueIds.size}
+                taskStatus={props.bundle.task.status}
+                onCreate={createAnnotation}
+                onOpenRestore={(revision) => {
+                  setRestoreTargetRevision(revision);
                   setDialogDecision("RESTORE");
                 }}
-                onOpenSubmit={() => void runPreSubmitCheck()}
+                onOpenReview={setDialogDecision}
                 onOpenSave={() => {
                   setPreSubmitCheckState(idlePreSubmitCheck);
                   setDialogDecision("SAVE");
                 }}
+                onOpenSubmit={() => void runPreSubmitCheck()}
+                onRequestMode={requestWorkspaceMode}
                 onRestoreTargetChange={setRestoreTargetRevision}
               />
             ),
+            inspector: () =>
+              workspaceMode === "tag-review" ? (
+                <ReviewInspector
+                  bundle={props.bundle}
+                  clock={clock}
+                  comment={reviewComment}
+                  selectedIssueIds={reviewIssueIds}
+                  tags={props.tags}
+                  onCommentChange={setReviewComment}
+                  onToggleIssue={(annotationId) =>
+                    setReviewIssueIds((current) => {
+                      const next = new Set(current);
+                      if (next.has(annotationId)) next.delete(annotationId);
+                      else next.add(annotationId);
+                      return next;
+                    })
+                  }
+                />
+              ) : workspaceMode === "view" ? (
+                <DataViewInspector bundle={props.bundle} tags={props.tags} />
+              ) : workspaceMode === "revisions" ? (
+                <RevisionHistoryInspector
+                  bundle={props.bundle}
+                  disabled={pending !== null || !permissions.canRevise}
+                  selectedRevision={restoreTargetRevision}
+                  onSelectRevision={setRestoreTargetRevision}
+                />
+              ) : (
+                <div
+                  className={styles.robotPoseInspector}
+                  aria-label="机器人姿态同步视图"
+                >
+                  <ViewerRobotPosePanel
+                    scene={visualAdapter.robotScene}
+                    unavailableReason={
+                      visualAdapter.robotSceneUnavailableReason
+                    }
+                  />
+                </div>
+              ),
+            actionDock: () =>
+              workspaceMode === "annotation" ? (
+                <div className={styles.jointAngleDock}>
+                  <ViewerJointAngleCurvePanel
+                    clock={clock}
+                    stream={jointAngleStream}
+                    unavailableReason={
+                      jointTopic
+                        ? `已发现 ${jointTopic.name}，但当前固定数据窗口还没有可显示的关节角向量。`
+                        : "当前数据未发现关节角 Topic。写入关节角数据后，曲线会随共享时间轴同步显示。"
+                    }
+                    onResourceError={onResourceError}
+                  />
+                  {preSubmitCheck.status !== "idle" &&
+                  preSubmitCheck.status !== "passed" ? (
+                    <PreSubmitCheckPanel state={preSubmitCheck} />
+                  ) : null}
+                </div>
+              ) : (
+                <ActionDock
+                  bundle={props.bundle}
+                  dirty={props.dirty}
+                  surface={workspaceMode}
+                  permissions={permissions}
+                  preSubmitCheck={preSubmitCheck}
+                  tags={props.tags}
+                  onOpenRevisionLedger={props.onOpenRevisions}
+                />
+              ),
             ...(props.renderPanel ? { renderPanel: props.renderPanel } : {}),
           }}
         />
@@ -1703,6 +2435,163 @@ export function AnnotationWorkbenchView(
           <WorkbenchCollectionPanel adapter={adapter} />
         </div>
       </EntityDrawer>
+      <Modal
+        centered
+        destroyOnHidden
+        footer={null}
+        open={reportDialogOpen}
+        title="报告数据问题"
+        onCancel={() => {
+          if (!reportPending) setReportDialogOpen(false);
+        }}
+      >
+        <Form layout="vertical" onFinish={() => void submitDataIssue()}>
+          <Alert
+            className={styles.reportRangeAlert}
+            showIcon
+            type="info"
+            title={
+              reportSelection
+                ? `异常片段：${reportSelection.startStep}–${reportSelection.endStep} 步（${stepRange(reportSelection.startStep, reportSelection.endStep, frequencyHz)}）`
+                : "尚未选择异常片段"
+            }
+            description="这会创建独立的数据质量问题；不会自动改变当前标注任务的审核状态。"
+          />
+          <Form.Item
+            label="问题数据流"
+            required
+            help="后端会从当前标注任务解析固定 Dataset、Episode、Revision 与 Stream 身份。"
+          >
+            <Select
+              aria-label="问题数据流"
+              disabled={reportPending}
+              options={reportStreamOptions}
+              placeholder="选择发现异常的数据流"
+              value={reportStreamRef || undefined}
+              onChange={setReportStreamRef}
+            />
+          </Form.Item>
+          <Form.Item label="问题类型" required>
+            <Select
+              aria-label="问题类型"
+              disabled={reportPending}
+              options={[...dataIssueTypeOptions]}
+              value={reportIssueType}
+              onChange={setReportIssueType}
+            />
+          </Form.Item>
+          <Form.Item label="严重程度" required>
+            <Select
+              aria-label="严重程度"
+              disabled={reportPending}
+              options={[...dataIssueSeverityOptions]}
+              value={reportSeverity}
+              onChange={setReportSeverity}
+            />
+          </Form.Item>
+          <Form.Item label="问题说明" required>
+            <Input.TextArea
+              aria-label="问题说明"
+              disabled={reportPending}
+              maxLength={8192}
+              rows={4}
+              showCount
+              placeholder="说明自动质检漏检了什么，以及在当前片段中观察到的证据…"
+              value={reportNote}
+              onChange={(event) => setReportNote(event.target.value)}
+            />
+          </Form.Item>
+          {reportProblem ? (
+            <Alert
+              showIcon
+              type="error"
+              title="问题数据登记失败"
+              description={`${reportProblem.message}${reportProblem.requestId ? `（请求 ID：${reportProblem.requestId}）` : ""}`}
+            />
+          ) : null}
+          <div className={styles.reportModalActions}>
+            <button
+              disabled={reportPending}
+              type="button"
+              onClick={() => setReportDialogOpen(false)}
+            >
+              取消
+            </button>
+            <button
+              aria-busy={reportPending || undefined}
+              className={styles.reportSubmitAction}
+              disabled={
+                reportPending ||
+                !reportSelection ||
+                !reportStreamRef ||
+                !reportNote.trim()
+              }
+              type="submit"
+            >
+              {reportPending ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className={styles.loadingIcon}
+                  size={15}
+                />
+              ) : (
+                <CircleAlert aria-hidden="true" size={15} />
+              )}
+              登记到问题数据
+            </button>
+          </div>
+        </Form>
+      </Modal>
+      <Modal
+        centered
+        closable={pending !== "save"}
+        footer={
+          <div className={styles.modeSwitchActions}>
+            <button
+              type="button"
+              disabled={pending === "save"}
+              onClick={() => setModeSwitchTarget(null)}
+            >
+              继续编辑
+            </button>
+            <button
+              className={styles.discardSwitchAction}
+              type="button"
+              disabled={pending === "save"}
+              onClick={discardAndSwitch}
+            >
+              放弃修改
+            </button>
+            <button
+              aria-busy={pending === "save" || undefined}
+              className={styles.saveSwitchAction}
+              type="button"
+              disabled={pending === "save" || !permissions.canSave}
+              onClick={saveAndSwitch}
+            >
+              {pending === "save" ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className={styles.loadingIcon}
+                  size={15}
+                />
+              ) : null}
+              保存后切换
+            </button>
+          </div>
+        }
+        keyboard={pending !== "save"}
+        mask={{ closable: false }}
+        open={modeSwitchTarget !== null}
+        title="有未保存的修改"
+        onCancel={() => {
+          if (pending !== "save") setModeSwitchTarget(null);
+        }}
+      >
+        <p>
+          离开标注模式前请选择如何处理当前修改。取消后会保留当前模式和全部草稿内容。
+        </p>
+      </Modal>
       <DangerousActionDialog
         confirmLabel={
           dialogDecision === "SAVE"
@@ -1712,7 +2601,7 @@ export function AnnotationWorkbenchView(
               : dialogDecision === "RESTORE"
                 ? `确认回退为 r${restoreTargetRevision ?? "?"}`
                 : dialogDecision
-                  ? reviewDecisionLabels[dialogDecision]
+                  ? "确认提交审核"
                   : "确认"
         }
         impact={
@@ -1723,20 +2612,20 @@ export function AnnotationWorkbenchView(
               ]
             : dialogDecision === "SUBMIT"
               ? [
-                  "保存后的当前修订将生成不可变提交快照",
-                  "提交后进入 Tag 审核，当前草稿不再直接修改该快照",
+                  "当前已保存修订将生成固定提交版本",
+                  "提交后进入审核流程，可能无法继续编辑",
                 ]
               : dialogDecision === "RESTORE"
                 ? [
                     `当前多级 Tag 与区间将按历史 r${restoreTargetRevision ?? "?"} 生成新的不可变数据修订`,
-                    "原修订、提交快照与审核记录继续保留；不会覆盖历史数据",
+                    "原修订、提交版本与审核记录继续保留；不会覆盖历史数据",
                   ]
                 : dialogDecision === "APPROVE"
                   ? [
                       "创建不可变审核通过记录",
-                      "固定该 Revision、提交与 Tag Schema 版本",
+                      "固定该 Revision、提交与标签结构版本",
                     ]
-                  : ["创建不可变审核决定", "原提交快照和全部审核历史仍保留"]
+                  : ["创建不可变审核决定", "原提交版本和全部审核历史仍保留"]
         }
         open={dialogDecision !== null}
         pending={pending !== null}
@@ -1745,11 +2634,11 @@ export function AnnotationWorkbenchView(
           dialogDecision === "SAVE"
             ? "保存标注修改"
             : dialogDecision === "SUBMIT"
-              ? "提交 Tag 审核"
+              ? "确认提交审核？"
               : dialogDecision === "RESTORE"
                 ? "回退标注数据修订"
                 : dialogDecision
-                  ? reviewDecisionLabels[dialogDecision]
+                  ? "提交审核"
                   : "确认操作"
         }
         onCancel={() => {
@@ -1760,21 +2649,37 @@ export function AnnotationWorkbenchView(
         onConfirm={confirmDecision}
       >
         {dialogDecision === "SUBMIT" && preSubmitCheck.status === "passed" ? (
-          <p className={styles.preSubmitPassed} role="status">
-            <ShieldCheck aria-hidden="true" size={15} />
-            检查已通过
-          </p>
+          <>
+            <p className={styles.preSubmitPassed} role="status">
+              <ShieldCheck aria-hidden="true" size={15} />
+              检查已通过
+            </p>
+            <p>
+              提交后会生成一个新的 Episode 版本并进入审核；草稿保存本身不会增加 Episode 版本号。
+            </p>
+          </>
         ) : null}
         {dialogDecision &&
         dialogDecision !== "SAVE" &&
         dialogDecision !== "SUBMIT" &&
         dialogDecision !== "RESTORE" ? (
           <p>
-            审核基于提交{" "}
-            {resolveReviewSubmission(props.bundle)?.submission_id ?? "不可用"}。
+            审核基于 Episode v
+            {resolveReviewSubmission(props.bundle)?.episode_version ?? "不可用"}（提交{" "}
+            {resolveReviewSubmission(props.bundle)?.submission_id ?? "不可用"}）。
+          </p>
+        ) : null}
+        {dialogDecision === "APPROVE" ? (
+          <p className={styles.reviewOutcomeSummary} data-outcome="approved">
+            未标记问题。提交后任务将进入“标注完成”。
+          </p>
+        ) : dialogDecision === "NEEDS_REVISION" ? (
+          <p className={styles.reviewOutcomeSummary} data-outcome="revision">
+            已标记 {reviewIssueRows.length}{" "}
+            处问题。提交后任务将进入“待修改”，修改并重新提交后可再次审核。
           </p>
         ) : null}
       </DangerousActionDialog>
-    </main>
+    </div>
   );
 }

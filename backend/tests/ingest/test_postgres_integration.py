@@ -27,6 +27,7 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
 from hc_data_platform.core.errors import ProblemException  # noqa: E402
 from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
 from hc_data_platform.ingest.models import (  # noqa: E402
+    HuggingFaceEpisodeSourceV1,
     ManifestFileV1,
     RolloutManifestV1,
     UploadSourceType,
@@ -397,6 +398,42 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
             )
             assert filtered.total == 1
             assert filtered.items[0].session_id == external_grant.session.session_id
+
+            source_manifest = _manifest(project_id, b"stable-source").model_copy(
+                update={
+                    "collection_job_id": "job-stable-source",
+                    "rollout_id": "rollout-stable-source",
+                    "collection_session_id": "session-stable-source",
+                    "recording_request_id": "request-stable-source",
+                    "data_package_id": "package-stable-source",
+                    "source_recording": HuggingFaceEpisodeSourceV1(
+                        repository="aractingi/droid_100",
+                        resolved_revision="e86faae",
+                        episode_index=7,
+                    ),
+                }
+            )
+            restarted.create_session(
+                manifest=source_manifest,
+                region_code=region,
+                idempotency_key="stable-source-first",
+            )
+            duplicate_source = source_manifest.model_copy(
+                update={
+                    "collection_job_id": "job-stable-source-duplicate",
+                    "rollout_id": "rollout-stable-source-duplicate",
+                    "collection_session_id": "session-stable-source-duplicate",
+                    "recording_request_id": "request-stable-source-duplicate",
+                    "data_package_id": "package-stable-source-duplicate",
+                }
+            )
+            with pytest.raises(ProblemException) as duplicate_problem:
+                restarted.create_session(
+                    manifest=duplicate_source,
+                    region_code=region,
+                    idempotency_key="stable-source-duplicate",
+                )
+            assert duplicate_problem.value.problem.code == "SOURCE_RECORDING_DUPLICATE"
 
         with _scope(f"other-{project_id}", region):
             with pytest.raises(ProblemException) as hidden:

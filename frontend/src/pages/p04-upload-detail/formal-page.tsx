@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Space, Typography } from "antd";
 import { ArrowLeft, Camera, Clock3, FileJson2, RadioTower } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import {
   createPlaybackClock,
@@ -14,6 +19,11 @@ import type { RuntimeManifestDiscoveryProjection } from "../../features/viewer/r
 import type { StreamDescriptor } from "../../features/viewer/types";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
+import {
+  formatEffectiveDuration,
+  formatStorageSize,
+} from "../../shared/lib/metric-presentation";
+import { safeReturnTo } from "../../shared/routing/route-registry";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
 import { createDatasetPreviewMediaSource } from "../p06-dataset-detail/preview-media-source";
 import {
@@ -39,6 +49,11 @@ import {
 import styles from "./formal-page.module.css";
 
 const uploadRecordsPath = "/ingest/uploads/records";
+const problemDataPath = "/manual/issues";
+
+type ResolvedFormalUploadDetail = FormalUploadDetail & {
+  readonly quality: FormalQcReport;
+};
 
 const findingTitles: Readonly<Record<string, string>> = {
   QC_REQUIRED_TOPIC_MISSING: "必需 Topic 缺失",
@@ -103,26 +118,6 @@ function formatDate(value: string | undefined): string {
     dateStyle: "medium",
     timeStyle: "medium",
   }).format(date);
-}
-
-function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"] as const;
-  let amount = value;
-  let unitIndex = 0;
-  while (amount >= 1024 && unitIndex < units.length - 1) {
-    amount /= 1024;
-    unitIndex += 1;
-  }
-  return `${new Intl.NumberFormat("zh-CN", {
-    maximumFractionDigits: unitIndex === 0 ? 0 : 2,
-  }).format(amount)} ${units[unitIndex]}`;
-}
-
-function formatDuration(durationNs: number): string {
-  return `${new Intl.NumberFormat("zh-CN", {
-    maximumFractionDigits: 3,
-  }).format(durationNs / 1_000_000_000)} 秒`;
 }
 
 function statusTone(
@@ -358,7 +353,7 @@ function RawMediaEvidence({
         <h2 id="raw-media-source-title">原始 MCAP 证据源</h2>
         <p>
           浏览器不会把 MCAP 采集包误播为视频；相机话题与 Raw 文件保持一对一的
-          Manifest 关联。
+          数据清单关联。
         </p>
       </div>
       {pending ? (
@@ -375,7 +370,7 @@ function RawMediaEvidence({
       {source ? (
         <div className={styles.rawSourceAction}>
           <span>
-            已授权 · {formatBytes(source.byte_length)} · 至
+            已授权 · {formatStorageSize(source.byte_length)} · 至
             {formatDate(source.expires_at)} 有效
           </span>
           <a
@@ -410,12 +405,16 @@ function UploadDiagnostic({
   rawSourceAvailable,
   scope,
   workflowPreview,
+  returnTo = problemDataPath,
+  problemDataContext = false,
   showContextBar = true,
 }: {
-  readonly detail: FormalUploadDetail;
+  readonly detail: ResolvedFormalUploadDetail;
   readonly rawSourceAvailable: boolean;
   readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
   readonly workflowPreview: WorkflowPreviewView;
+  readonly returnTo?: string;
+  readonly problemDataContext?: boolean;
   readonly showContextBar?: boolean;
 }) {
   const bounds = useMemo(
@@ -461,9 +460,9 @@ function UploadDiagnostic({
     <>
       {showContextBar ? (
         <div className={styles.contextBar}>
-          <Link to={uploadRecordsPath}>
+          <Link to={returnTo}>
             <ArrowLeft aria-hidden="true" size={16} />
-            返回上传记录
+            返回问题数据
           </Link>
           <Space wrap>
             <StatusTag
@@ -491,7 +490,11 @@ function UploadDiagnostic({
       <RawDiagnosticWorkbench
         id={`upload-diagnostic:${detail.session.session_id ?? detail.session.rollout_id}`}
         title="Raw 诊断"
-        description="采集记录 / 数据包诊断 / 自动质检证据"
+        description={
+          problemDataContext
+            ? "问题数据 / 自动质检异常 / Raw 证据诊断"
+            : "采集记录 / 数据包诊断 / 自动质检证据"
+        }
         clock={clock}
         manifest={manifest}
         mediaStreamsByTopic={mediaStreamsByTopic}
@@ -513,10 +516,10 @@ function UploadDiagnostic({
               },
               {
                 label: "时长",
-                value: formatDuration(detail.quality.duration_ns),
+                value: formatEffectiveDuration(detail.quality.duration_ns),
               },
               { label: "相机", value: `${manifest.cameras.length} 路` },
-              { label: "来源", value: "Manifest" },
+              { label: "来源", value: "数据清单" },
             ],
           },
         ]}
@@ -540,13 +543,62 @@ function UploadDiagnostic({
   );
 }
 
+function ManifestDiscoveryPanel({
+  manifest,
+}: {
+  readonly manifest: FormalUploadDetail["manifest"];
+}) {
+  const discovery = manifest.discovery;
+  return (
+    <section
+      className={styles.factPanel}
+      aria-labelledby="manifest-facts-title"
+    >
+      <header>
+        <Typography.Title id="manifest-facts-title" level={2}>
+          数据清单发现
+        </Typography.Title>
+        <span>只读</span>
+      </header>
+      {discovery.cameras.length ? (
+        <ul className={styles.discoveryList}>
+          {discovery.cameras.map((camera) => (
+            <li key={`${camera.camera_id}:${camera.topic}`}>
+              <strong>{camera.camera_id}</strong>
+              <code title={camera.topic}>{camera.topic}</code>
+              <span>{camera.encoding ?? "编码未声明"}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <PageState
+          state="empty"
+          title="数据清单未声明相机"
+          description="这是有效的 0 相机发现结果；Topic 清单仍按原始事实保留。"
+        />
+      )}
+      <details className={styles.topicDetails}>
+        <summary>查看 {discovery.topics.length} 个 Topic</summary>
+        <ul>
+          {discovery.topics.map((topic) => (
+            <li key={topic.name}>
+              <code>{topic.name}</code>
+              <span>{topic.required ? "必需" : "可选"}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  );
+}
+
 function PassedUploadDetail({
   detail,
   rawMedia,
   scope,
   workflowPreview,
 }: {
-  readonly detail: FormalUploadDetail;
+  readonly detail: ResolvedFormalUploadDetail;
   readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
   readonly workflowPreview: WorkflowPreviewView;
   readonly rawMedia: {
@@ -561,7 +613,7 @@ function PassedUploadDetail({
     <section className={styles.passedPage}>
       <UiPageHeader
         title="上传详情"
-        description="Manifest 与自动质检结果均来自当前项目和区域的正式运行时接口。"
+        description="数据清单与自动质检结果均来自当前项目和区域的正式运行时接口。"
         breadcrumbs={[
           { key: "uploads", label: "上传记录", to: uploadRecordsPath },
           { key: "detail", label: detail.session.data_package_id },
@@ -581,7 +633,7 @@ function PassedUploadDetail({
         <UiMetricCard
           label="数据包大小"
           icon={<FileJson2 />}
-          value={formatBytes(detail.manifest.total_file_size)}
+          value={formatStorageSize(detail.manifest.total_file_size)}
           description={detail.session.data_package_id}
         />
         <UiMetricCard
@@ -589,7 +641,7 @@ function PassedUploadDetail({
           icon={<Camera />}
           value={discovery.cameras.length}
           unit="路"
-          description="由 Manifest 自动发现"
+          description="由数据清单自动发现"
         />
         <UiMetricCard
           label="Topic"
@@ -601,7 +653,7 @@ function PassedUploadDetail({
         <UiMetricCard
           label="记录时长"
           icon={<Clock3 />}
-          value={formatDuration(detail.quality.duration_ns)}
+          value={formatEffectiveDuration(detail.quality.duration_ns)}
           description={`${formatDate(detail.manifest.time_range.start_time)} 开始`}
         />
       </div>
@@ -614,45 +666,7 @@ function PassedUploadDetail({
         showContextBar={false}
       />
       <div className={styles.passedGrid}>
-        <section
-          className={styles.factPanel}
-          aria-labelledby="manifest-facts-title"
-        >
-          <header>
-            <Typography.Title id="manifest-facts-title" level={2}>
-              Manifest 发现
-            </Typography.Title>
-            <span>只读</span>
-          </header>
-          {discovery.cameras.length ? (
-            <ul className={styles.discoveryList}>
-              {discovery.cameras.map((camera) => (
-                <li key={`${camera.camera_id}:${camera.topic}`}>
-                  <strong>{camera.camera_id}</strong>
-                  <code title={camera.topic}>{camera.topic}</code>
-                  <span>{camera.encoding ?? "编码未声明"}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <PageState
-              state="empty"
-              title="Manifest 未声明相机"
-              description="这是有效的 0 相机发现结果；Topic 清单仍按原始事实保留。"
-            />
-          )}
-          <details className={styles.topicDetails}>
-            <summary>查看 {discovery.topics.length} 个 Topic</summary>
-            <ul>
-              {discovery.topics.map((topic) => (
-                <li key={topic.name}>
-                  <code>{topic.name}</code>
-                  <span>{topic.required ? "必需" : "可选"}</span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        </section>
+        <ManifestDiscoveryPanel manifest={detail.manifest} />
         <section
           className={styles.qualityPanel}
           aria-labelledby="quality-result-title"
@@ -671,12 +685,118 @@ function PassedUploadDetail({
   );
 }
 
+function PendingQualityUploadDetail({
+  detail,
+  rawMedia,
+  workflowPreview,
+  onRefreshQuality,
+}: {
+  readonly detail: FormalUploadDetail;
+  readonly workflowPreview: WorkflowPreviewView;
+  readonly onRefreshQuality: () => void;
+  readonly rawMedia: {
+    readonly source: FormalRawMediaSource | undefined;
+    readonly pending: boolean;
+    readonly error: unknown;
+    readonly onRefresh: () => void;
+  };
+}) {
+  const discovery = detail.manifest.discovery;
+  return (
+    <section className={styles.passedPage}>
+      <UiPageHeader
+        title="上传详情"
+        description="上传内容已接收，后台摄取和自动质检仍在进行。"
+        breadcrumbs={[
+          { key: "uploads", label: "上传记录", to: uploadRecordsPath },
+          { key: "detail", label: detail.session.data_package_id },
+        ]}
+        metadata={
+          <Space wrap>
+            <StatusTag status={detail.session.status} tone="info" />
+            <StatusTag status="PENDING" label="自动质检处理中" tone="info" />
+          </Space>
+        }
+      />
+      <div className={styles.metrics}>
+        <UiMetricCard
+          label="数据包大小"
+          icon={<FileJson2 />}
+          value={formatStorageSize(detail.manifest.total_file_size)}
+          description={detail.session.data_package_id}
+        />
+        <UiMetricCard
+          label="相机"
+          icon={<Camera />}
+          value={discovery.cameras.length}
+          unit="路"
+          description="由数据清单自动发现"
+        />
+        <UiMetricCard
+          label="Topic"
+          icon={<RadioTower />}
+          value={discovery.topics.length}
+          unit="个"
+          description="只读采集事实"
+        />
+        <UiMetricCard
+          label="记录开始"
+          icon={<Clock3 />}
+          value={formatDate(detail.manifest.time_range.start_time)}
+          description="等待自动质检计算时长"
+        />
+      </div>
+      <ProcessingPreviewState
+        session={detail.session}
+        workflow={workflowPreview.job}
+        previewTarget={workflowPreview.target}
+        viewerTarget={workflowPreview.viewer}
+        pending={workflowPreview.pending}
+        error={workflowPreview.error}
+        onRefresh={workflowPreview.onRefresh}
+      />
+      <RawMediaEvidence {...rawMedia} />
+      <div className={styles.passedGrid}>
+        <ManifestDiscoveryPanel manifest={detail.manifest} />
+        <section
+          className={styles.qualityPanel}
+          aria-labelledby="quality-result-title"
+        >
+          <Typography.Title id="quality-result-title" level={2}>
+            自动质检
+          </Typography.Title>
+          <PageState
+            state="empty"
+            label="自动质检"
+            title="自动质检报告尚未生成"
+            description="上传详情已可查看；报告生成后本页会自动刷新。"
+            onRetry={onRefreshQuality}
+            retryLabel="刷新质检状态"
+          />
+        </section>
+      </div>
+    </section>
+  );
+}
+
 export default function FormalUploadDetailPage() {
   const { uploadId = "" } = useParams();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const stableId =
     uploadId.trim() && !["latest", "current"].includes(uploadId)
       ? uploadId
       : null;
+  const requestedReturnTo = safeReturnTo(searchParams.get("returnTo"));
+  const problemDataReturnTo =
+    requestedReturnTo &&
+    new URL(requestedReturnTo, "https://application.invalid").pathname ===
+      problemDataPath
+      ? requestedReturnTo
+      : problemDataPath;
+  const problemDataContext =
+    location.pathname.startsWith(`${problemDataPath}/raw-diagnostic/`) ||
+    requestedReturnTo === problemDataReturnTo;
   const scopeSnapshot = useIngestScope();
   const scope = useMemo(
     () => (scopeSnapshot ? { ...scopeSnapshot } : null),
@@ -687,7 +807,7 @@ export default function FormalUploadDetailPage() {
     ],
   );
   const capabilities = useCapabilities();
-  const detail = useQuery({
+  const detail = useQuery<FormalUploadDetail>({
     queryKey: [
       "p04-formal-upload-detail",
       scope?.projectId,
@@ -696,6 +816,8 @@ export default function FormalUploadDetailPage() {
     ],
     enabled: Boolean(scope && stableId && capabilities.has("upload.read")),
     staleTime: 10_000,
+    refetchInterval: (query) =>
+      query.state.data?.quality === null ? 3_000 : false,
     queryFn: ({ signal }) => {
       if (!scope || !stableId) throw new Error("UPLOAD_SCOPE_UNAVAILABLE");
       return loadFormalUploadDetail(scope, stableId, signal);
@@ -824,20 +946,39 @@ export default function FormalUploadDetailPage() {
     error: workflow.error,
     onRefresh: () => void workflow.refetch(),
   };
+  const rawMediaView = {
+    source: rawMedia.data,
+    pending: rawMedia.isPending,
+    error: rawMedia.error,
+    onRefresh: () => void rawMedia.refetch(),
+  };
+
+  if (detail.data.quality === null) {
+    return (
+      <main className={styles.page}>
+        <PendingQualityUploadDetail
+          detail={detail.data}
+          workflowPreview={workflowPreview}
+          rawMedia={rawMediaView}
+          onRefreshQuality={() => void detail.refetch()}
+        />
+      </main>
+    );
+  }
+
+  const resolvedDetail: ResolvedFormalUploadDetail = {
+    ...detail.data,
+    quality: detail.data.quality,
+  };
 
   return (
     <main className={styles.page}>
-      {detail.data.quality.status === "PASS" ? (
+      {resolvedDetail.quality.status === "PASS" ? (
         <PassedUploadDetail
-          detail={detail.data}
+          detail={resolvedDetail}
           scope={scope}
           workflowPreview={workflowPreview}
-          rawMedia={{
-            source: rawMedia.data,
-            pending: rawMedia.isPending,
-            error: rawMedia.error,
-            onRefresh: () => void rawMedia.refetch(),
-          }}
+          rawMedia={rawMediaView}
         />
       ) : (
         <>
@@ -848,10 +989,12 @@ export default function FormalUploadDetailPage() {
             onRefresh={() => void rawMedia.refetch()}
           />
           <UploadDiagnostic
-            detail={detail.data}
+            detail={resolvedDetail}
             rawSourceAvailable={Boolean(rawMedia.data)}
             scope={scope}
             workflowPreview={workflowPreview}
+            returnTo={problemDataReturnTo}
+            problemDataContext={problemDataContext}
           />
         </>
       )}

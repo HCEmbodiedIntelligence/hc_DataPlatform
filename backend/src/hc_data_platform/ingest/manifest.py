@@ -153,6 +153,7 @@ def preflight_manifest(manifest: RolloutManifestV1) -> ManifestPreflightResultV1
     missing = tuple(sorted(set(manifest.expected_topics) - set(manifest.actual_topics)))
     return ManifestPreflightResultV1(
         manifest_fingerprint=hashlib.sha256(encoded).hexdigest(),
+        source_fingerprint=manifest.source_fingerprint,
         identifiers=ManifestIdentifiersV1(
             collection_session_id=manifest.collection_session_id,
             recording_request_id=manifest.recording_request_id,

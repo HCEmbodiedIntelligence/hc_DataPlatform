@@ -9,13 +9,14 @@ import type { AuthorizationSnapshot } from "../../entities/capability";
 import { makeScopeKey } from "../../entities/scope";
 import {
   getDashboardActivity,
-  getDashboardSnapshot,
+  getDashboardTaskStatus,
   listDashboardPendingItems,
 } from "../../features/dashboard/api/client";
 import {
   dashboardActivityFixture,
   dashboardPendingFixture,
-  dashboardSnapshotFixture,
+  dashboardTaskStatusAllTasksFixture,
+  dashboardTaskStatusFixture,
 } from "../../mocks/fixtures/dashboard";
 import {
   configureRuntime,
@@ -52,8 +53,14 @@ function json(body: unknown, init?: ResponseInit): Response {
 function responseFor(url: string): Response {
   if (url.includes("/dashboard/activity?"))
     return json(dashboardActivityFixture);
-  if (url.includes("/dashboard/snapshot?"))
-    return json(dashboardSnapshotFixture);
+  if (url.includes("/dashboard/task-status?")) {
+    const parsed = new URL(url, "https://frontend.invalid");
+    return json(
+      parsed.searchParams.has("task_id")
+        ? dashboardTaskStatusFixture
+        : dashboardTaskStatusAllTasksFixture,
+    );
+  }
   if (url.includes("/dashboard/pending-items?"))
     return json(dashboardPendingFixture);
   return json({ title: "Unexpected request", status: 404 }, { status: 404 });
@@ -97,15 +104,15 @@ describe("Dashboard production client path", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const [activity, snapshot, pending] = await Promise.all([
+    const [activity, taskStatus, pending] = await Promise.all([
       getDashboardActivity(dashboardScope, dashboardWindow),
-      getDashboardSnapshot(dashboardScope, dashboardWindow),
+      getDashboardTaskStatus(dashboardScope, "task-assembly-01"),
       listDashboardPendingItems(dashboardScope, dashboardWindow, { limit: 5 }),
     ]);
 
     expect(activity.items).toHaveLength(2);
-    expect(snapshot.signalPipeline.stages).toHaveLength(8);
-    expect(snapshot.signalPipeline.stageCounts.PUBLISHED).toBe(8);
+    expect(taskStatus.selected?.stages).toHaveLength(8);
+    expect(taskStatus.selected?.task.lifecycle).toBe("ACTIVE");
     expect(pending.items).toHaveLength(4);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const urls = fetchMock.mock.calls.map(([input]) => String(input));
@@ -116,14 +123,18 @@ describe("Dashboard production client path", () => {
     ).toEqual([
       "/api/v1/projects/prj_fx_01/dashboard/activity",
       "/api/v1/projects/prj_fx_01/dashboard/pending-items",
-      "/api/v1/projects/prj_fx_01/dashboard/snapshot",
+      "/api/v1/projects/prj_fx_01/dashboard/task-status",
     ]);
     for (const url of urls) {
       const parsed = new URL(url, "https://frontend.invalid");
       expect(parsed.searchParams.get("region_code")).toBe("cn-shanghai");
-      expect(parsed.searchParams.get("timezone")).toBe("Asia/Shanghai");
-      expect(parsed.searchParams.get("from")).toBe(dashboardWindow.from);
-      expect(parsed.searchParams.get("to")).toBe(dashboardWindow.to);
+      if (!parsed.pathname.endsWith("/task-status")) {
+        expect(parsed.searchParams.get("timezone")).toBe("Asia/Shanghai");
+        expect(parsed.searchParams.get("from")).toBe(dashboardWindow.from);
+        expect(parsed.searchParams.get("to")).toBe(dashboardWindow.to);
+      } else {
+        expect(parsed.searchParams.get("task_id")).toBe("task-assembly-01");
+      }
     }
   });
 
@@ -145,6 +156,10 @@ describe("Dashboard production client path", () => {
       await screen.findByRole("heading", { name: "最近活动" }),
     ).toBeVisible();
     expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    expect(screen.getByText("全部任务（2）")).toBeVisible();
+    expect(screen.getByLabelText("全部任务汇总")).toHaveTextContent(
+      "2 个任务 · 14 个数据包",
+    );
     expect(screen.queryByRole("heading", { name: "局部状态" })).toBeNull();
     expect(screen.queryByText("采集覆盖率")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -153,6 +168,79 @@ describe("Dashboard production client path", () => {
         String(input).includes("/dashboard/coverage"),
       ),
     ).toBe(false);
+  });
+
+  it("renders the Dashboard and issues all three reads for platform.admin", async () => {
+    useShellStore.setState({
+      authorization: {
+        scopeKey: makeScopeKey(scope),
+        roleVersion: "role-p01-platform-admin",
+        capabilities: ["platform.admin"],
+        fetchedAt: "2026-08-05T08:00:00Z",
+        expiresAt: "2099-08-05T08:00:00Z",
+      },
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      responseFor(String(input)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "最近活动" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    expect(screen.queryByText("无权访问")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      fetchMock.mock.calls
+        .map(
+          ([input]) =>
+            new URL(String(input), "https://frontend.invalid").pathname,
+        )
+        .sort(),
+    ).toEqual([
+      "/api/v1/projects/prj_fx_01/dashboard/activity",
+      "/api/v1/projects/prj_fx_01/dashboard/pending-items",
+      "/api/v1/projects/prj_fx_01/dashboard/task-status",
+    ]);
+  });
+
+  it("renders the complete zero-result Dashboard without tenant reads", () => {
+    useShellStore.setState({
+      scope: null,
+      scopeKey: makeScopeKey({ organizationId: "unscoped" }),
+      authorization: null,
+      authorizationLoading: false,
+      authorizationFailed: false,
+      bootstrapLoaded: true,
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "工作台" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "信号轨道" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "最近活动" })).toBeVisible();
+    expect(screen.getByText("当前范围没有采集任务")).toBeVisible();
+    expect(screen.queryByText("能力尚未开放")).toBeNull();
+    expect(screen.getByRole("button", { name: "刷新工作台" })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("fails closed on 403 authorization without issuing Dashboard reads", async () => {

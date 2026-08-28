@@ -131,12 +131,26 @@ function numericVector(
   if (expected === "SCALAR") {
     return typeof value === "number" && Number.isFinite(value) ? [value] : null;
   }
-  if (!Array.isArray(value) || value.length === 0 || value.length > 4096)
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const candidate = Array.isArray(value)
+    ? value
+    : Array.isArray(record?.positions)
+      ? record.positions
+      : Array.isArray(record?.values)
+        ? record.values
+        : Array.isArray(record?.position_xyz) &&
+            Array.isArray(record?.orientation_wxyz)
+          ? [...record.position_xyz, ...record.orientation_wxyz]
+          : null;
+  if (candidate === null || candidate.length === 0 || candidate.length > 4096)
     return null;
-  const numeric = value.every(
+  const numeric = candidate.every(
     (item): item is number => typeof item === "number" && Number.isFinite(item),
   );
-  return numeric ? value : null;
+  return numeric ? candidate : null;
 }
 
 function xyzPoints(value: unknown): Float32Array | null {
@@ -163,11 +177,20 @@ function eventLabel(value: unknown): string | null {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return null;
   const record = value as Record<string, unknown>;
-  for (const key of ["label", "type", "name"] as const) {
+  for (const key of [
+    "label",
+    "type",
+    "name",
+    "source_format",
+    "repository",
+  ] as const) {
     const candidate = record[key];
     if (typeof candidate === "string" && candidate.trim())
       return candidate.trim().slice(0, 256);
   }
+  const episodeIndex = record.episode_index;
+  if (typeof episodeIndex === "number" && Number.isFinite(episodeIndex))
+    return `episode ${episodeIndex}`;
   return null;
 }
 
@@ -253,22 +276,17 @@ export function createDatasetLanceWindowSource(input: {
           true,
         );
 
-      const timestampsNs = records.map((record) => record.timestamp_ns);
+      const timestampsNs: string[] = [];
       const values: (readonly number[])[] = [];
       const pointFrames: ViewerPointFrame[] = [];
       const events: ViewerEventSample[] = [];
       for (const record of records) {
         const value = record.modalities[input.binding.modality_key];
-        if (
-          record.sample_valid === false ||
-          record.valid[input.binding.modality_key] === false
-        ) {
-          throw p06DataError(
-            "P06_STREAM_SAMPLE_INVALID",
-            "当前时间范围包含不可用的采集样本。",
-            true,
-          );
-        }
+        // sample_valid is the aggregate row flag: one missing camera can make it
+        // false even when this numeric channel is valid.  Decode by the
+        // channel-specific validity bit and omit only that channel's gaps.
+        if (record.valid[input.binding.modality_key] === false) continue;
+        timestampsNs.push(record.timestamp_ns);
         if (input.binding.value_kind === "POINTCLOUD_XYZ") {
           const points = xyzPoints(value);
           if (points === null)
@@ -297,6 +315,13 @@ export function createDatasetLanceWindowSource(input: {
           );
         values.push(vector);
       }
+
+      if (!timestampsNs.length)
+        throw p06DataError(
+          "P06_STREAM_DATA_UNAVAILABLE",
+          "当前时间范围没有此通道的有效采集样本。",
+          true,
+        );
 
       return {
         generation: 0,

@@ -1,11 +1,19 @@
-import { Button, Input, Select } from "antd";
+import { Button, Input, Select, Space } from "antd";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Box, Boxes, FileStack, Search, ShieldCheck } from "lucide-react";
+import {
+  Box,
+  Boxes,
+  FileStack,
+  Search,
+  ShieldCheck,
+  Upload,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { RobotModel } from "../../entities/robot-model";
 import {
   useRobotModelAssetDownload,
+  authorizeRobotModelViewerAssets,
   useRobotModelAssets,
   useRobotModelBindings,
   useRobotModelJointMappings,
@@ -21,8 +29,12 @@ import {
   type RobotModelJointMapping,
   type RobotModelPublishPreflight,
 } from "../../features/robot-models/api";
-import { RobotSceneCore } from "../../features/viewer";
+import {
+  createLazyThreeRobotSceneLoader,
+  RobotSceneCore,
+} from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
+import { formatStorageSize } from "../../shared/lib/metric-presentation";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
   DataCursorPager,
@@ -46,7 +58,7 @@ const detailTabs = [
 
 const incompatibilityLabels = {
   JOINT_MAPPING: "Joint Mapping 与模型必需关节不匹配，已阻止加载错误 3D 事实。",
-  MODEL_VERSION: "模型版本与 Viewer Manifest 不匹配。",
+  MODEL_VERSION: "模型版本与查看器数据清单不匹配。",
   CALIBRATION_VERSION: "标定版本不匹配。",
   FRAME_GRAPH: "Frame Graph 不匹配。",
 } as const;
@@ -131,8 +143,12 @@ export function Component() {
   } | null>(null);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
   const scope = useShellStore((state) => state.scope);
-  const [bindingRegionCode, setBindingRegionCode] = useState("");
-  const [bindingRobotId, setBindingRobotId] = useState("");
+  const [bindingRegionCode, setBindingRegionCode] = useState(
+    search.targetRegionCode ?? "",
+  );
+  const [bindingRobotId, setBindingRobotId] = useState(
+    search.targetRobotId ?? "",
+  );
   const [bindingTarget, setBindingTarget] = useState<{
     readonly robotId: string;
     readonly displayName: string;
@@ -155,6 +171,34 @@ export function Component() {
       ),
     [jointMappings.data],
   );
+  const urdfAsset = assets.data?.find((asset) => asset.role === "URDF");
+  const runtimeLoader = useMemo(() => {
+    if (!selectedVersion || !urdfAsset || !scope?.organizationId) return;
+    const modelId = selectedVersion.robotModelId;
+    const modelVersion = selectedVersion.id;
+    const organizationId = scope.organizationId;
+    const requiredJoints = (jointMappings.data ?? []).map(
+      (mapping) => mapping.source_joint_name,
+    );
+    return createLazyThreeRobotSceneLoader(async (_props, signal) => {
+      const viewerAssets = await authorizeRobotModelViewerAssets(
+        organizationId,
+        modelVersion,
+        assets.data ?? [],
+        signal,
+      );
+      return {
+        manifest: { modelId, modelVersion, requiredJoints },
+        ...viewerAssets,
+      };
+    });
+  }, [
+    assets.data,
+    jointMappings.data,
+    scope?.organizationId,
+    selectedVersion,
+    urdfAsset,
+  ]);
 
   useEffect(() => {
     if (!selectedVersion || !jointMappings.data) return;
@@ -174,6 +218,11 @@ export function Component() {
       setBindingRegionCode(scope.regionCode);
     }
   }, [bindingRegionCode, scope?.regionCode]);
+
+  useEffect(() => {
+    if (search.targetRobotId) setBindingRobotId(search.targetRobotId);
+    if (search.targetRegionCode) setBindingRegionCode(search.targetRegionCode);
+  }, [search.targetRegionCode, search.targetRobotId]);
 
   const downloadAsset = async (assetId: string) => {
     if (!selectedVersion) return;
@@ -271,6 +320,14 @@ export function Component() {
     });
     setPreflight(null);
     setPublishMessage(`版本 ${published.versionLabel} 已发布。`);
+    if (search.targetRobotId) {
+      setParams(
+        robotModelsQueryCodec.build(
+          { ...search, detailTab: "bindings", versionId: published.id },
+          search,
+        ),
+      );
+    }
   };
 
   const loadBindingTarget = async () => {
@@ -394,21 +451,30 @@ export function Component() {
             { key: "models", label: "机器人模型资产" },
           ],
           actions: (
-            <Button
-              disabled={selectedVersion?.lifecycle !== "DRAFT"}
-              onClick={() =>
-                setParams(
-                  robotModelsQueryCodec.build(
-                    { ...search, detailTab: "assets" },
-                    search,
-                  ),
-                )
-              }
-            >
-              {selectedVersion?.lifecycle === "DRAFT"
-                ? "管理资产文件"
-                : "选择草稿版本以管理资产"}
-            </Button>
+            <Space wrap>
+              <Button
+                type="primary"
+                href="/settings/robots"
+                icon={<Upload aria-hidden="true" size={16} />}
+              >
+                导入 URDF / 配置文件
+              </Button>
+              <Button
+                disabled={selectedVersion?.lifecycle !== "DRAFT"}
+                onClick={() =>
+                  setParams(
+                    robotModelsQueryCodec.build(
+                      { ...search, detailTab: "assets" },
+                      search,
+                    ),
+                  )
+                }
+              >
+                {selectedVersion?.lifecycle === "DRAFT"
+                  ? "管理资产文件"
+                  : "选择草稿版本以管理资产"}
+              </Button>
+            </Space>
           ),
         }}
         summary={
@@ -590,6 +656,7 @@ export function Component() {
                       modelVersion: selectedVersion.id,
                     }}
                     jointMapping={viewerJointMapping}
+                    runtimeLoader={runtimeLoader}
                     onIncompatible={(reason) =>
                       setIncompatibleReason(incompatibilityLabels[reason])
                     }
@@ -698,7 +765,7 @@ export function Component() {
                               <strong>{asset.relative_path}</strong>
                               <small>
                                 {asset.role} · {asset.media_type} ·{" "}
-                                {asset.size_bytes} B
+                                {formatStorageSize(asset.size_bytes)}
                               </small>
                             </span>
                             <Button
@@ -733,6 +800,14 @@ export function Component() {
                         浏览器只保留短期分片授权；请提供构建产物的
                         SHA-256，客户端不会把大文件完整读入内存。
                       </p>
+                      <div className={workspace.actionRow}>
+                        <Button href="/robots/annotation-demo/robot.urdf">
+                          下载内置 7 轴测试 URDF
+                        </Button>
+                        <Button href="/robots/annotation-demo/robot.config.json">
+                          下载测试配置文件
+                        </Button>
+                      </div>
                       <label className={workspace.toolbarField}>
                         <span>资产文件</span>
                         <input

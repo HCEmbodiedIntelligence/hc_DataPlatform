@@ -7,8 +7,15 @@ import type {
 export interface RobotSceneAssets {
   readonly manifest: RobotSceneManifest;
   readonly urdfUrl: string;
-  readonly packages?: string | Readonly<Record<string, string>>;
+  readonly urdfPath?: string;
+  readonly assetUrls?: Readonly<Record<string, string>>;
+  readonly packages?:
+    | string
+    | Readonly<Record<string, string>>
+    | ((packageName: string) => string);
   readonly background?: string;
+  readonly jointFrameSource?: RobotSceneCoreProps["jointFrameSource"];
+  readonly jointMapping?: RobotSceneCoreProps["jointMapping"];
 }
 
 export type RobotSceneAssetResolver = (
@@ -29,7 +36,15 @@ export function createLazyThreeRobotSceneLoader(resolveAssets: RobotSceneAssetRe
       createRuntime: async () => {
         const { createThreeRobotSceneRuntime } = await import('./runtime/threeRobotSceneRuntime');
         if (signal.aborted) throw new DOMException('Robot scene load aborted', 'AbortError');
-        return createThreeRobotSceneRuntime(host, assets, signal);
+        return createThreeRobotSceneRuntime(
+          host,
+          {
+            ...assets,
+            jointFrameSource: assets.jointFrameSource ?? props.jointFrameSource,
+            jointMapping: assets.jointMapping ?? props.jointMapping,
+          },
+          signal,
+        );
       },
     };
   };

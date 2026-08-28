@@ -18,13 +18,17 @@ from hc_data_platform.core.errors import ProblemException, problem
 from .access_models import (
     AccessAuditEvent,
     AccessRequestStatus,
+    AccountAccessOverview,
+    AccountAccessRequest,
     AccountCredential,
     AccountNotification,
     AccountNotificationKind,
     AccountNotificationResourceType,
     AccountNotificationState,
+    AccountOrganizationMembership,
     AccountPrincipal,
     AccountProfileRecord,
+    AccountProjectMembership,
     AccountStatus,
     AvailableScope,
     CapabilityRequest,
@@ -305,6 +309,42 @@ class AccessRepository(AccountRecoveryRepository, AdminAccountRepository, Protoc
         self, *, principal_id: str, notification_id: str, request_id: str
     ) -> bool: ...
 
+    def list_organization_memberships(
+        self, *, principal_id: str
+    ) -> tuple[AccountOrganizationMembership, ...]: ...
+
+    def account_access_overview(self, *, principal_id: str) -> AccountAccessOverview: ...
+
+    def create_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id_or_join_code: str,
+        reason: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest: ...
+
+    def decide_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        target_status: AccessRequestStatus,
+        reason: str | None,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest: ...
+
+    def withdraw_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest: ...
+
     def create_membership_request(
         self,
         *,
@@ -441,7 +481,10 @@ class InMemoryAccessRepository:
         self._platform_capabilities: dict[str, set[str]] = {}
         self._deleted_accounts: dict[str, datetime] = {}
         self._memberships: set[tuple[str, str, str]] = set()
+        self._organization_memberships: set[tuple[str, str]] = set()
         self._organization_projects = set(organization_projects)
+        self._organization_membership_requests: dict[str, AccountAccessRequest] = {}
+        self._organization_request_owners: dict[str, str] = {}
         self._membership_requests: dict[str, MembershipRequest] = {}
         self._capability_requests: dict[str, CapabilityRequest] = {}
         self._notifications: dict[str, AccountNotification] = {}
@@ -1436,6 +1479,303 @@ class InMemoryAccessRepository:
             )
             return True
 
+    def list_organization_memberships(
+        self, *, principal_id: str
+    ) -> tuple[AccountOrganizationMembership, ...]:
+        with self._lock:
+            organization_ids = {
+                organization_id
+                for member_id, organization_id in self._organization_memberships
+                if member_id == principal_id
+            }
+            # Older project grants predate the separate organization relationship.
+            organization_ids.update(
+                organization_id
+                for member_id, organization_id, _ in self._memberships
+                if member_id == principal_id
+            )
+            return tuple(
+                AccountOrganizationMembership(
+                    organization_id=organization_id,
+                    organization_name=organization_id,
+                )
+                for organization_id in sorted(organization_ids)
+            )
+
+    def account_access_overview(self, *, principal_id: str) -> AccountAccessOverview:
+        with self._lock:
+            organizations = self.list_organization_memberships(principal_id=principal_id)
+            projects = tuple(
+                AccountProjectMembership(
+                    organization_id=organization_id,
+                    organization_name=organization_id,
+                    project_id=project_id,
+                    project_name=project_id,
+                )
+                for member_id, organization_id, project_id in sorted(self._memberships)
+                if member_id == principal_id
+            )
+            requests = [
+                item
+                for item in self._organization_membership_requests.values()
+                if self._organization_request_owners.get(item.request_id) == principal_id
+            ]
+            requests.extend(
+                AccountAccessRequest(
+                    request_id=item.request_id,
+                    kind="PROJECT",
+                    organization_id=item.organization_id,
+                    project_id=item.project_id,
+                    status=item.status,
+                    reason=item.reason,
+                    created_at=item.created_at,
+                    updated_at=item.updated_at,
+                    revision=item.revision,
+                )
+                for item in self._membership_requests.values()
+                if item.requester_id == principal_id
+            )
+            requests.extend(
+                AccountAccessRequest(
+                    request_id=item.request_id,
+                    kind="CAPABILITY",
+                    organization_id=item.organization_id,
+                    project_id=item.project_id,
+                    capability_keys=item.capability_keys,
+                    status=item.status,
+                    reason=item.reason,
+                    created_at=item.created_at,
+                    updated_at=item.updated_at,
+                    revision=item.revision,
+                )
+                for item in self._capability_requests.values()
+                if item.requester_id == principal_id
+            )
+            ordered = tuple(
+                sorted(requests, key=lambda item: (item.created_at, item.request_id), reverse=True)
+            )
+            return AccountAccessOverview(
+                organizations=organizations,
+                projects=projects,
+                requests=ordered,
+                pending_request_count=sum(
+                    item.status is AccessRequestStatus.PENDING for item in ordered
+                ),
+            )
+
+    def create_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id_or_join_code: str,
+        reason: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        payload = {
+            "organization_id_or_join_code": organization_id_or_join_code,
+            "reason": reason,
+        }
+        with self._lock:
+            if auth.subject_id not in self._accounts:
+                raise _account_principal_required()
+            repeated = self._repeat(
+                auth.subject_id, "organization-membership.create", idempotency_key, payload
+            )
+            if repeated is not None:
+                return self._organization_membership_requests[repeated]
+            organization_ids = {item[0] for item in self._organization_projects}
+            if organization_id_or_join_code not in organization_ids:
+                raise _not_found("organization")
+            organization_id = organization_id_or_join_code
+            if (auth.subject_id, organization_id) in self._organization_memberships:
+                raise problem(
+                    status=409,
+                    code="ORGANIZATION_MEMBERSHIP_ALREADY_ACTIVE",
+                    title="Organization membership already active",
+                    detail="The principal is already a member of this organization.",
+                )
+            if any(
+                item.organization_id == organization_id
+                and item.status is AccessRequestStatus.PENDING
+                and self._organization_request_owners.get(item.request_id) == auth.subject_id
+                for item in self._organization_membership_requests.values()
+            ):
+                raise problem(
+                    status=409,
+                    code="ORGANIZATION_MEMBERSHIP_REQUEST_ALREADY_PENDING",
+                    title="Organization membership request already pending",
+                    detail="A pending membership request already exists for this organization.",
+                )
+            timestamp = _now()
+            item = AccountAccessRequest(
+                request_id=str(uuid4()),
+                kind="ORGANIZATION",
+                organization_id=organization_id,
+                status=AccessRequestStatus.PENDING,
+                reason=reason,
+                created_at=timestamp,
+                updated_at=timestamp,
+                revision=1,
+            )
+            # AccountAccessRequest is a public projection; requester ownership is keyed here.
+            self._organization_membership_requests[item.request_id] = item
+            self._organization_request_owners[item.request_id] = auth.subject_id
+            self._remember(
+                auth.subject_id,
+                "organization-membership.create",
+                idempotency_key,
+                payload,
+                item.request_id,
+            )
+            self._append_audit(
+                scope_kind="PLATFORM",
+                organization_id=organization_id,
+                project_id=None,
+                actor_id=auth.subject_id,
+                action="access.organization-membership.requested",
+                resource_type="organization_membership_request",
+                resource_id=item.request_id,
+                request_id=request_id,
+                outcome="SUCCEEDED",
+                safe_details={"status": item.status.value, "requester_id": auth.subject_id},
+            )
+            return item
+
+    def decide_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        target_status: AccessRequestStatus,
+        reason: str | None,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        auth.require_capability(CAPABILITY_PLATFORM_ADMIN)
+        if target_status not in {
+            AccessRequestStatus.APPROVED,
+            AccessRequestStatus.REJECTED,
+            AccessRequestStatus.REVOKED,
+        }:
+            raise ValueError("unsupported organization membership transition")
+        payload = {
+            "request_id": access_request_id,
+            "status": target_status.value,
+            "reason": reason,
+        }
+        with self._lock:
+            repeated = self._repeat(
+                auth.subject_id, "organization-membership.decide", idempotency_key, payload
+            )
+            if repeated is not None:
+                return self._organization_membership_requests[repeated]
+            item = self._organization_membership_requests.get(access_request_id)
+            if item is None:
+                raise _not_found("organization_membership_request")
+            expected = (
+                AccessRequestStatus.APPROVED
+                if target_status is AccessRequestStatus.REVOKED
+                else AccessRequestStatus.PENDING
+            )
+            if item.status is not target_status and item.status is not expected:
+                raise _transition_conflict(item.status)
+            updated = (
+                item
+                if item.status is target_status
+                else item.model_copy(
+                    update={
+                        "status": target_status,
+                        "updated_at": _now(),
+                        "revision": item.revision + 1,
+                    }
+                )
+            )
+            self._organization_membership_requests[item.request_id] = updated
+            owner_id = self._organization_request_owners.get(item.request_id)
+            if owner_id is None:
+                raise _not_found("organization_membership_request")
+            if target_status is AccessRequestStatus.APPROVED:
+                self._organization_memberships.add((owner_id, item.organization_id))
+                self._bump_revision(owner_id)
+            elif target_status is AccessRequestStatus.REVOKED:
+                self._organization_memberships.discard((owner_id, item.organization_id))
+                revoked_projects = {
+                    project_id
+                    for member_id, organization_id, project_id in self._memberships
+                    if member_id == owner_id and organization_id == item.organization_id
+                }
+                self._memberships = {
+                    membership
+                    for membership in self._memberships
+                    if not (membership[0] == owner_id and membership[1] == item.organization_id)
+                }
+                for project_id in revoked_projects:
+                    self._revoke_capability_requests(
+                        owner_id, item.organization_id, project_id, auth.subject_id
+                    )
+                self._bump_revision(owner_id)
+            self._remember(
+                auth.subject_id,
+                "organization-membership.decide",
+                idempotency_key,
+                payload,
+                item.request_id,
+            )
+            return updated
+
+    def withdraw_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        payload = {"request_id": access_request_id}
+        with self._lock:
+            repeated = self._repeat(
+                auth.subject_id, "organization-membership.withdraw", idempotency_key, payload
+            )
+            if repeated is not None:
+                return self._organization_membership_requests[repeated]
+            item = self._organization_membership_requests.get(access_request_id)
+            if (
+                item is None
+                or self._organization_request_owners.get(item.request_id) != auth.subject_id
+            ):
+                raise _not_found("organization_membership_request")
+            if item.status is not AccessRequestStatus.PENDING:
+                raise _transition_conflict(item.status)
+            updated = item.model_copy(
+                update={
+                    "status": AccessRequestStatus.WITHDRAWN,
+                    "updated_at": _now(),
+                    "revision": item.revision + 1,
+                }
+            )
+            self._organization_membership_requests[item.request_id] = updated
+            self._remember(
+                auth.subject_id,
+                "organization-membership.withdraw",
+                idempotency_key,
+                payload,
+                item.request_id,
+            )
+            self._append_audit(
+                scope_kind="PLATFORM",
+                organization_id=item.organization_id,
+                project_id=None,
+                actor_id=auth.subject_id,
+                action="access.organization-membership.withdrawn",
+                resource_type="organization_membership_request",
+                resource_id=item.request_id,
+                request_id=request_id,
+                outcome="SUCCEEDED",
+                safe_details={"status": updated.status.value},
+            )
+            return updated
+
     def create_membership_request(
         self,
         *,
@@ -1600,6 +1940,7 @@ class InMemoryAccessRepository:
             )
             self._membership_requests[item.request_id] = updated
             if target_status is AccessRequestStatus.APPROVED:
+                self._organization_memberships.add((item.requester_id, organization_id))
                 self._memberships.add((item.requester_id, organization_id, project_id))
                 self._bump_revision(item.requester_id)
             elif target_status is AccessRequestStatus.REVOKED:

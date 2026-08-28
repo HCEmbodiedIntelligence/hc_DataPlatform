@@ -7,7 +7,7 @@ from typing import Any
 
 from hc_data_platform.core.errors import problem
 
-from .models import QcReportV1, QualityProfileV1, QualitySummaryV1
+from .models import AutoQualityProblemV1, QcReportV1, QualityProfileV1, QualitySummaryV1
 
 
 class PostgresQualityRepository:
@@ -179,6 +179,59 @@ class PostgresQualityRepository:
             (project_id, region_code, rollout_id),
         )
         return None if row is None else self._report(row[0])
+
+    def list_problem_reports(
+        self, *, project_id: str, region_code: str
+    ) -> tuple[AutoQualityProblemV1, ...]:
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT report.report_json,
+                           session.session_id,
+                           session.data_package_id,
+                           summary.updated_at
+                      FROM quality_rollout_summaries AS summary
+                      JOIN qc_reports AS report
+                        ON report.project_id = summary.project_id
+                       AND report.region_code = summary.region_code
+                       AND report.report_sha256 = summary.report_sha256
+                      LEFT JOIN LATERAL (
+                           SELECT upload.session_id, upload.data_package_id
+                             FROM ingest.upload_sessions AS upload
+                            WHERE upload.project_id = summary.project_id
+                              AND upload.region_code = summary.region_code
+                              AND upload.rollout_id = summary.rollout_id
+                            ORDER BY upload.created_at DESC, upload.session_id DESC
+                            LIMIT 1
+                      ) AS session ON TRUE
+                     WHERE summary.project_id = %s
+                       AND summary.region_code = %s
+                       AND summary.status IN ('RISK', 'REJECT')
+                     ORDER BY summary.updated_at DESC, summary.rollout_id DESC
+                     LIMIT 1000
+                    """,
+                    (project_id, region_code),
+                )
+                result: list[AutoQualityProblemV1] = []
+                for report_json, session_id, data_package_id, updated_at in cursor.fetchall():
+                    report = self._report(report_json)
+                    if not report.findings:
+                        continue
+                    result.append(
+                        AutoQualityProblemV1.from_report(
+                            report,
+                            session_id=None if session_id is None else str(session_id),
+                            data_package_id=(
+                                None if data_package_id is None else str(data_package_id)
+                            ),
+                            updated_at=updated_at,
+                        )
+                    )
+                return tuple(result)
+        finally:
+            connection.close()
 
     def _fetchone(self, query: str, params: tuple[object, ...]) -> Any | None:
         connection = self._connection_factory()

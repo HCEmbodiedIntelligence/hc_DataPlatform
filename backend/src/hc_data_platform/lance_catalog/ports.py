@@ -54,6 +54,8 @@ class StepReaderPort(Protocol):
 class LanceCatalogPort(StepReaderPort, Protocol):
     def register_schema(self, snapshot: DatasetSchemaSnapshot) -> None: ...
 
+    def schema_for(self, project_id: str, dataset_id: str) -> DatasetSchemaSnapshot | None: ...
+
     def commit_fragment(
         self,
         manifest: AlignedFragmentManifestV1,
@@ -106,6 +108,13 @@ class LanceStoragePort(Protocol):
         manifest: AlignedFragmentManifestV1,
         stage_uri: str,
     ) -> StorageCommitReceipt: ...
+
+    def cleanup_attempt(
+        self,
+        snapshot: DatasetSchemaSnapshot,
+        manifest: AlignedFragmentManifestV1,
+    ) -> None:
+        """Delete an attempt dataset only after its shared commit is indexed."""
 
     def read_steps(
         self,

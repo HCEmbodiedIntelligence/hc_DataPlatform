@@ -89,6 +89,13 @@ def test_preview_serving_api_images_include_the_media_runtime() -> None:
     assert "ffprobe -version >/dev/null" in dockerfile
 
 
+def test_media_runtime_prepares_writable_worker_staging_directories() -> None:
+    dockerfile = (ROOT / "backend/Dockerfile").read_text(encoding="utf-8")
+    assert "install -d -o 65532 -g 65532 -m 0750" in dockerfile
+    assert "/tmp/hc-data/alignment" in dockerfile
+    assert "/tmp/hc-data/previews" in dockerfile
+
+
 def test_worker_images_install_and_import_the_production_ros2_decoder() -> None:
     pyproject = (ROOT / "backend/pyproject.toml").read_text(encoding="utf-8")
     dockerfile = (ROOT / "backend/Dockerfile").read_text(encoding="utf-8")

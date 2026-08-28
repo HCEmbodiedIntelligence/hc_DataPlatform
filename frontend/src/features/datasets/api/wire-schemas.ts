@@ -78,6 +78,7 @@ export const datasetWireSchema = z
   .object({
     scope: scopeWireSchema,
     dataset_id: datasetIdWireSchema,
+    folder_path: z.array(z.string().min(1).max(128)).max(16),
     name: z.string().min(1).max(256),
     description: z.string().max(4096),
     labels: z.array(z.string().min(1).max(96)).max(64),
@@ -105,7 +106,10 @@ export const datasetListItemWireSchema = z
   .object({
     scope: scopeWireSchema,
     dataset_id: datasetIdWireSchema,
+    folder_path: z.array(z.string().min(1).max(128)).max(16),
+    collection_task_id: z.string().min(1).max(128).nullable().optional(),
     name: z.string().min(1).max(256),
+    availability: z.string().min(1),
     dataset_created_at: isoDateTimeWireSchema,
     dataset_activity_at: isoDateTimeWireSchema,
     current_version: currentReadyVersionWireSchema.nullable(),
@@ -140,6 +144,7 @@ export const datasetFacetsWireSchema = z
     robots: z.array(facetValueWireSchema),
     robot_models: z.array(facetValueWireSchema),
     tasks: z.array(facetValueWireSchema),
+    tags: z.array(facetValueWireSchema),
     scenes: z.array(facetValueWireSchema),
     asset_states: z.array(facetValueWireSchema),
     storage_classes: z.array(facetValueWireSchema),
@@ -188,8 +193,27 @@ export const datasetBootstrapDataWireSchema = z
     scope: scopeWireSchema,
     dataset: datasetWireSchema,
     current_ready_version: currentReadyVersionWireSchema.nullable(),
+    working_version_id: versionIdWireSchema.nullable().optional(),
     suggested_version_id: versionIdWireSchema.nullable(),
     summary: datasetDetailSummaryWireSchema,
+  })
+  .strict();
+
+export const publishedDatasetManifestWireSchema = z
+  .object({
+    schema_version: z.literal("published-dataset-manifest/v1"),
+    project_id: z.string().min(1),
+    dataset_id: datasetIdWireSchema,
+    dataset_version: z.string().min(1),
+    base_lance_version: z.string().min(1),
+    created_at: isoDateTimeWireSchema,
+    content_hash: sha256WireSchema,
+    annotations_uri: z.string().min(1),
+    annotations_content_sha256: sha256WireSchema,
+    training_manifest_uri: z.string().min(1),
+    training_manifest_content_sha256: sha256WireSchema,
+    rollouts: z.array(z.unknown()),
+    excluded_rollouts: z.array(z.unknown()),
   })
   .strict();
 
@@ -312,6 +336,7 @@ export const sourceProvenanceWireSchema = z
     scope: scopeWireSchema,
     dataset_id: datasetIdWireSchema,
     version_id: versionIdWireSchema,
+    storage_region_code: z.string().min(1).max(64).nullable().optional(),
     provenance_id: z.string().min(1).max(128),
     upload_id: z.string().min(1).max(128),
     source_id: z.string().min(1).max(128).nullable().optional(),
@@ -559,6 +584,7 @@ export const versionEpisodeListItemWireSchema = z
     dataset_id: datasetIdWireSchema,
     version_id: versionIdWireSchema,
     episode_id: episodeIdWireSchema,
+    storage_region_code: z.string().min(1).max(64).nullable().optional(),
     selected_revision: revisionSnapshotRefWireSchema,
     included: z.boolean(),
     success_state: z.string().min(1),
@@ -859,6 +885,7 @@ export const createDatasetRequestWireSchema = z
     name: z.string().trim().min(1).max(256),
     description: z.string().max(4096),
     labels: z.array(z.string().min(1).max(96)).max(64),
+    folder_path: z.array(z.string().min(1).max(128)).max(16),
   })
   .strict();
 

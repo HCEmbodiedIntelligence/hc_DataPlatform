@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -15,12 +15,18 @@ from hc_data_platform.core.context import (
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.dataset_registry.models import (
     CreateDatasetCommand,
+    DatasetPageActor,
+    DatasetPageEpisodeRecord,
+    DatasetPageMetadata,
     DatasetPageMutationRecord,
     DatasetPageRecord,
+    DatasetPageRevisionSnapshotReference,
+    DatasetPageScope,
 )
 from hc_data_platform.dataset_registry.repository import (
     DatasetPageFilters,
     DbApiConnection,
+    InMemoryDatasetPageRepository,
     PostgresDatasetPageRepository,
 )
 from hc_data_platform.dataset_registry.service import DatasetPageService
@@ -87,11 +93,18 @@ def _prepare_app_role(dsn: str) -> None:
             )
         )
         cursor.execute(
-            "GRANT USAGE ON SCHEMA core, registry, dataset_registry TO p05_dataset_page_writer"
+            "GRANT USAGE ON SCHEMA core, registry, dataset_registry, collection_tasks "
+            "TO p05_dataset_page_writer"
         )
         cursor.execute("GRANT SELECT ON registry.organization_projects TO p05_dataset_page_writer")
         cursor.execute(
             "GRANT SELECT, INSERT ON dataset_registry.datasets TO p05_dataset_page_writer"
+        )
+        cursor.execute(
+            "GRANT SELECT ON dataset_registry.dataset_version_episodes TO p05_dataset_page_writer"
+        )
+        cursor.execute(
+            "GRANT SELECT ON collection_tasks.collection_tasks TO p05_dataset_page_writer"
         )
         cursor.execute("GRANT INSERT ON core.audit_events TO p05_dataset_page_writer")
         cursor.execute(
@@ -101,6 +114,14 @@ def _prepare_app_role(dsn: str) -> None:
 
 def _cleanup(dsn: str) -> None:
     with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM dataset_registry.dataset_version_episodes WHERE project_id IN (%s, %s)",
+            (PROJECT_ID, FOREIGN_PROJECT_ID),
+        )
+        cursor.execute(
+            "DELETE FROM dataset_registry.dataset_versions WHERE project_id IN (%s, %s)",
+            (PROJECT_ID, FOREIGN_PROJECT_ID),
+        )
         cursor.execute(
             "DELETE FROM core.audit_integrity_entries WHERE project_id IN (%s, %s)",
             (PROJECT_ID, FOREIGN_PROJECT_ID),
@@ -159,6 +180,163 @@ def _command() -> CreateDatasetCommand:
         name="P05 PostgreSQL Dataset",
         description="P05 durable dataset-page aggregate",
         labels=("p05", "postgres"),
+    )
+
+
+def _filter_record(
+    *,
+    dataset_id: str,
+    name: str,
+    task: str,
+    pending: str = "0",
+    returned: str = "0",
+    draft: str = "0",
+) -> DatasetPageRecord:
+    scope = DatasetPageScope(
+        organization_id=ORGANIZATION_ID,
+        project_id=PROJECT_ID,
+        region_code=REGION_CODE,
+    )
+    return DatasetPageRecord(
+        scope=scope,
+        dataset_id=dataset_id,
+        name=name,
+        description="PostgreSQL filter semantics",
+        availability="ACTIVE",
+        owner=DatasetPageActor(id="filter-owner", display_name="Filter Owner"),
+        created_at=NOW,
+        updated_at=NOW,
+        activity_at=NOW,
+        etag='"v1"',
+        metadata=DatasetPageMetadata(
+            robot_model_id="model-filter",
+            robot_id=f"robot-{dataset_id}",
+            task=task,
+            scene="lab",
+            asset_state="READY",
+            storage_class="STANDARD",
+        ),
+        pending_review_version_count=pending,
+        returned_version_count=returned,
+        actionable_draft_count=draft,
+    )
+
+
+def _filter_episode(*, dataset_id: str, episode_id: str, ordinal: int) -> DatasetPageEpisodeRecord:
+    return DatasetPageEpisodeRecord(
+        scope=DatasetPageScope(
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            region_code=REGION_CODE,
+        ),
+        dataset_id=dataset_id,
+        version_id="version_filterepisode",
+        episode_id=episode_id,
+        selected_revision=DatasetPageRevisionSnapshotReference(
+            episode_id=episode_id,
+            revision_id=f"revision_filterepisode{ordinal}",
+            ordinal=ordinal,
+            content_sha256=str(ordinal + 1) * 64,
+        ),
+        included=True,
+        success_state="SUCCEEDED",
+        task="robot-picking-task",
+    )
+
+
+def _insert_filter_record(cursor: Any, record: DatasetPageRecord) -> None:
+    cursor.execute(
+        """
+        INSERT INTO dataset_registry.datasets (
+            organization_id, project_id, region_code, dataset_id, name, description,
+            labels, availability, owner_id, owner_display_name, robot_model_id, robot_id,
+            task, scene, asset_state, storage_class, channels, episode_count,
+            pending_review_version_count, returned_version_count, actionable_draft_count,
+            version, dataset_document, created_at, updated_at, activity_at
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, '[]'::jsonb, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, '[]'::jsonb, %s, %s, %s, %s, 1, %s::jsonb, %s, %s, %s
+        )
+        """,
+        (
+            record.scope.organization_id,
+            record.scope.project_id,
+            record.scope.region_code,
+            record.dataset_id,
+            record.name,
+            record.description,
+            record.availability,
+            record.owner.id,
+            record.owner.display_name,
+            record.metadata.robot_model_id,
+            record.metadata.robot_id,
+            record.metadata.task,
+            record.metadata.scene,
+            record.metadata.asset_state,
+            record.metadata.storage_class,
+            int(record.episode_count),
+            int(record.pending_review_version_count),
+            int(record.returned_version_count),
+            int(record.actionable_draft_count),
+            record.model_dump_json(),
+            record.created_at,
+            record.updated_at,
+            record.activity_at,
+        ),
+    )
+
+
+def _insert_filter_episode(cursor: Any, episode: DatasetPageEpisodeRecord) -> None:
+    version_document = {
+        "scope": episode.scope.model_dump(mode="json"),
+        "dataset_id": episode.dataset_id,
+        "version_id": episode.version_id,
+        "display_version": "v1",
+        "kind": "RAW",
+        "status": "REVIEWING",
+    }
+    cursor.execute(
+        """
+        INSERT INTO dataset_registry.dataset_versions (
+            organization_id, project_id, region_code, dataset_id, version_id,
+            display_version, version_kind, version_status, created_at, version_document
+        ) VALUES (%s, %s, %s, %s, %s, 'v1', 'RAW', 'REVIEWING', %s, %s::jsonb)
+        ON CONFLICT DO NOTHING
+        """,
+        (
+            episode.scope.organization_id,
+            episode.scope.project_id,
+            episode.scope.region_code,
+            episode.dataset_id,
+            episode.version_id,
+            NOW,
+            psycopg.types.json.Jsonb(version_document),
+        ),
+    )
+    cursor.execute(
+        """
+        INSERT INTO dataset_registry.dataset_version_episodes (
+            organization_id, project_id, region_code, dataset_id, version_id, episode_id,
+            revision_id, ordinal, started_at_ns, included, success_state, task,
+            review_finding_count, has_finding, episode_document
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s, %s, 0, false, %s::jsonb
+        )
+        """,
+        (
+            episode.scope.organization_id,
+            episode.scope.project_id,
+            episode.scope.region_code,
+            episode.dataset_id,
+            episode.version_id,
+            episode.episode_id,
+            episode.selected_revision.revision_id,
+            episode.selected_revision.ordinal,
+            episode.included,
+            episode.success_state,
+            episode.task,
+            episode.model_dump_json(),
+        ),
     )
 
 
@@ -308,6 +486,89 @@ def test_postgres_dataset_page_is_rls_scoped_audited_and_replayable() -> None:
                     cursor.close()
             finally:
                 connection.close()
+        finally:
+            reset_request_context(token)
+    finally:
+        _cleanup(superuser_dsn)
+        _drop_app_role(superuser_dsn)
+
+
+def test_postgres_and_memory_dataset_filters_have_identical_task_and_workflow_semantics() -> None:
+    superuser_dsn = _superuser_dsn()
+    _cleanup(superuser_dsn)
+    _prepare_app_role(superuser_dsn)
+    records = (
+        _filter_record(
+            dataset_id="dataset_filterpending",
+            name="Filter pending",
+            task="PickBox",
+            pending="1",
+        ),
+        _filter_record(
+            dataset_id="dataset_filterepisode",
+            name="Filter episode",
+            task="unrelated",
+            returned="2",
+        ),
+        _filter_record(
+            dataset_id="dataset_filterliteral",
+            name="Filter literal",
+            task="literal-%_task",
+            draft="3",
+        ),
+    )
+    episodes = (
+        _filter_episode(
+            dataset_id="dataset_filterepisode",
+            episode_id="episode_filterepisode0",
+            ordinal=0,
+        ),
+        _filter_episode(
+            dataset_id="dataset_filterepisode",
+            episode_id="episode_filterepisode1",
+            ordinal=1,
+        ),
+    )
+    try:
+        with psycopg.connect(superuser_dsn) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO registry.organization_projects (organization_id, project_id) "
+                "VALUES (%s, %s)",
+                (ORGANIZATION_ID, PROJECT_ID),
+            )
+            for record in records:
+                _insert_filter_record(cursor, record)
+            for episode in episodes:
+                _insert_filter_episode(cursor, episode)
+
+        scope = records[0].scope
+        memory = InMemoryDatasetPageRepository(records=records, episodes=episodes)
+        token = bind_request_context(_request_context())
+        try:
+            postgres = PostgresDatasetPageRepository(_connection_factory(_app_dsn(superuser_dsn)))
+            filters_to_compare = (
+                DatasetPageFilters(task="PICK"),
+                DatasetPageFilters(task="%_"),
+                DatasetPageFilters(workflow_state="pendingReview"),
+                DatasetPageFilters(workflow_state="returned"),
+                DatasetPageFilters(workflow_state="actionableDraft"),
+                DatasetPageFilters(
+                    task="pick",
+                    workflow_state="pendingReview",
+                    asset_state="READY",
+                    created_from=NOW.date(),
+                    created_to=NOW.date(),
+                ),
+            )
+            for filters in filters_to_compare:
+                memory_ids = {
+                    record.dataset_id
+                    for record in memory.list_records(scope=scope, filters=filters)
+                }
+                postgres_records = postgres.list_records(scope=scope, filters=filters)
+                postgres_ids = [record.dataset_id for record in postgres_records]
+                assert set(postgres_ids) == memory_ids
+                assert len(postgres_ids) == len(set(postgres_ids))
         finally:
             reset_request_context(token)
     finally:

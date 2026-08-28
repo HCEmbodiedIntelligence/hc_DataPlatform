@@ -16,6 +16,8 @@ from .access_models import (
     AccessAuditEventList,
     AccessDecisionCommand,
     AccessRequestStatus,
+    AccountAccessOverview,
+    AccountAccessRequest,
     AccountNotificationPage,
     AccountNotificationState,
     AccountNotificationUnreadCount,
@@ -29,6 +31,7 @@ from .access_models import (
     MembershipRequest,
     MembershipRequestCreate,
     MembershipRequestList,
+    OrganizationMembershipRequestCreate,
     PasswordChangeCommand,
     PasswordChangeResult,
     PublicAuthConfiguration,
@@ -534,6 +537,160 @@ def get_own_account_profile(
     )
     response.headers["ETag"] = result.profile.etag
     return result
+
+
+@router.get(
+    "/account/access-overview",
+    operation_id="getOwnAccountAccessOverview",
+    response_model=AccountAccessOverview,
+    responses={401: PROBLEM_RESPONSES[401]},
+)
+def get_own_account_access_overview(
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+) -> AccountAccessOverview:
+    _no_store(response)
+    return service.account_access_overview(auth=auth)
+
+
+@router.post(
+    "/account/organization-membership-requests",
+    operation_id="createOrganizationMembershipRequest",
+    response_model=AccountAccessRequest,
+    status_code=status.HTTP_201_CREATED,
+    responses=PROBLEM_RESPONSES,
+)
+def create_organization_membership_request(
+    command: OrganizationMembershipRequestCreate,
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    idempotency_key: IdempotencyKey,
+) -> AccountAccessRequest:
+    _no_store(response)
+    return service.create_organization_membership_request(
+        auth=auth,
+        command=command,
+        idempotency_key=idempotency_key,
+        request_id=current_request_context().request_id,
+    )
+
+
+@router.post(
+    "/account/organization-membership-requests/{access_request_id}:withdraw",
+    operation_id="withdrawOrganizationMembershipRequest",
+    response_model=AccountAccessRequest,
+    responses=PROBLEM_RESPONSES,
+)
+def withdraw_organization_membership_request(
+    access_request_id: UUID,
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    idempotency_key: IdempotencyKey,
+) -> AccountAccessRequest:
+    _no_store(response)
+    return service.withdraw_organization_membership_request(
+        auth=auth,
+        access_request_id=str(access_request_id),
+        idempotency_key=idempotency_key,
+        request_id=current_request_context().request_id,
+    )
+
+
+def _organization_membership_decision(
+    *,
+    access_request_id: str,
+    target_status: AccessRequestStatus,
+    command: AccessDecisionCommand,
+    auth: VerifiedAuth,
+    service: AccessService,
+    idempotency_key: str,
+) -> AccountAccessRequest:
+    return service.decide_organization_membership_request(
+        auth=auth,
+        access_request_id=access_request_id,
+        target_status=target_status,
+        command=command,
+        idempotency_key=idempotency_key,
+        request_id=current_request_context().request_id,
+    )
+
+
+@router.post(
+    "/organization-membership-requests/{access_request_id}:approve",
+    operation_id="approveOrganizationMembershipRequest",
+    response_model=AccountAccessRequest,
+    responses=PROBLEM_RESPONSES,
+)
+def approve_organization_membership_request(
+    access_request_id: UUID,
+    command: AccessDecisionCommand,
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    idempotency_key: IdempotencyKey,
+) -> AccountAccessRequest:
+    _no_store(response)
+    return _organization_membership_decision(
+        access_request_id=str(access_request_id),
+        target_status=AccessRequestStatus.APPROVED,
+        command=command,
+        auth=auth,
+        service=service,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/organization-membership-requests/{access_request_id}:reject",
+    operation_id="rejectOrganizationMembershipRequest",
+    response_model=AccountAccessRequest,
+    responses=PROBLEM_RESPONSES,
+)
+def reject_organization_membership_request(
+    access_request_id: UUID,
+    command: AccessDecisionCommand,
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    idempotency_key: IdempotencyKey,
+) -> AccountAccessRequest:
+    _no_store(response)
+    return _organization_membership_decision(
+        access_request_id=str(access_request_id),
+        target_status=AccessRequestStatus.REJECTED,
+        command=command,
+        auth=auth,
+        service=service,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/organization-membership-requests/{access_request_id}:revoke",
+    operation_id="revokeOrganizationMembershipRequest",
+    response_model=AccountAccessRequest,
+    responses=PROBLEM_RESPONSES,
+)
+def revoke_organization_membership_request(
+    access_request_id: UUID,
+    command: AccessDecisionCommand,
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    idempotency_key: IdempotencyKey,
+) -> AccountAccessRequest:
+    _no_store(response)
+    return _organization_membership_decision(
+        access_request_id=str(access_request_id),
+        target_status=AccessRequestStatus.REVOKED,
+        command=command,
+        auth=auth,
+        service=service,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.patch(

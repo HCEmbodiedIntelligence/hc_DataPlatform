@@ -108,20 +108,7 @@ export function useLoginFlow() {
       setSession(toActorSummary(bootstrap.principal), token);
       installSessionBootstrap(bootstrap);
       issuedToken = null;
-      const canManagePlatformAccounts =
-        bootstrap.platform_capabilities?.includes("platform.admin") ||
-        bootstrap.platform_capabilities?.includes("platform.account.read") ||
-        bootstrap.platform_capabilities?.includes("platform.account.manage");
-      navigate(
-        bootstrap.available_scopes.length === 0
-          ? canManagePlatformAccounts
-            ? "/settings/access?tab=users"
-            : "/account/empty"
-          : "/",
-        {
-          replace: true,
-        },
-      );
+      navigate("/", { replace: true });
     } catch (reason) {
       if (issuedToken !== null) {
         const discardedToken = issuedToken;

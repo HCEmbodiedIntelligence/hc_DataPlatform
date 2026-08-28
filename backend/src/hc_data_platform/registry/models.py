@@ -54,6 +54,11 @@ class RobotModelBindingStatus(str, Enum):
     REVOKED = "REVOKED"
 
 
+class RobotModelDraftScope(str, Enum):
+    ASSETS = "ASSETS"
+    MAPPINGS = "MAPPINGS"
+
+
 def _safe_relative_path(value: str) -> str:
     if (
         value.startswith(("/", "\\"))
@@ -109,6 +114,42 @@ class CreateRobotModelAssetUploadRequest(BaseModel):
         if sum(item.size_bytes for item in self.files) > 5 * 1024**4:
             raise ValueError("asset upload exceeds the 5 TiB resource limit")
         return self
+
+
+class CreateRobotModelRequest(BaseModel):
+    """Create a robot model identity together with its first editable version."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    manufacturer: str = Field(min_length=1, max_length=256)
+    model_code: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=256)
+    version_label: str = Field(min_length=1, max_length=128)
+
+    @field_validator("manufacturer", "model_code", "display_name", "version_label")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("robot model fields must not be blank")
+        return normalized
+
+
+class CreateRobotModelDraftRequest(BaseModel):
+    """Create an editable successor without mutating a published version."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version_label: str = Field(min_length=1, max_length=128)
+    update_scope: RobotModelDraftScope
+
+    @field_validator("version_label")
+    @classmethod
+    def normalize_version_label(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("version_label must not be blank")
+        return normalized
 
 
 class RobotAssetPartAuthorization(BaseModel):

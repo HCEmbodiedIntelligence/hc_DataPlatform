@@ -5,7 +5,10 @@ from __future__ import annotations
 import bisect
 import hashlib
 from collections.abc import Iterator
+from itertools import islice
 from typing import Any
+
+import numpy as np
 
 from .canonical import canonical_json_bytes
 from .models import (
@@ -35,6 +38,8 @@ _NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
 class AlignmentEngine:
+    _TIMELINE_BATCH_ROWS = 4_096
+
     def align_to_writer(
         self,
         data: AlignmentInputV1,
@@ -93,30 +98,80 @@ class AlignmentEngine:
         self, data: AlignmentInputV1, profile: AlignmentProfileV1
     ) -> Iterator[AlignedRowV1]:
         previous_sources: dict[str, tuple[int, ...]] = {}
-        for step_index, timestamp_ns in enumerate(self.iter_timestamps(data, profile)):
-            modalities: dict[str, AlignedValueV1] = {}
-            for name, stream in sorted(data.streams.items()):
-                strategy = profile.stream_strategies.get(name, _DEFAULT_STRATEGIES[stream.kind])
-                tolerance = profile.stream_tolerance_ns.get(name, profile.default_tolerance_ns)
-                aligned = self._select(stream, timestamp_ns, strategy, tolerance)
-                repeated = (
-                    aligned.valid
-                    and len(aligned.source_timestamps_ns) == 1
-                    and previous_sources.get(name) == aligned.source_timestamps_ns
-                )
-                if aligned.valid and len(aligned.source_timestamps_ns) == 1:
-                    previous_sources[name] = aligned.source_timestamps_ns
-                else:
-                    previous_sources.pop(name, None)
-                modalities[name] = aligned.model_copy(update={"repeated": repeated})
-            sample_valid = all(modalities[name].valid for name in profile.required_modalities)
-            yield AlignedRowV1(
-                rollout_id=data.rollout_id,
-                step_index=step_index,
-                timestamp_ns=timestamp_ns,
-                modalities=modalities,
-                sample_valid=sample_valid,
+        stream_specs = tuple(
+            (
+                name,
+                stream,
+                profile.stream_strategies.get(name, _DEFAULT_STRATEGIES[stream.kind]),
+                profile.stream_tolerance_ns.get(name, profile.default_tolerance_ns),
+                np.fromiter(
+                    (sample.timestamp_ns for sample in stream.samples),
+                    dtype=np.int64,
+                    count=len(stream.samples),
+                ),
             )
+            for name, stream in sorted(data.streams.items())
+        )
+        timestamp_iterator = self.iter_timestamps(data, profile)
+        step_index = 0
+        while batch := tuple(islice(timestamp_iterator, self._TIMELINE_BATCH_ROWS)):
+            targets = np.asarray(batch, dtype=np.int64)
+            search_plans = {
+                name: self._batch_search(source_times, targets, strategy, tolerance)
+                for name, _stream, strategy, tolerance, source_times in stream_specs
+            }
+            for local_index, timestamp_ns in enumerate(batch):
+                modalities: dict[str, AlignedValueV1] = {}
+                for name, stream, strategy, tolerance, _source_times in stream_specs:
+                    search = tuple(
+                        int(indexes[local_index]) for indexes in search_plans[name]
+                    )
+                    aligned = self._select(
+                        stream,
+                        timestamp_ns,
+                        strategy,
+                        tolerance,
+                        search=search,
+                    )
+                    repeated = (
+                        aligned.valid
+                        and len(aligned.source_timestamps_ns) == 1
+                        and previous_sources.get(name) == aligned.source_timestamps_ns
+                    )
+                    if aligned.valid and len(aligned.source_timestamps_ns) == 1:
+                        previous_sources[name] = aligned.source_timestamps_ns
+                    else:
+                        previous_sources.pop(name, None)
+                    modalities[name] = aligned.model_copy(update={"repeated": repeated})
+                sample_valid = all(
+                    modalities[name].valid for name in profile.required_modalities
+                )
+                yield AlignedRowV1(
+                    rollout_id=data.rollout_id,
+                    step_index=step_index,
+                    timestamp_ns=timestamp_ns,
+                    modalities=modalities,
+                    sample_valid=sample_valid,
+                )
+                step_index += 1
+
+    @staticmethod
+    def _batch_search(
+        source_times: Any,
+        targets: Any,
+        strategy: AlignmentStrategy,
+        tolerance_ns: int,
+    ) -> tuple[Any, ...]:
+        if strategy in {AlignmentStrategy.NEAREST, AlignmentStrategy.LINEAR}:
+            return (np.searchsorted(source_times, targets, side="left"),)
+        if strategy in {AlignmentStrategy.CAUSAL, AlignmentStrategy.RECENT}:
+            return (np.searchsorted(source_times, targets, side="right"),)
+        if strategy is AlignmentStrategy.WINDOW_MEAN:
+            return (
+                np.searchsorted(source_times, targets - tolerance_ns, side="left"),
+                np.searchsorted(source_times, targets + tolerance_ns, side="right"),
+            )
+        raise ValueError(f"unsupported alignment strategy: {strategy}")
 
     @staticmethod
     def iter_timestamps(data: AlignmentInputV1, profile: AlignmentProfileV1) -> Iterator[int]:
@@ -139,19 +194,26 @@ class AlignmentEngine:
         target_ns: int,
         strategy: AlignmentStrategy,
         tolerance_ns: int,
+        *,
+        search: tuple[int, ...] | None = None,
     ) -> AlignedValueV1:
         if not stream.samples:
             return self._invalid(strategy)
         if strategy == AlignmentStrategy.NEAREST:
-            selected = self._nearest_sample(stream.samples, target_ns)
+            selected = self._nearest_sample(
+                stream.samples,
+                target_ns,
+                insertion_index=None if search is None else search[0],
+            )
             return self._single(selected, target_ns, strategy, tolerance_ns)
         if strategy in (AlignmentStrategy.CAUSAL, AlignmentStrategy.RECENT):
             index = (
                 bisect.bisect_right(
                     stream.samples, target_ns, key=lambda sample: sample.timestamp_ns
                 )
-                - 1
-            )
+                if search is None
+                else search[0]
+            ) - 1
             if index < 0:
                 first = stream.samples[0]
                 return self._invalid(
@@ -161,9 +223,19 @@ class AlignmentEngine:
                 )
             return self._single(stream.samples[index], target_ns, strategy, tolerance_ns)
         if strategy == AlignmentStrategy.LINEAR:
-            return self._linear(stream.samples, target_ns, tolerance_ns)
+            return self._linear(
+                stream.samples,
+                target_ns,
+                tolerance_ns,
+                insertion_index=None if search is None else search[0],
+            )
         if strategy == AlignmentStrategy.WINDOW_MEAN:
-            return self._window_mean(stream.samples, target_ns, tolerance_ns)
+            return self._window_mean(
+                stream.samples,
+                target_ns,
+                tolerance_ns,
+                bounds=None if search is None else (search[0], search[1]),
+            )
         raise ValueError(f"unsupported alignment strategy: {strategy}")
 
     @staticmethod
@@ -193,8 +265,14 @@ class AlignmentEngine:
         samples: tuple[TimedSampleV1, ...],
         target_ns: int,
         tolerance_ns: int,
+        *,
+        insertion_index: int | None = None,
     ) -> AlignedValueV1:
-        index = bisect.bisect_left(samples, target_ns, key=lambda sample: sample.timestamp_ns)
+        index = (
+            bisect.bisect_left(samples, target_ns, key=lambda sample: sample.timestamp_ns)
+            if insertion_index is None
+            else insertion_index
+        )
         if index < len(samples) and samples[index].timestamp_ns == target_ns:
             return self._single(samples[index], target_ns, AlignmentStrategy.LINEAR, tolerance_ns)
         if index == 0 or index == len(samples):
@@ -235,17 +313,22 @@ class AlignmentEngine:
         samples: tuple[TimedSampleV1, ...],
         target_ns: int,
         tolerance_ns: int,
+        *,
+        bounds: tuple[int, int] | None = None,
     ) -> AlignedValueV1:
-        left = bisect.bisect_left(
-            samples,
-            target_ns - tolerance_ns,
-            key=lambda sample: sample.timestamp_ns,
-        )
-        right = bisect.bisect_right(
-            samples,
-            target_ns + tolerance_ns,
-            key=lambda sample: sample.timestamp_ns,
-        )
+        if bounds is None:
+            left = bisect.bisect_left(
+                samples,
+                target_ns - tolerance_ns,
+                key=lambda sample: sample.timestamp_ns,
+            )
+            right = bisect.bisect_right(
+                samples,
+                target_ns + tolerance_ns,
+                key=lambda sample: sample.timestamp_ns,
+            )
+        else:
+            left, right = bounds
         selected = samples[left:right]
         if not selected:
             nearest = self._nearest_sample(samples, target_ns)
@@ -289,8 +372,17 @@ class AlignmentEngine:
         )
 
     @staticmethod
-    def _nearest_sample(samples: tuple[TimedSampleV1, ...], target_ns: int) -> TimedSampleV1:
-        index = bisect.bisect_left(samples, target_ns, key=lambda sample: sample.timestamp_ns)
+    def _nearest_sample(
+        samples: tuple[TimedSampleV1, ...],
+        target_ns: int,
+        *,
+        insertion_index: int | None = None,
+    ) -> TimedSampleV1:
+        index = (
+            bisect.bisect_left(samples, target_ns, key=lambda sample: sample.timestamp_ns)
+            if insertion_index is None
+            else insertion_index
+        )
         candidates = [
             candidate for candidate in (index - 1, index) if 0 <= candidate < len(samples)
         ]

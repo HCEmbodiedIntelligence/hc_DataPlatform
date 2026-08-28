@@ -2,6 +2,8 @@
 
 PARSE_MANIFEST_ACTIVITY = "workflow.parse_manifest"
 VERIFY_RAW_ACTIVITY = "workflow.verify_raw"
+MATERIALIZE_INGEST_PROJECTION_ACTIVITY = "workflow.materialize_ingest_projection"
+CLEANUP_INGEST_PROJECTION_ACTIVITY = "workflow.cleanup_ingest_projection"
 EVALUATE_QUALITY_ACTIVITY = "workflow.evaluate_quality"
 ALIGN_FRAGMENT_ACTIVITY = "workflow.align_fragment"
 COMMIT_FRAGMENT_ACTIVITY = "workflow.commit_fragment"
@@ -13,6 +15,7 @@ PREFLIGHT_EXPORT_ACTIVITY = "workflow.preflight_export"
 VERIFY_EXPORT_ARTIFACT_ACTIVITY = "workflow.verify_export_artifact"
 RECONCILE_CATALOG_ACTIVITY = "workflow.reconcile_catalog"
 RECONCILE_PUBLICATION_ACTIVITY = "workflow.reconcile_publication"
+PERSIST_WORKFLOW_JOB_ACTIVITY = "workflow.persist_job"
 
 INGEST_ROLLOUT_WORKFLOW = "IngestRolloutWorkflow"
 DATASET_WRITER_WORKFLOW = "DatasetWriterWorkflow"

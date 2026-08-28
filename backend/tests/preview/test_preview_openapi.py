@@ -6,61 +6,68 @@ from hc_data_platform.core.app import create_app
 from hc_data_platform.core.config import Settings
 
 
-def test_preview_openapi_exposes_profile_mapping_and_invalid_placeholders() -> None:
+def _static() -> dict:  # type: ignore[type-arg]
     path = Path(__file__).parents[2] / "openapi" / "preview.yaml"
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    schemas = document["components"]["schemas"]
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    request = schemas["PreviewRequestV1"]
-    descriptor = schemas["PreviewDescriptorV1"]
-    placeholder = schemas["PlaceholderDescriptorV1"]
-    timeline = schemas["TimelineSegmentV1"]
 
-    assert request["properties"]["encoding_profile"] == {
-        "$ref": "#/components/schemas/EncodingProfileV1"
+def test_request_accepts_only_a_fixed_profile_identity() -> None:
+    request = _static()["components"]["schemas"]["PreviewRequestV1"]
+
+    assert "encoding_profile" not in request["properties"]
+    assert request["properties"]["profile_id"]["default"] == (
+        "annotation-h264-720p-v1"
+    )
+
+
+def test_create_documents_ready_and_durable_pending_states_without_503() -> None:
+    create = _static()["paths"]["/api/v1/previews/sessions"]["post"]
+
+    assert set(create["responses"]) == {"201", "202"}
+    assert create["responses"]["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/PreviewDescriptorV1"
     }
-    assert descriptor["properties"]["timeline"] == {
-        "$ref": "#/components/schemas/TimelineMappingV1"
+    assert create["responses"]["202"]["headers"]["Retry-After"]["schema"] == {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 60,
     }
-    assert descriptor["properties"]["placeholders"]["items"] == {
-        "$ref": "#/components/schemas/PlaceholderDescriptorV1"
-    }
-    assert "invalid_reason" in placeholder["required"]
-    assert {
-        "playback_start_seconds",
-        "playback_end_seconds",
-        "source_start_step",
-        "source_end_step",
-    }.issubset(timeline["required"])
 
 
-def test_preview_openapi_exposes_unsigned_hls_capability_endpoint() -> None:
-    path = Path(__file__).parents[2] / "openapi" / "preview.yaml"
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    media = document["paths"]["/api/v1/previews/sessions/{session_id}/media/{asset_name}"]["get"]
+def test_playlist_bridge_is_public_but_segments_are_not_api_routes() -> None:
+    document = _static()
+    path = "/api/v1/previews/sessions/{session_id}/media/index.m3u8"
+    media = document["paths"][path]["get"]
 
-    assert media["operationId"] == "getPreviewMedia"
+    assert media["operationId"] == "getPreviewPlaylist"
     assert media["security"] == []
     assert {item["name"] for item in media["parameters"]} == {
         "session_id",
-        "asset_name",
         "expires",
         "sig",
+        "organization_id",
+        "project_id",
+        "region_code",
     }
-    assert {"200", "206", "403", "404"}.issubset(media["responses"])
-    assert "video/iso.segment" in media["responses"]["200"]["content"]
+    assert not any("asset_name" in route for route in document["paths"])
 
 
-def test_runtime_openapi_marks_only_media_capability_as_public() -> None:
+def test_runtime_openapi_matches_async_control_plane_contract() -> None:
     runtime = create_app(
         settings=Settings(environment="test", runtime_backend="memory", _env_file=None)
     ).openapi()
-    media = runtime["paths"]["/api/v1/previews/sessions/{session_id}/media/{asset_name}"]["get"]
+    media = runtime["paths"][
+        "/api/v1/previews/sessions/{session_id}/media/index.m3u8"
+    ]["get"]
     descriptor = runtime["paths"]["/api/v1/previews/sessions/{session_id}"]["get"]
+    create = runtime["paths"]["/api/v1/previews/sessions"]["post"]
 
     assert media["security"] == []
     assert descriptor["security"] == [{"bearerAuth": []}]
-    assert media["responses"]["206"]["headers"]["Accept-Ranges"]["schema"] == {
-        "type": "string",
-        "const": "bytes",
+    assert {"201", "202"}.issubset(create["responses"])
+    assert "503" not in create["responses"]
+    assert create["responses"]["202"]["headers"]["Retry-After"]["schema"] == {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 60,
     }

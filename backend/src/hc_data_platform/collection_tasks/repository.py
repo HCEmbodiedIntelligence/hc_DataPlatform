@@ -6,10 +6,13 @@ from threading import RLock
 from hc_data_platform.core.errors import problem
 
 from .models import (
+    CollectionTaskPackage,
+    CollectionTaskPackageState,
     CollectionTaskRecord,
     CollectionTaskStatus,
     ProgressFacts,
     QcOutcome,
+    dataset_id_for_collection_task,
     utc_now,
 )
 
@@ -57,8 +60,13 @@ def version_conflict(current_version: int) -> Exception:
 class InMemoryCollectionTaskRepository:
     """Thread-safe reference repository, including close/package linearization."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        assignable_datasets: tuple[tuple[str, str, str], ...] = (),
+    ) -> None:
         self._tasks: dict[tuple[str, str, str], CollectionTaskRecord] = {}
+        self._assignable_datasets = set(assignable_datasets)
         self._packages: dict[
             tuple[str, str, str],
             dict[
@@ -74,6 +82,22 @@ class InMemoryCollectionTaskRepository:
         ] = {}
         self._task_code = 0
         self._lock = RLock()
+
+    def register_assignable_dataset(
+        self, organization_id: str, project_id: str, dataset_id: str
+    ) -> None:
+        with self._lock:
+            self._assignable_datasets.add((organization_id, project_id, dataset_id))
+
+    def is_dataset_assignable(self, organization_id: str, project_id: str, dataset_id: str) -> bool:
+        with self._lock:
+            return (organization_id, project_id, dataset_id) in self._assignable_datasets
+
+    def has_received_packages(
+        self, organization_id: str, project_id: str, collection_task_id: str
+    ) -> bool:
+        with self._lock:
+            return bool(self._packages.get((organization_id, project_id, collection_task_id), {}))
 
     def create(self, task: CollectionTaskRecord) -> CollectionTaskRecord:
         key = (task.organization_id, task.project_id, task.collection_task_id)
@@ -91,7 +115,17 @@ class InMemoryCollectionTaskRepository:
             self._task_code += 1
             if self._task_code > 99_999_999:
                 raise RuntimeError("collection task code space exhausted")
-            persisted = task.model_copy(update={"task_code": f"{self._task_code:08d}"})
+            persisted = task.model_copy(
+                update={
+                    "task_code": f"{self._task_code:08d}",
+                    "dataset_id": task.dataset_id
+                    or dataset_id_for_collection_task(
+                        task.organization_id,
+                        task.project_id,
+                        task.collection_task_id,
+                    ),
+                }
+            )
             self._tasks[key] = persisted
             self._packages[key] = {}
             return persisted
@@ -325,4 +359,42 @@ class InMemoryCollectionTaskRepository:
                 device_ids=tuple(sorted({item for fact in package_facts for item in fact[1]})),
                 camera_ids=tuple(sorted({item for fact in package_facts for item in fact[2]})),
                 topic_names=tuple(sorted({item for fact in package_facts for item in fact[3]})),
+            )
+
+    def packages(
+        self,
+        organization_id: str,
+        project_id: str,
+        collection_task_id: str,
+        region_code: str,
+        assigned_dataset_id: str,
+    ) -> tuple[CollectionTaskPackage, ...]:
+        """Reference view used by unit tests; production adds workflow/publication lineage."""
+
+        key = (organization_id, project_id, collection_task_id)
+        with self._lock:
+            if key not in self._tasks:
+                raise task_not_found()
+            now = utc_now()
+            return tuple(
+                CollectionTaskPackage(
+                    data_package_id=package_id,
+                    rollout_id=package_id,
+                    robot_id="unknown",
+                    state=(
+                        CollectionTaskPackageState.QUALITY_RISK
+                        if fact[0] is QcOutcome.RISK
+                        else CollectionTaskPackageState.QUALITY_REJECTED
+                        if fact[0] is QcOutcome.REJECT
+                        else CollectionTaskPackageState.PROCESSING
+                        if fact[0] is QcOutcome.PASS
+                        else CollectionTaskPackageState.PENDING_QC
+                    ),
+                    qc_outcome=fact[0],
+                    visualizable=False,
+                    received_at=now,
+                    updated_at=now,
+                )
+                for (saved_region, package_id), fact in sorted(self._packages[key].items())
+                if saved_region == region_code
             )

@@ -51,6 +51,11 @@ function renderPage() {
 
 beforeEach(() => {
   requestMock.mockReset();
+  const getComputedStyle = window.getComputedStyle.bind(window);
+  Object.defineProperty(window, "getComputedStyle", {
+    configurable: true,
+    value: (element: Element) => getComputedStyle(element),
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class ResizeObserverStub {
@@ -152,6 +157,7 @@ describe("P18 page-owned decision feedback", () => {
     expect(
       screen.queryByRole("tab", { name: /权限申请/u }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText(/自助注册账户.*不进入项目审批队列/u)).toBeVisible();
     expect(requestMock).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "GET",
@@ -159,6 +165,22 @@ describe("P18 page-owned decision feedback", () => {
         scopeMode: "session",
       }),
     );
+  });
+
+  it("loads the project queue without automatically opening the first request", async () => {
+    requestMock.mockImplementation(async (options) => {
+      if (options.path.endsWith("membership-requests"))
+        return { items: [pendingMembership] };
+      if (options.path.endsWith("capability-requests")) return { items: [] };
+      throw new Error(`Unexpected request: ${options.method} ${options.path}`);
+    });
+
+    renderPage();
+
+    await screen.findByRole("button", {
+      name: "查看 contractor-17 的申请",
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("keeps a polite dismissible success after the successful mutation refetch removes the selected row and drawer", async () => {
@@ -188,7 +210,12 @@ describe("P18 page-owned decision feedback", () => {
     });
 
     renderPage();
-    await screen.findByRole("button", { name: /contractor-17/u });
+    await user.click(
+      await screen.findByRole("button", {
+        name: "查看 contractor-17 的申请",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "批准申请" }));
     await user.click(screen.getByRole("button", { name: "提交批准申请" }));
 
     const status = await screen.findByRole("status");
@@ -198,7 +225,7 @@ describe("P18 page-owned decision feedback", () => {
       screen.queryByRole("dialog", { name: "审批申请" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /contractor-17/u }),
+      screen.queryByRole("button", { name: "查看 contractor-17 的申请" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭成功提示" })).toHaveFocus();
 
@@ -230,7 +257,12 @@ describe("P18 page-owned decision feedback", () => {
     });
 
     renderPage();
-    await screen.findByRole("button", { name: /contractor-17/u });
+    await user.click(
+      await screen.findByRole("button", {
+        name: "查看 contractor-17 的申请",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "批准申请" }));
     await user.click(screen.getByRole("button", { name: "提交批准申请" }));
     await screen.findByRole("status");
 
@@ -242,7 +274,12 @@ describe("P18 page-owned decision feedback", () => {
     membershipRows = [pendingMembership];
     await user.click(screen.getByRole("tab", { name: /项目加入申请/u }));
     await user.click(screen.getByRole("button", { name: "刷新" }));
-    await screen.findByRole("button", { name: /contractor-17/u });
+    await user.click(
+      await screen.findByRole("button", {
+        name: "查看 contractor-17 的申请",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "批准申请" }));
     await user.click(screen.getByRole("button", { name: "提交批准申请" }));
     await screen.findByRole("status");
 
@@ -288,12 +325,47 @@ describe("P18 page-owned decision feedback", () => {
     });
 
     renderPage();
-    await screen.findByRole("button", { name: /contractor-17/u });
+    await user.click(
+      await screen.findByRole("button", {
+        name: "查看 contractor-17 的申请",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "批准申请" }));
     await user.click(screen.getByRole("button", { name: "提交批准申请" }));
 
     expect(await screen.findByText("申请状态已变化")).toBeVisible();
     expect(screen.getByText("ACCESS_409")).toBeVisible();
     expect(screen.getByText("request-p18-409")).toBeVisible();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("closes an open request when the Shell project scope changes", async () => {
+    requestMock.mockImplementation(async (options) => {
+      if (options.path.endsWith("membership-requests"))
+        return { items: [pendingMembership] };
+      if (options.path.endsWith("capability-requests")) return { items: [] };
+      throw new Error(`Unexpected request: ${options.method} ${options.path}`);
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      await screen.findByRole("button", {
+        name: "查看 contractor-17 的申请",
+      }),
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    const nextScope = { ...scope, projectId: "project-b" };
+    await act(async () => {
+      useShellStore.setState({
+        scope: nextScope,
+        scopeKey: makeScopeKey(nextScope),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 });

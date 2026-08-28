@@ -94,7 +94,7 @@ export function StorageSummaryStrip({
           icon: <Layers3 size={29} strokeWidth={1.65} />,
         },
         {
-          eyebrow: '快照状态',
+          eyebrow: '盘点状态',
           label: '数据新鲜度',
           value: freshnessLabel(overview.freshness),
           state: 'ready' as const,
@@ -123,7 +123,7 @@ export function StorageSummaryStrip({
           icon: <Layers3 size={29} strokeWidth={1.65} />,
         },
         {
-          eyebrow: '快照状态',
+          eyebrow: '盘点状态',
           label: '数据新鲜度',
           detail: '对象盘点更新时间',
           icon: <FileText size={29} strokeWidth={1.65} />,

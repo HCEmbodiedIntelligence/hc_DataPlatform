@@ -10,8 +10,22 @@ data:
   HC_API_PORT: {{ .Values.backend.api.port | quote }}
   HC_TEMPORAL_TARGET: {{ .Values.backend.config.temporalTarget | quote }}
   HC_OUTBOX_SCOPES: {{ .Values.backend.config.outboxScopes | quote }}
+  HC_STORAGE_INVENTORY_SCOPES: {{ .Values.backend.config.storageInventoryScopes | quote }}
+  HC_STORAGE_INVENTORY_INTERVAL_SECONDS: {{ .Values.backend.config.storageInventoryIntervalSeconds | quote }}
   HC_ARTIFACT_PREFIX: {{ .Values.backend.config.artifactPrefix | quote }}
   HC_TEMPORAL_TASK_QUEUE: {{ .Values.backend.worker.taskQueue | quote }}
+  HC_MEDIA_TEMPORAL_TASK_QUEUE: {{ .Values.backend.mediaWorker.taskQueue | quote }}
+  HC_PREVIEW_ARTIFACT_TTL_DAYS: {{ .Values.backend.config.previewArtifactTtlDays | quote }}
+  HC_PREVIEW_SESSION_TTL_MINUTES: {{ .Values.backend.config.previewSessionTtlMinutes | quote }}
+  HC_PREVIEW_STAGING_TTL_HOURS: {{ .Values.backend.config.previewStagingTtlHours | quote }}
+  HC_PREVIEW_GC_INTERVAL_SECONDS: {{ .Values.backend.config.previewGcIntervalSeconds | quote }}
+  HC_PREVIEW_PROJECT_QUOTA_BYTES: {{ .Values.backend.config.previewProjectQuotaBytes | quote }}
+  HC_PREVIEW_GLOBAL_QUOTA_BYTES: {{ .Values.backend.config.previewGlobalQuotaBytes | quote }}
+  HC_PREVIEW_HIGH_WATERMARK_PERCENT: {{ .Values.backend.config.previewHighWatermarkPercent | quote }}
+  HC_PREVIEW_LOW_WATERMARK_PERCENT: {{ .Values.backend.config.previewLowWatermarkPercent | quote }}
+  HC_PREVIEW_ALLOWED_PROFILES: {{ .Values.backend.config.previewAllowedProfiles | quote }}
+  HC_MEDIA_MAX_CONCURRENT_GENERATIONS: {{ .Values.backend.mediaWorker.maxConcurrentGenerations | quote }}
+  HC_MEDIA_FFMPEG_THREADS: {{ .Values.backend.mediaWorker.ffmpegThreads | quote }}
   {{- with .Values.backend.config.workflowActivityFactory }}
   HC_WORKFLOW_ACTIVITY_FACTORY: {{ . | quote }}
   {{- end }}

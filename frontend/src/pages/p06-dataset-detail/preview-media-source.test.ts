@@ -28,7 +28,7 @@ function descriptor(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 1,
     session_id: "preview-session-p06",
-    cache_key: "cache-p06",
+    artifact_key: "a".repeat(64),
     project_id: scope.projectId,
     dataset_id: "dataset_p06fixture",
     rollout_id: binding.rollout_id,
@@ -36,6 +36,7 @@ function descriptor(overrides: Record<string, unknown> = {}) {
     annotation_revision: binding.annotation_revision,
     camera_id: binding.camera_id,
     view_mode: "original",
+    profile_id: "annotation-h264-720p-v1",
     encoding_profile: {
       name: "h264-cmaf-preview-v1",
       width: 1280,
@@ -54,7 +55,7 @@ function descriptor(overrides: Record<string, unknown> = {}) {
     placeholders: [],
     duration_seconds: 3,
     timeline: { frequency_hz: 30, segments: [] },
-    cache_expires_at: "2026-08-20T09:15:00Z",
+    artifact_expires_at: "2026-08-20T09:15:00Z",
     signed_url_expires_at: "2026-08-20T09:00:00Z",
     ...overrides,
   };
@@ -103,6 +104,7 @@ describe("P06 scoped preview media source", () => {
           annotation_revision: binding.annotation_revision,
           camera_id: binding.camera_id,
           view_mode: "original",
+          profile_id: "annotation-h264-720p-v1",
           frequency_hz: 30,
           start_step: 0,
           end_step: 90,
@@ -131,7 +133,7 @@ describe("P06 scoped preview media source", () => {
       source.authorize(new AbortController().signal),
     ).rejects.toThrow("P06 预览授权与当前固定采集条目不一致。");
     requestMock.mockResolvedValue(
-      descriptor({ cache_key: undefined }) as never,
+      descriptor({ artifact_key: undefined }) as never,
     );
     await expect(
       source.refresh(new AbortController().signal),
@@ -140,7 +142,7 @@ describe("P06 scoped preview media source", () => {
     });
   });
 
-  it("requests VP9 CMAF when this browser cannot decode H.264 through MediaSource", async () => {
+  it("keeps the server-prewarmed H.264 profile even when MediaSource prefers VP9", async () => {
     configureRuntime({
       apiBaseUrl: "/api/v1",
       sseBaseUrl: "/api/v1/events",
@@ -150,20 +152,7 @@ describe("P06 scoped preview media source", () => {
     vi.stubGlobal("MediaSource", {
       isTypeSupported: vi.fn((value: string) => value.includes("vp09")),
     });
-    requestMock.mockResolvedValue(
-      descriptor({
-        encoding_profile: {
-          name: "vp9-cmaf-preview-v1",
-          width: 1280,
-          height: 720,
-          video_codec: "vp9",
-          pixel_format: "yuv420p",
-          video_bitrate_kbps: 2000,
-          segment_duration_seconds: 2,
-          preset: "veryfast",
-        },
-      }) as never,
-    );
+    requestMock.mockResolvedValue(descriptor() as never);
     const source = createDatasetPreviewMediaSource({
       scope,
       datasetId: "dataset_p06fixture",
@@ -176,12 +165,12 @@ describe("P06 scoped preview media source", () => {
     expect(requestMock).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
-          encoding_profile: {
-            name: "vp9-cmaf-preview-v1",
-            video_codec: "vp9",
-          },
+          profile_id: "annotation-h264-720p-v1",
         }),
       }),
+    );
+    expect(requestMock.mock.calls[0]?.[0].body).not.toHaveProperty(
+      "encoding_profile",
     );
   });
 });

@@ -78,7 +78,7 @@ export const cleaningCommitWireSchema = z.discriminatedUnion('status', [
       if (revision.ordinal !== index) ctx.addIssue({ code: 'custom', message: 'Output Revision ordinals must be 0..N' });
     });
     if (commit.output_version.status !== 'REVIEWING') {
-      ctx.addIssue({ code: 'custom', message: 'Commit completion Version snapshot must be REVIEWING' });
+      ctx.addIssue({ code: 'custom', message: 'Commit completion Version state must be REVIEWING' });
     }
   }),
   z.object({

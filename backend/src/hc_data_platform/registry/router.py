@@ -15,6 +15,8 @@ from .models import (
     BindRobotModelVersionRequest,
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
+    CreateRobotModelDraftRequest,
+    CreateRobotModelRequest,
     PublishRobotModelVersionRequest,
     ReplaceRobotModelJointMappingsRequest,
     RobotAssetPartAuthorizationPage,
@@ -104,6 +106,40 @@ def list_robot_models(
     )
 
 
+@router.post(
+    "/robot-models",
+    operation_id="createRobotModel",
+    status_code=201,
+    response_model=RobotModelVersionEnvelope,
+    responses=PROBLEM_RESPONSES,
+)
+def create_robot_model(
+    organization_id: str,
+    command: CreateRobotModelRequest,
+    response: Response,
+    request: Request,
+    auth: VerifiedAuth,
+    project_id: ProjectScope,
+    idempotency_key: IdempotencyKey,
+    service: ServiceDependency,
+) -> RobotModelVersionEnvelope:
+    _select_project_scope(auth, project_id, capability="robot_model.manage")
+    _no_store(response)
+    result = service.create_robot_model(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+        request_id=_request_id(request),
+        command=command,
+    )
+    response.headers["ETag"] = result.data.etag
+    response.headers["Location"] = (
+        f"/api/v1/organizations/{organization_id}/robot-model-versions/{result.data.id}"
+    )
+    return result
+
+
 @router.get(
     "/robot-model-versions/{version_id}",
     operation_id="getRobotModelVersion",
@@ -129,6 +165,42 @@ def get_robot_model_version(
         request_id=_request_id(request),
     )
     response.headers["ETag"] = result.data.etag
+    return result
+
+
+@router.post(
+    "/robot-model-versions/{version_id}:create-draft",
+    operation_id="createRobotModelDraft",
+    status_code=201,
+    response_model=RobotModelVersionEnvelope,
+    responses=PROBLEM_RESPONSES,
+)
+def create_robot_model_draft(
+    organization_id: str,
+    version_id: str,
+    command: CreateRobotModelDraftRequest,
+    response: Response,
+    request: Request,
+    auth: VerifiedAuth,
+    project_id: ProjectScope,
+    idempotency_key: IdempotencyKey,
+    service: ServiceDependency,
+) -> RobotModelVersionEnvelope:
+    _select_project_scope(auth, project_id, capability="robot_model.manage")
+    _no_store(response)
+    result = service.create_robot_model_draft(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        source_version_id=version_id,
+        idempotency_key=idempotency_key,
+        request_id=_request_id(request),
+        command=command,
+    )
+    response.headers["ETag"] = result.data.etag
+    response.headers["Location"] = (
+        f"/api/v1/organizations/{organization_id}/robot-model-versions/{result.data.id}"
+    )
     return result
 
 

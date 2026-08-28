@@ -560,6 +560,7 @@ def test_task_manifest_discovery_is_task_bound_and_sanitized(
     assert response.json() == {
         "source": "MANIFEST",
         "read_only": True,
+        "robot_id": None,
         "cameras": [],
         "topics": [],
         "missing_expected_topics": [],

@@ -41,6 +41,7 @@ def test_dashboard_fragment_matches_router_and_aggregates_without_duplicate_cont
         ("/api/v1/projects/{project_id}/dashboard/activity", "get"),
         ("/api/v1/projects/{project_id}/dashboard/coverage", "get"),
         ("/api/v1/projects/{project_id}/dashboard/pending-items", "get"),
+        ("/api/v1/projects/{project_id}/dashboard/task-status", "get"),
     }
     assert operations(fragment) == expected
     assert operations(runtime) == expected
@@ -63,9 +64,12 @@ def test_contract_requires_explicit_exact_scope_time_and_bounded_cursor_pages() 
         refs = {parameter.get("$ref") for parameter in parameters}
         assert "#/components/parameters/DashboardProjectId" in refs
         assert "#/components/parameters/DashboardRegionCode" in refs
-        assert "#/components/parameters/DashboardFrom" in refs
-        assert "#/components/parameters/DashboardTo" in refs
-        assert "#/components/parameters/DashboardTimezone" in refs
+        if not path.endswith("/task-status"):
+            assert "#/components/parameters/DashboardFrom" in refs
+            assert "#/components/parameters/DashboardTo" in refs
+            assert "#/components/parameters/DashboardTimezone" in refs
+        else:
+            assert "#/components/parameters/DashboardTaskId" in refs
         if path.endswith(("/activity", "/pending-items")):
             assert "#/components/parameters/DashboardCursor" in refs
             assert "#/components/parameters/DashboardLimit" in refs
@@ -115,6 +119,12 @@ def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage()
     snapshot_sections = schemas["DashboardSnapshotSections"]
     assert set(snapshot_sections["properties"]) == {"signal_pipeline", "episodes", "work"}
     assert "storage" not in snapshot_sections["properties"]
+    task_status = schemas["DashboardTaskStatusResponse"]
+    assert "pipeline" in task_status["required"]
+    assert task_status["properties"]["pipeline"] == {
+        "$ref": "#/components/schemas/TaskPipelineStatus"
+    }
+    assert schemas["TaskPipelineStatus"]["properties"]["stages"]["minItems"] == 8
     assert schemas["DashboardActivityEventType"]["enum"] == [
         "UPLOAD_COMMITTED",
         "QC_COMPLETED",
@@ -154,6 +164,7 @@ def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage()
         assert "as_of" in schema["required"]
         assert {"project_id", "region_code", "from", "to", "timezone"} <= set(schema["required"])
     source = FRAGMENT.read_text(encoding="utf-8").lower()
+    assert "not a device captured/saved fact" in source
     assert "not throughput buckets" in source
     assert "historical observations are not projected as a percentage" in source
     assert "region storage is not a p01 field" in source

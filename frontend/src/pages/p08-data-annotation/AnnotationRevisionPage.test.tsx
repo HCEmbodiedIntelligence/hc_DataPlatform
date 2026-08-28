@@ -102,6 +102,7 @@ beforeEach(() => {
   grantedCapabilities.clear();
   grantedCapabilities.add("annotation_task.read");
   grantedCapabilities.add("episode.read");
+  listThreadsMock.mockReset();
   listThreadsMock.mockResolvedValue(page("task-1", { next: "cursor-1" }));
 });
 
@@ -118,8 +119,12 @@ describe("AnnotationRevisionPage", () => {
     renderPage();
 
     expect(
-      await screen.findByRole("heading", { name: "数据修订" }),
+      await screen.findByRole("heading", { name: "Episode 版本与草稿修订" }),
     ).toBeVisible();
+    expect(screen.getByRole("link", { name: "返回任务队列" })).toHaveAttribute(
+      "href",
+      "/annotations/annotate",
+    );
     expect(screen.getByText("rollout-task-1")).toBeVisible();
     expect(screen.getByRole("link", { name: "打开任务" })).toHaveAttribute(
       "href",
@@ -221,7 +226,7 @@ describe("AnnotationRevisionPage", () => {
       "/annotations/tasks/task-legacy-route",
     );
     expect(
-      screen.getByRole("link", { name: "查看全部数据修订" }),
+      screen.getByRole("link", { name: "查看全部修订记录" }),
     ).toHaveAttribute("href", "/annotations/revisions");
   });
 });

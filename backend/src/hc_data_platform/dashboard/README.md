@@ -16,6 +16,41 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
 - P01 正式 snapshot 不含 storage；区域容量只属于 P12。
 - signal 按项目、区域和显式时间窗口计算云端数据包到达各阶段的去重数量；
   episode/work 状态集合和 freshness SLO 仍未冻结，继续 `BLOCKED`。
+- P01 主状态区域使用无时间窗口的 `task-status` 只读投影。任务列表按 exact project+region
+  的 `collection_jobs` 关联；不传 `task_id` 时主轨道汇总全部任务，`task_id` 只用于可选下钻。
+  为兼容单任务范围，只有一个任务时仍同时返回该任务详情；多任务汇总不会伪装成零值。
+
+## Task status 当前状态投影
+
+投影 cohort 固定为 `collection_tasks.collection_tasks.collection_task_id` →
+`ingest.collection_jobs.task_id` → `ingest.rollouts.collection_job_id`。每个
+`data_package_id` 只得到一个 current main state，同时保留以下正交事实：
+
+- 登记/上传：`rollouts.status` 与最新 `upload_sessions.status/failure_code`；登记不是设备端
+  `CAPTURED/SAVED`。
+- 设备执行：`ingest.device_capture_facts` 只接受带精确 organization/project/region scope 的
+  device-agent service identity。`CAPTURED` 与带本地文件大小/SHA256的 `SAVED` 均为不可变
+  事实；顶栏的设备计数和已确认时长只读取这里，绝不由 Manifest、rollout 或上传时间推断。
+- Raw 接收：`rollout_objects.committed_at`，代表对象已通过大小、CRC64、SHA256校验并提交。
+- Raw结构：最新 immutable `raw_verification_reports`；`REJECTED` 独立于 QC REJECT。
+- QC：`quality_rollout_summaries` 的 current `PASS/RISK/REJECT`。RISK/REJECT 保留Raw且阻断
+  标准化，不提供人工强制通过。
+- 标准化：最新 `aligned_fragment_attempts`（WRITING/READY/ABORTED）、可用时的
+  `workflow.jobs` 技术错误和 `lance_rollout_lineage`。Temporal ingest workflow 在每个阶段和
+  终态通过幂等 activity 写入 `workflow.jobs`，并使用 patch marker 兼容历史重放。
+  对齐/Lance技术失败不会改写QC结论；
+  QC PASS 后如果既没有可用执行结果又不能由 attempt/lineage 判定，技术状态返回
+  `UNKNOWN/UNAVAILABLE`，不伪造等待或成功。
+- 后续：`annotation_tasks`、最新 `annotation_reviews` 和
+  `publishing.rollout_publication_lineage`。
+
+任务 `ACTIVE/CLOSED/CANCELLED` 生命周期和 target attainment 分字段返回；达到数据包目标不会
+自动关闭ACTIVE任务。持续时长目标只汇总每个数据包最新的设备 `SAVED` 事实；尚未收到事实时
+明确为 0 秒已确认进度，不会用上传、Manifest 或对象时间伪造。
+
+旧 `/dashboard/snapshot` 已在运行时 OpenAPI 标记 deprecated，并返回 `Deprecation: true` 与
+指向 `task-status` 的 successor `Link`；P01 不再调用它的 signal 区域。保留读兼容仅用于尚未
+迁移的调用方。
 
 ## Signal 云端阶段计数
 

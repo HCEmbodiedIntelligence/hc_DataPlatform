@@ -26,4 +26,18 @@ spec:
     matchLabels:
       {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-media-worker
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media-worker
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.mediaWorkerMinAvailable }}
+  selector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: media-worker
 {{- end }}

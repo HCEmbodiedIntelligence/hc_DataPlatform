@@ -211,6 +211,104 @@ def test_robot_model_router_rejects_missing_auth_and_missing_capability() -> Non
     assert denied.json()["code"] == "CAPABILITY_REQUIRED"
 
 
+def test_robot_model_update_creates_idempotent_draft_without_mutating_published_source() -> None:
+    service, repository = _service()
+    configure_registry(service)
+    current: dict[str, AuthContext | None] = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    path = "/api/v1/organizations/organization-a/robot-model-versions/version-a:create-draft"
+    headers = {
+        "Authorization": "Bearer test",
+        "X-Project-ID": "project-a",
+        "Idempotency-Key": "draft-version-a-110",
+    }
+
+    created = client.post(
+        path,
+        headers=headers,
+        json={"version_label": "1.1.0", "update_scope": "ASSETS"},
+    )
+    assert created.status_code == 201
+    draft = created.json()["data"]
+    assert draft["id"].startswith("version-")
+    assert draft["robot_model_id"] == "model-a"
+    assert draft["version_label"] == "1.1.0"
+    assert draft["lifecycle"] == "DRAFT"
+    assert draft["asset_availability"] == "MISSING"
+    assert created.headers["location"].endswith(draft["id"])
+
+    retried = client.post(
+        path,
+        headers=headers,
+        json={"version_label": "1.1.0", "update_scope": "ASSETS"},
+    )
+    assert retried.status_code == 201
+    assert retried.json()["data"] == draft
+    source = repository.get_robot_model_version(
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-a",
+    )
+    assert source is not None
+    assert source.lifecycle == "PUBLISHED"
+    assert source.version_label == "1.0.0"
+
+    conflict = client.post(
+        path,
+        headers=headers,
+        json={"version_label": "1.2.0", "update_scope": "MAPPINGS"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_robot_model_create_starts_with_an_idempotent_editable_version() -> None:
+    service, repository = _service()
+    configure_registry(service)
+    current: dict[str, AuthContext | None] = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    path = "/api/v1/organizations/organization-a/robot-models"
+    headers = {
+        "Authorization": "Bearer test",
+        "X-Project-ID": "project-a",
+        "Idempotency-Key": "create-model-xr-02",
+    }
+    payload = {
+        "manufacturer": "HC Robotics",
+        "model_code": "XR-02",
+        "display_name": "XR-02 测试机器人",
+        "version_label": "1.0.0-draft",
+    }
+
+    created = client.post(path, headers=headers, json=payload)
+    assert created.status_code == 201
+    draft = created.json()["data"]
+    assert draft["robot_model_id"].startswith("model-")
+    assert draft["id"].startswith("version-")
+    assert draft["lifecycle"] == "DRAFT"
+    assert draft["asset_availability"] == "MISSING"
+    assert created.headers["location"].endswith(draft["id"])
+
+    retried = client.post(path, headers=headers, json=payload)
+    assert retried.status_code == 201
+    assert retried.json()["data"] == draft
+    persisted = repository.get_robot_model_version(
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id=draft["id"],
+    )
+    assert persisted is not None
+    assert persisted.lifecycle == "DRAFT"
+
+    duplicate = client.post(
+        path,
+        headers={**headers, "Idempotency-Key": "create-model-xr-02-again"},
+        json={**payload, "display_name": "另一个显示名称"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "ROBOT_MODEL_IDENTITY_EXISTS"
+
+
 def test_robot_model_asset_upload_direct_transfer_manifest_and_download_authorization() -> None:
     repository = InMemoryRegistryRepository(
         organization_projects=(("organization-a", "project-a"),),
@@ -551,8 +649,8 @@ def test_robot_model_publish_uses_a_durable_preflight_and_one_time_proof() -> No
         command=ReplaceRobotModelJointMappingsRequest(
             mappings=(
                 RobotModelJointMapping(
-                    source_joint_name="joint_1",
-                    target_joint_name="actuator_1",
+                    source_joint_name="actuator_1",
+                    target_joint_name="joint_1",
                     direction=RobotJointDirection.SAME,
                 ),
             )

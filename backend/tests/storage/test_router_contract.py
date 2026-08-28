@@ -17,7 +17,12 @@ from hc_data_platform.core.context import (
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.health import ReadinessProbe
 from hc_data_platform.security.auth import AuthContext, Role
-from hc_data_platform.storage.router import router
+from hc_data_platform.storage.inventory import StorageInventorySnapshotProducer
+from hc_data_platform.storage.repository import InMemoryStorageRepository
+from hc_data_platform.storage.router import get_storage_governance_service, router
+from hc_data_platform.storage.service import StorageGovernanceService
+
+from .test_inventory_producer import Catalog, Provider
 
 
 class ReadyProbe:
@@ -99,6 +104,47 @@ def test_storage_router_enforces_page_capabilities_and_private_read_cache_header
     )
     assert denied.status_code == 403
     assert denied.json()["code"] == "CAPABILITY_REQUIRED"
+
+
+def test_generated_inventory_serves_capacity_and_history_without_cross_project_leakage() -> None:
+    service = StorageGovernanceService(
+        InMemoryStorageRepository(), cursor_secret="router-inventory-test"
+    )
+    snapshot = StorageInventorySnapshotProducer(Catalog(), Provider(), service).run(
+        project_id="project-inventory"
+    )
+    auth = AuthContext(
+        subject_id="storage-inventory-reader",
+        project_ids=frozenset({"project-inventory", "project-other"}),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset({"storage.overview.read"}),
+        scope_pairs=frozenset({("project-inventory", None), ("project-other", None)}),
+    )
+    app = app_with_auth(auth)
+    app.dependency_overrides[get_storage_governance_service] = lambda: service
+    client = TestClient(app)
+
+    capacity = client.get(
+        "/api/v1/projects/project-inventory/storage/capacity",
+        headers={"X-Project-Id": "project-inventory"},
+    )
+    history = client.get(
+        "/api/v1/projects/project-inventory/storage/capacity/history",
+        headers={"X-Project-Id": "project-inventory"},
+    )
+    other = client.get(
+        "/api/v1/projects/project-other/storage/capacity",
+        headers={"X-Project-Id": "project-other"},
+    )
+
+    assert capacity.status_code == 200
+    assert capacity.json()["snapshot_id"] == snapshot.snapshot_id
+    assert history.status_code == 200
+    assert history.json()["items"][0]["snapshot_id"] == snapshot.snapshot_id
+    assert other.status_code == 404
+    assert other.json()["code"] == "CAPACITY_SNAPSHOT_NOT_FOUND"
+    assert snapshot.snapshot_id not in other.text
 
 
 def test_storage_router_preserves_the_verified_organization_and_region_scope() -> None:

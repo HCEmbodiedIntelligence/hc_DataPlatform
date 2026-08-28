@@ -188,6 +188,11 @@ class ManualIssueService:
             for status in ("OPEN", "IN_PROGRESS", "RESOLVED")
             if any(record.status == status for record in records)
         )
+        discovery_sources = tuple(
+            source
+            for source in ("DATA_VIEWER", "ANNOTATOR", "REVIEWER")
+            if any(record.discovery_source == source for record in records)
+        )
         assignees = tuple(
             sorted(
                 {record.assignee for record in records if record.assignee is not None},
@@ -215,6 +220,7 @@ class ManualIssueService:
                     issue_types=types,
                     severities=severities,
                     statuses=statuses,
+                    discovery_sources=discovery_sources,
                     assignees=assignees,
                 ),
                 allowed_actions=self._page_actions(auth=auth, project_id=project_id),
@@ -267,17 +273,55 @@ class ManualIssueService:
             project_id=project_id,
             region_code=region_code,
         )
+        if command.source_kind == "ANNOTATION_TASK":
+            auth.require_capability(
+                "annotation.review"
+                if command.discovery_source == "REVIEWER"
+                else "annotation.edit",
+                project_id,
+            )
         payload = command.model_dump(mode="json")
 
         def action() -> ManualIssueMutationRecord:
-            source = self._repository.source_facts(
-                scope=scope,
-                version_id=command.origin_dataset_version_id,
-                episode_id=command.episode_id,
-                revision_id=command.episode_revision_id,
-                stream_id=command.episode_stream_id,
-            )
-            if source is None or not _range_within_source(command=command, source=source):
+            if command.source_kind == "ANNOTATION_TASK":
+                assert command.annotation_task_id is not None
+                assert command.stream_ref is not None
+                assert command.relative_start_ns is not None
+                assert command.relative_end_ns is not None
+                source = self._repository.source_facts_for_annotation_task(
+                    scope=scope,
+                    task_id=command.annotation_task_id,
+                    stream_ref=command.stream_ref,
+                )
+                if source is None:
+                    raise _source_version_conflict()
+                start_ns = str(int(source.stream_start_ns) + int(command.relative_start_ns))
+                end_ns = str(int(source.stream_start_ns) + int(command.relative_end_ns))
+                if int(start_ns) < int(source.stream_start_ns) or int(end_ns) > int(
+                    source.stream_end_ns
+                ):
+                    raise _source_version_conflict()
+            else:
+                assert command.origin_dataset_version_id is not None
+                assert command.episode_id is not None
+                assert command.episode_revision_id is not None
+                assert command.episode_stream_id is not None
+                assert command.start_ns is not None
+                assert command.end_ns is not None
+                source = self._repository.source_facts(
+                    scope=scope,
+                    version_id=command.origin_dataset_version_id,
+                    episode_id=command.episode_id,
+                    revision_id=command.episode_revision_id,
+                    stream_id=command.episode_stream_id,
+                )
+                start_ns = command.start_ns
+                end_ns = command.end_ns
+            if source is None or not _range_within_source_values(
+                start_ns=start_ns,
+                end_ns=end_ns,
+                source=source,
+            ):
                 raise _source_version_conflict()
             now = self._clock()
             issue_id = _issue_id(scope=scope, idempotency_key=idempotency_key)
@@ -293,10 +337,12 @@ class ManualIssueService:
                 schema_snapshot_id=source.schema_snapshot_id,
                 robot_model_version_id=source.robot_model_version_id,
                 calibration_set_id=source.calibration_set_id,
-                start_ns=command.start_ns,
-                end_ns=command.end_ns,
+                start_ns=start_ns,
+                end_ns=end_ns,
                 issue_type=command.issue_type,
                 severity=command.severity,
+                discovery_source=command.discovery_source,
+                annotation_task_id=command.annotation_task_id,
                 status="OPEN",
                 note=command.note.strip(),
                 created_at=now,
@@ -311,7 +357,11 @@ class ManualIssueService:
                 request_id=request_id,
                 occurred_at=now,
                 after_hash=canonical_hash(record.model_dump(mode="json")),
-                details={"issue_type": record.issue_type, "severity": record.severity},
+                details={
+                    "issue_type": record.issue_type,
+                    "severity": record.severity,
+                    "discovery_source": record.discovery_source,
+                },
             )
             try:
                 saved = self._repository.create_issue(record=record, audit_event=audit)
@@ -831,6 +881,8 @@ class ManualIssueService:
             end_ns=visible.end_ns,
             issue_type=visible.issue_type,
             severity=visible.severity,
+            discovery_source=visible.discovery_source,
+            annotation_task_id=visible.annotation_task_id,
             status=visible.status,
             assignee=visible.assignee,
             related_draft_count=str(len(visible.related_drafts)),
@@ -1080,6 +1132,7 @@ def _validated_filters(filters: ManualIssueFilters) -> ManualIssueFilters:
         statuses=tuple(sorted(set(filters.statuses))),
         issue_types=tuple(sorted(set(filters.issue_types))),
         severities=tuple(sorted(set(filters.severities))),
+        discovery_sources=tuple(sorted(set(filters.discovery_sources))),
         assignee_id=text(filters.assignee_id),
     )
 
@@ -1093,6 +1146,7 @@ def _filter_document(filters: ManualIssueFilters) -> dict[str, object]:
         "status": list(filters.statuses),
         "issue_type": list(filters.issue_types),
         "severity": list(filters.severities),
+        "discovery_source": list(filters.discovery_sources),
         "assignee_id": filters.assignee_id,
     }
 
@@ -1141,15 +1195,10 @@ def _before_index(keys: list[tuple[str, str]], position: tuple[str, str] | None)
         ) from exc
 
 
-def _range_within_source(
-    *, command: CreateManualIssueCommand, source: ManualIssueSourceFacts
+def _range_within_source_values(
+    *, start_ns: str, end_ns: str, source: ManualIssueSourceFacts
 ) -> bool:
-    return (
-        int(source.stream_start_ns)
-        <= int(command.start_ns)
-        < int(command.end_ns)
-        <= int(source.stream_end_ns)
-    )
+    return int(source.stream_start_ns) <= int(start_ns) < int(end_ns) <= int(source.stream_end_ns)
 
 
 def _issue_id(*, scope: ManualIssueScope, idempotency_key: str) -> str:

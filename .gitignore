@@ -34,6 +34,9 @@ __pycache__/
 *.pyc
 /.ruff_cache/
 
+# Local download and model caches
+.cache/
+
 # Generated unified-release artifacts
 release.yaml
 release-values.yaml

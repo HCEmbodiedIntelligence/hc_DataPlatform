@@ -165,7 +165,6 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
     assert {item.__name__ for item in workflows} == {
         "IngestRolloutWorkflow",
         "DatasetWriterWorkflow",
-        "PreviewWorkflow",
         "PublishDatasetWorkflow",
         "ExportWorkflow",
         "CatalogReconciliationWorkflow",
@@ -179,7 +178,6 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "align_fragment",
         "commit_fragment",
         "create_annotation_task",
-        "create_preview",
         "publish_dataset",
         "preflight_export",
         "export_dataset",
@@ -188,7 +186,13 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "reconcile_publication",
         "storage_apply_lifecycle_batch",
         "parse_manifest",
+        "materialize_ingest_projection",
+        "cleanup_ingest_projection",
+        "persist_workflow_job",
     }
+    media_workflows, media_activities = discover_temporal_registrations("media")
+    assert {item.__name__ for item in media_workflows} == {"PreviewWorkflow"}
+    assert {item.__name__ for item in media_activities} == {"create_preview"}
     assert ACTIVITY_RETRY_POLICY.maximum_attempts == 8
     assert ACTIVITY_RETRY_POLICY.backoff_coefficient == 2
     assert ACTIVITY_RETRY_POLICY.non_retryable_error_types is not None

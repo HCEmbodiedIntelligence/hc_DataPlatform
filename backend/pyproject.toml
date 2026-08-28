@@ -61,6 +61,7 @@ hc-data-migrate = "hc_data_platform.core.migrations:main"
 hc-offline-import = "hc_data_platform.ingest.cli:main"
 hc-openapi = "hc_data_platform.core.openapi:main"
 hc-data-worker = "hc_data_platform.workflow.worker:main"
+hc-storage-inventory = "hc_data_platform.storage.inventory_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hc_data_platform"]
@@ -98,4 +99,9 @@ module = [
   "pyarrow",
   "pyarrow.*",
 ]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["mcap", "mcap.*"]
+follow_imports = "skip"
 ignore_missing_imports = true

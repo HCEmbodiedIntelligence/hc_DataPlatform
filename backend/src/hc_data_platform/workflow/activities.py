@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from threading import Event
 from typing import Protocol, TypeVar
 
 from pydantic import ValidationError
@@ -40,7 +42,7 @@ from hc_data_platform.lance_catalog.service import (
     CatalogConflictError,
     SchemaIncompatibleError,
 )
-from hc_data_platform.preview.models import PreviewDescriptorV1, PreviewRequestV1
+from hc_data_platform.preview.models import PreviewArtifactV1, PreviewRequestV1, PreviewScopeV1
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
@@ -70,10 +72,15 @@ from .models import (
     ExportPreflightActivityInput,
     ExportPreflightActivityOutput,
     IngestProjectionSourceV1,
+    JobRecord,
     ManifestActivityInput,
     ManifestActivityOutput,
     PreviewActivityInput,
     PreviewActivityOutput,
+    ProjectionCleanupActivityInput,
+    ProjectionCleanupActivityOutput,
+    ProjectionMaterializationActivityInput,
+    ProjectionMaterializationActivityOutput,
     PublishActivityInput,
     PublishActivityOutput,
     PublishReconciliationActivityInput,
@@ -82,15 +89,19 @@ from .models import (
     QualityActivityOutput,
     VerificationActivityInput,
     VerificationActivityOutput,
+    WorkflowJobPersistenceActivityInput,
 )
 from .names import (
     ALIGN_FRAGMENT_ACTIVITY,
+    CLEANUP_INGEST_PROJECTION_ACTIVITY,
     COMMIT_FRAGMENT_ACTIVITY,
     CREATE_ANNOTATION_TASK_ACTIVITY,
     CREATE_PREVIEW_ACTIVITY,
     EVALUATE_QUALITY_ACTIVITY,
     EXPORT_DATASET_ACTIVITY,
+    MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
     PARSE_MANIFEST_ACTIVITY,
+    PERSIST_WORKFLOW_JOB_ACTIVITY,
     PREFLIGHT_EXPORT_ACTIVITY,
     PUBLISH_DATASET_ACTIVITY,
     RECONCILE_CATALOG_ACTIVITY,
@@ -110,6 +121,10 @@ class FragmentWriterFactoryPort(Protocol):
 
 class IngestProjectionPort(Protocol):
     """Reload bounded raw observations inside an activity, outside workflow history."""
+
+    def materialize(self, source: IngestProjectionSourceV1) -> IngestProjectionSourceV1: ...
+
+    def cleanup(self, source: IngestProjectionSourceV1) -> None: ...
 
     def project_quality(self, source: IngestProjectionSourceV1) -> QualityInputV1: ...
 
@@ -142,7 +157,14 @@ class CatalogFragmentAdapterPort(Protocol):
 
 
 class PreviewGenerationPort(Protocol):
-    def create(self, request: PreviewRequestV1) -> PreviewDescriptorV1: ...
+    def generate(
+        self,
+        scope: PreviewScopeV1,
+        request: PreviewRequestV1,
+        *,
+        job_id: str | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> PreviewArtifactV1: ...
 
 
 class DatasetPublishingPort(Protocol):
@@ -207,6 +229,12 @@ class AutomaticAnnotationTaskPort(Protocol):
     def ensure_task(self, request: AutomaticAnnotationRequest) -> AnnotationTask: ...
 
 
+class WorkflowJobPersistencePort(Protocol):
+    """Persist the latest workflow-owned job state for read-side projections."""
+
+    def put_job(self, request: WorkflowJobPersistenceActivityInput) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ActivityDependencies:
     manifest_parser: ManifestParserPort | None = None
@@ -228,6 +256,7 @@ class ActivityDependencies:
     alignment_manifests: AlignmentManifestPersistencePort | None = None
     annotation_tasks: AutomaticAnnotationTaskPort | None = None
     storage_lifecycle: LifecycleBatchExecutor | None = None
+    workflow_jobs: WorkflowJobPersistencePort | None = None
 
 
 class WorkflowPortNotConfigured(RuntimeError):
@@ -235,6 +264,14 @@ class WorkflowPortNotConfigured(RuntimeError):
 
 
 _dependencies = ActivityDependencies()
+
+# Preview encoding is CPU-heavy. Temporal may have hundreds of ingest workflows
+# queued, but a worker must only transcode a small, fixed number at once. Tasks
+# waiting here remain async and heartbeat instead of occupying executor threads.
+_PREVIEW_ACTIVITY_CONCURRENCY = max(
+    1, int(os.getenv("HC_MEDIA_MAX_CONCURRENT_GENERATIONS", "2"))
+)
+_PREVIEW_ACTIVITY_SLOTS = asyncio.Semaphore(_PREVIEW_ACTIVITY_CONCURRENCY)
 
 
 def configure_activity_dependencies(dependencies: ActivityDependencies) -> None:
@@ -290,23 +327,42 @@ def _heartbeat(stage: str, state: str) -> None:
     activity.heartbeat({"stage": stage, "state": state})
 
 
-async def _with_heartbeats(stage: str, operation: Callable[[], _T]) -> _T:
+async def _with_heartbeats(
+    stage: str,
+    operation: Callable[[], _T],
+    *,
+    on_cancel: Callable[[], None] | None = None,
+) -> _T:
     """Run a synchronous port outside the event loop and heartbeat until it returns."""
 
     _heartbeat(stage, "started")
     task = asyncio.create_task(asyncio.to_thread(operation))
-    while True:
-        done, _ = await asyncio.wait({task}, timeout=_HEARTBEAT_INTERVAL_SECONDS)
-        if task in done:
-            result = task.result()
-            _heartbeat(stage, "completed")
-            return result
-        _heartbeat(stage, "running")
-
-
-async def _invoke(stage: str, operation: Callable[[], _T]) -> _T:
     try:
-        return await _with_heartbeats(stage, operation)
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=_HEARTBEAT_INTERVAL_SECONDS)
+            if task in done:
+                result = task.result()
+                _heartbeat(stage, "completed")
+                return result
+            _heartbeat(stage, "running")
+    except asyncio.CancelledError:
+        if on_cancel is not None:
+            on_cancel()
+        # Give the synchronous adapter a bounded interval to kill FFmpeg and
+        # remove its keyed staging directory before acknowledging cancellation.
+        with suppress(Exception, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(task), timeout=10)
+        raise
+
+
+async def _invoke(
+    stage: str,
+    operation: Callable[[], _T],
+    *,
+    on_cancel: Callable[[], None] | None = None,
+) -> _T:
+    try:
+        return await _with_heartbeats(stage, operation, on_cancel=on_cancel)
     except ApplicationError:
         WORKFLOW_FAILURES.labels(
             project_id="unknown",
@@ -324,6 +380,7 @@ async def _invoke(stage: str, operation: Callable[[], _T]) -> _T:
             type=details.code,
             non_retryable=not details.retryable,
         ) from exc
+
     except WorkflowPortNotConfigured as exc:
         raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
     except AutomaticAnnotationBlocked as exc:
@@ -344,6 +401,35 @@ async def _invoke(stage: str, operation: Callable[[], _T]) -> _T:
             type="VALIDATION_FAILED",
             non_retryable=True,
         ) from exc
+
+
+@activity.defn(name=PERSIST_WORKFLOW_JOB_ACTIVITY)
+async def persist_workflow_job(
+    request: WorkflowJobPersistenceActivityInput,
+) -> JobRecord:
+    job = request.job
+    with _worker_scope(
+        job.project_id,
+        request.region_code,
+        job.resource_id,
+        organization_id=request.organization_id,
+    ):
+        try:
+            await asyncio.to_thread(
+                lambda: _require(
+                    _dependencies.workflow_jobs,
+                    "workflow.WorkflowJobPersistencePort",
+                ).put_job(request)
+            )
+        except WorkflowPortNotConfigured as exc:
+            raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
+        except (TypeError, ValueError) as exc:
+            raise ApplicationError(
+                str(exc),
+                type="VALIDATION_FAILED",
+                non_retryable=True,
+            ) from exc
+    return job
 
 
 @activity.defn(name=PARSE_MANIFEST_ACTIVITY)
@@ -394,9 +480,66 @@ async def verify_raw(request: VerificationActivityInput) -> VerificationActivity
             )
         return report
 
-    with _worker_scope(request.project_id, request.region_code, request.rollout_id):
+    with _worker_scope(
+        request.project_id,
+        request.region_code,
+        request.rollout_id,
+        organization_id=request.organization_id,
+    ):
         report = await _invoke("verification", verify_and_persist)
     return VerificationActivityOutput(report=report)
+
+
+@activity.defn(name=MATERIALIZE_INGEST_PROJECTION_ACTIVITY)
+async def materialize_ingest_projection(
+    request: ProjectionMaterializationActivityInput,
+) -> ProjectionMaterializationActivityOutput:
+    source = request.source
+    with _worker_scope(
+        source.project_id,
+        source.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        materialized = await _invoke(
+            "projection_materialization",
+            lambda: _require(
+                _dependencies.ingest_projection,
+                "workflow.IngestProjectionPort",
+            ).materialize(source),
+        )
+    if (
+        materialized.project_id != source.project_id
+        or materialized.region_code != source.region_code
+        or materialized.rollout_id != source.rollout_id
+        or materialized.source_sha256 != source.source_sha256
+        or materialized.materialization is None
+    ):
+        raise ValueError("materialized projection lineage does not match its source")
+    return ProjectionMaterializationActivityOutput(source=materialized)
+
+
+@activity.defn(name=CLEANUP_INGEST_PROJECTION_ACTIVITY)
+async def cleanup_ingest_projection(
+    request: ProjectionCleanupActivityInput,
+) -> ProjectionCleanupActivityOutput:
+    source = request.source
+    if source.materialization is None:
+        return ProjectionCleanupActivityOutput()
+    with _worker_scope(
+        source.project_id,
+        source.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        await _invoke(
+            "projection_cleanup",
+            lambda: _require(
+                _dependencies.ingest_projection,
+                "workflow.IngestProjectionPort",
+            ).cleanup(source),
+        )
+    return ProjectionCleanupActivityOutput()
 
 
 @activity.defn(name=EVALUATE_QUALITY_ACTIVITY)
@@ -615,6 +758,7 @@ async def create_annotation_task(
                 base_step_count=request.base_step_count,
                 source_workflow_id=request.source_workflow_id,
                 task_kind=request.task_kind,
+                frame_selection=request.frame_selection,
             )
         )
         return AutomaticAnnotationActivityOutput(task_id=task.task_id)
@@ -633,16 +777,37 @@ async def create_preview(request: PreviewActivityInput) -> PreviewActivityOutput
     preview_request = request.request
     with _worker_scope(
         preview_request.project_id,
-        None,
+        request.region_code,
         f"{preview_request.dataset_id}/{preview_request.rollout_id}",
+        organization_id=request.organization_id,
     ):
-        descriptor = await _invoke(
-            "preview",
-            lambda: _require(_dependencies.preview, "preview.PreviewService").create(
-                preview_request
-            ),
-        )
-    return PreviewActivityOutput(descriptor=descriptor)
+        while True:
+            try:
+                await asyncio.wait_for(_PREVIEW_ACTIVITY_SLOTS.acquire(), timeout=10)
+                break
+            except TimeoutError:
+                _heartbeat("preview", "queued")
+        try:
+            cancel_event = Event()
+            artifact = await _invoke(
+                "preview",
+                lambda: _require(
+                    _dependencies.preview, "preview.PreviewGenerationService"
+                ).generate(
+                    PreviewScopeV1(
+                        organization_id=request.organization_id,
+                        project_id=preview_request.project_id,
+                        region_code=request.region_code,
+                    ),
+                    preview_request,
+                    job_id=request.job_id,
+                    cancelled=cancel_event.is_set,
+                ),
+                on_cancel=cancel_event.set,
+            )
+        finally:
+            _PREVIEW_ACTIVITY_SLOTS.release()
+    return PreviewActivityOutput(artifact=artifact)
 
 
 @activity.defn(name=PUBLISH_DATASET_ACTIVITY)
@@ -765,8 +930,11 @@ async def reconcile_publication(
 
 
 ALL_ACTIVITIES = (
+    persist_workflow_job,
     parse_manifest,
     verify_raw,
+    materialize_ingest_projection,
+    cleanup_ingest_projection,
     evaluate_quality,
     align_fragment,
     commit_fragment,

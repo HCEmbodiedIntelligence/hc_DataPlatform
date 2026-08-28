@@ -65,53 +65,115 @@ async function mountFixture(
 }
 
 async function mountQueueFixture(page: Page): Promise<void> {
+  const baseTask = {
+    task_id:
+      "annotation-task-fe13-with-a-deliberately-long-auditable-identifier",
+    project_id: "project_fe13_visual",
+    region_code: "cn-east-01",
+    dataset_id: "dataset-fe13-with-a-very-long-name-that-must-remain-contained",
+    dataset_version: 18,
+    rollout_id:
+      "rollout-fe13-production-cell-with-an-extremely-long-readable-name",
+    base_lance_version: 42,
+    base_step_count: 26787,
+    tag_schema_id: "robot-operation-schema-fe13",
+    tag_schema_version: 7,
+    task_kind: "TAGGING",
+    creation_source: "SYSTEM_LANCE",
+    source_workflow_id: "ingest/fe13/visual",
+    assignee_id: null,
+    current_revision: 0,
+    state_version: 1,
+    current_submission_id: null,
+    submitted_revision: null,
+    submitted_by: null,
+    approved_revision: null,
+    approved_review_id: null,
+    status: "DRAFT",
+    schema_version: "1",
+    etag: '"annotation-task-fe13-v1"',
+    created_at: "2026-08-18T08:00:00Z",
+    updated_at: "2026-08-18T08:42:00Z",
+  };
+  const queueTasks = [
+    baseTask,
+    {
+      ...baseTask,
+      task_id: "annotation-task-fe13-submitted",
+      rollout_id: "rollout-fe13-submitted",
+      assignee_id: "annotator-fe13",
+      current_revision: 2,
+      current_submission_id: "submission-fe13-2",
+      submitted_revision: 2,
+      submitted_by: "annotator-fe13",
+      status: "SUBMITTED",
+      updated_at: "2026-08-19T09:10:00Z",
+    },
+    {
+      ...baseTask,
+      task_id: "annotation-task-fe13-needs-revision",
+      rollout_id: "rollout-fe13-needs-revision",
+      assignee_id: "actor_fe13_visual",
+      current_revision: 3,
+      status: "NEEDS_REVISION",
+      updated_at: "2026-08-20T10:20:00Z",
+    },
+    {
+      ...baseTask,
+      task_id: "annotation-task-fe13-approved",
+      rollout_id: "rollout-fe13-approved",
+      assignee_id: "annotator-fe13",
+      current_revision: 4,
+      approved_revision: 4,
+      approved_review_id: "review-fe13-approved",
+      status: "APPROVED",
+      updated_at: "2026-08-21T11:30:00Z",
+    },
+    {
+      ...baseTask,
+      task_id: "annotation-task-fe13-rejected",
+      rollout_id: "rollout-fe13-rejected",
+      assignee_id: "annotator-fe13",
+      current_revision: 2,
+      status: "REJECTED",
+      updated_at: "2026-08-22T12:40:00Z",
+    },
+  ];
   await page.route(
     "**/api/v1/projects/project_fe13_visual/annotation-tasks**",
     async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify([
-          {
-            task_id:
-              "annotation-task-fe13-with-a-deliberately-long-auditable-identifier",
-            project_id: "project_fe13_visual",
-            region_code: "cn-east-01",
-            dataset_id:
-              "dataset-fe13-with-a-very-long-name-that-must-remain-contained",
-            dataset_version: 18,
-            rollout_id:
-              "rollout-fe13-production-cell-with-an-extremely-long-readable-name",
-            base_lance_version: 42,
-            base_step_count: 26787,
-            tag_schema_id: "robot-operation-schema-fe13",
-            tag_schema_version: 7,
-            task_kind: "TAGGING",
-            creation_source: "SYSTEM_LANCE",
-            source_workflow_id: "ingest/fe13/visual",
-            assignee_id: null,
-            current_revision: 0,
-            state_version: 1,
-            current_submission_id: null,
-            submitted_revision: null,
-            submitted_by: null,
-            approved_revision: null,
-            approved_review_id: null,
-            status: "DRAFT",
-            schema_version: "1",
-            etag: '"annotation-task-fe13-v1"',
-            created_at: "2026-08-18T08:00:00Z",
-            updated_at: "2026-08-18T08:42:00Z",
-          },
-        ]),
+        body: JSON.stringify(queueTasks),
       });
     },
   );
   await page.goto("/dashboard");
   await page.locator("#main-content").waitFor({ state: "attached" });
-  await page.evaluate(async () => {
+  await page.evaluate(async (tasks) => {
     const main = document.getElementById("main-content");
     if (!main) throw new Error("Missing PlatformShell main content");
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (
+        url.includes("/api/v1/projects/project_fe13_visual/annotation-tasks")
+      ) {
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return originalFetch(input, init);
+    };
     main.setAttribute("role", "presentation");
     for (const child of Array.from(main.children))
       child.setAttribute("hidden", "");
@@ -128,7 +190,7 @@ async function mountQueueFixture(page: Page): Promise<void> {
       'return import("/src/pages/p08-data-annotation/testing/AnnotationQueueVisualFixture.tsx")',
     ) as () => Promise<QueueVisualModule>;
     (await load()).mountAnnotationQueueVisualFixture(host, "annotation");
-  });
+  }, queueTasks);
   await expect(
     page.getByRole("heading", { level: 1, name: "数据标注" }),
   ).toBeVisible();
@@ -158,7 +220,7 @@ async function runAxe(
   );
   const report = JSON.stringify({ violations: result.violations }, null, 2);
   writeFileSync(outputPath, report);
-  await testInfo.attach("axe-fe13-annotation-queue", {
+  await testInfo.attach("axe-p08-report", {
     body: report,
     contentType: "application/json",
   });
@@ -177,7 +239,7 @@ async function expectGeometry(
   expect(boxes.every(Boolean)).toBe(true);
   const widths = boxes.map((box) => box?.width ?? 0);
   const total = widths.reduce((sum, width) => sum + width, 0);
-  const expected = mode === "annotation" ? [0.76, 0.24] : [0.72, 0.28];
+  const expected = mode === "annotation" ? [0.7, 0.3] : [0.68, 0.32];
   widths.forEach((width, index) =>
     expect(Math.abs(width / total - (expected[index] ?? 0))).toBeLessThan(
       0.035,
@@ -211,7 +273,31 @@ for (const mode of ["annotation", "tag-review"] as const) {
       await mountFixture(page, { mode, cameraCount: 4, scenario: "reference" });
       await expectGeometry(page, mode);
       if (mode === "annotation") {
-        await expect(page.getByText("多级 Tag 工具")).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: "多级 Tag" }),
+        ).toBeVisible();
+        expect(
+          await page
+            .getByLabel("机器人姿态同步视图")
+            .evaluate((element) => getComputedStyle(element).overflowY),
+        ).toBe("visible");
+        expect(
+          await page
+            .locator(".viewer-timeline__viewport")
+            .evaluate((element) => getComputedStyle(element).overflowY),
+        ).toBe("hidden");
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollHeight > window.innerHeight,
+          ),
+        ).toBe(true);
+        expect(
+          (await page.getByLabel("相机与同步信号").boundingBox())?.height ?? 0,
+        ).toBeGreaterThanOrEqual(500);
+        await expect(
+          page.getByRole("article", { name: "关节角变化" }),
+        ).toBeVisible();
+        await expect(page.getByLabel(/关节角时间序列/u)).toBeVisible();
         await expect(
           page.getByRole("button", { name: "保存修改" }),
         ).toBeVisible();
@@ -219,18 +305,29 @@ for (const mode of ["annotation", "tag-review"] as const) {
           page.getByRole("button", { name: "提交审核" }),
         ).toBeVisible();
         await expect(
-          page.getByLabel("Manifest 相机视图").locator(".viewer-panel"),
+          page
+            .getByLabel("数据清单相机视图")
+            .locator(".viewer-panel:not(.viewer-robot-panel)"),
         ).toHaveCount(4);
       } else {
         await expect(page.getByText("六项审核清单")).toBeVisible();
         await expect(page.getByText("原始 / 修订差异")).toBeVisible();
         await expect(
-          page.getByLabel("Manifest 相机视图").locator(".viewer-panel"),
+          page
+            .getByLabel("数据清单相机视图")
+            .locator(".viewer-panel:not(.viewer-robot-panel)"),
         ).toHaveCount(1);
         await expect(page.locator("#review-camera-select option")).toHaveCount(
           4,
         );
       }
+      await expect(
+        page.getByLabel("数据清单相机视图").locator(".viewer-robot-panel"),
+      ).toHaveCount(mode === "annotation" ? 0 : 1);
+      if (mode === "annotation")
+        await expect(
+          page.getByLabel("机器人姿态同步视图").locator(".viewer-robot-panel"),
+        ).toHaveCount(1);
       await page.screenshot({
         path: resolve(directory, viewport.file),
         fullPage: false,
@@ -246,7 +343,12 @@ test("E07 keeps the workbench skeleton for a zero-camera Manifest", async ({
   mkdirSync(directory, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
   await mountFixture(page, { mode: "annotation", scenario: "empty-cameras" });
-  await expect(page.getByText(/Manifest 未发现相机/)).toBeVisible();
+  await expect(
+    page
+      .getByLabel("数据清单相机视图")
+      .locator(".viewer-panel:not(.viewer-robot-panel)"),
+  ).toHaveCount(4);
+  await expect(page.getByText("等待摄像头接入")).toHaveCount(4);
   await expect(page.getByRole("slider", { name: "共享播放位置" })).toHaveCount(
     1,
   );
@@ -269,10 +371,78 @@ test("E07 adapts a one-camera Manifest without adding another timeline", async (
   });
   await expectGeometry(page, "annotation");
   await expect(
-    page.getByLabel("Manifest 相机视图").locator(".viewer-panel"),
-  ).toHaveCount(1);
+    page
+      .getByLabel("数据清单相机视图")
+      .locator(".viewer-panel:not(.viewer-robot-panel)"),
+  ).toHaveCount(4);
+  await expect(
+    page
+      .getByLabel("数据清单相机视图")
+      .locator(".viewer-panel:not(.viewer-robot-panel)")
+      .first(),
+  ).toHaveAttribute("aria-label", /主臂相机/u);
+  await expect(page.getByText("等待摄像头接入")).toHaveCount(3);
   await page.screenshot({
     path: resolve(directory, "1280x800-one-camera.png"),
+    fullPage: false,
+  });
+});
+
+test("E07 keeps Tag editing compact below the four-camera viewer", async ({
+  page,
+}) => {
+  const directory = resolve(artifactRoot, "E07");
+  mkdirSync(directory, { recursive: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mountFixture(page, {
+    mode: "annotation",
+    cameraCount: 1,
+    scenario: "reference",
+  });
+
+  const timeline = page.getByLabel("共享视频时间轴区域");
+  await timeline.scrollIntoViewIfNeeded();
+  await expect(page.getByText("拖选后自动分级")).toBeVisible();
+  await expect(page.getByLabel("父级")).toHaveCount(0);
+  await expect(page.getByLabel(/当前 Tag · 共/u)).toHaveCount(0);
+  const slider = page.getByRole("slider", { name: "共享播放位置" });
+  const sliderBox = await slider.boundingBox();
+  expect(sliderBox).not.toBeNull();
+  if (sliderBox) {
+    await page.mouse.move(
+      sliderBox.x + sliderBox.width * 0.18,
+      sliderBox.y + 8,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      sliderBox.x + sliderBox.width * 0.42,
+      sliderBox.y + 8,
+    );
+    await page.mouse.up();
+  }
+  await expect(
+    page.getByRole("button", { name: "拖动整个标注区间" }),
+  ).toBeVisible();
+  await expect(page.getByText(/自动 L1/u)).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建 Tag" })).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /起点同步播放全部视频和关节数据/u,
+    }),
+  ).toHaveCount(2);
+  await expect(page.getByText(/点击 Tag 从起点同步播放/u)).toBeVisible();
+  await expect(timeline.locator(".viewer-timeline__tracks")).not.toContainText(
+    "30 Hz 对齐",
+  );
+  await expect(timeline.locator(".viewer-timeline__tracks")).not.toContainText(
+    "数据修订",
+  );
+  expect(
+    (await page.getByRole("heading", { name: "多级 Tag" }).boundingBox())
+      ?.height ?? 0,
+  ).toBeLessThan(24);
+  await page.screenshot({
+    path: resolve(directory, "1280x800-one-camera-timeline.png"),
     fullPage: false,
   });
 });
@@ -302,7 +472,7 @@ test("E07 opens collection data as an overlay without resizing the viewer", asyn
   await expect(drawer).toBeVisible();
   await expect(drawer.getByRole("heading", { name: "采集条目" })).toBeVisible();
   await expect(drawer.getByText("任务 ID", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("Schema", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("数据结构", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Lance", { exact: true })).toBeVisible();
   await expect(drawer.getByText("区间", { exact: true })).toBeVisible();
 
@@ -370,7 +540,7 @@ test("E08 keeps the fixed submission visible after a concurrent 409", async ({
   await mountFixture(page, { mode: "tag-review", scenario: "conflict" });
   await expect(page.getByText("并发版本冲突，写操作已暂停")).toBeVisible();
   await expect(page.getByText("必填属性完整", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "审核通过" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "提交审核" })).toBeDisabled();
   await page.screenshot({
     path: resolve(directory, "1280x800-conflict.png"),
     fullPage: false,
@@ -416,7 +586,10 @@ test("E07 8-camera shared-clock interaction stays within the local render budget
         (sum, entry) => sum + entry.duration,
         0,
       ),
-      cameraPanels: document.querySelectorAll(".viewer-panel").length,
+      cameraPanels: document.querySelectorAll(
+        ".viewer-media-grid .viewer-panel:not(.viewer-robot-panel)",
+      ).length,
+      robotPanels: document.querySelectorAll(".viewer-robot-panel").length,
       sharedTimelineCount: document.querySelectorAll(
         '[role="slider"][aria-label="共享播放位置"]',
       ).length,
@@ -432,7 +605,8 @@ test("E07 8-camera shared-clock interaction stays within the local render budget
     body: serializedProfile,
     contentType: "application/json",
   });
-  expect(profile.cameraPanels).toBe(8);
+  expect(profile.cameraPanels).toBe(4);
+  expect(profile.robotPanels).toBe(1);
   expect(profile.sharedTimelineCount).toBe(1);
   expect(profile.dispatchMs).toBeLessThan(120);
   expect(profile.longTaskCount).toBeLessThanOrEqual(1);
@@ -440,84 +614,168 @@ test("E07 8-camera shared-clock interaction stays within the local render budget
 
 test("E07 exposes the primary workbench controls to the keyboard", async ({
   page,
-}) => {
+}, testInfo) => {
+  const directory = resolve(artifactRoot, "E07");
+  mkdirSync(directory, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
   await mountFixture(page, {
     mode: "annotation",
     cameraCount: 4,
     scenario: "reference",
   });
-  const tagTree = page.getByRole("tree", { name: "多级 Tag Schema 层级" });
-  const firstTag = tagTree.getByRole("treeitem").first();
-  await firstTag.focus();
-  await expect(firstTag).toBeFocused();
+  const modeNavigation = page.getByRole("tablist", {
+    name: "数据标注工作模式",
+  });
+  const annotationTab = modeNavigation.getByRole("tab", { name: /^标注/u });
+  const viewTab = modeNavigation.getByRole("tab", { name: /^查看/u });
+  await annotationTab.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(viewTab).toBeFocused();
+  await expect(viewTab).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(annotationTab).toBeFocused();
+  await expect(annotationTab).toHaveAttribute("aria-selected", "true");
+  const tagName = page.locator("#manual-tag-label");
+  await tagName.focus();
+  await expect(tagName).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toBeVisible();
+  const tagPlayback = page
+    .getByRole("button", { name: /起点同步播放全部视频和关节数据/u })
+    .first();
+  await tagPlayback.focus();
+  await expect(tagPlayback).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(tagPlayback).toHaveAttribute("aria-current", "time");
+  await page.getByRole("button", { name: "暂停" }).click();
   const slider = page.getByRole("slider", { name: "共享播放位置" });
   await slider.focus();
   await expect(slider).toBeFocused();
   await page.keyboard.press("ArrowRight");
-});
-
-test("E07 queue uses native links, stable search semantics and contained long text", async ({
-  page,
-}, testInfo) => {
-  const directory = resolve(artifactRoot, "E07");
-  mkdirSync(directory, { recursive: true });
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await mountQueueFixture(page);
-
-  const modeNavigation = page.getByRole("navigation", {
-    name: "数据标注功能模式",
-  });
-  const annotationLink = modeNavigation.getByRole("link", { name: "数据标注" });
-  const reviewLink = modeNavigation.getByRole("link", { name: "Tag 审核" });
-  await expect(annotationLink).toHaveAttribute("href", "/annotations/annotate");
-  await expect(annotationLink).toHaveAttribute("aria-current", "page");
-  await expect(reviewLink).toHaveAttribute("href", "/annotations/tag-review");
-  expect(
-    await reviewLink.evaluate(
-      (element) =>
-        element instanceof HTMLAnchorElement &&
-        element.href.endsWith("/annotations/tag-review"),
-    ),
-  ).toBe(true);
-
-  const search = page.getByLabel("搜索任务、Rollout、Dataset 或 Schema");
-  await expect(search).toHaveAttribute("name", "annotation-task-search");
-  await expect(search).toHaveAttribute("autocomplete", "off");
-  await expect(search).toHaveAttribute("placeholder", "输入关键词…");
-  await annotationLink.focus();
-  await expect(annotationLink).toBeFocused();
-  expect(
-    await annotationLink.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return (
-        style.outlineStyle !== "none" &&
-        Number.parseFloat(style.outlineWidth) >= 2
-      );
-    }),
-  ).toBe(true);
-  await page.keyboard.press("Tab");
-  await expect(reviewLink).toBeFocused();
-
-  const overflow = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    content: document.documentElement.scrollWidth,
-  }));
-  expect(overflow.content).toBeLessThanOrEqual(overflow.viewport);
   await runAxe(
     page,
     testInfo,
-    '[data-fe13-annotation-queue-host="true"]',
-    resolve(directory, "axe-1280x800-queue.json"),
+    '[data-p08-visual-host="true"]',
+    resolve(directory, "axe-1280x800-workbench.json"),
   );
-  await page.evaluate(() =>
-    (document.activeElement as HTMLElement | null)?.blur(),
-  );
-  await page.screenshot({
-    path: resolve(directory, "1280x800-queue-links.png"),
-    animations: "disabled",
-    fullPage: false,
-  });
 });
+
+for (const viewport of [
+  { width: 2560, height: 1200 },
+  { width: 1440, height: 1000 },
+  { width: 1280, height: 1000 },
+  { width: 768, height: 1200 },
+] as const) {
+  test(`E07 annotation queue at ${viewport.width}px has contained responsive layout`, async ({
+    page,
+  }, testInfo) => {
+    const directory = resolve(artifactRoot, "E07");
+    mkdirSync(directory, { recursive: true });
+    await page.setViewportSize(viewport);
+    await mountQueueFixture(page);
+
+    const stageNavigation = page.getByRole("navigation", {
+      name: "标注任务状态",
+    });
+    const stageLinks = stageNavigation.getByRole("link");
+    await expect(stageLinks).toHaveCount(4);
+    const draftLink = stageNavigation.getByRole("link", {
+      name: /^待标注，/u,
+    });
+    await expect(draftLink).toHaveAttribute("aria-current", "page");
+    await expect(
+      stageNavigation.getByRole("link", { name: /^待审核，/u }),
+    ).toHaveAttribute("href", "/annotations/annotate?stage=SUBMITTED");
+    await expect(page.getByRole("link", { name: "修订记录" })).toHaveAttribute(
+      "href",
+      "/annotations/revisions",
+    );
+    await expect(page.getByText("流程边界")).toHaveCount(0);
+
+    const cardColumns = await stageLinks.evaluateAll(
+      (links) =>
+        new Set(
+          links.map((link) => Math.round(link.getBoundingClientRect().top)),
+        ).size,
+    );
+    const expectedRows = viewport.width >= 1440 ? 1 : 2;
+    expect(cardColumns).toBe(expectedRows);
+
+    const queuePanel = page.getByRole("region", {
+      name: "待标注",
+      exact: true,
+    });
+    await expect(queuePanel).toBeVisible();
+    await expect(page.getByRole("link", { name: /^已拒绝，/u })).toHaveCount(0);
+
+    const search = page.getByLabel("搜索任务、Rollout、Dataset 或数据结构");
+    await expect(search).toHaveAttribute("name", "annotation-task-search");
+    await expect(search).toHaveAttribute("autocomplete", "off");
+    await expect(search).toHaveAttribute("placeholder", "输入关键词…");
+    const longId = page.getByTitle(
+      "annotation-task-fe13-with-a-deliberately-long-auditable-identifier",
+    );
+    await expect(longId).toBeVisible();
+    expect(
+      await longId.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return style.overflow === "hidden" && style.textOverflow === "ellipsis";
+      }),
+    ).toBe(true);
+
+    const tableRegion = page.getByRole("region", {
+      name: "待标注任务表，可横向滚动",
+    });
+    expect(
+      await tableRegion.evaluate(
+        (element) => element.scrollWidth >= element.clientWidth,
+      ),
+    ).toBe(true);
+    const overflow = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }));
+    expect(overflow.content).toBeLessThanOrEqual(overflow.viewport);
+
+    if (viewport.width === 1280) {
+      const revisionLink = page.getByRole("link", { name: "修订记录" });
+      await revisionLink.focus();
+      await expect(revisionLink).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("button", { name: "刷新" })).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(draftLink).toBeFocused();
+      expect(
+        await draftLink.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return (
+            style.outlineStyle !== "none" &&
+            Number.parseFloat(style.outlineWidth) >= 2
+          );
+        }),
+      ).toBe(true);
+      await page.keyboard.press("Tab");
+      await expect(
+        stageNavigation.getByRole("link", { name: /^待审核，/u }),
+      ).toBeFocused();
+    }
+
+    await runAxe(
+      page,
+      testInfo,
+      '[data-fe13-annotation-queue-host="true"]',
+      resolve(directory, `axe-queue-${viewport.width}.json`),
+    );
+    await page.evaluate(() =>
+      (document.activeElement as HTMLElement | null)?.blur(),
+    );
+    await page.screenshot({
+      path: resolve(
+        directory,
+        `annotation-queue-${viewport.width}x${viewport.height}.png`,
+      ),
+      animations: "disabled",
+      fullPage: true,
+    });
+  });
+}

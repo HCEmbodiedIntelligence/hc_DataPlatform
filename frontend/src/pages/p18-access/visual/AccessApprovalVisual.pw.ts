@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -45,6 +45,7 @@ async function mountFixture(
     readonly tab?: "users" | "membership-requests" | "capability-requests";
   },
 ) {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
     window.localStorage.setItem("hc-platform-navigation-collapsed", "true");
   });
@@ -127,39 +128,31 @@ test("E09 platform user management stays usable across desktop and mobile", asyn
   });
 });
 
-async function expectGeometry(page: Page) {
-  const [main, drawer] = await Promise.all([
+async function expectFullWidthList(page: Page) {
+  const [pageBox, listBox] = await Promise.all([
+    page.locator("[data-e09-page]").boundingBox(),
     page.locator("[data-e09-main]").boundingBox(),
-    page.locator("[data-e09-drawer]").boundingBox(),
   ]);
-  expect(main).not.toBeNull();
+  expect(pageBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect((listBox?.width ?? 0) / (pageBox?.width ?? 1)).toBeGreaterThan(0.98);
+}
+
+async function expectDrawerOverlay(page: Page, viewportWidth: number) {
+  const drawer = await page.locator("[data-e09-drawer]").boundingBox();
   expect(drawer).not.toBeNull();
-  const total = (main?.width ?? 0) + (drawer?.width ?? 0);
-  expect((drawer?.width ?? 0) / total).toBeGreaterThan(0.34);
-  expect((drawer?.width ?? 0) / total).toBeLessThan(0.47);
+  expect(drawer?.width ?? 0).toBeLessThanOrEqual(viewportWidth);
+  if (viewportWidth <= 375) {
+    expect(Math.abs((drawer?.width ?? 0) - viewportWidth)).toBeLessThanOrEqual(
+      1,
+    );
+  } else {
+    expect(drawer?.width ?? 0).toBeGreaterThanOrEqual(520);
+  }
   expect((drawer?.y ?? 0) + (drawer?.height ?? 0)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerHeight + 1),
   );
-  const horizontalGeometry = await page.evaluate(() => ({
-    overflow: document.documentElement.scrollWidth - window.innerWidth,
-    offenders: [...document.querySelectorAll("body *")]
-      .filter((element) => {
-        const box = element.getBoundingClientRect();
-        return (
-          box.width > 0 && (box.left < -1 || box.right > window.innerWidth + 1)
-        );
-      })
-      .slice(0, 12)
-      .map((element) => ({
-        node: element.tagName,
-        className: element.className,
-        box: element.getBoundingClientRect().toJSON(),
-      })),
-  }));
-  expect(
-    horizontalGeometry.overflow,
-    JSON.stringify(horizontalGeometry.offenders, null, 2),
-  ).toBeLessThanOrEqual(0);
+  await expectNoHorizontalOverflow(page);
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -186,16 +179,30 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 async function runAxe(page: Page): Promise<AxeResult | null> {
-  const axePath = process.env.AXE_CORE_PATH;
-  if (!axePath) return null;
+  const axePath =
+    process.env.AXE_CORE_PATH ??
+    resolve(process.cwd(), "node_modules/axe-core/axe.min.js");
+  if (!existsSync(axePath)) return null;
   await page.addScriptTag({ path: axePath });
   return page.evaluate(async () => {
     const axe = (
-      window as Window & { axe?: { run(root: Element): Promise<AxeResult> } }
+      window as Window & {
+        axe?: {
+          run(
+            root:
+              | Element
+              | Document
+              | { readonly include: readonly (readonly string[])[] },
+          ): Promise<AxeResult>;
+        };
+      }
     ).axe;
     const fixture = document.querySelector("[data-p18-visual-fixture]");
     if (!axe || !fixture) throw new Error("Missing axe-core or E09 fixture");
-    return axe.run(fixture);
+    const include: string[][] = [["[data-p18-visual-fixture]"]];
+    if (document.querySelector("[data-e09-drawer]"))
+      include.push(["[data-e09-drawer]"]);
+    return axe.run({ include });
   });
 }
 
@@ -212,16 +219,42 @@ for (const viewport of [
     await expect(
       page.getByRole("tab", { name: /项目加入申请/u }),
     ).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("dialog", { name: "审批申请" })).toBeVisible();
-    await expect(page.getByText("注册账户不进入审批队列。")).toBeVisible();
-    await expectGeometry(page);
+    await expect(page.locator("[data-e09-drawer]")).toHaveCount(0);
+    await expect(page.getByText(/注册账户不进入审批队列/u)).toHaveCount(0);
+    await expectFullWidthList(page);
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({
+      path: resolve(artifactDirectory, viewport.file),
+      animations: "disabled",
+      fullPage: false,
+    });
 
-    const close = page.getByRole("button", { name: "关闭审批抽屉" });
+    const selectedRequest = page.getByRole("button", {
+      name: "查看 contractor-li.ming-017 的申请",
+    });
+    await selectedRequest.click();
+    await expect(page.locator("[data-e09-drawer]")).toHaveCount(1);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expectDrawerOverlay(page, viewport.width);
+
+    const close = page.getByRole("button", { name: "关闭申请详情" });
     await close.focus();
     await page.keyboard.press("Escape");
-    await expect(page.locator("[data-selected]")).toBeFocused();
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          ariaLabel: document.activeElement?.getAttribute("aria-label"),
+          tag: document.activeElement?.tagName,
+          text: document.activeElement?.textContent,
+        })),
+      )
+      .toEqual({
+        ariaLabel: "查看 contractor-li.ming-017 的申请",
+        tag: "BUTTON",
+        text: "查看",
+      });
 
-    await page.locator("[data-selected]").click();
+    await selectedRequest.click();
     const axe = await runAxe(page);
     if (axe) {
       writeFileSync(
@@ -238,7 +271,10 @@ for (const viewport of [
       expect(axe.violations).toEqual([]);
     }
     await page.screenshot({
-      path: resolve(artifactDirectory, viewport.file),
+      path: resolve(
+        artifactDirectory,
+        viewport.file.replace(".png", "-drawer.png"),
+      ),
       animations: "disabled",
       fullPage: false,
     });
@@ -267,8 +303,24 @@ test("E09 keeps lightweight approval usable at 375x812", async ({ page }) => {
   mkdirSync(repairArtifactDirectory, { recursive: true });
   await page.setViewportSize({ width: 375, height: 812 });
   await mountFixture(page, { scenario: "reference" });
-  await expect(page.getByRole("dialog", { name: "审批申请" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "提交批准" })).toBeVisible();
+  await expect(page.locator("[data-e09-drawer]")).toHaveCount(0);
+  await expectFullWidthList(page);
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({
+    path: resolve(repairArtifactDirectory, "375x812-list.png"),
+    animations: "disabled",
+    fullPage: false,
+  });
+
+  await page
+    .getByRole("button", { name: "查看 contractor-li.ming-017 的申请" })
+    .click();
+  await expect(page.locator("[data-e09-drawer]")).toHaveCount(1);
+  await expectDrawerOverlay(page, 375);
+  await page.getByRole("button", { name: "批准申请" }).click();
+  await expect(
+    page.getByRole("button", { name: "提交批准申请" }),
+  ).toBeVisible();
   const horizontalGeometry = await page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     offenders: [...document.querySelectorAll("body *")]
@@ -289,6 +341,8 @@ test("E09 keeps lightweight approval usable at 375x812", async ({ page }) => {
     horizontalGeometry.overflow,
     JSON.stringify(horizontalGeometry.offenders, null, 2),
   ).toBeLessThanOrEqual(0);
+  const axe = await runAxe(page);
+  if (axe) expect(axe.violations).toEqual([]);
   await page.screenshot({
     path: resolve(repairArtifactDirectory, "375x812-light-approval.png"),
     animations: "disabled",
@@ -302,10 +356,12 @@ test("E09 keeps server-confirmed success after the decided row and drawer disapp
   mkdirSync(artifactDirectory, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
   await mountFixture(page, { scenario: "reference" });
-  const decidedRow = page
-    .locator("button")
-    .filter({ has: page.getByTitle("contractor-li.ming-017") });
+  const decidedRow = page.getByRole("button", {
+    name: "查看 contractor-li.ming-017 的申请",
+  });
   await expect(decidedRow).toBeVisible();
+  await decidedRow.click();
+  await page.getByRole("button", { name: "批准申请" }).click();
   await page.getByRole("button", { name: "提交批准申请" }).click();
 
   await expect(decidedRow).toHaveCount(0);

@@ -275,17 +275,115 @@ export function useRobotModelVersion(versionId: string | null) {
   return useQuery({
     queryKey: makeQueryKey("robot-models", "version", versionId),
     enabled: Boolean(organizationId && versionId),
-    queryFn: async ({ signal }) => {
-      const raw = await request<unknown>({
-        method: "GET",
-        path: `/organizations/${encodeURIComponent(organizationId ?? "")}/robot-model-versions/${encodeURIComponent(versionId ?? "")}`,
-        signal,
-      });
-      return adaptRobotModelVersion(
-        parseWire(robotModelVersionEnvelopeWireSchema, raw, {
-          endpoint: "getRobotModelVersion",
-        }).data,
+    queryFn: ({ signal }) =>
+      getRobotModelVersion(organizationId!, versionId!, signal),
+  });
+}
+
+export async function getRobotModelVersion(
+  organizationId: string,
+  versionId: string,
+  signal?: AbortSignal,
+): Promise<RobotModelVersion> {
+  const raw = await request<unknown>({
+    method: "GET",
+    path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(versionId)}`,
+    ...(signal ? { signal } : {}),
+  });
+  return adaptRobotModelVersion(
+    parseWire(robotModelVersionEnvelopeWireSchema, raw, {
+      endpoint: "getRobotModelVersion",
+    }).data,
+  );
+}
+
+export interface CreateRobotModelIntent {
+  readonly manufacturer: string;
+  readonly modelCode: string;
+  readonly displayName: string;
+  readonly versionLabel: string;
+  readonly idempotencyKey: string;
+}
+
+export async function createRobotModel(
+  organizationId: string,
+  intent: CreateRobotModelIntent,
+): Promise<RobotModelVersion> {
+  const raw = await request<unknown>({
+    method: "POST",
+    path: `/organizations/${encodeURIComponent(organizationId)}/robot-models`,
+    body: {
+      manufacturer: intent.manufacturer,
+      model_code: intent.modelCode,
+      display_name: intent.displayName,
+      version_label: intent.versionLabel,
+    },
+    idempotencyKey: intent.idempotencyKey,
+    cache: "no-store",
+  });
+  return adaptRobotModelVersion(
+    parseWire(robotModelVersionEnvelopeWireSchema, raw, {
+      endpoint: "createRobotModel",
+    }).data,
+  );
+}
+
+export function useCreateRobotModel() {
+  const organizationId = useOrganizationId();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (intent: CreateRobotModelIntent) =>
+      createRobotModel(organizationId!, intent),
+    onSuccess: (version) => {
+      client.setQueryData(
+        makeQueryKey("robot-models", "version", version.id),
+        version,
       );
+      void client.invalidateQueries({ queryKey: ["robot-models"] });
+    },
+  });
+}
+
+export interface CreateRobotModelDraftIntent {
+  readonly sourceVersionId: string;
+  readonly versionLabel: string;
+  readonly updateScope: "ASSETS" | "MAPPINGS";
+  readonly idempotencyKey: string;
+}
+
+export async function createRobotModelDraft(
+  organizationId: string,
+  intent: CreateRobotModelDraftIntent,
+): Promise<RobotModelVersion> {
+  const raw = await request<unknown>({
+    method: "POST",
+    path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(intent.sourceVersionId)}:create-draft`,
+    body: {
+      version_label: intent.versionLabel,
+      update_scope: intent.updateScope,
+    },
+    idempotencyKey: intent.idempotencyKey,
+    cache: "no-store",
+  });
+  return adaptRobotModelVersion(
+    parseWire(robotModelVersionEnvelopeWireSchema, raw, {
+      endpoint: "createRobotModelDraft",
+    }).data,
+  );
+}
+
+export function useCreateRobotModelDraft() {
+  const organizationId = useOrganizationId();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (intent: CreateRobotModelDraftIntent) =>
+      createRobotModelDraft(organizationId!, intent),
+    onSuccess: (version) => {
+      client.setQueryData(
+        makeQueryKey("robot-models", "version", version.id),
+        version,
+      );
+      void client.invalidateQueries({ queryKey: ["robot-models"] });
     },
   });
 }
@@ -334,15 +432,74 @@ export async function authorizeRobotModelAssetDownload(
   organizationId: string,
   versionId: string,
   assetId: string,
+  signal?: AbortSignal,
 ): Promise<RobotModelAssetDownloadAuthorization> {
   const raw = await request<unknown>({
     method: "GET",
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(versionId)}/assets/${encodeURIComponent(assetId)}/download`,
     cache: "no-store",
+    ...(signal ? { signal } : {}),
   });
   return parseWire(assetDownloadWireSchema, raw, {
     endpoint: "authorizeRobotModelAssetDownload",
   });
+}
+
+export interface RobotModelViewerAssets {
+  readonly urdfUrl: string;
+  readonly urdfPath: string;
+  readonly assetUrls: Readonly<Record<string, string>>;
+}
+
+/**
+ * Authorize every object a URDF viewer may fetch. A signed URDF URL cannot be
+ * used as a relative base for separately stored meshes or textures because
+ * each object requires its own short-lived signature.
+ */
+export async function authorizeRobotModelViewerAssets(
+  organizationId: string,
+  versionId: string,
+  assets: readonly RobotModelAsset[],
+  signal?: AbortSignal,
+): Promise<RobotModelViewerAssets> {
+  const urdfAsset = assets.find((asset) => asset.role === "URDF");
+  if (!urdfAsset) throw new Error("Robot model viewer requires one URDF asset");
+
+  const viewerAssets = assets.filter(
+    (asset) =>
+      asset.asset_id === urdfAsset.asset_id ||
+      asset.role === "MESH" ||
+      asset.role === "TEXTURE",
+  );
+  const authorizations = await Promise.all(
+    viewerAssets.map(async (asset) => ({
+      asset,
+      authorization: await authorizeRobotModelAssetDownload(
+        organizationId,
+        versionId,
+        asset.asset_id,
+        signal,
+      ),
+    })),
+  );
+  const urdfAuthorization = authorizations.find(
+    ({ asset }) => asset.asset_id === urdfAsset.asset_id,
+  );
+  if (!urdfAuthorization)
+    throw new Error("Robot model viewer could not authorize its URDF asset");
+
+  return {
+    urdfUrl: urdfAuthorization.authorization.download_url,
+    urdfPath: urdfAsset.relative_path,
+    assetUrls: Object.fromEntries(
+      authorizations
+        .filter(({ asset }) => asset.asset_id !== urdfAsset.asset_id)
+        .map(({ asset, authorization }) => [
+          asset.relative_path,
+          authorization.download_url,
+        ]),
+    ),
+  };
 }
 
 async function authorizeRobotModelAssetParts(

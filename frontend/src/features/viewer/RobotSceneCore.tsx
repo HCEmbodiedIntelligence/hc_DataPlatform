@@ -9,9 +9,20 @@ export interface RobotSceneCoreProps {
   calibrationRef?: { setId: string; version: string };
   frameGraphRef?: string;
   clock?: PlaybackClock;
+  /** Returns source-joint radians for the immutable frame nearest to `ns`. */
+  jointFrameSource?: RobotJointFrameSource;
   runtimeLoader?: RobotSceneRuntimeLoader;
   onIncompatible?: (reason: 'JOINT_MAPPING'|'MODEL_VERSION'|'CALIBRATION_VERSION'|'FRAME_GRAPH') => void;
   onContextLost?: (recovered: boolean) => void;
+}
+
+export interface RobotJointFrameSource {
+  sampleAt(
+    ns: string,
+    signal: AbortSignal,
+  ):
+    | Readonly<Record<string, number>>
+    | Promise<Readonly<Record<string, number>>>;
 }
 
 export interface RobotSceneManifest {
@@ -64,7 +75,7 @@ function incompatible(manifest: RobotSceneManifest, props: RobotSceneCoreProps):
 }
 
 export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
-  const { calibrationRef, clock, frameGraphRef, jointMapping, modelRef, onContextLost, onIncompatible, runtimeLoader: providedRuntimeLoader } = p;
+  const { calibrationRef, clock, frameGraphRef, jointFrameSource, jointMapping, modelRef, onContextLost, onIncompatible, runtimeLoader: providedRuntimeLoader } = p;
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'incompatible' | 'context-lost'>('loading');
   const [reason, setReason] = useState<string>('');
@@ -85,7 +96,7 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       return () => controller.abort();
     }
 
-    const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, onContextLost, onIncompatible };
+    const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible };
     activeRuntimeLoader(host, runtimeProps, controller.signal).then(async ({ manifest, createRuntime, runtime: eagerRuntime }) => {
       if (controller.signal.aborted) { eagerRuntime?.dispose(); return; }
       const mismatch = incompatible(manifest, runtimeProps);
@@ -134,7 +145,7 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       resources.dispose();
       host.replaceChildren();
     };
-  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, onContextLost, onIncompatible, providedRuntimeLoader]);
+  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible, providedRuntimeLoader]);
 
   return (
     <section className="robot-scene-core" data-status={status} aria-label="机器人 3D 场景">

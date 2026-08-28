@@ -32,6 +32,7 @@ import {
   fetchVersionManifest,
   fetchVersionSchema,
   preflightDeletion,
+  publishDatasetVersion,
   resolveViewerEpisode,
   returnVersionReview,
   runReviewChecks,
@@ -39,6 +40,7 @@ import {
   type EpisodeListApiFilters,
   type EpisodeRevisionHistoryApiFilters,
   type VersionListApiFilters,
+  type PublishDatasetVersionCommand,
 } from "./queries";
 
 function useScopedKey(
@@ -136,6 +138,15 @@ export function useDatasetVersionsQuery(
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasetVersions(datasetId, filters, signal),
     enabled,
+  });
+}
+
+export function usePublishDatasetVersionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (command: PublishDatasetVersionCommand) =>
+      publishDatasetVersion(command),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["datasets"] }),
   });
 }
 

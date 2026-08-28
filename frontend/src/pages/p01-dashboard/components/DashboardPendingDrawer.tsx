@@ -44,7 +44,7 @@ export function DashboardPendingDrawer({
           <DataCursorPager
             pageInfo={page.pageInfo}
             busy={state === "refreshing"}
-            windowLabel={`当前窗口 ${page.items.length} 条 · 快照 ${page.asOf}`}
+            windowLabel={`当前窗口 ${page.items.length} 条`}
             onChange={onCursorChange}
           />
         ) : undefined

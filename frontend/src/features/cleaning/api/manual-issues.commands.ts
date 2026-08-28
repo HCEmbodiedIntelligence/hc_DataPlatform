@@ -1,44 +1,59 @@
-import type { ManualIssue, ManualIssueSeverity, ManualIssueType } from '../../../entities/manual-issue';
-import { asCleaningDraftId, type CleaningDraftId } from '../../../entities/cleaning-draft';
-import { asManualIssueId } from '../../../entities/manual-issue';
-import { request } from '../../../shared/api/http-client';
-import { adaptManualIssueEnvelope } from './manual-issues.adapter';
+import type {
+  ManualIssue,
+  ManualIssueSeverity,
+  ManualIssueType,
+} from "../../../entities/manual-issue";
+import {
+  asCleaningDraftId,
+  type CleaningDraftId,
+} from "../../../entities/cleaning-draft";
+import { asManualIssueId } from "../../../entities/manual-issue";
+import { request } from "../../../shared/api/http-client";
+import { adaptManualIssueEnvelope } from "./manual-issues.adapter";
 import {
   createDraftFromIssueEnvelopeWireSchema,
   createManualIssueRequestWireSchema,
   resolveManualIssueRequestWireSchema,
   triageManualIssueRequestWireSchema,
-} from './manual-issues.schemas';
-import { assertCleaningScope } from './wire-common';
+} from "./manual-issues.schemas";
+import { assertCleaningScope } from "./wire-common";
 
 export interface ManualCleaningCommandRequest {
   readonly operationId: string;
-  readonly method: 'POST' | 'PUT' | 'DELETE';
+  readonly method: "POST" | "PUT" | "DELETE";
   readonly path: string;
   readonly headers: Readonly<Record<string, string>>;
   readonly body?: unknown;
   readonly signal?: AbortSignal;
 }
 
-export type ManualCleaningCommandTransport = (request: ManualCleaningCommandRequest) => Promise<unknown>;
+export type ManualCleaningCommandTransport = (
+  request: ManualCleaningCommandRequest,
+) => Promise<unknown>;
 
-const defaultTransport: ManualCleaningCommandTransport = (command) => request({
-  method: command.method,
-  path: command.path,
-  ...(command.body === undefined ? {} : { body: command.body }),
-  ...(command.headers['Idempotency-Key']
-    ? { idempotencyKey: command.headers['Idempotency-Key'] }
-    : {}),
-  ...(command.headers['If-Match'] ? { ifMatch: command.headers['If-Match'] } : {}),
-  ...(command.signal ? { signal: command.signal } : {}),
-});
+const defaultTransport: ManualCleaningCommandTransport = (command) =>
+  request({
+    method: command.method,
+    path: command.path,
+    ...(command.body === undefined ? {} : { body: command.body }),
+    ...(command.headers["Idempotency-Key"]
+      ? { idempotencyKey: command.headers["Idempotency-Key"] }
+      : {}),
+    ...(command.headers["If-Match"]
+      ? { ifMatch: command.headers["If-Match"] }
+      : {}),
+    ...(command.signal ? { signal: command.signal } : {}),
+  });
 
 let configuredTransport: ManualCleaningCommandTransport = defaultTransport;
 
-export function configureManualCleaningCommandTransport(transport: ManualCleaningCommandTransport): () => void {
+export function configureManualCleaningCommandTransport(
+  transport: ManualCleaningCommandTransport,
+): () => void {
   configuredTransport = transport;
   return () => {
-    if (configuredTransport === transport) configuredTransport = defaultTransport;
+    if (configuredTransport === transport)
+      configuredTransport = defaultTransport;
   };
 }
 
@@ -65,7 +80,7 @@ export async function createManualIssueCommand(
   input: CreateManualIssueCommandInput,
   transport: ManualCleaningCommandTransport = configuredTransport,
 ): Promise<ManualIssue> {
-  if (!input.datasetId.trim()) throw new TypeError('datasetId is required');
+  if (!input.datasetId.trim()) throw new TypeError("datasetId is required");
   const body = createManualIssueRequestWireSchema.parse({
     origin_dataset_version_id: input.versionId,
     episode_id: input.episodeId,
@@ -78,14 +93,66 @@ export async function createManualIssueCommand(
     note: input.note,
   });
   const raw = await transport({
-    operationId: 'createManualIssue',
-    method: 'POST',
+    operationId: "createManualIssue",
+    method: "POST",
     path: `/projects/${encodeURIComponent(input.projectId)}/regions/${encodeURIComponent(input.regionCode)}/manual-issues`,
     headers: {
-      'X-Organization-Id': input.organizationId,
-      'X-Project-Id': input.projectId,
-      'X-Region-Code': input.regionCode,
-      'Idempotency-Key': input.idempotencyKey,
+      "X-Organization-Id": input.organizationId,
+      "X-Project-Id": input.projectId,
+      "X-Region-Code": input.regionCode,
+      "Idempotency-Key": input.idempotencyKey,
+    },
+    body,
+    ...(input.signal ? { signal: input.signal } : {}),
+  });
+  return adaptManualIssueEnvelope(raw, input);
+}
+
+export interface CreateAnnotationManualIssueCommandInput {
+  readonly organizationId: string;
+  readonly projectId: string;
+  readonly regionCode: string;
+  readonly annotationTaskId: string;
+  readonly streamRef: string;
+  readonly relativeStartNs: string;
+  readonly relativeEndNs: string;
+  readonly discoverySource: "ANNOTATOR" | "REVIEWER";
+  readonly issueType: ManualIssueType;
+  readonly severity: ManualIssueSeverity;
+  readonly note: string;
+  readonly idempotencyKey: string;
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * Creates a ManualIssue from an annotation task without asking the browser to
+ * invent Dataset Version / Episode / Revision identities. The backend resolves
+ * and validates those immutable facts from the task and selected stream.
+ */
+export async function createAnnotationManualIssueCommand(
+  input: CreateAnnotationManualIssueCommandInput,
+  transport: ManualCleaningCommandTransport = configuredTransport,
+): Promise<ManualIssue> {
+  const body = createManualIssueRequestWireSchema.parse({
+    source_kind: "ANNOTATION_TASK",
+    discovery_source: input.discoverySource,
+    annotation_task_id: input.annotationTaskId,
+    stream_ref: input.streamRef,
+    relative_start_ns: input.relativeStartNs,
+    relative_end_ns: input.relativeEndNs,
+    issue_type: input.issueType,
+    severity: input.severity,
+    note: input.note,
+  });
+  const raw = await transport({
+    operationId: "createManualIssue",
+    method: "POST",
+    path: `/projects/${encodeURIComponent(input.projectId)}/regions/${encodeURIComponent(input.regionCode)}/manual-issues`,
+    headers: {
+      "X-Organization-Id": input.organizationId,
+      "X-Project-Id": input.projectId,
+      "X-Region-Code": input.regionCode,
+      "Idempotency-Key": input.idempotencyKey,
     },
     body,
     ...(input.signal ? { signal: input.signal } : {}),
@@ -104,23 +171,26 @@ interface ExistingManualIssueCommandInput {
   readonly signal?: AbortSignal;
 }
 
-export interface TriageManualIssueCommandInput extends ExistingManualIssueCommandInput {
-  readonly targetStatus: 'OPEN' | 'IN_PROGRESS';
+export interface TriageManualIssueCommandInput
+  extends ExistingManualIssueCommandInput {
+  readonly targetStatus: "OPEN" | "IN_PROGRESS";
   readonly severity: ManualIssueSeverity;
   readonly assigneeId: string | null;
   readonly reason: string;
 }
 
-export interface ResolveManualIssueCommandInput extends ExistingManualIssueCommandInput {
+export interface ResolveManualIssueCommandInput
+  extends ExistingManualIssueCommandInput {
   readonly resolutionVersionId: string;
   readonly resolutionNote: string;
 }
 
-export type CreateDraftFromManualIssueCommandInput = ExistingManualIssueCommandInput;
+export type CreateDraftFromManualIssueCommandInput =
+  ExistingManualIssueCommandInput;
 
 export type CreateDraftFromManualIssueResult =
   | {
-      readonly disposition: 'CREATED' | 'ALREADY_LINKED';
+      readonly disposition: "CREATED" | "ALREADY_LINKED";
       readonly draftId: CleaningDraftId;
       readonly context: {
         readonly schemaVersion: 1;
@@ -136,7 +206,7 @@ export type CreateDraftFromManualIssueResult =
       };
     }
   | {
-      readonly disposition: 'SELECTION_REQUIRED';
+      readonly disposition: "SELECTION_REQUIRED";
       readonly selectionToken: string;
       readonly expiresAt: string;
       readonly candidates: readonly {
@@ -148,18 +218,23 @@ export type CreateDraftFromManualIssueResult =
       }[];
     };
 
-function issueCommandPath(input: ExistingManualIssueCommandInput, suffix = ''): string {
+function issueCommandPath(
+  input: ExistingManualIssueCommandInput,
+  suffix = "",
+): string {
   asManualIssueId(input.manualIssueId);
   return `/projects/${encodeURIComponent(input.projectId)}/regions/${encodeURIComponent(input.regionCode)}/manual-issues/${encodeURIComponent(input.manualIssueId)}${suffix}`;
 }
 
-function issueCommandHeaders(input: ExistingManualIssueCommandInput): Readonly<Record<string, string>> {
+function issueCommandHeaders(
+  input: ExistingManualIssueCommandInput,
+): Readonly<Record<string, string>> {
   return {
-    'X-Organization-Id': input.organizationId,
-    'X-Project-Id': input.projectId,
-    'X-Region-Code': input.regionCode,
-    'Idempotency-Key': input.idempotencyKey,
-    'If-Match': input.expectedVersion,
+    "X-Organization-Id": input.organizationId,
+    "X-Project-Id": input.projectId,
+    "X-Region-Code": input.regionCode,
+    "Idempotency-Key": input.idempotencyKey,
+    "If-Match": input.expectedVersion,
   };
 }
 
@@ -174,9 +249,9 @@ export async function triageManualIssueCommand(
     reason: input.reason,
   });
   const raw = await transport({
-    operationId: 'triageManualIssue',
-    method: 'POST',
-    path: issueCommandPath(input, ':triage'),
+    operationId: "triageManualIssue",
+    method: "POST",
+    path: issueCommandPath(input, ":triage"),
     headers: issueCommandHeaders(input),
     body,
     ...(input.signal ? { signal: input.signal } : {}),
@@ -193,9 +268,9 @@ export async function resolveManualIssueCommand(
     resolution_note: input.resolutionNote,
   });
   const raw = await transport({
-    operationId: 'resolveManualIssue',
-    method: 'POST',
-    path: issueCommandPath(input, ':resolve'),
+    operationId: "resolveManualIssue",
+    method: "POST",
+    path: issueCommandPath(input, ":resolve"),
     headers: issueCommandHeaders(input),
     body,
     ...(input.signal ? { signal: input.signal } : {}),
@@ -214,18 +289,18 @@ export async function createCleaningDraftFromManualIssueCommand(
 ): Promise<CreateDraftFromManualIssueResult> {
   const body = {};
   const raw = await transport({
-    operationId: 'createCleaningDraftFromManualIssue',
-    method: 'POST',
-    path: issueCommandPath(input, '/cleaning-drafts'),
+    operationId: "createCleaningDraftFromManualIssue",
+    method: "POST",
+    path: issueCommandPath(input, "/cleaning-drafts"),
     headers: issueCommandHeaders(input),
     body,
     ...(input.signal ? { signal: input.signal } : {}),
   });
   const wire = createDraftFromIssueEnvelopeWireSchema.parse(raw);
   assertCleaningScope(wire.scope, input);
-  if (wire.data.disposition === 'SELECTION_REQUIRED') {
+  if (wire.data.disposition === "SELECTION_REQUIRED") {
     return {
-      disposition: 'SELECTION_REQUIRED',
+      disposition: "SELECTION_REQUIRED",
       selectionToken: wire.data.selection_token,
       expiresAt: wire.data.expires_at,
       candidates: wire.data.candidates.map((candidate) => ({

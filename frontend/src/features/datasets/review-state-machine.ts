@@ -37,7 +37,7 @@ export function getReviewStatePolicy(
       readOnly: true,
       unknownEnum: false,
       allowedMutations: [],
-      reason: 'Ready 版本及其 Manifest 已永久冻结。',
+      reason: '就绪版本及其数据清单已永久冻结。',
     };
   }
   if (deliveryStatus === 'FAILED') {
@@ -45,7 +45,7 @@ export function getReviewStatePolicy(
       readOnly: false,
       unknownEnum: false,
       allowedMutations: ['RETRY_MANIFEST'],
-      reason: 'Manifest 生成失败；重新预检后可受控重试。',
+      reason: '数据清单生成失败；重新预检后可受控重试。',
     };
   }
   if (deliveryStatus === 'GENERATING' || deliveryStatus === 'CANDIDATE_READY') {
@@ -53,7 +53,7 @@ export function getReviewStatePolicy(
       readOnly: true,
       unknownEnum: false,
       allowedMutations: [],
-      reason: 'Manifest 正在生成或等待服务端原子发布。',
+      reason: '数据清单正在生成或等待服务端原子发布。',
     };
   }
   return {

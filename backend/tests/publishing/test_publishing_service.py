@@ -99,7 +99,8 @@ def test_s3_export_authorization_uses_public_presign_client() -> None:
                 "Params": {
                     "Bucket": "private-bucket",
                     "Key": "exports/dataset/version/export.zip",
-                    "ResponseContentDisposition": "attachment",
+                    "ResponseContentDisposition": 'attachment; filename="export.zip"',
+                    "ResponseContentType": "application/zip",
                 },
                 "ExpiresIn": 900,
                 "HttpMethod": "GET",
@@ -162,7 +163,7 @@ def publisher(
     )
 
 
-def test_preflight_filters_risk_reject_unready_and_unapproved_rollouts() -> None:
+def test_preflight_does_not_treat_quality_as_a_dataset_version_gate() -> None:
     rollouts = [
         rollout("r1"),
         rollout("r2", quality=QualityStatus.RISK),
@@ -173,10 +174,8 @@ def test_preflight_filters_risk_reject_unready_and_unapproved_rollouts() -> None
     service = publisher(rollouts, [approval(item.rollout_id) for item in rollouts[:-1]])
     report = service.preflight(request())
 
-    assert [item.rollout_id for item in report.eligible_rollouts] == ["r1"]
+    assert [item.rollout_id for item in report.eligible_rollouts] == ["r1", "r2", "r3"]
     reasons = {item.rollout_id: item.reasons for item in report.excluded_rollouts}
-    assert reasons["r2"] == ("QUALITY_RISK",)
-    assert reasons["r3"] == ("QUALITY_REJECT",)
     assert reasons["r4"] == ("DERIVED_FAILED",)
     assert reasons["r5"] == ("ANNOTATION_NOT_APPROVED",)
 
@@ -292,7 +291,7 @@ def test_no_eligible_rollout_does_not_publish_partial_manifest_or_assets() -> No
     repository = InMemoryPublishedManifestRepository()
     assets = InMemoryArtifactSink()
     service = publisher(
-        [rollout("r1", quality=QualityStatus.RISK)],
+        [rollout("r1", quality=QualityStatus.RISK, derived=DerivedStatus.FAILED)],
         [approval("r1")],
         repository,
         artifacts=assets,
@@ -531,9 +530,13 @@ def test_deterministic_lerobot_export_preserves_synchronized_modalities() -> Non
     )
     result = coordinator.export(manifest, format=ExportFormat.LEROBOT_V3)
 
-    payload = json.loads(sink.artifacts[result.artifact_uri])
+    with zipfile.ZipFile(io.BytesIO(sink.artifacts[result.artifact_uri])) as archive:
+        assert all(item.compress_type == zipfile.ZIP_DEFLATED for item in archive.infolist())
+        payload = json.loads(archive.read("lerobot-v3.json"))
     exported = payload["episodes"][0]["steps"]
     assert result.row_count == 4
+    assert result.artifact_uri.endswith(".zip")
+    assert result.media_type == "application/zip"
     assert [step["step_index"] for step in exported] == [0, 1, 4, 5]
     assert all(set(step["modalities"]) == {"camera.front", "action"} for step in exported)
     assert payload["manifest_content_hash"] == manifest.content_hash

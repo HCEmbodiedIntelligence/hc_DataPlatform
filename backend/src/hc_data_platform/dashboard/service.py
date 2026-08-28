@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from hashlib import sha256
-from typing import Protocol
+from typing import Literal, Protocol, cast
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -23,6 +23,7 @@ from hc_data_platform.security.capabilities import (
 from .models import (
     PENDING_ITEM_TYPES,
     SIGNAL_STAGES,
+    TASK_PROCESSING_STAGES,
     DashboardActivityEvent,
     DashboardActivityEventType,
     DashboardActivityPage,
@@ -42,6 +43,21 @@ from .models import (
     DashboardSnapshotResponse,
     DashboardSnapshotSections,
     DashboardTargetResource,
+    DashboardTaskStatusResponse,
+    SelectedTaskStatus,
+    TaskAttainment,
+    TaskDeviceProgress,
+    TaskLifecycle,
+    TaskPackageMainState,
+    TaskPipelineStatus,
+    TaskProcessingStage,
+    TaskQcCounts,
+    TaskStageCounts,
+    TaskStandardizationCounts,
+    TaskStatusAction,
+    TaskStatusBlocker,
+    TaskStatusListItem,
+    TaskStatusTarget,
 )
 from .repository import (
     DashboardBusinessEventFact,
@@ -52,6 +68,9 @@ from .repository import (
     DashboardWindow,
     InMemoryDashboardRepository,
     PublicationLineageSummary,
+    TaskStatusPackageFact,
+    TaskStatusProjectionFacts,
+    TaskStatusTaskFact,
 )
 
 MAX_QUERY_WINDOW = timedelta(days=31)
@@ -380,6 +399,87 @@ class DashboardService:
             now,
         )
         return response
+
+    def task_status(
+        self,
+        *,
+        auth: AuthContext,
+        project_id: str,
+        region_code: str,
+        task_id: str | None = None,
+    ) -> DashboardTaskStatusResponse:
+        scope = DashboardScope(auth.subject_id, project_id, region_code)
+        self._repository.enforce_scope(auth, scope)
+        now = self._clock()
+        if now.tzinfo is None:
+            raise RuntimeError("dashboard clock must return a timezone-aware instant")
+        now = now.astimezone(timezone.utc)
+        facts = self._repository.task_status_projection(
+            auth=auth,
+            scope=scope,
+            task_id=task_id,
+        )
+        tasks = tuple(_task_list_item(item) for item in facts.tasks)
+        task_ids = {item.task_id for item in tasks}
+        if task_id is not None and task_id not in task_ids:
+            raise problem(
+                status=404,
+                code="DASHBOARD_COLLECTION_TASK_NOT_FOUND",
+                title="Collection task not found",
+                detail="The requested collection task is not present in this project-region scope.",
+            )
+        selected_id = (
+            task_id if task_id is not None else (tasks[0].task_id if len(tasks) == 1 else None)
+        )
+        selected = None
+        if selected_id is not None:
+            selected_task = next(item for item in tasks if item.task_id == selected_id)
+            selected = _selected_task_status(selected_task, facts)
+        pipeline = _task_pipeline_status(
+            facts,
+            task_count=1 if selected_id is not None else len(tasks),
+        )
+        if not tasks:
+            section = DashboardSectionState(status=DashboardSectionStatus.EMPTY, as_of=now)
+        elif facts.unavailable_sources:
+            section = DashboardSectionState(
+                status=DashboardSectionStatus.PARTIAL,
+                as_of=now,
+                error=DashboardSectionError(
+                    code="DASHBOARD_TASK_STATUS_SOURCE_PARTIAL",
+                    message=(
+                        "One or more task-status fact sources are unavailable; "
+                        "affected values are marked unavailable."
+                    ),
+                    retryable=True,
+                ),
+            )
+        else:
+            section = DashboardSectionState(status=DashboardSectionStatus.READY, as_of=now)
+        self._repository.record_query(
+            auth,
+            DashboardQueryAudit(
+                principal_id=scope.principal_id,
+                project_id=project_id,
+                region_code=region_code,
+                endpoint="task-status",
+                range_start=now,
+                range_end=now,
+                timezone="UTC",
+                result_status=section.status.value,
+                occurred_at=now,
+            ),
+        )
+        return DashboardTaskStatusResponse(
+            project_id=project_id,
+            region_code=region_code,
+            as_of=now,
+            section=section,
+            tasks=tasks,
+            pipeline=pipeline,
+            selected_task_id=selected_id,
+            selected=selected,
+        )
 
     def activity(
         self,
@@ -835,3 +935,513 @@ class DashboardService:
         if DashboardSectionStatus.STALE in statuses:
             return DashboardSectionStatus.STALE
         return DashboardSectionStatus.READY
+
+
+def _task_list_item(fact: TaskStatusTaskFact) -> TaskStatusListItem:
+    target = (
+        None
+        if fact.target_package_count is None and fact.target_duration_seconds is None
+        else TaskStatusTarget(
+            package_count=fact.target_package_count,
+            duration_seconds=fact.target_duration_seconds,
+        )
+    )
+    return TaskStatusListItem(
+        task_id=fact.task_id,
+        task_code=fact.task_code.strip(),
+        name=fact.name,
+        lifecycle=TaskLifecycle(fact.lifecycle),
+        target=target,
+        registered_count=fact.registered_count,
+        received_count=fact.received_count,
+        device_progress=TaskDeviceProgress(
+            source="DEVICE_ATTESTED_FACT",
+            captured_count=fact.device_captured_count,
+            saved_count=fact.device_saved_count,
+            confirmed_duration_seconds=fact.confirmed_duration_seconds,
+        ),
+    )
+
+
+def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
+    if fact.published:
+        return TaskPackageMainState.PUBLISHED
+    if fact.annotation_task_id is not None:
+        if fact.annotation_status == "APPROVED":
+            return TaskPackageMainState.PUBLISH_PENDING
+        if fact.annotation_status == "SUBMITTED":
+            return TaskPackageMainState.REVIEW_PENDING
+        return TaskPackageMainState.ANNOTATING
+    if fact.lance_ready:
+        return TaskPackageMainState.STANDARDIZED_READY
+    if fact.qc_status == "RISK":
+        return TaskPackageMainState.QC_RISK
+    if fact.qc_status == "REJECT":
+        return TaskPackageMainState.QC_REJECT
+    if not fact.technical_state_available and fact.qc_status == "PASS":
+        return TaskPackageMainState.UNKNOWN
+    if fact.workflow_status in {"PENDING", "RUNNING"}:
+        stage = (fact.workflow_stage or "").lower()
+        if "lance" in stage:
+            return TaskPackageMainState.LANCE_WRITING
+        if "align" in stage:
+            return TaskPackageMainState.ALIGNING
+    if fact.workflow_status == "TECHNICAL_FAILED":
+        stage = (fact.workflow_stage or "").lower()
+        error = (fact.workflow_error_code or "").upper()
+        if (
+            "lance" in stage
+            or fact.alignment_status == "READY"
+            or any(token in error for token in ("LANCE", "CATALOG", "DATASET_WRITER"))
+        ):
+            return TaskPackageMainState.LANCE_FAILED
+        if "align" in stage or fact.qc_status == "PASS":
+            return TaskPackageMainState.ALIGNMENT_FAILED
+    if fact.alignment_status == "ABORTED":
+        return TaskPackageMainState.ALIGNMENT_FAILED
+    if fact.alignment_status == "WRITING":
+        return TaskPackageMainState.ALIGNING
+    if fact.alignment_status == "READY":
+        return TaskPackageMainState.LANCE_WRITING
+    if fact.qc_status == "PASS":
+        return TaskPackageMainState.STANDARDIZATION_WAITING
+    if fact.verification_status == "REJECTED":
+        return TaskPackageMainState.VALIDATION_FAILED
+    if fact.verification_status == "RAW_VERIFIED":
+        return TaskPackageMainState.QC_WAITING
+    if fact.raw_committed:
+        if fact.workflow_status in {"PENDING", "RUNNING"} and fact.workflow_stage in {
+            "manifest",
+            "verification",
+        }:
+            return TaskPackageMainState.VALIDATION_RUNNING
+        return TaskPackageMainState.RAW_RECEIVED
+    state = fact.upload_status or fact.rollout_status
+    return {
+        "UPLOADING": TaskPackageMainState.UPLOADING,
+        "PAUSED": TaskPackageMainState.UPLOAD_PAUSED,
+        "FAILED": TaskPackageMainState.UPLOAD_FAILED,
+        "CANCELLED": TaskPackageMainState.CANCELLED,
+    }.get(state, TaskPackageMainState.REGISTERED)
+
+
+def _task_attainment(task: TaskStatusListItem) -> TaskAttainment:
+    target = task.target
+    if target is None:
+        return TaskAttainment.NOT_CONFIGURED
+    progress: list[int] = []
+    if target.package_count is not None:
+        progress.append(
+            1
+            if task.received_count > target.package_count
+            else 0
+            if task.received_count == target.package_count
+            else -1
+        )
+    if target.duration_seconds is not None:
+        duration = task.device_progress.confirmed_duration_seconds
+        progress.append(
+            1
+            if duration > target.duration_seconds
+            else 0
+            if duration == target.duration_seconds
+            else -1
+        )
+    if not progress:
+        return TaskAttainment.UNKNOWN
+    if any(value < 0 for value in progress):
+        return TaskAttainment.IN_PROGRESS
+    return (
+        TaskAttainment.EXCEEDED if any(value > 0 for value in progress) else TaskAttainment.ATTAINED
+    )
+
+
+def _increment(
+    counts: dict[TaskProcessingStage, dict[str, int]],
+    stage: TaskProcessingStage,
+    bucket: str,
+) -> None:
+    counts[stage][bucket] += 1
+
+
+def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStageCounts, ...]:
+    buckets = (
+        "waiting",
+        "running",
+        "succeeded",
+        "risk",
+        "isolated",
+        "blocked",
+        "failed",
+        "unavailable",
+    )
+    counts = {stage: {bucket: 0 for bucket in buckets} for stage in TASK_PROCESSING_STAGES}
+    for fact in packages:
+        main = _package_main_state(fact)
+        _increment(counts, TaskProcessingStage.TASK_EXECUTION, "succeeded")
+        if fact.raw_committed:
+            _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, "succeeded")
+            _increment(counts, TaskProcessingStage.RAW_RECEIPT, "succeeded")
+        else:
+            upload_bucket = (
+                "failed"
+                if main is TaskPackageMainState.UPLOAD_FAILED
+                else "blocked"
+                if main in {TaskPackageMainState.UPLOAD_PAUSED, TaskPackageMainState.CANCELLED}
+                else "running"
+                if main is TaskPackageMainState.UPLOADING
+                else "waiting"
+            )
+            _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, upload_bucket)
+            _increment(counts, TaskProcessingStage.RAW_RECEIPT, "waiting")
+
+        if fact.duplicate_of_rollout_id is not None:
+            validation_bucket = "isolated"
+        elif not fact.raw_committed:
+            validation_bucket = "waiting"
+        elif fact.verification_status == "REJECTED":
+            validation_bucket = "failed"
+        elif fact.qc_status in {"RISK", "REJECT"}:
+            validation_bucket = "isolated"
+        elif fact.qc_status == "PASS":
+            validation_bucket = "succeeded"
+        elif main is TaskPackageMainState.VALIDATION_RUNNING:
+            validation_bucket = "running"
+        else:
+            validation_bucket = "waiting"
+        _increment(counts, TaskProcessingStage.AUTOMATIC_VALIDATION, validation_bucket)
+
+        if fact.duplicate_of_rollout_id is not None:
+            standard_bucket = "isolated"
+        elif not fact.technical_state_available and fact.qc_status == "PASS":
+            standard_bucket = "unavailable"
+        elif fact.qc_status in {"RISK", "REJECT"}:
+            standard_bucket = "isolated"
+        elif fact.verification_status == "REJECTED":
+            standard_bucket = "blocked"
+        elif main in {TaskPackageMainState.ALIGNMENT_FAILED, TaskPackageMainState.LANCE_FAILED}:
+            standard_bucket = "failed"
+        elif main in {TaskPackageMainState.ALIGNING, TaskPackageMainState.LANCE_WRITING}:
+            standard_bucket = "running"
+        elif fact.lance_ready:
+            standard_bucket = "succeeded"
+        else:
+            standard_bucket = "waiting"
+        _increment(counts, TaskProcessingStage.STANDARDIZATION, standard_bucket)
+
+        if (
+            fact.duplicate_of_rollout_id is not None
+            or fact.qc_status in {"RISK", "REJECT"}
+        ):
+            annotation_bucket = "isolated"
+        elif fact.annotation_task_id is None:
+            annotation_bucket = "waiting"
+        elif fact.annotation_status == "APPROVED" or fact.annotation_status == "SUBMITTED":
+            annotation_bucket = "succeeded"
+        else:
+            annotation_bucket = "running"
+        _increment(counts, TaskProcessingStage.ANNOTATION, annotation_bucket)
+        if (
+            fact.duplicate_of_rollout_id is not None
+            or fact.qc_status in {"RISK", "REJECT"}
+        ):
+            review_bucket = "isolated"
+        elif fact.annotation_status == "SUBMITTED":
+            review_bucket = "waiting"
+        elif fact.annotation_status == "APPROVED":
+            review_bucket = "succeeded"
+        elif fact.review_decision in {"NEEDS_REVISION", "REJECT"}:
+            review_bucket = "blocked"
+        else:
+            review_bucket = "waiting"
+        _increment(counts, TaskProcessingStage.REVIEW, review_bucket)
+        publication_bucket = (
+            "isolated"
+            if fact.duplicate_of_rollout_id is not None
+            or fact.qc_status in {"RISK", "REJECT"}
+            else "succeeded"
+            if fact.published
+            else "waiting"
+        )
+        _increment(counts, TaskProcessingStage.PUBLICATION, publication_bucket)
+    return tuple(TaskStageCounts(stage=stage, **counts[stage]) for stage in TASK_PROCESSING_STAGES)
+
+
+def _qc_counts(
+    packages: tuple[TaskStatusPackageFact, ...],
+    unavailable_sources: tuple[str, ...],
+) -> TaskQcCounts:
+    received = tuple(item for item in packages if item.raw_committed)
+    canonical = tuple(item for item in received if item.duplicate_of_rollout_id is None)
+    qc_eligible = tuple(item for item in canonical if item.verification_status == "RAW_VERIFIED")
+    return TaskQcCounts(
+        waiting=sum(item.qc_status is None for item in qc_eligible),
+        passed=sum(item.qc_status == "PASS" for item in canonical),
+        risk=sum(item.qc_status == "RISK" for item in canonical),
+        rejected=sum(item.qc_status == "REJECT" for item in canonical),
+        duplicate=sum(item.duplicate_of_rollout_id is not None for item in received),
+        unavailable=(len(qc_eligible) if "quality_rollout_summaries" in unavailable_sources else 0),
+    )
+
+
+def _task_pipeline_status(
+    facts: TaskStatusProjectionFacts,
+    *,
+    task_count: int,
+) -> TaskPipelineStatus:
+    return TaskPipelineStatus(
+        task_count=task_count,
+        package_count=len(facts.packages),
+        qc=_qc_counts(facts.packages, facts.unavailable_sources),
+        stages=_stage_counts(facts.packages),
+        unavailable_sources=facts.unavailable_sources,
+    )
+
+
+def _blockers(
+    packages: tuple[TaskStatusPackageFact, ...], task_id: str
+) -> tuple[TaskStatusBlocker, ...]:
+    grouped: dict[tuple[str, str, str, bool], int] = {}
+    for fact in packages:
+        if fact.duplicate_of_rollout_id is not None:
+            continue
+        main = _package_main_state(fact)
+        value: tuple[str, str, str, bool] | None = None
+        if main is TaskPackageMainState.UPLOAD_FAILED:
+            value = (fact.upload_failure_code or "UPLOAD_FAILED", "上传失败", "UPLOAD", True)
+        elif main is TaskPackageMainState.VALIDATION_FAILED:
+            value = (
+                fact.verification_reason_code or "RAW_STRUCTURE_REJECTED",
+                "Raw结构验证失败",
+                "RAW_VALIDATION",
+                False,
+            )
+        elif main is TaskPackageMainState.ALIGNMENT_FAILED:
+            value = (
+                fact.workflow_error_code or "ALIGNMENT_TECHNICAL_FAILED",
+                "30 Hz对齐技术失败",
+                "TECHNICAL",
+                True,
+            )
+        elif main is TaskPackageMainState.LANCE_FAILED:
+            value = (
+                fact.workflow_error_code or "LANCE_WRITE_FAILED",
+                "Lance写入技术失败",
+                "TECHNICAL",
+                True,
+            )
+        if value is not None:
+            grouped[value] = grouped.get(value, 0) + 1
+    task_query = quote(task_id, safe="")
+    links = {
+        "UPLOAD": f"/ingest/uploads/records?task_id={task_query}&status=FAILED",
+        "RAW_VALIDATION": f"/ingest/uploads/records?task_id={task_query}",
+        "QUALITY": f"/ingest/uploads/records?task_id={task_query}",
+        "TECHNICAL": f"/ingest/uploads/records?task_id={task_query}",
+        "REVIEW": "/annotations/tag-review",
+    }
+    return tuple(
+        TaskStatusBlocker(
+            reason_code=code,
+            label=label,
+            category=cast(
+                Literal["UPLOAD", "RAW_VALIDATION", "QUALITY", "TECHNICAL", "REVIEW"],
+                category,
+            ),
+            count=count,
+            retryable=retryable,
+            deep_link=links[category],
+        )
+        for (code, label, category, retryable), count in sorted(
+            grouped.items(), key=lambda item: (-item[1], item[0][0])
+        )
+    )
+
+
+def _actions(
+    task: TaskStatusListItem,
+    blockers: tuple[TaskStatusBlocker, ...],
+    packages: tuple[TaskStatusPackageFact, ...],
+    attainment: TaskAttainment,
+) -> tuple[TaskStatusAction, ...]:
+    task_query = quote(task.task_id, safe="")
+    actions: list[TaskStatusAction] = []
+    categories = {item.category for item in blockers}
+    quality_problem_count = sum(
+        item.duplicate_of_rollout_id is not None or item.qc_status in {"RISK", "REJECT"}
+        for item in packages
+    )
+    if "UPLOAD" in categories:
+        actions.append(
+            TaskStatusAction(
+                action="VIEW_UPLOAD_FAILURES",
+                label="查看上传失败",
+                deep_link=f"/ingest/uploads/records?task_id={task_query}&status=FAILED",
+            )
+        )
+    if "RAW_VALIDATION" in categories:
+        actions.append(
+            TaskStatusAction(
+                action="VIEW_RAW_DIAGNOSTICS",
+                label="查看Raw诊断",
+                deep_link=f"/ingest/uploads/records?task_id={task_query}",
+            )
+        )
+    if quality_problem_count:
+        actions.append(
+            TaskStatusAction(
+                action="VIEW_QC_ANOMALIES",
+                label="查看问题数据",
+                deep_link="/manual/issues?source=AUTO_QC",
+            )
+        )
+    if any(item.category == "TECHNICAL" and item.retryable for item in blockers):
+        actions.append(
+            TaskStatusAction(
+                action="RETRY_TECHNICAL_PROCESSING",
+                label="重试技术处理",
+                deep_link=f"/ingest/uploads/records?task_id={task_query}",
+            )
+        )
+    annotation = next(
+        (
+            item.annotation_task_id
+            for item in packages
+            if item.annotation_task_id and item.annotation_status != "APPROVED"
+        ),
+        None,
+    )
+    if annotation is not None:
+        actions.append(
+            TaskStatusAction(
+                action="ENTER_ANNOTATION",
+                label="进入标注",
+                deep_link=f"/annotations/tasks/{quote(annotation, safe='')}",
+            )
+        )
+    if any(item.annotation_status == "SUBMITTED" for item in packages):
+        actions.append(
+            TaskStatusAction(
+                action="VIEW_PENDING_REVIEW",
+                label="查看待审核",
+                deep_link="/annotations/tag-review",
+            )
+        )
+    if (
+        attainment in {TaskAttainment.ATTAINED, TaskAttainment.EXCEEDED}
+        and task.lifecycle is TaskLifecycle.ACTIVE
+    ):
+        actions.append(
+            TaskStatusAction(
+                action="CLOSE_TASK",
+                label="查看任务并关闭",
+                deep_link=f"/collection-tasks?task_id={task_query}",
+            )
+        )
+    if not actions:
+        actions.append(
+            TaskStatusAction(
+                action="VIEW_TASK",
+                label="查看采集任务",
+                deep_link=f"/collection-tasks?task_id={task_query}",
+            )
+        )
+    return tuple(actions[:3])
+
+
+def _selected_task_status(
+    task: TaskStatusListItem,
+    facts: TaskStatusProjectionFacts,
+) -> SelectedTaskStatus:
+    packages = tuple(item for item in facts.packages if item.task_id == task.task_id)
+    canonical_packages = tuple(
+        item for item in packages if item.duplicate_of_rollout_id is None
+    )
+    main_counts: dict[TaskPackageMainState, int] = {}
+    for fact in packages:
+        state = _package_main_state(fact)
+        main_counts[state] = main_counts.get(state, 0) + 1
+    qc = _qc_counts(packages, facts.unavailable_sources)
+    standardization = TaskStandardizationCounts(
+        waiting=sum(
+            _package_main_state(item) is TaskPackageMainState.STANDARDIZATION_WAITING
+            for item in canonical_packages
+        ),
+        aligning=sum(
+            _package_main_state(item) is TaskPackageMainState.ALIGNING
+            for item in canonical_packages
+        ),
+        alignment_failed=sum(
+            _package_main_state(item) is TaskPackageMainState.ALIGNMENT_FAILED
+            for item in canonical_packages
+        ),
+        lance_writing=sum(
+            _package_main_state(item) is TaskPackageMainState.LANCE_WRITING
+            for item in canonical_packages
+        ),
+        lance_failed=sum(
+            _package_main_state(item) is TaskPackageMainState.LANCE_FAILED
+            for item in canonical_packages
+        ),
+        ready=sum(item.lance_ready for item in canonical_packages),
+        blocked_by_quality=0,
+        isolated_by_quality=sum(
+            item.duplicate_of_rollout_id is not None
+            or item.qc_status in {"RISK", "REJECT"}
+            for item in packages
+        ),
+        unavailable=len(canonical_packages)
+        if any(
+            source in facts.unavailable_sources
+            for source in (
+                "aligned_fragment_attempts",
+                "lance_rollout_lineage",
+                "workflow_execution_state",
+            )
+        )
+        else 0,
+    )
+    blockers = _blockers(packages, task.task_id)
+    attainment = _task_attainment(task)
+    stages = _stage_counts(packages)
+    active_stage = TaskProcessingStage.TASK_EXECUTION
+    for stage in TASK_PROCESSING_STAGES:
+        item = next(value for value in stages if value.stage is stage)
+        if item.waiting or item.running or item.blocked or item.failed:
+            active_stage = stage
+            break
+    labels = {
+        TaskProcessingStage.TASK_EXECUTION: "任务执行",
+        TaskProcessingStage.PACKAGE_UPLOAD: "数据包登记与上传",
+        TaskProcessingStage.RAW_RECEIPT: "Raw接收",
+        TaskProcessingStage.AUTOMATIC_VALIDATION: "自动校验",
+        TaskProcessingStage.STANDARDIZATION: "标准化入库",
+        TaskProcessingStage.ANNOTATION: "标注",
+        TaskProcessingStage.REVIEW: "审核",
+        TaskProcessingStage.PUBLICATION: "发布",
+    }
+    next_step = (
+        blockers[0].label
+        if blockers
+        else (
+            "任务已达标，生命周期仍为ACTIVE，请确认后关闭任务。"
+            if attainment in {TaskAttainment.ATTAINED, TaskAttainment.EXCEEDED}
+            and task.lifecycle is TaskLifecycle.ACTIVE
+            else f"继续处理“{labels[active_stage]}”阶段的等待项。"
+        )
+    )
+    return SelectedTaskStatus(
+        task=task,
+        attainment=attainment,
+        current_stage=active_stage,
+        current_stage_label=labels[active_stage],
+        next_step=next_step,
+        qc=qc,
+        standardization=standardization,
+        stages=stages,
+        main_state_counts=main_counts,
+        blocker_count=sum(item.count for item in blockers),
+        blockers=blockers,
+        actions=_actions(task, blockers, packages, attainment),
+        unavailable_sources=facts.unavailable_sources,
+    )

@@ -14,6 +14,7 @@ from hc_data_platform.ingest.models import (
     CollectionJobStatus,
     CompletedPart,
     FailedPartV1,
+    HuggingFaceEpisodeSourceV1,
     IdempotencyOutcome,
     IngestTriggerStatus,
     ManifestCameraV1,
@@ -245,7 +246,11 @@ def test_manifest_discovery_for_rollout_is_exactly_project_and_region_scoped() -
         region_code="cn-hz",
         rollout_id=manifest.rollout_id,
     )
-    assert discovery == service.get_manifest_preflight(session.session_id).discovery
+    assert discovery.robot_id == manifest.robot_id
+    assert (
+        discovery.model_copy(update={"robot_id": None})
+        == service.get_manifest_preflight(session.session_id).discovery
+    )
 
     with pytest.raises(ProblemException) as wrong_region:
         service.get_manifest_discovery_for_rollout(
@@ -602,6 +607,53 @@ def test_same_sha_in_distinct_business_packages_is_retained_separately() -> None
     assert first.object_key != second.object_key
     assert "package=package-r1" in first.object_key
     assert "package=package-r2" in second.object_key
+
+
+def test_same_source_episode_with_new_converter_identity_is_rejected() -> None:
+    source = HuggingFaceEpisodeSourceV1(
+        repository="aractingi/droid_100",
+        resolved_revision="e86f5657cac0cd48c509543e4c14c6a31352b0cc",
+        episode_index=0,
+    )
+    first_manifest = manifest_for(b"first", rollout_id="r1").model_copy(
+        update={"source_recording": source}
+    )
+    second_manifest = manifest_for(b"second", rollout_id="r2").model_copy(
+        update={
+            "collection_job_id": "j2",
+            "collection_session_id": "session2",
+            "data_package_id": "package-r2-converter-v2",
+            "recorder_version": "2.0",
+            "source_recording": source.model_copy(
+                update={"resolved_revision": "f" * 40}
+            ),
+        }
+    )
+    service = UploadSessionService(InMemoryObjectStorage())
+
+    first = service.create_session(
+        manifest=first_manifest,
+        region_code="cn-hz",
+        idempotency_key="source-v1",
+    )
+    assert service.preflight_upload_manifest(first_manifest).source_fingerprint is not None
+    assert first.session_id
+
+    with pytest.raises(ProblemException) as preflight_rejected:
+        service.preflight_upload_manifest(second_manifest)
+    assert_problem(preflight_rejected, "SOURCE_RECORDING_DUPLICATE")
+    assert (
+        preflight_rejected.value.problem.details["existing_data_package_id"]
+        == first_manifest.data_package_id
+    )
+
+    with pytest.raises(ProblemException) as create_rejected:
+        service.create_session(
+            manifest=second_manifest,
+            region_code="cn-hz",
+            idempotency_key="source-v2",
+        )
+    assert_problem(create_rejected, "SOURCE_RECORDING_DUPLICATE")
 
 
 def test_concurrent_same_rollout_and_hash_returns_one_persisted_session() -> None:

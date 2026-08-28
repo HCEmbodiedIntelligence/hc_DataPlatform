@@ -82,6 +82,23 @@ function json(value: unknown): Response {
   });
 }
 
+function problem(status: number, code: string): Response {
+  return new Response(
+    JSON.stringify({
+      title: "资源不存在",
+      status,
+      detail: "No persisted quality report exists for this rollout.",
+      code,
+      request_id: "request-quality-pending",
+      retryable: false,
+    }),
+    {
+      status,
+      headers: { "Content-Type": "application/problem+json" },
+    },
+  );
+}
+
 beforeEach(() => {
   configureRuntime({
     apiBaseUrl: "/api/v1",
@@ -145,6 +162,45 @@ describe("P04 formal upload detail client", () => {
     expect(headers.get("X-Project-Id")).toBe(scope.projectId);
     expect(headers.get("X-Region-Code")).toBe(scope.regionCode);
     expect(result).toMatchObject({ session, manifest, quality });
+  });
+
+  it("keeps the upload detail available while its quality report is still pending", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/manifest")) return Promise.resolve(json(manifest));
+        if (url.endsWith("/quality")) {
+          return Promise.resolve(problem(404, "QUALITY_REPORT_NOT_FOUND"));
+        }
+        return Promise.resolve(json(session));
+      }),
+    );
+
+    await expect(
+      loadFormalUploadDetail(scope, session.session_id),
+    ).resolves.toMatchObject({ session, manifest, quality: null });
+  });
+
+  it("does not hide unrelated quality endpoint failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/manifest")) return Promise.resolve(json(manifest));
+        if (url.endsWith("/quality")) {
+          return Promise.resolve(problem(404, "QUALITY_PROFILE_NOT_FOUND"));
+        }
+        return Promise.resolve(json(session));
+      }),
+    );
+
+    await expect(
+      loadFormalUploadDetail(scope, session.session_id),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      problemCode: "QUALITY_PROFILE_NOT_FOUND",
+    });
   });
 
   it("fails closed when the session response crosses the active scope", async () => {

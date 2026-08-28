@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-media-worker
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media-worker
+spec:
+  replicas: {{ .Values.backend.mediaWorker.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.backend.mediaWorker.strategy.maxUnavailable }}
+      maxSurge: {{ .Values.backend.mediaWorker.strategy.maxSurge }}
+  selector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: media-worker
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: media-worker
+        {{- with .Values.backend.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "hc-data-platform.backendServiceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.backend.mediaWorker.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: media-worker
+          image: {{ include "hc-data-platform.backendImage" .Values.backend.mediaWorker.image | quote }}
+          imagePullPolicy: {{ .Values.backend.mediaWorker.image.pullPolicy }}
+          command: ["opentelemetry-instrument"]
+          args: ["python", "-m", "hc_data_platform.workflow.worker"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "hc-data-platform.backendFullname" . }}
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: hc-data-media-worker
+            - name: HC_WORKER_ROLE
+              value: media
+            - name: HC_WORKFLOW_ACTIVITY_FACTORY
+              value: hc_data_platform.runtime:media_activity_dependencies
+            {{- include "hc-data-platform.backendSecretEnv" . | nindent 12 }}
+          startupProbe:
+            exec:
+              command: ["python", "-c", "import os; os.kill(1, 0)"]
+            {{- toYaml .Values.backend.worker.probes.startup | nindent 12 }}
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - |-
+                  import os, socket
+                  assert os.environ["HC_WORKER_ROLE"] == "media"
+                  assert os.environ["HC_MEDIA_TEMPORAL_TASK_QUEUE"]
+                  host, separator, port = os.environ["HC_TEMPORAL_TARGET"].rpartition(":")
+                  assert separator and host and port
+                  with socket.create_connection((host, int(port)), timeout=2):
+                      pass
+            {{- toYaml .Values.backend.worker.probes.readiness | nindent 12 }}
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import os; os.kill(1, 0)"]
+            {{- toYaml .Values.backend.worker.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.mediaWorker.resources | nindent 12 }}
+          volumeMounts:
+            - name: staging
+              mountPath: /tmp/hc-data/previews
+      volumes:
+        - name: staging
+          emptyDir:
+            sizeLimit: {{ .Values.backend.mediaWorker.stagingSizeLimit }}
+      {{- with .Values.backend.mediaWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.mediaWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.mediaWorker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

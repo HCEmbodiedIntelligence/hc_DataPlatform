@@ -13,3 +13,8 @@
 创建，发布后由触发器冻结；没有最大层级数据库常量。旧记录的原作者、时间、审计事件和
 源 payload 保存在 revision/mapping 中。迁移只扩展 annotation schema，不创建 cleaning
 schema、表或 HTTP 资源。
+
+`0009_frame_selection_manifests.sql` 保存入库单次扫描产生的轻量候选帧清单引用（对象键、
+source/content hash、sampling version、camera set 和计数），并把同一不可变引用快照到自动
+标注 job。客户端不能提交对象键；provider 只消费服务端按 Task 解析的校验引用，因此不会
+为每次自动标注重新全量解码摄像头流。

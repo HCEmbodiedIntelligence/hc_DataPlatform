@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createDomainError } from "../../../shared/api/domain-error";
-import type { ViewerPanelRenderContext } from "../../../features/viewer";
+import type {
+  StreamDescriptor,
+  ViewerPanelRenderContext,
+} from "../../../features/viewer";
 import { AnnotationWorkbenchView } from "../AnnotationWorkbenchView";
 import type { RuntimeAnnotationTag } from "../runtime-annotation-adapter";
 import {
@@ -22,6 +25,52 @@ export interface AnnotationVisualFixtureOptions {
   readonly scenario?: AnnotationVisualScenario;
 }
 
+const visualJointAngleStream: StreamDescriptor = {
+  id: "visual-joint-angles",
+  canonicalPath: "/robot/joint_states",
+  displayName: "关节角变化",
+  modality: "joint_state",
+  schema: {
+    id: "sensor_msgs/msg/JointState",
+    version: "visual-fixture",
+    unit: "rad",
+  },
+  rateHz: 30,
+  startNs: "0",
+  endNs: "892900000000",
+  availability: "ready",
+  accessibleSummary: "视觉测试固定关节角窗口。",
+  windowSource: {
+    async loadWindow(window) {
+      const startStep = Number(BigInt(window.startNs) / 33_333_333n);
+      const endStep = Math.max(
+        startStep + 2,
+        Number(BigInt(window.endNs) / 33_333_333n),
+      );
+      const stride = Math.max(1, Math.ceil((endStep - startStep) / 180));
+      const steps = Array.from(
+        { length: Math.ceil((endStep - startStep) / stride) },
+        (_, index) => startStep + index * stride,
+      );
+      return {
+        generation: 0,
+        timestampsNs: steps.map((step) => `${BigInt(step) * 33_333_333n}`),
+        values: steps.map((step) =>
+          Array.from({ length: 7 }, (_, joint) => {
+            const phase = step / 22 + joint * 0.72;
+            return Math.sin(phase) * (0.72 + joint * 0.06) + joint * 0.08;
+          }),
+        ),
+        series: Array.from({ length: 7 }, (_, index) => ({
+          id: `joint-${index + 1}`,
+          displayName: `J${index + 1}`,
+          unit: "rad",
+        })),
+      };
+    },
+  },
+};
+
 function CameraClock({
   context,
 }: {
@@ -33,14 +82,14 @@ function CameraClock({
       context.clock.subscribe((value) => {
         if (!ref.current) return;
         const seconds = Number(BigInt(value) / 1_000_000n) / 1000;
-        ref.current.textContent = `${seconds.toFixed(3)} s`;
+        ref.current.textContent = `${seconds.toFixed(2)}s`;
         ref.current.dateTime = value;
       }),
     [context.clock],
   );
   return (
     <time className={styles.clock} ref={ref}>
-      0.000 s
+      0.00s
     </time>
   );
 }
@@ -146,6 +195,8 @@ function RobotCameraScene({ index }: { readonly index: number }): JSX.Element {
 }
 
 function renderCamera(context: ViewerPanelRenderContext): JSX.Element {
+  if (context.stream.semanticRole === "camera-slot-placeholder")
+    return <>{context.defaultPanel}</>;
   const index = Number(context.stream.canonicalPath.match(/(\d+)/u)?.[1] ?? 0);
   return (
     <article
@@ -154,7 +205,7 @@ function renderCamera(context: ViewerPanelRenderContext): JSX.Element {
     >
       <header>
         <h3>{context.stream.displayName}</h3>
-        <span>30 Hz · Manifest</span>
+        <span>30 Hz · 数据清单</span>
       </header>
       <RobotCameraScene index={index} />
       <CameraClock context={context} />
@@ -174,9 +225,25 @@ function AnnotationVisualFixture(
       ? { invalid: "missing-required" as const }
       : {}),
   });
+  const annotationTags = bundle.draft?.tags ?? [];
+  const visualParent = annotationTags[0];
+  const visualChild: RuntimeAnnotationTag | null = visualParent
+    ? {
+        ...visualParent,
+        annotation_id: "annotation-visual-child",
+        tag_id: "manual-visual-child",
+        label: "夹爪闭合",
+        parent_annotation_id: visualParent.annotation_id,
+        path: [...visualParent.path, "manual-visual-child"],
+        start_step: visualParent.start_step + 28,
+        end_step: visualParent.end_step - 24,
+      }
+    : null;
   const initialTags =
     mode === "annotation"
-      ? (bundle.draft?.tags ?? [])
+      ? visualChild
+        ? [...annotationTags, visualChild]
+        : annotationTags
       : (bundle.history.revisions.at(-1)?.tags ?? []);
   const [tags, setTags] =
     useState<readonly RuntimeAnnotationTag[]>(initialTags);
@@ -201,11 +268,17 @@ function AnnotationVisualFixture(
         dirty={scenario === "conflict"}
         externalError={externalError}
         mode={mode}
+        jointAngleStream={
+          mode === "annotation" ? visualJointAngleStream : undefined
+        }
         permissions={{
-          canEdit: mode === "annotation" && scenario !== "conflict",
-          canSave: mode === "annotation" && scenario !== "conflict",
-          canSubmit: mode === "annotation" && scenario !== "conflict",
-          canReview: mode === "tag-review" && scenario !== "conflict",
+          hasAnnotationDraft: mode === "annotation",
+          canCreate: false,
+          canEdit: mode === "annotation",
+          canSave: mode === "annotation",
+          canSubmit: mode === "annotation",
+          canReview: mode === "tag-review",
+          canRevise: mode === "annotation",
           ...(scenario === "conflict"
             ? { readOnlyReason: "并发 409 后写操作保持关闭，直到显式刷新。" }
             : {}),

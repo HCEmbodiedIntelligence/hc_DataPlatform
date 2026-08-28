@@ -36,6 +36,9 @@ backend:
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     # Replace with the exact organization/project/region triples consumed by this worker pool.
     outboxScopes: '["production-organization/production-project/production-region"]'
+    storageInventoryScopes: '["production-organization/production-project/production-region"]'
+    storageInventoryIntervalSeconds: "3600"
+    previewGcIntervalSeconds: "300"
     # Internal/provider gateway credentials are referenced via
     # backend.existingSecrets.application.autoAnnotationProviderApiKey.
     autoAnnotationProviderEndpoint: https://annotation-gateway.example.com/v1/annotate

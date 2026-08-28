@@ -10,7 +10,11 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { createPlaybackClock } from "./PlaybackClock";
-import { EpisodeWorkbenchCore } from "./EpisodeWorkbenchCore";
+import {
+  EpisodeWorkbenchCore,
+  formatElapsedNs,
+  ViewerJointAngleCurvePanel,
+} from "./EpisodeWorkbenchCore";
 import type { ViewerTimelineTrack } from "./EpisodeWorkbenchCore";
 
 beforeAll(() => {
@@ -51,6 +55,7 @@ const tracks: readonly ViewerTimelineTrack[] = [
         label: "抓取零件",
         startNs: "2000000000",
         endNs: "6000000000",
+        activatePlayback: true,
         tone: "phase",
       },
     ],
@@ -80,6 +85,11 @@ function renderTimeline() {
   );
   return { clock, onRangeSelect };
 }
+
+it("formats all viewer time readouts as seconds with two decimals", () => {
+  expect(formatElapsedNs(12_030_000_000n, 0n)).toBe("12.03s");
+  expect(formatElapsedNs(65_000_000_000n, 0n)).toBe("65.00s");
+});
 
 describe("ClipTimeline", () => {
   it("creates a precise range by dragging across the filmstrip", () => {
@@ -121,6 +131,23 @@ describe("ClipTimeline", () => {
     expect(screen.getAllByText("动作")).toHaveLength(2);
     clock.dispose();
   });
+
+  it("starts the shared playback clock at an interactive segment boundary", async () => {
+    const { clock } = renderTimeline();
+    clock.seek("8000000000");
+
+    const segment = screen.getByRole("button", {
+      name: "从“抓取零件”起点同步播放全部视频和关节数据",
+    });
+    fireEvent.click(segment);
+
+    expect(clock.currentNs()).toBe("2000000000");
+    expect(clock.isPlaying()).toBe(true);
+    await waitFor(() =>
+      expect(segment).toHaveAttribute("aria-current", "time"),
+    );
+    clock.dispose();
+  });
 });
 
 describe("EpisodeWorkbenchCore immutable window data", () => {
@@ -158,6 +185,60 @@ describe("EpisodeWorkbenchCore immutable window data", () => {
     await waitFor(() => expect(loadWindow).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("末端力 可视化")).toBeInTheDocument();
     expect(screen.getByText(/已加载 2 个真实数值样本/)).toBeInTheDocument();
+    clock.dispose();
+  });
+});
+
+describe("ViewerJointAngleCurvePanel recovery", () => {
+  it("keeps the last successful chart visible when a window refresh is transiently rejected", async () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "20000000000" });
+    const loadWindow = vi
+      .fn()
+      .mockResolvedValueOnce({
+        generation: 0,
+        timestampsNs: ["0", "1000000000"],
+        values: [
+          [0.1, -0.2],
+          [0.2, -0.1],
+        ],
+        series: [
+          { id: "shoulder", displayName: "shoulder", unit: "rad" },
+          { id: "elbow", displayName: "elbow", unit: "rad" },
+        ],
+      })
+      .mockRejectedValueOnce(new Error("temporary object-store failure"));
+    const rendered = render(
+      <ViewerJointAngleCurvePanel
+        clock={clock}
+        stream={{
+          id: "joint-stream",
+          canonicalPath: "/joint_states",
+          displayName: "关节角变化",
+          modality: "joint_state",
+          schema: { id: "joint-state", version: "1", unit: "rad" },
+          rateHz: 30,
+          startNs: "0",
+          endNs: "20000000000",
+          availability: "ready",
+          windowSource: { loadWindow },
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(loadWindow).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("img", { name: /关节角时间序列/ })).toBeVisible();
+
+    clock.seek("8000000000");
+    await waitFor(() => expect(loadWindow).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/最近一次刷新失败，已保留上一窗口/),
+      ).toBeVisible(),
+    );
+    expect(screen.queryByText("关节角读取失败")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /关节角时间序列/ })).toBeVisible();
+
+    rendered.unmount();
     clock.dispose();
   });
 });

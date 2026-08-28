@@ -80,7 +80,8 @@ class S3ArtifactSink:
                 Params={
                     "Bucket": self._bucket,
                     "Key": self._key(artifact_uri),
-                    "ResponseContentDisposition": "attachment",
+                    "ResponseContentDisposition": self._content_disposition(artifact_uri),
+                    "ResponseContentType": "application/zip",
                 },
                 ExpiresIn=900,
                 HttpMethod="GET",
@@ -99,7 +100,8 @@ class S3ArtifactSink:
                 Params={
                     "Bucket": self._bucket,
                     "Key": self._key(artifact_uri),
-                    "ResponseContentDisposition": "attachment",
+                    "ResponseContentDisposition": self._content_disposition(artifact_uri),
+                    "ResponseContentType": "application/zip",
                 },
                 ExpiresIn=900,
                 HttpMethod="GET",
@@ -108,6 +110,11 @@ class S3ArtifactSink:
 
     def _key(self, uri: str) -> str:
         return f"{self._prefix}/{uri.lstrip('/')}"
+
+    @staticmethod
+    def _content_disposition(artifact_uri: str) -> str:
+        filename = artifact_uri.rsplit("/", maxsplit=1)[-1]
+        return f'attachment; filename="{filename}"'
 
     def _get(self, key: str) -> bytes | None:
         try:

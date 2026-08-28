@@ -434,7 +434,7 @@ async function selectValidPackage(page: Page): Promise<void> {
     },
   ]);
   await expect(page.getByRole("dialog", { name: "确认上传" })).toBeVisible();
-  await expect(page.getByText("浏览器本地检查")).toBeVisible();
+  await expect(page.getByText("浏览器本地检查")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "确认上传" })).toBeEnabled();
 }
 
@@ -480,11 +480,6 @@ test("E05 reference layout at 1440x900 and 1280x800", async ({ page }) => {
   await mountPage(page);
   await selectValidPackage(page);
   await expectLayout(page);
-  await expect(
-    page.getByText(
-      "尚未创建服务端任务，也没有执行平台预检或上传任何文件。",
-    ),
-  ).toBeVisible();
   const newUploadTab = page.getByRole("tab", { name: "新建上传" });
   await newUploadTab.focus();
   expect(
@@ -549,7 +544,7 @@ test("E05 empty Manifest is explicit and leaves submission closed", async ({
   });
 });
 
-test("E05 form semantics, keyboard focus, long URI and axe", async ({
+test("E05 browser-only upload semantics and axe", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -559,39 +554,17 @@ test("E05 form semantics, keyboard focus, long URI and axe", async ({
     "browser-upload-package",
   );
 
-  await page.getByText("其他上传方式").click();
-  await page.getByRole("radio", { name: /授权对象地址/u }).click();
-  const uri = page.getByLabel("已授权对象地址");
-  await expect(uri).toHaveAttribute("name", "object-storage-uri");
-  await expect(uri).toHaveAttribute("autocomplete", "off");
-  await expect(uri).toHaveAttribute(
-    "placeholder",
-    "s3://受管存储桶/raw/v1/…/recording.mcap",
-  );
-  await expect(page.locator("#object-upload-manifest")).toHaveAttribute(
-    "name",
-    "object-upload-manifest",
-  );
-  await uri.fill(
-    "s3://managed-bucket/raw/v1/project-fe13/a-very-long-canonical-path-that-must-remain-inside-the-upload-column/recording.mcap",
-  );
-  await uri.focus();
-  await expect(uri).toBeFocused();
-  expect(
-    await uri.evaluate((element) => {
-      const wrapper = element.closest(".ant-input");
-      const target = wrapper instanceof HTMLElement ? wrapper : element;
-      const style = getComputedStyle(target);
-      return style.outlineStyle !== "none" || style.boxShadow !== "none";
-    }),
-  ).toBe(true);
+  await page.getByText("选择单个数据包").click();
+  await expect(
+    page.getByText("选择一个数据清单与 RAW/MCAP 文件"),
+  ).toBeVisible();
+  await expect(page.getByText("授权对象地址")).toHaveCount(0);
+  await expect(page.locator("#object-storage-uri")).toHaveCount(0);
+  await expect(page.locator("#object-upload-manifest")).toHaveCount(0);
   await expectLayout(page);
-  await runAxe(page, testInfo, "1280x800-object-reference");
-  await page.evaluate(() =>
-    (document.activeElement as HTMLElement | null)?.blur(),
-  );
+  await runAxe(page, testInfo, "1280x800-browser-package");
   await page.screenshot({
-    path: resolve(artifactRoot, "1280x800-object-reference.png"),
+    path: resolve(artifactRoot, "1280x800-browser-package.png"),
     animations: "disabled",
     fullPage: false,
   });
@@ -636,9 +609,11 @@ test("E05 timeout remains recoverable and commits only after explicit failed-par
   });
 
   await retry.click();
-  await expect(page.getByText("Raw 已提交", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "上传已完成" }),
+  ).toBeVisible();
   await expect(page.getByText("PART_TIMEOUT")).toHaveCount(0);
-  await expect(page.getByText("已进入摄取工作流")).toBeVisible();
+  await expect(page.getByText(/已提交到服务端并进入摄取工作流/u)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await page.screenshot({
     path: resolve(artifactRoot, "375x812-retry-success.png"),

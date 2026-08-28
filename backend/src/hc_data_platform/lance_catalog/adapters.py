@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 import math
+import shutil
 from base64 import b64encode
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -14,8 +15,8 @@ from decimal import Decimal
 from pathlib import Path
 from threading import Lock, RLock
 from types import ModuleType
-from typing import Any, Protocol
-from urllib.parse import quote
+from typing import Any, Protocol, cast
+from urllib.parse import quote, unquote, urlparse
 
 from .models import (
     AlignedFragmentManifestV1,
@@ -79,32 +80,50 @@ def build_dataset_uri(root_uri: str | Path, snapshot: DatasetSchemaSnapshot) -> 
     return "/".join((root, *components))
 
 
+def _normalize_arrow_value(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value):
+            return {"$float": "nan"}
+        if math.isinf(value):
+            return {"$float": "inf" if value > 0 else "-inf"}
+        return {"$float": value.hex()}
+    if isinstance(value, bytes):
+        return {"$binary": b64encode(value).decode("ascii")}
+    if isinstance(value, Decimal):
+        return {"$decimal": str(value)}
+    if isinstance(value, (date, datetime, time)):
+        return {"$temporal": value.isoformat()}
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_arrow_value(item) for key, item in sorted(value.items())
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_arrow_value(item) for item in value]
+    raise TypeError(f"unsupported Arrow scalar value {type(value).__name__}")
+
+
+def _arrow_rows(table: Any, *, batch_rows: int = 4_096) -> Iterator[dict[str, object]]:
+    """Materialize at most one bounded RecordBatch as Python objects."""
+
+    for batch in table.to_batches(max_chunksize=batch_rows):
+        yield from cast(list[dict[str, object]], batch.to_pylist())
+
+
 def _arrow_table_hash(table: Any) -> str:
-    """Hash logical Arrow values, independent of physical buffers and chunks."""
+    """Hash logical rows incrementally, independent of Arrow chunk boundaries."""
 
-    def normalize(value: object) -> object:
-        if value is None or isinstance(value, (bool, int, str)):
-            return value
-        if isinstance(value, float):
-            if math.isnan(value):
-                return {"$float": "nan"}
-            if math.isinf(value):
-                return {"$float": "inf" if value > 0 else "-inf"}
-            return {"$float": value.hex()}
-        if isinstance(value, bytes):
-            return {"$binary": b64encode(value).decode("ascii")}
-        if isinstance(value, Decimal):
-            return {"$decimal": str(value)}
-        if isinstance(value, (date, datetime, time)):
-            return {"$temporal": value.isoformat()}
-        if isinstance(value, dict):
-            return {str(key): normalize(item) for key, item in sorted(value.items())}
-        if isinstance(value, (list, tuple)):
-            return [normalize(item) for item in value]
-        raise TypeError(f"unsupported Arrow scalar value {type(value).__name__}")
-
-    payload = normalize(table.combine_chunks().to_pylist())
-    return hashlib.sha256(_dump_json(payload).encode()).hexdigest()
+    digest = hashlib.sha256()
+    digest.update(b"[")
+    first = True
+    for row in _arrow_rows(table):
+        if not first:
+            digest.update(b",")
+        digest.update(_dump_json(_normalize_arrow_value(row)).encode())
+        first = False
+    digest.update(b"]")
+    return digest.hexdigest()
 
 
 def _table_from_steps(snapshot: DatasetSchemaSnapshot, steps: Sequence[StepRecord]) -> Any:
@@ -145,8 +164,8 @@ def _steps_from_table(table: Any) -> tuple[StepRecord, ...]:
             isinstance(name, str) and name for name in raw_names
         ):
             raise ValueError("JSON modality metadata must be a string list")
-        rows = table.to_pylist()
-        for row in rows:
+        rows: list[StepRecord] = []
+        for row in _arrow_rows(table):
             modalities = row["modalities"]
             if not isinstance(modalities, dict):
                 raise ValueError("modalities must be an Arrow struct")
@@ -155,7 +174,8 @@ def _steps_from_table(table: Any) -> tuple[StepRecord, ...]:
                 if not isinstance(encoded, str):
                     raise ValueError(f"JSON modality {name!r} is not encoded text")
                 modalities[name] = json.loads(encoded)
-        return tuple(StepRecord.model_validate(row) for row in rows)
+            rows.append(StepRecord.model_validate(row))
+        return tuple(rows)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise SchemaIncompatibleError(
             f"stored Lance JSON modalities do not match schema metadata: {exc}"
@@ -170,9 +190,11 @@ class LanceAdapter:
         root_uri: str | Path,
         *,
         storage_options: dict[str, str] | None = None,
+        object_store_client: Any | None = None,
     ) -> None:
         self._root_uri = str(root_uri)
         self._storage_options = dict(storage_options or {})
+        self._object_store_client = object_store_client
         # This protects direct single-process use. Production also supplies the
         # PostgreSQL advisory writer lock to LanceCatalogService.
         self._guard = Lock()
@@ -290,13 +312,15 @@ class LanceAdapter:
             raise CatalogConflictError("staged attempt manifest hash is invalid")
         if staged_arrow_hash != _arrow_table_hash(table):
             raise CatalogConflictError("staged attempt content hash is invalid")
-        rows = table.select(["rollout_id", "step_index"]).to_pylist()
-        identities = [(row["rollout_id"], row["step_index"]) for row in rows]
-        expected = [(manifest.rollout_id, index) for index in range(manifest.step_count)]
-        if identities != expected:
-            raise CatalogConflictError(
-                "staged attempt step_index values are not contiguous logical identities"
-            )
+        identity_table = table.select(["rollout_id", "step_index"])
+        for expected_index, row in enumerate(_arrow_rows(identity_table)):
+            if (row["rollout_id"], row["step_index"]) != (
+                manifest.rollout_id,
+                expected_index,
+            ):
+                raise CatalogConflictError(
+                    "staged attempt step_index values are not contiguous logical identities"
+                )
 
     def list_commits(self, snapshot: DatasetSchemaSnapshot) -> tuple[StorageCommitReceipt, ...]:
         dataset = self._open_optional(self.dataset_uri(snapshot))
@@ -412,6 +436,59 @@ class LanceAdapter:
                     "Lance physical version advanced outside the dataset writer lock"
                 )
             return receipt
+
+    def cleanup_attempt(
+        self,
+        snapshot: DatasetSchemaSnapshot,
+        manifest: AlignedFragmentManifestV1,
+    ) -> None:
+        """Remove a committed staging dataset without touching shared Lance data."""
+
+        stage_uri = self._attempt_uri(snapshot, manifest)
+        parsed = urlparse(stage_uri)
+        if parsed.scheme == "s3":
+            if self._object_store_client is None:
+                raise CatalogConflictError(
+                    "cannot clean an S3 Lance attempt without an object-store client"
+                )
+            prefix = unquote(parsed.path.lstrip("/")).rstrip("/") + "/"
+            continuation: str | None = None
+            while True:
+                arguments: dict[str, object] = {
+                    "Bucket": parsed.netloc,
+                    "Prefix": prefix,
+                }
+                if continuation is not None:
+                    arguments["ContinuationToken"] = continuation
+                response = self._object_store_client.list_objects_v2(**arguments)
+                # Some S3-compatible providers require Content-MD5 for the
+                # multi-delete API. Individual deletes are universally
+                # supported and attempt datasets contain only a few objects.
+                for item in response.get("Contents", ()):
+                    self._object_store_client.delete_object(
+                        Bucket=parsed.netloc,
+                        Key=str(item["Key"]),
+                    )
+                if not response.get("IsTruncated", False):
+                    return
+                continuation = str(response["NextContinuationToken"])
+
+        if parsed.scheme not in {"", "file"}:
+            raise CatalogConflictError(
+                f"attempt cleanup is unsupported for URI scheme {parsed.scheme!r}"
+            )
+        target = Path(unquote(parsed.path) if parsed.scheme == "file" else stage_uri).resolve()
+        root_parsed = urlparse(self._root_uri)
+        root = Path(
+            unquote(root_parsed.path) if root_parsed.scheme == "file" else self._root_uri
+        ).resolve()
+        attempts_root = (root / "_attempts").resolve()
+        try:
+            target.relative_to(attempts_root)
+        except ValueError as exc:
+            raise CatalogConflictError("refusing to clean a path outside _attempts") from exc
+        if target.exists():
+            shutil.rmtree(target)
 
     def read_steps(
         self,

@@ -33,14 +33,14 @@ const capabilityLabels: Readonly<Record<string, string>> = {
   "ingest.upload": "数据摄取",
   "annotation.write": "数据标注",
   "annotation.review": "标注审核",
-  "tag_schema.write": "Tag Schema 管理",
+  "tag_schema.write": "标签结构管理",
   "dashboard.read": "工作台只读",
 };
 
 const elevatedImpact: Readonly<Record<string, string>> = {
   "project.access.manage": "批准后可管理并审批当前项目的访问申请。",
   "datasets.publish": "批准后可冻结并发布当前项目的数据集版本。",
-  "tag_schema.write": "批准后可变更当前项目的 Tag Schema。",
+  "tag_schema.write": "批准后可变更当前项目的标签结构。",
 };
 
 export function formatDateTime(value: string): string {
@@ -72,9 +72,8 @@ export function accessRequestTitle(row: AccessRequestRow): string {
 }
 
 export function accessRequestSummary(row: AccessRequestRow): string {
-  if (row.kind === "membership") return row.reason || "申请人未填写加入原因";
-  if (row.capabilityKeys.length === 0)
-    return "正式合同返回的 capability 列表为空";
+  if (row.kind === "membership") return row.reason || "未填写申请原因";
+  if (row.capabilityKeys.length === 0) return "未列出申请能力";
   return row.capabilityKeys.map(capabilityLabel).join("、");
 }
 
@@ -87,13 +86,10 @@ export function elevatedImpactNotes(row: AccessRequestRow): readonly string[] {
 export function availableDecisions(
   row: AccessRequestRow,
   canManage: boolean,
-  principalId: string | null,
+  _principalId: string | null,
 ): readonly AccessDecision[] {
   if (row.status === "PENDING") {
-    return [
-      ...(canManage ? (["approve", "reject"] as const) : []),
-      ...(principalId === row.requesterId ? (["withdraw"] as const) : []),
-    ];
+    return canManage ? ["approve", "reject"] : [];
   }
   if (row.status === "APPROVED" && canManage) return ["revoke"];
   return [];
@@ -107,7 +103,5 @@ export function decisionLabel(action: AccessDecision): string {
       return "拒绝申请";
     case "revoke":
       return "撤销授权";
-    case "withdraw":
-      return "撤回申请";
   }
 }

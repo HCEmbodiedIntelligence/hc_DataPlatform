@@ -11,7 +11,15 @@ import type {
   VersionManifestWire,
   VersionSchemaVm,
 } from "../../../features/datasets/api";
+import {
+  formatStorageSize,
+  formatTimeRange,
+} from "../../../shared/lib/metric-presentation";
 import { DataCursorPager, DataTable, StatusTag } from "../../../shared/ui";
+import {
+  episodeInclusionLabel,
+  episodeReviewPresentation,
+} from "../../p06-dataset-detail/episode-presentation";
 import styles from "../styles.module.css";
 
 type RevisionStream = EpisodeRevisionWire["streams"][number];
@@ -60,27 +68,37 @@ export function EpisodeRevisionTable({
         cell: ({ row }) => (
           <StatusTag
             status={row.original.included ? "INCLUDED" : "EXCLUDED"}
+            label={episodeInclusionLabel(row.original.included)}
             tone={row.original.included ? "info" : "neutral"}
           />
         ),
       },
       {
+        id: "storageRegion",
+        header: "存储区域",
+        cell: ({ row }) => (
+          <code className={styles.tableCode}>
+            {row.original.storageRegionCode ?? "—"}
+          </code>
+        ),
+      },
+      {
         id: "review",
         header: "Review",
-        cell: ({ row }) => (
-          <StatusTag
-            status={row.original.reviewStatus}
-            label={`${row.original.reviewStatus} · ${row.original.reviewFindingCount}`}
-            tone={
-              row.original.reviewStatus === "HAS_FINDING"
-                ? "warning"
-                : row.original.reviewStatus === "ACCEPTED"
-                  ? "success"
-                  : "neutral"
-            }
-            known={row.original.reviewStatus !== "UNKNOWN"}
-          />
-        ),
+        cell: ({ row }) => {
+          const review = episodeReviewPresentation(
+            row.original.reviewStatus,
+            row.original.reviewFindingCount,
+          );
+          return (
+            <StatusTag
+              status={row.original.reviewStatus}
+              label={review.label}
+              tone={review.tone}
+              known={review.known}
+            />
+          );
+        },
       },
       {
         id: "actions",
@@ -204,9 +222,8 @@ export function RevisionStreamTable({
       { id: "kind", header: "Kind", cell: ({ row }) => row.original.kind },
       {
         id: "range",
-        header: "Range ns",
-        cell: ({ row }) =>
-          `${row.original.t_start_ns}–${row.original.t_end_ns}`,
+        header: "时间范围",
+        cell: ({ row }) => formatTimeRange(row.original.t_start_ns, row.original.t_end_ns),
       },
     ],
     [],
@@ -228,19 +245,19 @@ export function ManifestTable({
     () => [
       {
         id: "entry",
-        header: "Entry",
+        header: "条目标识",
         cell: ({ row }) => row.original.entry_id,
       },
       {
         id: "episode",
-        header: "Episode",
+        header: "数据片段",
         cell: ({ row }) => row.original.episode_id,
       },
-      { id: "role", header: "Role", cell: ({ row }) => row.original.role },
+      { id: "role", header: "角色", cell: ({ row }) => row.original.role },
       {
         id: "bytes",
-        header: "Bytes",
-        cell: ({ row }) => row.original.size_bytes,
+        header: "数据量",
+        cell: ({ row }) => formatStorageSize(row.original.size_bytes),
       },
       {
         id: "sha",
@@ -255,7 +272,7 @@ export function ManifestTable({
       data={items}
       columns={columns}
       getRowId={(item) => item.entry_id}
-      caption="Version Manifest 条目"
+      caption="版本数据清单条目"
     />
   );
 }
@@ -265,16 +282,16 @@ export function SchemaChannelTable({
 }: Readonly<{ items: readonly SchemaChannel[] }>) {
   const columns = useMemo<readonly ColumnDef<SchemaChannel, unknown>[]>(
     () => [
-      { id: "id", header: "Channel ID", cell: ({ row }) => row.original.id },
-      { id: "name", header: "Name", cell: ({ row }) => row.original.name },
+      { id: "id", header: "通道标识", cell: ({ row }) => row.original.id },
+      { id: "name", header: "名称", cell: ({ row }) => row.original.name },
       {
         id: "dataType",
-        header: "Data type",
+        header: "数据类型",
         cell: ({ row }) => row.original.dataType,
       },
       {
         id: "unit",
-        header: "Unit",
+        header: "单位",
         cell: ({ row }) => row.original.unit ?? "—",
       },
     ],
@@ -285,7 +302,7 @@ export function SchemaChannelTable({
       data={items}
       columns={columns}
       getRowId={(item) => item.id}
-      caption="Schema Channels"
+      caption="数据结构通道"
     />
   );
 }
@@ -303,8 +320,8 @@ export function RequiredStorageTable({
       { id: "role", header: "Role", cell: ({ row }) => row.original.role },
       {
         id: "bytes",
-        header: "Bytes",
-        cell: ({ row }) => row.original.sizeBytes,
+        header: "容量",
+        cell: ({ row }) => formatStorageSize(row.original.sizeBytes),
       },
       { id: "reuse", header: "Reuse", cell: ({ row }) => row.original.reuse },
       {
@@ -357,8 +374,8 @@ export function InventoryTable({
       },
       {
         id: "bytes",
-        header: "Bytes",
-        cell: ({ row }) => row.original.sizeBytes,
+        header: "容量",
+        cell: ({ row }) => formatStorageSize(row.original.sizeBytes),
       },
       {
         id: "revision",
@@ -396,7 +413,7 @@ export function VersionCursorPager({
         hasNextPage: page.pageInfo.hasNextPage,
       }}
       busy={busy}
-      windowLabel={`当前窗口 ${page.items.length} 条 · 快照 ${page.snapshotAt}`}
+      windowLabel={`当前窗口 ${page.items.length} 条`}
       onChange={onChange}
     />
   );
@@ -405,13 +422,11 @@ export function VersionCursorPager({
 export function ManifestCursorPager({
   pageInfo,
   count,
-  snapshotAt,
   busy,
   onChange,
 }: Readonly<{
   pageInfo: VersionManifestWire["page_info"];
   count: number;
-  snapshotAt: string;
   busy?: boolean;
   onChange: (cursor: { before?: string; after?: string }) => void;
 }>) {
@@ -424,7 +439,7 @@ export function ManifestCursorPager({
         hasNextPage: pageInfo.has_next,
       }}
       busy={busy}
-      windowLabel={`当前窗口 ${count} 条 · 快照 ${snapshotAt}`}
+      windowLabel={`当前窗口 ${count} 条`}
       onChange={onChange}
     />
   );

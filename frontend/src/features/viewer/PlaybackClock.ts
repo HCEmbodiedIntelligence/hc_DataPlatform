@@ -6,12 +6,18 @@ export interface PlaybackClock {
   currentNs(): string;
   isPlaying(): boolean;
   playbackRate(): number;
-  subscribe(fn: (ns: string) => void): () => void;
+  subscribe(fn: (ns: string, update: PlaybackClockUpdate) => void): () => void;
   play(): void;
   pause(): void;
   seek(ns: string): void;
   setRate(r: number): void;
   dispose(): void;
+}
+
+export interface PlaybackClockUpdate {
+  readonly reason: 'subscribe' | 'tick' | 'play' | 'pause' | 'seek' | 'rate' | 'ended';
+  readonly playing: boolean;
+  readonly rate: number;
 }
 
 type FrameHandle = ReturnType<typeof setTimeout> | number;
@@ -49,11 +55,12 @@ export function createPlaybackClock(opts: { startNs: string; endNs: string }): P
   let disposed = false;
   let frame: FrameHandle | null = null;
   let previousAt = monotonicNow();
-  const listeners = new Set<(ns: string) => void>();
+  const listeners = new Set<(ns: string, update: PlaybackClockUpdate) => void>();
 
-  const emit = () => {
+  const emit = (reason: PlaybackClockUpdate['reason']) => {
     const value = current.toString();
-    for (const listener of [...listeners]) listener(value);
+    const update = { reason, playing, rate } as const;
+    for (const listener of [...listeners]) listener(value, update);
   };
 
   const stopFrame = () => {
@@ -79,7 +86,7 @@ export function createPlaybackClock(opts: { startNs: string; endNs: string }): P
     } else {
       current = next;
     }
-    emit();
+    emit(playing ? 'tick' : 'ended');
     schedule();
   };
 
@@ -92,7 +99,7 @@ export function createPlaybackClock(opts: { startNs: string; endNs: string }): P
     subscribe(fn) {
       if (disposed) return () => undefined;
       listeners.add(fn);
-      fn(current.toString());
+      fn(current.toString(), { reason: 'subscribe', playing, rate });
       return () => listeners.delete(fn);
     },
     play() {
@@ -100,21 +107,21 @@ export function createPlaybackClock(opts: { startNs: string; endNs: string }): P
       if (current >= end - 1n) current = start;
       playing = true;
       previousAt = monotonicNow();
-      emit();
+      emit('play');
       schedule();
     },
     pause() {
       if (disposed) return;
       playing = false;
       stopFrame();
-      emit();
+      emit('pause');
     },
     seek(ns) {
       if (disposed) return;
       const requested = parseNs(ns, 'seek ns');
       current = requested < start ? start : requested >= end ? end - 1n : requested;
       previousAt = monotonicNow();
-      emit();
+      emit('seek');
     },
     setRate(nextRate) {
       if (!Number.isFinite(nextRate) || nextRate <= 0 || nextRate > 16) {
@@ -122,6 +129,7 @@ export function createPlaybackClock(opts: { startNs: string; endNs: string }): P
       }
       rate = nextRate;
       previousAt = monotonicNow();
+      emit('rate');
     },
     dispose() {
       if (disposed) return;

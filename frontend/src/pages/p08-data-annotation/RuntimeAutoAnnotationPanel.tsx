@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   CircleAlert,
+  LoaderCircle,
   RefreshCw,
   Square,
   WandSparkles,
@@ -148,7 +149,7 @@ export function RuntimeAutoAnnotationPanel(props: {
     action: Exclude<PendingAction, null>,
     operation: () => Promise<void>,
   ) => {
-    if (pending !== null) return;
+    if (!props.canUse || pending !== null) return;
     setPending(action);
     setOperationError(null);
     try {
@@ -215,7 +216,9 @@ export function RuntimeAutoAnnotationPanel(props: {
           <strong>自动标注</strong>
         </span>
         {job ? (
-          <em data-status={job.status}>{jobStatusLabel(job.status)}</em>
+          <em aria-live="polite" data-status={job.status}>
+            {jobStatusLabel(job.status)}
+          </em>
         ) : null}
       </header>
 
@@ -228,7 +231,7 @@ export function RuntimeAutoAnnotationPanel(props: {
           <label htmlFor="auto-annotation-provider">
             <span>Provider</span>
             <select
-              disabled={pending !== null || running(job)}
+              disabled={!props.canUse || pending !== null || running(job)}
               id="auto-annotation-provider"
               value={provider?.provider ?? ""}
               onChange={(event) => {
@@ -246,7 +249,7 @@ export function RuntimeAutoAnnotationPanel(props: {
           <label htmlFor="auto-annotation-model">
             <span>模型</span>
             <select
-              disabled={pending !== null || running(job)}
+              disabled={!props.canUse || pending !== null || running(job)}
               id="auto-annotation-model"
               value={model ?? ""}
               onChange={(event) => setModelValue(event.target.value)}
@@ -261,7 +264,7 @@ export function RuntimeAutoAnnotationPanel(props: {
           <label htmlFor="auto-annotation-start-step">
             <span>开始步</span>
             <input
-              disabled={pending !== null || running(job)}
+              disabled={!props.canUse || pending !== null || running(job)}
               id="auto-annotation-start-step"
               min={0}
               type="number"
@@ -272,7 +275,7 @@ export function RuntimeAutoAnnotationPanel(props: {
           <label htmlFor="auto-annotation-end-step">
             <span>结束步（开区间）</span>
             <input
-              disabled={pending !== null || running(job)}
+              disabled={!props.canUse || pending !== null || running(job)}
               id="auto-annotation-end-step"
               max={props.task.base_step_count ?? undefined}
               min={1}
@@ -322,7 +325,7 @@ export function RuntimeAutoAnnotationPanel(props: {
         </p>
       ) : null}
       {!selectionValid && capability?.enabled ? (
-        <small>步区间必须位于当前不可变 Lance 快照内。</small>
+        <small>步区间必须位于当前固定 Lance 数据版本内。</small>
       ) : null}
       {props.dirty ? (
         <small>先保存本地 Tag 修改，再启动或应用任务。</small>
@@ -330,13 +333,27 @@ export function RuntimeAutoAnnotationPanel(props: {
 
       <div className={styles.autoAnnotationActions}>
         {capabilityQuery.error ? (
-          <button type="button" onClick={() => void capabilityQuery.refetch()}>
-            <RefreshCw aria-hidden="true" size={14} />
+          <button
+            aria-busy={capabilityQuery.isFetching || undefined}
+            disabled={capabilityQuery.isFetching}
+            type="button"
+            onClick={() => void capabilityQuery.refetch()}
+          >
+            {capabilityQuery.isFetching ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className={styles.loadingIcon}
+                size={14}
+              />
+            ) : (
+              <RefreshCw aria-hidden="true" size={14} />
+            )}
             重试配置
           </button>
         ) : null}
         {capability?.enabled && (!job || job.status === "APPLIED") ? (
           <button
+            aria-busy={pending === "start" || undefined}
             disabled={
               !props.canUse ||
               props.dirty ||
@@ -346,28 +363,54 @@ export function RuntimeAutoAnnotationPanel(props: {
             type="button"
             onClick={() => void start()}
           >
-            <WandSparkles aria-hidden="true" size={14} />
-            {pending === "start" ? "创建中…" : "启动自动标注"}
+            {pending === "start" ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className={styles.loadingIcon}
+                size={14}
+              />
+            ) : (
+              <WandSparkles aria-hidden="true" size={14} />
+            )}
+            启动自动标注
           </button>
         ) : null}
         {running(job) ? (
           <button
+            aria-busy={pending === "cancel" || undefined}
             disabled={!props.canUse || pending !== null}
             type="button"
             onClick={() => void cancel()}
           >
-            <Square aria-hidden="true" size={13} />
-            {pending === "cancel" ? "取消中…" : "取消任务"}
+            {pending === "cancel" ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className={styles.loadingIcon}
+                size={13}
+              />
+            ) : (
+              <Square aria-hidden="true" size={13} />
+            )}
+            取消任务
           </button>
         ) : null}
         {job?.status === "FAILED" || job?.status === "CANCELLED" ? (
           <button
+            aria-busy={pending === "retry" || undefined}
             disabled={!props.canUse || props.dirty || pending !== null}
             type="button"
             onClick={() => void retry()}
           >
-            <RefreshCw aria-hidden="true" size={14} />
-            {pending === "retry" ? "重试中…" : "重试同一任务"}
+            {pending === "retry" ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className={styles.loadingIcon}
+                size={14}
+              />
+            ) : (
+              <RefreshCw aria-hidden="true" size={14} />
+            )}
+            重试同一任务
           </button>
         ) : null}
         {job?.status === "SUCCEEDED" ? (

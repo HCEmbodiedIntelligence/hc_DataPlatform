@@ -89,6 +89,7 @@ class ApprovedAnnotationSnapshotV1(BaseModel):
     rollout_id: str = Field(min_length=1)
     annotation_revision: int = Field(ge=0)
     annotation_task_id: str | None = None
+    annotation_submission_id: str | None = None
     excluded_step_ranges: tuple[StepRangeV1, ...] = Field(
         default=(),
         validation_alias=AliasChoices("excluded_step_ranges", "excluded_ranges"),
@@ -106,7 +107,11 @@ class PublishDatasetRequestV1(BaseModel):
 
     project_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
-    dataset_version: str = Field(min_length=1)
+    dataset_version: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+    )
     base_lance_version: str = Field(min_length=1)
 
 
@@ -120,6 +125,7 @@ class PublishedRolloutV1(BaseModel):
     base_lance_version: str = Field(min_length=1)
     annotation_revision: int = Field(ge=0)
     annotation_task_id: str | None = None
+    annotation_submission_id: str | None = None
     quality_profile_version: str = Field(min_length=1)
     alignment_profile_version: str = Field(min_length=1)
     alignment_frequency_hz: int = Field(gt=0)

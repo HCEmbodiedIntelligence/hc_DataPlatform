@@ -41,8 +41,8 @@ export const annotationRoutes = {
   },
   tagReview: {
     pattern: dataAnnotationRoutes.tagReview,
-    build() {
-      return dataAnnotationRoutes.tagReview;
+    build(search?: AnnotationQueueSearch) {
+      return `${dataAnnotationRoutes.tagReview}${suffix(search ? annotationQueueQueryCodec.build(search) : "")}`;
     },
   },
   tagReviewTask: {

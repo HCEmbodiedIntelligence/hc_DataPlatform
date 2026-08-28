@@ -30,6 +30,8 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
 from hc_data_platform.dataset_registry.ingest_projection import (  # noqa: E402
     DatasetIngestProjectionConflict,
     PostgresDatasetIngestProjector,
+    _stream_kind,
+    _value_kind,
 )
 from hc_data_platform.ingest.manifest import preflight_manifest  # noqa: E402
 from hc_data_platform.ingest.models import (  # noqa: E402
@@ -48,6 +50,20 @@ pytestmark = pytest.mark.integration
 
 NOW = datetime(2026, 8, 21, 6, tzinfo=timezone.utc)
 REGION = "cn-ingest-viewer"
+
+
+def test_unitree_object_payloads_project_as_numeric_viewer_streams() -> None:
+    assert _value_kind(({"names": ["a"], "positions": [1.0]},)) == "VECTOR"
+    assert _value_kind(({"names": ["a"], "values": [2.0]},)) == "VECTOR"
+    assert (
+        _value_kind(({"position_xyz": [1, 2, 3], "orientation_wxyz": [1, 0, 0, 0]},))
+        == "VECTOR"
+    )
+    assert _stream_kind(
+        "/humanoid/observation/state", ModalityKind.CONTINUOUS, "VECTOR"
+    ) == "JOINT_STATE"
+    assert _stream_kind("/robot/end_effector/state", ModalityKind.CONTINUOUS, "VECTOR") == "POSE"
+    assert _value_kind(({"source_format": "lerobot"},)) == "EVENT"
 
 
 def _database_dsn() -> str:
@@ -234,6 +250,7 @@ def _seed_manifest(
     *,
     organization_id: str,
     project_id: str,
+    dataset_id: str,
     session_id: str,
     manifest: RolloutManifestV1,
 ) -> str:
@@ -255,6 +272,29 @@ def _seed_manifest(
                    set_config('app.request_id', %s, false)
             """,
             (organization_id, project_id, REGION, str(uuid4())),
+        )
+        connection.execute(
+            """
+            INSERT INTO collection_tasks.collection_tasks (
+                collection_task_id, organization_id, project_id, dataset_id, task_code,
+                name, task_type, scenario, description, target_json, quality_threshold,
+                status, version, create_fingerprint, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s,
+                lpad(nextval('collection_tasks.task_code_sequence')::text, 8, '0'),
+                'Ingest projection task', 'DATA_CAPTURE', 'integration', '', NULL, NULL,
+                'ACTIVE', 1, %s, %s, %s
+            ) ON CONFLICT (organization_id, project_id, collection_task_id) DO NOTHING
+            """,
+            (
+                manifest.task_id,
+                organization_id,
+                project_id,
+                dataset_id,
+                "7" * 64,
+                NOW,
+                NOW,
+            ),
         )
         connection.execute(
             """
@@ -366,6 +406,11 @@ def _cleanup(dsn: str, *, organization_id: str, project_id: str) -> None:
             "dataset_registry.datasets",
         ):
             connection.execute(f"DELETE FROM {table} WHERE project_id = %s", (project_id,))
+        connection.execute(
+            "DELETE FROM collection_tasks.collection_tasks "
+            "WHERE organization_id = %s AND project_id = %s",
+            (organization_id, project_id),
+        )
         for table in (
             "ingest.workflow_triggers",
             "ingest.manifest_discoveries",
@@ -418,6 +463,7 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
         dsn,
         organization_id=organization_id,
         project_id=project_id,
+        dataset_id=dataset_id,
         session_id=first_session,
         manifest=first_manifest,
     )
@@ -464,7 +510,9 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
 
         second_manifest = _manifest(
             project_id=project_id,
-            rollout_id=f"rollout-{suffix}-2",
+            # A rollout ID is an identity, not a commit-order key.  This second
+            # commit intentionally sorts before the first rollout.
+            rollout_id=f"rollout-{suffix}-0",
             data_package_id=f"package-{suffix}-2",
             sequence_no=2,
             source_sha256="b" * 64,
@@ -474,6 +522,7 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
             dsn,
             organization_id=organization_id,
             project_id=project_id,
+            dataset_id=dataset_id,
             session_id=second_session,
             manifest=second_manifest,
         )

@@ -77,7 +77,7 @@ function missingCameraStream(
     endNs: clock.endNs,
     frame: camera.frame_id ? { id: camera.frame_id, name: camera.frame_id } : undefined,
     availability: 'missing',
-    accessibleSummary: `${camera.camera_id} 由 Manifest 声明，但当前预览流缺失。`,
+    accessibleSummary: `${camera.camera_id} 由数据清单声明，但当前预览流缺失。`,
   };
 }
 
@@ -170,7 +170,7 @@ export function createRawDiagnosticWorkbenchAdapter(
     mode: 'raw-diagnostic',
     id: input.id,
     title: input.title ?? 'Raw 诊断',
-    description: input.description ?? '按 Manifest 核对多相机、信号与自动质检证据。',
+    description: input.description ?? '按数据清单核对多相机、信号与自动质检证据。',
     readOnly: true,
     clock: input.clock,
     cameraStreams,

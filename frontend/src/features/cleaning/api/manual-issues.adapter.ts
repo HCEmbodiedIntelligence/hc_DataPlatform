@@ -4,14 +4,14 @@ import {
   type ManualIssue,
   type ManualIssueListItem,
   type ManualIssuePage,
-} from '../../../entities/manual-issue';
-import { assertCleaningScope, type ExpectedCleaningScope } from './wire-common';
+} from "../../../entities/manual-issue";
+import { assertCleaningScope, type ExpectedCleaningScope } from "./wire-common";
 import {
   manualIssueDetailEnvelopeWireSchema,
   manualIssueListEnvelopeWireSchema,
   type ManualIssueListItemWire,
   type ManualIssueWire,
-} from './manual-issues.schemas';
+} from "./manual-issues.schemas";
 
 export function adaptManualIssueWire(wire: ManualIssueWire): ManualIssue {
   return {
@@ -36,9 +36,14 @@ export function adaptManualIssueWire(wire: ManualIssueWire): ManualIssue {
     },
     issueType: wire.issue_type,
     severity: wire.severity,
+    discoverySource: wire.discovery_source,
+    annotationTaskId: wire.annotation_task_id,
     status: projectManualIssueStatus(wire.status),
     note: wire.note,
-    assignee: wire.assignee && { id: wire.assignee.id, displayName: wire.assignee.display_name },
+    assignee: wire.assignee && {
+      id: wire.assignee.id,
+      displayName: wire.assignee.display_name,
+    },
     relatedDrafts: wire.related_drafts.map((draft) => ({
       draftId: draft.draft_id,
       status: draft.status,
@@ -58,7 +63,10 @@ export function adaptManualIssueWire(wire: ManualIssueWire): ManualIssue {
   };
 }
 
-export function adaptManualIssueEnvelope(raw: unknown, expectedScope: ExpectedCleaningScope): ManualIssue {
+export function adaptManualIssueEnvelope(
+  raw: unknown,
+  expectedScope: ExpectedCleaningScope,
+): ManualIssue {
   const wire = manualIssueDetailEnvelopeWireSchema.parse(raw);
   assertCleaningScope(wire.scope, expectedScope);
   assertCleaningScope(wire.data.scope, expectedScope);
@@ -87,8 +95,13 @@ export function adaptManualIssueListItem(
     },
     issueType: wire.issue_type,
     severity: wire.severity,
+    discoverySource: wire.discovery_source,
+    annotationTaskId: wire.annotation_task_id,
     status: projectManualIssueStatus(wire.status),
-    assignee: wire.assignee && { id: wire.assignee.id, displayName: wire.assignee.display_name },
+    assignee: wire.assignee && {
+      id: wire.assignee.id,
+      displayName: wire.assignee.display_name,
+    },
     relatedDraftCount: wire.related_draft_count,
     resolutionVersion: wire.resolution_version && {
       versionId: wire.resolution_version.version_id,
@@ -102,7 +115,10 @@ export function adaptManualIssueListItem(
   };
 }
 
-export function adaptManualIssueListEnvelope(raw: unknown, expectedScope: ExpectedCleaningScope): ManualIssuePage {
+export function adaptManualIssueListEnvelope(
+  raw: unknown,
+  expectedScope: ExpectedCleaningScope,
+): ManualIssuePage {
   const wire = manualIssueListEnvelopeWireSchema.parse(raw);
   assertCleaningScope(wire.scope, expectedScope);
   wire.items.forEach((item) => assertCleaningScope(item.scope, expectedScope));

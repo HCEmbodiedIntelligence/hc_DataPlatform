@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, cast
@@ -11,6 +12,26 @@ Identifier = Annotated[
     StringConstraints(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$"),
 ]
 TaskCode = Annotated[str, StringConstraints(pattern=r"^[0-9]{8}$")]
+DatasetIdentifier = Annotated[
+    str,
+    StringConstraints(
+        min_length=10,
+        max_length=104,
+        pattern=r"^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$",
+    ),
+]
+
+
+def dataset_id_for_collection_task(
+    organization_id: str,
+    project_id: str,
+    collection_task_id: str,
+) -> str:
+    """Return the region-independent Dataset identity owned by one collection task."""
+
+    canonical_identity = "\x1f".join((organization_id, project_id, collection_task_id))
+    digest = hashlib.sha256(canonical_identity.encode("utf-8")).hexdigest()[:32]
+    return f"dataset_task_{digest}"
 
 
 def utc_now() -> datetime:
@@ -33,6 +54,18 @@ class QcOutcome(str, Enum):
     PASS = "PASS"
     RISK = "RISK"
     REJECT = "REJECT"
+
+
+class CollectionTaskPackageState(str, Enum):
+    """One received package's current path toward a browsable Episode."""
+
+    PENDING_QC = "PENDING_QC"
+    PROCESSING = "PROCESSING"
+    PUBLISHED = "PUBLISHED"
+    QUALITY_RISK = "QUALITY_RISK"
+    QUALITY_REJECTED = "QUALITY_REJECTED"
+    TECHNICAL_FAILED = "TECHNICAL_FAILED"
+    DATASET_MISMATCH = "DATASET_MISMATCH"
 
 
 class StrictModel(BaseModel):
@@ -58,6 +91,8 @@ class CollectionTarget(StrictModel):
 
 
 class CreateCollectionTask(StrictModel):
+    # Optional when omitted, but explicit JSON null is invalid.
+    dataset_id: DatasetIdentifier = Field(default_factory=_omitted_text)
     name: str = Field(min_length=1, max_length=200)
     type: str = Field(min_length=1, max_length=100)
     scenario: str = Field(min_length=1, max_length=200)
@@ -69,6 +104,7 @@ class CreateCollectionTask(StrictModel):
 class UpdateCollectionTask(StrictModel):
     # A non-null annotation with a None omission default makes PATCH fields optional
     # while keeping explicit JSON null invalid in both validation and OpenAPI.
+    dataset_id: DatasetIdentifier = Field(default_factory=_omitted_text)
     name: str = Field(default_factory=_omitted_text, min_length=1, max_length=200)
     type: str = Field(default_factory=_omitted_text, min_length=1, max_length=100)
     scenario: str = Field(default_factory=_omitted_text, min_length=1, max_length=200)
@@ -82,6 +118,7 @@ class CollectionTask(StrictModel):
     collection_task_id: Identifier
     organization_id: Identifier
     project_id: Identifier
+    dataset_id: DatasetIdentifier
     task_code: TaskCode
     name: str
     type: str
@@ -176,10 +213,41 @@ class CollectionTaskProgress(StrictModel):
     observed_sources: ManifestObservedSources
 
 
+class CollectionTaskPackage(StrictModel):
+    """Read-only lineage from a committed package to its published Episode, if any."""
+
+    schema_version: str = Field(default="1", pattern=r"^1$")
+    data_package_id: str = Field(min_length=1, max_length=256)
+    rollout_id: str = Field(min_length=1, max_length=256)
+    robot_id: str = Field(min_length=1, max_length=256)
+    state: CollectionTaskPackageState
+    qc_outcome: QcOutcome | None = None
+    workflow_status: str | None = Field(default=None, max_length=128)
+    workflow_stage: str | None = Field(default=None, max_length=128)
+    error_code: str | None = Field(default=None, max_length=256)
+    dataset_id: DatasetIdentifier | None = None
+    version_id: str | None = Field(default=None, max_length=128)
+    episode_id: str | None = Field(default=None, max_length=128)
+    revision_id: str | None = Field(default=None, max_length=128)
+    visualizable: bool
+    received_at: datetime
+    updated_at: datetime
+
+
+class CollectionTaskPackageList(StrictModel):
+    schema_version: str = Field(default="1", pattern=r"^1$")
+    collection_task_id: Identifier
+    organization_id: Identifier
+    project_id: Identifier
+    as_of: datetime
+    items: tuple[CollectionTaskPackage, ...]
+
+
 class CollectionTaskRecord(StrictModel):
     collection_task_id: Identifier
     organization_id: Identifier
     project_id: Identifier
+    dataset_id: DatasetIdentifier | None = None
     created_by: Identifier | None = None
     task_code: TaskCode | None = None
     name: str
@@ -201,6 +269,12 @@ class CollectionTaskRecord(StrictModel):
             collection_task_id=self.collection_task_id,
             organization_id=self.organization_id,
             project_id=self.project_id,
+            dataset_id=self.dataset_id
+            or dataset_id_for_collection_task(
+                self.organization_id,
+                self.project_id,
+                self.collection_task_id,
+            ),
             task_code=self.task_code,
             name=self.name,
             type=self.type,

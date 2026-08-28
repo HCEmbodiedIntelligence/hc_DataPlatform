@@ -15,14 +15,18 @@ from hc_data_platform.core.errors import problem
 from .access_models import (
     AccessAuditEvent,
     AccessRequestStatus,
+    AccountAccessOverview,
+    AccountAccessRequest,
     AccountCredential,
     AccountNotification,
     AccountNotificationKind,
     AccountNotificationResourceType,
     AccountNotificationState,
+    AccountOrganizationMembership,
     AccountPrincipal,
     AccountProfile,
     AccountProfileRecord,
+    AccountProjectMembership,
     AccountStatus,
     AvailableScope,
     CapabilityRequest,
@@ -93,6 +97,12 @@ capability_keys, status, reason, decided_by, decision_reason,
 created_at, updated_at, revision
 """.strip()
 
+_ORGANIZATION_REQUEST_COLUMNS = """
+request_id::text AS request_id, 'ORGANIZATION' AS kind, organization_id,
+NULL::text AS project_id, ARRAY[]::text[] AS capability_keys, status, reason,
+created_at, updated_at, revision
+""".strip()
+
 _ACCOUNT_PROFILE_COLUMNS = """
 principal_id::text AS principal_id, display_username AS username, display_name,
 status, created_at, updated_at, password_changed_at, account_revision AS revision
@@ -150,6 +160,12 @@ def _account_profile(cursor: Any, raw: object) -> AccountProfileRecord:
     )
 
 
+def _organization_request(cursor: Any, raw: object) -> AccountAccessRequest:
+    values = _row(cursor, raw)
+    values["capability_keys"] = tuple(cast(Sequence[str], values["capability_keys"]))
+    return AccountAccessRequest.model_validate(values)
+
+
 def _notification(cursor: Any, raw: object) -> AccountNotification:
     return AccountNotification.model_validate(_row(cursor, raw))
 
@@ -183,6 +199,23 @@ def _principal_uuid(value: str) -> str | None:
         return str(UUID(value))
     except ValueError:
         return None
+
+
+def _foreign_key_constraint_name(exc: BaseException) -> str | None:
+    if getattr(exc, "sqlstate", None) != "23503":
+        return None
+    diagnostic = getattr(exc, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    return constraint_name if isinstance(constraint_name, str) else None
+
+
+def _organization_project_not_found() -> Exception:
+    return problem(
+        status=404,
+        code="PROJECT_NOT_FOUND",
+        title="Project not found",
+        detail="The requested project does not exist in the specified organization.",
+    )
 
 
 class PostgresAccessRepository:
@@ -1917,6 +1950,496 @@ class PostgresAccessRepository:
             cursor.close()
             connection.close()
 
+    def list_organization_memberships(
+        self, *, principal_id: str
+    ) -> tuple[AccountOrganizationMembership, ...]:
+        account_id = _principal_uuid(principal_id)
+        if account_id is None:
+            return ()
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT membership.organization_id,
+                       COALESCE(directory.display_name, membership.organization_id)
+                           AS organization_name
+                FROM access_control.organization_memberships membership
+                LEFT JOIN access_control.organization_join_codes directory
+                  ON directory.organization_id = membership.organization_id
+                WHERE membership.principal_id = %s::uuid AND membership.active
+                ORDER BY membership.organization_id
+                """,
+                (account_id,),
+            )
+            return tuple(
+                AccountOrganizationMembership(
+                    organization_id=str(values["organization_id"]),
+                    organization_name=str(values["organization_name"]),
+                )
+                for values in (_row(cursor, raw) for raw in cursor.fetchall())
+            )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def account_access_overview(self, *, principal_id: str) -> AccountAccessOverview:
+        account_id = _principal_uuid(principal_id)
+        if account_id is None:
+            raise _not_found("account")
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT membership.organization_id,
+                       COALESCE(directory.display_name, membership.organization_id)
+                           AS organization_name
+                FROM access_control.organization_memberships membership
+                LEFT JOIN access_control.organization_join_codes directory
+                  ON directory.organization_id = membership.organization_id
+                WHERE membership.principal_id = %s::uuid AND membership.active
+                ORDER BY membership.organization_id
+                """,
+                (account_id,),
+            )
+            organizations = tuple(
+                AccountOrganizationMembership(
+                    organization_id=str(values["organization_id"]),
+                    organization_name=str(values["organization_name"]),
+                )
+                for values in (_row(cursor, raw) for raw in cursor.fetchall())
+            )
+            cursor.execute(
+                """
+                SELECT membership.organization_id,
+                       COALESCE(directory.display_name, membership.organization_id)
+                           AS organization_name,
+                       membership.project_id
+                FROM access_control.memberships membership
+                LEFT JOIN access_control.organization_join_codes directory
+                  ON directory.organization_id = membership.organization_id
+                WHERE membership.principal_id = %s::uuid AND membership.active
+                ORDER BY membership.organization_id, membership.project_id
+                """,
+                (account_id,),
+            )
+            projects = tuple(
+                AccountProjectMembership(
+                    organization_id=str(values["organization_id"]),
+                    organization_name=str(values["organization_name"]),
+                    project_id=str(values["project_id"]),
+                    project_name=str(values["project_id"]),
+                )
+                for values in (_row(cursor, raw) for raw in cursor.fetchall())
+            )
+            cursor.execute(
+                f"""
+                SELECT {_ORGANIZATION_REQUEST_COLUMNS}
+                FROM access_control.organization_membership_requests
+                WHERE requester_id = %s::uuid
+                """,
+                (account_id,),
+            )
+            requests: list[AccountAccessRequest] = [
+                _organization_request(cursor, raw) for raw in cursor.fetchall()
+            ]
+            cursor.execute(
+                """
+                SELECT request_id::text AS request_id, 'PROJECT' AS kind,
+                       organization_id, project_id, ARRAY[]::text[] AS capability_keys,
+                       status, reason, created_at, updated_at, revision
+                FROM access_control.membership_requests
+                WHERE requester_id = %s::uuid
+                """,
+                (account_id,),
+            )
+            requests.extend(_organization_request(cursor, raw) for raw in cursor.fetchall())
+            cursor.execute(
+                """
+                SELECT request_id::text AS request_id, 'CAPABILITY' AS kind,
+                       organization_id, project_id, capability_keys,
+                       status, reason, created_at, updated_at, revision
+                FROM access_control.capability_requests
+                WHERE requester_id = %s::uuid
+                """,
+                (account_id,),
+            )
+            requests.extend(_organization_request(cursor, raw) for raw in cursor.fetchall())
+            ordered = tuple(
+                sorted(requests, key=lambda item: (item.created_at, item.request_id), reverse=True)
+            )
+            return AccountAccessOverview(
+                organizations=organizations,
+                projects=projects,
+                requests=ordered,
+                pending_request_count=sum(
+                    item.status is AccessRequestStatus.PENDING for item in ordered
+                ),
+            )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def create_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id_or_join_code: str,
+        reason: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        principal_id = _principal_uuid(auth.subject_id)
+        if principal_id is None:
+            raise _account_principal_required()
+        payload = {
+            "organization_id_or_join_code": organization_id_or_join_code,
+            "reason": reason,
+        }
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            repeated = self._begin_idempotency(
+                cursor,
+                principal_id,
+                "organization-membership.create",
+                idempotency_key,
+                payload,
+            )
+            if repeated is not None:
+                cursor.execute(
+                    f"""
+                    SELECT {_ORGANIZATION_REQUEST_COLUMNS}
+                    FROM access_control.organization_membership_requests
+                    WHERE request_id = %s::uuid AND requester_id = %s::uuid
+                    """,
+                    (repeated, principal_id),
+                )
+                raw = cursor.fetchone()
+                if raw is None:
+                    raise _not_found("organization_membership_request")
+                connection.commit()
+                return _organization_request(cursor, raw)
+            cursor.execute(
+                """
+                SELECT organization_id
+                FROM access_control.organization_join_codes
+                WHERE organization_id = %s OR join_code = %s
+                UNION
+                SELECT organization_id
+                FROM registry.organization_projects
+                WHERE organization_id = %s
+                LIMIT 1
+                """,
+                (
+                    organization_id_or_join_code,
+                    organization_id_or_join_code,
+                    organization_id_or_join_code,
+                ),
+            )
+            raw_organization = cursor.fetchone()
+            if raw_organization is None:
+                raise _not_found("organization")
+            organization_id = str(_row(cursor, raw_organization)["organization_id"])
+            cursor.execute(
+                """
+                SELECT 1
+                FROM access_control.organization_memberships
+                WHERE principal_id = %s::uuid AND organization_id = %s AND active
+                """,
+                (principal_id, organization_id),
+            )
+            if cursor.fetchone() is not None:
+                raise problem(
+                    status=409,
+                    code="ORGANIZATION_MEMBERSHIP_ALREADY_ACTIVE",
+                    title="Organization membership already active",
+                    detail="The principal is already a member of this organization.",
+                )
+            cursor.execute(
+                """
+                SELECT 1
+                FROM access_control.organization_membership_requests
+                WHERE requester_id = %s::uuid AND organization_id = %s AND status = 'PENDING'
+                """,
+                (principal_id, organization_id),
+            )
+            if cursor.fetchone() is not None:
+                raise problem(
+                    status=409,
+                    code="ORGANIZATION_MEMBERSHIP_REQUEST_ALREADY_PENDING",
+                    title="Organization membership request already pending",
+                    detail="A pending membership request already exists for this organization.",
+                )
+            access_request_id = str(uuid4())
+            cursor.execute(
+                f"""
+                INSERT INTO access_control.organization_membership_requests (
+                    request_id, organization_id, requester_id, status, reason
+                ) VALUES (%s::uuid, %s, %s::uuid, 'PENDING', %s)
+                RETURNING {_ORGANIZATION_REQUEST_COLUMNS}
+                """,
+                (access_request_id, organization_id, principal_id, reason),
+            )
+            raw = cursor.fetchone()
+            if raw is None:
+                raise RuntimeError("PostgreSQL did not return the organization request")
+            item = _organization_request(cursor, raw)
+            self._finish_idempotency(
+                cursor,
+                principal_id,
+                "organization-membership.create",
+                idempotency_key,
+                item.request_id,
+            )
+            self._audit(
+                cursor,
+                scope_kind="PLATFORM",
+                organization_id=organization_id,
+                project_id=None,
+                actor_id=principal_id,
+                action="access.organization-membership.requested",
+                resource_type="organization_membership_request",
+                resource_id=item.request_id,
+                request_id=request_id,
+                outcome="SUCCEEDED",
+                safe_details={"status": item.status.value, "requester_id": principal_id},
+            )
+            connection.commit()
+            return item
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def decide_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        target_status: AccessRequestStatus,
+        reason: str | None,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        auth.require_capability(CAPABILITY_PLATFORM_ADMIN)
+        if target_status not in {
+            AccessRequestStatus.APPROVED,
+            AccessRequestStatus.REJECTED,
+            AccessRequestStatus.REVOKED,
+        }:
+            raise ValueError("unsupported organization membership transition")
+        payload = {
+            "request_id": access_request_id,
+            "status": target_status.value,
+            "reason": reason,
+        }
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            repeated = self._begin_idempotency(
+                cursor,
+                auth.subject_id,
+                "organization-membership.decide",
+                idempotency_key,
+                payload,
+            )
+            request_key = repeated or access_request_id
+            cursor.execute(
+                f"""
+                SELECT {_ORGANIZATION_REQUEST_COLUMNS}, requester_id::text AS requester_id
+                FROM access_control.organization_membership_requests
+                WHERE request_id = %s::uuid
+                FOR UPDATE
+                """,
+                (request_key,),
+            )
+            raw = cursor.fetchone()
+            if raw is None:
+                raise _not_found("organization_membership_request")
+            values = _row(cursor, raw)
+            requester_id = str(values.pop("requester_id"))
+            values["capability_keys"] = tuple(cast(Sequence[str], values["capability_keys"]))
+            item = AccountAccessRequest.model_validate(values)
+            if repeated is not None or item.status is target_status:
+                self._finish_idempotency(
+                    cursor,
+                    auth.subject_id,
+                    "organization-membership.decide",
+                    idempotency_key,
+                    item.request_id,
+                )
+                connection.commit()
+                return item
+            expected = (
+                AccessRequestStatus.APPROVED
+                if target_status is AccessRequestStatus.REVOKED
+                else AccessRequestStatus.PENDING
+            )
+            if item.status is not expected:
+                raise _transition_conflict(item.status)
+            cursor.execute(
+                f"""
+                UPDATE access_control.organization_membership_requests
+                SET status = %s, decided_by = %s, decision_reason = %s,
+                    updated_at = now(), revision = revision + 1
+                WHERE request_id = %s::uuid AND revision = %s
+                RETURNING {_ORGANIZATION_REQUEST_COLUMNS}
+                """,
+                (
+                    target_status.value,
+                    auth.subject_id,
+                    reason,
+                    item.request_id,
+                    item.revision,
+                ),
+            )
+            raw_updated = cursor.fetchone()
+            if raw_updated is None:
+                raise _transition_conflict(item.status)
+            updated = _organization_request(cursor, raw_updated)
+            if target_status is AccessRequestStatus.APPROVED:
+                cursor.execute(
+                    """
+                    INSERT INTO access_control.organization_memberships (
+                        principal_id, organization_id, source_request_id, active, activated_by
+                    ) VALUES (%s::uuid, %s, %s::uuid, true, %s)
+                    ON CONFLICT (principal_id, organization_id) DO UPDATE SET
+                        source_request_id = EXCLUDED.source_request_id,
+                        active = true,
+                        activated_at = now(),
+                        activated_by = EXCLUDED.activated_by,
+                        revoked_at = NULL,
+                        revoked_by = NULL
+                    """,
+                    (requester_id, item.organization_id, item.request_id, auth.subject_id),
+                )
+                self._bump_revision(cursor, requester_id)
+            elif target_status is AccessRequestStatus.REVOKED:
+                cursor.execute(
+                    """
+                    UPDATE access_control.organization_memberships
+                    SET active = false, revoked_at = now(), revoked_by = %s
+                    WHERE principal_id = %s::uuid AND organization_id = %s AND active
+                    """,
+                    (auth.subject_id, requester_id, item.organization_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE access_control.memberships
+                    SET active = false, revoked_at = now(), revoked_by = %s
+                    WHERE principal_id = %s::uuid AND organization_id = %s AND active
+                    """,
+                    (auth.subject_id, requester_id, item.organization_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE access_control.capability_grants
+                    SET active = false, revoked_at = now(), revoked_by = %s
+                    WHERE principal_id = %s::uuid AND organization_id = %s AND active
+                    """,
+                    (auth.subject_id, requester_id, item.organization_id),
+                )
+                self._bump_revision(cursor, requester_id)
+            self._finish_idempotency(
+                cursor,
+                auth.subject_id,
+                "organization-membership.decide",
+                idempotency_key,
+                item.request_id,
+            )
+            connection.commit()
+            return updated
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def withdraw_organization_membership_request(
+        self,
+        *,
+        auth: AuthContext,
+        access_request_id: str,
+        idempotency_key: str,
+        request_id: str,
+    ) -> AccountAccessRequest:
+        payload = {"request_id": access_request_id}
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            repeated = self._begin_idempotency(
+                cursor,
+                auth.subject_id,
+                "organization-membership.withdraw",
+                idempotency_key,
+                payload,
+            )
+            request_key = repeated or access_request_id
+            cursor.execute(
+                f"""
+                SELECT {_ORGANIZATION_REQUEST_COLUMNS}
+                FROM access_control.organization_membership_requests
+                WHERE request_id = %s::uuid AND requester_id = %s::uuid
+                FOR UPDATE
+                """,
+                (request_key, auth.subject_id),
+            )
+            raw = cursor.fetchone()
+            if raw is None:
+                raise _not_found("organization_membership_request")
+            item = _organization_request(cursor, raw)
+            if repeated is not None:
+                connection.commit()
+                return item
+            if item.status is not AccessRequestStatus.PENDING:
+                raise _transition_conflict(item.status)
+            cursor.execute(
+                f"""
+                UPDATE access_control.organization_membership_requests
+                SET status = 'WITHDRAWN', updated_at = now(), revision = revision + 1
+                WHERE request_id = %s::uuid AND revision = %s
+                RETURNING {_ORGANIZATION_REQUEST_COLUMNS}
+                """,
+                (item.request_id, item.revision),
+            )
+            raw_updated = cursor.fetchone()
+            if raw_updated is None:
+                raise _transition_conflict(item.status)
+            updated = _organization_request(cursor, raw_updated)
+            self._finish_idempotency(
+                cursor,
+                auth.subject_id,
+                "organization-membership.withdraw",
+                idempotency_key,
+                item.request_id,
+            )
+            self._audit(
+                cursor,
+                scope_kind="PLATFORM",
+                organization_id=item.organization_id,
+                project_id=None,
+                actor_id=auth.subject_id,
+                action="access.organization-membership.withdrawn",
+                resource_type="organization_membership_request",
+                resource_id=item.request_id,
+                request_id=request_id,
+                outcome="SUCCEEDED",
+                safe_details={"status": updated.status.value},
+            )
+            connection.commit()
+            return updated
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
     def create_membership_request(
         self,
         *,
@@ -1986,8 +2509,11 @@ class PostgresAccessRepository:
             return item
         except Exception as exc:
             connection.rollback()
-            if getattr(exc, "sqlstate", None) == "23503":
+            constraint_name = _foreign_key_constraint_name(exc)
+            if constraint_name == "membership_requests_requester_id_fkey":
                 raise _account_principal_required() from exc
+            if constraint_name == "membership_requests_organization_project_fk":
+                raise _organization_project_not_found() from exc
             if getattr(exc, "sqlstate", None) == "23505":
                 raise problem(
                     status=409,
@@ -2142,6 +2668,20 @@ class PostgresAccessRepository:
                 )
             updated = _membership(cursor, raw)
             if target_status is AccessRequestStatus.APPROVED:
+                cursor.execute(
+                    """
+                    INSERT INTO access_control.organization_memberships (
+                        principal_id, organization_id, source_request_id, active, activated_by
+                    ) VALUES (%s::uuid, %s, NULL, true, %s)
+                    ON CONFLICT (principal_id, organization_id) DO UPDATE SET
+                        active = true,
+                        activated_at = now(),
+                        activated_by = EXCLUDED.activated_by,
+                        revoked_at = NULL,
+                        revoked_by = NULL
+                    """,
+                    (item.requester_id, organization_id, auth.subject_id),
+                )
                 cursor.execute(
                     """
                     INSERT INTO access_control.memberships (
@@ -2356,8 +2896,11 @@ class PostgresAccessRepository:
             return item
         except Exception as exc:
             connection.rollback()
-            if getattr(exc, "sqlstate", None) == "23503":
+            constraint_name = _foreign_key_constraint_name(exc)
+            if constraint_name == "capability_requests_requester_id_fkey":
                 raise _account_principal_required() from exc
+            if constraint_name == "capability_requests_organization_project_fk":
+                raise _organization_project_not_found() from exc
             raise
         finally:
             cursor.close()

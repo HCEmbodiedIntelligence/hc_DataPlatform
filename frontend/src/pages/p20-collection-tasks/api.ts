@@ -8,11 +8,16 @@ import { request } from "../../shared/api/http-client";
 import { getRuntimeConfig } from "../../shared/config/runtime";
 import { makeScopeKey, type Scope } from "../../entities/scope";
 import { getShellState } from "../../shared/scope/shell-store";
+import { fetchDatasets } from "../../features/datasets/api/queries";
 
 export type CollectionTask = components["schemas"]["CollectionTask"];
 export type CollectionTaskPage = components["schemas"]["CollectionTaskPage"];
 export type CollectionTaskProgress =
   components["schemas"]["CollectionTaskProgress"];
+export type CollectionTaskPackage =
+  components["schemas"]["CollectionTaskPackage"];
+export type CollectionTaskPackageList =
+  components["schemas"]["CollectionTaskPackageList"];
 export type CollectionTaskStatus =
   components["schemas"]["CollectionTaskStatus"];
 export type CreateCollectionTask =
@@ -34,7 +39,17 @@ export interface CollectionTaskSnapshot {
   readonly etag: string;
 }
 
+export interface AssignableDataset {
+  readonly datasetId: string;
+  readonly name: string;
+  readonly folderPath: readonly string[];
+}
+
 export interface CollectionTaskGateway {
+  listAssignableDatasets?: (
+    scope: CollectionTaskScope,
+    signal?: AbortSignal,
+  ) => Promise<readonly AssignableDataset[]>;
   list: (
     scope: CollectionTaskScope,
     query: Readonly<ListCollectionTaskQuery>,
@@ -45,6 +60,11 @@ export interface CollectionTaskGateway {
     collectionTaskId: string,
     signal?: AbortSignal,
   ) => Promise<CollectionTaskProgress>;
+  packages: (
+    scope: CollectionTaskScope,
+    collectionTaskId: string,
+    signal?: AbortSignal,
+  ) => Promise<CollectionTaskPackageList>;
   detail: (
     scope: CollectionTaskScope,
     collectionTaskId: string,
@@ -220,6 +240,46 @@ async function getCollectionTaskSnapshot(
 }
 
 export const collectionTaskGateway: CollectionTaskGateway = {
+  async listAssignableDatasets(scope, signal) {
+    const datasets: AssignableDataset[] = [];
+    let after: string | undefined;
+    do {
+      const page = await fetchDatasets(
+        { sort: "nameAsc", limit: 100, ...(after ? { after } : {}) },
+        signal,
+      );
+      if (
+        page.scope.organizationId !== scope.organizationId ||
+        page.scope.projectId !== scope.projectId ||
+        page.scope.regionCode !== scope.regionCode
+      ) {
+        throw createDomainError({
+          code: "CONTRACT_MISMATCH",
+          message: "数据集候选项与当前组织、项目或区域不匹配。",
+          fieldErrors: [],
+          operationErrors: [],
+          blockedReasons: [],
+          requestId: page.requestId,
+          retryable: false,
+          httpStatus: null,
+        });
+      }
+      datasets.push(
+        ...page.items
+          .filter((item) => item.availability === "ACTIVE")
+          .map((item) => ({
+            datasetId: item.datasetId,
+            name: item.name,
+            folderPath: item.folderPath,
+          })),
+      );
+      after = page.pageInfo.hasNextPage
+        ? (page.pageInfo.after ?? undefined)
+        : undefined;
+    } while (after);
+    return datasets;
+  },
+
   async list(scope, query, signal) {
     const page = await request<CollectionTaskPage>({
       method: "GET",
@@ -256,6 +316,32 @@ export const collectionTaskGateway: CollectionTaskGateway = {
       });
     }
     return progress;
+  },
+
+  async packages(scope, collectionTaskId, signal) {
+    const packages = await request<CollectionTaskPackageList>({
+      method: "GET",
+      path: `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}/packages`,
+      scope,
+      ...(signal ? { signal } : {}),
+    });
+    if (
+      packages.organization_id !== scope.organizationId ||
+      packages.project_id !== scope.projectId ||
+      packages.collection_task_id !== collectionTaskId
+    ) {
+      throw createDomainError({
+        code: "CONTRACT_MISMATCH",
+        message: "任务数据包响应与当前任务不匹配。",
+        fieldErrors: [],
+        operationErrors: [],
+        blockedReasons: [],
+        requestId: null,
+        retryable: false,
+        httpStatus: null,
+      });
+    }
+    return packages;
   },
 
   detail: getCollectionTaskSnapshot,

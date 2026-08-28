@@ -16,6 +16,7 @@ import { formalUploadSessionFixture } from "../fixtures/ingest";
 import { createVisualAnnotationBundle } from "../../pages/p08-data-annotation/testing/annotation-fixture";
 
 const api = "*/api/v1/projects/:projectId/regions/:regionCode/annotation-tasks";
+const manifestDiscoveryApi = `${api}/:taskId/manifest-discovery`;
 const entryResolutionApi =
   "*/api/v1/projects/:projectId/regions/:regionCode/episode-revisions/:revisionId/annotation-task-entry-resolution";
 
@@ -235,6 +236,54 @@ function replay(
 }
 
 export const annotationHandlers = [
+  http.get(
+    "*/api/v1/projects/:projectId/datasets/:datasetId/rollouts/:rolloutId/steps",
+    ({ request, params }) => {
+      if (params.rolloutId !== formalUploadSessionFixture.rollout_id)
+        return passthrough();
+      const url = new URL(request.url);
+      const startStep = Number(url.searchParams.get("startStep"));
+      const endStep = Number(url.searchParams.get("endStep"));
+      const version = Number(url.searchParams.get("version"));
+      if (
+        !Number.isSafeInteger(startStep) ||
+        !Number.isSafeInteger(endStep) ||
+        !Number.isSafeInteger(version) ||
+        startStep < 0 ||
+        endStep <= startStep ||
+        endStep - startStep > 480
+      )
+        return problem(422, "STEP_WINDOW_INVALID", "关节角步骤窗口无效");
+      return HttpResponse.json({
+        schema_version: "1",
+        project_id: String(params.projectId),
+        dataset_id: String(params.datasetId),
+        dataset_version: version,
+        rollout_id: String(params.rolloutId),
+        start_step: startStep,
+        end_step: endStep,
+        steps: Array.from({ length: endStep - startStep }, (_, offset) => {
+          const step = startStep + offset;
+          const values = Array.from({ length: 7 }, (_, joint) => {
+            const phase = step / 22 + joint * 0.72;
+            return Math.sin(phase) * (0.72 + joint * 0.06) + joint * 0.08;
+          });
+          return {
+            schema_version: "1",
+            rollout_id: String(params.rolloutId),
+            step_index: step,
+            timestamp_ns: `${(BigInt(step) * 1_000_000_000n) / 30n}`,
+            modalities: { "joint.position": values },
+            source_timestamps_ns: { "joint.position": [] },
+            time_error_ns: { "joint.position": 0 },
+            valid: { "joint.position": true },
+            repeated: { "joint.position": false },
+            sample_valid: true,
+          };
+        }),
+      });
+    },
+  ),
   // This module is first in the eager handler registry. Bypass Vite source modules before
   // legacy command-style matchers in unrelated page handlers attempt to parse the URL.
   http.all(/^(?!.*\/api\/v1\/).*$/u, () => passthrough()),
@@ -404,6 +453,38 @@ export const annotationHandlers = [
       ),
     );
   }),
+  http.get(manifestDiscoveryApi, ({ request, params }) => {
+    const invalid = validateRead(request, params);
+    if (invalid) return invalid;
+    const scenario = getAnnotationScenario();
+    const cameraCount =
+      scenario === "dual-arm-14-axis-multicam"
+        ? 3
+        : scenario === "single-arm-6-axis-camera-pointcloud" ||
+            scenario === "single-arm-7-axis-camera"
+          ? 1
+          : 3;
+    const fixture = createVisualAnnotationBundle({ cameraCount });
+    const manifest = fixture.manifest;
+    if (!manifest)
+      return problem(
+        500,
+        "FIXTURE_INVALID",
+        "标注数据清单模拟数据缺失",
+      );
+    return HttpResponse.json({
+      ...manifest,
+      topics: [
+        ...manifest.topics,
+        {
+          name: "/robot/joint_states",
+          required: true,
+          schema_name: "sensor_msgs/msg/JointState",
+          message_encoding: "cdr",
+        },
+      ],
+    });
+  }),
   http.get(`${api}/:taskId`, async ({ request, params }) => {
     const invalid = validateRead(request, params);
     if (invalid) return invalid;
@@ -487,7 +568,7 @@ export const annotationHandlers = [
     await scenarioDelay();
     const scenario = getAnnotationScenario();
     if (scenario === "validation-error")
-      return problem(422, "ANNOTATION_DRAFT_INVALID", "Schema 校验失败", [
+      return problem(422, "ANNOTATION_DRAFT_INVALID", "数据结构校验失败", [
         {
           path: "/entries/0/label_code",
           code: "REQUIRED",

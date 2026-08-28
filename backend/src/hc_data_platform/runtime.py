@@ -7,6 +7,7 @@ import json
 import os
 import socket
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote, urlparse
@@ -23,6 +24,7 @@ from hc_data_platform.annotation.auto_jobs import (
     AutoAnnotationOutboxHandler,
     HttpAutoAnnotationProvider,
     PostgresAutoAnnotationJobRepository,
+    PostgresAutoAnnotationSamplingRepository,
 )
 from hc_data_platform.annotation.automation import (
     AutomaticAnnotationTaskService,
@@ -80,9 +82,13 @@ from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepo
 from hc_data_platform.dataset_registry.router import configure_dataset_page
 from hc_data_platform.dataset_registry.service import DatasetPageService
 from hc_data_platform.ingest.adapters import S3ObjectStorage
+from hc_data_platform.ingest.device_facts import (
+    DeviceCaptureFactService,
+    PostgresDeviceCaptureFactRepository,
+)
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser
 from hc_data_platform.ingest.postgres import PostgresIngestPersistence
-from hc_data_platform.ingest.router import configure_ingest_service
+from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
@@ -112,18 +118,24 @@ from hc_data_platform.manual_cleaning.service import ManualIssueService
 from hc_data_platform.preview.adapters import (
     AnnotationExclusionAdapter,
     FFmpegHlsEncoder,
-    FilePreviewCache,
-    FilePreviewMediaReader,
     LanceStepReaderAdapter,
     S3ImageRefResolver,
 )
+from hc_data_platform.preview.artifact_store import S3PreviewArtifactStore
 from hc_data_platform.preview.audit import PostgresPreviewAuditRecorder, PreviewAuditRecorder
+from hc_data_platform.preview.gc import PreviewGarbageCollector
 from hc_data_platform.preview.memory import HmacUrlSigner
+from hc_data_platform.preview.postgres import PostgresPreviewRepository
+from hc_data_platform.preview.profiles import PreviewProfileCatalog
 from hc_data_platform.preview.router import (
     configure_preview_audit_recorder,
     configure_preview_service,
 )
-from hc_data_platform.preview.service import PreviewService
+from hc_data_platform.preview.service import (
+    PreviewControlPlaneService,
+    PreviewGenerationService,
+)
+from hc_data_platform.preview.temporal_queue import TemporalPreviewJobQueue
 from hc_data_platform.publishing.adapters import (
     ApprovedAnnotationSnapshotAdapter,
     CatalogSnapshotAdapter,
@@ -175,6 +187,12 @@ from hc_data_platform.storage.dispatch import (
     StorageScheduleEnqueuer,
 )
 from hc_data_platform.storage.executor import PostgresLifecycleBatchExecutor
+from hc_data_platform.storage.inventory import (
+    PostgresStorageInventoryCatalog,
+    S3StorageInventoryProvider,
+    StorageInventorySnapshotProducer,
+)
+from hc_data_platform.storage.inventory_worker import StorageInventoryRuntime
 from hc_data_platform.storage.object_store import S3StorageObjectOperator
 from hc_data_platform.storage.postgres import (
     PostgresStorageIdempotencyStore,
@@ -199,6 +217,11 @@ from hc_data_platform.workflow.ingest_plan import PostgresIngestWorkflowInputRes
 from hc_data_platform.workflow.models import (
     AlignmentActivityInput,
     CatalogFragmentPayloadV1,
+)
+from hc_data_platform.workflow.postgres import PostgresWorkflowJobRepository
+from hc_data_platform.workflow.projection_store import (
+    S3ProjectionArtifactStore,
+    S3ProjectionStagingSweeper,
 )
 from hc_data_platform.workflow.service import TemporalWorkflowLauncher
 from hc_data_platform.workflow.worker import DEFAULT_TASK_QUEUE
@@ -326,6 +349,7 @@ class RuntimeComponents:
     audit_governance: AuditGovernanceService
     dashboard: DashboardService
     ingest: UploadSessionService
+    device_capture_facts: DeviceCaptureFactService
     collection_tasks: CollectionTaskService
     storage: StorageGovernanceService
     registry: RegistryService
@@ -344,7 +368,7 @@ class RuntimeComponents:
     verification_repository: PostgresVerificationRepository
     quality_repository: PostgresQualityRepository
     alignment_repository: PostgresAlignmentRepository
-    preview: PreviewService
+    preview: PreviewControlPlaneService
     preview_audit: PreviewAuditRecorder
     publisher: DatasetPublisher
     exporter: ExportCoordinator
@@ -414,7 +438,9 @@ def _decoder(settings: Settings) -> DecoderProbe:
     )
 
 
-def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
+def build_runtime(
+    settings: Settings | None = None, *, include_media: bool = False
+) -> RuntimeComponents:
     resolved = settings or get_settings()
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
     hmac_secret = resolved.auth_abuse_hmac_secret
@@ -598,6 +624,8 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         max_concurrent_jobs_per_project=resolved.auto_annotation_max_concurrent_jobs,
         max_jobs_per_hour=resolved.auto_annotation_max_jobs_per_hour,
         daily_cost_limit_micros=resolved.auto_annotation_daily_cost_limit_micros,
+        sampling_repository=PostgresAutoAnnotationSamplingRepository(connection_factory),
+        require_sampling_manifest=True,
     )
     automatic_annotation = AutomaticAnnotationTaskService(
         PostgresAutomaticAnnotationRepository(connection_factory)
@@ -610,6 +638,7 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
     lance_root = resolved.lance_root_uri or f"s3://{resolved.object_store_bucket}/lance"
     lance_storage = LanceAdapter(
         lance_root,
+        object_store_client=s3_client,
         storage_options={
             "aws_endpoint": resolved.object_store_endpoint,
             "aws_access_key_id": resolved.object_store_access_key,
@@ -624,19 +653,52 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         PostgresAdvisoryDatasetLock(connection_factory),
     )
 
-    preview = PreviewService(
-        step_reader=LanceStepReaderAdapter(
-            catalog,
-            image_ref_resolver=S3ImageRefResolver(
-                s3_client,
-                resolved.object_store_bucket,
-            ),
-        ),
-        exclusions=AnnotationExclusionAdapter(annotation),
-        encoder=FFmpegHlsEncoder(Path(resolved.preview_cache_root) / "media"),
-        cache=FilePreviewCache(Path(resolved.preview_cache_root) / "metadata"),
+    preview_repository = PostgresPreviewRepository(connection_factory)
+    preview_store = S3PreviewArtifactStore(
+        s3_client,
+        resolved.object_store_bucket,
+        presign_client=s3_presign_client,
+    )
+    preview_profiles = PreviewProfileCatalog(resolved.preview_allowed_profiles)
+    preview_queue = TemporalPreviewJobQueue(
+        TemporalWorkflowLauncher(
+            resolved.temporal_target,
+            namespace=os.getenv("HC_TEMPORAL_NAMESPACE", "default"),
+            task_queue=resolved.media_temporal_task_queue,
+        )
+    )
+    preview = PreviewControlPlaneService(
+        repository=preview_repository,
+        store=preview_store,
         signer=HmacUrlSigner(resolved.cursor_secret.encode()),
-        media_reader=FilePreviewMediaReader(Path(resolved.preview_cache_root) / "media"),
+        queue=preview_queue,
+        profiles=preview_profiles,
+        artifact_ttl=timedelta(days=resolved.preview_artifact_ttl_days),
+        session_ttl=timedelta(minutes=resolved.preview_session_ttl_minutes),
+    )
+    preview_generation = (
+        PreviewGenerationService(
+            step_reader=LanceStepReaderAdapter(
+                catalog,
+                page_size=512,
+                image_ref_resolver=S3ImageRefResolver(
+                    s3_client,
+                    resolved.object_store_bucket,
+                ),
+            ),
+            exclusions=AnnotationExclusionAdapter(annotation),
+            encoder=FFmpegHlsEncoder(
+                Path(resolved.preview_cache_root) / "staging",
+                profiles=preview_profiles,
+                ffmpeg_threads=resolved.media_ffmpeg_threads,
+            ),
+            repository=preview_repository,
+            store=preview_store,
+            profiles=preview_profiles,
+            artifact_ttl=timedelta(days=resolved.preview_artifact_ttl_days),
+        )
+        if include_media
+        else None
     )
     preview_audit = PostgresPreviewAuditRecorder(connection_factory)
     catalog_audit = PostgresLanceCatalogAuditRecorder(connection_factory)
@@ -680,12 +742,21 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
             ChunkedObjectStorageReader(object_storage),
             catalog,
             decoder=decoder,
+            projection_store=S3ProjectionArtifactStore(
+                s3_client,
+                resolved.object_store_bucket,
+                Path(resolved.alignment_staging_root) / "projections",
+            ),
+            projection_staging_root=(
+                Path(resolved.alignment_staging_root) / "projections"
+            ),
+            projection_ttl=timedelta(hours=resolved.preview_staging_ttl_hours),
         ),
         dataset_ingest_projection=PostgresDatasetIngestProjector(connection_factory),
         fragment_writers=ArrowFragmentWriterFactory(Path(resolved.alignment_staging_root)),
         catalog_fragments=ArrowCatalogFragmentAdapter(catalog_repository),
         catalog=catalog,
-        preview=preview,
+        preview=preview_generation,
         publisher=publisher,
         exporter=exporter,
         catalog_reconciler=catalog,
@@ -698,6 +769,7 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
             connection_factory,
             storage_object_operator,
         ),
+        workflow_jobs=PostgresWorkflowJobRepository(connection_factory),
     )
     return RuntimeComponents(
         access=access,
@@ -707,6 +779,9 @@ def build_runtime(settings: Settings | None = None) -> RuntimeComponents:
         audit_governance=audit_governance,
         dashboard=dashboard,
         ingest=ingest,
+        device_capture_facts=DeviceCaptureFactService(
+            PostgresDeviceCaptureFactRepository(connection_factory)
+        ),
         collection_tasks=collection_tasks,
         storage=storage,
         registry=registry,
@@ -738,6 +813,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_audit_projection(runtime.audit_projection, runtime.audit_governance)
     configure_dashboard(runtime.dashboard)
     configure_ingest_service(runtime.ingest)
+    configure_device_capture_facts(runtime.device_capture_facts)
     configure_collection_tasks(runtime.collection_tasks)
     configure_storage_governance(runtime.storage)
     configure_registry(runtime.registry)
@@ -770,6 +846,73 @@ def activity_dependencies() -> ActivityDependencies:
     return build_runtime().activities
 
 
+def media_activity_dependencies() -> ActivityDependencies:
+    """Media-worker-only factory; the API and main worker never construct FFmpeg."""
+
+    return build_runtime(include_media=True).activities
+
+
+def build_preview_gc(settings: Settings | None = None) -> PreviewGarbageCollector:
+    """Compose exact-manifest preview GC for the main worker's scoped loop."""
+
+    resolved = settings or get_settings()
+    connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
+    s3_client, _, _ = _s3(resolved)
+    return PreviewGarbageCollector(
+        PostgresPreviewRepository(connection_factory),
+        S3PreviewArtifactStore(s3_client, resolved.object_store_bucket),
+        project_quota_bytes=resolved.preview_project_quota_bytes,
+        global_quota_bytes=resolved.preview_global_quota_bytes,
+        high_watermark_percent=resolved.preview_high_watermark_percent,
+        low_watermark_percent=resolved.preview_low_watermark_percent,
+    )
+
+
+def build_projection_staging_sweeper(
+    settings: Settings | None = None,
+) -> S3ProjectionStagingSweeper:
+    resolved = settings or get_settings()
+    s3_client, _, _ = _s3(resolved)
+    return S3ProjectionStagingSweeper(
+        s3_client,
+        resolved.object_store_bucket,
+        ttl=timedelta(hours=resolved.preview_staging_ttl_hours),
+    )
+
+
+def build_storage_inventory(
+    settings: Settings | None = None,
+    *,
+    scopes: tuple[str, ...] | None = None,
+) -> StorageInventoryRuntime:
+    """Compose the project catalog, S3 evidence reader, and sealed snapshot service."""
+
+    resolved = settings or get_settings()
+    configured_scopes = resolved.storage_inventory_scopes if scopes is None else scopes
+    if not configured_scopes:
+        raise ValueError("at least one exact storage inventory scope is required")
+    connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
+    s3_client, _, _ = _s3(resolved)
+    service = StorageGovernanceService(
+        PostgresStorageRepository(connection_factory),
+        cursor_secret=resolved.cursor_secret,
+    )
+    return StorageInventoryRuntime(
+        producer=StorageInventorySnapshotProducer(
+            PostgresStorageInventoryCatalog(
+                connection_factory,
+                object_store_bucket=resolved.object_store_bucket,
+                artifact_prefix=resolved.artifact_prefix,
+            ),
+            S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
+            service,
+            observation_interval_seconds=max(int(resolved.storage_inventory_interval_seconds), 1),
+        ),
+        scopes=configured_scopes,
+        interval_seconds=resolved.storage_inventory_interval_seconds,
+    )
+
+
 def build_worker_outbox(
     settings: Settings | None = None,
     *,
@@ -787,6 +930,7 @@ def build_worker_outbox(
     catalog = LanceCatalogService(
         LanceAdapter(
             lance_root,
+            object_store_client=s3_client,
             storage_options={
                 "aws_endpoint": resolved.object_store_endpoint,
                 "aws_access_key_id": resolved.object_store_access_key,
@@ -864,6 +1008,8 @@ def build_worker_outbox(
         max_concurrent_jobs_per_project=resolved.auto_annotation_max_concurrent_jobs,
         max_jobs_per_hour=resolved.auto_annotation_max_jobs_per_hour,
         daily_cost_limit_micros=resolved.auto_annotation_daily_cost_limit_micros,
+        sampling_repository=PostgresAutoAnnotationSamplingRepository(connection_factory),
+        require_sampling_manifest=True,
     )
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),

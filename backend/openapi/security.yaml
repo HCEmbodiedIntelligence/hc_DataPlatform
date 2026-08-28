@@ -540,6 +540,131 @@ paths:
         "401": {$ref: "#/components/responses/AccessUnauthorized"}
         "403": {$ref: "#/components/responses/AccessForbidden"}
         "422": {$ref: "#/components/responses/AccessUnprocessable"}
+  /api/v1/account/access-overview:
+    get:
+      operationId: getOwnAccountAccessOverview
+      tags: [access]
+      summary: Read the current account's organization, project, and request relationships.
+      description: This session-level route remains available when the account has no project scope.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Current account access relationships and request history.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccountAccessOverview"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+  /api/v1/account/organization-membership-requests:
+    post:
+      operationId: createOrganizationMembershipRequest
+      tags: [access]
+      summary: Request an organization relationship without requiring project scope.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OrganizationMembershipRequestCreate"}
+      responses:
+        "201":
+          description: Organization membership request created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccountAccessRequest"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/account/organization-membership-requests/{access_request_id}:withdraw:
+    parameters:
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: withdrawOrganizationMembershipRequest
+      tags: [access]
+      summary: Withdraw the current account's pending organization request.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      responses:
+        "200":
+          description: Organization membership request withdrawn.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccountAccessRequest"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/organization-membership-requests/{access_request_id}:approve:
+    parameters:
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: approveOrganizationMembershipRequest
+      tags: [access]
+      summary: Approve a pending organization membership request as a platform administrator.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200":
+          description: Organization membership request updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccountAccessRequest"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/organization-membership-requests/{access_request_id}:reject:
+    parameters:
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: rejectOrganizationMembershipRequest
+      tags: [access]
+      summary: Reject a pending organization membership request as a platform administrator.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200":
+          description: Organization membership request updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccountAccessRequest"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
+  /api/v1/organization-membership-requests/{access_request_id}:revoke:
+    parameters:
+      - {$ref: "#/components/parameters/AccessRequestId"}
+    post:
+      operationId: revokeOrganizationMembershipRequest
+      tags: [access]
+      summary: Revoke an approved organization relationship without deleting the account.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/AccessIdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/AccessDecisionBody"}
+      responses:
+        "200":
+          description: Organization membership request updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AccountAccessRequest"}
+        "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "403": {$ref: "#/components/responses/AccessForbidden"}
+        "409": {$ref: "#/components/responses/AccessConflict"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
+        "429": {$ref: "#/components/responses/AccessTooManyRequests"}
   /api/v1/organizations/{organization_id}/projects/{project_id}/membership-requests:
     parameters:
       - {$ref: "#/components/parameters/AccessOrganizationId"}
@@ -1319,12 +1444,25 @@ components:
           uniqueItems: true
           items: {type: string, minLength: 1}
           description: Authoritative approved capability keys for this exact project; legacy roles are compatibility projections only.
+    AvailableOrganization:
+      type: object
+      additionalProperties: false
+      required: [organization_id, organization_name]
+      description: Active organization relationship that grants no project data by itself.
+      properties:
+        organization_id: {type: string, minLength: 1, maxLength: 256}
+        organization_name: {type: string, minLength: 1, maxLength: 256}
+        member_status: {type: string, const: ACTIVE, default: ACTIVE}
     SessionBootstrap:
       type: object
       additionalProperties: false
       required: [principal, available_scopes, capability_revision]
       properties:
         principal: {$ref: "#/components/schemas/AccountPrincipal"}
+        available_organizations:
+          type: array
+          items: {$ref: "#/components/schemas/AvailableOrganization"}
+          default: []
         available_scopes:
           type: array
           items: {$ref: "#/components/schemas/AvailableScope"}
@@ -1334,6 +1472,64 @@ components:
           items: {type: string, minLength: 1}
           default: []
         capability_revision: {type: integer, minimum: 0}
+    OrganizationMembershipRequestCreate:
+      type: object
+      additionalProperties: false
+      required: [organization_id_or_join_code, reason]
+      properties:
+        organization_id_or_join_code: {type: string, minLength: 1, maxLength: 256}
+        reason: {type: string, minLength: 1, maxLength: 2000}
+    AccountOrganizationMembership:
+      type: object
+      additionalProperties: false
+      required: [organization_id, organization_name]
+      properties:
+        organization_id: {type: string, minLength: 1, maxLength: 256}
+        organization_name: {type: string, minLength: 1, maxLength: 256}
+        member_status: {type: string, const: ACTIVE, default: ACTIVE}
+    AccountProjectMembership:
+      type: object
+      additionalProperties: false
+      required: [organization_id, organization_name, project_id, project_name]
+      properties:
+        organization_id: {type: string, minLength: 1, maxLength: 256}
+        organization_name: {type: string, minLength: 1, maxLength: 256}
+        project_id: {type: string, minLength: 1, maxLength: 256}
+        project_name: {type: string, minLength: 1, maxLength: 256}
+        member_status: {type: string, const: ACTIVE, default: ACTIVE}
+    AccountAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, kind, organization_id, status, created_at, updated_at, revision]
+      properties:
+        request_id: {type: string, minLength: 1}
+        kind: {type: string, enum: [ORGANIZATION, PROJECT, CAPABILITY]}
+        organization_id: {type: string, minLength: 1, maxLength: 256}
+        project_id: {type: [string, "null"], maxLength: 256}
+        capability_keys:
+          type: array
+          items: {type: string}
+          default: []
+        status: {$ref: "#/components/schemas/AccessRequestStatus"}
+        reason: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        revision: {type: integer, minimum: 1}
+    AccountAccessOverview:
+      type: object
+      additionalProperties: false
+      required: [organizations, projects, requests, pending_request_count]
+      properties:
+        organizations:
+          type: array
+          items: {$ref: "#/components/schemas/AccountOrganizationMembership"}
+        projects:
+          type: array
+          items: {$ref: "#/components/schemas/AccountProjectMembership"}
+        requests:
+          type: array
+          items: {$ref: "#/components/schemas/AccountAccessRequest"}
+        pending_request_count: {type: integer, minimum: 0}
     MembershipRequestCreate:
       type: object
       additionalProperties: false

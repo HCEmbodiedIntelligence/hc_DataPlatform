@@ -186,6 +186,11 @@ def test_outbox_scopes_require_exact_organization_project_region_triples() -> No
         "organization-a/project-a/cn-east",
         "organization-b/project-b/cn-west",
     )
+    inventory = Settings(
+        storage_inventory_scopes=(" organization-a/project-a/cn-east ",),
+        _env_file=None,
+    )
+    assert inventory.storage_inventory_scopes == ("organization-a/project-a/cn-east",)
 
     for invalid in (
         ("project-a/cn-east",),
@@ -194,10 +199,20 @@ def test_outbox_scopes_require_exact_organization_project_region_triples() -> No
     ):
         with pytest.raises(ValidationError, match="scope triples"):
             Settings(outbox_scopes=invalid, _env_file=None)
+        with pytest.raises(ValidationError, match="scope triples"):
+            Settings(storage_inventory_scopes=invalid, _env_file=None)
 
     with pytest.raises(ValidationError, match="duplicate scope triples"):
         Settings(
             outbox_scopes=(
+                "organization-a/project-a/cn-east",
+                "organization-a/project-a/cn-east",
+            ),
+            _env_file=None,
+        )
+    with pytest.raises(ValidationError, match="duplicate scope triples"):
+        Settings(
+            storage_inventory_scopes=(
                 "organization-a/project-a/cn-east",
                 "organization-a/project-a/cn-east",
             ),

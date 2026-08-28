@@ -91,6 +91,8 @@ describe("StorageObjectDrawer focus lifecycle", () => {
     await user.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "对象详情" });
     const close = screen.getByRole("button", { name: "关闭对象详情" });
+    expect(screen.queryByText("只读诊断")).not.toBeInTheDocument();
+    expect(screen.getByText(object.displayKey)).toBeVisible();
     expect(trigger).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();

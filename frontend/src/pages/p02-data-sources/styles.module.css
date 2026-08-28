@@ -144,10 +144,14 @@
   margin-top: 2px;
 }
 
-.page :global([class*='toolbarRegion']) :global([class*='filterToolbar']) {
-  padding: 16px;
+.page :global([class*='toolbarRegion']) > :global([class*='filterToolbar']) {
+  padding: 12px 14px;
   border-radius: var(--hc-radius-lg, 16px);
   box-shadow: var(--hc-shadow-sm);
+}
+
+.page :global([class*='toolbarRegion']) > :global([data-filter-toolbar='collapsible']) {
+  padding: 0;
 }
 
 .page :global([class*='filterForm']) {
@@ -159,8 +163,8 @@
 
 .page :global([class*='filterFields']) {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 9px 12px;
+  grid-template-columns: minmax(210px, 1.4fr) repeat(4, minmax(130px, 1fr));
+  gap: 8px 10px;
 }
 
 .pageWithInspector :global([class*='toolbarRegion']),
@@ -232,8 +236,9 @@
   min-width: 0;
   gap: var(--hc-space-1, 4px);
   color: var(--hc-color-text-muted, #64736f);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1.35;
 }
 
 .filterField:first-child {
@@ -244,6 +249,18 @@
 .filterField :global(.ant-input-affix-wrapper) {
   width: 100%;
   min-width: 0;
+}
+
+.page
+  :global([data-filter-toolbar='collapsible'])
+  .filterField
+  :global(.ant-input-affix-wrapper),
+.page
+  :global([data-filter-toolbar='collapsible'])
+  .filterField
+  :global(.ant-select-single) {
+  height: 40px;
+  min-height: 40px;
 }
 
 .identity {

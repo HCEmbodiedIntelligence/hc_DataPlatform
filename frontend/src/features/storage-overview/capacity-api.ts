@@ -484,7 +484,7 @@ export async function getCapacitySnapshot(
     endpoint: "getStorageCapacity",
   });
   if (result.project_id !== scope.projectId) {
-    throw contractMismatch("容量快照与当前项目不匹配。");
+    throw contractMismatch("容量记录与当前项目不匹配。");
   }
   return result;
 }
@@ -511,7 +511,7 @@ export async function getCapacityInventory(
     result.project_id !== scope.projectId ||
     result.snapshot_id !== snapshotId
   ) {
-    throw contractMismatch("容量清单与当前项目或固定快照不匹配。");
+    throw contractMismatch("容量清单与当前项目或固定盘点记录不匹配。");
   }
   return result;
 }

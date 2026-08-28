@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { History, RefreshCw, ShieldCheck, Tags } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState, type JSX } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AnnotationPageState } from "../../features/annotation";
@@ -28,9 +28,9 @@ const revisionStatusOptions: readonly {
   readonly label: string;
 }[] = [
   { value: "ALL", label: "全部状态" },
-  { value: "DRAFT", label: "草稿" },
+  { value: "DRAFT", label: "待标注" },
   { value: "SUBMITTED", label: "待审核" },
-  { value: "APPROVED", label: "已通过" },
+  { value: "APPROVED", label: "标注完成" },
   { value: "NEEDS_REVISION", label: "需修改" },
   { value: "REJECTED", label: "已拒绝" },
 ];
@@ -87,7 +87,7 @@ function ThreadRow({
         </span>
       </td>
       <td>
-        <strong>r{thread.latest_revision.revision}</strong>
+        <strong>草稿 r{thread.latest_revision.revision}</strong>
         <small>
           {thread.latest_revision.origin === "ANNOTATION"
             ? "标注修订"
@@ -99,13 +99,13 @@ function ThreadRow({
         <small>v{thread.dataset_version}</small>
       </td>
       <td>
-        {thread.submitted_revision === null ||
-        thread.submitted_revision === undefined
+        {thread.current_episode_version === null ||
+        thread.current_episode_version === undefined
           ? "未提交"
-          : `已提交 r${thread.submitted_revision}`}
+          : `Episode v${thread.current_episode_version}`}
         {thread.approved_revision === null ||
         thread.approved_revision === undefined ? null : (
-          <small>已通过 r{thread.approved_revision}</small>
+          <small>已通过 · 待数据集发布定版</small>
         )}
       </td>
       <td>
@@ -134,6 +134,12 @@ function ThreadRow({
 export function AnnotationRevisionPage(): JSX.Element {
   const capabilities = useCapabilities();
   const shellScope = useShellStore((state) => state.scope);
+  const unscopedAccount = useShellStore(
+    (state) =>
+      state.bootstrapLoaded &&
+      !state.authorizationFailed &&
+      state.scope === null,
+  );
   const scope = runtimeAnnotationScopeFromShell(shellScope);
   const [status, setStatus] = useState<RevisionStatusFilter>("ALL");
   const [origin, setOrigin] = useState<RevisionOriginFilter>("ALL");
@@ -174,13 +180,14 @@ export function AnnotationRevisionPage(): JSX.Element {
   const threads = revisions.data?.pages.flatMap((page) => page.items) ?? [];
 
   if (
-    capabilities.loading ||
-    (revisions.isLoading && revisions.data === undefined)
+    !unscopedAccount &&
+    (capabilities.loading ||
+      (revisions.isLoading && revisions.data === undefined))
   )
     return <AnnotationPageState kind="first-loading" />;
-  if (capabilities.failed || !canRead)
+  if (!unscopedAccount && (capabilities.failed || !canRead))
     return <AnnotationPageState kind="forbidden" />;
-  if (!scope)
+  if (!scope && !unscopedAccount)
     return (
       <AnnotationPageState
         kind="feature-unavailable"
@@ -211,35 +218,34 @@ export function AnnotationRevisionPage(): JSX.Element {
 
   return (
     <main className="p08-page p08-revision-page">
-      <header className="p08-page-header">
+      <header className="p08-page-header p08-page-header--plain">
         <div>
-          <p className="p08-eyebrow">数据生产 / 数据标注 / 不可变修订</p>
-          <h1>数据修订</h1>
-          <p>以当前项目和 Region 为界，按最近工作流变化读取不可变修订线索。</p>
+          <h1>Episode 版本与草稿修订</h1>
+          <p>
+            草稿保存只产生编辑修订；每次提交 Review 才生成一个 Episode 版本，数据集发布后冻结其精确提交。
+          </p>
         </div>
-        <button
-          disabled={revisions.isFetching}
-          type="button"
-          onClick={() => void revisions.refetch()}
-        >
-          <RefreshCw aria-hidden="true" size={15} />
-          {revisions.isFetching ? "刷新中…" : "刷新"}
-        </button>
+        <div className="p08-header-actions">
+          <Link
+            className="p08-secondary-action"
+            to={annotationRoutes.annotate.pattern}
+          >
+            <ArrowLeft aria-hidden="true" size={16} />
+            返回任务队列
+          </Link>
+          <button
+            className="p08-secondary-action"
+            disabled={!scope || revisions.isFetching}
+            type="button"
+            onClick={() => {
+              if (scope) void revisions.refetch();
+            }}
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            {revisions.isFetching ? "刷新中…" : "刷新"}
+          </button>
+        </div>
       </header>
-      <nav className="p08-mode-tabs" aria-label="数据标注功能模式">
-        <Link to={annotationRoutes.annotate.pattern}>
-          <Tags aria-hidden="true" size={15} />
-          数据标注
-        </Link>
-        <Link aria-current="page" to={annotationRoutes.revisions.pattern}>
-          <History aria-hidden="true" size={15} />
-          数据修订
-        </Link>
-        <Link to={annotationRoutes.tagReview.pattern}>
-          <ShieldCheck aria-hidden="true" size={15} />
-          Tag 审核
-        </Link>
-      </nav>
       {legacyDraftId ? (
         <section className="p08-legacy-route-notice" role="status">
           <strong>旧清洗草稿兼容入口</strong>
@@ -247,7 +253,7 @@ export function AnnotationRevisionPage(): JSX.Element {
             仅在当前项目和 Region 中查找已安全导入的草稿 {legacyDraftId}；不会跨
             Scope 猜测映射。
           </span>
-          <Link to={annotationRoutes.revisions.pattern}>查看全部数据修订</Link>
+          <Link to={annotationRoutes.revisions.pattern}>查看全部修订记录</Link>
         </section>
       ) : null}
       <section className="p08-revision-toolbar" aria-label="修订筛选">
@@ -292,21 +298,26 @@ export function AnnotationRevisionPage(): JSX.Element {
           kind="empty"
           detail={
             legacyDraftId
-              ? `旧草稿 ${legacyDraftId} 尚未在当前项目和 Region 中安全导入；请从数据修订列表继续，不会自动打开其他 Scope 的同名草稿。`
+              ? `旧草稿 ${legacyDraftId} 尚未在当前项目和 Region 中安全导入；请从修订记录继续，不会自动打开其他 Scope 的同名草稿。`
               : "当前 Scope 中没有符合筛选条件的修订线索。"
           }
         />
       ) : (
-        <div className="p08-table-wrap">
+        <div
+          aria-label="修订记录表，可横向滚动"
+          className="p08-table-wrap"
+          role="region"
+          tabIndex={0}
+        >
           <table>
             <caption>当前修订线程（按最近变更排序）</caption>
             <thead>
               <tr>
                 <th>Rollout / 任务</th>
                 <th>状态</th>
-                <th>最新修订</th>
+                <th>最新草稿修订</th>
                 <th>Dataset</th>
-                <th>提交 / 审核</th>
+                <th>Episode 版本 / 审核</th>
                 <th>最近变更</th>
                 <th>操作</th>
               </tr>
