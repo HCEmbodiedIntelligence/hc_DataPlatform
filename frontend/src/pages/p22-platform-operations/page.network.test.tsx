@@ -332,6 +332,64 @@ describe("P22 platform operations production client path", () => {
     }
   });
 
+  it("creates the first project from the administrator platform settings page", async () => {
+    let created = false;
+    const createdProject = {
+      organization_id: "hangcha",
+      organization_name: "杭叉集团",
+      project_id: "robot-data-01",
+      project_name: "robot-data-01",
+    };
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/platform/overview")) return json(overview);
+        if (url.includes("/platform/logs?")) return json(logResponse(url));
+        if (url.includes("/platform/releases?"))
+          return json(emptyReleaseHistory);
+        if (url.includes("/platform/projects")) {
+          if (init?.method === "POST") {
+            created = true;
+            return json(createdProject, { status: 201 });
+          }
+          return json({
+            format_version: "hc-platform-project-directory/v1",
+            count: created ? 1 : 0,
+            items: created ? [createdProject] : [],
+          });
+        }
+        if (url.includes("/auth/session/bootstrap")) {
+          return json(
+            { title: "Bootstrap unavailable", status: 503 },
+            { status: 503 },
+          );
+        }
+        return json({}, { status: 404 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("尚未创建项目")).toBeVisible();
+    await user.type(screen.getByLabelText("项目所属组织 ID"), "hangcha");
+    await user.type(screen.getByLabelText("项目所属组织名称"), "杭叉集团");
+    await user.type(screen.getByLabelText("新项目 ID"), "robot-data-01");
+    await user.click(screen.getByRole("button", { name: "创建项目" }));
+
+    expect(await screen.findByText("robot-data-01")).toBeVisible();
+    expect(await screen.findByText(/刷新页面后即可选择该项目/u)).toBeVisible();
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes("/platform/projects") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      organization_id: "hangcha",
+      organization_name: "杭叉集团",
+      project_id: "robot-data-01",
+    });
+  });
+
   it("loads and saves encrypted OSS configuration only after the admin opens the panel", async () => {
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {

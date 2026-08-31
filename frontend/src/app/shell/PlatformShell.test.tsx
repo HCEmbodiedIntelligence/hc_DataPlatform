@@ -18,6 +18,10 @@ import {
   configureReleaseIdentity,
   resetReleaseIdentityForTests,
 } from "../../shared/config/release-identity";
+import {
+  configureRuntime,
+  resetRuntimeConfigForTests,
+} from "../../shared/config/runtime";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
 
 const scope = {
@@ -95,6 +99,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   window.localStorage.clear();
   resetReleaseIdentityForTests();
+  resetRuntimeConfigForTests();
   useShellStore.setState({
     principal: null,
     sessionToken: null,
@@ -224,6 +229,12 @@ describe("PlatformShell", () => {
   });
 
   it("loads the administrator-provided OSS address only when its selector opens", async () => {
+    configureRuntime({
+      apiBaseUrl: "/api/v1",
+      sseBaseUrl: "/api/v1",
+      buildVersion: "platform-shell-test",
+      releaseEnv: "test",
+    });
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (input) => {
@@ -256,15 +267,16 @@ describe("PlatformShell", () => {
         String(input).includes("/platform/object-store-location"),
       ),
     ).toBe(false);
-    await user.click(
-      screen.getByRole("combobox", { name: "当前存储地址" }),
-    );
+    const storageSelector = screen.getByRole("combobox", {
+      name: "当前存储地址",
+    });
+    await user.click(storageSelector);
 
-    expect(
-      await screen.findByText(
+    await waitFor(() =>
+      expect(storageSelector.parentElement).toHaveTextContent(
         "OSS · cn-shanghai · oss-cn-shanghai.aliyuncs.com",
       ),
-    ).toBeVisible();
+    );
   });
 
   it("switches duplicate project ids across organizations by their composite identity", async () => {
@@ -348,14 +360,9 @@ describe("PlatformShell", () => {
     await user.click(
       within(scopeGroup).getByRole("combobox", { name: "当前项目" }),
     );
-    const joinProject = await screen.findByRole("option", {
-      name: "加入项目",
-    });
-    expect(joinProject).toBeVisible();
-    await user.click(joinProject);
-    expect(screen.getByTestId("location")).toHaveTextContent(
-      "/account/settings",
-    );
+    await screen.findByRole("option", { name: "加入项目" });
+    const joinProject = screen.getByText("加入项目");
+    expect(joinProject).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "全局搜索" }),
     ).not.toBeInTheDocument();

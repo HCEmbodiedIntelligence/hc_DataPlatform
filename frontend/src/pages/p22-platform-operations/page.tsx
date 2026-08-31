@@ -591,8 +591,8 @@ function ProjectInitializationPanel() {
       ) : projects.data.count === 0 ? (
         <Alert
           description="新数据库还没有项目。填写下方信息创建第一个项目；创建后会自动刷新管理员可选作用域。"
-          message="尚未创建项目"
           showIcon
+          title="尚未创建项目"
           type="warning"
         />
       ) : (
@@ -677,8 +677,8 @@ function ProjectInitializationPanel() {
       {successMessage ? (
         <Alert
           className={styles.successAlert}
-          message={successMessage}
           showIcon
+          title={successMessage}
           type="success"
         />
       ) : null}
