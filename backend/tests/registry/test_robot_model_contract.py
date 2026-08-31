@@ -28,7 +28,6 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
         f"{root}/robot-model-versions/{{version_id}}:preflight-publish",
         f"{root}/robot-model-versions/{{version_id}}:publish",
         f"{root}/robot-model-versions/{{version_id}}/joint-mappings",
-        f"{root}/robot-model-versions/{{version_id}}/bindings",
         f"{root}/robot-model-versions/{{version_id}}/upload-sessions",
         f"{root}/robot-model-asset-uploads/{{upload_id}}:authorize-parts",
         f"{root}/robot-model-asset-uploads/{{upload_id}}:complete-file",
@@ -61,9 +60,10 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
         paths[f"{root}/robot-model-versions/{{version_id}}/joint-mappings"]["put"]["operationId"]
         == "replaceRobotModelJointMappings"
     )
+    assert f"{root}/robot-model-versions/{{version_id}}/bindings" not in paths
     assert (
-        paths[f"{root}/robot-model-versions/{{version_id}}/bindings"]["post"]["operationId"]
-        == "bindRobotModelVersion"
+        paths[f"{root}/robots/{{robot_id}}/model-bindings"]["post"]["operationId"]
+        == "bindOrganizationRobotModel"
     )
     for path in robot_model_paths:
         for operation in paths[path].values():
@@ -99,8 +99,6 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     for marker in (
         "registry.robot_model_joint_mappings",
         "registry.robot_model_publish_preflights",
-        "registry.robot_model_bindings",
-        "core.apply_project_rls('registry.robot_model_bindings'::regclass)",
     ):
         assert marker in publication_text
 
@@ -115,3 +113,9 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     )
     creation_text = creation_migration.read_text(encoding="utf-8")
     assert "CREATE_MODEL_DRAFT" in creation_text
+
+    organization_robot_migration = (
+        Path(__file__).parents[2] / "migrations/robotics/0005_organization_robot_assets.sql"
+    ).read_text(encoding="utf-8")
+    assert "registry.organization_robot_model_bindings" in organization_robot_migration
+    assert "DROP TABLE IF EXISTS registry.robot_model_bindings" in organization_robot_migration

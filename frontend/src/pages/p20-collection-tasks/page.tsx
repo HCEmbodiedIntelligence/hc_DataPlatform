@@ -720,8 +720,6 @@ export function CollectionTaskPage({
         <StandardPageScaffold
           header={{
             title: "采集任务",
-            description:
-              "任务可关联已有数据集或新建专属数据集；多个任务可以汇入同一数据集。进度按当前存储区域汇总。",
             breadcrumbs: [
               { key: "ingest", label: "采集与接收" },
               { key: "tasks", label: "采集任务" },

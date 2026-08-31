@@ -13,6 +13,9 @@ export type SaveSliceDraftCommand =
   components["schemas"]["SaveSliceDraftCommand"];
 export type SliceRevisionEnvelope =
   components["schemas"]["SliceRevisionEnvelope"];
+export type EpisodeProcessing = components["schemas"]["EpisodeProcessing"];
+export type EpisodeProcessingPage =
+  components["schemas"]["EpisodeProcessingPage"];
 
 export interface RecordingScope extends Scope {
   readonly projectId: string;
@@ -34,6 +37,11 @@ export interface RecordingGateway {
     recordingId: string,
     signal?: AbortSignal,
   ): Promise<RecordingVideoSourceEnvelope>;
+  processing(
+    scope: RecordingScope,
+    recordingId: string,
+    signal?: AbortSignal,
+  ): Promise<EpisodeProcessingPage>;
   saveDraft(
     scope: RecordingScope,
     recordingId: string,
@@ -74,6 +82,15 @@ export const recordingGateway: RecordingGateway = {
     request<RecordingVideoSourceEnvelope>({
       method: "GET",
       path: `${root(scope)}/${encodeURIComponent(recordingId)}/video-sources`,
+      scope,
+      cache: "no-store",
+      ...(signal ? { signal } : {}),
+    }),
+
+  processing: (scope, recordingId, signal) =>
+    request<EpisodeProcessingPage>({
+      method: "GET",
+      path: `${root(scope)}/${encodeURIComponent(recordingId)}/episodes`,
       scope,
       cache: "no-store",
       ...(signal ? { signal } : {}),

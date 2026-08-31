@@ -11,7 +11,11 @@ function grantsFromBootstrap(
 ): readonly SessionScopeGrant[] {
   return bootstrap.available_scopes.map((scope) => ({
     organizationId: scope.organization_id,
+    ...(scope.organization_name
+      ? { organizationName: scope.organization_name }
+      : {}),
     projectId: scope.project_id,
+    ...(scope.project_name ? { projectName: scope.project_name } : {}),
     regionCodes: scope.region_codes,
     projectWide: scope.project_wide,
     capabilities: scope.capabilities,
@@ -33,7 +37,7 @@ function organizationsFromBootstrap(bootstrap: SessionBootstrap) {
     if (!organizations.has(scope.organization_id)) {
       organizations.set(scope.organization_id, {
         organizationId: scope.organization_id,
-        organizationName: scope.organization_id,
+        organizationName: scope.organization_name ?? scope.organization_id,
         memberStatus: "ACTIVE",
       });
     }

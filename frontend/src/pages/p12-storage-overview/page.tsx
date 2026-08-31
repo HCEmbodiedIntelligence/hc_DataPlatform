@@ -1,6 +1,6 @@
 import { Button, Select } from "antd";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Database, RefreshCw, TrendingUp } from "lucide-react";
+import { RefreshCw, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   useCapacityPortfolio,
@@ -173,7 +173,6 @@ export function CapacityOverview({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-overview-title">容量总览</h3>
-          <p>四类互斥业务口径 · 容量自动换算为易读单位</p>
         </div>
         <StatusTag
           status={snapshot.reconciliation.balanced ? "BALANCED" : "UNBALANCED"}
@@ -331,7 +330,6 @@ export function CapacityTrend({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-trend-title">增长趋势</h3>
-          <p>按 UTC 日保留当天最终容量记录 · 容量自动换算为易读单位</p>
         </div>
         <div
           className={styles.trendRange}
@@ -742,7 +740,6 @@ export function CapacityPane() {
       <header className={styles.paneHeader}>
         <div>
           <h1 id="capacity-pane-title">容量管理</h1>
-          <p>按业务状态核对所选项目的对象存储容量</p>
         </div>
         <div className={styles.capacityHeaderActions}>
           {capacity.data ? (
@@ -780,11 +777,6 @@ export function StorageOverviewPage() {
   return (
     <div className={styles.page} data-page-id="P12">
       <CapacityPane />
-      <p className={styles.pageFootnote}>
-        <Database aria-hidden="true" size={13} />
-        页面只消费当前作用域的正式存储合同；真实 API 失败会保留错误状态，不回退
-        Browser Mock。
-      </p>
     </div>
   );
 }

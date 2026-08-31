@@ -19,8 +19,6 @@ from .models import (
     RobotModelAsset,
     RobotModelAssetUploadFile,
     RobotModelAssetUploadSession,
-    RobotModelBinding,
-    RobotModelBindingStatus,
     RobotModelDraftScope,
     RobotModelJointMapping,
     RobotModelPublishCheck,
@@ -112,33 +110,6 @@ class RobotModelPublishPreflightRecord:
     expires_at: datetime
     created_at: datetime
     consumed_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class RobotModelBindingRecord:
-    organization_id: str
-    project_id: str
-    region_code: str
-    binding_id: str
-    robot_id: str
-    version_id: str
-    idempotency_key: str
-    request_fingerprint: str
-    expected_robot_etag: str
-    status: RobotModelBindingStatus
-    bound_at: datetime
-    unbound_at: datetime | None
-
-    def public(self) -> RobotModelBinding:
-        return RobotModelBinding(
-            binding_id=self.binding_id,
-            robot_id=self.robot_id,
-            region_code=self.region_code,
-            version_id=self.version_id,
-            status=self.status,
-            bound_at=self.bound_at,
-            unbound_at=self.unbound_at,
-        )
 
 
 class RegistryRepository(Protocol):
@@ -269,24 +240,6 @@ class RegistryRepository(Protocol):
         occurred_at: datetime,
     ) -> RobotModelVersion: ...
 
-    def list_robot_model_bindings(
-        self, *, organization_id: str, project_id: str, version_id: str
-    ) -> tuple[RobotModelBinding, ...]: ...
-
-    def bind_robot_model_version(
-        self,
-        *,
-        organization_id: str,
-        project_id: str,
-        region_code: str,
-        version_id: str,
-        robot_id: str,
-        expected_robot_etag: str,
-        idempotency_key: str,
-        request_fingerprint: str,
-        bound_at: datetime,
-    ) -> RobotModelBinding: ...
-
     def append_audit(self, event: RegistryAuditEvent) -> None: ...
 
 
@@ -299,7 +252,6 @@ class InMemoryRegistryRepository:
         models: tuple[tuple[str, RobotModelSummary], ...] = (),
         versions: tuple[tuple[str, RobotModelVersion], ...] = (),
         organization_projects: tuple[tuple[str, str], ...] = (),
-        robot_etags: tuple[tuple[str, str, str, str], ...] = (),
     ) -> None:
         self._models = list(models)
         self._versions = {(organization_id, value.id): value for organization_id, value in versions}
@@ -311,11 +263,6 @@ class InMemoryRegistryRepository:
             tuple[str, str, str, str, str], tuple[str, RobotModelVersion]
         ] = {}
         self._publish_preflights: dict[tuple[str, str, str], RobotModelPublishPreflightRecord] = {}
-        self._bindings: dict[tuple[str, str, str, str], RobotModelBindingRecord] = {}
-        self._robot_etags = {
-            (project_id, region_code, robot_id): etag
-            for project_id, region_code, robot_id, etag in robot_etags
-        }
         self.audit_events: list[RegistryAuditEvent] = []
         self._lock = RLock()
 
@@ -776,94 +723,6 @@ class InMemoryRegistryRepository:
             )
             return updated
 
-    def list_robot_model_bindings(
-        self, *, organization_id: str, project_id: str, version_id: str
-    ) -> tuple[RobotModelBinding, ...]:
-        with self._lock:
-            values = [
-                item.public()
-                for item in self._bindings.values()
-                if item.organization_id == organization_id
-                and item.project_id == project_id
-                and item.version_id == version_id
-            ]
-        return tuple(
-            sorted(values, key=lambda item: (item.bound_at, item.binding_id), reverse=True)
-        )
-
-    def bind_robot_model_version(
-        self,
-        *,
-        organization_id: str,
-        project_id: str,
-        region_code: str,
-        version_id: str,
-        robot_id: str,
-        expected_robot_etag: str,
-        idempotency_key: str,
-        request_fingerprint: str,
-        bound_at: datetime,
-    ) -> RobotModelBinding:
-        with self._lock:
-            existing = next(
-                (
-                    item
-                    for item in self._bindings.values()
-                    if item.organization_id == organization_id
-                    and item.project_id == project_id
-                    and item.region_code == region_code
-                    and item.version_id == version_id
-                    and item.idempotency_key == idempotency_key
-                ),
-                None,
-            )
-            if existing is not None:
-                if existing.request_fingerprint != request_fingerprint:
-                    raise ValueError("robot model binding idempotency key was reused")
-                return existing.public()
-            version = self._versions.get((organization_id, version_id))
-            if version is None:
-                raise KeyError(version_id)
-            if version.lifecycle != "PUBLISHED":
-                raise ValueError("robot model version is not published")
-            robot_key = (project_id, region_code, robot_id)
-            current_robot_etag = self._robot_etags.get(robot_key)
-            if current_robot_etag is None:
-                raise KeyError(robot_id)
-            if current_robot_etag != expected_robot_etag:
-                raise ValueError("robot etag does not match")
-            for key, item in tuple(self._bindings.items()):
-                if (
-                    item.organization_id == organization_id
-                    and item.project_id == project_id
-                    and item.region_code == region_code
-                    and item.robot_id == robot_id
-                    and item.status is RobotModelBindingStatus.ACTIVE
-                ):
-                    self._bindings[key] = dataclass_replace(
-                        item,
-                        status=RobotModelBindingStatus.SUPERSEDED,
-                        unbound_at=bound_at,
-                    )
-            binding_id = str(uuid4())
-            record = RobotModelBindingRecord(
-                organization_id=organization_id,
-                project_id=project_id,
-                region_code=region_code,
-                binding_id=binding_id,
-                robot_id=robot_id,
-                version_id=version_id,
-                idempotency_key=idempotency_key,
-                request_fingerprint=request_fingerprint,
-                expected_robot_etag=expected_robot_etag,
-                status=RobotModelBindingStatus.ACTIVE,
-                bound_at=bound_at,
-                unbound_at=None,
-            )
-            self._bindings[(organization_id, project_id, region_code, binding_id)] = record
-            self._robot_etags[robot_key] = f'"robot:{robot_id}:binding:{binding_id}"'
-            return record.public()
-
     def finalize_asset_upload(
         self,
         *,
@@ -1036,18 +895,6 @@ def _publish_preflight(row: Mapping[str, object]) -> RobotModelPublishPreflightR
         expires_at=cast(datetime, row["expires_at"]),
         created_at=cast(datetime, row["created_at"]),
         consumed_at=cast(datetime | None, row["consumed_at"]),
-    )
-
-
-def _binding(row: Mapping[str, object]) -> RobotModelBinding:
-    return RobotModelBinding(
-        binding_id=str(row["binding_id"]),
-        robot_id=str(row["robot_id"]),
-        region_code=str(row["region_code"]),
-        version_id=str(row["version_id"]),
-        status=RobotModelBindingStatus(str(row["status"])),
-        bound_at=cast(datetime, row["bound_at"]),
-        unbound_at=cast(datetime | None, row["unbound_at"]),
     )
 
 
@@ -1395,8 +1242,8 @@ class PostgresRegistryRepository:
         try:
             cursor.execute(
                 """
-                SELECT model_id, manufacturer, model_code, display_name,
-                       current_published_version_id
+                SELECT model.model_id, model.manufacturer, model.model_code,
+                       model.display_name, model.current_published_version_id
                 FROM registry.robot_models model
                 JOIN registry.organization_projects membership
                   ON membership.organization_id = model.organization_id
@@ -1404,11 +1251,11 @@ class PostgresRegistryRepository:
                    AND membership.project_id = %s
                    AND (
                        %s::text IS NULL
-                       OR display_name ILIKE '%%' || %s || '%%'
-                       OR model_code ILIKE '%%' || %s || '%%'
-                       OR manufacturer ILIKE '%%' || %s || '%%'
+                       OR model.display_name ILIKE '%%' || %s || '%%'
+                       OR model.model_code ILIKE '%%' || %s || '%%'
+                       OR model.manufacturer ILIKE '%%' || %s || '%%'
                    )
-                 ORDER BY lower(display_name), model_id
+                 ORDER BY lower(model.display_name), model.model_id
                 """,
                 (organization_id, project_id, query, query, query, query),
             )
@@ -1608,7 +1455,7 @@ class PostgresRegistryRepository:
                         organization_id, project_id, asset_id, version_id, relative_path, role,
                         media_type, size_bytes, sha256, object_key, created_at
                     ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (organization_id, project_id, version_id, relative_path)
+                    ON CONFLICT (organization_id, version_id, relative_path)
                     DO NOTHING
                     """,
                     (
@@ -2069,181 +1916,6 @@ class PostgresRegistryRepository:
                 raise KeyError(version_id)
             connection.commit()
             return _version(_row(cursor, updated))
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            cursor.close()
-            connection.close()
-
-    def list_robot_model_bindings(
-        self, *, organization_id: str, project_id: str, version_id: str
-    ) -> tuple[RobotModelBinding, ...]:
-        connection = self._connection_factory()
-        cursor = connection.cursor()
-        try:
-            cursor.execute(
-                """
-                SELECT binding_id, robot_id, region_code, version_id, status, bound_at, unbound_at
-                  FROM registry.robot_model_bindings
-                 WHERE organization_id = %s AND project_id = %s AND version_id = %s
-                 ORDER BY bound_at DESC, binding_id DESC
-                """,
-                (organization_id, project_id, version_id),
-            )
-            return tuple(_binding(_row(cursor, raw)) for raw in cursor.fetchall())
-        finally:
-            cursor.close()
-            connection.close()
-
-    def bind_robot_model_version(
-        self,
-        *,
-        organization_id: str,
-        project_id: str,
-        region_code: str,
-        version_id: str,
-        robot_id: str,
-        expected_robot_etag: str,
-        idempotency_key: str,
-        request_fingerprint: str,
-        bound_at: datetime,
-    ) -> RobotModelBinding:
-        """Atomically write binding history and the P15 effective-binding projection."""
-
-        connection = self._connection_factory()
-        cursor = connection.cursor()
-        try:
-            # This serializes an idempotency key even if two callers select
-            # different robot rows. It avoids letting a unique violation leak as
-            # a transient 500 after one of those rows has been locked.
-            cursor.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (
-                    "|".join(
-                        (
-                            organization_id,
-                            project_id,
-                            region_code,
-                            version_id,
-                            idempotency_key,
-                        )
-                    ),
-                ),
-            )
-            cursor.execute(
-                """
-                SELECT binding_id, robot_id, region_code, version_id, status, bound_at, unbound_at,
-                       request_fingerprint
-                  FROM registry.robot_model_bindings
-                 WHERE organization_id = %s AND project_id = %s AND region_code = %s
-                   AND version_id = %s AND idempotency_key = %s
-                 FOR UPDATE
-                """,
-                (organization_id, project_id, region_code, version_id, idempotency_key),
-            )
-            prior = cursor.fetchone()
-            if prior is not None:
-                row = _row(cursor, prior)
-                if str(row["request_fingerprint"]) != request_fingerprint:
-                    raise ValueError("robot model binding idempotency key was reused")
-                connection.commit()
-                return _binding(row)
-
-            cursor.execute(
-                """
-                SELECT lifecycle
-                  FROM registry.robot_model_versions
-                 WHERE organization_id = %s AND version_id = %s
-                 FOR SHARE
-                """,
-                (organization_id, version_id),
-            )
-            raw_version = cursor.fetchone()
-            if raw_version is None:
-                raise KeyError(version_id)
-            if str(_row(cursor, raw_version)["lifecycle"]) != "PUBLISHED":
-                raise ValueError("robot model version is not published")
-            cursor.execute(
-                """
-                SELECT etag
-                  FROM robotics.robot_instances
-                 WHERE project_id = %s AND region_code = %s AND robot_id = %s
-                 FOR UPDATE
-                """,
-                (project_id, region_code, robot_id),
-            )
-            raw_robot = cursor.fetchone()
-            if raw_robot is None:
-                raise KeyError(robot_id)
-            if str(_row(cursor, raw_robot)["etag"]) != expected_robot_etag:
-                raise ValueError("robot etag does not match")
-            binding_id = str(uuid4())
-            binding_etag = f'"registry-binding:{binding_id}"'
-            robot_etag = f'"robot:{robot_id}:binding:{binding_id}"'
-            cursor.execute(
-                """
-                UPDATE registry.robot_model_bindings
-                   SET status = 'SUPERSEDED', unbound_at = %s
-                 WHERE organization_id = %s AND project_id = %s AND region_code = %s
-                   AND robot_id = %s AND status = 'ACTIVE'
-                """,
-                (bound_at, organization_id, project_id, region_code, robot_id),
-            )
-            cursor.execute(
-                """
-                INSERT INTO registry.robot_model_bindings (
-                    organization_id, project_id, region_code, binding_id, robot_id, version_id,
-                    idempotency_key, request_fingerprint, expected_robot_etag, status,
-                    bound_at, unbound_at
-                ) VALUES (%s, %s, %s, %s::uuid, %s, %s, %s, %s, %s, 'ACTIVE', %s, NULL)
-                """,
-                (
-                    organization_id,
-                    project_id,
-                    region_code,
-                    binding_id,
-                    robot_id,
-                    version_id,
-                    idempotency_key,
-                    request_fingerprint,
-                    expected_robot_etag,
-                    bound_at,
-                ),
-            )
-            cursor.execute(
-                """
-                UPDATE robotics.robot_instances
-                   SET binding_id = %s, binding_scope_type = 'ROBOT_INSTANCE',
-                       binding_scope_id = %s,
-                       robot_model_version_id = %s, binding_valid_from = %s,
-                       binding_valid_to = NULL, binding_etag = %s, etag = %s,
-                       topology_revision = topology_revision || ':binding:' || %s
-                 WHERE project_id = %s AND region_code = %s AND robot_id = %s
-                """,
-                (
-                    binding_id,
-                    robot_id,
-                    version_id,
-                    bound_at,
-                    binding_etag,
-                    robot_etag,
-                    binding_id,
-                    project_id,
-                    region_code,
-                    robot_id,
-                ),
-            )
-            connection.commit()
-            return RobotModelBinding(
-                binding_id=binding_id,
-                robot_id=robot_id,
-                region_code=region_code,
-                version_id=version_id,
-                status=RobotModelBindingStatus.ACTIVE,
-                bound_at=bound_at,
-                unbound_at=None,
-            )
         except Exception:
             connection.rollback()
             raise

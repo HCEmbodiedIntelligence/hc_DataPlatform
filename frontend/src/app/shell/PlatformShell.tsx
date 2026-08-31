@@ -27,6 +27,7 @@ import {
   Menu as MenuIcon,
   PanelLeftClose,
   PanelLeftOpen,
+  Scissors,
   Search,
   Settings,
   ShieldAlert,
@@ -147,6 +148,7 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P20: <ClipboardList aria-hidden="true" size={18} strokeWidth={1.8} />,
   P02: <Database aria-hidden="true" size={18} strokeWidth={1.8} />,
   P03: <CloudUpload aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P23: <Scissors aria-hidden="true" size={18} strokeWidth={1.8} />,
   P05: <Box aria-hidden="true" size={18} strokeWidth={1.8} />,
   P08: <Tags aria-hidden="true" size={18} strokeWidth={1.8} />,
   P21: <Download aria-hidden="true" size={18} strokeWidth={1.8} />,
@@ -707,7 +709,7 @@ export function PlatformShell({
           <Select
             aria-label="当前项目"
             options={[{ value: joinProjectOption, label: "加入项目" }]}
-            placeholder="尚未加入组织或项目"
+            placeholder="尚未加入项目"
             value={undefined}
             onChange={() => void navigate("/account/settings?tab=memberships")}
           />

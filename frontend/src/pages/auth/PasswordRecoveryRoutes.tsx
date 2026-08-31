@@ -173,7 +173,6 @@ export function PasswordRecoveryRequestRoute() {
         <header className={styles.formHeading}>
           <p className={styles.eyebrow}>账户恢复</p>
           <h1 id="recovery-request-title">找回密码</h1>
-          <p>输入用户名或已验证的恢复邮箱，平台将发送一次性重置链接。</p>
         </header>
 
         <div ref={feedbackRef} tabIndex={-1}>
@@ -360,7 +359,6 @@ export function PasswordResetRoute() {
         <header className={styles.formHeading}>
           <p className={styles.eyebrow}>账户恢复</p>
           <h1 id="password-reset-title">设置新密码</h1>
-          <p>重置成功后，服务端会撤销该账户的全部已有登录会话。</p>
         </header>
 
         <div ref={feedbackRef} tabIndex={-1}>

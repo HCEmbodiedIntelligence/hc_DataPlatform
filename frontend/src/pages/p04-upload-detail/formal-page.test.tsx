@@ -319,6 +319,10 @@ describe("P04 formal upload detail page", () => {
       "href",
       "/datasets/dataset_ingest_a/versions/version_lance_4/episodes/episode_ingest_a/view",
     );
+    expect(screen.getByRole("link", { name: "打开标注任务" })).toHaveAttribute(
+      "href",
+      "/annotations/tasks/annotation-a",
+    );
     expect(
       await screen.findByRole("link", { name: "下载 Raw MCAP" }),
     ).toHaveAttribute("href", "https://object.example.test/raw/signed");

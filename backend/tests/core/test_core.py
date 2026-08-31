@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
+import sys
 from copy import deepcopy
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -30,6 +31,7 @@ from hc_data_platform.core.context import (
     reset_request_context,
     select_request_scope,
 )
+from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.core.discovery import discover_module_routers
 from hc_data_platform.core.errors import ProblemDetails, ProblemException, problem
 from hc_data_platform.core.etag import ETag, etag_matches, make_etag, require_if_match
@@ -586,6 +588,58 @@ def test_project_scope_reselection_preserves_verified_organization() -> None:
         assert selected.subject_id == "principal-a"
     finally:
         reset_request_context(token)
+
+
+def test_project_connection_installs_verified_platform_admin_rls_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingConnection:
+        def __init__(self) -> None:
+            self.statement = ""
+            self.parameters: tuple[str, ...] = ()
+            self.closed = False
+
+        def execute(self, statement: str, parameters: tuple[str, ...]) -> None:
+            self.statement = statement
+            self.parameters = parameters
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = RecordingConnection()
+    monkeypatch.setitem(
+        sys.modules,
+        "psycopg",
+        SimpleNamespace(connect=lambda _dsn: connection),
+    )
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a",
+            project_id="project-a",
+            region_code="cn-east",
+            subject_id="platform-admin",
+            request_id="22222222-2222-4222-8222-222222222224",
+            platform_admin=True,
+        )
+    )
+    try:
+        result = psycopg_connection_factory("postgresql://platform")()
+    finally:
+        reset_request_context(token)
+
+    assert result is connection
+    assert "set_config('app.platform_admin', %s, false)" in connection.statement
+    assert "set_config('app.is_admin', %s, false)" in connection.statement
+    assert connection.parameters == (
+        "organization-a",
+        "project-a",
+        "cn-east",
+        "platform-admin",
+        "22222222-2222-4222-8222-222222222224",
+        "false",
+        "true",
+        "true",
+    )
 
 
 def test_framework_and_unexpected_errors_use_problem_details(

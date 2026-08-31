@@ -249,8 +249,7 @@ describe("P14 robot model asset client", () => {
         download_url: `https://object.example.test/${assetId}?signature=ephemeral`,
         expires_at: "2026-08-19T11:15:00Z",
         sha256: "b".repeat(64),
-        media_type:
-          assetId === "asset-urdf" ? "application/xml" : "model/stl",
+        media_type: assetId === "asset-urdf" ? "application/xml" : "model/stl",
       });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -291,8 +290,7 @@ describe("P14 robot model asset client", () => {
         assets,
       ),
     ).resolves.toEqual({
-      urdfUrl:
-        "https://object.example.test/asset-urdf?signature=ephemeral",
+      urdfUrl: "https://object.example.test/asset-urdf?signature=ephemeral",
       urdfPath: "robot/model.urdf",
       assetUrls: {
         "robot/meshes/body.stl":
@@ -478,7 +476,6 @@ describe("P14 robot model asset client", () => {
     const binding = {
       binding_id: "binding-1",
       robot_id: "robot-1",
-      region_code: scope.regionCode,
       version_id: "version-1",
       status: "ACTIVE",
       bound_at: "2026-08-19T11:00:00Z",
@@ -492,21 +489,31 @@ describe("P14 robot model asset client", () => {
               id: "robot-1",
               display_name: "XR-01",
               serial_no: "XR-01-SN",
+              lifecycle_status: "ACTIVE",
+              connectivity: {
+                state: "ONLINE",
+                observed_at: null,
+                source: null,
+                reason_code: null,
+              },
             },
             etag: '"robot-1:2"',
+            topology_revision: "topology-1",
+            effective_model_binding: null,
+            allowed_actions: ["VIEW", "BIND_MODEL"],
           },
+          scope: { organization_id: scope.organizationId },
+          request_id: "p14-binding-target",
+          contract_version: "2026-08-31",
         });
       }
-      if (input.endsWith("/bindings") && init?.method === "POST") {
+      if (input.endsWith("/model-bindings") && init?.method === "POST") {
         return jsonResponse(binding);
       }
-      if (input.endsWith("/bindings")) {
+      if (input.includes("/robots/model-bindings?version_id=")) {
         return jsonResponse({
           items: [binding],
-          scope: {
-            organization_id: scope.organizationId,
-            project_id: scope.projectId,
-          },
+          scope: { organization_id: scope.organizationId },
           request_id: "p14-bindings-list",
         });
       }
@@ -516,8 +523,6 @@ describe("P14 robot model asset client", () => {
 
     await expect(
       loadRobotBindingTarget({
-        projectId: scope.projectId,
-        regionCode: scope.regionCode,
         robotId: "robot-1",
       }),
     ).resolves.toEqual({
@@ -531,7 +536,6 @@ describe("P14 robot model asset client", () => {
     await expect(
       bindRobotModelVersion(scope.organizationId, {
         versionId: "version-1",
-        regionCode: scope.regionCode,
         robotId: "robot-1",
         robotEtag: '"robot-1:2"',
         idempotencyKey: "binding-key",
@@ -540,11 +544,10 @@ describe("P14 robot model asset client", () => {
     const bindCall = fetchMock.mock.calls.at(-1);
     const init = bindCall?.[1] as RequestInit;
     expect(bindCall?.[0]).toBe(
-      "/api/v1/organizations/org-assets/robot-model-versions/version-1/bindings",
+      "/api/v1/organizations/org-assets/robots/robot-1/model-bindings",
     );
     expect(JSON.parse(String(init.body))).toEqual({
-      region_code: scope.regionCode,
-      robot_id: "robot-1",
+      version_id: "version-1",
       robot_etag: '"robot-1:2"',
     });
     expect(new Headers(init.headers).get("Idempotency-Key")).toBe(

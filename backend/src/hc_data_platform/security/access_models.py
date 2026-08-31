@@ -254,7 +254,9 @@ class AvailableScope(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     organization_id: str = Field(min_length=1)
+    organization_name: str | None = Field(default=None, min_length=1, max_length=256)
     project_id: str = Field(min_length=1)
+    project_name: str | None = Field(default=None, min_length=1, max_length=256)
     region_codes: tuple[NonEmptyScopeValue, ...] = Field(json_schema_extra={"uniqueItems": True})
     project_wide: bool
     capabilities: tuple[NonEmptyScopeValue, ...] = Field(json_schema_extra={"uniqueItems": True})

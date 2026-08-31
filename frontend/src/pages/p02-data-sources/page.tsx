@@ -513,7 +513,6 @@ export default function DataSourcesPage() {
       <StandardPageScaffold
         header={{
           title: '数据源',
-          description: '管理机器人、边缘代理与 OSS 导入连接器。',
           breadcrumbs: [
             { key: 'ingest', label: '数据接入', to: routes.uploadRecords.build() },
             { key: 'sources', label: '数据源' },

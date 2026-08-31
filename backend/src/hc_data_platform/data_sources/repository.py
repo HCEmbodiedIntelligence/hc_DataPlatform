@@ -461,12 +461,16 @@ class PostgresDataSourceRepository:
         try:
             cursor.execute(
                 """
-                SELECT display_name
-                  FROM robotics.robot_instances
-                 WHERE organization_id = %s
-                   AND project_id = %s
-                   AND region_code = %s
-                   AND robot_id = %s
+                SELECT robot.display_name
+                  FROM robotics.project_robot_assignments assignment
+                  JOIN robotics.robot_assets robot
+                    ON robot.organization_id = assignment.organization_id
+                   AND robot.robot_id = assignment.robot_id
+                 WHERE assignment.organization_id = %s
+                   AND assignment.project_id = %s
+                   AND assignment.region_code = %s
+                   AND assignment.robot_id = %s
+                   AND assignment.active
                 """,
                 (organization_id, project_id, region_code, robot_id),
             )

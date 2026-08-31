@@ -262,7 +262,6 @@ export function ManagedStorageObjectsPanel({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="managed-objects-title">存储对象操作</h3>
-          <p>服务端判定可执行动作 · 物理 bucket/key 永不下发</p>
         </div>
         <Button
           size="small"

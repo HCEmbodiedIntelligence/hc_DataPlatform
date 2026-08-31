@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.ports import InMemoryObjectStorage
 from hc_data_platform.registry.models import (
-    BindRobotModelVersionRequest,
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
     PublishRobotModelVersionRequest,
@@ -36,23 +35,29 @@ def _auth(
     project_id: str = "project-a",
     can_read: bool = True,
     can_manage: bool = False,
-    region_code: str | None = None,
-    can_robot_manage: bool = False,
 ) -> AuthContext:
+    organization_id = "organization-a" if project_id == "project-a" else "organization-b"
     return AuthContext(
         subject_id="registry-reader",
+        organization_ids=frozenset({organization_id}),
         project_ids=frozenset({project_id}),
-        region_codes=frozenset({region_code} if region_code else ()),
+        region_codes=frozenset(),
         roles=frozenset(),
-        scope_pairs=frozenset(
-            {(project_id, None)} | ({(project_id, region_code)} if region_code else set())
-        ),
+        scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         scoped_capabilities=frozenset(
             capability
             for capability, enabled in (
                 ((project_id, "robot_model.read"), can_read),
                 ((project_id, "robot_model.manage"), can_manage),
-                ((project_id, "robot.manage"), can_robot_manage),
+            )
+            if enabled
+        ),
+        organization_scoped_capabilities=frozenset(
+            capability
+            for capability, enabled in (
+                ((organization_id, project_id, "robot_model.read"), can_read),
+                ((organization_id, project_id, "robot_model.manage"), can_manage),
             )
             if enabled
         ),
@@ -719,78 +724,3 @@ def test_robot_model_publish_uses_a_durable_preflight_and_one_time_proof() -> No
             command=PublishRobotModelVersionRequest(preflight_token="x" * 32),
         )
     assert invalid_token.value.problem.code == "ROBOT_MODEL_PUBLISH_PREFLIGHT_TOKEN_INVALID"
-
-
-def test_robot_model_binding_requires_both_model_and_robot_authority() -> None:
-    repository = InMemoryRegistryRepository(
-        organization_projects=(("organization-a", "project-a"),),
-        versions=(
-            (
-                "organization-a",
-                RobotModelVersion(
-                    id="version-published",
-                    robot_model_id="model-a",
-                    version_label="2.0.0",
-                    lifecycle="PUBLISHED",
-                    asset_availability="AVAILABLE",
-                    publish_readiness="READY",
-                    asset_manifest_hash="a" * 64,
-                    validation_input_hash="b" * 64,
-                    etag='"registry:version-published:2"',
-                    allowed_actions=("VIEW",),
-                    blocked_reasons=(),
-                ),
-            ),
-        ),
-        robot_etags=(("project-a", "region-a", "robot-a", '"robot-a:1"'),),
-    )
-    service = RegistryService(
-        repository,
-        clock=lambda: datetime(2026, 8, 19, 13, tzinfo=timezone.utc),
-    )
-    command = BindRobotModelVersionRequest(
-        region_code="region-a",
-        robot_id="robot-a",
-        robot_etag='"robot-a:1"',
-    )
-    auth = _auth(can_manage=True, region_code="region-a", can_robot_manage=True)
-    bound = service.bind_robot_model_version(
-        auth=auth,
-        organization_id="organization-a",
-        project_id="project-a",
-        version_id="version-published",
-        idempotency_key="bind-robot-a",
-        request_id="bind-robot",
-        command=command,
-    )
-    assert bound.status.value == "ACTIVE"
-    replay = service.bind_robot_model_version(
-        auth=auth,
-        organization_id="organization-a",
-        project_id="project-a",
-        version_id="version-published",
-        idempotency_key="bind-robot-a",
-        request_id="bind-robot-replay",
-        command=command,
-    )
-    assert replay.binding_id == bound.binding_id
-    bindings = service.list_robot_model_bindings(
-        auth=_auth(),
-        organization_id="organization-a",
-        project_id="project-a",
-        version_id="version-published",
-        request_id="list-bindings",
-    )
-    assert [item.binding_id for item in bindings.items] == [bound.binding_id]
-
-    with pytest.raises(ProblemException) as missing_robot_authority:
-        service.bind_robot_model_version(
-            auth=_auth(can_manage=True, region_code="region-a"),
-            organization_id="organization-a",
-            project_id="project-a",
-            version_id="version-published",
-            idempotency_key="bind-robot-without-capability",
-            request_id="bind-robot-without-capability",
-            command=command,
-        )
-    assert missing_robot_authority.value.problem.code == "CAPABILITY_REQUIRED"

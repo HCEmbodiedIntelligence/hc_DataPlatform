@@ -57,6 +57,22 @@ export type PlatformProject = Readonly<{
   project_name: string;
 }>;
 
+export type PlatformOrganization = Readonly<{
+  organization_id: string;
+  organization_name: string;
+}>;
+
+export type PlatformOrganizationPage = Readonly<{
+  format_version: "hc-platform-organization-directory/v1";
+  count: number;
+  items: readonly PlatformOrganization[];
+}>;
+
+export type PlatformOrganizationCreate = Readonly<{
+  organization_id: string;
+  organization_name: string;
+}>;
+
 export type PlatformProjectPage = Readonly<{
   format_version: "hc-platform-project-directory/v1";
   count: number;
@@ -65,8 +81,8 @@ export type PlatformProjectPage = Readonly<{
 
 export type PlatformProjectCreate = Readonly<{
   organization_id: string;
-  organization_name: string;
   project_id: string;
+  project_name: string;
 }>;
 
 export type PlatformLogFilters = Readonly<{
@@ -157,6 +173,31 @@ export const platformProjectWireSchema: z.ZodType<PlatformProject> = z
     project_name: z.string().min(1).max(256),
   })
   .strict();
+
+export const platformOrganizationWireSchema: z.ZodType<PlatformOrganization> = z
+  .object({
+    organization_id: stableScopeId,
+    organization_name: z.string().min(1).max(256),
+  })
+  .strict();
+
+export const platformOrganizationPageWireSchema: z.ZodType<PlatformOrganizationPage> =
+  z
+    .object({
+      format_version: z.literal("hc-platform-organization-directory/v1"),
+      count: z.number().int().nonnegative(),
+      items: z.array(platformOrganizationWireSchema),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (value.count !== value.items.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["count"],
+          message: "platform organization count mismatch",
+        });
+      }
+    });
 
 export const platformProjectPageWireSchema: z.ZodType<PlatformProjectPage> = z
   .object({
@@ -494,6 +535,33 @@ export async function listPlatformProjects(
     ...(signal ? { signal } : {}),
   });
   return parseWire(platformProjectPageWireSchema, raw, { endpoint });
+}
+
+export async function listPlatformOrganizations(
+  signal?: AbortSignal,
+): Promise<PlatformOrganizationPage> {
+  const endpoint = "/platform/organizations";
+  const raw = await request<unknown>({
+    method: "GET",
+    path: endpoint,
+    scopeMode: "session",
+    cache: "no-store",
+    ...(signal ? { signal } : {}),
+  });
+  return parseWire(platformOrganizationPageWireSchema, raw, { endpoint });
+}
+
+export async function createPlatformOrganization(
+  body: PlatformOrganizationCreate,
+): Promise<PlatformOrganization> {
+  const endpoint = "/platform/organizations";
+  const raw = await request<unknown>({
+    method: "POST",
+    path: endpoint,
+    scopeMode: "session",
+    body,
+  });
+  return parseWire(platformOrganizationWireSchema, raw, { endpoint });
 }
 
 export async function createPlatformProject(

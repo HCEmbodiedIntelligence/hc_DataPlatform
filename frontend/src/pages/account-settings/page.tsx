@@ -579,9 +579,6 @@ function SettingsContent({
             <dd>{formatInstant(account.profile.password_changed_at)}</dd>
           </div>
         </dl>
-        <p className={styles.identityNote}>
-          账户设置属于当前登录身份，不会随项目或区域切换而变化。
-        </p>
       </aside>
 
       <div className={styles.formsColumn}>
@@ -815,7 +812,6 @@ export function AccountSettingsPage() {
     <StandardPageScaffold
       header={{
         title: "账户设置",
-        description: "管理个人资料、安全设置、组织与项目关系及权限申请。",
       }}
       state={state}
     />

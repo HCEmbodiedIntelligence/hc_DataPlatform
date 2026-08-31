@@ -123,9 +123,7 @@ function JobStatus({ jobId }: { jobId: string }) {
         />
       ) : null}
       {job.data.status === "SUCCEEDED" ? (
-        <p role="status">
-          任务已完成；仍以重新读取的 Version Bootstrap 判定最终状态。
-        </p>
+        <p role="status">任务已完成，正在刷新最终状态。</p>
       ) : null}
     </section>
   );
@@ -732,7 +730,6 @@ export function VersionDetailPage() {
         resourceId={versionId}
         header={{
           title: version.displayVersion,
-          description: "固定内容版本与运行修订分离，均绑定指定数据版本。",
           breadcrumbs: [
             { key: "assets", label: "数据资产", to: routes.datasets.build() },
             {
@@ -786,9 +783,6 @@ export function VersionDetailPage() {
             <div className={styles.sectionHeader}>
               <div>
                 <Typography.Title level={2}>版本概要</Typography.Title>
-                <Typography.Paragraph>
-                  所有身份和令牌均来自固定 Version Bootstrap。
-                </Typography.Paragraph>
               </div>
             </div>
             <div
@@ -848,7 +842,6 @@ export function VersionDetailPage() {
               <div className={styles.sectionHeader}>
                 <div>
                   <h2>Episodes / Revisions</h2>
-                  <p>表格、筛选和游标均绑定同一个 snapshot token。</p>
                 </div>
               </div>
               <form
@@ -964,10 +957,6 @@ export function VersionDetailPage() {
               <div className={styles.sectionHeader}>
                 <div>
                   <h2>Review 决定与 Findings</h2>
-                  <p>
-                    P07 是唯一 mutation Owner；Finding 是不可变复核事实，不是
-                    ManualIssue。
-                  </p>
                 </div>
                 <div className={styles.actions}>
                   <Button
@@ -1120,9 +1109,6 @@ export function VersionDetailPage() {
           {search.tab === "manifest" ? (
             <section className={styles.section}>
               <h2>数据清单摘要</h2>
-              <p>
-                为保护数据安全，清单原文、对象路径和授权地址不会被记录到遥测数据或查询缓存标识中。
-              </p>
               {manifest.isPending ? (
                 <RegionState state="first-loading" />
               ) : manifest.isError ? (
@@ -1157,10 +1143,6 @@ export function VersionDetailPage() {
           {search.tab === "changes" ? (
             <section className={styles.section}>
               <h2>Version Diff</h2>
-              <p>
-                比较对象必须是同一 Dataset 的固定 Version ID；不接受
-                latest/current。
-              </p>
               <label className={styles.filterField}>
                 比较 Version ID
                 <input
@@ -1186,9 +1168,6 @@ export function VersionDetailPage() {
           {search.tab === "schema" ? (
             <section className={styles.section}>
               <h2>数据结构快照</h2>
-              <p>
-                此数据结构与当前固定版本绑定。如果返回的数据结构与约定不一致，本区域将停止展示，以避免显示错误数据。
-              </p>
               {schema.isPending ? (
                 <RegionState state="first-loading" />
               ) : schema.isError ? (
@@ -1228,11 +1207,6 @@ export function VersionDetailPage() {
           {search.tab === "capacity" ? (
             <section className={styles.section}>
               <h2>容量与运营库存</h2>
-              <p>
-                必需存储绑定固定内容版本，运行清单绑定{" "}
-                <code>{data.operationalRevision}</code>
-                ；两者不会在前端合并推算。
-              </p>
               <h3>Required storage</h3>
               {requiredStorage.isPending ? (
                 <RegionState state="first-loading" />
@@ -1280,7 +1254,6 @@ export function VersionDetailPage() {
               <div className={styles.sectionHeader}>
                 <div>
                   <h2>导出</h2>
-                  <p>按所选数据格式生成内容，完成后统一下载 ZIP 压缩包。</p>
                 </div>
                 <div className={styles.actions}>
                   <label className={styles.filterField}>
@@ -1555,10 +1528,6 @@ export function VersionDetailPage() {
         onCancel={() => setHistoryEpisodeId(null)}
         width={1000}
       >
-        <p className={styles.historyHint}>
-          每一行都是该 Episode 在一个不可变 Dataset Version 中当前选定的
-          Revision；打开后仅以该 Version 的事实进行可视化。
-        </p>
         {history.isPending ? (
           <RegionState state="first-loading" />
         ) : history.isError ? (
@@ -1626,9 +1595,6 @@ export function VersionDetailPage() {
           </Button>,
         ]}
       >
-        <Typography.Paragraph>
-          异步任务只比较两个固定数据版本的内容，不会改写版本事实。
-        </Typography.Paragraph>
         <Typography.Paragraph>
           <code>{versionId}</code> → <code>{compareTo}</code>
         </Typography.Paragraph>

@@ -80,6 +80,29 @@ class AlignmentStagingArtifactV1(BaseModel):
         return self
 
 
+class AlignedMediaMp4SourceV1(BaseModel):
+    """One immutable original MP4 and an exact Episode window within it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    object_key: str = Field(min_length=1, max_length=2048)
+    size_bytes: int = Field(ge=1)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    start_offset_ns: int = Field(ge=0)
+    end_offset_ns: int = Field(gt=0)
+    capture_start_timestamp_ns: int = Field(ge=0)
+    configured_fps: float = Field(gt=0, le=1000)
+    configured_codec: str = Field(min_length=1, max_length=64)
+    configured_time_base_numerator: int = Field(ge=1)
+    configured_time_base_denominator: int = Field(ge=1, le=1_000_000_000)
+
+    @model_validator(mode="after")
+    def validate_window(self) -> AlignedMediaMp4SourceV1:
+        if self.end_offset_ns <= self.start_offset_ns:
+            raise ValueError("MP4 Episode source requires a non-empty window")
+        return self
+
+
 class AlignedMediaGenerationRequestV1(BaseModel):
     """One camera encode bound to a not-yet-visible Dataset version."""
 
@@ -92,6 +115,7 @@ class AlignedMediaGenerationRequestV1(BaseModel):
     camera_id: str = Field(min_length=1)
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     alignment: AlignmentStagingArtifactV1
+    mp4_source: AlignedMediaMp4SourceV1 | None = None
     profile_id: str = Field(default="canonical-h264-crf20-v1", min_length=1)
 
 

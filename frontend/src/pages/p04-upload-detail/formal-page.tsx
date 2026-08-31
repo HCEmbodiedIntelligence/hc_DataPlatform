@@ -25,6 +25,7 @@ import {
 } from "../../shared/lib/metric-presentation";
 import { safeReturnTo } from "../../shared/routing/route-registry";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
+import { annotationRoutes } from "../p08-data-annotation/routes";
 import { createDatasetAlignedMediaSource } from "../p06-dataset-detail/aligned-media-source";
 import {
   PageState,
@@ -306,6 +307,14 @@ function ProcessingMediaState({
             打开完整数据视图
           </Link>
         ) : null}
+        <Link
+          className={styles.viewerLink}
+          to={annotationRoutes.task.build({
+            taskId: mediaTarget.annotationTaskId,
+          })}
+        >
+          打开标注任务
+        </Link>
       </div>
     );
   }
@@ -348,10 +357,6 @@ function RawMediaEvidence({
       <div>
         <span>RAW EVIDENCE</span>
         <h2 id="raw-media-source-title">原始 MCAP 证据源</h2>
-        <p>
-          浏览器不会把 MCAP 采集包误播为视频；相机话题与 Raw 文件保持一对一的
-          数据清单关联。
-        </p>
       </div>
       {pending ? (
         <output aria-live="polite">正在取得受权 Raw 源…</output>

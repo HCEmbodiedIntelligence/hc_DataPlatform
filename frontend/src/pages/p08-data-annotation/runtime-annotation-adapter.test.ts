@@ -73,7 +73,7 @@ function installBundleResponses(
         dataset_id: fixture.task.dataset_id,
         rollout_id: fixture.task.rollout_id,
         dataset_version: fixture.task.dataset_version,
-        camera_id: fixture.manifest?.cameras[0]?.topic,
+        camera_id: (options.body as { camera_id: string }).camera_id,
         media_url: mediaUrl,
         content_type: "video/mp4",
         expires_at: "2026-08-18T12:00:00Z",
@@ -639,6 +639,45 @@ describe("P08 formal runtime annotation adapter", () => {
         }),
       }),
     );
+    clock.dispose();
+  });
+
+  it("constructs and authorizes all four Manifest cameras for a continuous Episode", async () => {
+    installRuntime();
+    const fixture = installBundleResponses();
+    const bundle = await loadRuntimeAnnotationBundle(
+      visualAnnotationScope,
+      fixture.task.task_id,
+      "annotation",
+    );
+    const clock = createPlaybackClock({ startNs: "0", endNs: "60000000000" });
+    const adapter = buildRuntimeWorkbenchAdapter({
+      bundle,
+      scope: visualAnnotationScope,
+      mode: "annotation",
+      clock,
+      tags: bundle.draft?.tags ?? [],
+      cameraLimit: 4,
+      cameraSlotCount: 4,
+      readOnly: false,
+    });
+
+    const cameraStreams = adapter.cameraStreams.filter(
+      (stream) => stream.semanticRole !== "camera-slot-placeholder",
+    );
+    const media = await Promise.all(
+      cameraStreams.map((stream) =>
+        stream.mediaSource!.authorize(new AbortController().signal),
+      ),
+    );
+    expect(cameraStreams).toHaveLength(4);
+    expect(media.every((item) => item.url.endsWith("canonical.mp4"))).toBe(true);
+    expect(
+      requestMock.mock.calls
+        .map(([options]) => options)
+        .filter((options) => options.path === "/aligned-media/authorize")
+        .map((options) => (options.body as { camera_id: string }).camera_id),
+    ).toEqual(fixture.manifest?.cameras.map((camera) => camera.topic));
     clock.dispose();
   });
 

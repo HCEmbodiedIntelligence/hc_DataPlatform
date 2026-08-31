@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -14,6 +15,8 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from PIL import Image, ImageDraw
+
+from hc_data_platform.ingest.ports import ObjectStoragePort
 
 from .models import (
     AlignedMediaEncodingProfileV1,
@@ -33,7 +36,7 @@ class AlignedMediaGenerationCancelled(AlignedMediaEncodingError):
 
 
 class FFmpegMp4Encoder:
-    """Stream JPEG frames to one immutable H.264 MP4 with OS-pipe backpressure."""
+    """Materialize immutable H.264 MP4 from JPEG staging or one localized source MP4."""
 
     _SAFE_KEY = re.compile(r"^[0-9a-f]{64}$")
 
@@ -49,6 +52,7 @@ class FFmpegMp4Encoder:
         max_frame_bytes: int = 64 * 1024 * 1024,
         ffmpeg_threads: int = 2,
         process_timeout_seconds: float = 3_600,
+        raw_storage: ObjectStoragePort | None = None,
     ) -> None:
         if max_frame_bytes < 1 or ffmpeg_threads < 1 or process_timeout_seconds <= 0:
             raise ValueError("aligned media encoder limits must be positive")
@@ -61,6 +65,7 @@ class FFmpegMp4Encoder:
         self._max_frame_bytes = max_frame_bytes
         self._ffmpeg_threads = ffmpeg_threads
         self._timeout = process_timeout_seconds
+        self._raw_storage = raw_storage
         self._placeholder_cache: dict[tuple[int, int], bytes] = {}
 
     def encode(
@@ -85,12 +90,20 @@ class FFmpegMp4Encoder:
         temporary = Path(tempfile.mkdtemp(prefix=f".{artifact_key}.", dir=self._root))
         try:
             output = temporary / "media.mp4"
-            self._encode_file(
-                output,
-                profile=profile,
-                frames=frames,
-                cancelled=cancelled,
-            )
+            if request.mp4_source is None:
+                self._encode_file(
+                    output,
+                    profile=profile,
+                    frames=frames,
+                    cancelled=cancelled,
+                )
+            else:
+                self._encode_mp4_source(
+                    output,
+                    request=request,
+                    profile=profile,
+                    cancelled=cancelled,
+                )
             encoded = self._probe(output, expected_frames=request.alignment.row_count)
             try:
                 temporary.rename(final_dir)
@@ -103,6 +116,276 @@ class FFmpegMp4Encoder:
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
+
+    def _encode_mp4_source(
+        self,
+        output: Path,
+        *,
+        request: AlignedMediaGenerationRequestV1,
+        profile: AlignedMediaEncodingProfileV1,
+        cancelled: Callable[[], bool] | None,
+    ) -> None:
+        source = request.mp4_source
+        if source is None:
+            raise RuntimeError("MP4 source descriptor is missing")
+        storage = self._raw_storage
+        if storage is None:
+            raise AlignedMediaEncodingError("raw object storage is not configured for MP4 cuts")
+        localized = output.parent / "source.mp4"
+        digest = hashlib.sha256()
+        written = 0
+        try:
+            with localized.open("wb") as stream:
+                for chunk in storage.read_chunks(source.object_key):
+                    if cancelled is not None and cancelled():
+                        raise AlignedMediaGenerationCancelled(
+                            "aligned media generation was cancelled"
+                        )
+                    if not isinstance(chunk, bytes):
+                        raise TypeError("raw object storage returned non-bytes")
+                    written += len(chunk)
+                    if written > source.size_bytes:
+                        raise AlignedMediaEncodingError(
+                            "localized MP4 exceeded its immutable size receipt"
+                        )
+                    digest.update(chunk)
+                    stream.write(chunk)
+            if written != source.size_bytes or digest.hexdigest() != source.content_sha256:
+                raise AlignedMediaEncodingError(
+                    "localized MP4 differs from its immutable object receipt"
+                )
+            source_probe = self._probe_source(localized)
+            expected_frames = request.alignment.row_count
+            if self._can_stream_copy(source_probe, source=source, expected_frames=expected_frames):
+                command = [
+                    self._ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(localized),
+                    "-map",
+                    "0:v:0",
+                    "-an",
+                    "-c:v",
+                    "copy",
+                    "-frames:v",
+                    str(expected_frames),
+                    "-video_track_timescale",
+                    str(profile.fps),
+                    "-movflags",
+                    "+faststart",
+                    str(output),
+                ]
+                decision = "STREAM_COPY"
+            else:
+                start = source.start_offset_ns / 1_000_000_000
+                end = source.end_offset_ns / 1_000_000_000
+                filters = (
+                    f"trim=start={start:.9f}:end={end:.9f},setpts=PTS-STARTPTS,"
+                    f"fps=fps={profile.fps}:start_time=0:round=near,"
+                    f"format={profile.pixel_format},setparams=range=limited"
+                )
+                command = [
+                    self._ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(localized),
+                    "-map",
+                    "0:v:0",
+                    "-an",
+                    "-vf",
+                    filters,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    profile.preset,
+                    "-crf",
+                    str(profile.crf),
+                    "-pix_fmt",
+                    profile.pixel_format,
+                    "-g",
+                    str(profile.gop_frames),
+                    "-keyint_min",
+                    str(profile.gop_frames),
+                    "-sc_threshold",
+                    "0",
+                    "-bf",
+                    "0",
+                    "-threads",
+                    str(self._ffmpeg_threads),
+                    "-frames:v",
+                    str(expected_frames),
+                    "-r",
+                    str(profile.fps),
+                    "-fps_mode",
+                    "cfr",
+                    "-video_track_timescale",
+                    str(profile.fps),
+                    "-movflags",
+                    "+faststart",
+                    str(output),
+                ]
+                decision = "TRANSCODE"
+            self._run_ffmpeg(command, cancelled=cancelled)
+            (output.parent / "encode-facts.json").write_text(
+                json.dumps(
+                    {
+                        "decision": decision,
+                        "frame_count": expected_frames,
+                        "first_timestamp_ns": (
+                            source.capture_start_timestamp_ns + source.start_offset_ns
+                        ),
+                        "localized_source_bytes": written,
+                        "placeholder_count": 0,
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+        finally:
+            with suppress(OSError):
+                localized.unlink()
+
+    def _run_ffmpeg(
+        self,
+        command: list[str],
+        *,
+        cancelled: Callable[[], bool] | None,
+    ) -> None:
+        try:
+            process = self._process_factory(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise AlignedMediaEncodingError(
+                f"required executable is unavailable: {self._ffmpeg}"
+            ) from exc
+        deadline = time.monotonic() + self._timeout
+        try:
+            while True:
+                if cancelled is not None and cancelled():
+                    raise AlignedMediaGenerationCancelled("aligned media generation was cancelled")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, self._timeout)
+                try:
+                    _stdout, stderr = process.communicate(timeout=min(1.0, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if process.returncode != 0:
+                detail = bytes(stderr or b"").decode(errors="replace").strip()
+                raise AlignedMediaEncodingError(detail or "unknown FFmpeg failure")
+        except BaseException as exc:
+            with suppress(Exception):
+                process.kill()
+            with suppress(Exception):
+                process.communicate(timeout=5)
+            if isinstance(exc, subprocess.TimeoutExpired):
+                raise AlignedMediaEncodingError("aligned media encoding timed out") from exc
+            raise
+
+    def _probe_source(self, path: Path) -> dict[str, Any]:
+        try:
+            result = self._probe_runner(
+                [
+                    self._ffprobe,
+                    "-v",
+                    "error",
+                    "-count_frames",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    (
+                        "stream=codec_name,pix_fmt,width,height,avg_frame_rate,r_frame_rate,"
+                        "time_base,start_time,duration,nb_read_frames"
+                    ),
+                    "-of",
+                    "json",
+                    str(path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise AlignedMediaEncodingError("ffprobe could not inspect the source MP4") from exc
+        payload = json.loads(result.stdout)
+        streams = payload.get("streams")
+        if not isinstance(streams, list) or len(streams) != 1:
+            raise AlignedMediaEncodingError("source MP4 must contain exactly one video stream")
+        try:
+            first = self._probe_runner(
+                [
+                    self._ffprobe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-read_intervals",
+                    "0%+#1",
+                    "-show_entries",
+                    "frame=key_frame,best_effort_timestamp_time",
+                    "-of",
+                    "json",
+                    str(path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise AlignedMediaEncodingError(
+                "ffprobe could not inspect the first source frame"
+            ) from exc
+        first_frames = json.loads(first.stdout).get("frames")
+        if not isinstance(first_frames, list) or len(first_frames) != 1:
+            raise AlignedMediaEncodingError("source MP4 has no first video frame")
+        result = dict(streams[0])
+        result["_first_key_frame"] = first_frames[0].get("key_frame")
+        result["_first_pts"] = first_frames[0].get("best_effort_timestamp_time")
+        return result
+
+    @staticmethod
+    def _can_stream_copy(
+        probe: dict[str, Any],
+        *,
+        source: Any,
+        expected_frames: int,
+    ) -> bool:
+        if source.start_offset_ns != 0:
+            return False
+        try:
+            frames = int(probe.get("nb_read_frames") or 0)
+            duration_ns = round(float(probe.get("duration") or 0) * 1_000_000_000)
+        except (TypeError, ValueError):
+            return False
+        return (
+            probe.get("codec_name") == "h264"
+            and source.configured_codec.lower() == "h264"
+            and source.configured_fps == 30
+            and source.configured_time_base_numerator == 1
+            and source.configured_time_base_denominator == 30
+            and probe.get("pix_fmt") == "yuv420p"
+            and probe.get("avg_frame_rate") == "30/1"
+            and probe.get("r_frame_rate") == "30/1"
+            and probe.get("time_base") == "1/30"
+            and float(probe.get("start_time") or 0) == 0
+            and int(probe.get("_first_key_frame") or 0) == 1
+            and float(probe.get("_first_pts") or -1) == 0
+            and frames == expected_frames
+            and abs(duration_ns - source.end_offset_ns) <= 1
+        )
 
     def _encode_file(
         self,
@@ -294,7 +577,10 @@ class FFmpegMp4Encoder:
                 "error",
                 "-count_frames",
                 "-show_entries",
-                "stream=index,codec_type,codec_name,pix_fmt,width,height,avg_frame_rate,nb_read_frames:format=duration",
+                (
+                    "stream=index,codec_type,codec_name,pix_fmt,width,height,avg_frame_rate,"
+                    "r_frame_rate,time_base,start_time,nb_read_frames:format=duration"
+                ),
                 "-of",
                 "json",
                 str(path),
@@ -320,6 +606,9 @@ class FFmpegMp4Encoder:
             stream.get("codec_name") != "h264"
             or stream.get("pix_fmt") != "yuv420p"
             or stream.get("avg_frame_rate") != "30/1"
+            or stream.get("r_frame_rate") != "30/1"
+            or stream.get("time_base") != "1/30"
+            or float(stream.get("start_time") or 0) != 0
         ):
             raise AlignedMediaEncodingError(
                 "MP4 codec, pixel format, or frame rate is invalid: "
@@ -331,6 +620,43 @@ class FFmpegMp4Encoder:
         expected_duration = frame_count / 30
         if abs(duration - expected_duration) > 1 / 30:
             raise AlignedMediaEncodingError("MP4 duration does not match aligned timeline")
+        first_frame = self._probe_runner(
+            [
+                self._ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-read_intervals",
+                "0%+#1",
+                "-show_entries",
+                "frame=key_frame,best_effort_timestamp",
+                "-of",
+                "json",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        first_payload = json.loads(first_frame.stdout)
+        frames = first_payload.get("frames")
+        if (
+            not isinstance(frames, list)
+            or len(frames) != 1
+            or int(frames[0].get("key_frame", 0)) != 1
+            or int(frames[0].get("best_effort_timestamp", -1)) != 0
+        ):
+            raise AlignedMediaEncodingError(
+                "canonical MP4 must start at PTS 0 on an independently decodable keyframe"
+            )
+        with path.open("rb") as stream_file:
+            header = stream_file.read(min(path.stat().st_size, 2 * 1024 * 1024))
+        moov = header.find(b"moov")
+        mdat = header.find(b"mdat")
+        if moov < 0 or (mdat >= 0 and moov > mdat):
+            raise AlignedMediaEncodingError("canonical MP4 is missing faststart atom ordering")
         return EncodedAlignedMediaV1(
             file_uri=path.resolve().as_uri(),
             frame_count=frame_count,

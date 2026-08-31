@@ -32,7 +32,8 @@ export function UploadMethodPanel(props: {
         <div>
           <h2 id="upload-method-heading">选择采集文件夹</h2>
           <p>
-            浏览器会先在本地读取文件名、大小和数据清单；确认前不会创建任务或联系服务端预检。
+            支持平台 Manifest + MCAP，也支持原生 Unitree G1 LeRobot
+            v3（Parquet、MP4、meta）；确认前不会上传文件。
           </p>
         </div>
       </header>
@@ -63,6 +64,7 @@ export function UploadMethodPanel(props: {
           </span>
           <strong>选择采集文件夹</strong>
           <span>支持包含多个独立数据清单的数据包多级目录</span>
+          <small>也支持一个原始 LeRobot v3 数据集目录</small>
           <small>文件只在确认上传后开始提交</small>
         </label>
 

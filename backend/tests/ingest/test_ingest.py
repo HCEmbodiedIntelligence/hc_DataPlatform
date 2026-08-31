@@ -188,6 +188,36 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     assert rollout.status is RolloutStatus.RAW_COMMITTED
     assert storage.head(event.manifest_key) is not None
     assert event.object_key == raw_object_key(manifest)
+    raw_source_id = f"upload-{session.session_id.replace('-', '')}"
+    raw_source = service.raw_sources.get_source(
+        organization_id="legacy",
+        project_id="p1",
+        region_code="cn-hz",
+        raw_source_id=raw_source_id,
+    )
+    assert raw_source is not None
+    assert raw_source.source_format.value == "MCAP"
+    assert raw_source.manifest_key == event.manifest_key
+    assert raw_source.content_hash == manifest.sha256
+    assert raw_source.processing_status.value == "PENDING"
+    raw_episodes = service.raw_sources.list_episodes(
+        organization_id="legacy",
+        project_id="p1",
+        region_code="cn-hz",
+        raw_source_id=raw_source_id,
+    )
+    assert [(item.episode_id, item.source_episode_index) for item in raw_episodes] == [
+        (manifest.rollout_id, 0)
+    ]
+    raw_job = service.raw_sources.get_job(
+        organization_id="legacy",
+        project_id="p1",
+        region_code="cn-hz",
+        raw_source_id=raw_source_id,
+    )
+    assert raw_job is not None
+    assert raw_job.job_type.value == "DIRECT_EPISODE_INGEST"
+    assert raw_job.adapter_name == "mcap"
 
 
 def test_raw_media_access_requires_a_committed_object_and_records_a_redacted_audit() -> None:

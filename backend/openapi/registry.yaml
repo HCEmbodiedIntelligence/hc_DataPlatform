@@ -20,30 +20,6 @@ components:
       - part_numbers
       title: AuthorizeRobotModelAssetPartsRequest
       type: object
-    BindRobotModelVersionRequest:
-      additionalProperties: false
-      properties:
-        region_code:
-          maxLength: 64
-          minLength: 1
-          title: Region Code
-          type: string
-        robot_etag:
-          maxLength: 256
-          minLength: 1
-          title: Robot Etag
-          type: string
-        robot_id:
-          maxLength: 128
-          minLength: 1
-          title: Robot Id
-          type: string
-      required:
-      - region_code
-      - robot_id
-      - robot_etag
-      title: BindRobotModelVersionRequest
-      type: object
     BlockedReason:
       additionalProperties: false
       properties:
@@ -500,77 +476,6 @@ components:
       - updated_at
       title: RobotModelAssetUploadSession
       type: object
-    RobotModelBinding:
-      additionalProperties: false
-      properties:
-        binding_id:
-          minLength: 1
-          title: Binding Id
-          type: string
-        bound_at:
-          format: date-time
-          title: Bound At
-          type: string
-        region_code:
-          maxLength: 64
-          minLength: 1
-          title: Region Code
-          type: string
-        robot_id:
-          maxLength: 128
-          minLength: 1
-          title: Robot Id
-          type: string
-        status:
-          $ref: '#/components/schemas/RobotModelBindingStatus'
-        unbound_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          title: Unbound At
-        version_id:
-          maxLength: 128
-          minLength: 1
-          title: Version Id
-          type: string
-      required:
-      - binding_id
-      - robot_id
-      - region_code
-      - version_id
-      - status
-      - bound_at
-      title: RobotModelBinding
-      type: object
-    RobotModelBindingPage:
-      additionalProperties: false
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/RobotModelBinding'
-          title: Items
-          type: array
-        request_id:
-          maxLength: 128
-          minLength: 1
-          title: Request Id
-          type: string
-        scope:
-          $ref: '#/components/schemas/RegistryScope'
-      required:
-      - items
-      - scope
-      - request_id
-      title: RobotModelBindingPage
-      type: object
-    RobotModelBindingStatus:
-      enum:
-      - ACTIVE
-      - SUPERSEDED
-      - REVOKED
-      title: RobotModelBindingStatus
-      type: string
     RobotModelDraftScope:
       enum:
       - ASSETS
@@ -905,14 +810,6 @@ paths:
         schema:
           title: Upload Id
           type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
       requestBody:
         content:
           application/json:
@@ -1000,14 +897,6 @@ paths:
         required: true
         schema:
           title: Upload Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       requestBody:
         content:
@@ -1097,14 +986,6 @@ paths:
         schema:
           title: Version Id
           type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
       responses:
         '200':
           content:
@@ -1186,14 +1067,6 @@ paths:
         required: true
         schema:
           title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       responses:
         '200':
@@ -1283,14 +1156,6 @@ paths:
         schema:
           title: Asset Id
           type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
       responses:
         '200':
           content:
@@ -1357,199 +1222,6 @@ paths:
       summary: Authorize Robot Model Asset Download
       tags:
       - registry
-  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/bindings:
-    get:
-      operationId: listRobotModelBindings
-      parameters:
-      - in: path
-        name: organization_id
-        required: true
-        schema:
-          title: Organization Id
-          type: string
-      - in: path
-        name: version_id
-        required: true
-        schema:
-          title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RobotModelBindingPage'
-          description: Successful Response
-        '401':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '403':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '404':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '409':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '412':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '413':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '415':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '422':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '503':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-      security:
-      - bearerAuth: []
-      summary: List Robot Model Bindings
-      tags:
-      - registry
-    post:
-      operationId: bindRobotModelVersion
-      parameters:
-      - in: path
-        name: organization_id
-        required: true
-        schema:
-          title: Organization Id
-          type: string
-      - in: path
-        name: version_id
-        required: true
-        schema:
-          title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
-      - in: header
-        name: Idempotency-Key
-        required: true
-        schema:
-          maxLength: 256
-          minLength: 1
-          title: Idempotency-Key
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BindRobotModelVersionRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RobotModelBinding'
-          description: Successful Response
-        '401':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '403':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '404':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '409':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '412':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '413':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '415':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '422':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-        '503':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-          description: The registry request could not be completed.
-      security:
-      - bearerAuth: []
-      summary: Bind Robot Model Version
-      tags:
-      - registry
   /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/joint-mappings:
     get:
       operationId: listRobotModelJointMappings
@@ -1565,14 +1237,6 @@ paths:
         required: true
         schema:
           title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       responses:
         '200':
@@ -1654,14 +1318,6 @@ paths:
         required: true
         schema:
           title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       - in: header
         name: If-Match
@@ -1768,14 +1424,6 @@ paths:
           title: Version Id
           type: string
       - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
-      - in: header
         name: Idempotency-Key
         required: true
         schema:
@@ -1870,14 +1518,6 @@ paths:
         required: true
         schema:
           title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       - in: header
         name: Idempotency-Key
@@ -1976,14 +1616,6 @@ paths:
           title: Version Id
           type: string
       - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
-      - in: header
         name: If-Match
         required: true
         schema:
@@ -2080,14 +1712,6 @@ paths:
         required: true
         schema:
           title: Version Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       - in: header
         name: If-Match
@@ -2197,14 +1821,6 @@ paths:
             type: string
           - type: 'null'
           title: Q
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
-          type: string
       responses:
         '200':
           content:
@@ -2279,14 +1895,6 @@ paths:
         required: true
         schema:
           title: Organization Id
-          type: string
-      - in: header
-        name: X-Project-ID
-        required: true
-        schema:
-          maxLength: 128
-          minLength: 1
-          title: X-Project-Id
           type: string
       - in: header
         name: Idempotency-Key

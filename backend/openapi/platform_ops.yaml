@@ -1198,6 +1198,65 @@ components:
       - upgrade_preflight
       title: PlatformOperationsOverview
       type: object
+    PlatformOrganization:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      title: PlatformOrganization
+      type: object
+    PlatformOrganizationCreate:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      title: PlatformOrganizationCreate
+      type: object
+    PlatformOrganizationPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          default: hc-platform-organization-directory/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformOrganization'
+          title: Items
+          type: array
+      required:
+      - count
+      - items
+      title: PlatformOrganizationPage
+      type: object
     PlatformProject:
       additionalProperties: false
       properties:
@@ -1239,21 +1298,21 @@ components:
           pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
           title: Organization Id
           type: string
-        organization_name:
-          maxLength: 256
-          minLength: 1
-          title: Organization Name
-          type: string
         project_id:
           maxLength: 128
           minLength: 1
           pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
           title: Project Id
           type: string
+        project_name:
+          maxLength: 256
+          minLength: 1
+          title: Project Name
+          type: string
       required:
       - organization_id
-      - organization_name
       - project_id
+      - project_name
       title: PlatformProjectCreate
       type: object
     PlatformProjectPage:
@@ -2452,6 +2511,85 @@ paths:
       summary: Get Object Store Location
       tags:
       - platform-operations
+  /api/v1/platform/organizations:
+    get:
+      operationId: listPlatformOrganizations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOrganizationPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: List Platform Organizations
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+    post:
+      operationId: createPlatformOrganization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformOrganizationCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOrganization'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The organization already exists.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Platform Organization
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
   /api/v1/platform/overview:
     get:
       operationId: getPlatformOperationsOverview
@@ -2542,6 +2680,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The selected organization does not exist.
         '409':
           content:
             application/problem+json:

@@ -167,21 +167,6 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RecordingVideoSourceEnvelope"}
-  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:transition-processing:
-    post:
-      operationId: transitionContinuousRecordingEpisodeProcessing
-      security: [{bearerAuth: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/AdvanceEpisodeProcessingCommand"}
-      responses:
-        "200":
-          description: Episode advanced through the enforced QC/alignment state machine
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/EpisodeProcessingEnvelope"}
   /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources:
     get:
       operationId: authorizeContinuousRecordingEpisodeVideos
@@ -234,6 +219,9 @@ components:
       type: string
       pattern: "^(?:0|[1-9][0-9]*)$"
       description: Nanoseconds encoded as a canonical decimal string for JSON precision.
+    SensorTimestampMode:
+      type: string
+      enum: [ABSOLUTE_NS, RECORDING_OFFSET_NS]
     CameraRecordingConfig:
       type: object
       additionalProperties: false
@@ -254,6 +242,16 @@ components:
         clock_domain: {type: string, minLength: 1, maxLength: 128}
         time_base_numerator: {type: integer, minimum: 1, default: 1}
         time_base_denominator: {type: integer, minimum: 1, maximum: 1000000000}
+        capture_start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+    SensorRecordingConfig:
+      type: object
+      additionalProperties: false
+      required: [topic, clock_domain]
+      properties:
+        topic: {type: string, minLength: 1, maxLength: 512}
+        clock_domain: {type: string, minLength: 1, maxLength: 128}
+        timestamp_mode: {$ref: "#/components/schemas/SensorTimestampMode"}
+        required: {type: boolean, default: true}
     RecordingConfiguration:
       type: object
       additionalProperties: false
@@ -267,6 +265,11 @@ components:
           minItems: 1
           maxItems: 128
           items: {$ref: "#/components/schemas/CameraRecordingConfig"}
+        sensors:
+          type: array
+          maxItems: 2048
+          default: []
+          items: {$ref: "#/components/schemas/SensorRecordingConfig"}
     RecordingAssetManifest:
       type: object
       additionalProperties: false
@@ -602,8 +605,17 @@ components:
         start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
         end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
         status: {$ref: "#/components/schemas/EpisodeProcessingStatus"}
+        workflow_id: {type: [string, "null"], minLength: 1, maxLength: 1024}
+        event_id: {type: [string, "null"], format: uuid}
         qc_report_id: {type: [string, "null"]}
         alignment_attempt_id: {type: [string, "null"]}
+        dataset_id: {type: [string, "null"], minLength: 1, maxLength: 128}
+        dataset_version: {type: [integer, "null"], minimum: 1}
+        lance_version: {type: [integer, "null"], minimum: 1}
+        annotation_task_id: {type: [string, "null"], minLength: 1, maxLength: 128}
+        aligned_media_camera_count: {type: [integer, "null"], minimum: 1, maximum: 128}
+        failure_code: {type: [string, "null"], pattern: "^[A-Z0-9_]+$"}
+        failure_stage: {type: [string, "null"], minLength: 1, maxLength: 128}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     EpisodeProcessingPage:
@@ -615,21 +627,6 @@ components:
           type: array
           items: {$ref: "#/components/schemas/EpisodeProcessing"}
         total: {type: integer, minimum: 0}
-    AdvanceEpisodeProcessingCommand:
-      type: object
-      additionalProperties: false
-      required: [expected_status, new_status]
-      properties:
-        expected_status: {$ref: "#/components/schemas/EpisodeProcessingStatus"}
-        new_status: {$ref: "#/components/schemas/EpisodeProcessingStatus"}
-        qc_report_id: {type: [string, "null"], minLength: 1, maxLength: 256}
-        alignment_attempt_id: {type: [string, "null"], minLength: 1, maxLength: 256}
-    EpisodeProcessingEnvelope:
-      type: object
-      additionalProperties: false
-      required: [episode]
-      properties:
-        episode: {$ref: "#/components/schemas/EpisodeProcessing"}
     EpisodeVideoSource:
       type: object
       additionalProperties: false

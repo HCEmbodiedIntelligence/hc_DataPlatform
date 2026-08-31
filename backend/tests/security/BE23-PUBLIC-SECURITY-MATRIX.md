@@ -436,6 +436,7 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/platform/releases/{release_id}:transition` | N1；仅 `platform.release.operate`；外部控制器按有限状态机记录步骤，不接收集群凭据。 |
 | `/api/v1/platform/object-store-location` | N1；任意已认证账户可读取对象存储逻辑位置和配置来源，不返回 endpoint、bucket、access key 或 Secret。 |
 | `/api/v1/platform/object-store-config` | N1；仅 exact `platform.admin`；GET 不返回 Secret，PUT 使用 revision CAS，并将凭据加密后持久化，成功与拒绝均写 PLATFORM audit。 |
+| `/api/v1/platform/organizations` | N1；仅 exact `platform.admin`；GET/POST 独立管理全局组织目录，创建冲突 fail closed，成功与拒绝均写 PLATFORM audit。 |
 | `/api/v1/platform/projects` | N1；仅 exact `platform.admin`；GET/POST 操作全局项目目录，创建冲突 fail closed，成功与拒绝均写 PLATFORM audit。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads` | N1；写 capability 与 organization/project/region 精确 scope；只签发有界 multipart 上传授权，不返回对象存储凭据。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}` | N1；读 capability 与精确 scope；upload ID 必须归属当前 scope，响应不含对象 key 或凭据。 |
@@ -444,6 +445,5 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}:commit` | N1；写 capability 与精确 scope；仅在全部不可变资产校验通过后提交，并返回 no-store/ETag。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes` | N1；读 capability 与精确 scope；仅返回当前 recording 的 Episode 处理状态。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources` | N1；读 capability 与精确 scope；仅为 finalized Episode 返回短期原视频读取 URL，不物化预览副本。 |
-| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:transition-processing` | N1；写 capability 与精确 scope；使用 expected status 防止并发状态覆盖。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-proposals` | N1；写 capability 与精确 scope；模型切片提案受 If-Match/ETag 并发保护。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/video-sources` | N1；读 capability 与精确 scope；仅签发短期原视频读取 URL，不返回对象存储凭据或物理 key。 |

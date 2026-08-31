@@ -30,20 +30,16 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 function page(ids: readonly string[], cursor: string | null = null) {
   return {
-    query: "星舟",
     items: ids.map((id) => ({
-      entity_type: "ROBOT",
-      robot: {
-        id,
-        display_name: id === "robot-1" ? "星舟 017" : "星舟 018",
-        serial_no: id === "robot-1" ? "SN-017" : "SN-018",
-        lifecycle_status: "ACTIVE",
-        connectivity: {
-          state: "ONLINE",
-          observed_at: "2026-08-21T08:00:00Z",
-          source: "edge-agent",
-          reason_code: null,
-        },
+      id,
+      display_name: id === "robot-1" ? "星舟 017" : "星舟 018",
+      serial_no: id === "robot-1" ? "SN-017" : "SN-018",
+      lifecycle_status: "ACTIVE",
+      connectivity: {
+        state: "ONLINE",
+        observed_at: "2026-08-21T08:00:00Z",
+        source: "edge-agent",
+        reason_code: null,
       },
     })),
     page_info: {
@@ -53,7 +49,7 @@ function page(ids: readonly string[], cursor: string | null = null) {
       end_cursor: cursor,
     },
     snapshot_at: "2026-08-21T08:00:00Z",
-    scope: { project_id: scope.projectId, region_code: scope.regionCode },
+    scope: { organization_id: scope.organizationId },
     request_id: "global-search-test",
     contract_version: "2026-08-21",
   };
@@ -252,17 +248,17 @@ describe("global robot search", () => {
     );
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe(
-      "/api/v1/projects/project-search/regions/cn-shanghai-01/search?q=%E6%98%9F%E8%88%9F&limit=10",
+      "/api/v1/organizations/org-search/robots?q=%E6%98%9F%E8%88%9F",
     );
     const headers = new Headers(init?.headers);
     expect(headers.get("Authorization")).toBe("Bearer search-token");
-    expect(headers.get("X-Project-Id")).toBe(scope.projectId);
-    expect(headers.get("X-Region-Code")).toBe(scope.regionCode);
+    expect(headers.get("X-Project-Id")).toBeNull();
+    expect(headers.get("X-Region-Code")).toBeNull();
 
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         ...page(["robot-1"]),
-        scope: { project_id: "foreign", region_code: scope.regionCode },
+        scope: { organization_id: "foreign" },
       }),
     );
     await expect(searchRobots(scope, "星舟", undefined)).rejects.toMatchObject({
@@ -375,8 +371,8 @@ describe("global robot search", () => {
 
     const urls = fetchMock.mock.calls.map(([url]) => String(url));
     expect(urls).toEqual([
-      "/api/v1/projects/project-search/regions/cn-shanghai-01/search?q=%E6%98%9F%E8%88%9F&limit=10",
-      "/api/v1/projects/project-search/regions/cn-shanghai-01/search?q=%E6%98%9F%E8%88%9F&cursor=cursor-2&limit=10",
+      "/api/v1/organizations/org-search/robots?q=%E6%98%9F%E8%88%9F",
+      "/api/v1/organizations/org-search/robots?q=%E6%98%9F%E8%88%9F&cursor=cursor-2",
     ]);
   });
 
@@ -422,7 +418,7 @@ describe("global robot search", () => {
     expect(await screen.findByText("星舟装配数据集")).toBeVisible();
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(
       expect.arrayContaining([
-        "/api/v1/projects/project-search/regions/cn-shanghai-01/search?q=%E6%98%9F%E8%88%9F&limit=10",
+        "/api/v1/organizations/org-search/robots?q=%E6%98%9F%E8%88%9F",
         "/api/v1/projects/project-search/regions/cn-shanghai-01/data-sources/page?q=%E6%98%9F%E8%88%9F&sort=name%3Aasc%2Cid%3Aasc&limit=10",
         "/api/v1/projects/project-search/datasets?q=%E6%98%9F%E8%88%9F&sort=name%3Aasc%2Cdataset_id%3Aasc&limit=20",
       ]),

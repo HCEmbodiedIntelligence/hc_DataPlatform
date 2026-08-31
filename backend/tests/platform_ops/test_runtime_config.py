@@ -104,11 +104,6 @@ def test_revision_zero_preserves_release_boot_intervals_without_rounding() -> No
         )
 
 
-def test_legacy_preview_interval_is_read_only_compatibility() -> None:
-    values = RuntimeConfigValues.model_validate({"scheduling.preview_gc_interval_seconds": 450})
-    assert values.external()["scheduling.media_maintenance_interval_seconds"] == 450
-
-
 def test_revision_compare_and_swap_history_and_rollback_are_monotonic() -> None:
     repository = InMemoryRuntimeConfigRepository(clock=lambda: NOW)
     first = repository.publish(
@@ -266,3 +261,16 @@ def test_runtime_config_api_enforces_exact_capabilities_and_audits_no_values() -
         event.action == "platform.runtime_config.published" and event.outcome == "SUCCEEDED"
         for event in gate.platform_audit_events
     )
+def test_legacy_preview_interval_is_read_only_compatibility() -> None:
+    values = RuntimeConfigValues.model_validate({"scheduling.preview_gc_interval_seconds": 450})
+    assert values.external()["scheduling.media_maintenance_interval_seconds"] == 450
+def test_legacy_preview_interval_is_read_only_compatibility() -> None:
+    values = RuntimeConfigValues.model_validate({"scheduling.preview_gc_interval_seconds": 450})
+    assert values.media_maintenance_interval_seconds == 450
+    assert values.external() == {
+        "scheduling.media_maintenance_interval_seconds": 450,
+        "scheduling.storage_inventory_interval_seconds": 3600,
+        "ui.maintenance_banner_enabled": False,
+    }
+
+

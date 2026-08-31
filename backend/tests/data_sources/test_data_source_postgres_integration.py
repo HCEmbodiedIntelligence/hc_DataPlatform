@@ -90,7 +90,10 @@ def _prepare_app_role(dsn: str) -> None:
             "GRANT USAGE ON SCHEMA core, ingest, registry, robotics TO p02_data_source_writer"
         )
         cursor.execute("GRANT SELECT ON registry.organization_projects TO p02_data_source_writer")
-        cursor.execute("GRANT SELECT ON robotics.robot_instances TO p02_data_source_writer")
+        cursor.execute(
+            "GRANT SELECT ON robotics.robot_assets, robotics.project_robot_assignments "
+            "TO p02_data_source_writer"
+        )
         cursor.execute(
             "GRANT SELECT, INSERT, UPDATE ON ingest.data_sources TO p02_data_source_writer"
         )
@@ -149,8 +152,13 @@ def _cleanup(dsn: str) -> None:
             (PROJECT_ID, FOREIGN_PROJECT_ID),
         )
         cursor.execute(
-            "DELETE FROM robotics.robot_instances WHERE project_id = %s AND region_code = %s",
+            "DELETE FROM robotics.project_robot_assignments "
+            "WHERE project_id = %s AND region_code = %s",
             (PROJECT_ID, REGION_CODE),
+        )
+        cursor.execute(
+            "DELETE FROM robotics.robot_assets WHERE organization_id = %s AND robot_id = %s",
+            (ORGANIZATION_ID, ROBOT_ID),
         )
         cursor.execute(
             "DELETE FROM registry.organization_projects WHERE organization_id = ANY(%s)",
@@ -214,20 +222,18 @@ def test_postgres_data_source_is_rls_scoped_encrypted_audited_and_replayable() -
         with psycopg.connect(superuser_dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s)",
-                (ORGANIZATION_ID, PROJECT_ID),
+                "(organization_id, project_id, display_name) VALUES (%s, %s, %s)",
+                (ORGANIZATION_ID, PROJECT_ID, "P02 集成项目"),
             )
             cursor.execute(
                 """
-                INSERT INTO robotics.robot_instances (
-                    organization_id, project_id, region_code, robot_id, display_name, serial_no,
+                INSERT INTO robotics.robot_assets (
+                    organization_id, robot_id, display_name, serial_no,
                     lifecycle_status, connectivity_state, etag, topology_revision, allowed_actions
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
                 """,
                 (
                     ORGANIZATION_ID,
-                    PROJECT_ID,
-                    REGION_CODE,
                     ROBOT_ID,
                     "P02 PostgreSQL 机器人",
                     "P02-PG-SN",
@@ -238,14 +244,22 @@ def test_postgres_data_source_is_rls_scoped_encrypted_audited_and_replayable() -
                 ),
             )
             cursor.execute(
-                "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s)",
-                (FOREIGN_ORGANIZATION_ID, FOREIGN_PROJECT_ID),
+                """
+                INSERT INTO robotics.project_robot_assignments (
+                    organization_id, project_id, region_code, robot_id, assigned_by
+                ) VALUES (%s, %s, %s, %s, %s)
+                """,
+                (ORGANIZATION_ID, PROJECT_ID, REGION_CODE, ROBOT_ID, "p02-test"),
             )
             cursor.execute(
                 "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s)",
-                (SAME_PROJECT_FOREIGN_ORGANIZATION_ID, PROJECT_ID),
+                "(organization_id, project_id, display_name) VALUES (%s, %s, %s)",
+                (FOREIGN_ORGANIZATION_ID, FOREIGN_PROJECT_ID, "P02 外部项目"),
+            )
+            cursor.execute(
+                "INSERT INTO registry.organization_projects "
+                "(organization_id, project_id, display_name) VALUES (%s, %s, %s)",
+                (SAME_PROJECT_FOREIGN_ORGANIZATION_ID, PROJECT_ID, "P02 同名外部项目"),
             )
             cursor.execute(
                 """

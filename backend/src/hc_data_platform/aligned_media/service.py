@@ -33,11 +33,16 @@ from .ports import (
 from .profiles import DEFAULT_ALIGNED_MEDIA_PROFILES, AlignedMediaProfileCatalog
 
 ALIGNED_MEDIA_PIPELINE_REVISION = "aligned-mp4-image2pipe-v1"
+MP4_EPISODE_PIPELINE_REVISION = "aligned-mp4-native-cut-v1"
 
 
 def aligned_media_artifact_key(request: AlignedMediaGenerationRequestV1) -> str:
     payload = {
-        "pipeline_revision": ALIGNED_MEDIA_PIPELINE_REVISION,
+        "pipeline_revision": (
+            MP4_EPISODE_PIPELINE_REVISION
+            if request.mp4_source is not None
+            else ALIGNED_MEDIA_PIPELINE_REVISION
+        ),
         "project_id": request.project_id,
         "dataset_id": request.dataset_id,
         "rollout_id": request.rollout_id,
@@ -47,6 +52,9 @@ def aligned_media_artifact_key(request: AlignedMediaGenerationRequestV1) -> str:
         "alignment_version": request.alignment.alignment_version,
         "alignment_content_sha256": request.alignment.content_sha256,
         "profile_id": request.profile_id,
+        "mp4_source": (
+            None if request.mp4_source is None else request.mp4_source.model_dump(mode="json")
+        ),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()

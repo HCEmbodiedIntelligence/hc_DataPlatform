@@ -12,7 +12,7 @@ describe('StorageOverviewPanel', () => {
     expect(html).toContain('存储容量核对');
     expect(html).toContain('核对一致');
     expect(html).toContain('平台登记容量');
-    expect(html).toContain('对象存储实际盘点容量');
+    expect(html).toContain('实际存储容量');
     expect(html).toContain('未完成分片上传容量');
     expect(html).not.toContain('Inventory 对账');
     expect(html).not.toContain('>MATCHED<');

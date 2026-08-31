@@ -25,6 +25,12 @@ from hc_data_platform.annotation.models import (
     TagSchemaStatus,
     TagSchemaVersion,
 )
+from hc_data_platform.continuous_recordings.asset_models import (
+    EpisodeProcessing,
+    EpisodeProcessingStatus,
+    RecordingAssetRole,
+    RecordingConfigurationV1,
+)
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
@@ -72,6 +78,7 @@ class QualityOutcome(str, Enum):
 
 class WorkflowKind(str, Enum):
     INGEST_ROLLOUT = "ingest-rollout"
+    CONTINUOUS_EPISODE = "continuous-episode"
     DATASET_WRITER = "dataset-writer"
     PUBLISH_DATASET = "publish-dataset"
     EXPORT = "export"
@@ -413,6 +420,151 @@ class AlignedBundleCommitActivityOutput(BaseModel):
     viewer_target: DatasetIngestViewerTarget
 
 
+class ContinuousEpisodeAssetV1(BaseModel):
+    """Immutable raw object receipt carried in the internal Temporal input."""
+
+    model_config = ConfigDict(frozen=True)
+
+    asset_id: str = Field(min_length=1)
+    role: RecordingAssetRole
+    camera_id: str | None = Field(default=None, min_length=1)
+    modality_key: str | None = Field(default=None, min_length=1, max_length=512)
+    media_type: str = Field(min_length=1, max_length=255)
+    object_key: str = Field(min_length=1, max_length=2048)
+    size_bytes: int = Field(ge=1)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ContinuousEpisodeProjectionSourceV1(BaseModel):
+    """Product projection facts for one soft-sliced recording Episode."""
+
+    model_config = ConfigDict(frozen=True)
+
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    recording_id: str = Field(min_length=1)
+    recording_upload_id: str = Field(min_length=1)
+    episode_id: str = Field(min_length=1)
+    rollout_id: str = Field(min_length=1)
+    data_package_id: str = Field(min_length=1)
+    collection_task_id: str = Field(min_length=1)
+    robot_id: str = Field(min_length=1)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_size_bytes: int = Field(ge=1)
+    started_at: datetime
+    ended_at: datetime
+    camera_modality_keys: tuple[str, ...] = Field(min_length=1, max_length=128)
+
+
+class ContinuousEpisodeWorkflowInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    projection: ContinuousEpisodeProjectionSourceV1
+    dataset_id: str = Field(min_length=1)
+    schema_snapshot_id: str = Field(min_length=1)
+    recording_config: RecordingConfigurationV1
+    assets: tuple[ContinuousEpisodeAssetV1, ...] = Field(min_length=3, max_length=256)
+    quality_profile: QualityProfileV1
+    alignment_profile: AlignmentProfileV1
+    start_offset_ns: int = Field(ge=0)
+    end_offset_ns: int = Field(gt=0)
+    expected_dataset_version: int = Field(ge=1)
+    media_task_queue: str = Field(default="hc-media-pipeline", min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def validate_lineage(self) -> ContinuousEpisodeWorkflowInput:
+        projection = self.projection
+        if self.end_offset_ns <= self.start_offset_ns:
+            raise ValueError("continuous Episode requires a non-empty source window")
+        camera_assets = [item for item in self.assets if item.role is RecordingAssetRole.RAW_VIDEO]
+        sensor_assets = [
+            item for item in self.assets if item.role is RecordingAssetRole.SENSOR_DATA
+        ]
+        config_assets = [
+            item for item in self.assets if item.role is RecordingAssetRole.RECORDING_CONFIG
+        ]
+        configured = {
+            camera.camera_id: camera.modality_key for camera in self.recording_config.cameras
+        }
+        observed = {item.camera_id: item.modality_key for item in camera_assets}
+        if observed != configured:
+            raise ValueError("continuous Episode video assets do not match recording config")
+        if not sensor_assets or len(config_assets) != 1:
+            raise ValueError("continuous Episode requires sensor and config assets")
+        if set(projection.camera_modality_keys) != set(configured.values()):
+            raise ValueError("projection camera keys do not match recording config")
+        expected_modalities = set(projection.camera_modality_keys) | {
+            sensor.topic for sensor in self.recording_config.sensors
+        }
+        if self.quality_profile.required_topics != expected_modalities:
+            raise ValueError("quality profile must exactly match configured Episode modalities")
+        if self.alignment_profile.required_modalities != expected_modalities:
+            raise ValueError("alignment profile must exactly match configured Episode modalities")
+        if self.alignment_profile.frequency_hz != 30:
+            raise ValueError("continuous Episode alignment must use the canonical 30 Hz timeline")
+        return self
+
+
+class ContinuousEpisodeStateActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    recording_id: str = Field(min_length=1)
+    episode_id: str = Field(min_length=1)
+    expected_status: EpisodeProcessingStatus
+    new_status: EpisodeProcessingStatus
+    qc_report_id: str | None = Field(default=None, min_length=1, max_length=256)
+    alignment_attempt_id: str | None = Field(default=None, min_length=1, max_length=256)
+    dataset_id: str | None = Field(default=None, min_length=1, max_length=128)
+    dataset_version: int | None = Field(default=None, ge=1)
+    lance_version: int | None = Field(default=None, ge=1)
+    annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)
+    aligned_media_camera_count: int | None = Field(default=None, ge=1, le=128)
+    failure_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]+$")
+    failure_stage: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ContinuousEpisodeStateActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    episode: EpisodeProcessing
+
+
+class ContinuousEpisodeQcActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    report_id: str = Field(min_length=1, max_length=256)
+    status: Literal["PASS", "REJECT"]
+    finding_codes: tuple[str, ...] = ()
+    inspected_video_count: int = Field(ge=1, le=128)
+    inspected_sensor_message_count: int = Field(ge=0)
+
+
+class ContinuousEpisodeAlignmentActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    alignment: AlignmentActivityInput
+    staged_manifest: StagedFragmentManifestV1
+    alignment_staging: AlignmentStagingArtifactV1
+    expected_dataset_version: int = Field(ge=1)
+
+
+class ContinuousEpisodeBundleCommitActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    workflow_input: ContinuousEpisodeWorkflowInput
+    alignment: AlignmentActivityInput
+    staged_manifest: StagedFragmentManifestV1
+    alignment_staging: AlignmentStagingArtifactV1
+    expected_dataset_version: int = Field(ge=1)
+    expected_camera_ids: tuple[str, ...] = Field(min_length=1, max_length=128)
+    media_artifacts: tuple[AlignedMediaArtifactV1, ...] = Field(min_length=1, max_length=128)
+
+
 class CatalogCommitActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -446,23 +598,6 @@ class AutomaticAnnotationActivityInput(BaseModel):
     source_workflow_id: str = Field(min_length=1)
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
-
-
-class LegacyAutomaticAnnotationActivityInput(BaseModel):
-    """Frozen wire shape for Temporal histories recorded before core/018."""
-
-    model_config = ConfigDict(frozen=True)
-
-    project_id: str = Field(min_length=1)
-    region_code: str = Field(min_length=1)
-    rollout_id: str = Field(min_length=1)
-    dataset_id: str = Field(min_length=1)
-    dataset_version: int = Field(ge=1)
-    lance_version: int = Field(ge=1)
-    dataset_schema_snapshot_id: str = Field(min_length=1)
-    base_step_count: int = Field(gt=0)
-    source_workflow_id: str = Field(min_length=1)
-    task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
 
 
 class AutomaticAnnotationActivityOutput(BaseModel):
@@ -755,3 +890,19 @@ class AnnotationReviewPreparationWorkflowInput(BaseModel):
         ) != (self.tag_schema.schema_id, self.tag_schema.version):
             raise ValueError("revision must pin the supplied Tag Schema version")
         return self
+class LegacyAutomaticAnnotationActivityInput(BaseModel):
+    """Frozen wire shape for Temporal histories recorded before core/018."""
+
+    model_config = ConfigDict(frozen=True)
+
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    rollout_id: str = Field(min_length=1)
+    dataset_id: str = Field(min_length=1)
+    dataset_version: int = Field(ge=1)
+    lance_version: int = Field(ge=1)
+    dataset_schema_snapshot_id: str = Field(min_length=1)
+    base_step_count: int = Field(gt=0)
+    source_workflow_id: str = Field(min_length=1)
+    task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
+

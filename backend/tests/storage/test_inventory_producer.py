@@ -234,6 +234,58 @@ def test_postgres_catalog_includes_immutable_published_exports() -> None:
     assert entries[0].object_role is ObjectRole.REBUILDABLE_DERIVATIVE
 
 
+def test_postgres_catalog_counts_committed_aligned_media_exact_receipts() -> None:
+    class AlignedCursor(CatalogCursor):
+        def execute(self, query: str, parameters: tuple[str, ...]) -> None:
+            assert parameters == ("project-inventory",)
+            if "FROM aligned_media.artifacts" not in query:
+                self._rows = ()
+                return
+            self._rows = (
+                {
+                    "artifact_id": "artifact-front",
+                    "dataset_id": "dataset-1",
+                    "dataset_version": 3,
+                    "object_manifest": [
+                        {
+                            "key": "aligned-media/front/media.mp4",
+                            "size": 12_345,
+                            "sha256": "a" * 64,
+                            "media_type": "video/mp4",
+                        },
+                        {
+                            "key": "aligned-media/front/publication-intent.json",
+                            "size": 456,
+                            "sha256": "b" * 64,
+                            "media_type": "application/json",
+                        },
+                    ],
+                    "dataset_committed_at": OBSERVED_AT,
+                },
+            )
+
+    class AlignedConnection(CatalogConnection):
+        def __init__(self) -> None:
+            self.catalog_cursor = AlignedCursor()
+
+    entries = PostgresStorageInventoryCatalog(
+        AlignedConnection,
+        object_store_bucket="inventory-bucket",
+        artifact_prefix="artifacts",
+    ).entries(project_id="project-inventory")
+
+    assert [item.object_key for item in entries] == [
+        "aligned-media/front/media.mp4",
+        "aligned-media/front/publication-intent.json",
+    ]
+    assert sum(item.expected_bytes or 0 for item in entries) == 12_801
+    assert all(
+        item.business_category is BusinessCapacityCategory.PENDING_ANNOTATION
+        and item.object_role is ObjectRole.REBUILDABLE_DERIVATIVE
+        for item in entries
+    )
+
+
 def test_producer_keeps_empty_catalog_unknown_instead_of_publishing_zero_bytes() -> None:
     target, service = producer()
 

@@ -88,13 +88,6 @@
   font-size: 12px;
 }
 
-.identityNote {
-  margin: 2px 0 0;
-  color: var(--hc-color-text-muted);
-  font-size: 12px;
-  line-height: 1.65;
-}
-
 .formsColumn {
   display: grid;
   gap: 18px;

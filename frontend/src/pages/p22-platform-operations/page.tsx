@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Select } from "antd";
 import {
   ArchiveRestore,
+  Building2,
   Boxes,
   Check,
   CircleAlert,
@@ -12,15 +13,16 @@ import {
   GitPullRequestArrow,
   RefreshCw,
   Server,
-  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   approvePlatformRelease,
+  createPlatformOrganization,
   createPlatformProject,
   getPlatformObjectStoreConfig,
   getPlatformReleaseHistory,
   getPlatformOperationsOverview,
+  listPlatformOrganizations,
   listPlatformProjects,
   queryPlatformRuntimeLogs,
   updatePlatformObjectStoreConfig,
@@ -289,9 +291,6 @@ function ReleaseHistoryPanel({
           {approvalError}
         </p>
       ) : null}
-      <p className={styles.releaseCredentialNote}>
-        浏览器仅记录批准事实；镜像发布、迁移与回滚由最小权限外部控制器执行。
-      </p>
     </section>
   );
 }
@@ -463,19 +462,204 @@ function NodesPanel({
   );
 }
 
-type ProjectDraft = Readonly<{
+type OrganizationDraft = Readonly<{
   organizationId: string;
   organizationName: string;
+}>;
+
+const emptyOrganizationDraft: OrganizationDraft = {
+  organizationId: "",
+  organizationName: "",
+};
+
+const stableScopeId = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$/u;
+
+function OrganizationInitializationPanel() {
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState<OrganizationDraft>(emptyOrganizationDraft);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const organizations = useQuery({
+    queryKey: ["platform-operations", "global", "organizations"],
+    queryFn: ({ signal }) => listPlatformOrganizations(signal),
+    staleTime: 5_000,
+    gcTime: 0,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (organizations.data?.count === 0) setExpanded(true);
+  }, [organizations.data?.count]);
+
+  const create = useMutation({
+    mutationFn: () =>
+      createPlatformOrganization({
+        organization_id: draft.organizationId.trim(),
+        organization_name: draft.organizationName.trim(),
+      }),
+    onSuccess: async (created) => {
+      setFormError(null);
+      setSuccessMessage(`组织“${created.organization_name}”已创建。`);
+      setDraft(emptyOrganizationDraft);
+      setExpanded(false);
+      await queryClient.invalidateQueries({
+        queryKey: ["platform-operations", "global", "organizations"],
+      });
+    },
+    onError: (reason) => {
+      setSuccessMessage(null);
+      setFormError(
+        isDomainError(reason) &&
+          reason.problemCode === "PLATFORM_ORGANIZATION_ALREADY_EXISTS"
+          ? "该组织 ID 已存在，请更换组织 ID。"
+          : "组织未创建，请检查输入或稍后重试。",
+      );
+    },
+  });
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const organizationId = draft.organizationId.trim();
+    const organizationName = draft.organizationName.trim();
+    if (!organizationId || !organizationName) {
+      setFormError("组织 ID 和组织名称均为必填项。");
+      return;
+    }
+    if (!stableScopeId.test(organizationId)) {
+      setFormError("组织 ID 只能使用字母、数字、点、下划线和连字符。");
+      return;
+    }
+    setFormError(null);
+    setSuccessMessage(null);
+    create.mutate();
+  }
+
+  return (
+    <section
+      className={styles.dataPanel}
+      id="organization-initialization"
+      aria-labelledby="organization-init-title"
+    >
+      <div className={styles.sectionHeading}>
+        <div>
+          <span className={styles.eyebrow}>ORGANIZATION DIRECTORY</span>
+          <h2 id="organization-init-title">组织目录</h2>
+        </div>
+        <Button
+          icon={<Building2 aria-hidden="true" size={16} />}
+          onClick={() => {
+            setFormError(null);
+            setSuccessMessage(null);
+            setExpanded((value) => !value);
+          }}
+          type={organizations.data?.count === 0 ? "primary" : "default"}
+        >
+          {expanded ? "取消创建组织" : "创建组织"}
+        </Button>
+      </div>
+
+      {organizations.isPending ? (
+        <PageState state="loading" label="组织目录" />
+      ) : organizations.isError || !organizations.data ? (
+        <PageState
+          state={errorState(organizations.error)}
+          label="组织目录"
+          description="组织目录暂时不可用；项目和存储配置不会受影响。"
+          onRetry={() => void organizations.refetch()}
+        />
+      ) : organizations.data.count === 0 ? (
+        <Alert
+          description="先创建组织，再在项目目录中为该组织创建项目。"
+          showIcon
+          title="尚未创建组织"
+          type="warning"
+        />
+      ) : (
+        <div className={styles.projectDirectory} aria-live="polite">
+          <span>{organizations.data.count} 个组织</span>
+          <ul>
+            {organizations.data.items.map((organization) => (
+              <li key={organization.organization_id}>
+                <strong>{organization.organization_name}</strong>
+                <span>组织</span>
+                <code>{organization.organization_id}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {expanded ? (
+        <form className={styles.projectForm} onSubmit={submit}>
+          <div className={styles.projectFields}>
+            <label>
+              <span>组织 ID</span>
+              <Input
+                aria-describedby="organization-id-help"
+                aria-label="新组织 ID"
+                autoComplete="off"
+                disabled={create.isPending}
+                maxLength={128}
+                placeholder="例如 hangcha"
+                value={draft.organizationId}
+                onChange={(event) =>
+                  setDraft({ ...draft, organizationId: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              <span>组织名称</span>
+              <Input
+                aria-label="新组织名称"
+                autoComplete="organization"
+                disabled={create.isPending}
+                maxLength={256}
+                placeholder="例如 杭叉集团"
+                value={draft.organizationName}
+                onChange={(event) =>
+                  setDraft({ ...draft, organizationName: event.target.value })
+                }
+              />
+            </label>
+          </div>
+          <p className={styles.configurationNote} id="organization-id-help">
+            组织 ID 创建后作为稳定标识使用；日常界面显示组织名称。
+          </p>
+          {formError ? (
+            <p className={styles.filterError} role="alert">
+              {formError}
+            </p>
+          ) : null}
+          <Button htmlType="submit" loading={create.isPending} type="primary">
+            创建组织
+          </Button>
+        </form>
+      ) : null}
+
+      {successMessage ? (
+        <Alert
+          className={styles.successAlert}
+          showIcon
+          title={successMessage}
+          type="success"
+        />
+      ) : null}
+    </section>
+  );
+}
+
+type ProjectDraft = Readonly<{
+  organizationId: string;
   projectId: string;
+  projectName: string;
 }>;
 
 const emptyProjectDraft: ProjectDraft = {
   organizationId: "",
-  organizationName: "",
   projectId: "",
+  projectName: "",
 };
-
-const stableScopeId = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$/u;
 
 function ProjectInitializationPanel() {
   const queryClient = useQueryClient();
@@ -490,27 +674,44 @@ function ProjectInitializationPanel() {
     gcTime: 0,
     retry: 1,
   });
+  const organizations = useQuery({
+    queryKey: ["platform-operations", "global", "organizations"],
+    queryFn: ({ signal }) => listPlatformOrganizations(signal),
+    staleTime: 5_000,
+    gcTime: 0,
+    retry: 1,
+  });
 
   useEffect(() => {
-    if (projects.data?.count === 0) setExpanded(true);
-  }, [projects.data?.count]);
+    if (projects.data?.count === 0 && (organizations.data?.count ?? 0) > 0)
+      setExpanded(true);
+  }, [organizations.data?.count, projects.data?.count]);
+
+  useEffect(() => {
+    const firstOrganization = organizations.data?.items[0];
+    if (!draft.organizationId && firstOrganization) {
+      setDraft((current) => ({
+        ...current,
+        organizationId: firstOrganization.organization_id,
+      }));
+    }
+  }, [draft.organizationId, organizations.data?.items]);
 
   const create = useMutation({
     mutationFn: () =>
       createPlatformProject({
         organization_id: draft.organizationId.trim(),
-        organization_name: draft.organizationName.trim(),
         project_id: draft.projectId.trim(),
+        project_name: draft.projectName.trim(),
       }),
     onSuccess: async (created) => {
       setFormError(null);
       setSuccessMessage(
-        `项目 ${created.organization_id} / ${created.project_id} 已创建，并已加入管理员作用域。`,
+        `项目“${created.project_name}”已创建，并已加入管理员作用域。`,
       );
       setDraft((current) => ({
         ...emptyProjectDraft,
         organizationId: current.organizationId.trim(),
-        organizationName: current.organizationName.trim(),
       }));
       setExpanded(false);
       await queryClient.invalidateQueries({
@@ -530,7 +731,10 @@ function ProjectInitializationPanel() {
         isDomainError(reason) &&
           reason.problemCode === "PLATFORM_PROJECT_ALREADY_EXISTS"
           ? "该组织下已存在同名项目，请更换项目 ID。"
-          : "项目未创建，请检查输入或稍后重试。",
+          : isDomainError(reason) &&
+              reason.problemCode === "PLATFORM_ORGANIZATION_NOT_FOUND"
+            ? "所选组织不存在，请刷新组织目录后重试。"
+            : "项目未创建，请检查输入或稍后重试。",
       );
     },
   });
@@ -538,10 +742,10 @@ function ProjectInitializationPanel() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const organizationId = draft.organizationId.trim();
-    const organizationName = draft.organizationName.trim();
     const projectId = draft.projectId.trim();
-    if (!organizationId || !organizationName || !projectId) {
-      setFormError("组织 ID、组织名称和项目 ID 均为必填项。");
+    const projectName = draft.projectName.trim();
+    if (!organizationId || !projectId || !projectName) {
+      setFormError("所属组织、项目 ID 和项目名称均为必填项。");
       return;
     }
     if (!stableScopeId.test(organizationId) || !stableScopeId.test(projectId)) {
@@ -567,6 +771,7 @@ function ProjectInitializationPanel() {
           <h2 id="project-init-title">项目目录</h2>
         </div>
         <Button
+          disabled={(organizations.data?.count ?? 0) === 0}
           icon={<FolderPlus aria-hidden="true" size={16} />}
           onClick={() => {
             setFormError(null);
@@ -575,18 +780,30 @@ function ProjectInitializationPanel() {
           }}
           type={projects.data?.count === 0 ? "primary" : "default"}
         >
-          {expanded ? "取消创建" : "创建项目"}
+          {expanded ? "取消创建项目" : "创建项目"}
         </Button>
       </div>
 
-      {projects.isPending ? (
+      {projects.isPending || organizations.isPending ? (
         <PageState state="loading" label="项目目录" />
-      ) : projects.isError || !projects.data ? (
+      ) : projects.isError ||
+        !projects.data ||
+        organizations.isError ||
+        !organizations.data ? (
         <PageState
-          state={errorState(projects.error)}
+          state={errorState(projects.error ?? organizations.error)}
           label="项目目录"
           description="项目目录暂时不可用；OSS 配置仍可独立完成。"
-          onRetry={() => void projects.refetch()}
+          onRetry={() =>
+            void Promise.all([projects.refetch(), organizations.refetch()])
+          }
+        />
+      ) : organizations.data.count === 0 ? (
+        <Alert
+          description="请先在上方创建组织，然后再创建项目。"
+          showIcon
+          title="需要先创建组织"
+          type="warning"
         />
       ) : projects.data.count === 0 ? (
         <Alert
@@ -616,30 +833,20 @@ function ProjectInitializationPanel() {
         <form className={styles.projectForm} onSubmit={submit}>
           <div className={styles.projectFields}>
             <label>
-              <span>组织 ID</span>
-              <Input
-                aria-label="项目所属组织 ID"
-                autoComplete="off"
+              <span>所属组织</span>
+              <Select
+                aria-label="项目所属组织"
                 disabled={create.isPending}
-                maxLength={128}
-                placeholder="例如 hangcha"
+                options={(organizations.data?.items ?? []).map(
+                  (organization) => ({
+                    value: organization.organization_id,
+                    label: organization.organization_name,
+                  }),
+                )}
+                placeholder="请选择组织"
                 value={draft.organizationId}
-                onChange={(event) =>
-                  setDraft({ ...draft, organizationId: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>组织名称</span>
-              <Input
-                aria-label="项目所属组织名称"
-                autoComplete="organization"
-                disabled={create.isPending}
-                maxLength={256}
-                placeholder="例如 杭叉集团"
-                value={draft.organizationName}
-                onChange={(event) =>
-                  setDraft({ ...draft, organizationName: event.target.value })
+                onChange={(organizationId) =>
+                  setDraft({ ...draft, organizationId })
                 }
               />
             </label>
@@ -658,10 +865,23 @@ function ProjectInitializationPanel() {
                 }
               />
             </label>
+            <label>
+              <span>项目名称</span>
+              <Input
+                aria-label="新项目名称"
+                autoComplete="off"
+                disabled={create.isPending}
+                maxLength={256}
+                placeholder="例如 双臂采集一期"
+                value={draft.projectName}
+                onChange={(event) =>
+                  setDraft({ ...draft, projectName: event.target.value })
+                }
+              />
+            </label>
           </div>
           <p className={styles.configurationNote} id="project-id-help">
-            ID
-            创建后作为稳定作用域标识使用，只能包含字母、数字、点、下划线和连字符。
+            项目 ID 创建后作为稳定作用域标识使用；日常界面显示项目名称。
           </p>
           {formError ? (
             <p className={styles.filterError} role="alert">
@@ -821,14 +1041,14 @@ function ObjectStoreConfigurationPanel() {
           <h2 id="object-store-title">OSS 存储地址</h2>
         </div>
         <Button onClick={() => setExpanded((value) => !value)}>
-          {expanded ? "收起编辑" : "创建或编辑 OSS 地址"}
+          {expanded
+            ? "收起存储配置"
+            : config.data?.configured
+              ? "编辑存储地址"
+              : "创建存储地址"}
         </Button>
       </div>
-      {!expanded ? (
-        <p className={styles.configurationNote}>
-          未配置时 API 与 Worker 仍可启动；对象存储相关能力保持未就绪。
-        </p>
-      ) : config.isPending ? (
+      {!expanded ? null : config.isPending ? (
         <PageState state="loading" label="OSS 存储地址" />
       ) : config.isError || !config.data ? (
         <PageState
@@ -931,11 +1151,6 @@ function ObjectStoreConfigurationPanel() {
           {formError ? (
             <p className={styles.filterError} role="alert">
               {formError}
-            </p>
-          ) : null}
-          {config.data.activation_required ? (
-            <p className={styles.configurationNote}>
-              配置已加密保存；重启 API、主 Worker 与媒体 Worker 后生效。
             </p>
           ) : null}
           <Button htmlType="submit" loading={save.isPending} type="primary">
@@ -1137,20 +1352,10 @@ export function PlatformOperationsPage() {
     <StandardPageScaffold
       header={{
         title: "平台设置",
-        description:
-          "在无项目作用域下完成项目与 OSS 初始化，并查看平台运行状态。",
         breadcrumbs: [
           { key: "security", label: "安全与审计" },
           { key: "operations", label: "平台设置" },
         ],
-        metadata: (
-          <span className={styles.headerMeta}>
-            <ShieldCheck aria-hidden="true" size={15} />
-            {canConfigureObjectStore
-              ? " 全局管理员 · 凭据加密且不回显"
-              : " 全局只读 · 主机身份已脱敏"}
-          </span>
-        ),
         actions: (
           <Button
             icon={<RefreshCw aria-hidden="true" size={16} />}
@@ -1178,9 +1383,9 @@ export function PlatformOperationsPage() {
                 <span className={styles.eyebrow}>FIRST-RUN SETUP</span>
                 <h2 id="platform-initialization-title">平台初始化</h2>
               </div>
-              <p>项目目录与 OSS 相互独立，空数据库下可按任意顺序配置。</p>
             </div>
             <div className={styles.initializationGrid}>
+              <OrganizationInitializationPanel />
               <ProjectInitializationPanel />
               <ObjectStoreConfigurationPanel />
             </div>

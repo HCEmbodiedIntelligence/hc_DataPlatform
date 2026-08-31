@@ -105,7 +105,6 @@ function WorkbenchState(props: {
             mode: "annotation",
             id: `p08-state-${props.kind}`,
             title: "数据标注 / Tag 审核",
-            description: "固定 Lance 版本 · 多级 Tag · 共享时间轴",
             readOnly: true,
             clock,
             cameraStreams: [],
@@ -115,13 +114,13 @@ function WorkbenchState(props: {
             actions: [],
             banner: {
               label:
-                props.kind === "first-loading" ? "正在加载" : "真实 API 状态",
+                props.kind === "first-loading" ? "正在加载" : "加载状态",
               title:
                 props.kind === "first-loading"
                   ? "正在读取标注事实"
-                  : "页面未切换到 Browser Mock",
+                  : "标注数据暂时不可用",
               description:
-                props.detail ?? "保持工作台骨架并等待正式 runtime API。",
+                props.detail ?? "请稍后重试或返回任务队列。",
               tone: props.kind === "first-loading" ? "info" : "warning",
             },
           }}

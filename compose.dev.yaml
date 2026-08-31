@@ -297,52 +297,6 @@ services:
       - ./backend:/app:ro
       - media-staging:/tmp/hc-data/aligned-media
 
-  lerobot-discovery:
-    profiles: [lerobot-discovery]
-    image: hc-data-platform-worker:dev
-    build:
-      context: backend
-      target: worker-dev
-    init: true
-    command:
-      - python
-      - -m
-      - hc_data_platform.tools.lerobot_oss_discovery
-      - --source-prefix
-      - ${HC_LEROBOT_DISCOVERY_PREFIX:-lerobot-inbox}
-      - --project-id
-      - ${HC_LEROBOT_DISCOVERY_PROJECT_ID:-be22-hf-g1-video-20260819-02-p1}
-      - --collection-task-id
-      - ${HC_LEROBOT_DISCOVERY_TASK_ID:-14d16ba1-d95a-5ee3-aaa7-7b7d78091b52}
-      - --robot-id
-      - ${HC_LEROBOT_DISCOVERY_ROBOT_ID:-robot-d1a17126-b495-59b8-bf48-0ccce0a6ffe7}
-      - --episode-count
-      - ${HC_LEROBOT_DISCOVERY_EPISODE_COUNT:-10}
-      - --api-base-url
-      - http://api:8000
-      - --region-code
-      - ${HC_LEROBOT_DISCOVERY_PLATFORM_REGION_CODE:-be22-hf-g1-video-20260819-02-cn}
-      - --cache-dir
-      - /var/lib/hc-lerobot/cache
-      - --output-dir
-      - /var/lib/hc-lerobot/output
-      - --interval-seconds
-      - ${HC_LEROBOT_DISCOVERY_INTERVAL_SECONDS:-30}
-      - --stability-seconds
-      - ${HC_LEROBOT_DISCOVERY_STABILITY_SECONDS:-60}
-    environment:
-      HC_OBJECT_STORE_ENDPOINT: ${HC_OBJECT_STORE_ENDPOINT:-https://oss-cn-beijing.aliyuncs.com}
-      HC_OBJECT_STORE_BUCKET: ${HC_OBJECT_STORE_BUCKET:-humanoid-robot-embodied-operation}
-      HC_OBJECT_STORE_ACCESS_KEY: "${HC_OBJECT_STORE_ACCESS_KEY:-}"
-      HC_OBJECT_STORE_SECRET_KEY: "${HC_OBJECT_STORE_SECRET_KEY:-}"
-      HC_DATA_ACCESS_TOKEN: "${HC_DATA_ACCESS_TOKEN:-}"
-    depends_on:
-      api:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app:ro
-      - lerobot-discovery-cache:/var/lib/hc-lerobot
-
   frontend:
     image: hc-data-platform-frontend:dev
     build:
@@ -389,4 +343,3 @@ volumes:
   postgres-data:
   alignment-cache:
   media-staging:
-  lerobot-discovery-cache:

@@ -11,15 +11,12 @@ import {
   type CursorPageVm,
   type DatasetListItemVm,
 } from "../datasets/api";
-import type { components } from "../../shared/api/generated/platform";
 import { createDomainError } from "../../shared/api/domain-error";
 import { request } from "../../shared/api/http-client";
 import { makeQueryKey } from "../../shared/api/query-keys";
 import { parseWire } from "../../shared/api/validate";
 import { useShellStore } from "../../shared/scope/shell-store";
 
-export type GlobalRobotSearchPage =
-  components["schemas"]["GlobalRobotSearchPage"];
 export type GlobalDataSourceSearchPage = DataSourcePage;
 export type GlobalDatasetSearchPage = CursorPageVm<DatasetListItemVm>;
 
@@ -49,45 +46,43 @@ const pageInfo = z
   })
   .strict();
 
-export const globalRobotSearchPageWireSchema: z.ZodType<GlobalRobotSearchPage> =
-  z
-    .object({
-      query: z.string().min(1).max(256),
-      items: z.array(
-        z
-          .object({ entity_type: z.literal("ROBOT"), robot: robotWireSchema })
-          .strict(),
-      ),
-      page_info: pageInfo,
-      snapshot_at: z.string().datetime({ offset: true }),
-      scope: z
-        .object({ project_id: id, region_code: z.string().min(1).max(64) })
-        .strict(),
-      request_id: id,
-      contract_version: z.string(),
-    })
-    .strict();
+export const globalRobotSearchPageWireSchema = z
+  .object({
+    items: z.array(robotWireSchema),
+    page_info: pageInfo,
+    snapshot_at: z.string().datetime({ offset: true }),
+    scope: z.object({ organization_id: id }).strict(),
+    request_id: id,
+    contract_version: z.string(),
+  })
+  .strict();
+
+export interface GlobalRobotSearchPage {
+  readonly query: string;
+  readonly items: readonly Readonly<{
+    entity_type: "ROBOT";
+    robot: z.infer<typeof robotWireSchema>;
+  }>[];
+  readonly page_info: z.infer<typeof pageInfo>;
+  readonly snapshot_at: string;
+  readonly scope: Readonly<{ organization_id: string }>;
+  readonly request_id: string;
+  readonly contract_version: string;
+}
 
 export interface GlobalSearchScope extends Scope {
   readonly projectId: string;
   readonly regionCode: string;
 }
 
-function searchPath(scope: GlobalSearchScope): string {
-  return `/projects/${encodeURIComponent(scope.projectId)}/regions/${encodeURIComponent(scope.regionCode)}/search`;
-}
-
-function ensureScope(
-  page: GlobalRobotSearchPage,
+function ensureRobotOrganizationScope(
+  page: z.infer<typeof globalRobotSearchPageWireSchema>,
   scope: GlobalSearchScope,
-): GlobalRobotSearchPage {
-  if (
-    page.scope.project_id !== scope.projectId ||
-    page.scope.region_code !== scope.regionCode
-  ) {
+): z.infer<typeof globalRobotSearchPageWireSchema> {
+  if (page.scope.organization_id !== scope.organizationId) {
     throw createDomainError({
       code: "CONTRACT_MISMATCH",
-      message: "搜索响应与当前项目或区域不匹配。",
+      message: "机器人搜索响应与当前组织不匹配。",
       fieldErrors: [],
       operationErrors: [],
       blockedReasons: [],
@@ -107,17 +102,27 @@ export async function searchRobots(
 ): Promise<GlobalRobotSearchPage> {
   const raw = await request<unknown>({
     method: "GET",
-    path: searchPath(scope),
-    scope,
-    query: { q: query, cursor, limit: 10 },
+    path: `/organizations/${encodeURIComponent(scope.organizationId)}/robots`,
+    scopeMode: "organization",
+    scope: { organizationId: scope.organizationId },
+    query: { q: query, cursor },
     ...(signal ? { signal } : {}),
   });
-  return ensureScope(
+  const page = ensureRobotOrganizationScope(
     parseWire(globalRobotSearchPageWireSchema, raw, {
-      endpoint: "searchRobots",
+      endpoint: "listOrganizationRobots",
     }),
     scope,
   );
+  return {
+    query,
+    items: page.items.map((robot) => ({ entity_type: "ROBOT", robot })),
+    page_info: page.page_info,
+    snapshot_at: page.snapshot_at,
+    scope: page.scope,
+    request_id: page.request_id,
+    contract_version: page.contract_version,
+  };
 }
 
 export async function searchDataSources(
@@ -187,8 +192,7 @@ export function useGlobalRobotSearch(query: string, enabled: boolean) {
   const trimmed = query.trim();
   const key = scope
     ? makeQueryKey("global-search", "robots", {
-        projectId: scope.projectId,
-        regionCode: scope.regionCode,
+        organizationId: scope.organizationId,
         query: trimmed,
       })
     : ["global-search", "robots", "disabled"];

@@ -237,11 +237,6 @@ export function LifecycleProtectionSummary() {
           </div>
         ))}
       </div>
-      <p className={styles.protectionNote}>
-        所有物理动作先生成不可变
-        dry-run；申请人不能审批自己的计划。执行前和每个批次都会重新检查引用、保留期、Legal
-        Hold 与 Governance Hold。
-      </p>
     </section>
   );
 }
@@ -746,7 +741,6 @@ export function LifecyclePane() {
       <header className={styles.paneHeader}>
         <div>
           <h1 id="lifecycle-pane-title">生命周期策略</h1>
-          <p>配置规则、核对保护对象并追踪每次变更</p>
         </div>
         <div className={styles.headerActions}>
           <span id="lifecycle-permission" className={styles.permissionState}>
@@ -790,7 +784,7 @@ export function LifecyclePane() {
             type="warning"
             showIcon
             title="生命周期数据部分加载失败"
-            description="已保留成功区域；失败区域不会回退到 Browser Mock。"
+            description="已保留成功加载的区域，请重试失败区域。"
           />
         ) : null}
 
@@ -842,7 +836,6 @@ export function LifecyclePane() {
         >
           <div className={styles.sectionHeading}>
             <h3 id="audit-list-title">变更审计</h3>
-            <span>追加式记录 · 不可覆盖</span>
           </div>
           {auditState === "ready" ? (
             <LifecycleAuditTable

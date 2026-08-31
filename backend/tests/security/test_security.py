@@ -19,10 +19,12 @@ from hc_data_platform.security.capabilities import (
     legacy_roles_from_capabilities,
 )
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
+from hc_data_platform.security.postgres import RlsSessionContext
 from hc_data_platform.security.scope import (
     InMemoryScopedRepository,
     ScopedResource,
     ScopeGuard,
+    ScopeSelection,
 )
 from hc_data_platform.security.uow import InMemoryAtomicDatabase, InMemoryScopedUnitOfWork
 from hc_data_platform.security.versioning import ResourceVersion
@@ -267,7 +269,7 @@ def test_upload_read_does_not_activate_upload_write_authority() -> None:
     _assert_problem("CAPABILITY_REQUIRED", lambda: reader.require_capability("upload.manage", "p1"))
 
 
-def test_platform_admin_has_every_business_operation_across_existing_scopes_only() -> None:
+def test_platform_admin_has_every_business_operation_across_real_projects() -> None:
     platform_admin = AuthContext(
         subject_id="platform-admin",
         organization_ids=frozenset({"org-a", "org-b"}),
@@ -327,6 +329,41 @@ def test_platform_admin_has_every_business_operation_across_existing_scopes_only
         "PROJECT_NOT_FOUND",
         lambda: ScopeGuard.require(unverified_directory_claim, "invented-project"),
     )
+
+
+def test_project_rls_context_installs_verified_platform_admin_bypass() -> None:
+    class RecordingSession:
+        def __init__(self) -> None:
+            self.statement = ""
+            self.parameters: dict[str, str] = {}
+
+        async def execute(self, statement: object, parameters: dict[str, str]) -> None:
+            self.statement = str(statement)
+            self.parameters = parameters
+
+    auth = AuthContext(
+        subject_id="platform-admin",
+        organization_ids=frozenset({"org-a"}),
+        project_ids=frozenset({"project-a"}),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
+        organization_scope_triples=frozenset({("org-a", "project-a", None)}),
+    )
+    session = RecordingSession()
+
+    asyncio.run(
+        RlsSessionContext.apply(  # type: ignore[arg-type]
+            session,
+            auth=auth,
+            scope=ScopeSelection(organization_id="org-a", project_id="project-a"),
+            request_id="request-a",
+        )
+    )
+
+    assert "set_config('app.platform_admin', :platform_admin, true)" in session.statement
+    assert "set_config('app.is_admin', :platform_admin, true)" in session.statement
+    assert session.parameters["platform_admin"] == "true"
 
 
 def test_platform_operation_capabilities_do_not_inherit_the_admin_wildcard() -> None:

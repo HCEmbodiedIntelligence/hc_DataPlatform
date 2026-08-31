@@ -1037,8 +1037,6 @@ export function ManualIssuesPage() {
       <StandardPageScaffold
         header={{
           title: "问题数据",
-          description:
-            "统一处理自动质检发现与人工上报的问题：定位证据、分诊、清洗并完成闭环。",
           breadcrumbs: [
             { key: "production", label: "数据生产" },
             { key: "issues", label: "问题数据" },

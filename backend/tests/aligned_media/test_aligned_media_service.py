@@ -15,10 +15,14 @@ from PIL import Image
 
 from hc_data_platform.aligned_media.artifact_store import LocalAlignedMediaArtifactStore
 from hc_data_platform.aligned_media.audit import InMemoryAlignedMediaAuditRecorder
-from hc_data_platform.aligned_media.encoder import FFmpegMp4Encoder
+from hc_data_platform.aligned_media.encoder import AlignedMediaEncodingError, FFmpegMp4Encoder
+from hc_data_platform.aligned_media.maintenance import (
+    PostgresAlignedMediaVersionRetirementCollector,
+)
 from hc_data_platform.aligned_media.memory import InMemoryAlignedMediaRepository
 from hc_data_platform.aligned_media.models import (
     AlignedMediaArtifactStatus,
+    AlignedMediaArtifactV1,
     AlignedMediaEncodingProfileV1,
     AlignedMediaGenerationRequestV1,
     AlignedMediaScopeV1,
@@ -32,6 +36,11 @@ from hc_data_platform.aligned_media.service import (
     AlignedMediaAuthorizationService,
     AlignedMediaGenerationService,
     AlignedMediaLifecycleService,
+)
+from hc_data_platform.core.context import (
+    RequestContext,
+    bind_request_context,
+    reset_request_context,
 )
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.security import AuthContext
@@ -100,9 +109,53 @@ class CountingRepository(InMemoryAlignedMediaRepository):
         self.ensure_calls += 1
         return super().ensure_generation(**kwargs)
 
-    def find_by_selector(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+    def find_by_selector(
+        self,
+        scope: AlignedMediaScopeV1,
+        selector: AlignedMediaSelectorV1,
+        *,
+        profile_id: str,
+    ) -> AlignedMediaArtifactV1 | None:
         self.find_calls += 1
-        return super().find_by_selector(*args, **kwargs)
+        return super().find_by_selector(scope, selector, profile_id=profile_id)
+
+
+class RetirementCandidateCursor:
+    def __init__(self) -> None:
+        self.query = ""
+        self.parameters: tuple[object, ...] = ()
+        self.rowcount = 1
+
+    def __enter__(self):  # type: ignore[no-untyped-def]
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        del args
+
+    def execute(self, query: str, parameters: tuple[object, ...]) -> None:
+        self.query = query
+        self.parameters = parameters
+
+    def fetchall(self) -> tuple[tuple[str, str, int], ...]:
+        return (("dataset-1", "version_lance_7", 7),)
+
+
+class RetirementCandidateConnection:
+    def __init__(self) -> None:
+        self.cursor_value = RetirementCandidateCursor()
+        self.closed = False
+
+    def cursor(self) -> RetirementCandidateCursor:
+        return self.cursor_value
+
+    def close(self) -> None:
+        self.closed = True
+
+    def commit(self) -> None:
+        return None
+
+    def rollback(self) -> None:
+        return None
 
 
 def scope() -> AlignedMediaScopeV1:
@@ -366,12 +419,40 @@ def test_committed_dataset_version_retirement_is_exact_and_idempotent(tmp_path: 
         store=store,
         clock=lambda: NOW + timedelta(days=1),
     )
+    connections: list[RetirementCandidateConnection] = []
 
-    assert (
-        lifecycle.retire_dataset_version(scope(), dataset_id="dataset-1", dataset_version=7)
-        == artifact.total_bytes
+    def connection_factory() -> RetirementCandidateConnection:
+        connection = RetirementCandidateConnection()
+        connections.append(connection)
+        return connection
+
+    collector = PostgresAlignedMediaVersionRetirementCollector(
+        connection_factory,
+        lifecycle,
+        clock=lambda: NOW + timedelta(days=1),
     )
-    assert lifecycle.retire_dataset_version(scope(), dataset_id="dataset-1", dataset_version=7) == 0
+    context = bind_request_context(
+        RequestContext(
+            organization_id="organization-1",
+            project_id="project-1",
+            region_code="cn-test",
+            service_identity=True,
+        )
+    )
+    try:
+        assert collector.run_once() == artifact.total_bytes
+        assert collector.run_once() == 0
+    finally:
+        reset_request_context(context)
+
+    assert all(connection.closed for connection in connections)
+    assert "FOR UPDATE SKIP LOCKED" in connections[0].cursor_value.query
+    assert "dataset_version_retirement_requests" in connections[0].cursor_value.query
+    assert connections[0].cursor_value.parameters[:3] == (
+        "organization-1",
+        "project-1",
+        "cn-test",
+    )
     assert not tuple((tmp_path / "objects").rglob("*.*"))
     with pytest.raises(ProblemException) as retired:
         AlignedMediaAuthorizationService(
@@ -477,6 +558,38 @@ def test_retry_reencodes_when_persisted_publication_receipt_was_orphaned(
     assert recovered.status is AlignedMediaArtifactStatus.READY
     assert encoder.calls == reader.calls == 2
     assert all(store.resolve_local_object(item.key) is not None for item in recovered.objects)
+
+
+def test_encoder_failure_is_retryable_without_duplicate_artifact(tmp_path: Path) -> None:
+    class FailOnceEncoder(CountingEncoder):
+        def encode(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            if self.calls == 1:
+                raise AlignedMediaEncodingError("injected FFmpeg failure")
+            self.calls -= 1
+            return super().encode(**kwargs)
+
+    repository = CountingRepository()
+    reader = CountingFrameReader()
+    encoder = FailOnceEncoder(tmp_path / "encode")
+    store = LocalAlignedMediaArtifactStore(tmp_path / "objects")
+    generation = AlignedMediaGenerationService(
+        frame_reader=reader,
+        encoder=encoder,
+        repository=repository,
+        store=store,
+        heartbeat_interval=timedelta(hours=1),
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(AlignedMediaEncodingError, match="FFmpeg failure"):
+        generation.generate(scope(), generation_request())
+    recovered = generation.generate(scope(), generation_request())
+
+    assert recovered.status is AlignedMediaArtifactStatus.READY
+    assert encoder.calls == 2
+    assert reader.calls == 2
+    assert len(tuple((tmp_path / "objects").rglob("media.mp4"))) == 1
 
 
 @pytest.mark.skipif(

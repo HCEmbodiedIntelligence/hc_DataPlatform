@@ -85,6 +85,7 @@ function makeGateway(): RecordingGateway {
         ],
       }),
     ),
+    processing: vi.fn(async () => ({ items: [], total: 0 })),
     saveDraft: vi.fn(
       async (
         _scope: RecordingScope,

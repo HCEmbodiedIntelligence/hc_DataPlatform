@@ -48,12 +48,6 @@ class RobotJointDirection(str, Enum):
     INVERTED = "INVERTED"
 
 
-class RobotModelBindingStatus(str, Enum):
-    ACTIVE = "ACTIVE"
-    SUPERSEDED = "SUPERSEDED"
-    REVOKED = "REVOKED"
-
-
 class RobotModelDraftScope(str, Enum):
     ASSETS = "ASSETS"
     MAPPINGS = "MAPPINGS"
@@ -347,34 +341,6 @@ class PublishRobotModelVersionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     preflight_token: str = Field(min_length=32, max_length=2048)
-
-
-class RobotModelBinding(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    binding_id: str = Field(min_length=1)
-    robot_id: str = Field(min_length=1, max_length=128)
-    region_code: str = Field(min_length=1, max_length=64)
-    version_id: str = Field(min_length=1, max_length=128)
-    status: RobotModelBindingStatus
-    bound_at: datetime
-    unbound_at: datetime | None = None
-
-
-class RobotModelBindingPage(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    items: tuple[RobotModelBinding, ...]
-    scope: RegistryScope
-    request_id: str = Field(min_length=1, max_length=128)
-
-
-class BindRobotModelVersionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    region_code: str = Field(min_length=1, max_length=64)
-    robot_id: str = Field(min_length=1, max_length=128)
-    robot_etag: str = Field(min_length=1, max_length=256)
 
 
 class RobotModelSummary(BaseModel):

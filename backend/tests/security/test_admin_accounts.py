@@ -173,7 +173,7 @@ def test_project_administrator_cannot_read_or_manage_platform_accounts() -> None
 
 
 def test_platform_admin_bootstrap_lists_every_real_project_without_membership() -> None:
-    client, repository, _, _ = _stack(
+    client, repository, access, _ = _stack(
         organization_projects=(("org-a", "project-a"), ("org-b", "project-b"))
     )
     token, principal_id = _admin_session(client)
@@ -190,20 +190,30 @@ def test_platform_admin_bootstrap_lists_every_real_project_without_membership() 
     assert bootstrap.json()["available_scopes"] == [
         {
             "organization_id": "org-a",
+            "organization_name": "org-a",
             "project_id": "project-a",
+            "project_name": "project-a",
             "region_codes": [],
             "project_wide": True,
             "capabilities": [],
         },
         {
             "organization_id": "org-b",
+            "organization_name": "org-b",
             "project_id": "project-b",
+            "project_name": "project-b",
             "region_codes": [],
             "project_wide": True,
             "capabilities": [],
         },
     ]
+    overview = client.get("/api/v1/account/access-overview", headers=_headers(token))
+    assert overview.status_code == 200
+    assert overview.json()["projects"] == []
     assert not any(member_id == principal_id for member_id, _, _ in repository._memberships)
+    auth = access.authenticate_access_token(token)
+    assert auth is not None
+    assert auth.has_capability("future.business.operation", "project-a", "org-a")
 
 
 def test_platform_role_revision_revokes_old_session_and_relogin_gets_super_admin() -> None:

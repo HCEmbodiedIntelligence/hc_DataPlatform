@@ -9,12 +9,14 @@ objects to the active project.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol, cast
 from urllib.parse import quote, unquote, urlparse
 
+from hc_data_platform.aligned_media.models import AlignedMediaObjectV1
 from hc_data_platform.security.audit import canonical_hash
 
 from .models import (
@@ -119,6 +121,7 @@ class PostgresStorageInventoryCatalog:
                 *self._ingest_entries(cursor, project_id),
                 *self._publication_entries(cursor, project_id),
                 *self._published_export_entries(cursor, project_id),
+                *self._aligned_media_entries(cursor, project_id),
                 *self._lance_entries(cursor, project_id),
             ]
             return tuple(sorted(entries, key=lambda item: (item.object_key, -item.priority)))
@@ -252,6 +255,44 @@ class PostgresStorageInventoryCatalog:
             )
             for row in _rows(cursor, cursor.fetchall())
         )
+
+    @staticmethod
+    def _aligned_media_entries(
+        cursor: Any, project_id: str
+    ) -> tuple[InventoryCatalogEntry, ...]:
+        cursor.execute(
+            """
+            SELECT artifact_id, dataset_id, dataset_version, object_manifest,
+                   dataset_committed_at
+              FROM aligned_media.artifacts
+             WHERE project_id = %s AND status = 'READY'
+               AND dataset_committed_at IS NOT NULL AND deleted_at IS NULL
+             ORDER BY dataset_id, dataset_version, artifact_id
+            """,
+            (project_id,),
+        )
+        entries: list[InventoryCatalogEntry] = []
+        for row in _rows(cursor, cursor.fetchall()):
+            raw_manifest = row["object_manifest"]
+            if isinstance(raw_manifest, str):
+                raw_manifest = json.loads(raw_manifest)
+            if not isinstance(raw_manifest, list):
+                raise InventoryUnavailable("aligned-media object receipt is invalid")
+            observed_at = _aware(cast(datetime, row["dataset_committed_at"]))
+            for item in raw_manifest:
+                receipt = AlignedMediaObjectV1.model_validate(item)
+                entries.append(
+                    InventoryCatalogEntry(
+                        identity=f"aligned-media:{row['artifact_id']}:{receipt.sha256}",
+                        object_key=receipt.key,
+                        expected_bytes=receipt.size,
+                        business_category=BusinessCapacityCategory.PENDING_ANNOTATION,
+                        object_role=ObjectRole.REBUILDABLE_DERIVATIVE,
+                        observed_at=observed_at,
+                        priority=85,
+                    )
+                )
+        return tuple(entries)
 
     def _lance_entries(self, cursor: Any, project_id: str) -> tuple[InventoryCatalogEntry, ...]:
         cursor.execute(

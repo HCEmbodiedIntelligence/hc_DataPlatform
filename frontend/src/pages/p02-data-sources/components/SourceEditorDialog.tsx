@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Form, Input, Modal, Typography, type InputRef } from 'antd';
+import { Alert, Button, Flex, Form, Input, Modal, type InputRef } from 'antd';
 import { useEffect, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -268,11 +268,6 @@ export function SourceEditorDialog(props: {
           })(event);
         }}
       >
-        {props.mode === 'update' ? (
-          <Typography.Paragraph type="secondary">
-            稳定 ID 和连接器类型不可修改；秘密字段不会载入表单。
-          </Typography.Paragraph>
-        ) : null}
         {props.errorMessage ? <Alert type="error" showIcon title={props.errorMessage} /> : null}
         <div className={styles.formGrid}>
           <RHFInput control={form.control} name="name" label="名称" disabled={props.pending} autoComplete="off" />

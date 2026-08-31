@@ -267,8 +267,6 @@ export function EpisodeViewerShell() {
       <WorkbenchScaffold
         header={{
           title: `Episode ${episodeId}`,
-          description:
-            "Readonly episode viewer；时间范围采用半开区间 [start, end)。",
           breadcrumbs: [
             {
               key: datasetId,
@@ -316,7 +314,7 @@ export function EpisodeViewerShell() {
         editor={
           <Card title="只读约束" size="small">
             <Typography.Paragraph>
-              媒体、时间轴与通道数据只读；问题记录由 P09 Owner 创建。
+              媒体、时间轴与通道数据为只读。
             </Typography.Paragraph>
           </Card>
         }
@@ -434,8 +432,7 @@ export function EpisodeViewerShell() {
         ]}
       >
         <Typography.Paragraph>
-          只创建 P09 Owner 的 ManualIssue，并保留当前 Viewer 时间点；不会创建
-          CleaningDraft。
+          创建问题记录，并保留当前时间点。
         </Typography.Paragraph>
         <div className={styles.reviewForm}>
           <label>

@@ -4,8 +4,10 @@ import hashlib
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from threading import RLock
+from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.pagination import CursorCodec
 from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdempotencyStore
@@ -49,8 +51,26 @@ from .persistence import (
     source_recording_duplicate,
 )
 from .ports import ObjectMetadata, ObjectStoragePort, crc64_ecma, normalize_etag
+from .raw_sources import (
+    CommittedRawSourceGraph,
+    InMemoryRawSourceRepository,
+    RawIngestJob,
+    RawIngestJobType,
+    RawSource,
+    RawSourceEpisode,
+    RawSourceFormat,
+    RawSourceRepositoryPort,
+)
 
 _SESSION_CURSOR_VERSION = 1
+
+
+class AlternateManifestDiscoveryPort(Protocol):
+    """Read-only discovery for non-upload rollout sources such as soft Episodes."""
+
+    def find(
+        self, *, project_id: str, region_code: str, rollout_id: str
+    ) -> ManifestDiscoveryV1 | None: ...
 
 
 class UploadSessionService:
@@ -60,11 +80,13 @@ class UploadSessionService:
         persistence: IngestPersistencePort | None = None,
         idempotency: IdempotencyStore | None = None,
         *,
+        raw_sources: RawSourceRepositoryPort | None = None,
         authorization_ttl_seconds: int = 900,
         raw_media_authorization_ttl_seconds: int = 900,
         max_authorizations_per_request: int = 256,
         max_part_retries: int = 5,
         cursor_secret: str = "ingest-session-local-cursor-secret",
+        alternate_manifest_discovery: AlternateManifestDiscoveryPort | None = None,
     ) -> None:
         if not 1 <= authorization_ttl_seconds <= 3600:
             raise ValueError("part authorization TTL must be between 1 and 3600 seconds")
@@ -76,6 +98,7 @@ class UploadSessionService:
             raise ValueError("part retry limit must be between 1 and 10")
         self.storage = storage
         self.persistence = persistence or InMemoryIngestPersistence()
+        self.raw_sources = raw_sources or InMemoryRawSourceRepository()
         persistence_idempotency = getattr(self.persistence, "idempotency_store", None)
         self.idempotency: IdempotencyStore = (
             idempotency or persistence_idempotency or InMemoryIdempotencyStore()
@@ -85,6 +108,7 @@ class UploadSessionService:
         self.max_authorizations_per_request = max_authorizations_per_request
         self.max_part_retries = max_part_retries
         self._cursor = CursorCodec(cursor_secret)
+        self._alternate_manifest_discovery = alternate_manifest_discovery
         self._lock = RLock()
 
     def preflight_upload_manifest(self, manifest: RolloutManifestV1) -> ManifestPreflightResultV1:
@@ -652,6 +676,7 @@ class UploadSessionService:
                     actor_id=actor_id,
                     request_id=request_id,
                 )
+                self._register_raw_source(session=session, manifest=manifest, event=event)
                 return event
             workflow = self._stage_workflow_trigger(
                 session=session,
@@ -659,7 +684,9 @@ class UploadSessionService:
                 actor_id=actor_id,
                 request_id=request_id,
             )
-            return existing.model_copy(update={"workflow": workflow})
+            event = existing.model_copy(update={"workflow": workflow})
+            self._register_raw_source(session=session, manifest=manifest, event=event)
+            return event
         if session.expected_sha256 != manifest.sha256:
             raise _rollout_content_conflict()
         if session.manifest_fingerprint != _manifest_fingerprint(manifest):
@@ -750,6 +777,7 @@ class UploadSessionService:
                 actor_id=actor_id,
                 request_id=request_id,
             )
+            self._register_raw_source(session=session, manifest=manifest, event=event)
             return event
         workflow = self._stage_workflow_trigger(
             session=session,
@@ -757,7 +785,91 @@ class UploadSessionService:
             actor_id=actor_id,
             request_id=request_id,
         )
-        return event.model_copy(update={"workflow": workflow})
+        event = event.model_copy(update={"workflow": workflow})
+        self._register_raw_source(session=session, manifest=manifest, event=event)
+        return event
+
+    def _register_raw_source(
+        self,
+        *,
+        session: UploadSession,
+        manifest: RolloutManifestV1,
+        event: RawObjectCommittedV1,
+    ) -> None:
+        """Register MCAP/capture Raw using the same graph as native LeRobot."""
+
+        try:
+            organization_id = current_request_context().organization_id
+        except RuntimeError:
+            # Unit-level callers use the in-memory repository without HTTP context.
+            organization_id = None
+        organization_id = organization_id or "legacy"
+        raw_source_id = f"upload-{session.session_id.replace('-', '')}"
+        is_continuous = manifest.processing_mode is IngestProcessingMode.CONTINUOUS_RECORDING
+        source_format = RawSourceFormat.CAPTURE_BUNDLE if is_continuous else RawSourceFormat.MCAP
+        job_type = (
+            RawIngestJobType.CONTINUOUS_RECORDING_DISCOVERY
+            if is_continuous
+            else RawIngestJobType.DIRECT_EPISODE_INGEST
+        )
+        adapter_name = "capture_bundle" if is_continuous else "mcap"
+        now = event.committed_at
+        episodes = (
+            ()
+            if is_continuous
+            else (
+                RawSourceEpisode(
+                    organization_id=organization_id,
+                    project_id=session.project_id,
+                    region_code=session.region_code,
+                    raw_source_id=raw_source_id,
+                    episode_id=session.rollout_id,
+                    source_episode_index=0,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            )
+        )
+        self.raw_sources.register_committed(
+            CommittedRawSourceGraph(
+                source=RawSource(
+                    raw_source_id=raw_source_id,
+                    organization_id=organization_id,
+                    project_id=session.project_id,
+                    region_code=session.region_code,
+                    upload_id=session.session_id,
+                    collection_task_id=manifest.task_id,
+                    robot_id=manifest.robot_id,
+                    source_format=source_format,
+                    source_format_version="v1" if is_continuous else "1.0",
+                    manifest_key=event.manifest_key,
+                    storage_prefix=(
+                        event.object_key.rsplit("/", 1)[0]
+                        if "/" in event.object_key
+                        else event.object_key
+                    ),
+                    content_hash=event.sha256,
+                    file_count=1,
+                    total_bytes=event.file_size,
+                    created_at=session.created_at,
+                    committed_at=now,
+                    updated_at=now,
+                ),
+                episodes=episodes,
+                job=RawIngestJob(
+                    organization_id=organization_id,
+                    project_id=session.project_id,
+                    region_code=session.region_code,
+                    job_id=f"raw-job-{session.session_id.replace('-', '')}",
+                    raw_source_id=raw_source_id,
+                    workflow_id=(None if event.workflow is None else event.workflow.workflow_id),
+                    job_type=job_type,
+                    adapter_name=adapter_name,
+                    created_at=session.created_at,
+                    updated_at=now,
+                ),
+            )
+        )
 
     def _stage_workflow_trigger(
         self,
@@ -818,7 +930,26 @@ class UploadSessionService:
         """Expose persisted Manifest discovery without disclosing upload-session details."""
 
         session = self.persistence.find_session(project_id, rollout_id)
-        if session is None or session.region_code != region_code:
+        if session is None:
+            alternate = self._alternate_manifest_discovery
+            discovery = (
+                None
+                if alternate is None
+                else alternate.find(
+                    project_id=project_id,
+                    region_code=region_code,
+                    rollout_id=rollout_id,
+                )
+            )
+            if discovery is not None:
+                return discovery
+            raise problem(
+                status=404,
+                code="UPLOAD_SESSION_NOT_FOUND",
+                title="Upload session not found",
+                detail="No upload session exists for this rollout in the selected Region.",
+            )
+        if session.region_code != region_code:
             raise problem(
                 status=404,
                 code="UPLOAD_SESSION_NOT_FOUND",

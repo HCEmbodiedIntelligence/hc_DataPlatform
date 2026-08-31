@@ -850,8 +850,6 @@ export function DataExportPage() {
       <StandardPageScaffold
         header={{
           title: "数据导出",
-          description:
-            "从数据集当前 READY 版本中选择已审核标注数据，批量生成 Lance 或 LeRobot v3 压缩包。",
           breadcrumbs: [
             { key: "production", label: "数据生产" },
             { key: "exports", label: "数据导出" },

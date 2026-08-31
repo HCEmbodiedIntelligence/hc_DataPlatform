@@ -7,7 +7,6 @@ export interface RobotModelsSearch {
   readonly modelId?: string;
   readonly versionId?: string;
   readonly targetRobotId?: string;
-  readonly targetRegionCode?: string;
   readonly detailTab:
     | "overview"
     | "assets"
@@ -61,7 +60,6 @@ export const robotModelsQueryCodec = defineQueryCodec<RobotModelsSearch>({
     const modelId = sp.get("modelId") || undefined;
     const versionId = sp.get("versionId") || undefined;
     const targetRobotId = sp.get("targetRobotId") || undefined;
-    const targetRegionCode = sp.get("targetRegionCode") || undefined;
     return {
       binding,
       sort,
@@ -71,7 +69,6 @@ export const robotModelsQueryCodec = defineQueryCodec<RobotModelsSearch>({
       ...(modelId ? { modelId } : {}),
       ...(versionId ? { versionId } : {}),
       ...(targetRobotId ? { targetRobotId } : {}),
-      ...(targetRegionCode ? { targetRegionCode } : {}),
       ...(after && !before ? { after } : {}),
       ...(before && !after ? { before } : {}),
     };
@@ -84,7 +81,6 @@ export const robotModelsQueryCodec = defineQueryCodec<RobotModelsSearch>({
       "modelId",
       "versionId",
       "targetRobotId",
-      "targetRegionCode",
       "after",
       "before",
     ] as const)

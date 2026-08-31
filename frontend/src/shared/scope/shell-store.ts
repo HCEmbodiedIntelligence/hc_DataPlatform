@@ -37,7 +37,9 @@ interface ShellState {
 
 export interface SessionScopeGrant {
   readonly organizationId: string;
+  readonly organizationName?: string;
   readonly projectId: string;
+  readonly projectName?: string;
   readonly regionCodes: readonly string[];
   readonly projectWide: boolean;
   readonly capabilities: readonly string[];

@@ -127,9 +127,6 @@ export function CredentialRotationDialog(props: {
         <Typography.Paragraph>
           稳定 ID：<code>{props.sourceId}</code>
         </Typography.Paragraph>
-        <Typography.Paragraph type="secondary">
-          当前凭据仅显示“已配置”和掩码；新 Token 不会回显、缓存、持久化或进入遥测。
-        </Typography.Paragraph>
         {props.errorMessage ? <Alert type="error" showIcon title={props.errorMessage} /> : null}
         <Form.Item label="新 Token" required>
           <Input.Password

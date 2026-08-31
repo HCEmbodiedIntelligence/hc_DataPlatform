@@ -13,9 +13,6 @@ export function StorageOverviewPanel({ overview }: Readonly<{ overview: StorageO
     <div className={`${styles.contentStack} ${styles.overviewPanel}`}>
       <StorageVisualCharts overview={overview} />
       <Card title={<h2>存储容量核对</h2>} size="small">
-        <Typography.Paragraph type="secondary">
-          用于核对平台登记的物理存储容量与对象存储实际盘点容量是否一致。
-        </Typography.Paragraph>
         <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
           <Descriptions.Item label="状态">
             <StatusTag

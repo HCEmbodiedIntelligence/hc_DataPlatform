@@ -334,11 +334,6 @@ export function CollectionTaskDrawer({
           <Typography.Title id={headingId} level={2}>
             {mode === "create" ? "新建采集任务" : "编辑采集任务"}
           </Typography.Title>
-          <p>
-            {mode === "create"
-              ? "可关联已有数据集，也可让系统新建专属数据集；多个任务可以汇入同一数据集。"
-              : "尚未收到数据时可以调整关联；已有数据的任务会保留原关联，避免历史数据混乱。"}
-          </p>
         </div>
         <Button
           aria-label="关闭任务抽屉"

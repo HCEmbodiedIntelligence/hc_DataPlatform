@@ -146,7 +146,9 @@ describe("RuntimePlatformShell", () => {
       available_scopes: [
         {
           organization_id: scope.organizationId,
+          organization_name: "杭叉集团",
           project_id: scope.projectId,
+          project_name: "双臂采集一期",
           region_codes: [scope.regionCode],
           project_wide: false,
           capabilities: [],
@@ -161,9 +163,7 @@ describe("RuntimePlatformShell", () => {
     expect(
       screen.queryByText(/stale-private-project/u),
     ).not.toBeInTheDocument();
-    expect(
-      await screen.findByText(`${scope.organizationId} / ${scope.projectId}`),
-    ).toBeVisible();
+    expect(await screen.findByText("杭叉集团 / 双臂采集一期")).toBeVisible();
     await waitFor(() => expect(useShellStore.getState().scope).toEqual(scope));
     expect(
       screen.queryByText(/stale-private-project/u),
@@ -190,7 +190,13 @@ describe("RuntimePlatformShell", () => {
           status: "ACTIVE",
           created_at: "2026-08-24T00:00:00Z",
         },
-        available_organizations: [],
+        available_organizations: [
+          {
+            organization_id: "organization-without-project",
+            organization_name: "仅加入的组织",
+            member_status: "ACTIVE",
+          },
+        ],
         available_scopes: [],
         platform_capabilities: [],
         capability_revision: 2,
@@ -198,7 +204,8 @@ describe("RuntimePlatformShell", () => {
 
     renderAuthenticatedShell();
 
-    expect(await screen.findByText("尚未加入组织或项目")).toBeVisible();
+    expect(await screen.findByText("尚未加入项目")).toBeVisible();
+    expect(screen.queryByText("仅加入的组织")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "个人主页" }),
     ).not.toBeInTheDocument();

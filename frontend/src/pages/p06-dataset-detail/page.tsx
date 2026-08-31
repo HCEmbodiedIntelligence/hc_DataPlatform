@@ -493,9 +493,6 @@ export function DatasetDetailPage() {
             <div className={styles.sectionHeader}>
               <div>
                 <Typography.Title level={2}>概要</Typography.Title>
-                <Typography.Paragraph>
-                  统计来自同一授权聚合；未知值不推断。Base Lance 保持不可变，标注与清洗只生成 Revision 视图。
-                </Typography.Paragraph>
               </div>
               <StatusTag
                 status={data.dataset.availability}
@@ -569,9 +566,6 @@ export function DatasetDetailPage() {
           <div className={styles.sectionHeader}>
             <div>
               <Typography.Title level={2}>数据集版本</Typography.Title>
-              <Typography.Paragraph>
-                仅展示手动发布且不可变的数据集版本；质检状态不会自动创建或推进版本号。
-              </Typography.Paragraph>
             </div>
             {capabilities.has('dataset_version.publish') ? (
               <Button type="primary" disabled={!baseLanceVersion} onClick={() => setPublishOpen(true)}>
@@ -620,11 +614,6 @@ export function DatasetDetailPage() {
           <div className={styles.sectionHeader}>
             <div>
               <Typography.Title level={2}>Episodes</Typography.Title>
-              <Typography.Paragraph>
-                {search.collectionTaskId
-                  ? `仅展示采集任务 ${search.collectionTaskId} 关联的真实数据。`
-                  : '固定 Dataset + Version + Episode 身份进入只读 Viewer。'}
-              </Typography.Paragraph>
             </div>
           </div>
           {!hasChosenVersion ? (
@@ -675,7 +664,6 @@ export function DatasetDetailPage() {
                         <span>固定工作快照</span>
                         <code title={chosenVersionId}>{chosenVersionId}</code>
                       </div>
-                      <p>仅展示当前授权范围内的真实记录，不以推测行填充稀疏窗口。</p>
                     </section>
                   </>
                 )}
@@ -798,7 +786,7 @@ export function DatasetDetailPage() {
         resourceId={datasetId}
         header={{
           title: data.dataset.name,
-          description: data.dataset.description || '暂无描述',
+          description: data.dataset.description || undefined,
           breadcrumbs: [
             { key: 'assets', label: '数据资产', to: routes.datasets.build() },
             { key: 'datasets', label: '数据集', to: routes.datasets.build() },

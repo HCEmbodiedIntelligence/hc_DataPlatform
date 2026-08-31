@@ -285,7 +285,6 @@ describe("E10 capacity and lifecycle component contracts", () => {
     expect(screen.getByText("数据清单")).toBeVisible();
     expect(screen.getByText("已发布数据清单")).toBeVisible();
     expect(screen.getByText("生产执行需独立审批")).toBeVisible();
-    expect(screen.getByText(/申请人不能审批自己的计划/u)).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /模拟|执行/u }),
     ).not.toBeInTheDocument();

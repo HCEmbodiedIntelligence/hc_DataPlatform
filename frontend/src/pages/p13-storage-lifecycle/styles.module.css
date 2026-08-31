@@ -26,7 +26,6 @@
 .paneHeader h1,
 .paneHeader p,
 .protectionHeading h3,
-.protectionNote,
 .sectionHeading h3,
 .sectionHeading span {
   margin: 0;
@@ -142,13 +141,6 @@
   color: var(--hc-color-text-muted);
   font-size: 10px;
   line-height: 1.35;
-}
-
-.protectionNote {
-  margin-top: var(--hc-space-2);
-  color: var(--hc-color-text-muted);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 .filterBar {

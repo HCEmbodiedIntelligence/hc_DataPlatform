@@ -1185,8 +1185,9 @@ class PostgresCalibrationRepository:
             cursor.execute(
                 """
                 SELECT EXISTS (
-                    SELECT 1 FROM robotics.robot_instances
+                    SELECT 1 FROM robotics.project_robot_assignments
                      WHERE project_id = %s AND region_code = %s AND robot_id = %s
+                       AND active
                 ) AS present
                 """,
                 (project_id, region_code, item.robot_instance_id),
@@ -1198,9 +1199,16 @@ class PostgresCalibrationRepository:
                 cursor.execute(
                     """
                     SELECT EXISTS (
-                        SELECT 1 FROM robotics.robot_components
-                         WHERE project_id = %s AND region_code = %s AND component_id = %s
-                           AND robot_id = %s
+                        SELECT 1
+                          FROM robotics.project_robot_assignments assignment
+                          JOIN robotics.robot_asset_components component
+                            ON component.organization_id = assignment.organization_id
+                           AND component.robot_id = assignment.robot_id
+                         WHERE assignment.project_id = %s
+                           AND assignment.region_code = %s
+                           AND component.component_id = %s
+                           AND assignment.robot_id = %s
+                           AND assignment.active
                     ) AS present
                     """,
                     (project_id, region_code, item.component_id, item.robot_instance_id),

@@ -38,10 +38,9 @@ class ScopeGuard:
         region_code: str | None = None,
         organization_id: str | None = None,
     ) -> None:
-        # A human platform administrator bypasses membership, capability and region grants,
-        # but not the project directory.  Platform-session bootstrap populates project_ids and
-        # exact organization triples from registry.organization_projects rather than from
-        # memberships, so arbitrary tenant identifiers still fail as not found.
+        # Human platform administrators may operate every real project without becoming
+        # project members.  Their session bootstrap is populated from the verified project
+        # directory, so arbitrary tenant identifiers still fail closed as not found.
         if auth.is_platform_admin and not auth.service_identity:
             project_exists = any(
                 scoped_project == project_id
@@ -60,8 +59,8 @@ class ScopeGuard:
                 detail="The requested organization and project do not exist.",
             )
 
-        # Exact project scope is mandatory for ordinary humans and workers alike.  In
-        # particular, the project role "admin" is never a cross-tenant bypass.
+        # Exact membership-derived project scope remains mandatory for ordinary humans
+        # and workers.  A project-level admin role is never a cross-tenant bypass.
         if organization_id is not None:
             if auth.organization_scope_triples:
                 allowed = (

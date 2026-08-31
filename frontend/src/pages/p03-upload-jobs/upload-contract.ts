@@ -43,6 +43,38 @@ export interface FolderUploadDiscovery {
   readonly failures: readonly FolderUploadDiscoveryFailure[];
 }
 
+export interface LeRobotSourceFile {
+  readonly file: File;
+  /** Original path below the selected LeRobot root; this becomes the Raw object suffix. */
+  readonly path: string;
+}
+
+export interface LeRobotFolderSelection {
+  readonly format: "lerobot";
+  readonly version: "v3.0";
+  readonly robotType: "unitree_g1";
+  readonly rootDirectory: string;
+  readonly info: Readonly<Record<string, unknown>>;
+  readonly episodeCount: number;
+  readonly sourceFiles: readonly LeRobotSourceFile[];
+  readonly sourceBytes: number;
+}
+
+export class LocalLeRobotError extends Error {
+  constructor(
+    readonly code:
+      | "LEROBOT_ROOT_AMBIGUOUS"
+      | "LEROBOT_INFO_INVALID"
+      | "LEROBOT_PROFILE_UNSUPPORTED"
+      | "LEROBOT_LAYOUT_INCOMPLETE"
+      | "LEROBOT_SOURCE_INVALID",
+    message: string,
+  ) {
+    super(message);
+    this.name = "LocalLeRobotError";
+  }
+}
+
 export interface UploadProblemCopy {
   readonly title: string;
   readonly detail: string;
@@ -204,6 +236,174 @@ export function selectedRelativePath(file: File): string | null {
   return normalizeRelativePath(
     candidate && candidate.length > 0 ? candidate : file.name,
   );
+}
+
+const LEROBOT_CAMERAS = [
+  "observation.images.head_stereo_left",
+  "observation.images.head_stereo_right",
+  "observation.images.wrist_left",
+  "observation.images.wrist_right",
+] as const;
+const LEROBOT_REQUIRED_FEATURES = [
+  "observation.state.ee_state",
+  "observation.state.hand_state",
+  "observation.state.robot_q_current",
+  "action.ee_action",
+  "action.hand_cmd",
+  "action.robot_q_desired",
+  ...LEROBOT_CAMERAS,
+] as const;
+const LEROBOT_DATA_PATH = /^data\/chunk-\d{3}\/file-\d{3}\.parquet$/u;
+const LEROBOT_EPISODE_PATH =
+  /^meta\/episodes\/chunk-\d{3}\/file-\d{3}\.parquet$/u;
+const LEROBOT_VIDEO_PATH = /^videos\/([^/]+)\/chunk-\d{3}\/file-\d{3}\.mp4$/u;
+
+async function readBrowserText(file: File): Promise<string> {
+  if (typeof file.text === "function") return file.text();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("LEROBOT_FILE_READ_FAILED"));
+    reader.onload = () =>
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+/** Detect one native Unitree G1 LeRobot v3 tree without rewriting any source file. */
+export async function detectLeRobotFolder(
+  files: readonly File[],
+): Promise<LeRobotFolderSelection | null> {
+  const entries = files
+    .map((file) => ({ file, selectedPath: selectedRelativePath(file) }))
+    .filter(
+      (entry): entry is { file: File; selectedPath: string } =>
+        entry.selectedPath !== null,
+    );
+  const infoEntries = entries.filter(({ selectedPath }) =>
+    /(?:^|\/)meta\/info\.json$/u.test(selectedPath),
+  );
+  if (infoEntries.length === 0) return null;
+  if (infoEntries.length !== 1) {
+    throw new LocalLeRobotError(
+      "LEROBOT_ROOT_AMBIGUOUS",
+      `所选目录包含 ${infoEntries.length} 个 LeRobot meta/info.json；一次请选择一个原始数据集。`,
+    );
+  }
+  const infoEntry = infoEntries[0];
+  if (!infoEntry) return null;
+  const marker = "meta/info.json";
+  const rootDirectory = infoEntry.selectedPath
+    .slice(0, -marker.length)
+    .replace(/\/$/u, "");
+  const sourcePrefix = rootDirectory ? `${rootDirectory}/` : "";
+  const sourceFiles = entries
+    .filter(({ selectedPath }) =>
+      sourcePrefix ? selectedPath.startsWith(sourcePrefix) : true,
+    )
+    .map(({ file, selectedPath }) => ({
+      file,
+      path: sourcePrefix
+        ? selectedPath.slice(sourcePrefix.length)
+        : selectedPath,
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  if (
+    sourceFiles.length === 0 ||
+    sourceFiles.length > 10_000 ||
+    sourceFiles.some(
+      ({ file, path }) =>
+        !path ||
+        file.size <= 0 ||
+        !Number.isSafeInteger(file.size) ||
+        file.size > MAX_PACKAGE_BYTES,
+    )
+  ) {
+    throw new LocalLeRobotError(
+      "LEROBOT_SOURCE_INVALID",
+      "LeRobot Raw 源文件必须非空、单文件不超过 5 TiB，且总文件数不超过 10000。",
+    );
+  }
+  if (infoEntry.file.size > MAX_MANIFEST_BYTES) {
+    throw new LocalLeRobotError(
+      "LEROBOT_INFO_INVALID",
+      "LeRobot meta/info.json 超过 1 MiB 上限。",
+    );
+  }
+  let info: unknown;
+  try {
+    info = JSON.parse(await readBrowserText(infoEntry.file)) as unknown;
+  } catch {
+    throw new LocalLeRobotError(
+      "LEROBOT_INFO_INVALID",
+      "LeRobot meta/info.json 必须是有效的 UTF-8 JSON 对象。",
+    );
+  }
+  if (typeof info !== "object" || info === null || Array.isArray(info)) {
+    throw new LocalLeRobotError(
+      "LEROBOT_INFO_INVALID",
+      "LeRobot meta/info.json 根节点必须是 JSON 对象。",
+    );
+  }
+  const metadata = info as Record<string, unknown>;
+  const features = metadata.features;
+  const episodeCount = metadata.total_episodes;
+  if (
+    metadata.codebase_version !== "v3.0" ||
+    metadata.robot_type !== "unitree_g1" ||
+    typeof metadata.fps !== "number" ||
+    !Number.isFinite(metadata.fps) ||
+    metadata.fps <= 0 ||
+    metadata.fps > 240 ||
+    typeof metadata.data_path !== "string" ||
+    typeof metadata.video_path !== "string" ||
+    typeof features !== "object" ||
+    features === null ||
+    Array.isArray(features) ||
+    !Number.isInteger(episodeCount) ||
+    typeof episodeCount !== "number" ||
+    episodeCount < 1 ||
+    episodeCount > 100 ||
+    LEROBOT_REQUIRED_FEATURES.some(
+      (feature) => !(feature in (features as Record<string, unknown>)),
+    )
+  ) {
+    throw new LocalLeRobotError(
+      "LEROBOT_PROFILE_UNSUPPORTED",
+      "当前页面支持 Unitree G1 的 LeRobot v3.0 原始目录（1–100 个 episode，并包含完整状态、动作和四路相机特征）。",
+    );
+  }
+  const paths = new Set(sourceFiles.map(({ path }) => path));
+  const cameraFeatures = new Set(
+    sourceFiles.flatMap(({ path }) => {
+      const match = LEROBOT_VIDEO_PATH.exec(path);
+      return match?.[1] &&
+        LEROBOT_CAMERAS.includes(match[1] as (typeof LEROBOT_CAMERAS)[number])
+        ? [match[1]]
+        : [];
+    }),
+  );
+  if (
+    !paths.has("meta/info.json") ||
+    !sourceFiles.some(({ path }) => LEROBOT_EPISODE_PATH.test(path)) ||
+    !sourceFiles.some(({ path }) => LEROBOT_DATA_PATH.test(path)) ||
+    LEROBOT_CAMERAS.some((camera) => !cameraFeatures.has(camera))
+  ) {
+    throw new LocalLeRobotError(
+      "LEROBOT_LAYOUT_INCOMPLETE",
+      "LeRobot 原始目录缺少 episode 元数据、数据 Parquet 或 Unitree G1 四路相机 MP4。",
+    );
+  }
+  return {
+    format: "lerobot",
+    version: "v3.0",
+    robotType: "unitree_g1",
+    rootDirectory,
+    info: metadata,
+    episodeCount,
+    sourceFiles,
+    sourceBytes: sourceFiles.reduce((total, item) => total + item.file.size, 0),
+  };
 }
 
 /** Discover independent upload packages inside an arbitrarily nested folder. */
@@ -472,8 +672,7 @@ export function uploadProblemCopy(error: unknown): UploadProblemCopy {
     },
     409: {
       title: "数据包事实发生冲突",
-      detail:
-        "该数据包标识、内容或来源已存在冲突，请核对数据清单和上传记录。",
+      detail: "该数据包标识、内容或来源已存在冲突，请核对数据清单和上传记录。",
     },
     422: {
       title: "数据清单预检失败",

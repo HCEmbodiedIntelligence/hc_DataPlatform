@@ -7,7 +7,9 @@ from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
+from hc_data_platform.workflow.models import WorkflowKind, workflow_id
 
 from .asset_models import EpisodeProcessing, EpisodeProcessingStatus
 from .models import (
@@ -50,6 +52,10 @@ class ContinuousRecordingRepository(Protocol):
         self, scope: RecordingScope, recording_id: str
     ) -> tuple[EpisodeProcessing, ...]: ...
 
+    def get_episode_processing(
+        self, scope: RecordingScope, recording_id: str, episode_id: str
+    ) -> EpisodeProcessing | None: ...
+
     def save_episode_processing(
         self,
         episode: EpisodeProcessing,
@@ -64,6 +70,7 @@ class InMemoryContinuousRecordingRepository:
         self._by_upload: dict[tuple[str, str, str, str], str] = {}
         self._revisions: dict[tuple[str, str, str, str, int], RecordingSliceRevision] = {}
         self._episode_processing: dict[tuple[str, str, str, str, str], EpisodeProcessing] = {}
+        self.outbox_events: dict[str, DomainEventEnvelope] = {}
         self._lock = RLock()
 
     def create(
@@ -71,7 +78,10 @@ class InMemoryContinuousRecordingRepository:
     ) -> ContinuousRecording:
         del actor_id, request_id
         key = _recording_key(recording.scope, recording.recording_id)
-        upload_key = _upload_key(recording.scope, str(recording.upload_session_id))
+        upload_key = _upload_key(
+            recording.scope,
+            str(recording.upload_session_id or recording.recording_upload_id),
+        )
         with self._lock:
             existing = self._recordings.get(key)
             upload_owner = self._by_upload.get(upload_key)
@@ -140,6 +150,7 @@ class InMemoryContinuousRecordingRepository:
             self._revisions[revision_key] = revision
             if revision.status is SliceRevisionStatus.FINALIZED:
                 for episode in revision.slices:
+                    event = _episode_dispatch_event(episode, revision.created_at)
                     processing = EpisodeProcessing(
                         scope=episode.scope,
                         recording_id=episode.recording_id,
@@ -147,10 +158,13 @@ class InMemoryContinuousRecordingRepository:
                         finalized_revision=episode.revision,
                         start_offset_ns=episode.start_offset_ns,
                         end_offset_ns=episode.end_offset_ns,
+                        workflow_id=str(event.payload["workflow_id"]),
+                        event_id=event.event_id,
                         created_at=revision.created_at,
                         updated_at=revision.created_at,
                     )
                     self._episode_processing[(*key, episode.episode_id)] = processing
+                    self.outbox_events[event.event_id] = event
             self._recordings[key] = recording
             return recording
 
@@ -177,6 +191,12 @@ class InMemoryContinuousRecordingRepository:
                 raise _episode_status_conflict(current.status)
             self._episode_processing[key] = episode
             return episode
+
+    def get_episode_processing(
+        self, scope: RecordingScope, recording_id: str, episode_id: str
+    ) -> EpisodeProcessing | None:
+        with self._lock:
+            return self._episode_processing.get((*_recording_key(scope, recording_id), episode_id))
 
 
 class PostgresContinuousRecordingRepository:
@@ -394,6 +414,25 @@ class PostgresContinuousRecordingRepository:
         finally:
             connection.close()
 
+    def get_episode_processing(
+        self, scope: RecordingScope, recording_id: str, episode_id: str
+    ) -> EpisodeProcessing | None:
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT episode_document FROM ingest.recording_episode_processing
+                    WHERE organization_id = %s AND project_id = %s AND region_code = %s
+                      AND recording_id = %s AND episode_id = %s
+                    """,
+                    (*_scope_values(scope), recording_id, episode_id),
+                )
+                row = cursor.fetchone()
+                return None if row is None else EpisodeProcessing.model_validate(row[0])
+        finally:
+            connection.close()
+
     def save_episode_processing(
         self,
         episode: EpisodeProcessing,
@@ -407,6 +446,9 @@ class PostgresContinuousRecordingRepository:
                     """
                     UPDATE ingest.recording_episode_processing
                     SET status = %s, qc_report_id = %s, alignment_attempt_id = %s,
+                        dataset_id = %s, dataset_version = %s, lance_version = %s,
+                        annotation_task_id = %s, aligned_media_camera_count = %s,
+                        failure_code = %s, failure_stage = %s,
                         episode_document = %s::jsonb, updated_at = %s
                     WHERE organization_id = %s AND project_id = %s AND region_code = %s
                       AND recording_id = %s AND episode_id = %s AND status = %s
@@ -415,6 +457,13 @@ class PostgresContinuousRecordingRepository:
                         episode.status.value,
                         episode.qc_report_id,
                         episode.alignment_attempt_id,
+                        episode.dataset_id,
+                        episode.dataset_version,
+                        episode.lance_version,
+                        episode.annotation_task_id,
+                        episode.aligned_media_camera_count,
+                        episode.failure_code,
+                        episode.failure_stage,
                         episode.model_dump_json(),
                         episode.updated_at,
                         *_scope_values(episode.scope),
@@ -474,6 +523,7 @@ class PostgresContinuousRecordingRepository:
 
     @staticmethod
     def _insert_episode_processing(cursor: Any, episode: EpisodeSlice, created_at: object) -> None:
+        event = _episode_dispatch_event(episode, created_at)
         processing = EpisodeProcessing(
             scope=episode.scope,
             recording_id=episode.recording_id,
@@ -481,6 +531,8 @@ class PostgresContinuousRecordingRepository:
             finalized_revision=episode.revision,
             start_offset_ns=episode.start_offset_ns,
             end_offset_ns=episode.end_offset_ns,
+            workflow_id=str(event.payload["workflow_id"]),
+            event_id=event.event_id,
             created_at=created_at,
             updated_at=created_at,
         )
@@ -489,8 +541,11 @@ class PostgresContinuousRecordingRepository:
             INSERT INTO ingest.recording_episode_processing (
                 organization_id, project_id, region_code, recording_id, episode_id,
                 finalized_revision, start_offset_ns, end_offset_ns, status,
-                episode_document, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                workflow_id, event_id, episode_document, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s::jsonb, %s, %s
+            )
             """,
             (
                 *_scope_values(episode.scope),
@@ -500,9 +555,30 @@ class PostgresContinuousRecordingRepository:
                 episode.start_offset_ns,
                 episode.end_offset_ns,
                 processing.status.value,
+                processing.workflow_id,
+                processing.event_id,
                 processing.model_dump_json(),
                 processing.created_at,
                 processing.updated_at,
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO core.outbox_events (
+                event_id, organization_id, project_id, region_code, event_type,
+                envelope, occurred_at, published_at, publish_attempts, available_at
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, NULL, 0, %s)
+            ON CONFLICT (event_id) DO NOTHING
+            """,
+            (
+                event.event_id,
+                episode.scope.organization_id,
+                event.project_id,
+                event.region_code,
+                event.event_type,
+                event.model_dump_json(exclude_none=True),
+                event.occurred_at,
+                event.occurred_at,
             ),
         )
         cursor.execute(
@@ -639,6 +715,48 @@ def _recording_values(recording: ContinuousRecording) -> tuple[object, ...]:
         recording.model_dump_json(),
         recording.created_at,
         recording.updated_at,
+    )
+
+
+def _episode_dispatch_event(
+    episode: EpisodeSlice,
+    occurred_at: object,
+) -> DomainEventEnvelope:
+    resource_id = f"{episode.recording_id}/{episode.episode_id}"
+    stable_workflow_id = workflow_id(
+        WorkflowKind.CONTINUOUS_EPISODE,
+        episode.scope.project_id,
+        f"{episode.scope.region_code}/{resource_id}",
+    )
+    event_id = uuid5(
+        NAMESPACE_URL,
+        ":".join(
+            (
+                "continuous-recording-episode-workflow/v1",
+                episode.scope.organization_id,
+                episode.scope.project_id,
+                episode.scope.region_code,
+                episode.recording_id,
+                episode.episode_id,
+                str(episode.revision),
+            )
+        ),
+    )
+    return DomainEventEnvelope(
+        event_id=str(event_id),
+        event_type="continuous-recording.episode.workflow.requested.v1",
+        aggregate_type="continuous_recording_episode",
+        aggregate_id=resource_id,
+        organization_id=episode.scope.organization_id,
+        project_id=episode.scope.project_id,
+        region_code=episode.scope.region_code,
+        occurred_at=occurred_at,
+        payload={
+            "workflow_id": stable_workflow_id,
+            "recording_id": episode.recording_id,
+            "episode_id": episode.episode_id,
+            "finalized_revision": episode.revision,
+        },
     )
 
 

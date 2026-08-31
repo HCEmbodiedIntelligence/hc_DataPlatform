@@ -61,7 +61,9 @@ const sessionCreatedWireSchema: z.ZodType<SessionCreated> = z
 const availableScopeWireSchema: z.ZodType<AvailableScope> = z
   .object({
     organization_id: z.string().min(1),
+    organization_name: z.string().min(1).max(256).nullable().optional(),
     project_id: z.string().min(1),
+    project_name: z.string().min(1).max(256).nullable().optional(),
     region_codes: z.array(z.string().min(1)),
     project_wide: z.boolean(),
     capabilities: z.array(z.string().min(1)),
@@ -79,7 +81,9 @@ const availableOrganizationWireSchema: z.ZodType<AvailableOrganization> = z
 const sessionBootstrapWireSchema: z.ZodType<SessionBootstrap> = z
   .object({
     principal: accountPrincipalWireSchema,
-    available_organizations: z.array(availableOrganizationWireSchema).default([]),
+    available_organizations: z
+      .array(availableOrganizationWireSchema)
+      .default([]),
     available_scopes: z.array(availableScopeWireSchema),
     platform_capabilities: z.array(z.string().min(1)).default([]),
     capability_revision: z.number().int().nonnegative(),

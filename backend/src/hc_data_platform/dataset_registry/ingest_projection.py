@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -18,7 +19,10 @@ from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.versioning import ResourceVersion
-from hc_data_platform.workflow.models import IngestProjectionSourceV1
+from hc_data_platform.workflow.models import (
+    ContinuousEpisodeProjectionSourceV1,
+    IngestProjectionSourceV1,
+)
 
 from .models import (
     DatasetIngestViewerTarget,
@@ -139,6 +143,16 @@ def _row_document(raw: object) -> object:
     return raw[0] if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)) else raw
 
 
+@dataclass(frozen=True, slots=True)
+class _ProjectionFacts:
+    collection_task_id: str
+    robot_id: str
+    started_at: datetime
+    camera_topics: frozenset[str]
+    source_size_bytes: int
+    upload_id: str
+
+
 class PostgresDatasetIngestProjector:
     """Publish one all-or-nothing, idempotent Dataset/Version/Episode view."""
 
@@ -219,10 +233,18 @@ class PostgresDatasetIngestProjector:
                     connection.commit()
                     return existing
                 preflight = self._preflight(cursor, source)
+                facts = _ProjectionFacts(
+                    collection_task_id=preflight.manifest.task_id,
+                    robot_id=preflight.manifest.robot_id,
+                    started_at=preflight.manifest.start_time,
+                    camera_topics=frozenset(camera.topic for camera in preflight.manifest.cameras),
+                    source_size_bytes=preflight.total_file_size,
+                    upload_id=source.session_id,
+                )
                 self._assert_task_dataset(
                     cursor,
                     source=source,
-                    collection_task_id=preflight.manifest.task_id,
+                    collection_task_id=facts.collection_task_id,
                     dataset_id=target.dataset_id,
                 )
                 self._insert_projection(
@@ -234,7 +256,112 @@ class PostgresDatasetIngestProjector:
                     version=version,
                     ready=ready,
                     target=target,
-                    preflight=preflight,
+                    facts=facts,
+                    media_artifacts=media_artifacts,
+                )
+            connection.commit()
+            return target
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def project_continuous_episode(
+        self,
+        *,
+        source: ContinuousEpisodeProjectionSourceV1,
+        alignment: AlignmentInputV1,
+        schema_snapshot_id: str,
+        frequency_hz: float,
+        version: DatasetVersionRef,
+        ready: DerivedReadyV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1],
+    ) -> DatasetIngestViewerTarget:
+        """Publish a finalized soft Episode through the same immutable projection."""
+
+        context = current_request_context()
+        if (
+            context.organization_id != source.organization_id
+            or context.project_id != source.project_id
+            or context.region_code != source.region_code
+            or not context.service_identity
+        ):
+            raise DatasetIngestProjectionConflict(
+                "continuous Episode projection requires the exact Worker scope"
+            )
+        if (
+            alignment.rollout_id != source.rollout_id
+            or alignment.source_sha256 != source.source_sha256
+            or version.project_id != source.project_id
+            or version.dataset_id != ready.dataset_id
+            or version.version != ready.dataset_version
+            or version.lance_version != ready.lance_version
+            or version.schema_snapshot_id != schema_snapshot_id
+            or version.frequency_hz != frequency_hz
+            or ready.project_id != source.project_id
+            or ready.rollout_id != source.rollout_id
+            or ready.source_sha256 != source.source_sha256
+            or ready.content_hash != version.content_hash
+            or ready.step_count <= 0
+            or source.rollout_id not in version.committed_rollouts
+            or len(version.committed_rollouts) != version.version
+        ):
+            raise DatasetIngestProjectionConflict(
+                "continuous Episode lineage does not match the Lance commit"
+            )
+        target = DatasetIngestViewerTarget(
+            dataset_id=ready.dataset_id,
+            version_id=_version_id(ready.dataset_version),
+            episode_id=source.episode_id,
+            revision_id=_stable_id("revision", source.episode_id, source.source_sha256),
+        )
+        facts = _ProjectionFacts(
+            collection_task_id=source.collection_task_id,
+            robot_id=source.robot_id,
+            started_at=source.started_at,
+            camera_topics=frozenset(source.camera_modality_keys),
+            source_size_bytes=source.source_size_bytes,
+            upload_id=source.recording_upload_id,
+        )
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (
+                        "/".join(
+                            (
+                                source.organization_id,
+                                source.project_id,
+                                source.region_code,
+                                ready.dataset_id,
+                            )
+                        ),
+                    ),
+                )
+                existing = self._existing_target(
+                    cursor, source=source, version=version, target=target
+                )
+                if existing is not None:
+                    connection.commit()
+                    return existing
+                self._assert_task_dataset(
+                    cursor,
+                    source=source,
+                    collection_task_id=facts.collection_task_id,
+                    dataset_id=target.dataset_id,
+                )
+                self._insert_projection(
+                    cursor,
+                    source=source,
+                    alignment=alignment,
+                    schema_snapshot_id=schema_snapshot_id,
+                    frequency_hz=frequency_hz,
+                    version=version,
+                    ready=ready,
+                    target=target,
+                    facts=facts,
                     media_artifacts=media_artifacts,
                 )
             connection.commit()
@@ -249,7 +376,7 @@ class PostgresDatasetIngestProjector:
     def _existing_target(
         cursor: Any,
         *,
-        source: IngestProjectionSourceV1,
+        source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
         version: DatasetVersionRef,
         target: DatasetIngestViewerTarget,
     ) -> DatasetIngestViewerTarget | None:
@@ -403,7 +530,7 @@ class PostgresDatasetIngestProjector:
     def _assert_task_dataset(
         cursor: Any,
         *,
-        source: IngestProjectionSourceV1,
+        source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
         collection_task_id: str,
         dataset_id: str,
     ) -> None:
@@ -426,14 +553,14 @@ class PostgresDatasetIngestProjector:
         self,
         cursor: Any,
         *,
-        source: IngestProjectionSourceV1,
+        source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
         alignment: AlignmentInputV1,
         schema_snapshot_id: str,
         frequency_hz: float,
         version: DatasetVersionRef,
         ready: DerivedReadyV1,
         target: DatasetIngestViewerTarget,
-        preflight: ManifestPreflightResultV1,
+        facts: _ProjectionFacts,
         media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> None:
         scope = DatasetPageScope(
@@ -450,7 +577,7 @@ class PostgresDatasetIngestProjector:
         )
         streams = self._streams(
             alignment=alignment,
-            preflight=preflight,
+            camera_topics=facts.camera_topics,
             ready=ready,
             frequency_hz=frequency_hz,
             media_artifacts=media_artifacts,
@@ -470,11 +597,11 @@ class PostgresDatasetIngestProjector:
             selected_revision=current_ref,
             included=True,
             success_state="SUCCEEDED",
-            task=preflight.manifest.task_id,
-            robot_id=preflight.manifest.robot_id,
+            task=facts.collection_task_id,
+            robot_id=facts.robot_id,
             review_status=None,
             review_finding_count="0",
-            started_at=preflight.manifest.start_time,
+            started_at=facts.started_at,
             started_at_ns=str(alignment.start_ns),
             has_finding=False,
             change_type="INGESTED",
@@ -534,7 +661,7 @@ class PostgresDatasetIngestProjector:
                 episode_id=current_revision.episode_id,
                 revision_id=current_revision.revision_id,
                 role="REVISION",
-                size_bytes=str(preflight.total_file_size),
+                size_bytes=str(facts.source_size_bytes),
                 sha256=current_revision.content_sha256,
                 safe_locator=f"episode:{current_revision.episode_id}",
             ),
@@ -572,7 +699,8 @@ class PostgresDatasetIngestProjector:
             cursor,
             scope=scope,
             dataset_id=target.dataset_id,
-            manifest=preflight.manifest,
+            collection_task_id=facts.collection_task_id,
+            robot_id=facts.robot_id,
             version=page_version,
             channels=tuple(stream.channel_path for stream in version_streams),
             episode_count=len(episodes),
@@ -622,9 +750,9 @@ class PostgresDatasetIngestProjector:
             version_id=target.version_id,
             storage_region_code=scope.region_code,
             provenance_id=_stable_id("provenance", source.data_package_id),
-            upload_id=source.session_id,
-            source_id=preflight.manifest.robot_id,
-            source_display_name=preflight.manifest.robot_id,
+            upload_id=facts.upload_id,
+            source_id=facts.robot_id,
+            source_display_name=facts.robot_id,
             source_manifest_id=source.data_package_id,
             source_manifest_sha256=source.manifest_fingerprint,
             verified_object_set_hash=source.source_sha256,
@@ -638,12 +766,15 @@ class PostgresDatasetIngestProjector:
             current=provenance,
         ):
             self._put_provenance(cursor, item)
-        source_bytes = self._source_bytes(
-            cursor,
-            scope,
-            target.dataset_id,
-            ready.dataset_version,
-        ) + int(preflight.total_file_size)
+        source_bytes = (
+            self._source_bytes(
+                cursor,
+                scope,
+                target.dataset_id,
+                ready.dataset_version,
+            )
+            + facts.source_size_bytes
+        )
         capacity = DatasetPageVersionCapacityFacts(
             scope=scope,
             dataset_id=target.dataset_id,
@@ -656,7 +787,7 @@ class PostgresDatasetIngestProjector:
             basis_revision=f"lance:{version.storage_commit_id}",
         )
         self._put_capacity(cursor, capacity)
-        facts = DatasetPageDetailFacts(
+        detail_facts = DatasetPageDetailFacts(
             scope=scope,
             dataset_id=target.dataset_id,
             summary=DatasetPageDetailSummary(
@@ -672,7 +803,7 @@ class PostgresDatasetIngestProjector:
                 calculation_state="PARTIAL",
             ),
         )
-        self._put_facts(cursor, facts)
+        self._put_facts(cursor, detail_facts)
         PostgresDatasetPageRepository._insert_audit(
             cursor,
             DatasetPageAuditEvent(
@@ -894,12 +1025,11 @@ class PostgresDatasetIngestProjector:
     def _streams(
         *,
         alignment: AlignmentInputV1,
-        preflight: ManifestPreflightResultV1,
+        camera_topics: frozenset[str],
         ready: DerivedReadyV1,
         frequency_hz: float,
         media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> tuple[DatasetPageEpisodeStream, ...]:
-        camera_topics = {camera.topic for camera in preflight.manifest.cameras}
         media_by_camera = {artifact.camera_id: artifact for artifact in media_artifacts}
         if set(media_by_camera) != camera_topics or any(
             artifact.status is not AlignedMediaArtifactStatus.READY
@@ -968,7 +1098,8 @@ class PostgresDatasetIngestProjector:
         *,
         scope: DatasetPageScope,
         dataset_id: str,
-        manifest: Any,
+        collection_task_id: str,
+        robot_id: str,
         version: DatasetPageReadyVersion,
         channels: tuple[str, ...],
         episode_count: int,
@@ -1002,9 +1133,9 @@ class PostgresDatasetIngestProjector:
                 activity_at=version.created_at,
                 etag=ResourceVersion().etag,
                 metadata=DatasetPageMetadata(
-                    robot_id=manifest.robot_id,
-                    collection_task_id=manifest.task_id,
-                    task=manifest.task_id,
+                    robot_id=robot_id,
+                    collection_task_id=collection_task_id,
+                    task=collection_task_id,
                     asset_state="READY",
                     storage_class="STANDARD",
                     channels=channels,
@@ -1018,9 +1149,9 @@ class PostgresDatasetIngestProjector:
         resource_version = ResourceVersion.from_etag(existing.etag)
         metadata = existing.metadata.model_copy(
             update={
-                "robot_id": existing.metadata.robot_id or manifest.robot_id,
-                "collection_task_id": existing.metadata.collection_task_id or manifest.task_id,
-                "task": existing.metadata.task or manifest.task_id,
+                "robot_id": existing.metadata.robot_id or robot_id,
+                "collection_task_id": existing.metadata.collection_task_id or collection_task_id,
+                "task": existing.metadata.task or collection_task_id,
                 "asset_state": "READY",
                 "channels": tuple(dict.fromkeys((*existing.metadata.channels, *channels))),
             }

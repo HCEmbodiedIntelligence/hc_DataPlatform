@@ -23,4 +23,5 @@ describe("expandGrantedCapabilities", () => {
       expandGrantedCapabilities(["collection.upload"]).has("upload.read"),
     ).toBe(true);
   });
+
 });

@@ -114,3 +114,8 @@ ingest/007_continuous_recording_slices.sql
 ingest/008_recording_video_assets.sql
 preview/0005_commit_fence_and_media_retirement.sql
 platform/009_object_store_configuration.sql
+registry/0008_project_display_names.sql
+ingest/009_continuous_episode_workflows.sql
+preview/0006_dataset_version_media_retirement.sql
+robotics/0005_organization_robot_assets.sql
+ingest/010_raw_sources.sql

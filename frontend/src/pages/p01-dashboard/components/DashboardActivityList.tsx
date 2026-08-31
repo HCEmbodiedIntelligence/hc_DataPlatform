@@ -72,7 +72,6 @@ export function DashboardActivityList({
       <div className={styles.panelHeading}>
         <div>
           <h2 id="dashboard-activity-title">最近活动</h2>
-          <p>来自当前项目与区域的持久业务事件</p>
         </div>
         <StatusTag
           status={activity.section.status}

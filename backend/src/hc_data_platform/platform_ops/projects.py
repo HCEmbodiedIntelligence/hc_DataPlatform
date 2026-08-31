@@ -1,4 +1,4 @@
-"""Platform-admin project directory and bootstrap provisioning."""
+"""Platform-admin organization and project directory provisioning."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class PlatformProjectError(RuntimeError):
         self.code = code
 
 
-class PlatformProjectCreate(BaseModel):
+class PlatformOrganizationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     organization_id: StableScopeId
@@ -36,7 +36,32 @@ class PlatformProjectCreate(BaseModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=256),
     ]
+
+
+class PlatformOrganization(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    organization_id: StableScopeId
+    organization_name: str = Field(min_length=1, max_length=256)
+
+
+class PlatformOrganizationPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    format_version: str = "hc-platform-organization-directory/v1"
+    count: int = Field(ge=0)
+    items: tuple[PlatformOrganization, ...]
+
+
+class PlatformProjectCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_id: StableScopeId
     project_id: StableScopeId
+    project_name: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=256),
+    ]
 
 
 class PlatformProject(BaseModel):
@@ -57,17 +82,54 @@ class PlatformProjectPage(BaseModel):
 
 
 class PlatformProjectRepository(Protocol):
+    def list_organizations(self) -> tuple[PlatformOrganization, ...]: ...
+
+    def create_organization(self, command: PlatformOrganizationCreate) -> PlatformOrganization: ...
+
     def list_projects(self) -> tuple[PlatformProject, ...]: ...
 
     def create_project(self, command: PlatformProjectCreate) -> PlatformProject: ...
 
 
 class InMemoryPlatformProjectRepository:
-    def __init__(self, projects: tuple[PlatformProject, ...] = ()) -> None:
+    def __init__(
+        self,
+        projects: tuple[PlatformProject, ...] = (),
+        organizations: tuple[PlatformOrganization, ...] = (),
+    ) -> None:
+        self._organizations = {
+            organization.organization_id: organization for organization in organizations
+        }
         self._projects = {
             (project.organization_id, project.project_id): project for project in projects
         }
+        for project in projects:
+            self._organizations.setdefault(
+                project.organization_id,
+                PlatformOrganization(
+                    organization_id=project.organization_id,
+                    organization_name=project.organization_name,
+                ),
+            )
         self._lock = RLock()
+
+    def list_organizations(self) -> tuple[PlatformOrganization, ...]:
+        with self._lock:
+            return tuple(self._organizations[key] for key in sorted(self._organizations))
+
+    def create_organization(self, command: PlatformOrganizationCreate) -> PlatformOrganization:
+        with self._lock:
+            if command.organization_id in self._organizations:
+                raise PlatformProjectError(
+                    "PLATFORM_ORGANIZATION_ALREADY_EXISTS",
+                    "the organization already exists",
+                )
+            organization = PlatformOrganization(
+                organization_id=command.organization_id,
+                organization_name=command.organization_name,
+            )
+            self._organizations[organization.organization_id] = organization
+            return organization
 
     def list_projects(self) -> tuple[PlatformProject, ...]:
         with self._lock:
@@ -79,6 +141,12 @@ class InMemoryPlatformProjectRepository:
     def create_project(self, command: PlatformProjectCreate) -> PlatformProject:
         key = (command.organization_id, command.project_id)
         with self._lock:
+            organization = self._organizations.get(command.organization_id)
+            if organization is None:
+                raise PlatformProjectError(
+                    "PLATFORM_ORGANIZATION_NOT_FOUND",
+                    "the selected organization does not exist",
+                )
             if key in self._projects:
                 raise PlatformProjectError(
                     "PLATFORM_PROJECT_ALREADY_EXISTS",
@@ -86,9 +154,9 @@ class InMemoryPlatformProjectRepository:
                 )
             project = PlatformProject(
                 organization_id=command.organization_id,
-                organization_name=command.organization_name,
+                organization_name=organization.organization_name,
                 project_id=command.project_id,
-                project_name=command.project_id,
+                project_name=command.project_name,
             )
             self._projects[key] = project
             return project
@@ -110,13 +178,19 @@ class DbApiConnection(Protocol):
     def cursor(self) -> DbApiCursor: ...
 
 
+def _organization_from_row(row: Mapping[str, Any]) -> PlatformOrganization:
+    return PlatformOrganization(
+        organization_id=str(row["organization_id"]),
+        organization_name=str(row["organization_name"]),
+    )
+
+
 def _project_from_row(row: Mapping[str, Any]) -> PlatformProject:
-    project_id = str(row["project_id"])
     return PlatformProject(
         organization_id=str(row["organization_id"]),
         organization_name=str(row["organization_name"]),
-        project_id=project_id,
-        project_name=project_id,
+        project_id=str(row["project_id"]),
+        project_name=str(row["project_name"]),
     )
 
 
@@ -143,6 +217,47 @@ class PostgresPlatformProjectRepository:
         # through the registry table's FORCE RLS policy.
         cursor.execute("SELECT set_config('app.platform_admin', 'true', true)")
 
+    def list_organizations(self) -> tuple[PlatformOrganization, ...]:
+        with self._connection_factory() as connection:
+            cursor = connection.cursor()
+            self._activate_platform_admin(cursor)
+            cursor.execute(
+                """
+                SELECT organization_id, display_name AS organization_name
+                FROM access_control.organization_join_codes
+                ORDER BY organization_id
+                """
+            )
+            rows = cursor.fetchall()
+        return tuple(_organization_from_row(row) for row in rows)
+
+    def create_organization(self, command: PlatformOrganizationCreate) -> PlatformOrganization:
+        with self._connection_factory() as connection:
+            cursor = connection.cursor()
+            self._activate_platform_admin(cursor)
+            cursor.execute(
+                """
+                INSERT INTO access_control.organization_join_codes (
+                    organization_id, display_name, join_code
+                )
+                VALUES (%s, %s, %s)
+                ON CONFLICT (organization_id) DO NOTHING
+                RETURNING organization_id, display_name AS organization_name
+                """,
+                (
+                    command.organization_id,
+                    command.organization_name,
+                    f"bootstrap-{uuid4().hex}",
+                ),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise PlatformProjectError(
+                    "PLATFORM_ORGANIZATION_ALREADY_EXISTS",
+                    "the organization already exists",
+                )
+        return _organization_from_row(row)
+
     def list_projects(self) -> tuple[PlatformProject, ...]:
         with self._connection_factory() as connection:
             cursor = connection.cursor()
@@ -152,7 +267,8 @@ class PostgresPlatformProjectRepository:
                 SELECT project.organization_id,
                        COALESCE(directory.display_name, project.organization_id)
                            AS organization_name,
-                       project.project_id
+                       project.project_id,
+                       project.display_name AS project_name
                 FROM registry.organization_projects project
                 LEFT JOIN access_control.organization_join_codes directory
                   ON directory.organization_id = project.organization_id
@@ -168,26 +284,27 @@ class PostgresPlatformProjectRepository:
             self._activate_platform_admin(cursor)
             cursor.execute(
                 """
-                INSERT INTO access_control.organization_join_codes (
-                    organization_id, display_name, join_code
-                )
-                VALUES (%s, %s, %s)
-                ON CONFLICT (organization_id) DO NOTHING
+                SELECT organization_id
+                FROM access_control.organization_join_codes
+                WHERE organization_id = %s
                 """,
-                (
-                    command.organization_id,
-                    command.organization_name,
-                    f"bootstrap-{uuid4().hex}",
-                ),
+                (command.organization_id,),
             )
+            if cursor.fetchone() is None:
+                raise PlatformProjectError(
+                    "PLATFORM_ORGANIZATION_NOT_FOUND",
+                    "the selected organization does not exist",
+                )
             cursor.execute(
                 """
-                INSERT INTO registry.organization_projects (organization_id, project_id)
-                VALUES (%s, %s)
+                INSERT INTO registry.organization_projects (
+                    organization_id, project_id, display_name
+                )
+                VALUES (%s, %s, %s)
                 ON CONFLICT (organization_id, project_id) DO NOTHING
                 RETURNING organization_id, project_id
                 """,
-                (command.organization_id, command.project_id),
+                (command.organization_id, command.project_id, command.project_name),
             )
             inserted = cursor.fetchone()
             if inserted is None:
@@ -200,7 +317,8 @@ class PostgresPlatformProjectRepository:
                 SELECT project.organization_id,
                        COALESCE(directory.display_name, project.organization_id)
                            AS organization_name,
-                       project.project_id
+                       project.project_id,
+                       project.display_name AS project_name
                 FROM registry.organization_projects project
                 LEFT JOIN access_control.organization_join_codes directory
                   ON directory.organization_id = project.organization_id
@@ -217,6 +335,13 @@ class PostgresPlatformProjectRepository:
 class PlatformProjectService:
     def __init__(self, repository: PlatformProjectRepository) -> None:
         self.repository = repository
+
+    def list_organizations(self) -> PlatformOrganizationPage:
+        organizations = self.repository.list_organizations()
+        return PlatformOrganizationPage(count=len(organizations), items=organizations)
+
+    def create_organization(self, command: PlatformOrganizationCreate) -> PlatformOrganization:
+        return self.repository.create_organization(command)
 
     def list_projects(self) -> PlatformProjectPage:
         projects = self.repository.list_projects()

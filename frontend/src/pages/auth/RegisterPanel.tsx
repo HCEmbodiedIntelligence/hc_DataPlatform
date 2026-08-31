@@ -47,7 +47,6 @@ export function RegisterPanel({
       <header className={styles.formHeading}>
         <p className={styles.eyebrow}>公开注册</p>
         <h1 id="register-title">创建账户</h1>
-        <p>只需设置用户名和密码。注册后可立即登录。</p>
       </header>
 
       {error ? (

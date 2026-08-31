@@ -314,7 +314,6 @@ export function DashboardPage() {
       <div className={styles.panelHeading}>
         <div>
           <h2 id="dashboard-pending-title">我的待办</h2>
-          <p>仅展示当前能力与项目范围允许处理的事项</p>
         </div>
         <div className={styles.panelHeadingActions}>
           <StatusTag

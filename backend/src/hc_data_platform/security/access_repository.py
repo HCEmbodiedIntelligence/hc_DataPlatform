@@ -1229,6 +1229,9 @@ class InMemoryAccessRepository:
             ):
                 session.last_seen_at = timestamp
             platform_capabilities = self._platform_capabilities.get(principal_id, set())
+            # Platform administrators receive the verified project directory as their
+            # selectable scope without becoming project members.  Every other account
+            # receives only active membership-derived projects.
             projects = (
                 sorted(self._organization_projects)
                 if CAPABILITY_PLATFORM_ADMIN in platform_capabilities
@@ -1241,7 +1244,9 @@ class InMemoryAccessRepository:
             scopes = tuple(
                 AvailableScope(
                     organization_id=organization_id,
+                    organization_name=organization_id,
                     project_id=project_id,
+                    project_name=project_id,
                     region_codes=(),
                     project_wide=True,
                     capabilities=tuple(

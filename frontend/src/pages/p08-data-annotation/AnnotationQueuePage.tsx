@@ -437,7 +437,6 @@ function RuntimeAnnotationQueuePage({
       <header className="p08-page-header p08-page-header--plain">
         <div>
           <h1>数据标注</h1>
-          <p>按任务状态推进标注、审核与返工；所有变更都保留为不可变修订。</p>
         </div>
         <div className="p08-header-actions">
           <Link

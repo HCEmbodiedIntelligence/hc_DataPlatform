@@ -50,10 +50,19 @@ class EpisodeProcessingStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class SensorTimestampMode(str, Enum):
+    ABSOLUTE_NS = "ABSOLUTE_NS"
+    RECORDING_OFFSET_NS = "RECORDING_OFFSET_NS"
+
+
 class CameraRecordingConfigV1(BaseModel):
     """Queryable camera timing facts copied from the immutable config object."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_mode_override="validation",
+    )
 
     camera_id: Identifier
     topic: str | None = Field(default=None, min_length=1, max_length=512)
@@ -64,6 +73,22 @@ class CameraRecordingConfigV1(BaseModel):
     clock_domain: str = Field(min_length=1, max_length=128)
     time_base_numerator: int = Field(default=1, ge=1)
     time_base_denominator: int = Field(ge=1, le=1_000_000_000)
+    capture_start_offset_ns: Nanoseconds = 0
+
+    @property
+    def modality_key(self) -> str:
+        return self.topic or self.camera_id
+
+
+class SensorRecordingConfigV1(BaseModel):
+    """Queryable non-video timing facts copied from the immutable config object."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    topic: str = Field(min_length=1, max_length=512)
+    clock_domain: str = Field(min_length=1, max_length=128)
+    timestamp_mode: SensorTimestampMode = SensorTimestampMode.ABSOLUTE_NS
+    required: bool = True
 
 
 class RecordingConfigurationV1(BaseModel):
@@ -73,12 +98,21 @@ class RecordingConfigurationV1(BaseModel):
     recorder_version: str = Field(min_length=1, max_length=128)
     primary_clock_domain: str = Field(min_length=1, max_length=128)
     cameras: tuple[CameraRecordingConfigV1, ...] = Field(min_length=1, max_length=128)
+    sensors: tuple[SensorRecordingConfigV1, ...] = Field(default=(), max_length=2048)
 
     @model_validator(mode="after")
     def validate_cameras(self) -> RecordingConfigurationV1:
         camera_ids = [camera.camera_id for camera in self.cameras]
         if len(camera_ids) != len(set(camera_ids)):
             raise ValueError("recording config camera_id values must be unique")
+        modality_keys = [camera.modality_key for camera in self.cameras]
+        sensor_topics = [sensor.topic for sensor in self.sensors]
+        if len(modality_keys) != len(set(modality_keys)):
+            raise ValueError("recording config camera topic values must be unique")
+        if len(sensor_topics) != len(set(sensor_topics)):
+            raise ValueError("recording config sensor topic values must be unique")
+        if set(modality_keys).intersection(sensor_topics):
+            raise ValueError("camera and sensor modality keys must be disjoint")
         return self
 
 
@@ -269,8 +303,17 @@ class EpisodeProcessing(BaseModel):
     start_offset_ns: Nanoseconds
     end_offset_ns: Nanoseconds
     status: EpisodeProcessingStatus = EpisodeProcessingStatus.PENDING_QC
+    workflow_id: str | None = Field(default=None, min_length=1, max_length=1024)
+    event_id: UUID | None = None
     qc_report_id: str | None = None
     alignment_attempt_id: str | None = None
+    dataset_id: str | None = Field(default=None, min_length=1, max_length=128)
+    dataset_version: int | None = Field(default=None, ge=1)
+    lance_version: int | None = Field(default=None, ge=1)
+    annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)
+    aligned_media_camera_count: int | None = Field(default=None, ge=1, le=128)
+    failure_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]+$")
+    failure_stage: str | None = Field(default=None, min_length=1, max_length=128)
     created_at: AwareDatetime = Field(default_factory=utc_now)
     updated_at: AwareDatetime = Field(default_factory=utc_now)
 
@@ -283,7 +326,6 @@ class EpisodeProcessing(BaseModel):
                 EpisodeProcessingStatus.PENDING_ALIGNMENT,
                 EpisodeProcessingStatus.ALIGNING,
                 EpisodeProcessingStatus.READY,
-                EpisodeProcessingStatus.FAILED,
             }
             and self.qc_report_id is None
         ):
@@ -293,57 +335,31 @@ class EpisodeProcessing(BaseModel):
             in {
                 EpisodeProcessingStatus.ALIGNING,
                 EpisodeProcessingStatus.READY,
-                EpisodeProcessingStatus.FAILED,
             }
             and self.alignment_attempt_id is None
         ):
             raise ValueError("alignment Episode states require alignment_attempt_id")
-        return self
-
-
-_EPISODE_PROCESSING_TRANSITIONS = {
-    EpisodeProcessingStatus.PENDING_QC: {EpisodeProcessingStatus.QC_RUNNING},
-    EpisodeProcessingStatus.QC_RUNNING: {
-        EpisodeProcessingStatus.QC_FAILED,
-        EpisodeProcessingStatus.PENDING_ALIGNMENT,
-    },
-    EpisodeProcessingStatus.QC_FAILED: {EpisodeProcessingStatus.PENDING_QC},
-    EpisodeProcessingStatus.PENDING_ALIGNMENT: {EpisodeProcessingStatus.ALIGNING},
-    EpisodeProcessingStatus.ALIGNING: {
-        EpisodeProcessingStatus.READY,
-        EpisodeProcessingStatus.FAILED,
-    },
-    EpisodeProcessingStatus.FAILED: {EpisodeProcessingStatus.PENDING_ALIGNMENT},
-    EpisodeProcessingStatus.READY: set(),
-}
-
-
-class AdvanceEpisodeProcessingCommand(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    expected_status: EpisodeProcessingStatus
-    new_status: EpisodeProcessingStatus
-    qc_report_id: str | None = Field(default=None, min_length=1, max_length=256)
-    alignment_attempt_id: str | None = Field(default=None, min_length=1, max_length=256)
-
-    @model_validator(mode="after")
-    def validate_transition(self) -> AdvanceEpisodeProcessingCommand:
-        if self.new_status not in _EPISODE_PROCESSING_TRANSITIONS[self.expected_status]:
-            raise ValueError("invalid Episode QC/alignment state transition")
-        if (
-            self.new_status
-            in {
-                EpisodeProcessingStatus.QC_FAILED,
-                EpisodeProcessingStatus.PENDING_ALIGNMENT,
-            }
-            and self.qc_report_id is None
+        ready_values = (
+            self.dataset_id,
+            self.dataset_version,
+            self.lance_version,
+            self.annotation_task_id,
+            self.aligned_media_camera_count,
+        )
+        if self.status is EpisodeProcessingStatus.READY and any(
+            value is None for value in ready_values
         ):
-            raise ValueError("QC completion transitions require qc_report_id")
-        if (
-            self.new_status is EpisodeProcessingStatus.ALIGNING
-            and self.alignment_attempt_id is None
+            raise ValueError("READY Episodes require Dataset, Lance, task, and media evidence")
+        if self.status is not EpisodeProcessingStatus.READY and any(
+            value is not None for value in ready_values
         ):
-            raise ValueError("ALIGNING requires alignment_attempt_id")
+            raise ValueError("only READY Episodes expose Dataset, task, and media evidence")
+        failed = self.status in {
+            EpisodeProcessingStatus.QC_FAILED,
+            EpisodeProcessingStatus.FAILED,
+        }
+        if failed != (self.failure_code is not None and self.failure_stage is not None):
+            raise ValueError("failed Episode states require failure code and stage evidence")
         return self
 
 

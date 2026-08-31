@@ -1041,7 +1041,9 @@ def test_two_users_are_repository_scoped_and_revocation_is_immediate() -> None:
         assert before_revoke["available_scopes"] == [
             {
                 "organization_id": "org-a",
+                "organization_name": "org-a",
                 "project_id": "project-a",
+                "project_name": "project-a",
                 "region_codes": [],
                 "project_wide": True,
                 "capabilities": ["datasets.read"],

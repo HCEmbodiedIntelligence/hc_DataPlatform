@@ -75,6 +75,7 @@ beforeEach(() => {
     roleVersion: "role-shell-test",
     capabilities: [
       "upload.read",
+      "episode.read",
       "annotation_task.read",
       "manual_issue.read",
       "robot.read",
@@ -145,6 +146,7 @@ function renderShell(
                   roleVersion: "role-shell-test",
                   capabilities: [
                     "upload.read",
+                    "episode.read",
                     "annotation_task.read",
                     "manual_issue.read",
                     "robot.read",
@@ -154,6 +156,7 @@ function renderShell(
                 pageAvailability={{
                   P01: true,
                   P03: true,
+                  P23: true,
                   P08: true,
                   P09: true,
                 }}
@@ -208,6 +211,13 @@ describe("PlatformShell", () => {
       "href",
       "/annotations/annotate",
     );
+    const recordingSliceLink = screen.getByRole("link", {
+      name: "录制切片",
+    });
+    expect(recordingSliceLink).toHaveAttribute("href", "/recordings");
+    expect(
+      recordingSliceLink.closest("li")?.querySelector("svg"),
+    ).not.toBeNull();
     expect(screen.getByText("采集与接收")).toBeVisible();
     expect(screen.getByText("数据生产")).toBeVisible();
     expect(screen.queryByText("数据清洗")).not.toBeInTheDocument();
@@ -347,7 +357,7 @@ describe("PlatformShell", () => {
     expect(
       within(scopeGroup).getByRole("combobox", { name: "当前项目" }),
     ).toBeVisible();
-    expect(screen.getByText("尚未加入组织或项目")).toBeVisible();
+    expect(screen.getByText("尚未加入项目")).toBeVisible();
     expect(
       screen.queryByRole("link", { name: "个人主页" }),
     ).not.toBeInTheDocument();

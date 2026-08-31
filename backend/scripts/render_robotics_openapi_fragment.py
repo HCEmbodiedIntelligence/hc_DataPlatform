@@ -1,4 +1,4 @@
-"""Render the P15 fragment from the production-composed runtime schema."""
+"""Render the organization robot-asset fragment from the runtime schema."""
 
 from __future__ import annotations
 
@@ -8,24 +8,19 @@ from typing import Any
 
 from hc_data_platform.core.openapi import render, runtime_document
 
-_PATH_PREFIX = "/api/v1/projects/{project_id}/regions/{region_code}"
-_ROBOT_PATH_MARKERS = ("/robots", "/components", "/search")
+_PATH_PREFIX = "/api/v1/organizations/{organization_id}/robots"
 _SCHEMAS = (
-    "ChannelPage",
-    "ChannelReference",
-    "ComponentPage",
     "Connectivity",
     "EffectiveModelBinding",
-    "FramePage",
-    "FrameReference",
-    "GlobalRobotSearchPage",
-    "GlobalSearchRobotResult",
+    "BindOrganizationRobotModelRequest",
+    "CreateRobotRequest",
+    "OrganizationRobotBootstrapEnvelope",
+    "OrganizationRobotModelBinding",
+    "OrganizationRobotModelBindingPage",
+    "OrganizationRobotPage",
+    "OrganizationRobotScope",
     "RobotBootstrap",
-    "RobotBootstrapEnvelope",
-    "RobotComponent",
-    "RobotPage",
     "RobotRecord",
-    "RobotScope",
 )
 
 
@@ -38,7 +33,6 @@ def document() -> dict[str, Any]:
             path: item
             for path, item in runtime["paths"].items()
             if path.startswith(_PATH_PREFIX)
-            and any(marker in path for marker in _ROBOT_PATH_MARKERS)
         },
         "components": {
             "schemas": {name: runtime["components"]["schemas"][name] for name in _SCHEMAS}

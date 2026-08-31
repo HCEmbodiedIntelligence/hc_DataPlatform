@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from hc_data_platform.continuous_recordings.asset_models import (
-    AdvanceEpisodeProcessingCommand,
     CameraRecordingConfigV1,
     CompleteRecordingAssetCommand,
     CreateRecordingUploadCommand,
@@ -566,46 +565,12 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
         recording_id="recording-video-a",
     )
     assert processing.items[0].status is EpisodeProcessingStatus.PENDING_QC
-
-    with pytest.raises(ValidationError):
-        AdvanceEpisodeProcessingCommand(
-            expected_status=EpisodeProcessingStatus.PENDING_QC,
-            new_status=EpisodeProcessingStatus.ALIGNING,
-            alignment_attempt_id="alignment-skipped-qc",
-        )
-    transitions = (
-        AdvanceEpisodeProcessingCommand(
-            expected_status=EpisodeProcessingStatus.PENDING_QC,
-            new_status=EpisodeProcessingStatus.QC_RUNNING,
-        ),
-        AdvanceEpisodeProcessingCommand(
-            expected_status=EpisodeProcessingStatus.QC_RUNNING,
-            new_status=EpisodeProcessingStatus.PENDING_ALIGNMENT,
-            qc_report_id="qc-report-reviewed-01",
-        ),
-        AdvanceEpisodeProcessingCommand(
-            expected_status=EpisodeProcessingStatus.PENDING_ALIGNMENT,
-            new_status=EpisodeProcessingStatus.ALIGNING,
-            alignment_attempt_id="alignment-attempt-reviewed-01",
-        ),
-        AdvanceEpisodeProcessingCommand(
-            expected_status=EpisodeProcessingStatus.ALIGNING,
-            new_status=EpisodeProcessingStatus.READY,
-        ),
-    )
-    for transition in transitions:
-        advanced = service.advance_episode_processing(
-            auth=_auth(),
-            organization_id="org-a",
-            project_id="project-a",
-            region_code="cn-hz",
-            recording_id="recording-video-a",
-            episode_id="episode_reviewed_01",
-            command=transition,
-        )
-    assert advanced.episode.status is EpisodeProcessingStatus.READY
-    assert advanced.episode.qc_report_id == "qc-report-reviewed-01"
-    assert advanced.episode.alignment_attempt_id == "alignment-attempt-reviewed-01"
+    assert processing.items[0].workflow_id is not None
+    assert processing.items[0].event_id is not None
+    assert len(recording_repository.outbox_events) == 1
+    event = next(iter(recording_repository.outbox_events.values()))
+    assert event.event_type == "continuous-recording.episode.workflow.requested.v1"
+    assert event.payload["workflow_id"] == processing.items[0].workflow_id
 
     preview = service.authorize_episode_videos(
         auth=_auth(),

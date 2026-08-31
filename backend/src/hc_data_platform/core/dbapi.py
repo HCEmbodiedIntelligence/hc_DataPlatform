@@ -26,8 +26,10 @@ def psycopg_connection_factory(dsn: str) -> Callable[[], Any]:
         import psycopg
 
         context = current_request_context()
-        if context.project_id is None:
-            raise RuntimeError("a verified project scope is required before opening PostgreSQL")
+        if context.project_id is None and context.organization_id is None:
+            raise RuntimeError(
+                "a verified organization or project scope is required before opening PostgreSQL"
+            )
         raw_connection = psycopg.connect(normalized)
         try:
             raw_connection.execute(
@@ -44,7 +46,7 @@ def psycopg_connection_factory(dsn: str) -> Callable[[], Any]:
                 """,
                 (
                     context.organization_id or "",
-                    context.project_id,
+                    context.project_id or "",
                     context.region_code or "",
                     context.subject_id or "",
                     context.request_id,

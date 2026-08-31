@@ -382,6 +382,10 @@
   gap: 2px;
 }
 
+.episodeHeaderState {
+  justify-self: end;
+}
+
 .episodeCardHeader strong,
 .episodeCardHeader small {
   overflow: hidden;
@@ -405,6 +409,67 @@
   gap: var(--hc-space-2);
   padding: 0 var(--hc-space-2) var(--hc-space-2);
   border-top: 1px solid var(--hc-color-border-subtle);
+}
+
+.processingPanel {
+  display: grid;
+  gap: var(--hc-space-2);
+  margin-top: var(--hc-space-2);
+  padding: var(--hc-space-2);
+  border: 1px solid var(--hc-color-border-subtle);
+  border-radius: var(--hc-radius-xs);
+  background: var(--hc-color-surface-subtle);
+}
+
+.processingHeading,
+.processingActions,
+.processingFailure {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.processingHeading {
+  justify-content: space-between;
+  gap: var(--hc-space-2);
+}
+
+.processingHeading > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.processingHeading strong {
+  color: var(--hc-color-text);
+  font-size: 0.75rem;
+}
+
+.processingHeading small,
+.processingEvidence,
+.processingFailure {
+  color: var(--hc-color-text-muted);
+  font-size: 0.6875rem;
+}
+
+.processingActions {
+  flex-wrap: wrap;
+  gap: var(--hc-space-3);
+  font-size: 0.75rem;
+}
+
+.processingEvidence,
+.processingFailure {
+  margin: 0;
+}
+
+.processingFailure {
+  flex-wrap: wrap;
+  gap: var(--hc-space-2);
+}
+
+.processingFailure code {
+  color: var(--hc-color-danger);
 }
 
 .episodeFields > label,

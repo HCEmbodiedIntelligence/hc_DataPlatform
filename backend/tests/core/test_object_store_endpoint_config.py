@@ -54,15 +54,6 @@ def test_local_and_test_allow_explicit_browser_reachable_http_endpoints() -> Non
     assert test.object_store_public_endpoint == "http://localhost:9000"
 
 
-def test_local_legacy_single_endpoint_falls_back_without_changing_server_operations() -> None:
-    settings = Settings(
-        environment="local",
-        object_store_endpoint="http://minio:9000",
-        _env_file=None,
-    )
-    assert settings.object_store_public_endpoint == settings.object_store_endpoint
-
-
 def test_oss_provider_requires_https_native_endpoints() -> None:
     settings = Settings(
         environment="test",
@@ -229,3 +220,19 @@ def test_object_store_secrets_do_not_appear_in_repr_or_validation_errors() -> No
             _env_file=None,
         )
     assert secret not in str(captured.value)
+def test_local_legacy_single_endpoint_falls_back_without_changing_server_operations() -> None:
+    settings = Settings(
+        environment="local",
+        object_store_endpoint="http://minio:9000",
+        _env_file=None,
+    )
+    assert settings.object_store_public_endpoint == settings.object_store_endpoint
+def test_local_legacy_single_endpoint_falls_back_without_changing_server_operations() -> None:
+    settings = Settings(
+        environment="local",
+        object_store_endpoint="http://minio:9000",
+        _env_file=None,
+    )
+    assert settings.object_store_public_endpoint == settings.object_store_endpoint
+
+

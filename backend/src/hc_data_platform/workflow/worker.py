@@ -288,6 +288,7 @@ async def serve() -> None:
     )
     from hc_data_platform.runtime import (
         build_aligned_media_orphan_reconciler,
+        build_aligned_media_version_retirement_collector,
         build_frame_selection_lifecycle_collector,
         build_projection_staging_sweeper,
         build_storage_inventory,
@@ -323,6 +324,11 @@ async def serve() -> None:
     )
     frame_selection_collector = (
         build_frame_selection_lifecycle_collector(settings)
+        if role == "main" and object_store_configured and settings.outbox_scopes
+        else None
+    )
+    aligned_media_version_retirement = (
+        build_aligned_media_version_retirement_collector(settings)
         if role == "main" and object_store_configured and settings.outbox_scopes
         else None
     )
@@ -421,9 +427,14 @@ async def serve() -> None:
                         )
                     ),
                     scoped_object_sweepers=(
-                        ()
-                        if frame_selection_collector is None
-                        else (frame_selection_collector.run_once,)
+                        tuple(
+                            sweeper.run_once
+                            for sweeper in (
+                                frame_selection_collector,
+                                aligned_media_version_retirement,
+                            )
+                            if sweeper is not None
+                        )
                     ),
                     maintenance_gate=maintenance_gate,
                     environment_id=settings.platform_environment_id,

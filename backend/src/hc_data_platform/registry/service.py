@@ -12,7 +12,6 @@ from urllib.parse import quote
 from uuid import uuid4
 from xml.etree import ElementTree
 
-from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.ingest.models import CompletedPart
@@ -23,7 +22,6 @@ from hc_data_platform.security.scope import ScopeGuard
 
 from .models import (
     AuthorizeRobotModelAssetPartsRequest,
-    BindRobotModelVersionRequest,
     BlockedReason,
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
@@ -39,8 +37,6 @@ from .models import (
     RobotModelAssetDownloadAuthorization,
     RobotModelAssetPage,
     RobotModelAssetUploadEnvelope,
-    RobotModelBinding,
-    RobotModelBindingPage,
     RobotModelJointMapping,
     RobotModelJointMappingPage,
     RobotModelPage,
@@ -932,102 +928,6 @@ class RegistryService:
             outcome="SUCCEEDED",
         )
         return RobotModelVersionEnvelope(data=updated, scope=scope, request_id=request_id)
-
-    def list_robot_model_bindings(
-        self,
-        *,
-        auth: AuthContext,
-        organization_id: str,
-        project_id: str,
-        version_id: str,
-        request_id: str,
-    ) -> RobotModelBindingPage:
-        scope = self._authorize_read(
-            auth=auth, organization_id=organization_id, project_id=project_id
-        )
-        self._require_version(
-            organization_id=organization_id, project_id=project_id, version_id=version_id
-        )
-        items = self._repository.list_robot_model_bindings(
-            organization_id=organization_id, project_id=project_id, version_id=version_id
-        )
-        self._audit(
-            auth=auth,
-            scope=scope,
-            action="registry.robot_model_binding.listed",
-            resource_id=version_id,
-            request_id=request_id,
-            outcome="SUCCEEDED",
-        )
-        return RobotModelBindingPage(items=items, scope=scope, request_id=request_id)
-
-    def bind_robot_model_version(
-        self,
-        *,
-        auth: AuthContext,
-        organization_id: str,
-        project_id: str,
-        version_id: str,
-        idempotency_key: str,
-        request_id: str,
-        command: BindRobotModelVersionRequest,
-    ) -> RobotModelBinding:
-        scope = self._authorize_manage(
-            auth=auth, organization_id=organization_id, project_id=project_id
-        )
-        ScopeGuard.require(auth, project_id, command.region_code)
-        auth.require_capability("robot.manage", project_id)
-        # The registry ledger is project-scoped; the P15 projection is region-scoped.
-        # Bind the narrower RLS scope only after both authorities have passed.
-        select_request_scope(project_id, command.region_code)
-        self._require_version(
-            organization_id=organization_id, project_id=project_id, version_id=version_id
-        )
-        try:
-            binding = self._repository.bind_robot_model_version(
-                organization_id=organization_id,
-                project_id=project_id,
-                region_code=command.region_code,
-                version_id=version_id,
-                robot_id=command.robot_id,
-                expected_robot_etag=command.robot_etag,
-                idempotency_key=idempotency_key,
-                request_fingerprint=request_fingerprint(command.model_dump(mode="json")),
-                bound_at=self._clock(),
-            )
-        except KeyError as exc:
-            raise problem(
-                status=404,
-                code="ROBOT_MODEL_BINDING_ROBOT_NOT_FOUND",
-                title="Robot not found",
-                detail="The target robot does not exist in the selected project and region.",
-            ) from exc
-        except ValueError as exc:
-            message = str(exc)
-            if "idempotency" in message:
-                raise idempotency_conflict() from exc
-            if "etag" in message:
-                raise problem(
-                    status=412,
-                    code="ROBOT_ETAG_MISMATCH",
-                    title="Robot changed",
-                    detail="Reload the robot bootstrap before binding a model version.",
-                ) from exc
-            raise problem(
-                status=409,
-                code="ROBOT_MODEL_VERSION_NOT_PUBLISHED",
-                title="Robot model version is not published",
-                detail="Only a published robot model version can be bound to a robot.",
-            ) from exc
-        self._audit(
-            auth=auth,
-            scope=scope,
-            action="registry.robot_model_version.bound",
-            resource_id=binding.binding_id,
-            request_id=request_id,
-            outcome="SUCCEEDED",
-        )
-        return binding
 
     def _evaluate_publish_preflight(
         self,

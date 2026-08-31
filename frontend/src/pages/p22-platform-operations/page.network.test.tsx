@@ -257,6 +257,12 @@ describe("P22 platform operations production client path", () => {
         if (url.includes("/platform/logs?")) return json(logResponse(url));
         if (url.includes("/platform/releases?"))
           return json(emptyReleaseHistory);
+        if (url.includes("/platform/organizations"))
+          return json({
+            format_version: "hc-platform-organization-directory/v1",
+            count: 0,
+            items: [],
+          });
         if (url.includes("/platform/projects"))
           return json({
             format_version: "hc-platform-project-directory/v1",
@@ -294,7 +300,7 @@ describe("P22 platform operations production client path", () => {
     expect(screen.getByText("允许进入升级窗口")).toBeVisible();
     expect(await screen.findByText("PLATFORM.READY")).toBeVisible();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     const calls = fetchMock.mock.calls;
     expect(
       calls
@@ -305,6 +311,7 @@ describe("P22 platform operations production client path", () => {
         .sort(),
     ).toEqual([
       "/api/v1/platform/logs",
+      "/api/v1/platform/organizations",
       "/api/v1/platform/overview",
       "/api/v1/platform/projects",
       "/api/v1/platform/releases",
@@ -332,13 +339,18 @@ describe("P22 platform operations production client path", () => {
     }
   });
 
-  it("creates the first project from the administrator platform settings page", async () => {
-    let created = false;
+  it("creates an organization and project through separate administrator flows", async () => {
+    let organizationCreated = false;
+    let projectCreated = false;
+    const createdOrganization = {
+      organization_id: "hangcha",
+      organization_name: "杭叉集团",
+    };
     const createdProject = {
       organization_id: "hangcha",
       organization_name: "杭叉集团",
       project_id: "robot-data-01",
-      project_name: "robot-data-01",
+      project_name: "双臂采集一期",
     };
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -347,15 +359,26 @@ describe("P22 platform operations production client path", () => {
         if (url.includes("/platform/logs?")) return json(logResponse(url));
         if (url.includes("/platform/releases?"))
           return json(emptyReleaseHistory);
+        if (url.includes("/platform/organizations")) {
+          if (init?.method === "POST") {
+            organizationCreated = true;
+            return json(createdOrganization, { status: 201 });
+          }
+          return json({
+            format_version: "hc-platform-organization-directory/v1",
+            count: organizationCreated ? 1 : 0,
+            items: organizationCreated ? [createdOrganization] : [],
+          });
+        }
         if (url.includes("/platform/projects")) {
           if (init?.method === "POST") {
-            created = true;
+            projectCreated = true;
             return json(createdProject, { status: 201 });
           }
           return json({
             format_version: "hc-platform-project-directory/v1",
-            count: created ? 1 : 0,
-            items: created ? [createdProject] : [],
+            count: projectCreated ? 1 : 0,
+            items: projectCreated ? [createdProject] : [],
           });
         }
         if (url.includes("/auth/session/bootstrap")) {
@@ -371,22 +394,37 @@ describe("P22 platform operations production client path", () => {
     const user = userEvent.setup();
     renderPage();
 
+    expect(await screen.findByText("尚未创建组织")).toBeVisible();
+    await user.type(screen.getByLabelText("新组织 ID"), "hangcha");
+    await user.type(screen.getByLabelText("新组织名称"), "杭叉集团");
+    await user.click(screen.getByRole("button", { name: "创建组织" }));
+
     expect(await screen.findByText("尚未创建项目")).toBeVisible();
-    await user.type(screen.getByLabelText("项目所属组织 ID"), "hangcha");
-    await user.type(screen.getByLabelText("项目所属组织名称"), "杭叉集团");
     await user.type(screen.getByLabelText("新项目 ID"), "robot-data-01");
+    await user.type(screen.getByLabelText("新项目名称"), "双臂采集一期");
     await user.click(screen.getByRole("button", { name: "创建项目" }));
 
-    expect(await screen.findByText("robot-data-01")).toBeVisible();
+    expect((await screen.findAllByText("双臂采集一期")).length).toBeGreaterThan(
+      0,
+    );
     expect(await screen.findByText(/刷新页面后即可选择该项目/u)).toBeVisible();
+    const organizationCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes("/platform/organizations") &&
+        init?.method === "POST",
+    );
+    expect(JSON.parse(String(organizationCall?.[1]?.body))).toEqual({
+      organization_id: "hangcha",
+      organization_name: "杭叉集团",
+    });
     const createCall = fetchMock.mock.calls.find(
       ([input, init]) =>
         String(input).includes("/platform/projects") && init?.method === "POST",
     );
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
       organization_id: "hangcha",
-      organization_name: "杭叉集团",
       project_id: "robot-data-01",
+      project_name: "双臂采集一期",
     });
   });
 
@@ -428,9 +466,7 @@ describe("P22 platform operations production client path", () => {
       ),
     ).toBe(false);
 
-    await user.click(
-      screen.getByRole("button", { name: "创建或编辑 OSS 地址" }),
-    );
+    await user.click(screen.getByRole("button", { name: "创建存储地址" }));
     await screen.findByText("尚未配置");
     await user.type(screen.getByLabelText("OSS Bucket"), "hc-platform-test");
     await user.type(

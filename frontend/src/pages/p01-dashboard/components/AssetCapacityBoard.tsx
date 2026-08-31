@@ -150,7 +150,6 @@ export function AssetCapacityBoard({
               tone={sectionTone(taskStatus.section.status)}
             />
           </div>
-          <p>实时数据从采集、接收到发布的流转概览</p>
         </div>
 
         <div className={styles.taskContext}>

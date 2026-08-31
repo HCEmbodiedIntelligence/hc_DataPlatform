@@ -1433,7 +1433,9 @@ components:
       required: [organization_id, project_id, region_codes, project_wide, capabilities]
       properties:
         organization_id: {type: string, minLength: 1}
+        organization_name: {type: [string, "null"], minLength: 1, maxLength: 256}
         project_id: {type: string, minLength: 1}
+        project_name: {type: [string, "null"], minLength: 1, maxLength: 256}
         region_codes:
           type: array
           uniqueItems: true

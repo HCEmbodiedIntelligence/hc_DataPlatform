@@ -80,10 +80,10 @@ Bucket。上传流程为：
 
 ```text
 本地 LeRobot（Parquet + MP4）
-  -> 转换为平台标准 Episode（MCAP + Manifest）
-  -> 向平台创建上传会话
+  -> 向平台创建原生 LeRobot Raw 上传会话
   -> 使用平台签发的临时 URL 将文件正文直传 OSS
   -> 向平台提交完成
+  -> 平台登记 Raw Source、Episode 和处理任务
   -> 自动质检、对齐、可视化和标注
 ```
 
@@ -103,35 +103,36 @@ backend/.venv/bin/python scripts/upload_lerobot_via_platform.py
 1. 本地 LeRobot 文件夹路径，可以直接粘贴 Windows 路径；
 2. 平台地址，本机直连 API 通常使用 `http://127.0.0.1:8000`，经过网关可使用
    `http://127.0.0.1:8088`；
-3. 平台用户名和密码。
+3. Organization ID；
+4. 平台用户名和密码。
 
 当前 Unitree G1 数据的参数已经预填：
 
 ```text
 Project:  be22-hf-g1-video-20260819-02-p1
 Region:   be22-hf-g1-video-20260819-02-cn
+Dataset:  be22-hf-g1-video-20260819-02-p1
 Task:     14d16ba1-d95a-5ee3-aaa7-7b7d78091b52
 Robot:    robot-d1a17126-b495-59b8-bf48-0ccce0a6ffe7
-Episodes: 0-9
+Episodes: 从 meta/info.json 自动读取
 ```
 
 也可以使用 Token 非交互上传。Token 通过环境变量传入，不会出现在命令行参数中：
 
 ```bash
 export HC_DATA_ACCESS_TOKEN='平台 Bearer Token'
+export HC_ORGANIZATION_ID='所属 Organization ID'
 
 backend/.venv/bin/python scripts/upload_lerobot_via_platform.py \
   --source-dir 'E:\HC-Unitree-G1-Conversion-Cache\unitreerobotics--G1_WBT_Dex1_Put_Clothes_into_Washing_Machine' \
-  --api-base-url http://127.0.0.1:8000 \
-  --episode-count 10
+  --api-base-url http://127.0.0.1:8000
 ```
 
-Windows 盘符路径会在 WSL 中自动转换成 `/mnt/<盘符>/...`。转换结果默认缓存在
-`artifacts/hf-unitree-g1-mcap`；重复执行会复用已校验的数据包，并通过稳定幂等键避免平台
-重复收录同一个 Episode。
+Windows 盘符路径会在 WSL 中自动转换成 `/mnt/<盘符>/...`。平台保留原始 Parquet、MP4
+及元数据文件，不在机器人端生成 MCAP。
 
-更完整的说明见 [LeRobot 平台上传指南](docs/lerobot-platform-upload.md)。机器完全无法访问
-平台 API、只能自行写 OSS 时，才使用 [OSS 自动发现兼容方案](docs/lerobot-oss-auto-discovery.md)。
+更完整的说明见 [LeRobot 平台上传指南](docs/lerobot-platform-upload.md)。机器人上传只允许走
+平台控制面；不提供 OSS AccessKey 直写、`lerobot-inbox` 扫描或 Bucket 自动发现兼容入口。
 
 ## 查看当前状态
 

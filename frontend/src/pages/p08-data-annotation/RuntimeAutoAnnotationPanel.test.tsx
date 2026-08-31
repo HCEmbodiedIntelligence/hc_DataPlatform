@@ -117,7 +117,7 @@ describe("P08 runtime automatic annotation panel", () => {
 
     renderPanel();
 
-    expect(await screen.findByText(/不会创建假任务或假结果/u)).toBeVisible();
+    expect(await screen.findByText("当前环境未配置自动标注 Provider。")).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "启动自动标注" }),
     ).not.toBeInTheDocument();

@@ -430,7 +430,6 @@ export function AccessApprovalView({
       <StandardPageScaffold
         header={{
           title: "账户与权限",
-          description: "管理平台账户，并处理当前项目的成员加入与能力授权申请。",
           breadcrumbs: [
             { key: "security", label: "安全与审计" },
             { key: "access", label: "账户与权限" },

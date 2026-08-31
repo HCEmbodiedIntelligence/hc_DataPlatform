@@ -24,11 +24,9 @@ from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 
 from .asset_models import (
-    AdvanceEpisodeProcessingCommand,
     AuthorizeRecordingAssetPartsCommand,
     CompleteRecordingAssetCommand,
     CreateRecordingUploadCommand,
-    EpisodeProcessingEnvelope,
     EpisodeProcessingPage,
     EpisodeVideoSource,
     EpisodeVideoSourceEnvelope,
@@ -763,64 +761,6 @@ class ContinuousRecordingService:
         self._require_recording(scope, recording_id)
         items = self._repository.list_episode_processing(scope, recording_id)
         return EpisodeProcessingPage(items=items, total=len(items))
-
-    def advance_episode_processing(
-        self,
-        *,
-        auth: AuthContext,
-        organization_id: str,
-        project_id: str,
-        region_code: str,
-        recording_id: str,
-        episode_id: str,
-        command: AdvanceEpisodeProcessingCommand,
-    ) -> EpisodeProcessingEnvelope:
-        scope = self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            write=True,
-        )
-        self._require_recording(scope, recording_id)
-        current = next(
-            (
-                item
-                for item in self._repository.list_episode_processing(scope, recording_id)
-                if item.episode_id == episode_id
-            ),
-            None,
-        )
-        if current is None:
-            raise problem(
-                status=404,
-                code="RECORDING_EPISODE_NOT_FOUND",
-                title="Recording Episode not found",
-                detail="The finalized recording does not contain this Episode.",
-            )
-        if current.status is not command.expected_status:
-            raise problem(
-                status=409,
-                code="EPISODE_PROCESSING_STATUS_CONFLICT",
-                title="Episode processing status changed",
-                detail="Reload the Episode before advancing its QC/alignment state.",
-                details={"current_status": current.status.value},
-            )
-        updated = current.model_copy(
-            update={
-                "status": command.new_status,
-                "qc_report_id": command.qc_report_id or current.qc_report_id,
-                "alignment_attempt_id": (
-                    command.alignment_attempt_id or current.alignment_attempt_id
-                ),
-                "updated_at": utc_now(),
-            }
-        )
-        persisted = self._repository.save_episode_processing(
-            updated,
-            expected_status=command.expected_status,
-        )
-        return EpisodeProcessingEnvelope(episode=persisted)
 
     def authorize_episode_videos(
         self,

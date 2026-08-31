@@ -12,6 +12,7 @@ import type {
 import { makeQueryKey } from "../../../shared/api/query-keys";
 import { parseWire } from "../../../shared/api/validate";
 import { useShellStore } from "../../../shared/scope/shell-store";
+import { getRobotBootstrap } from "../../robots/api";
 
 const id = z.string().min(1).max(128);
 const blockedReasonSchema = z
@@ -150,14 +151,19 @@ type ReplaceRobotModelJointMappingsRequest =
   operations["replaceRobotModelJointMappings"]["requestBody"]["content"]["application/json"];
 type PublishRobotModelVersionRequest =
   operations["publishRobotModelVersion"]["requestBody"]["content"]["application/json"];
-type BindRobotModelVersionRequest =
-  operations["bindRobotModelVersion"]["requestBody"]["content"]["application/json"];
 
 export type RobotModelJointMapping =
   components["schemas"]["RobotModelJointMapping"];
 export type RobotModelPublishPreflight =
   components["schemas"]["RobotModelPublishPreflight"];
-export type RobotModelBinding = components["schemas"]["RobotModelBinding"];
+export interface RobotModelBinding {
+  readonly binding_id: string;
+  readonly robot_id: string;
+  readonly version_id: string;
+  readonly status: "ACTIVE" | "SUPERSEDED" | "REVOKED";
+  readonly bound_at: string;
+  readonly unbound_at: string | null;
+}
 
 export interface RobotModelAssetUploadInput {
   readonly file: File;
@@ -239,7 +245,13 @@ export function adaptRobotModelVersion(
 }
 
 function useOrganizationId(): string | null {
-  return useShellStore((state) => state.scope?.organizationId ?? null);
+  return useShellStore(
+    (state) =>
+      state.scope?.organizationId ??
+      state.sessionOrganizations[0]?.organizationId ??
+      state.sessionScopes[0]?.organizationId ??
+      null,
+  );
 }
 
 export function useRobotModels(
@@ -743,7 +755,6 @@ const bindingWireSchema = z
   .object({
     binding_id: z.string().min(1),
     robot_id: id,
-    region_code: z.string().min(1).max(64),
     version_id: id,
     status: z.enum(["ACTIVE", "SUPERSEDED", "REVOKED"]),
     bound_at: z.string().datetime({ offset: true }),
@@ -753,27 +764,10 @@ const bindingWireSchema = z
 const bindingPageWireSchema = z
   .object({
     items: z.array(bindingWireSchema),
-    scope: scopeSchema,
+    scope: z.object({ organization_id: id }).strict(),
     request_id: id,
   })
   .strict();
-const robotBootstrapWireSchema = z
-  .object({
-    data: z
-      .object({
-        robot: z
-          .object({
-            id,
-            display_name: z.string().min(1),
-            serial_no: z.string().min(1),
-          })
-          .passthrough(),
-        etag: z.string().min(1),
-      })
-      .passthrough(),
-  })
-  .passthrough();
-
 export async function listRobotModelJointMappings(
   organizationId: string,
   versionId: string,
@@ -808,7 +802,10 @@ export async function listRobotModelBindings(
 ): Promise<readonly RobotModelBinding[]> {
   const raw = await request<unknown>({
     method: "GET",
-    path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(versionId)}/bindings`,
+    path: `/organizations/${encodeURIComponent(organizationId)}/robots/model-bindings`,
+    scopeMode: "organization",
+    scope: { organizationId },
+    query: { version_id: versionId },
     cache: "no-store",
     ...(signal ? { signal } : {}),
   });
@@ -829,31 +826,17 @@ export function useRobotModelBindings(versionId: string | null) {
 }
 
 export interface RobotBindingTarget {
-  readonly projectId: string;
-  readonly regionCode: string;
   readonly robotId: string;
 }
 
 export async function loadRobotBindingTarget(
   target: RobotBindingTarget,
 ): Promise<Readonly<{ robotId: string; displayName: string; etag: string }>> {
-  const raw = await request<unknown>({
-    method: "GET",
-    path: `/projects/${encodeURIComponent(target.projectId)}/regions/${encodeURIComponent(target.regionCode)}/robots/${encodeURIComponent(target.robotId)}/bootstrap`,
-    cache: "no-store",
-    scope: {
-      organizationId: useShellStore.getState().scope?.organizationId ?? "",
-      projectId: target.projectId,
-      regionCode: target.regionCode,
-    },
-  });
-  const parsed = parseWire(robotBootstrapWireSchema, raw, {
-    endpoint: "getRobotBootstrap",
-  });
+  const robot = await getRobotBootstrap(target.robotId);
   return {
-    robotId: parsed.data.robot.id,
-    displayName: parsed.data.robot.display_name,
-    etag: parsed.data.etag,
+    robotId: robot.id,
+    displayName: robot.displayName,
+    etag: robot.etag,
   };
 }
 
@@ -866,7 +849,6 @@ export function useLoadRobotBindingTarget() {
 
 export interface BindRobotModelVersionIntent {
   readonly versionId: string;
-  readonly regionCode: string;
   readonly robotId: string;
   readonly robotEtag: string;
   readonly idempotencyKey: string;
@@ -876,20 +858,18 @@ export async function bindRobotModelVersion(
   organizationId: string,
   intent: BindRobotModelVersionIntent,
 ): Promise<RobotModelBinding> {
-  const body = {
-    region_code: intent.regionCode,
-    robot_id: intent.robotId,
-    robot_etag: intent.robotEtag,
-  } satisfies BindRobotModelVersionRequest;
+  const body = { version_id: intent.versionId, robot_etag: intent.robotEtag };
   const raw = await request<unknown>({
     method: "POST",
-    path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(intent.versionId)}/bindings`,
+    path: `/organizations/${encodeURIComponent(organizationId)}/robots/${encodeURIComponent(intent.robotId)}/model-bindings`,
+    scopeMode: "organization",
+    scope: { organizationId },
     body,
     idempotencyKey: intent.idempotencyKey,
     cache: "no-store",
   });
   return parseWire(bindingWireSchema, raw, {
-    endpoint: "bindRobotModelVersion",
+    endpoint: "bindOrganizationRobotModel",
   });
 }
 
@@ -898,7 +878,9 @@ export function useBindRobotModelVersion() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (intent: BindRobotModelVersionIntent) =>
-      bindRobotModelVersion(organizationId!, intent),
+      organizationId
+        ? bindRobotModelVersion(organizationId, intent)
+        : Promise.reject(new Error("当前会话没有可用的组织范围。")),
     onSuccess: (_binding, intent) => {
       void client.invalidateQueries({
         queryKey: makeQueryKey("robot-models", "bindings", intent.versionId),

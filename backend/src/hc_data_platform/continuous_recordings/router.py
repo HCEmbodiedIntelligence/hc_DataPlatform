@@ -9,11 +9,9 @@ from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.security.http import VerifiedAuth
 
 from .asset_models import (
-    AdvanceEpisodeProcessingCommand,
     AuthorizeRecordingAssetPartsCommand,
     CompleteRecordingAssetCommand,
     CreateRecordingUploadCommand,
-    EpisodeProcessingEnvelope,
     EpisodeProcessingPage,
     EpisodeVideoSourceEnvelope,
     RecordingAssetPartGrant,
@@ -424,35 +422,6 @@ def list_continuous_recording_episodes(
         project_id=project_id,
         region_code=region_code,
         recording_id=recording_id,
-    )
-
-
-@router.post(
-    "/{recording_id}/episodes/{episode_id}:transition-processing",
-    operation_id="transitionContinuousRecordingEpisodeProcessing",
-    response_model=EpisodeProcessingEnvelope,
-    responses=PROBLEM_RESPONSES,
-)
-def transition_continuous_recording_episode_processing(
-    project_id: str,
-    region_code: str,
-    recording_id: str,
-    episode_id: str,
-    command: AdvanceEpisodeProcessingCommand,
-    response: Response,
-    auth: VerifiedAuth,
-    organization_id: OrganizationHeader,
-    service: Service,
-) -> EpisodeProcessingEnvelope:
-    response.headers["Cache-Control"] = "no-store"
-    return service.advance_episode_processing(
-        auth=auth,
-        organization_id=organization_id,
-        project_id=project_id,
-        region_code=region_code,
-        recording_id=recording_id,
-        episode_id=episode_id,
-        command=command,
     )
 
 

@@ -52,7 +52,7 @@ import {
   RobotSceneCore,
 } from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
-import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useOrganizationCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
   DataCursorPager,
@@ -188,8 +188,15 @@ function SummaryItem({
 export function Component() {
   const [params, setParams] = useSearchParams();
   const search = robotsQueryCodec.parse(params);
-  const scope = useShellStore((state) => state.scope);
-  const capabilities = useCapabilities();
+  const organizationId = useShellStore(
+    (state) =>
+      state.scope?.organizationId ??
+      state.sessionOrganizations[0]?.organizationId ??
+      state.sessionScopes[0]?.organizationId ??
+      null,
+  );
+  const bootstrapLoaded = useShellStore((state) => state.bootstrapLoaded);
+  const capabilities = useOrganizationCapabilities(organizationId);
   const canManageRobots = capabilities.has("robot.manage");
   const canManageModels = capabilities.has("robot_model.manage");
 
@@ -340,8 +347,7 @@ export function Component() {
     [currentMappings.data],
   );
   const currentRuntimeLoader = useMemo(() => {
-    if (!boundVersion.data || !currentUrdf || !scope?.organizationId) return;
-    const organizationId = scope.organizationId;
+    if (!boundVersion.data || !currentUrdf || !organizationId) return;
     const versionId = boundVersion.data.id;
     const modelId = boundVersion.data.robotModelId;
     const requiredJoints = (currentMappings.data ?? []).map(
@@ -365,7 +371,7 @@ export function Component() {
     currentAssets.data,
     currentMappings.data,
     currentUrdf,
-    scope?.organizationId,
+    organizationId,
   ]);
 
   const localModelRef = useMemo(
@@ -521,7 +527,7 @@ export function Component() {
       !selectedBootstrap ||
       !boundVersion.data ||
       !currentAssets.data ||
-      !scope?.organizationId
+      !organizationId
     ) {
       return;
     }
@@ -531,7 +537,7 @@ export function Component() {
       const downloaded = await Promise.all(
         currentAssets.data.map(async (asset) => {
           const authorization = await authorizeRobotModelAssetDownload(
-            scope.organizationId,
+            organizationId,
             boundVersion.data!.id,
             asset.asset_id,
           );
@@ -636,8 +642,7 @@ export function Component() {
     if (
       !analysis ||
       !importRobot ||
-      !scope?.organizationId ||
-      !scope.regionCode ||
+      !organizationId ||
       !modelCommandId ||
       !modelMetadata ||
       !mappingsValid
@@ -686,7 +691,7 @@ export function Component() {
         idempotencyKey: `${modelCommandId}:assets`,
       });
       const uploadedDraft = await getRobotModelVersion(
-        scope.organizationId,
+        organizationId,
         draft.id,
       );
       const configuredDraft = await replaceModelMappings.mutateAsync({
@@ -719,7 +724,6 @@ export function Component() {
       });
       await bindVersion.mutateAsync({
         versionId: published.id,
-        regionCode: scope.regionCode,
         robotId: importRobot.id,
         robotEtag: importRobot.etag,
         idempotencyKey: `${modelCommandId}:bind`,
@@ -800,7 +804,15 @@ export function Component() {
     [selectedRobotId],
   );
 
-  const pageState = robots.isPending ? (
+  const pageState = !bootstrapLoaded ? (
+    <PageState state="loading" label="机器人资产" />
+  ) : !organizationId ? (
+    <PageState
+      state="empty"
+      title="尚未加入组织"
+      description="机器人是组织级通用资产；加入组织后即可查看，无需先选择项目。"
+    />
+  ) : robots.isPending ? (
     <PageState state="loading" label="机器人资产" />
   ) : robots.error && isDomainError(robots.error) ? (
     <PageState
@@ -823,8 +835,6 @@ export function Component() {
       <StandardPageScaffold
         header={{
           title: "机器人资产",
-          description:
-            "每台机器人独立持有一套 URDF 模型文件和描述配置；导入后先解析与预览，确认无误再保存。",
           breadcrumbs: [
             {
               key: "settings",
@@ -976,7 +986,6 @@ export function Component() {
             <header className={workspace.paneHeader}>
               <div>
                 <h2>机器人</h2>
-                <p>选择后查看或修改模型</p>
               </div>
               <span className={workspace.inlineMeta}>
                 共 {robotItems.length} 台
@@ -1023,9 +1032,7 @@ export function Component() {
               <div>
                 <h2>{selectedRobot?.displayName ?? "选择机器人"}</h2>
                 <p>
-                  {selectedRobot
-                    ? `${selectedRobot.serialNo} · 每台机器人独立保存模型与配置`
-                    : "从左侧选择机器人"}
+                  {selectedRobot ? selectedRobot.serialNo : "从左侧选择机器人"}
                 </p>
               </div>
               {selectedBootstrap ? (

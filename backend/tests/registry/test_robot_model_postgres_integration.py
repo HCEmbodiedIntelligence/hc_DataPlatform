@@ -22,7 +22,6 @@ from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.migrations import apply_migrations
 from hc_data_platform.ingest.ports import InMemoryObjectStorage
 from hc_data_platform.registry.models import (
-    BindRobotModelVersionRequest,
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
     PublishRobotModelVersionRequest,
@@ -49,8 +48,6 @@ MODEL_ID = "p14-registry-integration-model"
 VERSION_ID = "p14-registry-integration-version"
 DRAFT_VERSION_ID = "p14-registry-integration-draft-version"
 CONCURRENT_DRAFT_VERSION_ID = "p14-registry-integration-concurrent-draft-version"
-ROBOT_ID = "p14-registry-integration-robot"
-REGION_CODE = "p14-region"
 APP_ROLE = "p14_registry_reader"
 APP_PASSWORD = "p14-registry-reader-test-password"
 MAPPING_TRIGGER_ADVISORY_KEY = 814_201_947
@@ -101,10 +98,9 @@ def _prepare_app_role(dsn: str) -> None:
         )
         cursor.execute(
             "GRANT SELECT, INSERT, UPDATE, DELETE ON registry.robot_model_joint_mappings, "
-            "registry.robot_model_publish_preflights, registry.robot_model_command_receipts, "
-            "registry.robot_model_bindings TO " + APP_ROLE
+            "registry.robot_model_publish_preflights, registry.robot_model_command_receipts TO "
+            + APP_ROLE
         )
-        cursor.execute("GRANT SELECT, UPDATE ON robotics.robot_instances TO " + APP_ROLE)
         cursor.execute("GRANT INSERT ON registry.audit_events TO " + APP_ROLE)
         cursor.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA registry TO " + APP_ROLE)
 
@@ -124,10 +120,6 @@ def _cleanup(dsn: str) -> None:
             (ORGANIZATION_ID,),
         )
         cursor.execute(
-            "DELETE FROM registry.robot_model_bindings WHERE organization_id = %s",
-            (ORGANIZATION_ID,),
-        )
-        cursor.execute(
             "DELETE FROM registry.robot_model_command_receipts WHERE organization_id = %s",
             (ORGANIZATION_ID,),
         )
@@ -144,10 +136,6 @@ def _cleanup(dsn: str) -> None:
             (ORGANIZATION_ID,),
         )
         cursor.execute(
-            "DELETE FROM robotics.robot_instances WHERE project_id IN (%s, %s)",
-            (PROJECT_ID, FOREIGN_PROJECT_ID),
-        )
-        cursor.execute(
             "DELETE FROM registry.robot_models WHERE organization_id = %s",
             (ORGANIZATION_ID,),
         )
@@ -161,10 +149,17 @@ def _seed(dsn: str) -> None:
     with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO registry.organization_projects (organization_id, project_id)
-            VALUES (%s, %s), (%s, %s)
+            INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+            VALUES (%s, %s, %s), (%s, %s, %s)
             """,
-            (ORGANIZATION_ID, PROJECT_ID, ORGANIZATION_ID, FOREIGN_PROJECT_ID),
+            (
+                ORGANIZATION_ID,
+                PROJECT_ID,
+                "P14 集成项目",
+                ORGANIZATION_ID,
+                FOREIGN_PROJECT_ID,
+                "P14 同组织外部项目",
+            ),
         )
         cursor.execute(
             """
@@ -193,27 +188,6 @@ def _seed(dsn: str) -> None:
                 "a" * 64,
                 "b" * 64,
                 '"p14-registry-integration-version:1"',
-            ),
-        )
-        cursor.execute(
-            """
-            INSERT INTO robotics.robot_instances (
-                organization_id, project_id, region_code, robot_id, display_name, serial_no,
-                lifecycle_status,
-                connectivity_state, etag, topology_revision, allowed_actions
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
-            """,
-            (
-                ORGANIZATION_ID,
-                PROJECT_ID,
-                REGION_CODE,
-                ROBOT_ID,
-                "P14 integration robot",
-                "P14-ROBOT-01",
-                "ACTIVE",
-                "ONLINE",
-                '"p14-robot:1"',
-                "p14-topology:1",
             ),
         )
         cursor.execute(
@@ -285,21 +259,27 @@ def _auth(
     project_id: str = PROJECT_ID,
     *,
     can_manage: bool = False,
-    region_code: str | None = None,
-    can_robot_manage: bool = False,
 ) -> AuthContext:
+    organization_id = ORGANIZATION_ID
     return AuthContext(
         subject_id="p14-registry-integration-reader",
+        organization_ids=frozenset({organization_id}),
         project_ids=frozenset({project_id}),
-        region_codes=frozenset({region_code} if region_code else ()),
+        region_codes=frozenset(),
         roles=frozenset(),
-        scope_pairs=frozenset(
-            {(project_id, None)} | ({(project_id, region_code)} if region_code else set())
-        ),
+        scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         scoped_capabilities=frozenset(
             {(project_id, "robot_model.read")}
             | ({(project_id, "robot_model.manage")} if can_manage else set())
-            | ({(project_id, "robot.manage")} if can_robot_manage else set())
+        ),
+        organization_scoped_capabilities=frozenset(
+            {(organization_id, project_id, "robot_model.read")}
+            | (
+                {(organization_id, project_id, "robot_model.manage")}
+                if can_manage
+                else set()
+            )
         ),
     )
 
@@ -556,48 +536,6 @@ def test_postgres_registry_asset_ledger_is_project_scoped_and_manifested(
             command=PublishRobotModelVersionRequest(preflight_token=preflight.data.preflight_token),
         )
         assert replay.data.etag == published.data.etag
-        binding = service.bind_robot_model_version(
-            auth=_auth(
-                can_manage=True,
-                region_code=REGION_CODE,
-                can_robot_manage=True,
-            ),
-            organization_id=ORGANIZATION_ID,
-            project_id=PROJECT_ID,
-            version_id=DRAFT_VERSION_ID,
-            idempotency_key="p14-registry-bind-robot",
-            request_id="p14-registry-bind-robot",
-            command=BindRobotModelVersionRequest(
-                region_code=REGION_CODE,
-                robot_id=ROBOT_ID,
-                robot_etag='"p14-robot:1"',
-            ),
-        )
-        assert binding.robot_id == ROBOT_ID
-        assert binding.status.value == "ACTIVE"
-        bindings = service.list_robot_model_bindings(
-            auth=_auth(),
-            organization_id=ORGANIZATION_ID,
-            project_id=PROJECT_ID,
-            version_id=DRAFT_VERSION_ID,
-            request_id="p14-registry-bindings-list",
-        )
-        assert [item.binding_id for item in bindings.items] == [binding.binding_id]
-        with psycopg.connect(postgres_dsn) as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT robot_model_version_id, binding_id, binding_scope_type, binding_scope_id
-                  FROM robotics.robot_instances
-                 WHERE project_id = %s AND region_code = %s AND robot_id = %s
-                """,
-                (PROJECT_ID, REGION_CODE, ROBOT_ID),
-            )
-            assert cursor.fetchone() == (
-                DRAFT_VERSION_ID,
-                binding.binding_id,
-                "ROBOT_INSTANCE",
-                ROBOT_ID,
-            )
 
         with pytest.raises(ProblemException) as denied:
             service.list_robot_model_assets(

@@ -26,6 +26,9 @@ from hc_data_platform.aligned_media.audit import (
 )
 from hc_data_platform.aligned_media.capacity import PostgresMediaCapacityGate
 from hc_data_platform.aligned_media.encoder import FFmpegMp4Encoder
+from hc_data_platform.aligned_media.maintenance import (
+    PostgresAlignedMediaVersionRetirementCollector,
+)
 from hc_data_platform.aligned_media.models import (
     AlignedMediaArtifactV1,
     AlignedMediaFrameReferenceV1,
@@ -37,6 +40,7 @@ from hc_data_platform.aligned_media.router import configure_aligned_media
 from hc_data_platform.aligned_media.service import (
     AlignedMediaAuthorizationService,
     AlignedMediaGenerationService,
+    AlignedMediaLifecycleService,
 )
 from hc_data_platform.aligned_media.staging import ArrowAlignedFrameReader
 from hc_data_platform.alignment.arrow_writer import ArrowFragmentWriter
@@ -91,6 +95,11 @@ from hc_data_platform.collection_tasks.service import CollectionTaskService
 from hc_data_platform.continuous_recordings.asset_repository import (
     PostgresRecordingAssetRepository,
 )
+from hc_data_platform.continuous_recordings.processing import (
+    ContinuousEpisodeProcessingService,
+    PostgresContinuousEpisodeManifestDiscovery,
+    PostgresContinuousEpisodeWorkflowInputResolver,
+)
 from hc_data_platform.continuous_recordings.repository import (
     PostgresContinuousRecordingRepository,
 )
@@ -125,6 +134,7 @@ from hc_data_platform.ingest.device_facts import (
 )
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser
 from hc_data_platform.ingest.postgres import PostgresIngestPersistence
+from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
 from hc_data_platform.lance_catalog.adapters import (
@@ -181,9 +191,9 @@ from hc_data_platform.quality.router import configure_quality_repository
 from hc_data_platform.registry.repository import PostgresRegistryRepository
 from hc_data_platform.registry.router import configure_registry
 from hc_data_platform.registry.service import RegistryService
-from hc_data_platform.robotics.repository import PostgresRoboticsRepository
-from hc_data_platform.robotics.router import configure_robotics
-from hc_data_platform.robotics.service import RoboticsService
+from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
+from hc_data_platform.robot_assets.router import configure_organization_robot_assets
+from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
 from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -233,6 +243,9 @@ from hc_data_platform.verification.ports import (
 from hc_data_platform.verification.postgres import PostgresVerificationRepository
 from hc_data_platform.verification.router import configure_verification_repository
 from hc_data_platform.workflow.activities import ActivityDependencies
+from hc_data_platform.workflow.continuous_episode_dispatch import (
+    ContinuousEpisodeOutboxHandler,
+)
 from hc_data_platform.workflow.ingest_dispatch import IngestOutboxHandler
 from hc_data_platform.workflow.ingest_plan import PostgresIngestWorkflowInputResolver
 from hc_data_platform.workflow.models import (
@@ -372,6 +385,12 @@ class _ArrowStepSequence(Sequence[StepRecord]):
                             continue
                         if artifact.media_object_key is None:
                             raise ValueError("READY media artifact has no object key")
+                        frame_source = isinstance(value.value, bytes) or (
+                            isinstance(value.value, dict)
+                            and isinstance(value.value.get("source_frame_index"), int)
+                            and isinstance(value.value.get("source_pts_ns"), int)
+                        )
+                        reference_valid = value.valid and frame_source
                         values[name] = AlignedMediaFrameReferenceV1(
                             camera_id=name,
                             artifact_id=artifact.artifact_id,
@@ -379,8 +398,8 @@ class _ArrowStepSequence(Sequence[StepRecord]):
                             frame_index=int(indexes[row_index].as_py()),
                             pts=int(indexes[row_index].as_py()),
                             timestamp_ns=int(timestamps[row_index].as_py()),
-                            valid=value.valid and isinstance(value.value, bytes),
-                            placeholder=not value.valid or not isinstance(value.value, bytes),
+                            valid=reference_valid,
+                            placeholder=not reference_valid,
                             repeated=value.repeated,
                             dropped=not value.source_timestamps_ns,
                             source_timestamps_ns=value.source_timestamps_ns,
@@ -440,7 +459,7 @@ class RuntimeComponents:
     collection_tasks: CollectionTaskService
     storage: StorageGovernanceService
     registry: RegistryService
-    robotics: RoboticsService
+    robot_assets: OrganizationRobotAssetService
     calibrations: CalibrationService
     data_schemas: DataSchemaService
     data_sources: DataSourceService
@@ -668,11 +687,14 @@ def build_runtime(
     ingest = UploadSessionService(
         object_storage,
         persistence=PostgresIngestPersistence(connection_factory),
+        raw_sources=PostgresRawSourceRepository(connection_factory),
         authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
         cursor_secret=resolved.cursor_secret,
+        alternate_manifest_discovery=PostgresContinuousEpisodeManifestDiscovery(connection_factory),
     )
+    continuous_recording_repository = PostgresContinuousRecordingRepository(connection_factory)
     continuous_recordings = ContinuousRecordingService(
-        PostgresContinuousRecordingRepository(connection_factory),
+        continuous_recording_repository,
         ingest,
         PostgresRecordingAssetRepository(connection_factory),
         object_storage,
@@ -705,9 +727,8 @@ def build_runtime(
         storage=object_storage,
         cursor_secret=resolved.cursor_secret,
     )
-    robotics = RoboticsService(
-        PostgresRoboticsRepository(connection_factory),
-        cursor_secret=resolved.cursor_secret,
+    robot_assets = OrganizationRobotAssetService(
+        PostgresOrganizationRobotAssetRepository(connection_factory),
     )
     calibrations = CalibrationService(
         PostgresCalibrationRepository(connection_factory),
@@ -823,6 +844,7 @@ def build_runtime(
                 Path(resolved.aligned_media_staging_root),
                 profiles=aligned_media_profiles,
                 ffmpeg_threads=resolved.media_ffmpeg_threads,
+                raw_storage=object_storage,
             ),
             repository=aligned_media_repository,
             store=aligned_media_store,
@@ -864,6 +886,22 @@ def build_runtime(
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
     decoder = _decoder(resolved)
+    dataset_ingest_projection = PostgresDatasetIngestProjector(connection_factory)
+    continuous_episode_processing = ContinuousEpisodeProcessingService(
+        connection_factory=connection_factory,
+        repository=continuous_recording_repository,
+        storage=object_storage,
+        decoder=decoder,
+        quality=QualityEngine(),
+        alignment=AlignmentEngine(),
+        fragment_writers=ArrowFragmentWriterFactory(Path(resolved.alignment_staging_root)),
+        staging=shared_staging_store,
+        staging_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
+        catalog_fragments=ArrowCatalogFragmentAdapter(catalog_repository),
+        catalog=catalog,
+        media_repository=aligned_media_repository,
+        dataset_projection=dataset_ingest_projection,
+    )
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
         verifier=McapVerifier(
@@ -881,7 +919,7 @@ def build_runtime(
             projection_staging_root=(Path(resolved.alignment_staging_root) / "raw-localization"),
             projection_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
         ),
-        dataset_ingest_projection=PostgresDatasetIngestProjector(connection_factory),
+        dataset_ingest_projection=dataset_ingest_projection,
         fragment_writers=ArrowFragmentWriterFactory(Path(resolved.alignment_staging_root)),
         alignment_staging=shared_staging_store,
         alignment_staging_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
@@ -903,6 +941,7 @@ def build_runtime(
             storage_object_operator,
         ),
         workflow_jobs=PostgresWorkflowJobRepository(connection_factory),
+        continuous_episode_processing=continuous_episode_processing,
     )
     return RuntimeComponents(
         access=access,
@@ -919,7 +958,7 @@ def build_runtime(
         collection_tasks=collection_tasks,
         storage=storage,
         registry=registry,
-        robotics=robotics,
+        robot_assets=robot_assets,
         calibrations=calibrations,
         data_schemas=data_schemas,
         data_sources=data_sources,
@@ -953,7 +992,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_collection_tasks(runtime.collection_tasks)
     configure_storage_governance(runtime.storage)
     configure_registry(runtime.registry)
-    configure_robotics(runtime.robotics)
+    configure_organization_robot_assets(runtime.robot_assets)
     configure_calibrations(runtime.calibrations)
     configure_data_schemas(runtime.data_schemas)
     configure_data_sources(runtime.data_sources)
@@ -1005,6 +1044,29 @@ def build_aligned_media_orphan_reconciler(
             scope, artifact_key, token, now=now
         ),
         orphan_ttl=timedelta(minutes=resolved.aligned_media_publication_orphan_ttl_minutes),
+    )
+
+
+def build_aligned_media_version_retirement_collector(
+    settings: Settings | None = None,
+) -> PostgresAlignedMediaVersionRetirementCollector:
+    """Compose the production Dataset-version deletion → exact MP4 cleanup hook."""
+
+    resolved = settings or get_settings()
+    connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
+    repository = PostgresAlignedMediaRepository(connection_factory)
+    client, presign_client, _ = _object_store_clients(resolved)
+    lifecycle = AlignedMediaLifecycleService(
+        repository=repository,
+        store=S3AlignedMediaArtifactStore(
+            client,
+            resolved.object_store_bucket,
+            presign_client=presign_client,
+        ),
+    )
+    return PostgresAlignedMediaVersionRetirementCollector(
+        connection_factory,
+        lifecycle,
     )
 
 
@@ -1109,6 +1171,15 @@ def build_worker_outbox(
         catalog,
     )
     handler = IngestOutboxHandler(launcher, resolver)
+    continuous_episode_resolver = PostgresContinuousEpisodeWorkflowInputResolver(
+        connection_factory,
+        catalog,
+        media_task_queue=os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline"),
+    )
+    continuous_episode_handler = ContinuousEpisodeOutboxHandler(
+        launcher,
+        continuous_episode_resolver,
+    )
     storage_repository = PostgresStorageRepository(connection_factory)
     storage_handler = StorageLifecycleOutboxHandler(
         launcher,
@@ -1170,6 +1241,7 @@ def build_worker_outbox(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
             handler.EVENT_TYPE: handler,
+            continuous_episode_handler.EVENT_TYPE: continuous_episode_handler,
             storage_handler.EVENT_TYPE: storage_handler,
             schedule_handler.EVENT_TYPE: schedule_handler,
             AuditExportOutboxHandler.EVENT_TYPE: AuditExportOutboxHandler(audit_governance),

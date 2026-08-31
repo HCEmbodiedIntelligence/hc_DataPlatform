@@ -168,3 +168,30 @@ def select_request_scope(
             platform_admin=context.platform_admin,
         )
     )
+
+
+def select_organization_scope(organization_id: str) -> None:
+    """Select an organization-wide business scope without inventing a project.
+
+    Organization-owned registries such as robot assets are shared by every
+    project in the tenant.  Keeping ``project_id`` unset is intentional: it
+    prevents an implementation detail from becoming part of the resource
+    identity while still installing the verified organization boundary for
+    PostgreSQL RLS.
+    """
+
+    if not organization_id:
+        raise ValueError("organization_id must not be empty")
+    context = _current_request_context.get() or RequestContext()
+    _current_request_context.set(
+        RequestContext(
+            organization_id=organization_id,
+            project_id=None,
+            subject_id=context.subject_id,
+            region_code=None,
+            roles=context.roles,
+            request_id=context.request_id,
+            service_identity=context.service_identity,
+            platform_admin=context.platform_admin,
+        )
+    )

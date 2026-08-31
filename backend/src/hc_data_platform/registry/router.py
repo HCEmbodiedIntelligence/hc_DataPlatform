@@ -12,7 +12,6 @@ from hc_data_platform.security.scope import ScopeGuard
 
 from .models import (
     AuthorizeRobotModelAssetPartsRequest,
-    BindRobotModelVersionRequest,
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
     CreateRobotModelDraftRequest,
@@ -23,8 +22,6 @@ from .models import (
     RobotModelAssetDownloadAuthorization,
     RobotModelAssetPage,
     RobotModelAssetUploadEnvelope,
-    RobotModelBinding,
-    RobotModelBindingPage,
     RobotModelJointMappingPage,
     RobotModelPage,
     RobotModelPublishPreflightEnvelope,
@@ -56,7 +53,55 @@ def get_registry_service() -> RegistryService:
 
 
 ServiceDependency = Annotated[RegistryService, Depends(get_registry_service)]
-ProjectScope = Annotated[str, Header(alias="X-Project-ID", min_length=1, max_length=128)]
+
+
+def resolve_registry_project(
+    organization_id: str,
+    auth: VerifiedAuth,
+    requested_project: Annotated[
+        str | None, Header(alias="X-Project-ID", min_length=1, max_length=128)
+    ] = None,
+) -> str:
+    """Choose an authorization/audit project without making it resource identity.
+
+    Robot models are organization master data.  The optional legacy header is
+    accepted during client rollout, while unscoped callers deterministically use
+    one of their authorized projects in the organization.  Repository identity
+    remains organization based.
+    """
+
+    candidates = sorted(
+        {
+            project_id
+            for scoped_organization, project_id, _region in auth.organization_scope_triples
+            if scoped_organization == organization_id
+        }
+    )
+    if requested_project is not None:
+        if requested_project not in candidates and not auth.is_platform_admin:
+            from hc_data_platform.core.errors import problem
+
+            raise problem(
+                status=403,
+                code="ORGANIZATION_SCOPE_DENIED",
+                title="Organization access denied",
+                detail="The requested project does not belong to the authorized organization.",
+            )
+        return requested_project
+    if candidates:
+        return candidates[0]
+
+    from hc_data_platform.core.errors import problem
+
+    raise problem(
+        status=403,
+        code="ORGANIZATION_SCOPE_DENIED",
+        title="Organization access denied",
+        detail="No authorized organization scope is available for this registry operation.",
+    )
+
+
+ProjectScope = Annotated[str, Depends(resolve_registry_project)]
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=256)]
 
@@ -262,62 +307,6 @@ def replace_robot_model_joint_mappings(
     )
     response.headers["ETag"] = result.data.etag
     return result
-
-
-@router.get(
-    "/robot-model-versions/{version_id}/bindings",
-    operation_id="listRobotModelBindings",
-    response_model=RobotModelBindingPage,
-    responses=PROBLEM_RESPONSES,
-)
-def list_robot_model_bindings(
-    organization_id: str,
-    version_id: str,
-    response: Response,
-    request: Request,
-    auth: VerifiedAuth,
-    project_id: ProjectScope,
-    service: ServiceDependency,
-) -> RobotModelBindingPage:
-    _select_project_scope(auth, project_id)
-    _no_store(response)
-    return service.list_robot_model_bindings(
-        auth=auth,
-        organization_id=organization_id,
-        project_id=project_id,
-        version_id=version_id,
-        request_id=_request_id(request),
-    )
-
-
-@router.post(
-    "/robot-model-versions/{version_id}/bindings",
-    operation_id="bindRobotModelVersion",
-    response_model=RobotModelBinding,
-    responses=PROBLEM_RESPONSES,
-)
-def bind_robot_model_version(
-    organization_id: str,
-    version_id: str,
-    command: BindRobotModelVersionRequest,
-    response: Response,
-    request: Request,
-    auth: VerifiedAuth,
-    project_id: ProjectScope,
-    idempotency_key: IdempotencyKey,
-    service: ServiceDependency,
-) -> RobotModelBinding:
-    _select_project_scope(auth, project_id, capability="robot_model.manage")
-    _no_store(response)
-    return service.bind_robot_model_version(
-        auth=auth,
-        organization_id=organization_id,
-        project_id=project_id,
-        version_id=version_id,
-        idempotency_key=idempotency_key,
-        request_id=_request_id(request),
-        command=command,
-    )
 
 
 @router.post(

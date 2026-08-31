@@ -1,0 +1,198 @@
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports:
+    post:
+      operationId: beginLerobotImport
+      tags: [lerobot-imports]
+      parameters:
+        - &project_parameter {name: project_id, in: path, required: true, schema: {type: string}}
+        - &region_parameter {name: region_code, in: path, required: true, schema: {type: string}}
+        - &organization_parameter {name: X-Organization-Id, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateLeRobotImportV1"}
+      responses:
+        "201":
+          description: Native LeRobot Raw multipart grants.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LeRobotImportGrantV1"}
+        "422": &validation_response
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts:
+    post:
+      operationId: authorizeLerobotAssetParts
+      tags: [lerobot-imports]
+      parameters:
+        - *project_parameter
+        - *region_parameter
+        - &import_parameter {name: import_id, in: path, required: true, schema: {type: string}}
+        - *organization_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AuthorizeLeRobotPartsV1"}
+      responses:
+        "200":
+          description: Renewed short-lived direct PUT grants.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LeRobotPartGrantV1"}
+        "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete:
+    post:
+      operationId: completeLerobotAsset
+      tags: [lerobot-imports]
+      parameters:
+        - *project_parameter
+        - *region_parameter
+        - *import_parameter
+        - *organization_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CompleteLeRobotAssetV1"}
+      responses:
+        "200":
+          description: Completed byte-identical Raw source object.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LeRobotAssetCompletedV1"}
+        "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit:
+    post:
+      operationId: commitLerobotImport
+      tags: [lerobot-imports]
+      parameters:
+        - *project_parameter
+        - *region_parameter
+        - *import_parameter
+        - *organization_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CommitLeRobotImportV1"}
+      responses:
+        "200":
+          description: Raw manifest is verified and queued for discovery.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LeRobotImportAcceptedV1"}
+        "422": *validation_response
+components:
+  schemas:
+    LeRobotSourceFileV1:
+      type: object
+      additionalProperties: false
+      required: [path, size, part_count]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 1024}
+        size: {type: integer, exclusiveMinimum: 0, maximum: 5497558138880}
+        part_count: {type: integer, minimum: 1, maximum: 10000}
+    CreateLeRobotImportV1:
+      type: object
+      additionalProperties: false
+      required: [dataset_id, collection_task_id, robot_id, info, files]
+      properties:
+        schema_version: {type: string, const: lerobot-web-import/v1, default: lerobot-web-import/v1}
+        dataset_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
+        collection_task_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
+        robot_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
+        info: {type: object, additionalProperties: true}
+        files:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/LeRobotSourceFileV1"}
+    LeRobotAssetUploadGrantV1:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string}
+        multipart_upload_id:
+          anyOf: [{type: string}, {type: "null"}]
+        parts:
+          type: array
+          items: {$ref: "#/components/schemas/PartAuthorization"}
+          default: []
+        completed: {type: boolean, default: false}
+    LeRobotImportGrantV1:
+      type: object
+      additionalProperties: false
+      required: [import_id, assets]
+      properties:
+        schema_version: {type: string, const: lerobot-web-import-grant/v1, default: lerobot-web-import-grant/v1}
+        import_id: {type: string, pattern: "^[a-f0-9]{32}$"}
+        assets:
+          type: array
+          items: {$ref: "#/components/schemas/LeRobotAssetUploadGrantV1"}
+    AuthorizeLeRobotPartsV1:
+      type: object
+      additionalProperties: false
+      required: [dataset_id, path, multipart_upload_id, part_numbers]
+      properties:
+        dataset_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
+        path: {type: string, minLength: 1, maxLength: 1024}
+        multipart_upload_id: {type: string, minLength: 1, maxLength: 2048}
+        part_numbers:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items: {type: integer}
+    LeRobotPartGrantV1:
+      type: object
+      additionalProperties: false
+      required: [path, parts]
+      properties:
+        path: {type: string}
+        parts:
+          type: array
+          items: {$ref: "#/components/schemas/PartAuthorization"}
+    CompleteLeRobotAssetV1:
+      type: object
+      additionalProperties: false
+      required: [dataset_id, path, multipart_upload_id, size, part_count]
+      properties:
+        dataset_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
+        path: {type: string, minLength: 1, maxLength: 1024}
+        multipart_upload_id: {type: string, minLength: 1, maxLength: 2048}
+        size: {type: integer, exclusiveMinimum: 0, maximum: 5497558138880}
+        part_count: {type: integer, minimum: 1, maximum: 10000}
+    LeRobotAssetCompletedV1:
+      type: object
+      additionalProperties: false
+      required: [path, size, parts]
+      properties:
+        path: {type: string}
+        size: {type: integer}
+        parts:
+          type: array
+          items: {$ref: "#/components/schemas/CompletedPart"}
+    CommitLeRobotImportV1:
+      type: object
+      additionalProperties: false
+      required: [manifest]
+      properties:
+        manifest: {$ref: "#/components/schemas/CreateLeRobotImportV1"}
+    LeRobotImportAcceptedV1:
+      type: object
+      additionalProperties: false
+      required: [import_id, episode_count, source_file_count, episode_task_count, episode_plan_key]
+      properties:
+        schema_version: {type: string, const: lerobot-web-import-accepted/v1, default: lerobot-web-import-accepted/v1}
+        import_id: {type: string}
+        status: {type: string, const: EPISODES_QUEUED, default: EPISODES_QUEUED}
+        episode_count: {type: integer, minimum: 1, maximum: 100}
+        source_file_count: {type: integer, minimum: 1, maximum: 10000}
+        episode_task_count: {type: integer, minimum: 1, maximum: 100}
+        episode_plan_key: {type: string, minLength: 1, maxLength: 2048}

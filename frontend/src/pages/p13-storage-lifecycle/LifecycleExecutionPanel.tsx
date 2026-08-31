@@ -411,7 +411,6 @@ export function LifecycleExecutionPanel({
         <div className={styles.sectionHeading}>
           <div>
             <h3 id="execution-title">执行计划与进度</h3>
-            <span>dry-run → 独立审批 → durable queue → 断点批处理</span>
           </div>
           <Space>
             <Select
@@ -472,7 +471,6 @@ export function LifecycleExecutionPanel({
         <div className={styles.sectionHeading}>
           <div>
             <h3 id="schedule-title">计划任务</h3>
-            <span>到期仅自动生成 dry-run，不绕过独立审批</span>
           </div>
           <Button
             size="small"

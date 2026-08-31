@@ -383,6 +383,39 @@ class AuthContext:
                 detail="The current project scope does not grant the required capability.",
             )
 
+    def has_organization_capability(self, organization_id: str, capability: str) -> bool:
+        """Resolve a tenant-wide business capability without selecting a project.
+
+        Project grants remain the source of ordinary-user authorization during
+        the access-model transition, but any matching grant in the organization
+        authorizes the shared organization resource.  The resource itself is
+        never keyed by that project.  Platform administrators retain their
+        existing global business-capability wildcard.
+        """
+
+        if not organization_id or not capability:
+            return False
+        if self.is_platform_admin:
+            return True
+        return any(
+            scoped_organization == organization_id
+            and scoped_capability == capability
+            for scoped_organization, _project_id, scoped_capability in (
+                self.organization_scoped_capabilities
+            )
+        )
+
+    def require_organization_capability(
+        self, organization_id: str, capability: str
+    ) -> None:
+        if not self.has_organization_capability(organization_id, capability):
+            raise problem(
+                status=403,
+                code="ORGANIZATION_CAPABILITY_REQUIRED",
+                title="Insufficient organization capability",
+                detail="The current organization does not grant the required capability.",
+            )
+
     def has_exact_platform_capability(self, capability: str) -> bool:
         """Check a global operational grant without the platform-admin wildcard."""
 

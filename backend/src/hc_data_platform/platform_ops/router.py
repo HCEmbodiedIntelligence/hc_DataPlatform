@@ -64,6 +64,9 @@ from .object_store_config import (
 )
 from .overview import PlatformOperationsOverview, PlatformOperationsOverviewService
 from .projects import (
+    PlatformOrganization,
+    PlatformOrganizationCreate,
+    PlatformOrganizationPage,
     PlatformProject,
     PlatformProjectCreate,
     PlatformProjectError,
@@ -1032,13 +1035,125 @@ def _platform_project_action(action: Callable[[], _T]) -> _T:
     try:
         return action()
     except PlatformProjectError as exc:
+        not_found = exc.code == "PLATFORM_ORGANIZATION_NOT_FOUND"
         raise problem(
-            status=409,
+            status=404 if not_found else 409,
             code=exc.code,
-            title="Platform project already exists",
-            detail="The project already exists in the selected organization.",
+            title=(
+                "Platform organization not found"
+                if not_found
+                else "Platform directory entry already exists"
+            ),
+            detail=(
+                "The selected organization does not exist."
+                if not_found
+                else "The organization or project directory entry already exists."
+            ),
             retryable=False,
         ) from exc
+
+
+@router.get(
+    "/organizations",
+    operation_id="listPlatformOrganizations",
+    response_model=PlatformOrganizationPage,
+    responses={401: _AUTHENTICATION_RESPONSE, 403: _CAPABILITY_RESPONSE},
+    openapi_extra={
+        "x-hc-platform-capability-policy": {
+            "mode": "one-exact",
+            "capabilities": [CAPABILITY_PLATFORM_ADMIN],
+        }
+    },
+)
+def list_platform_organizations(
+    request: Request,
+    response: Response,
+    auth: VerifiedAuth,
+    service: PlatformProjectServiceDependency,
+    audit_sink: MaintenanceAuditDependency,
+) -> PlatformOrganizationPage:
+    _require_exact_with_audit(
+        auth,
+        CAPABILITY_PLATFORM_ADMIN,
+        request=request,
+        audit_sink=audit_sink,
+        action="platform.organizations.list",
+        resource_id="organization-directory",
+    )
+    result = service.list_organizations()
+    response.headers["Cache-Control"] = "private, no-store"
+    _append_platform_audit(
+        audit_sink,
+        request=request,
+        auth=auth,
+        action="platform.organizations.listed",
+        resource_type="platform_organization_directory",
+        resource_id="organization-directory",
+        outcome="SUCCEEDED",
+        safe_details={"count": result.count},
+    )
+    return result
+
+
+@router.post(
+    "/organizations",
+    operation_id="createPlatformOrganization",
+    response_model=PlatformOrganization,
+    status_code=201,
+    responses={
+        401: _AUTHENTICATION_RESPONSE,
+        403: _CAPABILITY_RESPONSE,
+        409: _problem_response("The organization already exists."),
+    },
+    openapi_extra={
+        "x-hc-platform-capability-policy": {
+            "mode": "one-exact",
+            "capabilities": [CAPABILITY_PLATFORM_ADMIN],
+        }
+    },
+)
+def create_platform_organization(
+    request: Request,
+    body: PlatformOrganizationCreate,
+    response: Response,
+    auth: VerifiedAuth,
+    service: PlatformProjectServiceDependency,
+    audit_sink: MaintenanceAuditDependency,
+) -> PlatformOrganization:
+    _require_exact_with_audit(
+        auth,
+        CAPABILITY_PLATFORM_ADMIN,
+        request=request,
+        audit_sink=audit_sink,
+        action="platform.organization.create",
+        resource_id=body.organization_id,
+    )
+    try:
+        result = _platform_project_action(lambda: service.create_organization(body))
+    except ProblemException as exc:
+        _append_platform_audit(
+            audit_sink,
+            request=request,
+            auth=auth,
+            action="platform.organization.create",
+            resource_type="platform_organization",
+            resource_id=body.organization_id,
+            outcome="FAILED",
+            safe_details={"error_code": exc.problem.code},
+        )
+        raise
+    response.headers["Cache-Control"] = "private, no-store"
+    _append_platform_audit(
+        audit_sink,
+        request=request,
+        auth=auth,
+        action="platform.organization.created",
+        resource_type="platform_organization",
+        resource_id=result.organization_id,
+        outcome="SUCCEEDED",
+        safe_details={"organization_id": result.organization_id},
+    )
+    return result
 
 
 @router.get(
@@ -1091,6 +1206,7 @@ def list_platform_projects(
     responses={
         401: _AUTHENTICATION_RESPONSE,
         403: _CAPABILITY_RESPONSE,
+        404: _problem_response("The selected organization does not exist."),
         409: _problem_response("The organization project already exists."),
     },
     openapi_extra={

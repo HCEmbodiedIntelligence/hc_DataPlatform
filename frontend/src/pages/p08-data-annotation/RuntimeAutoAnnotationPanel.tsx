@@ -225,7 +225,7 @@ export function RuntimeAutoAnnotationPanel(props: {
       {capabilityQuery.isLoading ? (
         <p>正在读取 Provider 与配额配置…</p>
       ) : capability && !capability.enabled ? (
-        <p>当前环境没有配置自动标注 Provider；不会创建假任务或假结果。</p>
+        <p>当前环境未配置自动标注 Provider。</p>
       ) : capability ? (
         <div className={styles.autoAnnotationFields}>
           <label htmlFor="auto-annotation-provider">

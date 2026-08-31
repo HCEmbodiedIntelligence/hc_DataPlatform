@@ -142,9 +142,12 @@ export function Component() {
     readonly idempotencyKey: string;
   } | null>(null);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
-  const scope = useShellStore((state) => state.scope);
-  const [bindingRegionCode, setBindingRegionCode] = useState(
-    search.targetRegionCode ?? "",
+  const organizationId = useShellStore(
+    (state) =>
+      state.scope?.organizationId ??
+      state.sessionOrganizations[0]?.organizationId ??
+      state.sessionScopes[0]?.organizationId ??
+      null,
   );
   const [bindingRobotId, setBindingRobotId] = useState(
     search.targetRobotId ?? "",
@@ -173,10 +176,9 @@ export function Component() {
   );
   const urdfAsset = assets.data?.find((asset) => asset.role === "URDF");
   const runtimeLoader = useMemo(() => {
-    if (!selectedVersion || !urdfAsset || !scope?.organizationId) return;
+    if (!selectedVersion || !urdfAsset || !organizationId) return;
     const modelId = selectedVersion.robotModelId;
     const modelVersion = selectedVersion.id;
-    const organizationId = scope.organizationId;
     const requiredJoints = (jointMappings.data ?? []).map(
       (mapping) => mapping.source_joint_name,
     );
@@ -195,7 +197,7 @@ export function Component() {
   }, [
     assets.data,
     jointMappings.data,
-    scope?.organizationId,
+    organizationId,
     selectedVersion,
     urdfAsset,
   ]);
@@ -214,15 +216,8 @@ export function Component() {
   }, [jointMappings.data, selectedVersion]);
 
   useEffect(() => {
-    if (!bindingRegionCode && scope?.regionCode) {
-      setBindingRegionCode(scope.regionCode);
-    }
-  }, [bindingRegionCode, scope?.regionCode]);
-
-  useEffect(() => {
     if (search.targetRobotId) setBindingRobotId(search.targetRobotId);
-    if (search.targetRegionCode) setBindingRegionCode(search.targetRegionCode);
-  }, [search.targetRegionCode, search.targetRobotId]);
+  }, [search.targetRobotId]);
 
   const downloadAsset = async (assetId: string) => {
     if (!selectedVersion) return;
@@ -331,15 +326,8 @@ export function Component() {
   };
 
   const loadBindingTarget = async () => {
-    if (
-      !scope?.projectId ||
-      !bindingRegionCode.trim() ||
-      !bindingRobotId.trim()
-    )
-      return;
+    if (!bindingRobotId.trim()) return;
     const target = await loadRobotBindingTarget.mutateAsync({
-      projectId: scope.projectId,
-      regionCode: bindingRegionCode.trim(),
       robotId: bindingRobotId.trim(),
     });
     setBindingTarget(target);
@@ -347,10 +335,9 @@ export function Component() {
   };
 
   const bindRobot = async () => {
-    if (!selectedVersion || !bindingTarget || !bindingRegionCode.trim()) return;
+    if (!selectedVersion || !bindingTarget) return;
     const binding = await bindRobotModelVersion.mutateAsync({
       versionId: selectedVersion.id,
-      regionCode: bindingRegionCode.trim(),
       robotId: bindingTarget.robotId,
       robotEtag: bindingTarget.etag,
       idempotencyKey: crypto.randomUUID(),
@@ -441,7 +428,6 @@ export function Component() {
       <StandardPageScaffold
         header={{
           title: "机器人模型资产",
-          description: "在固定版本上管理可审计资产、关节映射和一次性发布预检。",
           breadcrumbs: [
             {
               key: "settings",
@@ -582,7 +568,6 @@ export function Component() {
             <header className={workspace.paneHeader}>
               <div>
                 <h2>模型资产</h2>
-                <p>列表只展示授权范围内的稳定资源</p>
               </div>
               <span className={workspace.inlineMeta}>共 {items.length} 项</span>
             </header>
@@ -731,12 +716,6 @@ export function Component() {
                   aria-labelledby={`tab-${tab.id}`}
                   hidden={search.detailTab !== tab.id}
                 >
-                  {tab.id === "overview" ? (
-                    <p className={workspace.safeNote}>
-                      浏览器直传授权仅驻留内存且 no-store；Multipart ETag 与内容
-                      SHA-256 不等价。
-                    </p>
-                  ) : null}
                   {tab.id === "assets" ? (
                     assets.isPending ? (
                       <PageState state="loading" label="固定版本资产" />
@@ -746,11 +725,7 @@ export function Component() {
                         onRetry={() => void assets.refetch()}
                       />
                     ) : !selectedVersion ? (
-                      <PageState
-                        state="empty"
-                        title="选择固定版本后查看资产"
-                        description="资产清单始终绑定到一个不可变的版本，不回退到 latest。"
-                      />
+                      <PageState state="empty" title="选择固定版本后查看资产" />
                     ) : assets.data?.length ? (
                       <ul
                         className={workspace.factList}
@@ -785,7 +760,6 @@ export function Component() {
                       <PageState
                         state="empty"
                         title="这个固定版本还没有完成的资产"
-                        description="上传会先取得短期分片授权；完成后服务端重新读取对象并验证 SHA-256。"
                       />
                     )
                   ) : null}
@@ -796,10 +770,6 @@ export function Component() {
                       aria-label="上传固定版本资产"
                     >
                       <strong>上传资产</strong>
-                      <p>
-                        浏览器只保留短期分片授权；请提供构建产物的
-                        SHA-256，客户端不会把大文件完整读入内存。
-                      </p>
                       <div className={workspace.actionRow}>
                         <Button href="/robots/annotation-demo/robot.urdf">
                           下载内置 7 轴测试 URDF
@@ -981,7 +951,7 @@ export function Component() {
                       <PageState
                         state="empty"
                         title="选择固定版本后查看绑定"
-                        description="每条绑定都指向明确的机器人、区域和已发布模型版本。"
+                        description="每条绑定都指向组织内唯一的机器人和已发布模型版本。"
                       />
                     ) : bindings.isPending ? (
                       <PageState state="loading" label="机器人绑定" />
@@ -1009,8 +979,7 @@ export function Component() {
                                 <span>
                                   <strong>{binding.robot_id}</strong>
                                   <small>
-                                    {binding.region_code} · {binding.status} ·{" "}
-                                    {binding.bound_at}
+                                    {binding.status} · {binding.bound_at}
                                   </small>
                                 </span>
                               </li>
@@ -1024,15 +993,6 @@ export function Component() {
                         {selectedVersion.lifecycle === "PUBLISHED" ? (
                           <div className={workspace.actionRow}>
                             <Input
-                              aria-label="机器人区域"
-                              value={bindingRegionCode}
-                              placeholder="区域代码"
-                              onChange={(event) => {
-                                setBindingRegionCode(event.target.value);
-                                setBindingTarget(null);
-                              }}
-                            />
-                            <Input
                               aria-label="机器人 ID"
                               value={bindingRobotId}
                               placeholder="机器人 ID"
@@ -1043,11 +1003,7 @@ export function Component() {
                             />
                             <Button
                               loading={loadRobotBindingTarget.isPending}
-                              disabled={
-                                !scope?.projectId ||
-                                !bindingRegionCode.trim() ||
-                                !bindingRobotId.trim()
-                              }
+                              disabled={!bindingRobotId.trim()}
                               onClick={() => void loadBindingTarget()}
                             >
                               读取机器人当前版本
@@ -1083,10 +1039,6 @@ export function Component() {
                       aria-label="发布预检结果"
                     >
                       <strong>发布预检</strong>
-                      <p>
-                        服务端重新核验资产清单、URDF
-                        结构和活动关节映射；结果不会使用浏览器自报的通过状态。
-                      </p>
                       {preflight?.result.checks.map((check) => (
                         <p
                           className={

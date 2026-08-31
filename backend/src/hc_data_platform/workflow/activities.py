@@ -120,6 +120,12 @@ from .models import (
     CatalogFragmentPayloadV1,
     CatalogReconciliationActivityInput,
     CatalogReconciliationActivityOutput,
+    ContinuousEpisodeAlignmentActivityOutput,
+    ContinuousEpisodeBundleCommitActivityInput,
+    ContinuousEpisodeQcActivityOutput,
+    ContinuousEpisodeStateActivityInput,
+    ContinuousEpisodeStateActivityOutput,
+    ContinuousEpisodeWorkflowInput,
     ExportActivityInput,
     ExportActivityOutput,
     ExportArtifactVerificationActivityInput,
@@ -148,11 +154,13 @@ from .models import (
     WorkflowJobPersistenceActivityInput,
 )
 from .names import (
+    ALIGN_CONTINUOUS_EPISODE_ACTIVITY,
     ALIGN_FRAGMENT_ACTIVITY,
     CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
     CLEANUP_INGEST_PROJECTION_ACTIVITY,
     CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY,
     COMMIT_ALIGNED_BUNDLE_ACTIVITY,
+    COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
     COMMIT_FRAGMENT_ACTIVITY,
     CREATE_ALIGNED_MEDIA_ACTIVITY,
     CREATE_ANNOTATION_TASK_ACTIVITY,
@@ -164,8 +172,10 @@ from .names import (
     PREFLIGHT_EXPORT_ACTIVITY,
     PROCESS_INGEST_SOURCE_ACTIVITY,
     PUBLISH_DATASET_ACTIVITY,
+    QC_CONTINUOUS_EPISODE_ACTIVITY,
     RECONCILE_CATALOG_ACTIVITY,
     RECONCILE_PUBLICATION_ACTIVITY,
+    UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY,
     VERIFY_EXPORT_ARTIFACT_ACTIVITY,
     VERIFY_RAW_ACTIVITY,
 )
@@ -332,6 +342,32 @@ class WorkflowJobPersistencePort(Protocol):
     def put_job(self, request: WorkflowJobPersistenceActivityInput) -> None: ...
 
 
+class ContinuousEpisodeProcessingPort(Protocol):
+    """Worker-only implementation for finalized continuous recording Episodes."""
+
+    def update_state(
+        self, request: ContinuousEpisodeStateActivityInput
+    ) -> ContinuousEpisodeStateActivityOutput: ...
+
+    def qc(self, request: ContinuousEpisodeWorkflowInput) -> ContinuousEpisodeQcActivityOutput: ...
+
+    def align(
+        self, request: ContinuousEpisodeWorkflowInput
+    ) -> ContinuousEpisodeAlignmentActivityOutput: ...
+
+    def commit_bundle(
+        self,
+        *,
+        workflow_input: ContinuousEpisodeWorkflowInput,
+        alignment: AlignmentActivityInput,
+        staged_manifest: Any,
+        alignment_staging: AlignmentStagingArtifactV1,
+        expected_dataset_version: int,
+        expected_camera_ids: Sequence[str],
+        media_artifacts: Sequence[AlignedMediaArtifactV1],
+    ) -> AlignedBundleCommitActivityOutput: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ActivityDependencies:
     manifest_parser: ManifestParserPort | None = None
@@ -358,6 +394,7 @@ class ActivityDependencies:
     annotation_tasks: AutomaticAnnotationTaskPort | None = None
     storage_lifecycle: LifecycleBatchExecutor | None = None
     workflow_jobs: WorkflowJobPersistencePort | None = None
+    continuous_episode_processing: ContinuousEpisodeProcessingPort | None = None
 
 
 class WorkflowPortNotConfigured(RuntimeError):
@@ -588,6 +625,93 @@ async def persist_workflow_job(
                 non_retryable=True,
             ) from exc
     return job
+
+
+@activity.defn(name=UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY)
+async def update_continuous_episode_state(
+    request: ContinuousEpisodeStateActivityInput,
+) -> ContinuousEpisodeStateActivityOutput:
+    with _worker_scope(
+        request.project_id,
+        request.region_code,
+        f"{request.recording_id}/{request.episode_id}",
+        organization_id=request.organization_id,
+    ):
+        return await _invoke(
+            "continuous_episode_state",
+            lambda: _require(
+                _dependencies.continuous_episode_processing,
+                "continuous_recordings.ContinuousEpisodeProcessingService",
+            ).update_state(request),
+        )
+
+
+@activity.defn(name=QC_CONTINUOUS_EPISODE_ACTIVITY)
+async def qc_continuous_episode(
+    request: ContinuousEpisodeWorkflowInput,
+) -> ContinuousEpisodeQcActivityOutput:
+    source = request.projection
+    with _worker_scope(
+        source.project_id,
+        source.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        return await _invoke(
+            "continuous_episode_qc",
+            lambda: _require(
+                _dependencies.continuous_episode_processing,
+                "continuous_recordings.ContinuousEpisodeProcessingService",
+            ).qc(request),
+        )
+
+
+@activity.defn(name=ALIGN_CONTINUOUS_EPISODE_ACTIVITY)
+async def align_continuous_episode(
+    request: ContinuousEpisodeWorkflowInput,
+) -> ContinuousEpisodeAlignmentActivityOutput:
+    source = request.projection
+    with _worker_scope(
+        source.project_id,
+        source.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        return await _invoke(
+            "continuous_episode_alignment",
+            lambda: _require(
+                _dependencies.continuous_episode_processing,
+                "continuous_recordings.ContinuousEpisodeProcessingService",
+            ).align(request),
+        )
+
+
+@activity.defn(name=COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY)
+async def commit_continuous_episode_bundle(
+    request: ContinuousEpisodeBundleCommitActivityInput,
+) -> AlignedBundleCommitActivityOutput:
+    source = request.workflow_input.projection
+    with _worker_scope(
+        source.project_id,
+        source.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        return await _invoke(
+            "continuous_episode_commit",
+            lambda: _require(
+                _dependencies.continuous_episode_processing,
+                "continuous_recordings.ContinuousEpisodeProcessingService",
+            ).commit_bundle(
+                workflow_input=request.workflow_input,
+                alignment=request.alignment,
+                staged_manifest=request.staged_manifest,
+                alignment_staging=request.alignment_staging,
+                expected_dataset_version=request.expected_dataset_version,
+                expected_camera_ids=request.expected_camera_ids,
+                media_artifacts=request.media_artifacts,
+            ),
+        )
 
 
 @activity.defn(name=PARSE_MANIFEST_ACTIVITY)
@@ -1122,24 +1246,6 @@ def _publish_alignment_staging(
         camera_shards=camera_shards,
         created_at=now,
         expires_at=now + _dependencies.alignment_staging_ttl,
-    )
-
-
-def _write_alignment_camera_shard(
-    *,
-    source_path: Path,
-    destination_path: Path,
-    rollout_id: str,
-    camera_id: str,
-    expected_rows: int,
-) -> None:
-    """Compatibility wrapper for tests and one-camera callers."""
-
-    _write_alignment_camera_shards(
-        source_path=source_path,
-        destinations={camera_id: destination_path},
-        rollout_id=rollout_id,
-        expected_rows=expected_rows,
     )
 
 
@@ -1715,6 +1821,10 @@ async def reconcile_publication(
 
 ALL_ACTIVITIES = (
     persist_workflow_job,
+    update_continuous_episode_state,
+    qc_continuous_episode,
+    align_continuous_episode,
+    commit_continuous_episode_bundle,
     parse_manifest,
     verify_raw,
     process_ingest_source,
@@ -1735,3 +1845,20 @@ ALL_ACTIVITIES = (
     reconcile_catalog,
     reconcile_publication,
 )
+def _write_alignment_camera_shard(
+    *,
+    source_path: Path,
+    destination_path: Path,
+    rollout_id: str,
+    camera_id: str,
+    expected_rows: int,
+) -> None:
+    """Compatibility wrapper for tests and one-camera callers."""
+
+    _write_alignment_camera_shards(
+        source_path=source_path,
+        destinations={camera_id: destination_path},
+        rollout_id=rollout_id,
+        expected_rows=expected_rows,
+    )
+

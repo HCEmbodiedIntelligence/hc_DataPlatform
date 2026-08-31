@@ -8,6 +8,7 @@ import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState, UiPageHeader } from "../../shared/ui";
 import { UploadConfirmationDialog } from "./components/UploadConfirmationDialog";
+import { LeRobotUploadPanel } from "./components/LeRobotUploadPanel";
 import {
   UploadMethodPanel,
   type BrowserSelectionMode,
@@ -28,6 +29,10 @@ import {
   type UploadFlowState,
 } from "./upload-flow";
 import { uploadProblemCopy } from "./upload-contract";
+import {
+  uploadNativeLeRobot,
+  type LeRobotTargetBinding,
+} from "./lerobot-client";
 import { useUploadQueueStore } from "./upload-queue-store";
 
 function useNetworkStatus(): boolean {
@@ -136,7 +141,10 @@ export default function UploadJobsPage() {
       flow.phase === "folder_selected" ||
       flow.phase === "confirming" ||
       flow.phase === "prechecking" ||
-      flow.phase === "precheck_failed"
+      flow.phase === "precheck_failed" ||
+      flow.phase === "lerobot_uploading" ||
+      flow.phase === "lerobot_failed" ||
+      flow.phase === "lerobot_completed"
     )
       return;
     const next = queueFlowPhase(queueItems);
@@ -151,14 +159,14 @@ export default function UploadJobsPage() {
         item.sourceType === "BROWSER_MULTIPART" &&
         ["uploading", "pausing", "finalizing"].includes(item.transferStatus),
     );
-    if (!hasActiveBrowserTransfer) return;
+    if (!hasActiveBrowserTransfer && flow.phase !== "lerobot_uploading") return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [queueItems]);
+  }, [flow.phase, queueItems]);
 
   const records = useQuery({
     queryKey: [
@@ -244,6 +252,7 @@ export default function UploadJobsPage() {
     async (
       selection: LocalUploadSelection,
       previouslyPreparedItemIds: readonly string[] = [],
+      lerobotBinding: LeRobotTargetBinding | null = null,
     ) => {
       if (!scope) {
         if (unscopedAccount) setScopeRequiredOpen(true);
@@ -260,6 +269,60 @@ export default function UploadJobsPage() {
         files: selection.files,
         objectStorageUri: selection.objectStorageUri,
       });
+      if (confirmedSelection.lerobot) {
+        if (!lerobotBinding) {
+          setFlow({
+            phase: "confirming",
+            selection: confirmedSelection,
+            preparedItemIds: previouslyPreparedItemIds,
+          });
+          return;
+        }
+        const initialProgress = {
+          stage: "uploading" as const,
+          currentPath: null,
+          completedFiles: 0,
+          totalFiles: confirmedSelection.lerobot.sourceFiles.length,
+          uploadedBytes: 0,
+          totalBytes: confirmedSelection.lerobot.sourceBytes,
+        };
+        setFlow({
+          phase: "lerobot_uploading",
+          selection: confirmedSelection,
+          binding: lerobotBinding,
+          progress: initialProgress,
+        });
+        try {
+          const result = await uploadNativeLeRobot(
+            scope,
+            confirmedSelection.lerobot,
+            lerobotBinding,
+            (progress) =>
+              setFlow({
+                phase: "lerobot_uploading",
+                selection: confirmedSelection,
+                binding: lerobotBinding,
+                progress,
+              }),
+          );
+          setFlow({ phase: "lerobot_completed", result });
+        } catch (error) {
+          const copied = uploadProblemCopy(error);
+          setFlow({
+            phase: "lerobot_failed",
+            selection: confirmedSelection,
+            binding: lerobotBinding,
+            problem: {
+              ...copied,
+              detail:
+                copied.problemCode === null && error instanceof Error
+                  ? error.message
+                  : copied.detail,
+            },
+          });
+        }
+        return;
+      }
       if (
         confirmedSelection.problems.length > 0 ||
         confirmedSelection.units.length === 0
@@ -399,6 +462,10 @@ export default function UploadJobsPage() {
       flow.phase === "confirming");
   const precheckVisible =
     flow.phase === "prechecking" || flow.phase === "precheck_failed";
+  const lerobotVisible =
+    flow.phase === "lerobot_uploading" ||
+    flow.phase === "lerobot_failed" ||
+    flow.phase === "lerobot_completed";
   const queueVisible =
     flow.phase === "queue_ready" ||
     flow.phase === "uploading" ||
@@ -485,10 +552,11 @@ export default function UploadJobsPage() {
                   canManage={canManage}
                   online={online}
                   onCancel={() => confirmResetSelection(flow.preparedItemIds)}
-                  onConfirm={() =>
+                  onConfirm={(binding) =>
                     void performServerPrecheck(
                       flow.selection,
                       flow.preparedItemIds,
+                      binding,
                     )
                   }
                 />
@@ -518,7 +586,29 @@ export default function UploadJobsPage() {
             </div>
           ) : null}
 
-          {queueVisible && !precheckVisible && !selectionVisible ? (
+          {lerobotVisible ? (
+            <div className={styles.serialWorkspace}>
+              <LeRobotUploadPanel
+                state={flow}
+                onRetry={() => {
+                  if (flow.phase === "lerobot_failed")
+                    void performServerPrecheck(
+                      flow.selection,
+                      [],
+                      flow.binding,
+                    );
+                }}
+                onBack={resetSelection}
+                onContinue={resetSelection}
+                onViewRecords={() => void navigate(dataUploadRoutes.records)}
+              />
+            </div>
+          ) : null}
+
+          {queueVisible &&
+          !precheckVisible &&
+          !selectionVisible &&
+          !lerobotVisible ? (
             <div className={styles.serialWorkspace}>
               <UploadQueuePanel
                 items={queueItems}
@@ -554,7 +644,9 @@ export default function UploadJobsPage() {
           <UploadRecordsPanel
             items={records.data?.items ?? []}
             total={records.data?.total ?? 0}
-            loading={Boolean(scope) && (records.isPending || records.isFetching)}
+            loading={
+              Boolean(scope) && (records.isPending || records.isFetching)
+            }
             problem={records.isError ? uploadProblemCopy(records.error) : null}
             packageFilter={packageFilter}
             statusFilter={statusFilter}

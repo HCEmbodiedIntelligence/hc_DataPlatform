@@ -1,14 +1,22 @@
 import type { IngestScope } from "../../entities/data-source";
 import type { ManifestPreflight, UploadManifest } from "./formal-client";
 import type { BrowserSelectionMode } from "./components/UploadMethodPanel";
+import type {
+  LeRobotImportAccepted,
+  LeRobotTargetBinding,
+  LeRobotUploadProgress,
+} from "./lerobot-client";
 import {
   discoverFolderUploadBundles,
+  detectLeRobotFolder,
   findManifestFiles,
   findRawPackageFile,
   LocalManifestError,
+  LocalLeRobotError,
   parseManifestFile,
   selectedRelativePath,
   validateObjectStorageUri,
+  type LeRobotFolderSelection,
 } from "./upload-contract";
 
 export type UploadFlowPhase =
@@ -19,6 +27,9 @@ export type UploadFlowPhase =
   | "precheck_failed"
   | "queue_ready"
   | "uploading"
+  | "lerobot_uploading"
+  | "lerobot_failed"
+  | "lerobot_completed"
   | "completed";
 
 export type UploadSourceChoice =
@@ -52,6 +63,7 @@ export interface LocalUploadSelection {
   readonly manifestFiles: readonly File[];
   readonly rawFiles: readonly File[];
   readonly units: readonly LocalUploadUnit[];
+  readonly lerobot: LeRobotFolderSelection | null;
   readonly totalLocalBytes: number;
   readonly declaredRawBytes: number;
   readonly objectStorageUri: string;
@@ -86,6 +98,28 @@ export type UploadFlowState =
     }
   | { readonly phase: "queue_ready" }
   | { readonly phase: "uploading" }
+  | {
+      readonly phase: "lerobot_uploading";
+      readonly selection: LocalUploadSelection;
+      readonly binding: LeRobotTargetBinding;
+      readonly progress: LeRobotUploadProgress;
+    }
+  | {
+      readonly phase: "lerobot_failed";
+      readonly selection: LocalUploadSelection;
+      readonly binding: LeRobotTargetBinding;
+      readonly problem: {
+        readonly title: string;
+        readonly detail: string;
+        readonly problemCode: string | null;
+        readonly requestId: string | null;
+        readonly retryable: boolean;
+      };
+    }
+  | {
+      readonly phase: "lerobot_completed";
+      readonly result: LeRobotImportAccepted;
+    }
   | { readonly phase: "completed" };
 
 export interface InspectLocalSelectionInput {
@@ -176,8 +210,31 @@ export async function inspectLocalUploadSelection(
   );
   const problems: LocalSelectionProblem[] = [];
   const units: LocalUploadUnit[] = [];
+  let lerobot: LeRobotFolderSelection | null = null;
+  let lerobotInspectionFailed = false;
 
-  if (manifestFiles.length === 0) {
+  if (
+    input.sourceType === "BROWSER_MULTIPART" &&
+    input.browserSelectionMode === "folder"
+  ) {
+    try {
+      lerobot = await detectLeRobotFolder(input.files);
+    } catch (error) {
+      lerobotInspectionFailed = true;
+      problems.push(
+        problem(
+          error instanceof LocalLeRobotError
+            ? error.code
+            : "LEROBOT_INFO_INVALID",
+          error instanceof Error
+            ? error.message
+            : "LeRobot 原始目录无法在浏览器本地解析。",
+        ),
+      );
+    }
+  }
+
+  if (manifestFiles.length === 0 && !lerobot && !lerobotInspectionFailed) {
     problems.push(
       problem(
         "MANIFEST_FILE_MISSING",
@@ -187,6 +244,7 @@ export async function inspectLocalUploadSelection(
   }
 
   if (
+    !lerobot &&
     input.sourceType === "BROWSER_MULTIPART" &&
     input.browserSelectionMode === "folder"
   ) {
@@ -223,14 +281,14 @@ export async function inspectLocalUploadSelection(
         );
       }
     }
-  } else if (manifestFiles.length > 1) {
+  } else if (!lerobot && manifestFiles.length > 1) {
     problems.push(
       problem(
         "MANIFEST_FILE_AMBIGUOUS",
         `当前上传单元找到 ${manifestFiles.length} 个数据清单文件，请只保留一个。`,
       ),
     );
-  } else if (manifestFiles[0]) {
+  } else if (!lerobot && manifestFiles[0]) {
     try {
       const manifest = await parseManifestFile(manifestFiles[0]);
       if (input.sourceType === "OBJECT_STORAGE_REFERENCE") {
@@ -268,7 +326,7 @@ export async function inspectLocalUploadSelection(
     }
   }
 
-  if (units.length === 0 && problems.length === 0) {
+  if (units.length === 0 && !lerobot && problems.length === 0) {
     problems.push(
       problem("UPLOAD_UNIT_MISSING", "没有识别到可上传的数据单元。"),
     );
@@ -282,11 +340,11 @@ export async function inspectLocalUploadSelection(
     manifestFiles,
     rawFiles,
     units,
+    lerobot,
     totalLocalBytes: input.files.reduce((total, file) => total + file.size, 0),
-    declaredRawBytes: units.reduce(
-      (total, unit) => total + unit.manifest.file_size,
-      0,
-    ),
+    declaredRawBytes:
+      lerobot?.sourceBytes ??
+      units.reduce((total, unit) => total + unit.manifest.file_size, 0),
     objectStorageUri: input.objectStorageUri,
     problems,
   };

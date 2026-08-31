@@ -1,10 +1,7 @@
-"""Import Unitree G1 LeRobot v3 data from local disk or OSS into the platform.
+"""Legacy offline Unitree G1 LeRobot-to-MCAP export utility.
 
-The source remains a compact LeRobot layout (Parquet telemetry plus MP4 camera
-streams).  Each selected episode is converted into the platform's canonical MCAP
-package and uploaded through the normal upload-session API, so verification,
-quality, alignment, Lance publication, dataset projection, and annotation creation
-continue through the existing durable workflow.
+The platform upload path is ``hc-lerobot-platform-upload``. It preserves the
+original Parquet, MP4, and metadata objects and never calls this converter.
 """
 
 from __future__ import annotations
@@ -14,51 +11,17 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
-from urllib.parse import unquote, urlparse
 
 from hc_data_platform.ingest.cli import DEFAULT_PART_SIZE, import_offline_bundle
 from hc_data_platform.ingest.manifest import parse_manifest_bytes
-from hc_data_platform.storage.oss_client import build_oss_bucket
 
 from . import hf_unitree_g1_to_mcap as converter
 
 _CANONICAL_DATA = re.compile(r"^data/chunk-\d{3}/file-\d{3}\.parquet$")
 _CANONICAL_EPISODES = re.compile(r"^meta/episodes/chunk-\d{3}/file-\d{3}\.parquet$")
 _CANONICAL_VIDEO = re.compile(r"^videos/([^/]+)/chunk-\d{3}/file-\d{3}\.mp4$")
-
-
-@dataclass(frozen=True, slots=True)
-class OssSource:
-    bucket: str
-    prefix: str
-
-
-@dataclass(frozen=True, slots=True)
-class SourceObject:
-    key: str
-    size: int
-
-
-def parse_oss_source_uri(value: str) -> OssSource:
-    parsed = urlparse(value.strip())
-    prefix = unquote(parsed.path.lstrip("/")).rstrip("/")
-    if (
-        parsed.scheme != "oss"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or not prefix
-        or parsed.params
-        or parsed.query
-        or parsed.fragment
-        or "\\" in prefix
-        or any(part in {"", ".", ".."} for part in prefix.split("/"))
-    ):
-        raise ValueError("OSS source must use oss://<bucket>/<non-empty-prefix>")
-    return OssSource(bucket=parsed.hostname, prefix=prefix)
 
 
 def is_canonical_lerobot_object(relative_path: str) -> bool:
@@ -74,89 +37,6 @@ def is_canonical_lerobot_object(relative_path: str) -> bool:
     if video_match is None:
         return False
     return video_match.group(1) in {camera.feature_key for camera in converter.CAMERAS}
-
-
-def _list_source_objects(bucket: Any, prefix: str) -> list[SourceObject]:
-    token = ""
-    objects: list[SourceObject] = []
-    while True:
-        result = bucket.list_objects_v2(
-            prefix=f"{prefix.rstrip('/')}/",
-            continuation_token=token,
-            max_keys=1000,
-        )
-        objects.extend(
-            SourceObject(key=str(item.key), size=int(item.size)) for item in result.object_list
-        )
-        if not result.is_truncated:
-            return objects
-        token = str(result.next_continuation_token or "")
-        if not token:
-            raise RuntimeError("OSS returned a truncated listing without a continuation token")
-
-
-def _dataset_root(objects: list[SourceObject]) -> str:
-    marker = "meta/info.json"
-    roots = sorted({item.key[: -len(marker)] for item in objects if item.key.endswith(marker)})
-    if not roots:
-        raise ValueError("the OSS prefix does not contain a LeRobot meta/info.json")
-    if len(roots) != 1:
-        raise ValueError("the OSS prefix contains multiple LeRobot revision roots")
-    return roots[0]
-
-
-def _download_object(bucket: Any, source: SourceObject, destination: Path) -> None:
-    if destination.is_file() and destination.stat().st_size == source.size:
-        return
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(f".{destination.name}.oss-download")
-    result = bucket.get_object(source.key)
-    try:
-        with temporary.open("wb") as output:
-            while chunk := result.read(8 * 1024 * 1024):
-                output.write(chunk)
-    finally:
-        close = getattr(result, "close", None)
-        if close is not None:
-            close()
-    if temporary.stat().st_size != source.size:
-        temporary.unlink(missing_ok=True)
-        raise RuntimeError(f"OSS object size changed while downloading: {source.key}")
-    os.replace(temporary, destination)
-
-
-def materialize_oss_source(
-    bucket: Any,
-    *,
-    source: OssSource,
-    cache_dir: Path,
-) -> Path:
-    objects = _list_source_objects(bucket, source.prefix)
-    root_prefix = _dataset_root(objects)
-    selected: list[tuple[SourceObject, str]] = []
-    for item in objects:
-        if not item.key.startswith(root_prefix):
-            continue
-        relative = item.key[len(root_prefix) :]
-        if is_canonical_lerobot_object(relative):
-            selected.append((item, relative))
-    if not any(relative == "meta/info.json" for _, relative in selected):
-        raise ValueError("the OSS prefix has no canonical LeRobot metadata")
-
-    identity = re.sub(r"[^A-Za-z0-9._-]+", "-", root_prefix.strip("/"))[-160:]
-    local_root = (cache_dir / identity).resolve()
-    cache_root = cache_dir.resolve()
-    try:
-        local_root.relative_to(cache_root)
-    except ValueError as exc:
-        raise RuntimeError(
-            "resolved OSS source cache escaped the selected cache directory"
-        ) from exc
-    for index, (item, relative) in enumerate(selected, start=1):
-        print(f"sync OSS source [{index}/{len(selected)}] {relative}", file=sys.stderr)
-        _download_object(bucket, item, local_root / relative)
-    validate_source_profile(local_root)
-    return local_root
 
 
 def find_local_source_root(value: Path) -> Path:
@@ -188,12 +68,23 @@ def validate_source_profile(source_root: Path) -> dict[str, Any]:
         info = json.loads((source_root / "meta/info.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("LeRobot meta/info.json is missing or invalid") from exc
+    return validate_source_info(info)
+
+
+def validate_source_info(info: object) -> dict[str, Any]:
+    """Validate the supported LeRobot metadata without requiring a local directory."""
+
     if not isinstance(info, dict):
         raise ValueError("LeRobot meta/info.json must contain an object")
     if info.get("codebase_version") != "v3.0":
         raise ValueError("this importer currently requires LeRobotDataset v3.0")
     if info.get("robot_type") != "unitree_g1":
         raise ValueError("this importer currently requires the Unitree G1 source profile")
+    fps = info.get("fps")
+    if not isinstance(fps, (int, float)) or isinstance(fps, bool) or not 0 < float(fps) <= 240:
+        raise ValueError("LeRobot metadata has an invalid fps")
+    if not isinstance(info.get("data_path"), str) or not isinstance(info.get("video_path"), str):
+        raise ValueError("LeRobot v3 metadata is missing data/video path templates")
     features = info.get("features")
     if not isinstance(features, dict):
         raise ValueError("LeRobot metadata has no feature inventory")
@@ -231,19 +122,6 @@ def _required_env(name: str) -> str:
     if not value:
         raise ValueError(f"environment variable {name} is required")
     return value
-
-
-def _oss_bucket(source: OssSource) -> Any:
-    configured_bucket = _required_env("HC_OBJECT_STORE_BUCKET")
-    if configured_bucket != source.bucket:
-        raise ValueError("OSS URI bucket must equal HC_OBJECT_STORE_BUCKET")
-    return build_oss_bucket(
-        endpoint=_required_env("HC_OBJECT_STORE_ENDPOINT"),
-        bucket=configured_bucket,
-        access_key=_required_env("HC_OBJECT_STORE_ACCESS_KEY"),
-        secret_key=_required_env("HC_OBJECT_STORE_SECRET_KEY"),
-        connect_timeout=30,
-    )
 
 
 def _converter_arguments(args: argparse.Namespace, source_root: Path) -> argparse.Namespace:
@@ -312,9 +190,7 @@ def _upload_packages(args: argparse.Namespace, packages: tuple[Path, ...]) -> li
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--source-dir", type=Path)
-    source.add_argument("--oss-uri")
+    parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--collection-task-id", required=True)
     parser.add_argument("--robot-id", required=True)
@@ -353,24 +229,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("--episode-count must be between 1 and 100")
     if args.part_size_mib < 5:
         raise ValueError("--part-size-mib must be at least 5")
-
-    cache_dir = cast(Path, args.cache_dir).expanduser().resolve()
-    if args.source_dir is not None:
-        source_root = find_local_source_root(cast(Path, args.source_dir))
-        source_kind = "local"
-    else:
-        oss_source = parse_oss_source_uri(cast(str, args.oss_uri))
-        source_root = materialize_oss_source(
-            _oss_bucket(oss_source),
-            source=oss_source,
-            cache_dir=cache_dir / "oss-sources",
+    if not args.convert_only:
+        raise ValueError(
+            "platform LeRobot imports must use hc-lerobot-platform-upload; "
+            "this legacy utility only supports --convert-only"
         )
-        source_kind = "oss"
+
+    source_root = find_local_source_root(cast(Path, args.source_dir))
 
     packages = converter.convert(_converter_arguments(args, source_root))
     platform = _upload_packages(args, packages)
     return {
-        "source_kind": source_kind,
+        "source_kind": "local",
         "source_root": str(source_root),
         "packages": [str(package) for package in packages],
         "uploaded": platform,

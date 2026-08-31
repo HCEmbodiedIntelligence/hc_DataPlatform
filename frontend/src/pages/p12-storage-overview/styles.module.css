@@ -695,8 +695,7 @@
 .cardHeading h3,
 .cardHeading p,
 .capacityFigure,
-.trendSummary,
-.pageFootnote {
+.trendSummary {
   margin: 0;
 }
 
@@ -1143,17 +1142,6 @@
   justify-content: flex-end;
   width: 100%;
   padding-top: var(--hc-space-2);
-}
-
-.pageFootnote {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--hc-space-1);
-  min-height: 28px;
-  color: var(--hc-color-text-muted);
-  font-size: 10px;
-  text-align: center;
 }
 
 .srOnly {

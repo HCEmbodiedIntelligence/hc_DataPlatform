@@ -51,7 +51,6 @@ export function LoginPanel({
       <header className={styles.formHeading}>
         <p className={styles.eyebrow}>账户认证</p>
         <h1 id="login-title">登录</h1>
-        <p>使用已注册的用户名进入 HC 数据平台。</p>
       </header>
 
       {error ? (

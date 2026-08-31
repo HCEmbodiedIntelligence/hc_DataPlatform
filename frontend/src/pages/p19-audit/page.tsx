@@ -435,7 +435,6 @@ export function AuditPage() {
         <StandardPageScaffold
           header={{
             title: "审计日志",
-            description: "当前读取者可见的脱敏、追加式审计投影。",
             breadcrumbs: [
               {
                 key: "settings",

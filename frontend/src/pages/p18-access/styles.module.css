@@ -459,8 +459,6 @@
 }
 
 .decisionContext,
-.decisionHint,
-.decisionBoundary,
 .readOnlyNote {
   margin: 0;
   color: var(--hc-color-neutral-text);
@@ -496,16 +494,6 @@
 .fieldError {
   margin: 0;
   color: var(--hc-color-error);
-  font-size: 0.75rem;
-}
-
-.decisionHint,
-.decisionBoundary {
-  margin-top: var(--hc-space-2);
-}
-
-.decisionBoundary {
-  color: var(--hc-color-neutral-text);
   font-size: 0.75rem;
 }
 

@@ -221,9 +221,6 @@ export function AnnotationRevisionPage(): JSX.Element {
       <header className="p08-page-header p08-page-header--plain">
         <div>
           <h1>Episode 版本与草稿修订</h1>
-          <p>
-            草稿保存只产生编辑修订；每次提交 Review 才生成一个 Episode 版本，数据集发布后冻结其精确提交。
-          </p>
         </div>
         <div className="p08-header-actions">
           <Link

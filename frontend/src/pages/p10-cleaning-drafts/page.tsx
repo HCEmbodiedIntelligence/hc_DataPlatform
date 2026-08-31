@@ -533,8 +533,6 @@ export function CleaningDraftsPage() {
       <StandardPageScaffold
         header={{
           title: "清洗草稿",
-          description:
-            "P10 只读聚合五条正交状态轴；所有编辑、Preview 与 Commit 都在 P11 完成。",
           breadcrumbs: [
             {
               key: "cleaning",

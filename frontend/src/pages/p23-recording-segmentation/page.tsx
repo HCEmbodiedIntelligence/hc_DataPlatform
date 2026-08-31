@@ -39,15 +39,21 @@ import {
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useToast } from "../../app/providers/ToastProvider";
+import type { DatasetId } from "../../entities/dataset";
+import type { DatasetVersionId } from "../../entities/dataset-version";
+import type { EpisodeId } from "../../entities/episode";
+import { routes as datasetRoutes } from "../../features/datasets/routing";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { StandardPageScaffold } from "../../shared/ui/layout/StandardPageScaffold";
 import { PageState } from "../../shared/ui/state/PageState";
 import { StatusTag } from "../../shared/ui/state/StatusTag";
+import { annotationRoutes } from "../p08-data-annotation/routes";
 import {
   recordingGateway,
   type ContinuousRecording,
+  type EpisodeProcessing,
   type RecordingGateway,
   type RecordingScope,
 } from "./api";
@@ -109,6 +115,27 @@ function statusTag(recording: ContinuousRecording) {
     return <StatusTag status="DRAFT" label="切片草稿" tone="warning" />;
   }
   return <StatusTag status={recording.status} label="待切片" tone="info" />;
+}
+
+const processingLabels: Readonly<Record<EpisodeProcessing["status"], string>> =
+  {
+    PENDING_QC: "等待质检",
+    QC_RUNNING: "质检中",
+    QC_FAILED: "质检未通过",
+    PENDING_ALIGNMENT: "等待对齐",
+    ALIGNING: "对齐与媒体处理中",
+    READY: "已就绪",
+    FAILED: "处理失败",
+  };
+
+function processingTone(
+  status: EpisodeProcessing["status"],
+): "info" | "warning" | "danger" | "success" {
+  if (status === "READY") return "success";
+  if (status === "QC_FAILED" || status === "FAILED") return "danger";
+  if (status === "PENDING_QC" || status === "PENDING_ALIGNMENT")
+    return "warning";
+  return "info";
 }
 
 function RecordingListPage({
@@ -266,8 +293,6 @@ function RecordingListPage({
     <StandardPageScaffold
       header={{
         title: "录制切片",
-        description:
-          "直接预览 OSS 中的长录制原视频，人工切割为可质检、可对齐的 Episode。",
         actions: (
           <Button
             icon={<RefreshCw size={16} />}
@@ -375,6 +400,24 @@ function RecordingSegmentationPage({
     retry: false,
     staleTime: 5 * 60_000,
   });
+  const processing = useQuery({
+    queryKey: ["continuous-recording-processing", scopeKey, recordingId],
+    queryFn: ({ signal }) =>
+      gateway.processing(scope as RecordingScope, recordingId, signal),
+    enabled: scope !== null,
+    retry: false,
+    refetchInterval: (query) => {
+      const episodes = query.state.data?.items ?? [];
+      return episodes.some(
+        (episode) =>
+          episode.status !== "READY" &&
+          episode.status !== "QC_FAILED" &&
+          episode.status !== "FAILED",
+      )
+        ? 3_000
+        : false;
+    },
+  });
   const [slices, setSlices] = useState<EditableSlice[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
@@ -410,6 +453,16 @@ function RecordingSegmentationPage({
   const issues = useMemo(
     () => validateSlices(slices, durationNs, minimumDurationNs),
     [durationNs, minimumDurationNs, slices],
+  );
+  const processingByEpisode = useMemo(
+    () =>
+      new Map(
+        (processing.data?.items ?? []).map((episode) => [
+          episode.episode_id,
+          episode,
+        ]),
+      ),
+    [processing.data?.items],
   );
 
   useEffect(() => {
@@ -574,6 +627,9 @@ function RecordingSegmentationPage({
       void queryClient.invalidateQueries({
         queryKey: ["continuous-recordings", scopeKey],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["continuous-recording-processing", scopeKey, recordingId],
+      });
       showToast({
         title: "切片草稿已保存",
         message: `当前为第 ${result.revision.revision} 版。`,
@@ -605,6 +661,9 @@ function RecordingSegmentationPage({
       });
       void queryClient.invalidateQueries({
         queryKey: ["continuous-recordings", scopeKey],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["continuous-recording-processing", scopeKey, recordingId],
       });
       showToast({
         title: "Episode 已生成",
@@ -811,6 +870,23 @@ function RecordingSegmentationPage({
         />
       ) : null}
 
+      {recording.status === "SLICED" && processing.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Episode 处理状态加载失败"
+          description={pageError(
+            processing.error,
+            "数据仍在后台处理；请刷新页面重新读取真实状态。",
+          )}
+          action={
+            <Button size="small" onClick={() => void processing.refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+
       <div className={styles.editorGrid}>
         <section className={styles.videoWorkspace} aria-label="原始视频预览">
           <div className={styles.panelHeading}>
@@ -950,6 +1026,9 @@ function RecordingSegmentationPage({
                 const issue = issues.find(
                   (item) => item.episodeId === slice.episodeId,
                 );
+                const episodeProcessing = processingByEpisode.get(
+                  slice.episodeId,
+                );
                 return (
                   <article
                     className={styles.episodeCard}
@@ -973,10 +1052,91 @@ function RecordingSegmentationPage({
                           {formatTimecode(slice.endNs)}
                         </small>
                       </span>
-                      {issue ? <Tag color="error">边界错误</Tag> : null}
+                      <span className={styles.episodeHeaderState}>
+                        {episodeProcessing ? (
+                          <StatusTag
+                            status={episodeProcessing.status}
+                            label={processingLabels[episodeProcessing.status]}
+                            tone={processingTone(episodeProcessing.status)}
+                          />
+                        ) : processing.isPending &&
+                          recording.status === "SLICED" ? (
+                          <Tag>读取状态</Tag>
+                        ) : issue ? (
+                          <Tag color="error">边界错误</Tag>
+                        ) : null}
+                      </span>
                     </button>
                     {selected ? (
                       <div className={styles.episodeFields}>
+                        {episodeProcessing ? (
+                          <div className={styles.processingPanel}>
+                            <div className={styles.processingHeading}>
+                              <span>
+                                <strong>处理阶段</strong>
+                                <small>
+                                  {processingLabels[episodeProcessing.status]}
+                                </small>
+                              </span>
+                              <StatusTag
+                                status={episodeProcessing.status}
+                                label={episodeProcessing.status}
+                                tone={processingTone(episodeProcessing.status)}
+                              />
+                            </div>
+                            {episodeProcessing.status === "READY" &&
+                            episodeProcessing.dataset_id &&
+                            episodeProcessing.dataset_version &&
+                            episodeProcessing.annotation_task_id ? (
+                              <div className={styles.processingActions}>
+                                <Link
+                                  to={datasetRoutes.episodeViewer.build({
+                                    datasetId:
+                                      episodeProcessing.dataset_id as DatasetId,
+                                    versionId:
+                                      `version_lance_${episodeProcessing.dataset_version}` as DatasetVersionId,
+                                    episodeId:
+                                      episodeProcessing.episode_id as EpisodeId,
+                                    returnTo: globalThis.location.pathname,
+                                  })}
+                                >
+                                  打开 Dataset Episode
+                                </Link>
+                                <Link
+                                  to={annotationRoutes.task.build({
+                                    taskId:
+                                      episodeProcessing.annotation_task_id,
+                                  })}
+                                >
+                                  打开 TAGGING 任务
+                                </Link>
+                              </div>
+                            ) : episodeProcessing.failure_code ? (
+                              <p className={styles.processingFailure}>
+                                <code>{episodeProcessing.failure_code}</code>
+                                <span>
+                                  阶段：
+                                  {episodeProcessing.failure_stage ?? "未知"}
+                                </span>
+                              </p>
+                            ) : (
+                              <p className={styles.processingEvidence}>
+                                {episodeProcessing.qc_report_id
+                                  ? `QC ${episodeProcessing.qc_report_id}`
+                                  : `工作流 ${episodeProcessing.workflow_id ?? "等待启动"}`}
+                              </p>
+                            )}
+                          </div>
+                        ) : recording.status === "SLICED" &&
+                          !processing.isPending &&
+                          !processing.isError ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="尚未建立处理账本"
+                            description="此 Episode 不会显示为可用；请由运维检查 finalize outbox。"
+                          />
+                        ) : null}
                         <label>
                           标题
                           <Input

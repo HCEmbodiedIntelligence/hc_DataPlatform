@@ -19,6 +19,9 @@ export function RuntimePlatformShell({
 }) {
   const sessionToken = useShellStore((state) => state.sessionToken);
   const sessionScopes = useShellStore((state) => state.sessionScopes);
+  const sessionOrganizations = useShellStore(
+    (state) => state.sessionOrganizations,
+  );
   const bootstrapLoaded = useShellStore((state) => state.bootstrapLoaded);
   const setAuthorizationLoading = useShellStore(
     (state) => state.setAuthorizationLoading,
@@ -90,22 +93,33 @@ export function RuntimePlatformShell({
     return <Navigate replace to="/auth/login" />;
   }
 
-  const scopeOptions: readonly ScopeOption[] = sessionScopes.flatMap((grant) => {
-    const common = {
-      organizationId: grant.organizationId,
-      organizationName: grant.organizationId,
-      projectId: grant.projectId,
-      projectName: grant.projectId,
-      projectWide: grant.projectWide,
-    } as const;
-    return grant.regionCodes.length > 0
-      ? grant.regionCodes.map((regionCode) => ({
-          ...common,
-          regionCode,
-          regionName: regionCode,
-        }))
-      : [common];
-  });
+  const organizationNames = new Map(
+    sessionOrganizations.map((organization) => [
+      organization.organizationId,
+      organization.organizationName,
+    ]),
+  );
+  const scopeOptions: readonly ScopeOption[] = sessionScopes.flatMap(
+    (grant) => {
+      const common = {
+        organizationId: grant.organizationId,
+        organizationName:
+          grant.organizationName ??
+          organizationNames.get(grant.organizationId) ??
+          grant.organizationId,
+        projectId: grant.projectId,
+        projectName: grant.projectName ?? grant.projectId,
+        projectWide: grant.projectWide,
+      } as const;
+      return grant.regionCodes.length > 0
+        ? grant.regionCodes.map((regionCode) => ({
+            ...common,
+            regionCode,
+            regionName: regionCode,
+          }))
+        : [common];
+    },
+  );
 
   return (
     <PlatformShell

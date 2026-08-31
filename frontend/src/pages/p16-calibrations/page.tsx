@@ -475,7 +475,6 @@ export function Component() {
       <StandardPageScaffold
         header={{
           title: "标定管理",
-          description: "核对固定标定版本、其验证哈希，并发布已通过验证的草稿。",
           breadcrumbs: [
             {
               key: "settings",
@@ -577,7 +576,6 @@ export function Component() {
             <header className={workspace.paneHeader}>
               <div>
                 <h2>机器人 / 标定集</h2>
-                <p>固定关系与服务端记录</p>
               </div>
               <span className={workspace.inlineMeta}>共 {items.length} 项</span>
             </header>
@@ -730,9 +728,7 @@ export function Component() {
                         )}
                       </ul>
                     ) : (
-                      <p className={workspace.safeNote}>
-                        相机内参只在真实版本文档加载成功后展示。
-                      </p>
+                      <PageState state="empty" title="请选择标定版本" />
                     )
                   ) : null}
                   {tab.id === "transforms" ? (
@@ -757,10 +753,7 @@ export function Component() {
                         )}
                       </ul>
                     ) : (
-                      <p className={workspace.safeNote}>
-                        Frame Graph
-                        由服务端版本文档提供；循环与跨作用域引用会被校验报告阻断。
-                      </p>
+                      <PageState state="empty" title="请选择标定版本" />
                     )
                   ) : null}
                   {tab.id === "timeCalibrations" ? (
@@ -786,9 +779,7 @@ export function Component() {
                         )}
                       </ul>
                     ) : (
-                      <p className={workspace.safeNote}>
-                        请先加载真实版本内容。
-                      </p>
+                      <PageState state="empty" title="请选择标定版本" />
                     )
                   ) : null}
                   {tab.id === "jointCalibrations" ? (

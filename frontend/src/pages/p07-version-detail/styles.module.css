@@ -229,11 +229,6 @@
   color: var(--hc-color-text-muted, #64736f);
 }
 
-.historyHint {
-  margin: 0 0 var(--hc-space-3, 12px);
-  color: var(--hc-color-text-muted, #64736f);
-}
-
 .exportJob {
   display: grid;
   gap: var(--hc-space-3, 12px);

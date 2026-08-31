@@ -1707,18 +1707,35 @@ class PostgresAccessRepository:
                 "SELECT set_config('app.platform_admin', %s, true)",
                 ("true" if is_platform_admin else "false",),
             )
+            project_names: dict[tuple[str, str], str]
             if is_platform_admin:
                 cursor.execute(
                     """
-                    SELECT organization_id, project_id, ARRAY[]::text[] AS capability_keys
-                    FROM registry.organization_projects
-                    ORDER BY organization_id, project_id
+                    SELECT project.organization_id,
+                           COALESCE(organization.display_name, project.organization_id)
+                               AS organization_name,
+                           project.project_id,
+                           project.display_name AS project_name,
+                           ARRAY[]::text[] AS capability_keys
+                    FROM registry.organization_projects project
+                    LEFT JOIN access_control.organization_join_codes organization
+                      ON organization.organization_id = project.organization_id
+                    ORDER BY project.organization_id, project.project_id
                     """
                 )
+                raw_scopes = tuple(_row(cursor, item) for item in cursor.fetchall())
+                project_names = {
+                    (str(scope["organization_id"]), str(scope["project_id"])): str(
+                        scope["project_name"]
+                    )
+                    for scope in raw_scopes
+                }
             else:
                 cursor.execute(
                     """
                     SELECT membership.organization_id,
+                           COALESCE(organization.display_name, membership.organization_id)
+                               AS organization_name,
                            membership.project_id,
                            COALESCE(array_agg(DISTINCT capability_grant.capability_key)
                                FILTER (WHERE capability_grant.capability_key IS NOT NULL),
@@ -1730,21 +1747,55 @@ class PostgresAccessRepository:
                      AND capability_grant.organization_id = membership.organization_id
                      AND capability_grant.project_id = membership.project_id
                      AND capability_grant.active
+                    LEFT JOIN access_control.organization_join_codes organization
+                      ON organization.organization_id = membership.organization_id
                     WHERE membership.principal_id = %s::uuid AND membership.active
-                    GROUP BY membership.organization_id, membership.project_id
+                    GROUP BY membership.organization_id,
+                             organization.display_name,
+                             membership.project_id
                     ORDER BY membership.organization_id, membership.project_id
                     """,
                     (principal_id,),
                 )
+                raw_scopes = tuple(_row(cursor, item) for item in cursor.fetchall())
+                project_names = {}
+                for scope in raw_scopes:
+                    organization_id = str(scope["organization_id"])
+                    project_id = str(scope["project_id"])
+                    cursor.execute(
+                        """
+                        SELECT set_config('app.organization_id', %s, true),
+                               set_config('app.project_id', %s, true)
+                        """,
+                        (organization_id, project_id),
+                    )
+                    cursor.execute(
+                        """
+                        SELECT display_name
+                        FROM registry.organization_projects
+                        WHERE organization_id = %s AND project_id = %s
+                        """,
+                        (organization_id, project_id),
+                    )
+                    raw_project = cursor.fetchone()
+                    project_names[(organization_id, project_id)] = (
+                        project_id
+                        if raw_project is None
+                        else str(_row(cursor, raw_project)["display_name"])
+                    )
             scopes = tuple(
                 AvailableScope(
                     organization_id=str(scope["organization_id"]),
+                    organization_name=str(scope["organization_name"]),
                     project_id=str(scope["project_id"]),
+                    project_name=project_names[
+                        (str(scope["organization_id"]), str(scope["project_id"]))
+                    ],
                     region_codes=(),
                     project_wide=True,
                     capabilities=tuple(sorted(cast(Sequence[str], scope["capability_keys"]))),
                 )
-                for scope in (_row(cursor, item) for item in cursor.fetchall())
+                for scope in raw_scopes
             )
             resolved = ResolvedSession(
                 session_id=str(session["session_id"]),

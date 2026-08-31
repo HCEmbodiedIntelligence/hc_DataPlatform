@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Form, Input, Modal, Typography } from "antd";
+import { Alert, Button, Flex, Form, Input, Modal } from "antd";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -149,10 +149,6 @@ export function CreateDatasetDialog({
           )(event);
         }}
       >
-        <Typography.Paragraph type="secondary">
-          只创建空 Dataset，不隐式创建 Version；同一提交意图始终复用一个
-          Idempotency-Key。
-        </Typography.Paragraph>
         {errorMessage ? (
           <Alert type="error" showIcon title={errorMessage} />
         ) : null}

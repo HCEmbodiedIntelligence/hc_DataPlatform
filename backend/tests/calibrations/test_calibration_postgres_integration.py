@@ -90,7 +90,9 @@ def _prepare_app_role(dsn: str) -> None:
             "calibrations.calibration_dataset_version_associations TO " + APP_ROLE
         )
         cursor.execute(
-            "GRANT SELECT ON robotics.robot_instances, robotics.robot_components TO " + APP_ROLE
+            "GRANT SELECT ON robotics.robot_assets, robotics.project_robot_assignments, "
+            "robotics.robot_asset_components TO "
+            + APP_ROLE
         )
         cursor.execute("GRANT SELECT ON dataset_registry.dataset_versions TO " + APP_ROLE)
         cursor.execute("GRANT INSERT ON core.audit_events TO " + APP_ROLE)
@@ -98,6 +100,7 @@ def _prepare_app_role(dsn: str) -> None:
 
 def _cleanup(dsn: str) -> None:
     projects = [PROJECT_ID, FOREIGN_PROJECT_ID]
+    organizations = [ORGANIZATION_ID, FOREIGN_ORGANIZATION_ID]
     with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
         cursor.execute(
             "DELETE FROM core.audit_integrity_entries WHERE project_id = ANY(%s)", (projects,)
@@ -131,10 +134,16 @@ def _cleanup(dsn: str) -> None:
             "DELETE FROM calibrations.calibration_sets WHERE project_id = ANY(%s)", (projects,)
         )
         cursor.execute(
-            "DELETE FROM robotics.robot_components WHERE project_id = ANY(%s)", (projects,)
+            "DELETE FROM robotics.robot_asset_components WHERE organization_id = ANY(%s)",
+            (organizations,),
         )
         cursor.execute(
-            "DELETE FROM robotics.robot_instances WHERE project_id = ANY(%s)", (projects,)
+            "DELETE FROM robotics.project_robot_assignments WHERE project_id = ANY(%s)",
+            (projects,),
+        )
+        cursor.execute(
+            "DELETE FROM robotics.robot_assets WHERE organization_id = ANY(%s)",
+            (organizations,),
         )
         cursor.execute(
             "DELETE FROM dataset_registry.dataset_versions WHERE project_id = ANY(%s)",
@@ -154,8 +163,16 @@ def _seed(dsn: str) -> None:
     with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
         cursor.execute(
             "INSERT INTO registry.organization_projects "
-            "(organization_id, project_id) VALUES (%s, %s), (%s, %s)",
-            (ORGANIZATION_ID, PROJECT_ID, FOREIGN_ORGANIZATION_ID, FOREIGN_PROJECT_ID),
+            "(organization_id, project_id, display_name) "
+            "VALUES (%s, %s, %s), (%s, %s, %s)",
+            (
+                ORGANIZATION_ID,
+                PROJECT_ID,
+                "P16 集成项目",
+                FOREIGN_ORGANIZATION_ID,
+                FOREIGN_PROJECT_ID,
+                "P16 外部项目",
+            ),
         )
         cursor.execute(
             """
@@ -227,16 +244,14 @@ def _seed(dsn: str) -> None:
         )
         cursor.execute(
             """
-            INSERT INTO robotics.robot_instances (
-                organization_id, project_id, region_code, robot_id, display_name, serial_no,
+            INSERT INTO robotics.robot_assets (
+                organization_id, robot_id, display_name, serial_no,
                 lifecycle_status, connectivity_state, etag, topology_revision, allowed_actions
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb),
-                     (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb),
+                     (%s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb)
             """,
             (
                 ORGANIZATION_ID,
-                PROJECT_ID,
-                REGION_CODE,
                 ROBOT_ID,
                 "P16 集成机器人",
                 "P16-SN",
@@ -245,8 +260,6 @@ def _seed(dsn: str) -> None:
                 '"p16-robot:1"',
                 "p16-topology:1",
                 FOREIGN_ORGANIZATION_ID,
-                FOREIGN_PROJECT_ID,
-                REGION_CODE,
                 FOREIGN_ROBOT_ID,
                 "P16 外部机器人",
                 "P16-SN-FOREIGN",
@@ -258,16 +271,32 @@ def _seed(dsn: str) -> None:
         )
         cursor.execute(
             """
-            INSERT INTO robotics.robot_components (
-                organization_id, project_id, region_code, component_id, robot_id,
-                component_model_id,
-                component_type, display_name, serial_no, lifecycle_status, sort_order
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO robotics.project_robot_assignments (
+                organization_id, project_id, region_code, robot_id, assigned_by
+            ) VALUES (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)
             """,
             (
                 ORGANIZATION_ID,
                 PROJECT_ID,
                 REGION_CODE,
+                ROBOT_ID,
+                "p16-test",
+                FOREIGN_ORGANIZATION_ID,
+                FOREIGN_PROJECT_ID,
+                REGION_CODE,
+                FOREIGN_ROBOT_ID,
+                "p16-test",
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO robotics.robot_asset_components (
+                organization_id, component_id, robot_id, component_model_id,
+                component_type, display_name, serial_no, lifecycle_status, sort_order
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                ORGANIZATION_ID,
                 COMPONENT_ID,
                 ROBOT_ID,
                 "p16-camera",

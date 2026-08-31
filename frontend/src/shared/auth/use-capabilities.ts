@@ -100,6 +100,38 @@ export function useCapabilities(): CapabilitiesResult {
   return { has, loading, failed };
 }
 
+export function useOrganizationCapabilities(
+  organizationId: string | null,
+): CapabilitiesResult {
+  const sessionScopes = useShellStore((state) => state.sessionScopes);
+  const platformCapabilities = useShellStore(
+    (state) => state.platformCapabilities,
+  );
+  const loading = useShellStore(
+    (state) => !state.bootstrapLoaded || state.authorizationLoading,
+  );
+  const failed = useShellStore((state) => state.authorizationFailed);
+  const granted = useMemo(
+    () =>
+      expandGrantedCapabilities([
+        ...platformCapabilities,
+        ...sessionScopes
+          .filter((scope) => scope.organizationId === organizationId)
+          .flatMap((scope) => scope.capabilities),
+      ]),
+    [organizationId, platformCapabilities, sessionScopes],
+  );
+  const has = useCallback(
+    (capability: string) =>
+      Boolean(organizationId) &&
+      !loading &&
+      !failed &&
+      (granted.has(PLATFORM_ADMIN_CAPABILITY) || granted.has(capability)),
+    [failed, granted, loading, organizationId],
+  );
+  return { has, loading, failed };
+}
+
 export interface BlockedActionReason {
   code: string;
   message: string;

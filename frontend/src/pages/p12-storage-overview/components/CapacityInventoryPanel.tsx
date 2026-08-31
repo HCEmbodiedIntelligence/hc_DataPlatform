@@ -92,7 +92,6 @@ export function CapacityInventoryPanel({
       <div className={styles.cardHeading}>
         <div>
           <h3 id="capacity-inventory-title">容量对象清单</h3>
-          <p>固定到当前 sealed snapshot · 对象定位信息已脱敏</p>
         </div>
         <Button
           size="small"

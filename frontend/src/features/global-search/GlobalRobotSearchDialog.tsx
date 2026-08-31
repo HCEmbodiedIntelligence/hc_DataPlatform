@@ -60,7 +60,8 @@ export default function GlobalRobotSearchDialog({
   const capabilities = useCapabilities();
   const canSearchRobots = capabilities.has("robot.read");
   const canSearchDataSources = capabilities.has("ingest_source.read");
-  const canSearchDatasets = capabilities.has("dataset.read");
+  const canSearchDatasets =
+    capabilities.has("dataset.read") || capabilities.has("datasets.read");
   const canSearch =
     canSearchRobots || canSearchDataSources || canSearchDatasets;
   const robotResults = useGlobalRobotSearch(

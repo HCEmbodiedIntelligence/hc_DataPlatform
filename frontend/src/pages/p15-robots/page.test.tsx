@@ -50,7 +50,7 @@ const robot = {
 } as const;
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
-  useCapabilities: () => ({
+  useOrganizationCapabilities: () => ({
     has: (capability: string) =>
       capability === "robot.manage" || capability === "robot_model.manage",
     loading: false,
@@ -218,6 +218,18 @@ async function openAndParseModel(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+  useShellStore.getState().setSessionScopes(
+    [
+      {
+        organizationId: "org-p15",
+        projectId: "project-p15",
+        regionCodes: ["region-p15"],
+        projectWide: false,
+        capabilities: ["robot.manage", "robot_model.manage"],
+      },
+    ],
+    1,
+  );
   useShellStore.getState().setScope({
     organizationId: "org-p15",
     projectId: "project-p15",
@@ -318,6 +330,33 @@ afterEach(() => {
 });
 
 describe("P15 robot asset page", () => {
+  it("loads organization robots when no project is selected", async () => {
+    useShellStore.getState().setSession(null, null);
+    useShellStore
+      .getState()
+      .setSession(
+        { actorId: "robot-manager", displayName: "机器人管理员", roleIds: [] },
+        "session-without-project",
+      );
+    useShellStore.getState().setSessionScopes(
+      [],
+      2,
+      [],
+      [
+        {
+          organizationId: "org-p15",
+          organizationName: "P15 组织",
+          memberStatus: "ACTIVE",
+        },
+      ],
+    );
+
+    renderPage();
+
+    expect((await screen.findAllByText("XR-01")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("尚未加入组织")).not.toBeInTheDocument();
+  });
+
   it("selects the first robot for real and removes component topology concepts", async () => {
     renderPage();
 

@@ -298,16 +298,12 @@ def test_populated_legacy_calibration_and_robotics_upgrade_to_exact_organization
         organization_rows = connection.execute(
             """
             SELECT robot.organization_id, component.organization_id, calibration.organization_id
-            FROM robotics.robot_instances robot
-            JOIN robotics.robot_components component
+            FROM robotics.robot_assets robot
+            JOIN robotics.robot_asset_components component
               ON component.organization_id = robot.organization_id
-             AND component.project_id = robot.project_id
-             AND component.region_code = robot.region_code
              AND component.robot_id = robot.robot_id
             JOIN calibrations.calibration_sets calibration
               ON calibration.organization_id = component.organization_id
-             AND calibration.project_id = component.project_id
-             AND calibration.region_code = component.region_code
              AND calibration.component_id = component.component_id
              AND calibration.robot_instance_id = component.robot_id
             WHERE robot.robot_id = %s AND calibration.set_id = %s

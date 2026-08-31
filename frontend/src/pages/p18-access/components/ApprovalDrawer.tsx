@@ -207,14 +207,7 @@ export function ApprovalDrawer({
                       </p>
                     ) : null}
                   </div>
-                ) : (
-                  <p className={styles.decisionHint}>
-                    选择操作后再填写说明并提交；页面不会自动执行决策。
-                  </p>
-                )}
-                <p className={styles.decisionBoundary}>
-                  提交后由服务端再次校验权限与申请状态。
-                </p>
+                ) : null}
               </>
             ) : (
               <p className={styles.readOnlyNote}>

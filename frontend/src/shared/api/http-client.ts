@@ -38,7 +38,7 @@ export type RequestOptions = {
    * sends neither bearer nor tenant headers. Both remain independent from a
    * concurrent project-scope switch.
    */
-  scopeMode?: "active" | "session" | "public";
+  scopeMode?: "active" | "organization" | "session" | "public";
   /**
    * Use one not-yet-installed opaque session for bootstrap or cleanup. This is
    * accepted only in session mode and overrides the shell token.
@@ -357,7 +357,8 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   const shell = getShellState();
   const sessionScoped = opts.scopeMode === "session";
   const publicScoped = opts.scopeMode === "public";
-  const activeScoped = !sessionScoped && !publicScoped;
+  const organizationScoped = opts.scopeMode === "organization";
+  const activeScoped = !sessionScoped && !publicScoped && !organizationScoped;
   if (opts.bearerToken !== undefined) {
     if (!sessionScoped) {
       throw new TypeError("Explicit bearer tokens require session scope mode");
@@ -368,8 +369,18 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       );
     }
   }
-  if (!activeScoped && opts.scope !== undefined) {
+  if (!activeScoped && !organizationScoped && opts.scope !== undefined) {
     throw new TypeError("Unscoped requests cannot bind a project scope");
+  }
+  if (
+    organizationScoped &&
+    (opts.scope?.organizationId === undefined ||
+      opts.scope.projectId !== undefined ||
+      opts.scope.regionCode !== undefined)
+  ) {
+    throw new TypeError(
+      "Organization-scoped requests require only an organization scope",
+    );
   }
   if (opts.authChallengeResponse !== undefined) {
     if (!publicScoped) {
@@ -394,13 +405,16 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       "作用域切换期间禁止提交写请求",
     );
   }
-  const requestScope = activeScoped ? (opts.scope ?? shell.scope) : null;
+  const requestScope =
+    activeScoped || organizationScoped ? (opts.scope ?? shell.scope) : null;
   const requestScopeKey =
     requestScope === null ? shell.scopeKey : makeScopeKey(requestScope);
   if (
-    activeScoped &&
+    (activeScoped || organizationScoped) &&
     opts.scope !== undefined &&
-    shell.scopeKey !== requestScopeKey
+    (organizationScoped
+      ? shell.scope?.organizationId !== requestScope?.organizationId
+      : shell.scopeKey !== requestScopeKey)
   ) {
     throw scopeTransitionError(
       "SCOPE_CHANGED",
@@ -430,7 +444,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   if (opts.body !== undefined) headers.set("Content-Type", "application/json");
 
   const { controller, release } = createManagedAbortController(opts.signal, {
-    cancelOnScopeChange: activeScoped,
+    cancelOnScopeChange: activeScoped || organizationScoped,
   });
   try {
     const response = await globalThis.fetch(
@@ -443,8 +457,17 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
       },
     );
-    if (activeScoped && getShellState().scopeKey !== requestScopeKey) {
+    if (
+      activeScoped &&
+      getShellState().scopeKey !== requestScopeKey
+    ) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
+    }
+    if (
+      organizationScoped &&
+      getShellState().scope?.organizationId !== requestScope?.organizationId
+    ) {
+      throw scopeTransitionError("SCOPE_CHANGED", "请求所属组织已失效");
     }
     const raw = await readJson(response);
     if (!response.ok)

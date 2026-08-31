@@ -748,7 +748,7 @@ function WorkbenchContent({
               ))}
             </ul>
           ) : (
-            <p>无服务端事实或本地安全门阻断。</p>
+            <p>无阻断项。</p>
           )}
         </section>
         <label>
