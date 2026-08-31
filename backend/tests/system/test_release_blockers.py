@@ -44,11 +44,21 @@ REQUIRED_METRICS = {
     "hc_data_exports_total",
 }
 REQUIRED_LOG_FIELDS = {
+    "timestamp",
+    "severity",
+    "service",
+    "instance_id",
+    "node_name",
+    "role",
+    "release_id",
     "request_id",
-    "project_id",
-    "resource_id",
+    "trace_id",
+    "operation_id",
     "workflow_id",
-    "error_code",
+    "event_code",
+    "duration_ms",
+    "retry_count",
+    "error_type",
 }
 
 
@@ -71,19 +81,23 @@ def _logger_fields(paths: Iterable[Path]) -> tuple[bool, set[str]]:
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            if not isinstance(node.func.value, ast.Name) or node.func.value.id != "logger":
-                continue
-            found = True
-            fields.update(keyword.arg for keyword in node.keywords if keyword.arg is not None)
-            extra = next((item.value for item in node.keywords if item.arg == "extra"), None)
-            if isinstance(extra, ast.Dict):
+            if isinstance(node, ast.Dict):
                 fields.update(
                     key.value
-                    for key in extra.keys
+                    for key in node.keys
                     if isinstance(key, ast.Constant) and isinstance(key.value, str)
                 )
+            if not isinstance(node, ast.Call):
+                continue
+            direct_log_event = isinstance(node.func, ast.Name) and node.func.id == "log_event"
+            logger_call = (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "logger"
+            )
+            if direct_log_event or logger_call:
+                found = True
+                fields.update(keyword.arg for keyword in node.keywords if keyword.arg is not None)
     return found, fields
 
 
@@ -99,7 +113,7 @@ def test_release_gate_mounts_every_frozen_public_http_path() -> None:
     ready: ReadinessProbe = ReadyProbe()
 
     app = create_app(
-        settings=Settings(environment="test"),
+        settings=Settings(environment="test", runtime_backend="memory"),
         readiness_probes={
             "postgresql": ready,
             "temporal": ready,
@@ -139,32 +153,47 @@ def test_release_gate_preserves_all_interpolation_source_timestamps() -> None:
 def test_release_gate_worker_image_and_pilot_have_production_activity_dependencies() -> None:
     dockerfile = (BACKEND / "Dockerfile").read_text(encoding="utf-8")
     pilot = _yaml(CHART / "values-ci.yaml")
-    factory = pilot.get("backend", {}).get("config", {}).get("workflowActivityFactory", "")
+    main_factory = pilot.get("backend", {}).get("config", {}).get("workflowActivityFactory", "")
+    media_template = (CHART / "templates/backend-media-worker.yaml").read_text(encoding="utf-8")
+    media_factory_match = re.search(
+        r"value:\s*(hc_data_platform\.[A-Za-z0-9_.]+:[A-Za-z0-9_]+)",
+        media_template,
+    )
+    media_factory = "" if media_factory_match is None else media_factory_match.group(1)
     missing = []
     for extra in ("data",):
         if re.search(rf"--extra(?:=|\s+){re.escape(extra)}(?:\s|$)", dockerfile) is None:
             missing.append(f"Docker extra {extra}")
-    if not factory:
-        missing.append("pilot workflowActivityFactory")
-    else:
+    factories = {"main": main_factory, "media": media_factory}
+    for role, factory in factories.items():
+        if not factory:
+            missing.append(f"{role} workflowActivityFactory")
+            continue
         module_name, separator, attribute = factory.partition(":")
         if not separator:
-            missing.append("pilot workflowActivityFactory syntax")
-        else:
-            try:
-                candidate = getattr(importlib.import_module(module_name), attribute)
-                dependencies = candidate()
-            except Exception as error:
-                missing.append(f"factory invocation ({type(error).__name__}: {error})")
-            else:
-                if not isinstance(dependencies, activities.ActivityDependencies):
-                    missing.append("factory ActivityDependencies result")
-                else:
-                    missing.extend(
-                        f"activity dependency {field.name}"
-                        for field in fields(dependencies)
-                        if getattr(dependencies, field.name) is None
-                    )
+            missing.append(f"{role} workflowActivityFactory syntax")
+            continue
+        try:
+            candidate = getattr(importlib.import_module(module_name), attribute)
+            dependencies = candidate()
+        except Exception as error:
+            missing.append(f"{role} factory invocation ({type(error).__name__}: {error})")
+            continue
+        if not isinstance(dependencies, activities.ActivityDependencies):
+            missing.append(f"{role} factory ActivityDependencies result")
+            continue
+        required_fields = (
+            {field.name for field in fields(dependencies)} - {"aligned_media"}
+            if role == "main"
+            else {"aligned_media", "aligned_media_repository", "aligned_media_store"}
+        )
+        missing.extend(
+            f"{role} activity dependency {field_name}"
+            for field_name in sorted(required_fields)
+            if getattr(dependencies, field_name) is None
+        )
+        if role == "main" and dependencies.aligned_media is not None:
+            missing.append("main worker unexpectedly constructs FFmpeg media dependency")
     _xfail_if(bool(missing), "BE12-001", f"missing {', '.join(missing)}")
     assert not missing
 
@@ -219,8 +248,13 @@ def test_release_gate_unconfigured_activity_port_is_non_retryable(
 ) -> None:
     activities.configure_activity_dependencies(activities.ActivityDependencies())
 
-    async def invoke_without_temporal_context(stage: str, operation: Any) -> Any:
-        del stage
+    async def invoke_without_temporal_context(
+        stage: str,
+        operation: Any,
+        *,
+        on_cancel: Any = None,
+    ) -> Any:
+        del stage, on_cancel
         return operation()
 
     monkeypatch.setattr(activities, "_with_heartbeats", invoke_without_temporal_context)

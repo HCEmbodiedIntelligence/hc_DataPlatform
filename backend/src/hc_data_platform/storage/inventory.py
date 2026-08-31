@@ -100,10 +100,14 @@ class PostgresStorageInventoryCatalog:
         connection_factory: Callable[[], Any],
         *,
         object_store_bucket: str,
+        object_store_scheme: str = "s3",
         artifact_prefix: str,
     ) -> None:
         self._connection_factory = connection_factory
         self._bucket = object_store_bucket
+        self._scheme = object_store_scheme
+        if self._scheme not in {"s3", "oss"}:
+            raise ValueError("object-store inventory scheme must be s3 or oss")
         self._artifact_prefix = artifact_prefix.strip("/")
 
     def entries(self, *, project_id: str) -> tuple[InventoryCatalogEntry, ...]:
@@ -268,7 +272,7 @@ class PostgresStorageInventoryCatalog:
                 (
                     InventoryCatalogEntry(
                         identity=f"lance:{dataset_id}",
-                        object_key=self._s3_key(dataset_uri),
+                        object_key=self._object_key(dataset_uri),
                         business_category=BusinessCapacityCategory.PENDING_ANNOTATION,
                         object_role=ObjectRole.REBUILDABLE_DERIVATIVE,
                         observed_at=observed_at,
@@ -296,9 +300,9 @@ class PostgresStorageInventoryCatalog:
 
     def _lance_attempt_key(self, uri: str, *, project_id: str, dataset_id: str) -> str:
         parsed = urlparse(uri)
-        if parsed.scheme != "s3" or parsed.netloc != self._bucket:
+        if parsed.scheme != self._scheme or parsed.netloc != self._bucket:
             raise InventoryUnavailable(
-                f"registered dataset URI is outside s3://{self._bucket}: {uri}"
+                f"registered dataset URI is outside {self._scheme}://{self._bucket}: {uri}"
             )
         key = parsed.path.lstrip("/")
         marker = f"{quote(project_id, safe='')}/{quote(dataset_id, safe='')}/"
@@ -310,12 +314,12 @@ class PostgresStorageInventoryCatalog:
         root = key[:position]
         return unquote(f"{root}_attempts/{marker}")
 
-    def _s3_key(self, uri: str) -> str:
+    def _object_key(self, uri: str) -> str:
         parsed = urlparse(uri)
         key = unquote(parsed.path.lstrip("/"))
-        if parsed.scheme != "s3" or parsed.netloc != self._bucket or not key:
+        if parsed.scheme != self._scheme or parsed.netloc != self._bucket or not key:
             raise InventoryUnavailable(
-                f"registered dataset URI is outside s3://{self._bucket}: {uri}"
+                f"registered dataset URI is outside {self._scheme}://{self._bucket}: {uri}"
             )
         return key.rstrip("/") + "/"
 

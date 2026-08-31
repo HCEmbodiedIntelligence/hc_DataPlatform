@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from .models import AlignedFragmentManifestV1, AlignedRowV1, AlignmentInputV1, AlignmentProfileV1
+from .models import (
+    AlignedFragmentManifestV1,
+    AlignedRowV1,
+    AlignmentInputV1,
+    AlignmentProfileV1,
+    ModalityKind,
+    TimedSampleV1,
+)
 
 
 @runtime_checkable
@@ -25,6 +33,20 @@ class AlignmentPort(Protocol):
     def align_to_writer(
         self,
         data: AlignmentInputV1,
+        profile: AlignmentProfileV1,
+        writer: FragmentWriterPort,
+    ) -> AlignedFragmentManifestV1: ...
+
+    def align_stream_to_writer(
+        self,
+        *,
+        rollout_id: str,
+        source_sha256: str,
+        attempt_id: str,
+        start_ns: int,
+        end_ns: int,
+        stream_kinds: Mapping[str, ModalityKind],
+        samples: Iterable[tuple[str, TimedSampleV1]],
         profile: AlignmentProfileV1,
         writer: FragmentWriterPort,
     ) -> AlignedFragmentManifestV1: ...

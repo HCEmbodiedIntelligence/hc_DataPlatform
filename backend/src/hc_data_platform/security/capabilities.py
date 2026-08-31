@@ -31,6 +31,24 @@ CAPABILITY_PLATFORM_ACCOUNT_MANAGE = "platform.account.manage"
 # capability.  It controls a platform-wide security operation on a direct account.
 CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE = "platform.account_security.manage"
 CAPABILITY_PLATFORM_ADMIN = "platform.admin"
+# Platform operations deliberately use exact global grants. The legacy
+# ``platform.admin`` wildcard remains valid for tenant business operations, but it must
+# not silently grant backup, release, verification, or break-glass authority.
+CAPABILITY_PLATFORM_OPERATIONS_READ = "platform.operations.read"
+CAPABILITY_PLATFORM_MAINTENANCE_OPERATE = "platform.maintenance.operate"
+CAPABILITY_PLATFORM_RELEASE_OPERATE = "platform.release.operate"
+CAPABILITY_PLATFORM_MAINTENANCE_VERIFY = "platform.maintenance.verify"
+CAPABILITY_PLATFORM_BREAK_GLASS = "platform.break_glass"
+
+PLATFORM_OPERATION_CAPABILITIES = frozenset(
+    {
+        CAPABILITY_PLATFORM_OPERATIONS_READ,
+        CAPABILITY_PLATFORM_MAINTENANCE_OPERATE,
+        CAPABILITY_PLATFORM_RELEASE_OPERATE,
+        CAPABILITY_PLATFORM_MAINTENANCE_VERIFY,
+        CAPABILITY_PLATFORM_BREAK_GLASS,
+    }
+)
 
 PLATFORM_ADMIN_CAPABILITIES = frozenset(
     {

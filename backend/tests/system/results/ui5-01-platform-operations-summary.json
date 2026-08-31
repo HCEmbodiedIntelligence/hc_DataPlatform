@@ -1,0 +1,43 @@
+{
+  "schema_version": "hc-implementation-evidence/v1",
+  "task": "UI5-01",
+  "observed_at": "2026-08-29T05:35:00Z",
+  "status": "IMPLEMENTATION_PASSED",
+  "surface": {
+    "route": "/settings/platform-operations",
+    "queries": [
+      "/api/v1/platform/overview",
+      "/api/v1/platform/logs",
+      "/api/v1/platform/releases"
+    ],
+    "approval_endpoint": "/api/v1/platform/releases/{release_id}:approve",
+    "required_approval_capability": "platform.release.operate",
+    "cluster_credentials_in_browser": false,
+    "host_or_repository_locators_exposed": false
+  },
+  "preflight_checks": [
+    "RELEASE_IDENTITY",
+    "NODE_CONVERGENCE",
+    "NODE_READINESS",
+    "CONFIG_CONVERGENCE",
+    "VERIFIED_BACKUP",
+    "VERIFIED_RESTORE",
+    "CENTRAL_LOG_SEARCH"
+  ],
+  "verification": {
+    "frontend_test_files_passed": 107,
+    "frontend_tests_passed": 615,
+    "p22_mock_off_tests_passed": 3,
+    "eslint": "PASS",
+    "typescript": "PASS",
+    "production_build": "PASS",
+    "production_build_modules": 4025,
+    "backend_standard_passed": 1190,
+    "backend_explicit_external_skips": 120,
+    "backend_known_xfailed": 2
+  },
+  "fingerprints": {
+    "openapi_sha256": "efa8e786cd02f60731a88a64c3272dad898e69a888fcb7199e670c6232a97022",
+    "generated_client_sha256": "2ebb8c4ece21bbc428d5cab7dcb83f2aad7893ccfa5f7d1e6be06846e194d0c8"
+  }
+}

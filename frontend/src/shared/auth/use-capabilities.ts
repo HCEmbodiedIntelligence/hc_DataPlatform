@@ -54,6 +54,9 @@ export interface CapabilitiesResult {
 
 export function useCapabilities(): CapabilitiesResult {
   const snapshot = useShellStore((state) => state.authorization);
+  const platformCapabilities = useShellStore(
+    (state) => state.platformCapabilities,
+  );
   const hasScope = useShellStore((state) => state.scope !== null);
   const currentScopeKey = useShellStore((state) => state.scopeKey);
   const loading = useShellStore((state) => state.authorizationLoading);
@@ -74,6 +77,10 @@ export function useCapabilities(): CapabilitiesResult {
       ),
     [scopeMatches, snapshot],
   );
+  const globalGranted = useMemo(
+    () => expandGrantedCapabilities(platformCapabilities),
+    [platformCapabilities],
+  );
   const failed =
     authorizationFailed ||
     (hasScope &&
@@ -84,9 +91,11 @@ export function useCapabilities(): CapabilitiesResult {
     (capability: string) =>
       !loading &&
       !failed &&
-      scopeMatches &&
-      (granted.has(PLATFORM_ADMIN_CAPABILITY) || granted.has(capability)),
-    [failed, granted, loading, scopeMatches],
+      (globalGranted.has(PLATFORM_ADMIN_CAPABILITY) ||
+        globalGranted.has(capability) ||
+        (scopeMatches &&
+          (granted.has(PLATFORM_ADMIN_CAPABILITY) || granted.has(capability)))),
+    [failed, globalGranted, granted, loading, scopeMatches],
   );
   return { has, loading, failed };
 }

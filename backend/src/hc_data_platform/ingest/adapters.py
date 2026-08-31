@@ -6,6 +6,8 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from hc_data_platform.core.context import retain_current_writer_permit
+
 from .models import CompletedPart
 from .ports import (
     MultipartPart,
@@ -45,6 +47,7 @@ class S3ObjectStorage:
         part_number: int,
         expires_seconds: int,
     ) -> str:
+        retain_current_writer_permit(expires_seconds)
         return str(
             self._presign_client.generate_presigned_url(
                 "upload_part",
@@ -194,15 +197,22 @@ class OssObjectStorage:
         self,
         bucket: Any,
         *,
+        presign_bucket: Any | None = None,
         part_info_factory: Callable[[int, str, int], Any] | None = None,
     ) -> None:
         self._bucket = bucket
+        self._presign_bucket = presign_bucket or bucket
         self._part_info_factory = part_info_factory or _oss_part_info
 
     def create_multipart(self, key: str) -> str:
         if self.head(key) is not None:
             raise _immutable_object_exists()
-        return str(self._bucket.init_multipart_upload(key).upload_id)
+        return str(
+            self._bucket.init_multipart_upload(
+                key,
+                headers={"x-oss-forbid-overwrite": "true"},
+            ).upload_id
+        )
 
     def presign_part(
         self,
@@ -211,12 +221,14 @@ class OssObjectStorage:
         part_number: int,
         expires_seconds: int,
     ) -> str:
+        retain_current_writer_permit(expires_seconds)
         return str(
-            self._bucket.sign_url(
+            self._presign_bucket.sign_url(
                 "PUT",
                 key,
                 expires_seconds,
                 params={"uploadId": upload_id, "partNumber": str(part_number)},
+                slash_safe=True,
             )
         )
 
@@ -325,11 +337,12 @@ class OssObjectStorage:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
         return str(
-            self._bucket.sign_url(
+            self._presign_bucket.sign_url(
                 "GET",
                 key,
                 expires_seconds,
                 params={"response-cache-control": "no-store"},
+                slash_safe=True,
             )
         )
 

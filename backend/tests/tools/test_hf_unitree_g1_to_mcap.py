@@ -23,6 +23,7 @@ from hc_data_platform.tools.hf_unitree_g1_to_mcap import (
     VideoSlice,
     _identity,
     _robot_configuration,
+    acquire_source,
     load_episode_data,
     prune_source_cache,
     write_package,
@@ -82,14 +83,11 @@ def test_robot_configuration_marks_dex1_as_unmapped_without_calibration() -> Non
         for name in G1_JOINT_NAMES
     ]
     assert all(
-        row["source_joint_name"].startswith("unmapped_no_calibration/")
-        for row in mappings[29:]
+        row["source_joint_name"].startswith("unmapped_no_calibration/") for row in mappings[29:]
     )
     provenance = configuration["mapping_provenance"]
     assert isinstance(provenance, dict)
-    assert provenance["dex1"]["status"] == (
-        "UNMAPPED_NO_PUBLISHED_CONTROLLER_TO_METRE_CALIBRATION"
-    )
+    assert provenance["dex1"]["status"] == ("UNMAPPED_NO_PUBLISHED_CONTROLLER_TO_METRE_CALIBRATION")
 
 
 def test_prune_source_cache_removes_only_episode_payloads(tmp_path: Path) -> None:
@@ -126,6 +124,61 @@ def test_prune_source_cache_removes_only_episode_payloads(tmp_path: Path) -> Non
     assert metadata.read_text(encoding="utf-8") == "{}"
 
 
+def test_acquire_source_reads_an_explicit_lerobot_revision_without_network(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "revision"
+    info_path = source / "meta/info.json"
+    info_path.parent.mkdir(parents=True)
+    info_path.write_text(
+        json.dumps(
+            {
+                "fps": 30,
+                "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+                "video_path": (
+                    "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    episode_row: dict[str, object] = {
+        "episode_index": 0,
+        "length": 2,
+        "data/chunk_index": 0,
+        "data/file_index": 0,
+    }
+    for camera in CAMERAS:
+        prefix = f"videos/{camera.feature_key}"
+        episode_row[f"{prefix}/chunk_index"] = 0
+        episode_row[f"{prefix}/file_index"] = 0
+        episode_row[f"{prefix}/from_timestamp"] = 0.0
+        episode_row[f"{prefix}/to_timestamp"] = 2 / 30
+        video = source / f"videos/{camera.feature_key}/chunk-000/file-000.mp4"
+        video.parent.mkdir(parents=True)
+        video.write_bytes(b"mp4")
+    episodes = source / "meta/episodes/chunk-000/file-000.parquet"
+    episodes.parent.mkdir(parents=True)
+    pq.write_table(pa.Table.from_pylist([episode_row]), episodes)
+    data = source / "data/chunk-000/file-000.parquet"
+    data.parent.mkdir(parents=True)
+    data.write_bytes(b"parquet")
+
+    layout = acquire_source(
+        repository="unitreerobotics/test",
+        revision="a" * 40,
+        episode_index=0,
+        cache_root=tmp_path / "unused-cache",
+        source_root=source,
+    )
+
+    assert layout.data_file == data
+    assert layout.episode_metadata["length"] == 2
+    assert {video.file for video in layout.videos.values()} == {
+        source / f"videos/{camera.feature_key}/chunk-000/file-000.mp4" for camera in CAMERAS
+    }
+
+
 def test_writes_four_camera_package_and_projects_g1_joint_names(tmp_path: Path) -> None:
     parquet_path = tmp_path / "source.parquet"
     pq.write_table(pa.Table.from_pylist([_source_row(0), _source_row(1)]), parquet_path)
@@ -153,10 +206,7 @@ def test_writes_four_camera_package_and_projects_g1_joint_names(tmp_path: Path) 
             "codebase_version": "v3.0",
             "robot_type": "unitree_g1",
             "fps": 30,
-            "features": {
-                camera.feature_key: {"info": {"video.fps": 30}}
-                for camera in CAMERAS
-            },
+            "features": {camera.feature_key: {"info": {"video.fps": 30}} for camera in CAMERAS},
         },
         episode_metadata={"episode_index": 0, "length": 2},
         data_file=parquet_path,
@@ -181,12 +231,8 @@ def test_writes_four_camera_package_and_projects_g1_joint_names(tmp_path: Path) 
         layout=layout,
         camera_frames=camera_frames,
     )
-    manifest = parse_manifest_bytes(
-        (package / "rollout_manifest.json").read_bytes()
-    ).manifest
-    recording_config = json.loads(
-        (package / "recording-config.json").read_text(encoding="utf-8")
-    )
+    manifest = parse_manifest_bytes((package / "rollout_manifest.json").read_bytes()).manifest
+    recording_config = json.loads((package / "recording-config.json").read_text(encoding="utf-8"))
 
     assert manifest.source_recording is not None
     assert manifest.source_recording.repository == request.repository

@@ -1301,6 +1301,20 @@ def test_postgres_session_expiry_touch_credential_revision_and_atomic_cap() -> N
             ).fetchone()
             connection.commit()
         assert before_touch is not None
+        assert (
+            repository.resolve_session(
+                touch_hash,
+                request_id=f"read-only-touch-{suffix}",
+                allow_session_mutation=False,
+            )
+            is not None
+        )
+        with psycopg.connect(normalized) as connection:
+            after_read_only_resolve = connection.execute(
+                "SELECT last_seen_at FROM access_control.sessions WHERE token_hash = %s",
+                (touch_hash,),
+            ).fetchone()
+        assert after_read_only_resolve == before_touch
         assert repository.resolve_session(touch_hash, request_id=f"touch-{suffix}") is not None
         with psycopg.connect(normalized) as connection:
             after_touch = connection.execute(
@@ -1343,6 +1357,24 @@ def test_postgres_session_expiry_touch_credential_revision_and_atomic_cap() -> N
             )
             connection.commit()
 
+        assert (
+            repository.resolve_session(
+                idle_hash,
+                request_id=f"read-only-idle-expired-{suffix}",
+                allow_session_mutation=False,
+            )
+            is None
+        )
+        with psycopg.connect(normalized) as connection:
+            read_only_idle_state = connection.execute(
+                """
+                SELECT revoked_at, revocation_reason
+                FROM access_control.sessions
+                WHERE token_hash = %s
+                """,
+                (idle_hash,),
+            ).fetchone()
+        assert read_only_idle_state == (None, None)
         assert repository.resolve_session(idle_hash, request_id=f"idle-expired-{suffix}") is None
         assert (
             repository.resolve_session(
@@ -2432,6 +2464,16 @@ def _cleanup(
                 )
                 connection.execute(
                     "DELETE FROM access_control.memberships WHERE principal_id = ANY(%s::uuid[])",
+                    (principal_ids,),
+                )
+                connection.execute(
+                    "DELETE FROM access_control.organization_memberships "
+                    "WHERE principal_id = ANY(%s::uuid[])",
+                    (principal_ids,),
+                )
+                connection.execute(
+                    "DELETE FROM access_control.organization_membership_requests "
+                    "WHERE requester_id = ANY(%s::uuid[])",
                     (principal_ids,),
                 )
                 connection.execute(

@@ -70,6 +70,22 @@ class RawVerificationPort(Protocol):
     ) -> RawVerificationReportV1: ...
 
 
+@runtime_checkable
+class RawStreamVerificationPort(RawVerificationPort, Protocol):
+    """Verifier variant used after Raw has been localized once by a worker."""
+
+    def verify_stream(
+        self,
+        *,
+        rollout_id: str,
+        object_key: str,
+        source_sha256: str,
+        required_topics: set[str],
+        known_optional_topics: set[str] | None = None,
+        stream: ReadableBinaryStream,
+    ) -> RawVerificationReportV1: ...
+
+
 class FakeObjectStorage:
     def __init__(self, objects: dict[str, bytes] | None = None) -> None:
         self.objects = dict(objects or {})

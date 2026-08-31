@@ -21,9 +21,8 @@ services:
       HC_ENVIRONMENT: test
       HC_JWT_ISSUER: https://be22.test.invalid/
       HC_JWT_AUDIENCE: hc-data-platform
-      # The API signs browser PUTs for the host-reachable endpoint while all
-      # server-side S3 operations continue to use the base file's internal endpoint.
-      HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
+      # Browser multipart URLs are signed directly for the configured OSS endpoint.
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-https://oss-cn-hangzhou.aliyuncs.com}
     depends_on:
       migration-check:
         condition: service_completed_successfully
@@ -42,12 +41,11 @@ services:
 
   gateway:
     volumes:
-      # These two files are read only in the explicit real-browser profile.
+      # These files are read only in the explicit real-browser profile.
       # The zone is included by nginx at http level; the .inc is included only
       # inside the public server before its general /api/ proxy location.
       - ./deploy/compose/gateway.real-api-rate-limit.conf:/etc/nginx/conf.d/10-real-api-rate-limit.conf:ro
       - ./deploy/compose/gateway.real-api-auth-rate-limit.inc:/etc/nginx/conf.d/real-api-location-auth-rate-limit.inc:ro
-      - ./deploy/compose/gateway.real-api-preview-media-rate-limit.inc:/etc/nginx/conf.d/real-api-location-preview-media-rate-limit.inc:ro
 
   frontend:
     environment:

@@ -35,6 +35,7 @@ database = [
 ]
 workflow = ["temporalio>=1.8,<2"]
 storage = ["boto3>=1.35,<2", "oss2>=2.19,<3"]
+backup = ["boto3>=1.35,<2", "psycopg[binary]>=3.2,<4", "zstandard>=0.25,<1"]
 data = [
   "mcap>=1.2,<2",
   "mcap-ros2-support>=0.5.7,<0.6",
@@ -60,8 +61,22 @@ hc-data-api = "hc_data_platform.core.app:run"
 hc-data-migrate = "hc_data_platform.core.migrations:main"
 hc-offline-import = "hc_data_platform.ingest.cli:main"
 hc-openapi = "hc_data_platform.core.openapi:main"
+hc-capacity-gate = "hc_data_platform.core.capacity_gate:main"
 hc-data-worker = "hc_data_platform.workflow.worker:main"
 hc-storage-inventory = "hc_data_platform.storage.inventory_cli:main"
+hc-postgres-backup = "hc_data_platform.backup.postgresql_cli:main"
+hc-object-backup = "hc_data_platform.backup.object_cli:main"
+hc-configuration-backup = "hc_data_platform.backup.dependency_cli:main"
+hc-temporal-backup = "hc_data_platform.backup.temporal_cli:main"
+hc-platform = "hc_data_platform.backup.whole_cli:main"
+hc-frontend-heartbeat = "hc_data_platform.platform_ops.frontend_heartbeat:main"
+hc-lerobot-import = "hc_data_platform.tools.lerobot_unitree_g1_import:main"
+hc-lerobot-discovery = "hc_data_platform.tools.lerobot_oss_discovery:main"
+hc-lerobot-platform-upload = "hc_data_platform.tools.lerobot_platform_upload:main"
+hc-native-recording = "hc_data_platform.tools.native_unitree_g1_recording:main"
+hc-native-recording-upload = "hc_data_platform.tools.native_recording_upload:main"
+hc-release-controller = "hc_data_platform.platform_control.release_cli:main"
+hc-dr-evidence-gate = "hc_data_platform.platform_control.dr_evidence:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hc_data_platform"]

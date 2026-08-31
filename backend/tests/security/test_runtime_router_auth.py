@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from hc_data_platform.aligned_media.router import router as aligned_media_router
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.lance_catalog.audit import InMemoryLanceCatalogAuditRecorder
@@ -18,7 +19,6 @@ from hc_data_platform.lance_catalog.router import (
 from hc_data_platform.lance_catalog.router import (
     router as lance_catalog_router,
 )
-from hc_data_platform.preview.router import router as preview_router
 from hc_data_platform.publishing.router import router as publishing_router
 from hc_data_platform.security import AuthContext
 from hc_data_platform.workflow.router import router as workflow_router
@@ -28,15 +28,19 @@ def _auth(*roles: str, projects: tuple[str, ...] = ("project-a",)) -> AuthContex
     return AuthContext(
         subject_id="router-test",
         project_ids=frozenset(projects),
-        region_codes=frozenset(),
+        region_codes=frozenset({"cn-test"}),
         roles=frozenset(roles),
+        organization_ids=frozenset({"organization-a"}),
+        organization_scope_triples=frozenset(
+            ("organization-a", project_id, "cn-test") for project_id in projects
+        ),
     )
 
 
 @pytest.fixture
 def protected_api() -> Iterator[tuple[TestClient, dict[str, AuthContext | None]]]:
     app = FastAPI()
-    app.include_router(preview_router)
+    app.include_router(aligned_media_router)
     app.include_router(publishing_router)
     app.include_router(workflow_router)
     app.include_router(lance_catalog_router)
@@ -59,15 +63,13 @@ def protected_api() -> Iterator[tuple[TestClient, dict[str, AuthContext | None]]
         yield client, current
 
 
-def _preview_request(project_id: str = "project-a") -> dict[str, object]:
+def _aligned_media_request(project_id: str = "project-a") -> dict[str, object]:
     return {
         "project_id": project_id,
         "dataset_id": "dataset-a",
         "rollout_id": "rollout-a",
-        "lance_version": "1",
-        "annotation_revision": 0,
+        "dataset_version": 1,
         "camera_id": "front",
-        "view_mode": "original",
     }
 
 
@@ -80,18 +82,25 @@ def _publication_request() -> dict[str, str]:
     }
 
 
-def test_preview_rejects_anonymous_and_cross_project_requests(
+def test_aligned_media_rejects_anonymous_and_cross_project_requests(
     protected_api: tuple[TestClient, dict[str, AuthContext | None]],
 ) -> None:
     client, current = protected_api
-    anonymous = client.post("/api/v1/previews/sessions", json=_preview_request())
+    anonymous = client.post("/api/v1/aligned-media/authorize", json=_aligned_media_request())
     assert anonymous.status_code == 401
     assert anonymous.json()["code"] == "AUTHENTICATION_REQUIRED"
 
     current["auth"] = _auth("annotator", projects=("project-b",))
-    denied = client.post("/api/v1/previews/sessions", json=_preview_request())
+    denied = client.post(
+        "/api/v1/aligned-media/authorize",
+        json=_aligned_media_request(),
+        headers={
+            "X-Organization-Id": "organization-a",
+            "X-Region-Code": "cn-test",
+        },
+    )
     assert denied.status_code == 403
-    assert denied.json()["code"] == "PROJECT_SCOPE_DENIED"
+    assert denied.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
 
 def test_publication_requires_publish_permission_before_accessing_adapters(
@@ -150,7 +159,9 @@ def test_lance_step_window_is_scoped_audited_and_preserves_nanosecond_precision(
             *,
             version: int | None = None,
             project_id: str | None = None,
+            columns: Sequence[str] | None = None,
         ) -> StepWindow:
+            assert columns is None
             assert (dataset_id, rollout_id, start_step, end_step, version, project_id) == (
                 "dataset-a",
                 "rollout-a",

@@ -23,6 +23,7 @@ const clocks: ReturnType<typeof createPlaybackClock>[] = [];
 afterEach(() => {
   cleanup();
   clocks.splice(0).forEach((clock) => clock.dispose());
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -207,7 +208,7 @@ describe("DataVisualizationWorkbench camera composition", () => {
       <RawDiagnosticWorkbench
         {...props}
         mediaStreamsByTopic={{
-          ...media(4, { 2: "preview-generating", 3: "partial" }),
+          ...media(4, { 2: "media-preparing", 3: "partial" }),
           "/camera/4/image": undefined,
         }}
       />,
@@ -409,6 +410,55 @@ describe("DataVisualizationWorkbench camera composition", () => {
       ),
     );
     expect(screen.queryByText(/资源加载失败/u)).not.toBeInTheDocument();
+  });
+
+  it("refreshes a direct MP4 grant before its signed URL expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T10:00:00Z"));
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(
+      () => undefined,
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(
+      () => undefined,
+    );
+    const authorize = vi.fn().mockResolvedValue({
+      url: "https://media.invalid/first.mp4",
+      expiresAt: "2026-08-31T10:01:00Z",
+      kind: "rgb-video" as const,
+    });
+    const refresh = vi.fn().mockResolvedValue({
+      url: "https://media.invalid/second.mp4",
+      expiresAt: "2026-08-31T10:16:00Z",
+      kind: "rgb-video" as const,
+    });
+    const props = baseProps(1);
+
+    render(
+      <RawDiagnosticWorkbench
+        {...props}
+        mediaStreamsByTopic={{
+          "/camera/1/image": {
+            ...stream(1),
+            mediaSource: { authorize, refresh },
+          },
+        }}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(authorize).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("相机 1 媒体")).toHaveAttribute(
+      "src",
+      "https://media.invalid/second.mp4",
+    );
   });
 
   it("refreshes a failed signed media descriptor once, then keeps the failure local to its panel", async () => {

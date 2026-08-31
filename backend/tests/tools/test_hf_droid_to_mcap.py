@@ -3,11 +3,16 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import pytest
 from PIL import Image
 
+from hc_data_platform.core.context import (
+    RequestContext,
+    bind_request_context,
+    reset_request_context,
+)
 from hc_data_platform.ingest.manifest import parse_manifest_bytes
 from hc_data_platform.tools.hf_droid_to_mcap import (
     ACTION_TOPIC,
@@ -22,11 +27,41 @@ from hc_data_platform.tools.hf_droid_to_mcap import (
 )
 from hc_data_platform.verification.ports import RegisteredDecoderProbe
 from hc_data_platform.workflow.ingest_plan import PostgresIngestWorkflowInputResolver
+from hc_data_platform.workflow.models import IngestProjectionSourceV1
+from hc_data_platform.workflow.projection_store import LocalProjectionArtifactStore
 
 
 class LocalStorage:
     def open_reader(self, object_key: str) -> BinaryIO:
         return Path(object_key).open("rb")
+
+
+class _ProjectionCursor:
+    def __init__(self, row: tuple[object, ...]) -> None:
+        self._row = row
+
+    def __enter__(self) -> _ProjectionCursor:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, _query: str, _parameters: tuple[object, ...]) -> None:
+        return None
+
+    def fetchone(self) -> tuple[object, ...]:
+        return self._row
+
+
+class _ProjectionConnection:
+    def __init__(self, row: tuple[object, ...]) -> None:
+        self._row = row
+
+    def cursor(self) -> _ProjectionCursor:
+        return _ProjectionCursor(self._row)
+
+    def close(self) -> None:
+        return None
 
 
 def test_revision_url_keeps_repository_namespace_separator(
@@ -145,30 +180,69 @@ def test_writes_three_camera_platform_package_and_projects_real_values(tmp_path:
     decoder = RegisteredDecoderProbe(
         {("json", "jsonschema"): lambda _schema, message: json.loads(message)}
     )
+    projection_row = (
+        str(raw_path),
+        str(manifest_path),
+        manifest.sha256,
+        preflight.manifest_fingerprint,
+        preflight.model_dump(mode="json"),
+    )
     resolver = PostgresIngestWorkflowInputResolver(
-        lambda: None,
+        lambda: _ProjectionConnection(projection_row),
         LocalStorage(),
         None,  # type: ignore[arg-type]
         decoder=decoder,
+        projection_store=LocalProjectionArtifactStore(tmp_path / "projection-store"),
+        projection_staging_root=tmp_path / "projection-staging",
     )
-    quality, alignment = resolver._project_mcap(  # noqa: SLF001
-        object_key=str(raw_path),
+    source = IngestProjectionSourceV1(
+        organization_id="organization-a",
+        project_id=manifest.project_id,
+        region_code="local",
+        session_id="session-a",
         rollout_id=manifest.rollout_id,
+        data_package_id=manifest.data_package_id,
+        object_key=str(raw_path),
+        manifest_key=str(manifest_path),
+        manifest_fingerprint=preflight.manifest_fingerprint,
         source_sha256=manifest.sha256,
-        preflight=preflight,
     )
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a",
+            project_id=manifest.project_id,
+            region_code="local",
+            service_identity=True,
+        )
+    )
+    try:
+        materialized = resolver.materialize(source)
+        _quality, quality_stream = resolver.project_quality_stream(materialized)
+        quality_observations = tuple(quality_stream)
+        _alignment, alignment_stream = resolver.project_alignment_stream(materialized)
+        alignment_samples = tuple(alignment_stream)
+        resolver.cleanup(materialized)
+    finally:
+        reset_request_context(token)
 
-    assert set(quality.images) == {camera.topic for camera in CAMERAS}
-    assert all(len(samples) == 2 for samples in quality.images.values())
-    assert alignment.streams[JOINT_TOPIC].samples[0].value == {
+    camera_observations: dict[str, list[object]] = {}
+    for observation in quality_observations:
+        if observation.is_camera:
+            camera_observations.setdefault(observation.topic, []).append(observation)
+    assert set(camera_observations) == {camera.topic for camera in CAMERAS}
+    assert all(len(samples) == 2 for samples in camera_observations.values())
+    by_topic: dict[str, list[Any]] = {}
+    for topic, sample in alignment_samples:
+        by_topic.setdefault(topic, []).append(sample.value)
+    assert by_topic[JOINT_TOPIC][0] == {
         "names": ["joint_0", "joint_1", "joint_2"],
         "positions": [0.1, 0.2, 0.3],
     }
-    assert alignment.streams[STATE_TOPIC].samples[1].value == {
+    assert by_topic[STATE_TOPIC][1] == {
         "names": ["joint_0", "joint_1", "joint_2"],
         "positions": [0.4, 0.5, 0.6],
     }
-    assert alignment.streams[ACTION_TOPIC].samples[1].value == {
+    assert by_topic[ACTION_TOPIC][1] == {
         "names": ["action_0", "action_1", "action_2"],
         "values": [4.0, 5.0, 6.0],
     }

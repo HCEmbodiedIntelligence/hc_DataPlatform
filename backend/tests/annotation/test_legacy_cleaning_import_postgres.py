@@ -67,12 +67,14 @@ def isolated_legacy_import_dsn() -> Iterator[str]:
 
 async def _bootstrap_before_import(dsn: str) -> None:
     migrations = load_migrations()
-    assert migrations[-1].version == _IMPORT_VERSION
+    import_index = next(
+        index for index, migration in enumerate(migrations) if migration.version == _IMPORT_VERSION
+    )
     connection = await asyncpg.connect(normalize_postgres_dsn(dsn))
     try:
         async with connection.transaction():
             await connection.execute(migration_module._TRACKING_TABLE_SQL)
-        for migration in migrations[:-1]:
+        for migration in migrations[:import_index]:
             await migration_module._apply_pending_migration(connection, migration)
     finally:
         await connection.close()
@@ -214,12 +216,12 @@ def _seed_scope(
                 "kind": "RGB_VIDEO",
                 "t_start_ns": "0",
                 "t_end_ns": "1000000000",
-                "preview_binding": {
+                "aligned_media_binding": {
                     "rollout_id": rollout_id,
-                    "lance_version": 7,
-                    "annotation_revision": 0,
+                    "dataset_version": 7,
+                    "artifact_id": "aligned-media-legacy-import",
                     "camera_id": "camera",
-                    "frequency_hz": 100.0,
+                    "fps": 30,
                     "start_step": 0,
                     "end_step": 100,
                 },
@@ -398,7 +400,9 @@ def _seed_scope(
 
 
 async def _reapply_import_sql(dsn: str) -> None:
-    migration = load_migrations()[-1]
+    migration = next(
+        migration for migration in load_migrations() if migration.version == _IMPORT_VERSION
+    )
     connection = await asyncpg.connect(normalize_postgres_dsn(dsn))
     try:
         async with connection.transaction():
@@ -450,7 +454,13 @@ def test_existing_scoped_cleaning_rows_import_once_and_unresolved_lineage_fails_
             draft_ids=("draft_shared",),
         )
 
-    assert asyncio.run(apply_migrations(dsn)) == [_IMPORT_VERSION]
+    migrations = load_migrations()
+    import_index = next(
+        index for index, migration in enumerate(migrations) if migration.version == _IMPORT_VERSION
+    )
+    assert asyncio.run(apply_migrations(dsn)) == [
+        migration.version for migration in migrations[import_index:]
+    ]
     with psycopg.connect(dsn) as connection:
         assert connection.execute(
             "SELECT current_revision, state_version FROM annotation.annotation_tasks "

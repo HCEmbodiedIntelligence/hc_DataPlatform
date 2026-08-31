@@ -8,6 +8,10 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from hc_data_platform.aligned_media.models import (
+    AlignedMediaArtifactStatus,
+    AlignedMediaArtifactV1,
+)
 from hc_data_platform.alignment.models import AlignmentInputV1, ModalityKind
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
@@ -23,8 +27,8 @@ from .models import (
     DatasetPageContentSnapshot,
     DatasetPageDetailFacts,
     DatasetPageDetailSummary,
+    DatasetPageEpisodeAlignedMediaBinding,
     DatasetPageEpisodeDataBinding,
-    DatasetPageEpisodePreviewBinding,
     DatasetPageEpisodeRecord,
     DatasetPageEpisodeRevision,
     DatasetPageEpisodeStream,
@@ -150,6 +154,7 @@ class PostgresDatasetIngestProjector:
         frequency_hz: float,
         version: DatasetVersionRef,
         ready: DerivedReadyV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> DatasetIngestViewerTarget:
         context = current_request_context()
         if (
@@ -230,6 +235,7 @@ class PostgresDatasetIngestProjector:
                     ready=ready,
                     target=target,
                     preflight=preflight,
+                    media_artifacts=media_artifacts,
                 )
             connection.commit()
             return target
@@ -428,6 +434,7 @@ class PostgresDatasetIngestProjector:
         ready: DerivedReadyV1,
         target: DatasetIngestViewerTarget,
         preflight: ManifestPreflightResultV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> None:
         scope = DatasetPageScope(
             organization_id=source.organization_id,
@@ -446,6 +453,7 @@ class PostgresDatasetIngestProjector:
             preflight=preflight,
             ready=ready,
             frequency_hz=frequency_hz,
+            media_artifacts=media_artifacts,
         )
         current_ref = DatasetPageRevisionSnapshotReference(
             episode_id=target.episode_id,
@@ -598,7 +606,7 @@ class PostgresDatasetIngestProjector:
                     name=stream.channel_path,
                     data_type=(
                         "binary/jpeg"
-                        if stream.preview_binding is not None
+                        if stream.aligned_media_binding is not None
                         else stream.data_binding.value_kind
                         if stream.data_binding is not None
                         else "unknown"
@@ -889,8 +897,21 @@ class PostgresDatasetIngestProjector:
         preflight: ManifestPreflightResultV1,
         ready: DerivedReadyV1,
         frequency_hz: float,
+        media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> tuple[DatasetPageEpisodeStream, ...]:
         camera_topics = {camera.topic for camera in preflight.manifest.cameras}
+        media_by_camera = {artifact.camera_id: artifact for artifact in media_artifacts}
+        if set(media_by_camera) != camera_topics or any(
+            artifact.status is not AlignedMediaArtifactStatus.READY
+            or artifact.dataset_id != ready.dataset_id
+            or artifact.rollout_id != ready.rollout_id
+            or artifact.dataset_version != ready.dataset_version
+            or artifact.frame_count != ready.step_count
+            for artifact in media_by_camera.values()
+        ):
+            raise DatasetIngestProjectionConflict(
+                "camera projection requires one READY aligned MP4 per Manifest camera"
+            )
         streams: list[DatasetPageEpisodeStream] = []
         for topic, source_stream in sorted(alignment.streams.items()):
             stream_id = _stable_id("stream", alignment.rollout_id, topic)
@@ -902,12 +923,11 @@ class PostgresDatasetIngestProjector:
                         kind="RGB_VIDEO",
                         t_start_ns=str(alignment.start_ns),
                         t_end_ns=str(alignment.end_ns),
-                        preview_binding=DatasetPageEpisodePreviewBinding(
+                        aligned_media_binding=DatasetPageEpisodeAlignedMediaBinding(
                             rollout_id=alignment.rollout_id,
-                            lance_version=ready.lance_version,
-                            annotation_revision=0,
+                            dataset_version=ready.dataset_version,
+                            artifact_id=media_by_camera[topic].artifact_id,
                             camera_id=topic,
-                            frequency_hz=frequency_hz,
                             start_step=0,
                             end_step=ready.step_count,
                         ),

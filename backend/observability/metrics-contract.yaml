@@ -3,54 +3,66 @@ required_resource_attributes:
   - service.name
   - service.version
   - deployment.environment.name
-required_dimensions: &required_dimensions
-  - project_id
-  - resource_id
-  - workflow_id
+cardinality_policy:
+  forbidden_labels:
+    - project_id
+    - user_id
+    - object_key
+    - resource_id
+    - workflow_id
+    - request_id
+  correlation_surface: logs_and_traces
 metrics:
   - name: hc_data_upload_backlog
     type: gauge
     unit: sessions
     owner: BE-03
     description: Upload sessions waiting for raw verification.
-    labels: *required_dimensions
+    labels: [queue]
   - name: hc_data_workflow_failures_total
     type: counter
     unit: failures
     owner: BE-04
     description: Durable workflow terminal technical failures.
-    labels: [project_id, resource_id, workflow_id, workflow_kind, error_code]
+    labels: [workflow_kind, error_code]
   - name: hc_data_qc_outcomes_total
     type: counter
     unit: reports
     owner: BE-06
     description: Deterministic quality outcomes.
-    labels: [project_id, resource_id, workflow_id, outcome, profile_id]
+    labels: [outcome, profile_id]
   - name: hc_data_lance_commits_total
     type: counter
     unit: commits
     owner: BE-08
     description: Lance physical commit and catalog registration outcomes.
-    labels: [project_id, resource_id, workflow_id, outcome, dataset_id]
+    labels: [outcome]
   - name: hc_data_transcode_duration_seconds
     type: histogram
     unit: seconds
     owner: BE-10
     description: Preview transcode latency through atomic cache publication.
-    labels: [project_id, resource_id, workflow_id, outcome, view_mode]
+    labels: [outcome, view_mode]
   - name: hc_data_exports_total
     type: counter
     unit: exports
     owner: BE-11
     description: Immutable training export attempts by format and outcome.
-    labels: [project_id, resource_id, workflow_id, outcome, format]
+    labels: [outcome, format]
+  - name: hc_platform_http_requests_total
+    type: counter
+    unit: requests
+    owner: platform-runtime
+    description: HTTP requests grouped only by framework route template, method, status class, and the bounded HTTP status-code set.
+    labels: [route, method, status_class, status_code]
+  - name: hc_platform_http_request_duration_seconds
+    type: histogram
+    unit: seconds
+    owner: platform-runtime
+    description: HTTP latency grouped only by framework route template and method.
+    labels: [route, method]
 logging:
-  required_fields:
-    - request_id
-    - project_id
-    - resource_id
-    - workflow_id
-    - error_code
+  contract: ../../docs/architecture/runtime-logging-contract.yaml
   forbidden_fields:
     - authorization
     - jwt

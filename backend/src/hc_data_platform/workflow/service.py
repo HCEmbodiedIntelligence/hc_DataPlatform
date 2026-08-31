@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any, Protocol, cast
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.core.structured_logging import log_event
 
 from .models import (
     TERMINAL_JOB_STATUSES,
@@ -15,6 +18,8 @@ from .models import (
     JobStatus,
     parse_workflow_id,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class JobStatusPort(Protocol):
@@ -216,10 +221,12 @@ class TemporalWorkflowLauncher:
                 id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
             )
         except WorkflowAlreadyStartedError:
-            return await self.get(workflow_id)
+            duplicate = await self.get(workflow_id)
+            self._log_workflow_started(workflow_id, duplicate=True)
+            return duplicate
 
         now = datetime.now(timezone.utc)
-        return JobRecord(
+        record = JobRecord(
             job_id=workflow_id,
             workflow_id=workflow_id,
             workflow_run_id=handle.run_id,
@@ -230,6 +237,23 @@ class TemporalWorkflowLauncher:
             stage="pending",
             created_at=now,
             updated_at=now,
+        )
+        self._log_workflow_started(workflow_id, duplicate=False)
+        return record
+
+    @staticmethod
+    def _log_workflow_started(workflow_id: str, *, duplicate: bool) -> None:
+        try:
+            request_id = current_request_context().request_id
+        except RuntimeError:
+            request_id = None
+        log_event(
+            logger,
+            logging.INFO,
+            "WORKFLOW.START_DEDUPLICATED" if duplicate else "WORKFLOW.STARTED",
+            request_id=request_id,
+            operation_id=workflow_id,
+            workflow_id=workflow_id,
         )
 
     async def get(self, job_id: str) -> JobRecord:

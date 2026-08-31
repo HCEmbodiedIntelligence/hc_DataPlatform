@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sys103-task-summary
+  namespace: hc-sys101
+  labels:
+    hc-data-platform.io/drill: sys1-03
+    hc-data-platform.io/probe-role: summary
+spec:
+  activeDeadlineSeconds: 60
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        hc-data-platform.io/drill: sys1-03
+        hc-data-platform.io/probe-role: summary
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: hc-sys101-20260829-worker
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: hc-data-platform-api@sha256:e7c1b96ddd03518fcb9a4bcf666d0ba99d3422e90060e5ce0b29f8d42e9736af
+          imagePullPolicy: Never
+          command: [/opt/venv/bin/python, /probe/platform_task_lease_probe.py, summary]
+          env:
+            - name: HC_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: hc-data-postgres
+                  key: dsn
+            - name: HC_PLATFORM_ENVIRONMENT_ID
+              value: hc-sys101
+            - name: HC_INVENTORY_SCOPE
+              value: sys103-org/sys103-project/cn-east
+            - name: HC_OWNER_INSTANCE_ID
+              value: 00000000-0000-4000-8000-000000000104
+          resources:
+            requests: { cpu: 25m, memory: 96Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: probe
+              mountPath: /probe
+              readOnly: true
+      volumes:
+        - name: probe
+          configMap:
+            name: sys103-task-lease-probe
+            defaultMode: 0444

@@ -179,10 +179,15 @@ def aggregate_fragments(fragment_dir: Path) -> OpenAPIDocument:
 def runtime_document() -> OpenAPIDocument:
     """Build the production-composed runtime schema used for generated client types."""
 
+    from hc_data_platform.platform_ops.maintenance import InMemoryMaintenanceWriteGate
+
     from .app import create_app
     from .config import Settings
 
-    application = create_app(settings=Settings(environment="test", runtime_backend="production"))
+    application = create_app(
+        settings=Settings(environment="test", runtime_backend="production"),
+        maintenance_write_gate=InMemoryMaintenanceWriteGate(),
+    )
     return application.openapi()
 
 

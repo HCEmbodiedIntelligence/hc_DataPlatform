@@ -624,9 +624,7 @@ def test_same_source_episode_with_new_converter_identity_is_rejected() -> None:
             "collection_session_id": "session2",
             "data_package_id": "package-r2-converter-v2",
             "recorder_version": "2.0",
-            "source_recording": source.model_copy(
-                update={"resolved_revision": "f" * 40}
-            ),
+            "source_recording": source.model_copy(update={"resolved_revision": "f" * 40}),
         }
     )
     service = UploadSessionService(InMemoryObjectStorage())

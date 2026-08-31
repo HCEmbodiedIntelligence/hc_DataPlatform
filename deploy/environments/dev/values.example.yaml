@@ -1,5 +1,8 @@
 global:
-  releaseId: platform-dev-sha
+  releaseId: platform-v0.1.0-dev
+  releaseManifestDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  gitCommit: 1111111111111111111111111111111111111111
+  migrationManifestDigest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 frontend:
   image:
     repository: registry.example.com/hc-data-platform/frontend
@@ -22,5 +25,6 @@ backend:
       digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
   config:
     environment: staging
-    serviceVersion: platform-dev-sha
+    platformEnvironmentId: hc-dev
+    secretBundleRevision: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies

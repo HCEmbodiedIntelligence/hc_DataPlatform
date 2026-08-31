@@ -14,7 +14,7 @@ Current chart lint/template validated on 2026-08-17 from
 | Data preservation | immutable Raw/Lance/Published proof hashes across rollback | PASS; all three hashes unchanged |
 | Current-source API image | Dockerfile `api` target with pinned Python base digest `sha256:2199a628…`; isolated `/health/live` | PASS; image `sha256:7c4e66f2…`, 293,697,718 bytes, HTTP 200 |
 | Current-source Worker image | Dockerfile `worker` target; source SHA, import, composition, and media probes | PASS; image `sha256:0c238a05…`, 465,944,651 bytes; 5 key source hashes and all 14 ports match/pass; `lerobot` absent |
-| Same-day BE-01 image smoke | cached image digest `sha256:280098df…`; container health and imports | PARTIAL; live=200, Docker health=healthy, FFmpeg/x264/HLS/FFprobe pass; ready=503 without external services |
+| Historical BE-01 image smoke | cached image digest `sha256:280098df…`; container health and imports | PARTIAL historical evidence only; current aligned-media source requires a new image rehearsal |
 | Chart-equivalent OTel API command | `opentelemetry-instrument uvicorn …` in isolated cached-image container | PASS; live=200 |
 
 The host did not have Helm installed, so Helm 3.16.4 was downloaded to `/tmp` for validation and
@@ -39,10 +39,16 @@ Worker relabel rebuild was cancelled when its Debian FFmpeg layer attempted a 13
 already verified image has identical application source and runtime media. BE-12 will perform no
 further Docker changes or builds per user direction.
 
-With the current source mounted read-only, `tests/system/container_preview_smoke.py` generated a
-six-frame H.264 preview with three CMAF segments, reloaded it through FFprobe, and confirmed an
-invalid input leaves no committed cache artifact. This closes preview binary/codec behavior. The
-corrected Worker closes the data-dependency image gap, but complete deployed pipeline execution
+The current aligned-media test generates an exact 1800-frame, 60-second H.264/yuv420p MP4 at
+30 Hz, reloads it through FFprobe, and verifies exact-receipt cleanup for an uncommitted bundle.
+The 2026-08-31 local component run in
+`backend/tests/load/results/aligned-media-capacity-20260831.json` additionally exercised four
+distinct 60-second camera streams at upload concurrency 1/2/4 with a shared FFmpeg limit of two,
+physical Lance commits after all four MP4s, and 100 concurrent authorize-plus-Range clients per
+case. All cases had zero failures and authorization counters showed zero encoding, job creation,
+or Lance work. This evidence is explicitly `LOCAL_COMPONENT_CAPACITY_NOT_PRODUCTION`; the host
+lacks cgroup `memory.current`, and deployed PostgreSQL/S3/pod/network capacity remains unmeasured.
+The corrected Worker closes the data-dependency image gap, but complete deployed pipeline execution
 still requires rebuilding the latest source and exercising its now-configured production
 Activity factory against pilot dependencies.
 

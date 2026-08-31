@@ -1,0 +1,432 @@
+{
+  "$defs": {
+    "BackupRepositoryV1": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket_reference": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Bucket Reference",
+          "type": "string"
+        },
+        "catalog_is_only_copy": {
+          "const": false,
+          "default": false,
+          "title": "Catalog Is Only Copy",
+          "type": "boolean"
+        },
+        "cross_site_replica_reference": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Cross Site Replica Reference",
+          "type": "string"
+        },
+        "kms_key_reference": {
+          "pattern": "^kms://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._:-]+)*/versions/v[1-9][0-9]*$",
+          "title": "Kms Key Reference",
+          "type": "string"
+        },
+        "object_lock": {
+          "const": "compliance",
+          "default": "compliance",
+          "title": "Object Lock",
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "s3_compatible",
+            "aws_s3",
+            "aliyun_oss"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "repository_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Repository Id",
+          "type": "string"
+        },
+        "retention_until": {
+          "format": "date-time",
+          "title": "Retention Until",
+          "type": "string"
+        },
+        "server_side_encryption": {
+          "const": "kms_aes256_gcm",
+          "default": "kms_aes256_gcm",
+          "title": "Server Side Encryption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository_id",
+        "provider",
+        "bucket_reference",
+        "kms_key_reference",
+        "retention_until",
+        "cross_site_replica_reference"
+      ],
+      "title": "BackupRepositoryV1",
+      "type": "object"
+    },
+    "BackupToolIdentityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "git_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "image_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        },
+        "name": {
+          "const": "hc-platform-backup",
+          "default": "hc-platform-backup",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "git_commit",
+        "image_digest"
+      ],
+      "title": "BackupToolIdentityV1",
+      "type": "object"
+    },
+    "ReleaseIdentityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_name": {
+          "const": "hc-data-platform",
+          "default": "hc-data-platform",
+          "title": "Chart Name",
+          "type": "string"
+        },
+        "chart_version": {
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$",
+          "title": "Chart Version",
+          "type": "string"
+        },
+        "git_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "images": {
+          "$ref": "#/$defs/ReleaseImagesV1"
+        },
+        "migration_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Migration Manifest Sha256",
+          "type": "string"
+        },
+        "release_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Manifest Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "git_commit",
+        "chart_version",
+        "images",
+        "migration_manifest_sha256",
+        "release_manifest_sha256"
+      ],
+      "title": "ReleaseIdentityV1",
+      "type": "object"
+    },
+    "ReleaseImagesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Api",
+          "type": "string"
+        },
+        "frontend": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Frontend",
+          "type": "string"
+        },
+        "worker": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api",
+        "worker",
+        "frontend"
+      ],
+      "title": "ReleaseImagesV1",
+      "type": "object"
+    },
+    "WholeDeploymentPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "gitops_repository_reference": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Gitops Repository Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gitops_repository_reference"
+      ],
+      "title": "WholeDeploymentPolicy",
+      "type": "object"
+    },
+    "WholeExternalEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "external_dependencies_evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "External Dependencies Evidence Sha256",
+          "type": "string"
+        },
+        "runtime_logs_evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Runtime Logs Evidence Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime_logs_evidence_sha256",
+        "external_dependencies_evidence_sha256"
+      ],
+      "title": "WholeExternalEvidence",
+      "type": "object"
+    },
+    "WholeObjectStorePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket_reference": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Bucket Reference",
+          "type": "string"
+        },
+        "prefix": {
+          "maxLength": 512,
+          "title": "Prefix",
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "s3_compatible",
+            "aws_s3",
+            "aliyun_oss"
+          ],
+          "title": "Provider",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "bucket_reference",
+        "prefix"
+      ],
+      "title": "WholeObjectStorePolicy",
+      "type": "object"
+    },
+    "WholePostgreSQLPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "physical_recovery": {
+          "enum": [
+            "baseline_plus_wal_pitr",
+            "provider_managed_pitr"
+          ],
+          "title": "Physical Recovery",
+          "type": "string"
+        },
+        "pitr_coordinate": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Pitr Coordinate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "physical_recovery",
+        "pitr_coordinate"
+      ],
+      "title": "WholePostgreSQLPolicy",
+      "type": "object"
+    },
+    "WholeSecretsPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "portable_recipient_key_references": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Portable Recipient Key References",
+          "type": "array"
+        },
+        "repository_key_reference": {
+          "pattern": "^kms://[A-Za-z0-9][A-Za-z0-9_.:/-]*/versions/v[1-9][0-9]*$",
+          "title": "Repository Key Reference",
+          "type": "string"
+        },
+        "signing_key_reference": {
+          "pattern": "^kms://[A-Za-z0-9][A-Za-z0-9_.:/-]*/versions/v[1-9][0-9]*$",
+          "title": "Signing Key Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository_key_reference",
+        "signing_key_reference"
+      ],
+      "title": "WholeSecretsPolicy",
+      "type": "object"
+    },
+    "WholeTemporalPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster_reference": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Cluster Reference",
+          "type": "string"
+        },
+        "namespace": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "service_version": {
+          "maxLength": 63,
+          "minLength": 1,
+          "title": "Service Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cluster_reference",
+        "namespace",
+        "service_version"
+      ],
+      "title": "WholeTemporalPolicy",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-whole-backup-plan-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Immutable, non-secret controller input for one retryable backup operation.",
+  "properties": {
+    "backup_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "title": "Backup Id",
+      "type": "string"
+    },
+    "backup_repository": {
+      "$ref": "#/$defs/BackupRepositoryV1"
+    },
+    "backup_tool": {
+      "$ref": "#/$defs/BackupToolIdentityV1"
+    },
+    "completed_at": {
+      "format": "date-time",
+      "title": "Completed At",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "deployment_configuration": {
+      "$ref": "#/$defs/WholeDeploymentPolicy"
+    },
+    "external_evidence": {
+      "$ref": "#/$defs/WholeExternalEvidence"
+    },
+    "format_version": {
+      "const": "hc-whole-backup-plan/v1",
+      "default": "hc-whole-backup-plan/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "snapshot",
+        "portable"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "object_store": {
+      "$ref": "#/$defs/WholeObjectStorePolicy"
+    },
+    "operation_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "postgresql": {
+      "$ref": "#/$defs/WholePostgreSQLPolicy"
+    },
+    "release": {
+      "$ref": "#/$defs/ReleaseIdentityV1"
+    },
+    "secrets_and_kms": {
+      "$ref": "#/$defs/WholeSecretsPolicy"
+    },
+    "source_environment_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "title": "Source Environment Id",
+      "type": "string"
+    },
+    "source_platform_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "title": "Source Platform Id",
+      "type": "string"
+    },
+    "temporal": {
+      "$ref": "#/$defs/WholeTemporalPolicy"
+    },
+    "verifier_identity": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Verifier Identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "operation_id",
+    "backup_id",
+    "mode",
+    "created_at",
+    "completed_at",
+    "source_platform_id",
+    "source_environment_id",
+    "verifier_identity",
+    "release",
+    "backup_tool",
+    "postgresql",
+    "object_store",
+    "temporal",
+    "deployment_configuration",
+    "secrets_and_kms",
+    "backup_repository",
+    "external_evidence"
+  ],
+  "title": "hc-whole-backup-plan/v1",
+  "type": "object"
+}

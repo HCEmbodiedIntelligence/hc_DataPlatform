@@ -383,6 +383,27 @@ class AuthContext:
                 detail="The current project scope does not grant the required capability.",
             )
 
+    def has_exact_platform_capability(self, capability: str) -> bool:
+        """Check a global operational grant without the platform-admin wildcard."""
+
+        return capability.startswith("platform.") and capability in self.capabilities
+
+    def require_exact_platform_capability(self, *capabilities: str) -> None:
+        """Require one exact global platform grant for separated-duty operations."""
+
+        required = frozenset(capabilities)
+        if (
+            not required
+            or any(not capability.startswith("platform.") for capability in required)
+            or not required.intersection(self.capabilities)
+        ):
+            raise problem(
+                status=403,
+                code="PLATFORM_CAPABILITY_REQUIRED",
+                title="Platform operation capability required",
+                detail="The verified identity is not authorized for this platform operation.",
+            )
+
     @classmethod
     def service(
         cls,

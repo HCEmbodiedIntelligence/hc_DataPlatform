@@ -104,6 +104,20 @@ def _seed_product_dataset(
             "region_code": REGION_CODE,
         },
     }
+    base_version_document = {
+        "dataset_id": dataset_id,
+        "version_id": "version_lance_1",
+        "display_version": "v1",
+        "kind": "RAW",
+        "status": "READY",
+        "published_at": NOW.isoformat(),
+        "scope": document["scope"],
+        "manifest": {
+            "manifest_id": f"manifest-{dataset_id}",
+            "sha256": hashlib.sha256(f"manifest:{dataset_id}".encode()).hexdigest(),
+            "entry_count": "0",
+        },
+    }
     with psycopg.connect(dsn) as connection:
         connection.execute(
             """
@@ -153,6 +167,27 @@ def _seed_product_dataset(
                 NOW,
                 NOW,
                 NOW,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO dataset_registry.dataset_versions (
+                organization_id, project_id, region_code, dataset_id, version_id,
+                display_version, version_kind, version_status, created_at, published_at,
+                version_document, version_scope
+            ) VALUES (
+                %s, %s, %s, %s, 'version_lance_1', 'v1', 'RAW', 'READY', %s, %s,
+                %s::jsonb, 'INTERNAL'
+            )
+            """,
+            (
+                ORGANIZATION_ID,
+                project_id,
+                REGION_CODE,
+                dataset_id,
+                NOW,
+                NOW,
+                json.dumps(base_version_document, sort_keys=True),
             ),
         )
 

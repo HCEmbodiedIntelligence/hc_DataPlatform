@@ -1,7 +1,4 @@
-import type {
-  AuthorizationSnapshot,
-  Capability,
-} from "../../entities/capability";
+import type { AuthorizationSnapshot } from "../../entities/capability";
 import { isPageHidden } from "../page-visibility";
 import { dataAnnotationRoutes, dataUploadRoutes } from "./navigation-routes";
 
@@ -16,7 +13,7 @@ export interface NavigationItem {
   pageId: string;
   label: string;
   path: string;
-  requiredCapability: Capability | null;
+  requiredCapability: string | null;
   administratorOnly: boolean;
   activePatterns: readonly string[];
 }
@@ -87,6 +84,14 @@ export const navigationManifest: NavigationManifest = [
     groupId: "production",
     label: "数据生产",
     items: [
+      {
+        pageId: "P23",
+        label: "录制切片",
+        path: "/recordings",
+        requiredCapability: "episode.read",
+        administratorOnly: false,
+        activePatterns: ["/recordings", "/recordings/:recordingId/slice"],
+      },
       {
         pageId: "P05",
         label: "数据集",
@@ -200,6 +205,14 @@ export const navigationManifest: NavigationManifest = [
         requiredCapability: "audit.read",
         administratorOnly: true,
         activePatterns: ["/settings/audit"],
+      },
+      {
+        pageId: "P22",
+        label: "平台设置",
+        path: "/settings/platform-operations",
+        requiredCapability: "platform.operations.read",
+        administratorOnly: true,
+        activePatterns: ["/settings/platform-operations"],
       },
     ],
   },

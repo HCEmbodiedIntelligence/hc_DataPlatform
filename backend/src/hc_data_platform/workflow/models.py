@@ -8,6 +8,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from hc_data_platform.aligned_media.models import (
+    AlignedMediaArtifactV1,
+    AlignedMediaGenerationRequestV1,
+    AlignmentStagingArtifactV1,
+)
 from hc_data_platform.alignment.models import (
     AlignedFragmentManifestV1 as StagedFragmentManifestV1,
 )
@@ -26,7 +31,6 @@ from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
 )
 from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1, StepRecord
-from hc_data_platform.preview.models import PreviewArtifactV1, PreviewRequestV1
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
@@ -69,7 +73,6 @@ class QualityOutcome(str, Enum):
 class WorkflowKind(str, Enum):
     INGEST_ROLLOUT = "ingest-rollout"
     DATASET_WRITER = "dataset-writer"
-    PREVIEW = "preview"
     PUBLISH_DATASET = "publish-dataset"
     EXPORT = "export"
     CATALOG_RECONCILIATION = "catalog-reconciliation"
@@ -325,16 +328,22 @@ class AlignmentActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     staged_manifest: StagedFragmentManifestV1
-    catalog_fragment: CatalogFragmentPayloadV1
+    catalog_fragment: CatalogFragmentPayloadV1 | None = None
     dataset_version: DatasetVersionRef | None = None
     derived_ready: DerivedReadyV1 | None = None
     viewer_target: DatasetIngestViewerTarget | None = None
+    alignment_staging: AlignmentStagingArtifactV1 | None = None
+    expected_dataset_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def complete_inline_commit(self) -> AlignmentActivityOutput:
         if (self.dataset_version is None) != (self.derived_ready is None):
             raise ValueError("inline alignment commit must return both version results")
-        if self.dataset_version is not None and self.catalog_fragment.steps:
+        if (
+            self.dataset_version is not None
+            and self.catalog_fragment is not None
+            and self.catalog_fragment.steps
+        ):
             raise ValueError("inline alignment commit must not return Step payloads")
         if self.viewer_target is not None:
             if self.dataset_version is None or self.derived_ready is None:
@@ -345,6 +354,63 @@ class AlignmentActivityOutput(BaseModel):
             ):
                 raise ValueError("viewer target must match the immutable Dataset version")
         return self
+
+
+class IngestSourceProcessingActivityInput(BaseModel):
+    """One worker-local Raw download used for verification, QC, and alignment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    verification: VerificationActivityInput
+    quality: QualityActivityInput
+    alignment: AlignmentActivityInput
+
+    @model_validator(mode="after")
+    def matching_source_lineage(self) -> IngestSourceProcessingActivityInput:
+        quality_source = self.quality.source
+        alignment_source = self.alignment.source
+        if quality_source is None or alignment_source is None or quality_source != alignment_source:
+            raise ValueError("combined ingest processing requires one shared raw source")
+        if (
+            self.verification.project_id != quality_source.project_id
+            or self.verification.region_code != quality_source.region_code
+            or self.verification.rollout_id != quality_source.rollout_id
+            or self.verification.object_key != quality_source.object_key
+            or self.verification.source_sha256 != quality_source.source_sha256
+        ):
+            raise ValueError("verification lineage must match the shared raw source")
+        return self
+
+
+class IngestSourceProcessingActivityOutput(BaseModel):
+    """Bounded results only; raw samples and temporary files never enter history."""
+
+    model_config = ConfigDict(frozen=True)
+
+    verification: VerificationActivityOutput
+    quality: QualityActivityOutput | None = None
+    alignment: AlignmentActivityOutput | None = None
+    frame_selection: FrameSelectionManifestRefV1 | None = None
+
+
+class AlignedBundleCommitActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    alignment: AlignmentActivityInput
+    staged_manifest: StagedFragmentManifestV1
+    alignment_staging: AlignmentStagingArtifactV1
+    expected_dataset_version: int = Field(ge=1)
+    # Default preserves deterministic decoding of pre-field Temporal histories.
+    expected_camera_ids: tuple[str, ...] = ()
+    media_artifacts: tuple[AlignedMediaArtifactV1, ...] = ()
+
+
+class AlignedBundleCommitActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    version: DatasetVersionRef
+    derived_ready: DerivedReadyV1
+    viewer_target: DatasetIngestViewerTarget
 
 
 class CatalogCommitActivityInput(BaseModel):
@@ -406,19 +472,48 @@ class AutomaticAnnotationActivityOutput(BaseModel):
     status: Literal["CREATED"] = "CREATED"
 
 
-class PreviewActivityInput(BaseModel):
+class AlignedMediaActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     organization_id: str = Field(min_length=1)
     region_code: str = Field(min_length=1)
-    job_id: str | None = Field(default=None, min_length=1)
-    request: PreviewRequestV1
+    request: AlignedMediaGenerationRequestV1
 
 
-class PreviewActivityOutput(BaseModel):
+class AlignedMediaActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    artifact: PreviewArtifactV1
+    artifact: AlignedMediaArtifactV1
+
+
+class AlignedMediaCleanupActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    artifacts: tuple[AlignedMediaArtifactV1, ...] = Field(min_length=1)
+
+
+class AlignedMediaCleanupActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    deleted_bytes: int = Field(ge=0)
+
+
+class AlignmentStagingCleanupActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    staging: AlignmentStagingArtifactV1
+
+
+class AlignmentStagingCleanupActivityOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    deleted: bool = True
 
 
 class PublishActivityInput(BaseModel):
@@ -603,15 +698,6 @@ class DatasetWriterWorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=1)
     resource_id: str = Field(min_length=1)
     commit: CatalogCommitActivityInput
-
-
-class PreviewWorkflowInput(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    organization_id: str = Field(min_length=1)
-    region_code: str = Field(min_length=1)
-    job_id: str = Field(min_length=1)
-    request: PreviewRequestV1
 
 
 class PublishDatasetWorkflowInput(BaseModel):

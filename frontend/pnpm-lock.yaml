@@ -20,9 +20,6 @@ importers:
       echarts:
         specifier: 6.0.0
         version: 6.0.0
-      hls.js:
-        specifier: 1.7.0
-        version: 1.7.0
       lucide-react:
         specifier: 0.542.0
         version: 0.542.0(react@19.1.1)
@@ -1581,9 +1578,6 @@ packages:
 
   headers-polyfill@4.0.3:
     resolution: {integrity: sha512-IScLbePpkvO846sIwOtOTDjutRMWdXdJmXdMvk6gCBHxFO8d+QKOQedyZSxFTTFYRSmlgSTDtXqqq4pcenBXLQ==}
-
-  hls.js@1.7.0:
-    resolution: {integrity: sha512-NnQpT6Z//+2IB2qovSUbKbrlXY1MOpi0JynZ9L2NNOuTJiNCyMSQj9k2laEj1v7CxU/Hb8oTWR98eT3mVpPQVQ==}
 
   html-encoding-sniffer@4.0.0:
     resolution: {integrity: sha512-Y22oTqIU4uuPgEemfz7NDJz6OeKf12Lsu+QC+s3BVpda64lTiMYCyGwg5ki4vFxkMwQdeZDl2adZoqUgdFuTgQ==}
@@ -3931,8 +3925,6 @@ snapshots:
   has-flag@4.0.0: {}
 
   headers-polyfill@4.0.3: {}
-
-  hls.js@1.7.0: {}
 
   html-encoding-sniffer@4.0.0:
     dependencies:

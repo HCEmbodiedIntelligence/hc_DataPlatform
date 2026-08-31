@@ -101,11 +101,11 @@ async def test_missing_temporal_execution_projects_the_durable_dispatch_as_pendi
 
     assert result.status.value == "PENDING"
     assert result.stage == "workflow_starting"
-    assert result.preview is None
+    assert result.aligned_media is None
     assert result.attempt == 1
 
 
-def test_success_projects_only_the_lineage_checked_preview_target() -> None:
+def test_success_projects_only_the_lineage_checked_media_target() -> None:
     result = project_upload_processing_status(_session(), _job())
 
     assert result.model_dump(mode="json") == {
@@ -116,15 +116,14 @@ def test_success_projects_only_the_lineage_checked_preview_target() -> None:
         "status": "SUCCEEDED",
         "stage": "completed",
         "attempt": 2,
-        "preview": {
-            "schema_version": "upload-preview-target/v1",
+        "aligned_media": {
+            "schema_version": "upload-aligned-media-target/v1",
             "project_id": "project-a",
             "dataset_id": "dataset_ingest_a",
             "rollout_id": "rollout-a",
             "dataset_version": 4,
-            "lance_version": 7,
             "annotation_task_id": "annotation-a",
-            "frequency_hz": 30.0,
+            "fps": 30,
             "start_step": 0,
             "end_step": 300,
         },

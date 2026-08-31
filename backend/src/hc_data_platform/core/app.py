@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from http import HTTPStatus
 from types import ModuleType
@@ -17,6 +18,71 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 import hc_data_platform
+from hc_data_platform.backup.catalog import (
+    BackupCatalogRepository,
+    InMemoryBackupCatalogRepository,
+    PostgresBackupCatalogRepository,
+)
+from hc_data_platform.platform_control.maintenance_contract import MaintenanceContractError
+from hc_data_platform.platform_control.release_identity import release_identity_from_settings
+from hc_data_platform.platform_ops.audit import (
+    InMemoryPlatformAuditRepository,
+    PlatformAuditRepository,
+    PlatformAuditService,
+    PostgresPlatformAuditRepository,
+)
+from hc_data_platform.platform_ops.instances import (
+    InMemoryPlatformInstanceRepository,
+    InstanceReadinessSummary,
+    PlatformInstanceHeartbeater,
+    PlatformInstanceService,
+    PostgresPlatformInstanceRepository,
+    platform_instance_identity,
+)
+from hc_data_platform.platform_ops.logs import (
+    LokiPlatformLogRepository,
+    PlatformLogRepository,
+    PlatformLogService,
+    UnavailablePlatformLogRepository,
+)
+from hc_data_platform.platform_ops.maintenance import (
+    InMemoryMaintenanceWriteGate,
+    MaintenanceWriteGate,
+    PostgresMaintenanceRepository,
+    WriterPermitRenewer,
+)
+from hc_data_platform.platform_ops.object_store_config import (
+    InMemoryObjectStoreConfigurationRepository,
+    ObjectStoreConfigurationRepository,
+    ObjectStoreConfigurationService,
+    PostgresObjectStoreConfigurationRepository,
+    load_persisted_object_store_settings,
+)
+from hc_data_platform.platform_ops.overview import PlatformOperationsOverviewService
+from hc_data_platform.platform_ops.projects import (
+    InMemoryPlatformProjectRepository,
+    PlatformProjectRepository,
+    PlatformProjectService,
+    PostgresPlatformProjectRepository,
+)
+from hc_data_platform.platform_ops.releases import (
+    InMemoryReleaseRepository,
+    PostgresReleaseRepository,
+    ReleaseRepository,
+    ReleaseService,
+    release_feed_verifier_from_encoded_keys,
+)
+from hc_data_platform.platform_ops.runtime_config import (
+    InMemoryRuntimeConfigRepository,
+    PollingRuntimeConfigSubscriber,
+    PostgresRuntimeConfigRepository,
+    PostgresRuntimeConfigSubscriber,
+    RuntimeConfigRepository,
+    RuntimeConfigService,
+    RuntimeConfigState,
+    RuntimeConfigSynchronizer,
+    runtime_config_boot_values,
+)
 from hc_data_platform.security.abuse import InMemoryAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -30,8 +96,19 @@ from hc_data_platform.security.recovery import (
 )
 from hc_data_platform.security.scope import ScopeGuard
 
-from .config import Settings, get_settings
-from .context import RequestContext, bind_request_context, reset_request_context
+from .config import Settings, get_settings, require_durable_runtime
+from .context import (
+    RequestContext,
+    bind_request_context,
+    bind_session_mutations_allowed,
+    bind_writer_permit,
+    bind_writer_permit_retention,
+    current_writer_permit_retention_seconds,
+    reset_request_context,
+    reset_session_mutations_allowed,
+    reset_writer_permit,
+    reset_writer_permit_retention,
+)
 from .discovery import discover_module_routers
 from .errors import ProblemDetails, ProblemException
 from .health import (
@@ -39,6 +116,15 @@ from .health import (
     check_readiness,
     default_readiness_probes,
     validate_readiness_probes,
+)
+from .observability import HTTP_REQUEST_DURATION, HTTP_REQUESTS
+from .structured_logging import (
+    LogCorrelation,
+    StructuredLogIdentity,
+    bind_log_correlation,
+    configure_structured_logging,
+    log_event,
+    reset_log_correlation,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +136,8 @@ _SAFE_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SAFE_VALIDATION_TYPE = re.compile(r"^[a-z][a-z0-9_.]{0,127}$")
 _SENSITIVE_TEXT = re.compile(
     r"(?i)(?:authorization|cookie|password|secret|access[_-]?key|session[_-]?token|"
-    r"postgres(?:ql)?(?:\+asyncpg)?://|s3://|minio://|x-amz-(?:signature|credential)|"
+    r"postgres(?:ql)?(?:\+asyncpg)?://|s3://|oss://|minio://|"
+    r"(?:x-amz-(?:signature|credential)|ossaccesskeyid)|"
     r"traceback \(most recent call last\)|object[_-]?(?:key|path)|signed[_-]?url|dsn)"
 )
 _SENSITIVE_DETAIL_KEYS = re.compile(
@@ -86,10 +173,12 @@ _PUBLIC_API_OPERATIONS = frozenset(
         ("/api/v1/auth/password-recovery-requests", "post"),
         ("/api/v1/auth/password-recovery-confirmations", "post"),
         ("/api/v1/capabilities/auto-annotation", "get"),
-        ("/api/v1/previews/sessions/{session_id}/media/index.m3u8", "get"),
+        ("/api/v1/platform/version", "get"),
     }
 )
 _SESSION_LOGOUT_OPERATION = ("/api/v1/auth/session:logout", "POST")
+_MAINTENANCE_CONTROL_PREFIX = "/api/v1/platform/maintenance-operations"
+_COMMAND_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _OPERATION_ID_OVERRIDES = {
     ("/health/live", "get"): "getLiveness",
     ("/health/ready", "get"): "getReadiness",
@@ -157,7 +246,16 @@ class PublicReadinessReport(BaseModel):
 
 
 def _request_id(request: Request) -> str:
-    supplied = request.headers.get("X-Request-ID", "").strip().lower()
+    state_request_id = getattr(request.state, "request_id", None)
+    supplied = (
+        (
+            state_request_id
+            if isinstance(state_request_id, str)
+            else request.headers.get("X-Request-ID", "")
+        )
+        .strip()
+        .lower()
+    )
     if _SAFE_REQUEST_ID.fullmatch(supplied):
         try:
             return str(UUID(supplied))
@@ -242,6 +340,17 @@ def _safe_problem(problem: ProblemDetails) -> ProblemDetails:
     # 501 is an intentionally declared product boundary, not an unexpected
     # server failure. Keep its sanitized contract code so clients can present
     # the approved "feature unavailable" state without guessing from HTTP.
+    if problem.status == 503 and problem.code == "PLATFORM_MAINTENANCE":
+        return problem.model_copy(
+            update={
+                "type": "https://hc-data-platform.invalid/problems/platform-maintenance",
+                "title": "Platform maintenance",
+                "detail": "The environment is read-only for maintenance.",
+                "retryable": True,
+                "retry_after_seconds": 10,
+                "details": {},
+            }
+        )
     if problem.status >= 500 and problem.status != 501:
         return _server_problem(
             request_id=problem.request_id or str(uuid4()),
@@ -275,18 +384,19 @@ def _log_security_failure(
 ) -> None:
     # Every value is either server-generated or selected from a closed set.  In particular,
     # do not add exception messages, raw request paths, headers, bodies, or object locators.
-    logger.error(
-        "request_failed",
-        extra={
-            "error_code": (
-                error_code if _SAFE_ERROR_CODE.fullmatch(error_code) else "INTERNAL_SERVER_ERROR"
-            ),
-            "exception_type": (
-                exception_type if exception_type in _SAFE_EXCEPTION_TYPES else "UnhandledException"
-            ),
-            "request_id": request_id,
-            "route": _safe_route_locator(request),
-        },
+    safe_error_code = (
+        error_code if _SAFE_ERROR_CODE.fullmatch(error_code) else "INTERNAL_SERVER_ERROR"
+    )
+    log_event(
+        logger,
+        logging.ERROR,
+        f"HTTP.REQUEST_FAILED.{safe_error_code}",
+        request_id=request_id,
+        error_type=(
+            exception_type if exception_type in _SAFE_EXCEPTION_TYPES else "UnhandledException"
+        ),
+        route=_safe_route_locator(request),
+        http_method=request.method,
     )
 
 
@@ -317,6 +427,43 @@ def _problem_response(problem: ProblemDetails) -> JSONResponse:
     # reuse one across sessions.
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def _maintenance_problem_response(*, request_id: str) -> JSONResponse:
+    return _problem_response(
+        ProblemDetails(
+            type="https://hc-data-platform.invalid/problems/platform-maintenance",
+            title="Platform maintenance",
+            status=503,
+            detail="The environment is read-only for maintenance.",
+            code="PLATFORM_MAINTENANCE",
+            request_id=request_id,
+            retryable=True,
+            retry_after_seconds=10,
+        )
+    )
+
+
+def _requires_writer_permit(request: Request) -> bool:
+    return request.method in _COMMAND_METHODS and not _is_maintenance_control(request)
+
+
+def _is_maintenance_control(request: Request) -> bool:
+    return request.url.path.startswith(_MAINTENANCE_CONTROL_PREFIX)
+
+
+def _uses_opaque_access_token(request: Request) -> bool:
+    if (request.url.path, request.method.lower()) in _PUBLIC_API_OPERATIONS:
+        return False
+    authorization = request.headers.get("Authorization")
+    if authorization is None:
+        return False
+    scheme, separator, credentials = authorization.partition(" ")
+    return bool(
+        scheme.lower() == "bearer"
+        and separator
+        and credentials.strip().startswith(AccessService.TOKEN_PREFIX)
+    )
 
 
 def _safe_retry_after_seconds(value: object) -> int | None:
@@ -578,10 +725,24 @@ def create_app(
     access_service: AccessService | None = None,
     admin_account_service: AdminAccountService | None = None,
     account_recovery_service: AccountRecoveryService | None = None,
+    maintenance_write_gate: MaintenanceWriteGate | None = None,
+    backup_catalog_repository: BackupCatalogRepository | None = None,
+    runtime_config_repository: RuntimeConfigRepository | None = None,
+    object_store_config_repository: ObjectStoreConfigurationRepository | None = None,
+    platform_project_repository: PlatformProjectRepository | None = None,
+    platform_audit_repository: PlatformAuditRepository | None = None,
+    platform_log_repository: PlatformLogRepository | None = None,
+    release_repository: ReleaseRepository | None = None,
 ) -> FastAPI:
     """Create an independently testable API application with injectable dependency probes."""
 
     resolved_settings = settings if settings is not None else get_settings()
+    active_object_store_config_revision = 0
+    if module_package is hc_data_platform:
+        resolved_settings, active_object_store_config_revision = (
+            load_persisted_object_store_settings(resolved_settings)
+        )
+        require_durable_runtime(resolved_settings)
     probes = (
         dict(readiness_probes)
         if readiness_probes is not None
@@ -597,6 +758,206 @@ def create_app(
         redoc_url="/redoc" if docs_enabled else None,
     )
     app.state.settings = resolved_settings
+    release_identity = release_identity_from_settings(resolved_settings)
+    if release_identity.component != "api":
+        raise ValueError("the HTTP API process requires HC_COMPONENT_ROLE=api")
+    app.state.release_identity = release_identity
+    instance_identity = platform_instance_identity(resolved_settings, release_identity)
+    app.state.instance_identity = instance_identity
+    configure_structured_logging(
+        StructuredLogIdentity(
+            service="hc-data-platform-api",
+            instance_id=str(instance_identity.instance_id),
+            node_name=instance_identity.node_name,
+            role="api",
+            release_id=release_identity.release_id,
+        )
+    )
+    persistent_instance_directory = (
+        resolved_settings.runtime_backend == "production"
+        and resolved_settings.environment in {"staging", "production"}
+    )
+    persistent_runtime_config = (
+        resolved_settings.runtime_backend == "production"
+        and resolved_settings.environment in {"staging", "production"}
+    )
+    boot_runtime_config = runtime_config_boot_values(
+        media_maintenance_interval_seconds=resolved_settings.media_maintenance_interval_seconds,
+        storage_inventory_interval_seconds=(resolved_settings.storage_inventory_interval_seconds),
+    )
+    runtime_config_state = RuntimeConfigState(
+        resolved_settings.platform_environment_id,
+        baseline_values=boot_runtime_config,
+    )
+    resolved_runtime_config_repository = runtime_config_repository or (
+        PostgresRuntimeConfigRepository.from_dsn(
+            resolved_settings.postgres_dsn,
+            baseline_values=boot_runtime_config,
+        )
+        if persistent_runtime_config
+        else InMemoryRuntimeConfigRepository(baseline_values=boot_runtime_config)
+    )
+    runtime_config_service = RuntimeConfigService(
+        resolved_runtime_config_repository,
+        runtime_config_state,
+        resolved_settings.platform_environment_id,
+    )
+    runtime_config_subscriber = (
+        PostgresRuntimeConfigSubscriber(
+            resolved_settings.postgres_dsn,
+            resolved_settings.platform_environment_id,
+        )
+        if persistent_runtime_config
+        else PollingRuntimeConfigSubscriber()
+    )
+    runtime_config_synchronizer = RuntimeConfigSynchronizer(
+        runtime_config_service,
+        runtime_config_subscriber,
+    )
+    app.state.runtime_config_service = runtime_config_service
+    app.state.runtime_config_state = runtime_config_state
+    app.state.runtime_config_synchronizer = runtime_config_synchronizer
+    resolved_object_store_config_repository = object_store_config_repository or (
+        PostgresObjectStoreConfigurationRepository.from_dsn(
+            resolved_settings.postgres_dsn,
+            encryption_key=(resolved_settings.data_source_credential_key.get_secret_value()),
+        )
+        if resolved_settings.runtime_backend == "production"
+        else InMemoryObjectStoreConfigurationRepository()
+    )
+    app.state.object_store_config_service = ObjectStoreConfigurationService(
+        resolved_object_store_config_repository,
+        resolved_settings,
+        active_revision=active_object_store_config_revision,
+    )
+    resolved_platform_project_repository = platform_project_repository or (
+        PostgresPlatformProjectRepository.from_dsn(resolved_settings.postgres_dsn)
+        if resolved_settings.runtime_backend == "production"
+        else InMemoryPlatformProjectRepository()
+    )
+    app.state.platform_project_service = PlatformProjectService(
+        resolved_platform_project_repository
+    )
+    instance_repository = (
+        PostgresPlatformInstanceRepository.from_dsn(
+            resolved_settings.postgres_dsn,
+            supports_runtime_config_revision=persistent_runtime_config,
+        )
+        if persistent_instance_directory
+        else InMemoryPlatformInstanceRepository()
+    )
+    platform_instance_service = PlatformInstanceService(
+        instance_repository,
+        instance_identity,
+        applied_config_revision_provider=lambda: runtime_config_state.revision,
+    )
+    platform_instance_heartbeater = PlatformInstanceHeartbeater(platform_instance_service)
+    app.state.platform_instance_service = platform_instance_service
+    app.state.platform_instance_heartbeater = platform_instance_heartbeater
+    resolved_maintenance_write_gate = maintenance_write_gate or (
+        PostgresMaintenanceRepository.from_dsn(resolved_settings.postgres_dsn)
+        if persistent_instance_directory
+        else InMemoryMaintenanceWriteGate()
+    )
+    maintenance_fencing_enabled = (
+        maintenance_write_gate is not None
+        or resolved_settings.runtime_backend == "memory"
+        or persistent_instance_directory
+    )
+    if isinstance(
+        resolved_maintenance_write_gate,
+        (PostgresMaintenanceRepository, InMemoryMaintenanceWriteGate),
+    ):
+        resolved_maintenance_write_gate.ensure_environment(
+            resolved_settings.platform_environment_id
+        )
+    app.state.maintenance_write_gate = resolved_maintenance_write_gate
+    resolved_backup_catalog_repository = backup_catalog_repository or (
+        PostgresBackupCatalogRepository.from_dsn(resolved_settings.postgres_dsn)
+        if persistent_instance_directory
+        else InMemoryBackupCatalogRepository()
+    )
+    app.state.backup_catalog_repository = resolved_backup_catalog_repository
+    resolved_platform_audit_repository = platform_audit_repository or (
+        PostgresPlatformAuditRepository.from_dsn(resolved_settings.postgres_dsn)
+        if persistent_instance_directory
+        else InMemoryPlatformAuditRepository()
+    )
+    app.state.platform_audit_service = PlatformAuditService(
+        resolved_platform_audit_repository,
+        cursor_secret=resolved_settings.cursor_secret,
+    )
+    resolved_platform_log_repository = platform_log_repository or (
+        LokiPlatformLogRepository(
+            resolved_settings.observability_log_query_url,
+            bearer_token=resolved_settings.observability_log_query_bearer_token,
+        )
+        if resolved_settings.observability_log_query_url is not None
+        else UnavailablePlatformLogRepository()
+    )
+    app.state.platform_log_service = PlatformLogService(resolved_platform_log_repository)
+    app.state.platform_operations_overview_service = PlatformOperationsOverviewService(
+        instance_service=platform_instance_service,
+        backup_repository=resolved_backup_catalog_repository,
+        release_identity=release_identity,
+        environment_id=resolved_settings.platform_environment_id,
+        reference_secret=resolved_settings.cursor_secret,
+        central_log_search_configured=not isinstance(
+            resolved_platform_log_repository, UnavailablePlatformLogRepository
+        ),
+    )
+    resolved_release_repository = release_repository or (
+        PostgresReleaseRepository.from_dsn(resolved_settings.postgres_dsn)
+        if persistent_instance_directory
+        else InMemoryReleaseRepository()
+    )
+    app.state.release_service = ReleaseService(
+        resolved_release_repository,
+        environment_id=resolved_settings.platform_environment_id,
+        current_version=resolved_settings.platform_version,
+        instance_service=platform_instance_service,
+        overview_service=app.state.platform_operations_overview_service,
+        reference_secret=resolved_settings.cursor_secret,
+        verifier=release_feed_verifier_from_encoded_keys(
+            resolved_settings.release_feed_trusted_public_keys
+        ),
+    )
+
+    async def instance_readiness() -> InstanceReadinessSummary:
+        report = await check_readiness(
+            probes,
+            timeout_seconds=resolved_settings.readiness_timeout_seconds,
+        )
+        failed_checks = tuple(
+            sorted(
+                name
+                for name, dependency in report.dependencies.items()
+                if dependency.status != "ready"
+            )
+        )
+        return InstanceReadinessSummary(
+            status=report.status,
+            failed_checks=failed_checks,
+        )
+
+    async def start_platform_instance_heartbeat() -> None:
+        await runtime_config_synchronizer.start()
+        await platform_instance_heartbeater.start(
+            instance_readiness,
+            initial_readiness=InstanceReadinessSummary(status="starting"),
+        )
+
+    async def stop_platform_instance_heartbeat() -> None:
+        await platform_instance_heartbeater.stop()
+        await runtime_config_synchronizer.stop()
+
+    app.router.add_event_handler("startup", start_platform_instance_heartbeat)
+    app.router.add_event_handler("shutdown", stop_platform_instance_heartbeat)
+    log_event(
+        logging.getLogger("uvicorn.error"),
+        logging.INFO,
+        "PROCESS.RELEASE_IDENTITY_INITIALIZED",
+    )
     app.state.readiness_probes = probes
     verifier = jwt_verifier or _jwt_verifier_from_settings(resolved_settings)
     app.state.jwt_verifier = verifier
@@ -679,40 +1040,91 @@ def create_app(
         request.state.request_id = request_id
         request.state.auth_context = None
         request.state._declared_feature_unavailable_marker = None
+        writer_permit = None
+        writer_token = None
+        writer_retention_token = None
+        writer_renewer = None
+        writer_permit_retained = False
+        session_mutation_token = None
+        request_context_token = None
         try:
-            auth = _authenticate_request(request, verifier, resolved_access_service)
-            context = _request_context(request, request_id=request_id, auth=auth)
-        except ProblemException as exc:
-            if exc.problem.status >= 500:
+            command_requires_permit = _requires_writer_permit(request)
+            opaque_session = _uses_opaque_access_token(request)
+            session_write_may_run = opaque_session and not _is_maintenance_control(request)
+            if maintenance_fencing_enabled and (command_requires_permit or session_write_may_run):
+                try:
+                    writer_permit = resolved_maintenance_write_gate.issue_writer_permit(
+                        environment_id=resolved_settings.platform_environment_id,
+                        writer_id=request_id,
+                        writer_kind="api_command",
+                    )
+                except MaintenanceContractError:
+                    if command_requires_permit:
+                        return _maintenance_problem_response(request_id=request_id)
+            if writer_permit is not None:
+                writer_token = bind_writer_permit(writer_permit.permit_id)
+                writer_retention_token = bind_writer_permit_retention()
+                writer_renewer = WriterPermitRenewer(
+                    resolved_maintenance_write_gate, writer_permit.permit_id
+                )
+                writer_renewer.start()
+            if opaque_session:
+                session_mutation_token = bind_session_mutations_allowed(
+                    writer_permit is not None or not maintenance_fencing_enabled
+                )
+            try:
+                auth = _authenticate_request(request, verifier, resolved_access_service)
+                context = _request_context(request, request_id=request_id, auth=auth)
+            except MaintenanceContractError:
+                return _maintenance_problem_response(request_id=request_id)
+            except ProblemException as exc:
+                if exc.problem.status >= 500:
+                    _log_security_failure(
+                        request,
+                        request_id=request_id,
+                        error_code="INTERNAL_SERVER_ERROR",
+                        exception_type="ProblemException",
+                    )
+                problem = exc.problem.model_copy(
+                    update={
+                        "request_id": request_id,
+                        "instance": None,
+                    }
+                )
+                auth_failure_response = _problem_response(problem)
+                if problem.status == 401:
+                    auth_failure_response.headers["WWW-Authenticate"] = "Bearer"
+                return auth_failure_response
+            except Exception:
                 _log_security_failure(
                     request,
                     request_id=request_id,
                     error_code="INTERNAL_SERVER_ERROR",
-                    exception_type="ProblemException",
+                    exception_type="AuthenticationDependencyError",
                 )
-            problem = exc.problem.model_copy(
-                update={
-                    "request_id": request_id,
-                    "instance": None,
-                }
-            )
-            auth_failure_response = _problem_response(problem)
-            if problem.status == 401:
-                auth_failure_response.headers["WWW-Authenticate"] = "Bearer"
-            return auth_failure_response
-        except Exception:
-            _log_security_failure(
-                request,
-                request_id=request_id,
-                error_code="INTERNAL_SERVER_ERROR",
-                exception_type="AuthenticationDependencyError",
-            )
-            return _problem_response(_server_problem(request_id=request_id))
-        request.state.auth_context = auth
-        request.state.request_context = context
-        token = bind_request_context(context)
-        try:
-            response = await call_next(request)
+                return _problem_response(_server_problem(request_id=request_id))
+            request.state.auth_context = auth
+            request.state.request_context = context
+            request_context_token = bind_request_context(context)
+            try:
+                response = await call_next(request)
+            except MaintenanceContractError:
+                return _maintenance_problem_response(request_id=context.request_id)
+            if writer_permit is not None:
+                try:
+                    if writer_renewer is not None:
+                        writer_renewer.stop()
+                        writer_renewer.raise_if_failed()
+                    retention_seconds = current_writer_permit_retention_seconds()
+                    if response.status_code < 400 and retention_seconds is not None:
+                        resolved_maintenance_write_gate.retain_writer_permit(
+                            writer_permit.permit_id,
+                            lease_seconds=retention_seconds,
+                        )
+                        writer_permit_retained = True
+                    resolved_maintenance_write_gate.assert_writer_permit(writer_permit.permit_id)
+                except MaintenanceContractError:
+                    return _maintenance_problem_response(request_id=context.request_id)
             raw_retry_after = response.headers.get("Retry-After")
             response_retry_after = (
                 _safe_retry_after_seconds(raw_retry_after)
@@ -747,7 +1159,64 @@ def create_app(
             response.headers["X-Request-ID"] = context.request_id
             return response
         finally:
-            reset_request_context(token)
+            if writer_renewer is not None:
+                writer_renewer.stop()
+            if request_context_token is not None:
+                reset_request_context(request_context_token)
+            if session_mutation_token is not None:
+                reset_session_mutations_allowed(session_mutation_token)
+            if writer_token is not None:
+                reset_writer_permit(writer_token)
+            if writer_retention_token is not None:
+                reset_writer_permit_retention(writer_retention_token)
+            if writer_permit is not None and not writer_permit_retained:
+                resolved_maintenance_write_gate.release_writer_permit(writer_permit.permit_id)
+
+    @app.middleware("http")
+    async def structured_access_log_middleware(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        request_id = _request_id(request)
+        request.state.request_id = request_id
+        correlation_token = bind_log_correlation(LogCorrelation(request_id=request_id))
+        started_at = time.perf_counter()
+        status_code = 500
+        error_type: str | None = None
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception as exc:
+            error_type = type(exc).__name__
+            raise
+        finally:
+            operation_id = request.path_params.get("operation_id")
+            route = _safe_route_locator(request)
+            duration_seconds = time.perf_counter() - started_at
+            HTTP_REQUESTS.labels(
+                route=route or "unmatched",
+                method=request.method,
+                status_class=f"{status_code // 100}xx",
+                status_code=str(status_code),
+            ).inc()
+            HTTP_REQUEST_DURATION.labels(
+                route=route or "unmatched",
+                method=request.method,
+            ).observe(duration_seconds)
+            log_event(
+                logger,
+                logging.ERROR if status_code >= 500 else logging.INFO,
+                "HTTP.REQUEST_COMPLETED",
+                request_id=request_id,
+                operation_id=operation_id if isinstance(operation_id, str) else None,
+                duration_ms=round(duration_seconds * 1000, 3),
+                error_type=error_type,
+                route=route,
+                http_method=request.method,
+                status_code=status_code,
+            )
+            reset_log_correlation(correlation_token)
 
     @app.exception_handler(ProblemException)
     async def handle_problem(request: Request, exc: ProblemException) -> JSONResponse:

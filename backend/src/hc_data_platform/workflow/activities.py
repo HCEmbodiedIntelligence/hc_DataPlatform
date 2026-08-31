@@ -3,19 +3,41 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager, suppress
+import tempfile
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from threading import Event
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
+from urllib.parse import quote, unquote, urlparse
 
 from pydantic import ValidationError
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from hc_data_platform.alignment.models import AlignedFragmentManifestV1, AlignmentInputV1
+from hc_data_platform.aligned_media.models import (
+    AlignedMediaArtifactV1,
+    AlignedMediaGenerationRequestV1,
+    AlignedMediaScopeV1,
+    AlignmentCameraStagingArtifactV1,
+    AlignmentStagingArtifactV1,
+)
+from hc_data_platform.aligned_media.ports import (
+    AlignedMediaArtifactStorePort,
+    AlignedMediaRepositoryPort,
+)
+from hc_data_platform.alignment.models import (
+    AlignedFragmentManifestV1,
+    AlignmentInputV1,
+    ModalityKind,
+    TimedSampleV1,
+)
 from hc_data_platform.alignment.ports import AlignmentPort, FragmentWriterPort
 from hc_data_platform.annotation.automation import (
     AutomaticAnnotationBlocked,
@@ -34,30 +56,63 @@ from hc_data_platform.core.observability import (
     WORKFLOW_FAILURES,
     locator_workflow_id,
 )
+from hc_data_platform.core.structured_logging import (
+    LogCorrelation,
+    bind_log_correlation,
+    log_event,
+    reset_log_correlation,
+)
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
 from hc_data_platform.ingest.manifest import ManifestParserPort
-from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1
+from hc_data_platform.lance_catalog.models import (
+    AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
+)
+from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1, StepRecord
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.lance_catalog.service import (
     CatalogConflictError,
     SchemaIncompatibleError,
 )
-from hc_data_platform.preview.models import PreviewArtifactV1, PreviewRequestV1, PreviewScopeV1
+from hc_data_platform.platform_control.maintenance_contract import MaintenanceContractError
+from hc_data_platform.platform_ops.maintenance import (
+    EnvironmentId,
+    MaintenanceWriteGate,
+    SafeActorId,
+    writer_permit_scope,
+)
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
     PublishDatasetRequestV1,
     PublishedDatasetManifestV1,
 )
-from hc_data_platform.quality.models import QcReportV1, QualityInputV1
+from hc_data_platform.quality.models import (
+    QcReportV1,
+    QualityInputV1,
+    QualityStatus,
+    QualityStreamObservationV1,
+)
 from hc_data_platform.quality.ports import QualityEvaluationPort
 from hc_data_platform.storage.temporal import LifecycleBatchExecutor
-from hc_data_platform.verification.models import RawVerificationReportV1
-from hc_data_platform.verification.ports import RawVerificationPort
+from hc_data_platform.verification.models import RawVerificationReportV1, VerificationStatus
+from hc_data_platform.verification.ports import (
+    RawStreamVerificationPort,
+    RawVerificationPort,
+    ReadableBinaryStream,
+)
+from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePort
 
 from .models import (
+    AlignedBundleCommitActivityInput,
+    AlignedBundleCommitActivityOutput,
+    AlignedMediaActivityInput,
+    AlignedMediaActivityOutput,
+    AlignedMediaCleanupActivityInput,
+    AlignedMediaCleanupActivityOutput,
     AlignmentActivityInput,
     AlignmentActivityOutput,
+    AlignmentStagingCleanupActivityInput,
+    AlignmentStagingCleanupActivityOutput,
     AutomaticAnnotationActivityInput,
     AutomaticAnnotationActivityOutput,
     CatalogCommitActivityInput,
@@ -71,12 +126,13 @@ from .models import (
     ExportArtifactVerificationActivityOutput,
     ExportPreflightActivityInput,
     ExportPreflightActivityOutput,
+    FrameSelectionManifestRefV1,
     IngestProjectionSourceV1,
+    IngestSourceProcessingActivityInput,
+    IngestSourceProcessingActivityOutput,
     JobRecord,
     ManifestActivityInput,
     ManifestActivityOutput,
-    PreviewActivityInput,
-    PreviewActivityOutput,
     ProjectionCleanupActivityInput,
     ProjectionCleanupActivityOutput,
     ProjectionMaterializationActivityInput,
@@ -93,16 +149,20 @@ from .models import (
 )
 from .names import (
     ALIGN_FRAGMENT_ACTIVITY,
+    CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
     CLEANUP_INGEST_PROJECTION_ACTIVITY,
+    CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY,
+    COMMIT_ALIGNED_BUNDLE_ACTIVITY,
     COMMIT_FRAGMENT_ACTIVITY,
+    CREATE_ALIGNED_MEDIA_ACTIVITY,
     CREATE_ANNOTATION_TASK_ACTIVITY,
-    CREATE_PREVIEW_ACTIVITY,
     EVALUATE_QUALITY_ACTIVITY,
     EXPORT_DATASET_ACTIVITY,
     MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
     PARSE_MANIFEST_ACTIVITY,
     PERSIST_WORKFLOW_JOB_ACTIVITY,
     PREFLIGHT_EXPORT_ACTIVITY,
+    PROCESS_INGEST_SOURCE_ACTIVITY,
     PUBLISH_DATASET_ACTIVITY,
     RECONCILE_CATALOG_ACTIVITY,
     RECONCILE_PUBLICATION_ACTIVITY,
@@ -119,6 +179,19 @@ class FragmentWriterFactoryPort(Protocol):
     def create(self, request: AlignmentActivityInput) -> FragmentWriterPort: ...
 
 
+class LocalIngestProjectionSessionPort(Protocol):
+    quality_data: QualityInputV1
+    alignment_data: AlignmentInputV1
+
+    def open_reader(self) -> ReadableBinaryStream: ...
+
+    def quality_observations(self) -> Iterable[QualityStreamObservationV1]: ...
+
+    def alignment_samples(self) -> Iterable[tuple[str, TimedSampleV1]]: ...
+
+    def frame_selection(self) -> FrameSelectionManifestRefV1: ...
+
+
 class IngestProjectionPort(Protocol):
     """Reload bounded raw observations inside an activity, outside workflow history."""
 
@@ -126,9 +199,26 @@ class IngestProjectionPort(Protocol):
 
     def cleanup(self, source: IngestProjectionSourceV1) -> None: ...
 
+    def open_local_session(
+        self, source: IngestProjectionSourceV1
+    ) -> AbstractContextManager[LocalIngestProjectionSessionPort]: ...
+
+    def project_alignment_metadata(self, source: IngestProjectionSourceV1) -> AlignmentInputV1: ...
+
     def project_quality(self, source: IngestProjectionSourceV1) -> QualityInputV1: ...
 
+    def project_quality_stream(
+        self, source: IngestProjectionSourceV1
+    ) -> tuple[QualityInputV1, Iterable[QualityStreamObservationV1]]: ...
+
     def project_alignment(self, source: IngestProjectionSourceV1) -> AlignmentInputV1: ...
+
+    def project_alignment_stream(
+        self, source: IngestProjectionSourceV1
+    ) -> tuple[
+        AlignmentInputV1,
+        Iterable[tuple[str, TimedSampleV1]],
+    ]: ...
 
 
 class DatasetIngestProjectionPort(Protocol):
@@ -143,6 +233,7 @@ class DatasetIngestProjectionPort(Protocol):
         frequency_hz: float,
         version: DatasetVersionRef,
         ready: DerivedReadyV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> DatasetIngestViewerTarget: ...
 
 
@@ -155,16 +246,22 @@ class CatalogFragmentAdapterPort(Protocol):
         manifest: AlignedFragmentManifestV1,
     ) -> CatalogFragmentPayloadV1: ...
 
+    def prepare_streaming(
+        self,
+        request: AlignmentActivityInput,
+        manifest: AlignedFragmentManifestV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
+    ) -> tuple[CatalogFragmentManifestV1, Sequence[StepRecord]]: ...
 
-class PreviewGenerationPort(Protocol):
+
+class AlignedMediaGenerationPort(Protocol):
     def generate(
         self,
-        scope: PreviewScopeV1,
-        request: PreviewRequestV1,
+        scope: AlignedMediaScopeV1,
+        request: AlignedMediaGenerationRequestV1,
         *,
-        job_id: str | None = None,
         cancelled: Callable[[], bool] | None = None,
-    ) -> PreviewArtifactV1: ...
+    ) -> AlignedMediaArtifactV1: ...
 
 
 class DatasetPublishingPort(Protocol):
@@ -244,9 +341,13 @@ class ActivityDependencies:
     ingest_projection: IngestProjectionPort | None = None
     dataset_ingest_projection: DatasetIngestProjectionPort | None = None
     fragment_writers: FragmentWriterFactoryPort | None = None
+    alignment_staging: ProjectionArtifactStorePort | None = None
+    alignment_staging_ttl: timedelta = timedelta(hours=24)
     catalog_fragments: CatalogFragmentAdapterPort | None = None
     catalog: LanceCatalogPort | None = None
-    preview: PreviewGenerationPort | None = None
+    aligned_media: AlignedMediaGenerationPort | None = None
+    aligned_media_repository: AlignedMediaRepositoryPort | None = None
+    aligned_media_store: AlignedMediaArtifactStorePort | None = None
     publisher: DatasetPublishingPort | None = None
     exporter: DatasetExportPort | None = None
     catalog_reconciler: CatalogReconciliationPort | None = None
@@ -264,14 +365,15 @@ class WorkflowPortNotConfigured(RuntimeError):
 
 
 _dependencies = ActivityDependencies()
+_maintenance_gate: MaintenanceWriteGate | None = None
+_maintenance_environment_id: EnvironmentId = "local"
+_maintenance_instance_id: SafeActorId = "unconfigured-worker"
 
-# Preview encoding is CPU-heavy. Temporal may have hundreds of ingest workflows
+# MP4 encoding is CPU-heavy. Temporal may have hundreds of ingest workflows
 # queued, but a worker must only transcode a small, fixed number at once. Tasks
 # waiting here remain async and heartbeat instead of occupying executor threads.
-_PREVIEW_ACTIVITY_CONCURRENCY = max(
-    1, int(os.getenv("HC_MEDIA_MAX_CONCURRENT_GENERATIONS", "2"))
-)
-_PREVIEW_ACTIVITY_SLOTS = asyncio.Semaphore(_PREVIEW_ACTIVITY_CONCURRENCY)
+_MEDIA_ACTIVITY_CONCURRENCY = max(1, int(os.getenv("HC_MEDIA_MAX_CONCURRENT_GENERATIONS", "2")))
+_MEDIA_ACTIVITY_SLOTS = asyncio.Semaphore(_MEDIA_ACTIVITY_CONCURRENCY)
 
 
 def configure_activity_dependencies(dependencies: ActivityDependencies) -> None:
@@ -289,6 +391,20 @@ def current_activity_dependencies() -> ActivityDependencies:
     return _dependencies
 
 
+def configure_activity_maintenance(
+    gate: MaintenanceWriteGate | None,
+    *,
+    environment_id: EnvironmentId = "local",
+    instance_id: SafeActorId = "unconfigured-worker",
+) -> None:
+    """Bind the process-global worker fence before Temporal begins polling."""
+
+    global _maintenance_gate, _maintenance_environment_id, _maintenance_instance_id
+    _maintenance_gate = gate
+    _maintenance_environment_id = environment_id
+    _maintenance_instance_id = instance_id
+
+
 def _require(value: _T | None, name: str) -> _T:
     if value is None:
         raise WorkflowPortNotConfigured(f"workflow activity port {name!r} is not configured")
@@ -303,24 +419,61 @@ def _worker_scope(
     *,
     organization_id: str | None = None,
 ) -> Iterator[None]:
-    if project_id is None:
-        yield
-        return
-    token = bind_request_context(
-        RequestContext(
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            subject_id="hc-data-worker",
-            request_id=locator_workflow_id("activity", project_id, resource_id),
-            roles=frozenset({"admin"}),
-            service_identity=True,
+    resource_digest = hashlib.sha256(resource_id.encode()).hexdigest()[:24]
+    writer_id = f"activity:{_maintenance_instance_id}:{resource_digest}"
+    try:
+        workflow_id = activity.info().workflow_id
+    except RuntimeError:
+        workflow_id = None
+    request_id = (
+        locator_workflow_id("activity", project_id, resource_id) if project_id is not None else None
+    )
+    correlation_token = bind_log_correlation(
+        LogCorrelation(
+            request_id=request_id,
+            operation_id=workflow_id,
+            workflow_id=workflow_id,
         )
     )
     try:
-        yield
+        with writer_permit_scope(
+            _maintenance_gate,
+            environment_id=_maintenance_environment_id,
+            writer_id=writer_id,
+            writer_kind="temporal_activity",
+        ):
+            if project_id is None:
+                yield
+                return
+            token = bind_request_context(
+                RequestContext(
+                    organization_id=organization_id,
+                    project_id=project_id,
+                    region_code=region_code,
+                    subject_id="hc-data-worker",
+                    request_id=request_id or "activity",
+                    roles=frozenset({"admin"}),
+                    service_identity=True,
+                )
+            )
+            try:
+                yield
+            finally:
+                reset_request_context(token)
     finally:
-        reset_request_context(token)
+        reset_log_correlation(correlation_token)
+
+
+@contextmanager
+def _media_attempt_scope(resource_id: str) -> Iterator[None]:
+    resource_digest = hashlib.sha256(resource_id.encode()).hexdigest()[:24]
+    with writer_permit_scope(
+        _maintenance_gate,
+        environment_id=_maintenance_environment_id,
+        writer_id=f"aligned-media:{_maintenance_instance_id}:{resource_digest}",
+        writer_kind="aligned_media_attempt",
+    ):
+        yield
 
 
 def _heartbeat(stage: str, state: str) -> None:
@@ -342,6 +495,8 @@ async def _with_heartbeats(
             done, _ = await asyncio.wait({task}, timeout=_HEARTBEAT_INTERVAL_SECONDS)
             if task in done:
                 result = task.result()
+                if activity.is_cancelled():
+                    raise asyncio.CancelledError
                 _heartbeat(stage, "completed")
                 return result
             _heartbeat(stage, "running")
@@ -365,9 +520,6 @@ async def _invoke(
         return await _with_heartbeats(stage, operation, on_cancel=on_cancel)
     except ApplicationError:
         WORKFLOW_FAILURES.labels(
-            project_id="unknown",
-            resource_id=stage,
-            workflow_id=f"activity:{stage}",
             workflow_kind=stage,
             error_code="APPLICATION_ERROR",
         ).inc()
@@ -386,6 +538,12 @@ async def _invoke(
     except AutomaticAnnotationBlocked as exc:
         raise ApplicationError(
             str(exc),
+            type=exc.code,
+            non_retryable=False,
+        ) from exc
+    except MaintenanceContractError as exc:
+        raise ApplicationError(
+            "The environment is read-only for maintenance.",
             type=exc.code,
             non_retryable=False,
         ) from exc
@@ -490,6 +648,185 @@ async def verify_raw(request: VerificationActivityInput) -> VerificationActivity
     return VerificationActivityOutput(report=report)
 
 
+@activity.defn(name=PROCESS_INGEST_SOURCE_ACTIVITY)
+async def process_ingest_source(
+    request: IngestSourceProcessingActivityInput,
+) -> IngestSourceProcessingActivityOutput:
+    """Use one OSS Raw download and no object-store Projection Arrow."""
+
+    source = _require(request.quality.source, "workflow.IngestProjectionSourceV1")
+    cancel_event = Event()
+
+    def cancelled() -> bool:
+        return cancel_event.is_set() or activity.is_cancelled()
+
+    def stop_if_cancelled() -> None:
+        # A short event wait closes the race between an accepted Temporal
+        # cancellation and completion of the current synchronous callback.
+        if cancel_event.wait(0.2) or cancelled():
+            raise asyncio.CancelledError
+
+    def process() -> IngestSourceProcessingActivityOutput:
+        projection = _require(
+            _dependencies.ingest_projection,
+            "workflow.IngestProjectionPort",
+        )
+        verifier = _require(_dependencies.verifier, "verification.RawVerificationPort")
+        if not isinstance(verifier, RawStreamVerificationPort):
+            raise WorkflowPortNotConfigured(
+                "combined ingest processing requires verification.RawStreamVerificationPort"
+            )
+        with projection.open_local_session(source) as session:
+            verification_report = verifier.verify_stream(
+                rollout_id=request.verification.rollout_id,
+                object_key=request.verification.object_key,
+                source_sha256=request.verification.source_sha256,
+                required_topics=set(request.verification.required_topics),
+                known_optional_topics=set(request.verification.known_optional_topics),
+                stream=session.open_reader(),
+            )
+            stop_if_cancelled()
+            if (
+                verification_report.rollout_id != request.verification.rollout_id
+                or verification_report.object_key != request.verification.object_key
+                or verification_report.source_sha256 != request.verification.source_sha256
+            ):
+                raise ValueError("Raw verification report lineage does not match activity input")
+            if _dependencies.verification_reports is not None:
+                if (
+                    request.verification.project_id is None
+                    or request.verification.region_code is None
+                ):
+                    raise ValueError("verification persistence requires project_id and region_code")
+                _dependencies.verification_reports.put_report(
+                    project_id=request.verification.project_id,
+                    region_code=request.verification.region_code,
+                    report=verification_report,
+                )
+            verification_output = VerificationActivityOutput(report=verification_report)
+            if verification_report.status is VerificationStatus.REJECTED:
+                return IngestSourceProcessingActivityOutput(
+                    verification=verification_output,
+                )
+
+            quality_data = session.quality_data
+            quality_report = _require(
+                _dependencies.quality,
+                "quality.QualityEvaluationPort",
+            ).evaluate_stream(
+                quality_data,
+                session.quality_observations(),
+                request.quality.profile,
+            )
+            stop_if_cancelled()
+            if (
+                quality_report.rollout_id != quality_data.rollout_id
+                or quality_report.source_sha256 != quality_data.source_sha256
+                or quality_report.profile_id != request.quality.profile.profile_id
+                or quality_report.profile_version != request.quality.profile.profile_version
+                or quality_report.profile_sha256 != request.quality.profile.content_sha256()
+                or quality_report.engine_version != request.quality.profile.engine_version
+                or quality_report.start_ns != quality_data.start_ns
+                or quality_report.end_ns != quality_data.end_ns
+            ):
+                raise ValueError("Quality report lineage does not match activity input")
+            if _dependencies.quality_reports is not None:
+                if request.quality.project_id is None or request.quality.region_code is None:
+                    raise ValueError("quality persistence requires project_id and region_code")
+                _dependencies.quality_reports.put_report(
+                    project_id=request.quality.project_id,
+                    region_code=request.quality.region_code,
+                    report=quality_report,
+                )
+            quality_output = QualityActivityOutput(report=quality_report)
+            if quality_report.status is not QualityStatus.PASS:
+                return IngestSourceProcessingActivityOutput(
+                    verification=verification_output,
+                    quality=quality_output,
+                )
+
+            alignment_data = session.alignment_data
+            effective_request = request.alignment.model_copy(
+                update={"data": alignment_data, "source": None}
+            )
+            alignment = _require(_dependencies.alignment, "alignment.AlignmentPort")
+            writer = _require(
+                _dependencies.fragment_writers,
+                "alignment.FragmentWriterFactoryPort",
+            ).create(effective_request)
+            staged_manifest = alignment.align_stream_to_writer(
+                rollout_id=alignment_data.rollout_id,
+                source_sha256=alignment_data.source_sha256,
+                attempt_id=alignment_data.attempt_id,
+                start_ns=alignment_data.start_ns,
+                end_ns=alignment_data.end_ns,
+                stream_kinds={name: stream.kind for name, stream in alignment_data.streams.items()},
+                samples=session.alignment_samples(),
+                profile=request.alignment.profile,
+                writer=writer,
+            )
+            stop_if_cancelled()
+            if (
+                staged_manifest.rollout_id != alignment_data.rollout_id
+                or staged_manifest.source_sha256 != alignment_data.source_sha256
+                or staged_manifest.attempt_id != alignment_data.attempt_id
+                or staged_manifest.frequency_hz != request.alignment.profile.frequency_hz
+            ):
+                raise ValueError("Alignment manifest lineage does not match activity input")
+            if _dependencies.alignment_manifests is not None:
+                if request.alignment.region_code is None:
+                    raise ValueError("alignment persistence requires region_code")
+                _dependencies.alignment_manifests.put_ready_manifest(
+                    project_id=request.alignment.project_id,
+                    region_code=request.alignment.region_code,
+                    manifest=staged_manifest,
+                )
+            staging = _publish_alignment_staging(
+                request.alignment,
+                staged_manifest,
+                camera_ids=tuple(
+                    name
+                    for name, stream in alignment_data.streams.items()
+                    if stream.kind is ModalityKind.IMAGE
+                ),
+            )
+            catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
+            current = catalog.current_version(
+                request.alignment.dataset_id,
+                project_id=request.alignment.project_id,
+            )
+            expected_version = 1 if current is None else current.version + 1
+            alignment_output = AlignmentActivityOutput(
+                staged_manifest=staged_manifest,
+                alignment_staging=staging,
+                expected_dataset_version=expected_version,
+            )
+            return IngestSourceProcessingActivityOutput(
+                verification=verification_output,
+                quality=quality_output,
+                alignment=alignment_output,
+                frame_selection=session.frame_selection(),
+            )
+
+    with _worker_scope(
+        source.project_id,
+        source.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        result = await _invoke(
+            "ingest_source_processing",
+            process,
+            on_cancel=cancel_event.set,
+        )
+    if result.quality is not None:
+        QC_OUTCOMES.labels(
+            outcome=result.quality.report.status.value,
+            profile_id=result.quality.report.profile_id,
+        ).inc()
+    return result
+
+
 @activity.defn(name=MATERIALIZE_INGEST_PROJECTION_ACTIVITY)
 async def materialize_ingest_projection(
     request: ProjectionMaterializationActivityInput,
@@ -546,16 +883,24 @@ async def cleanup_ingest_projection(
 async def evaluate_quality(request: QualityActivityInput) -> QualityActivityOutput:
     def evaluate_and_persist() -> QcReportV1:
         data = request.data
+        observations: Iterable[QualityStreamObservationV1] | None = None
         if data is None:
             source = _require(request.source, "workflow.IngestProjectionSourceV1")
-            data = _require(
+            projection = _require(
                 _dependencies.ingest_projection,
                 "workflow.IngestProjectionPort",
-            ).project_quality(source)
+            )
+            if source.materialization is None:
+                data = projection.project_quality(source)
+            else:
+                data, observations = projection.project_quality_stream(source)
             if data.rollout_id != source.rollout_id or data.source_sha256 != source.source_sha256:
                 raise ValueError("projected quality data lineage does not match source")
-        report = _require(_dependencies.quality, "quality.QualityEvaluationPort").evaluate(
-            data, request.profile
+        evaluator = _require(_dependencies.quality, "quality.QualityEvaluationPort")
+        report = (
+            evaluator.evaluate(data, request.profile)
+            if observations is None
+            else evaluator.evaluate_stream(data, observations, request.profile)
         )
         if (
             report.rollout_id != data.rollout_id
@@ -592,45 +937,56 @@ async def evaluate_quality(request: QualityActivityInput) -> QualityActivityOutp
     project_id = request.project_id or "unknown"
     workflow_id = locator_workflow_id("ingest-rollout", project_id, lineage.rollout_id)
     QC_OUTCOMES.labels(
-        project_id=project_id,
-        resource_id=lineage.rollout_id,
-        workflow_id=workflow_id,
         outcome=report.status.value,
         profile_id=report.profile_id,
     ).inc()
-    logger.info(
-        "quality activity completed",
-        extra={
-            "request_id": None,
-            "project_id": project_id,
-            "resource_id": lineage.rollout_id,
-            "workflow_id": workflow_id,
-            "error_code": None,
-        },
+    log_event(
+        logger,
+        logging.INFO,
+        "ACTIVITY.QUALITY_COMPLETED",
+        workflow_id=workflow_id,
     )
     return QualityActivityOutput(report=report)
 
 
 @activity.defn(name=ALIGN_FRAGMENT_ACTIVITY)
 async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOutput:
-    def align_and_prepare() -> AlignmentActivityOutput:
+    def align_and_stage() -> AlignmentActivityOutput:
         data = request.data
         effective_request = request
+        stream_samples: Iterable[tuple[str, TimedSampleV1]] | None = None
         if data is None:
             source = _require(request.source, "workflow.IngestProjectionSourceV1")
-            data = _require(
+            projection = _require(
                 _dependencies.ingest_projection,
                 "workflow.IngestProjectionPort",
-            ).project_alignment(source)
+            )
+            if source.materialization is None:
+                data = projection.project_alignment(source)
+            else:
+                data, stream_samples = projection.project_alignment_stream(source)
             if data.rollout_id != source.rollout_id or data.source_sha256 != source.source_sha256:
                 raise ValueError("projected alignment data lineage does not match source")
             effective_request = request.model_copy(update={"data": data, "source": None})
         alignment = _require(_dependencies.alignment, "alignment.AlignmentPort")
         writers = _require(_dependencies.fragment_writers, "alignment.FragmentWriterFactoryPort")
-        adapter = _require(_dependencies.catalog_fragments, "workflow.CatalogFragmentAdapterPort")
         catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
         writer = writers.create(effective_request)
-        manifest = alignment.align_to_writer(data, request.profile, writer)
+        manifest = (
+            alignment.align_to_writer(data, request.profile, writer)
+            if stream_samples is None
+            else alignment.align_stream_to_writer(
+                rollout_id=data.rollout_id,
+                source_sha256=data.source_sha256,
+                attempt_id=data.attempt_id,
+                start_ns=data.start_ns,
+                end_ns=data.end_ns,
+                stream_kinds={name: stream.kind for name, stream in data.streams.items()},
+                samples=stream_samples,
+                profile=request.profile,
+                writer=writer,
+            )
+        )
         if (
             manifest.rollout_id != data.rollout_id
             or manifest.source_sha256 != data.source_sha256
@@ -646,49 +1002,19 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
                 region_code=request.region_code,
                 manifest=manifest,
             )
-        fragment = adapter.prepare(effective_request, manifest)
-        catalog_manifest = fragment.manifest
-        if (
-            catalog_manifest.project_id != request.project_id
-            or catalog_manifest.dataset_id != request.dataset_id
-            or catalog_manifest.schema_snapshot_id != request.schema_snapshot_id
-            or catalog_manifest.rollout_id != data.rollout_id
-            or catalog_manifest.source_sha256 != data.source_sha256
-            or catalog_manifest.attempt_id != data.attempt_id
-        ):
-            raise ValueError("Catalog fragment lineage does not match activity input")
-        version, ready = catalog.commit_fragment(catalog_manifest, fragment.steps)
-        viewer_target = None
-        if request.source is not None:
-            viewer_target = _require(
-                _dependencies.dataset_ingest_projection,
-                "workflow.DatasetIngestProjectionPort",
-            ).project(
-                source=request.source,
-                alignment=data,
-                schema_snapshot_id=request.schema_snapshot_id,
-                frequency_hz=request.profile.frequency_hz,
-                version=version,
-                ready=ready,
-            )
-        workflow_id = locator_workflow_id(
-            "dataset-writer",
-            catalog_manifest.project_id,
-            catalog_manifest.dataset_id,
+        staging = _publish_alignment_staging(
+            request,
+            manifest,
+            camera_ids=tuple(
+                name for name, stream in data.streams.items() if stream.kind is ModalityKind.IMAGE
+            ),
         )
-        LANCE_COMMITS.labels(
-            project_id=catalog_manifest.project_id,
-            resource_id=catalog_manifest.rollout_id,
-            workflow_id=workflow_id,
-            outcome="success",
-            dataset_id=catalog_manifest.dataset_id,
-        ).inc()
+        current = catalog.current_version(request.dataset_id, project_id=request.project_id)
+        expected_dataset_version = 1 if current is None else current.version + 1
         return AlignmentActivityOutput(
             staged_manifest=manifest,
-            catalog_fragment=CatalogFragmentPayloadV1(manifest=catalog_manifest, steps=()),
-            dataset_version=version,
-            derived_ready=ready,
-            viewer_target=viewer_target,
+            alignment_staging=staging,
+            expected_dataset_version=expected_dataset_version,
         )
 
     lineage = request.data or request.source
@@ -701,7 +1027,379 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
         lineage.rollout_id,
         organization_id=organization_id,
     ):
-        return await _invoke("alignment", align_and_prepare)
+        return await _invoke("alignment", align_and_stage)
+
+
+def _publish_alignment_staging(
+    request: AlignmentActivityInput,
+    manifest: AlignedFragmentManifestV1,
+    *,
+    camera_ids: Sequence[str] = (),
+) -> AlignmentStagingArtifactV1:
+    store = _require(
+        _dependencies.alignment_staging,
+        "workflow.ProjectionArtifactStorePort",
+    )
+    parsed = urlparse(manifest.staging_uri)
+    if parsed.scheme != "file" or parsed.netloc not in {"", "localhost"}:
+        raise ValueError("alignment writer must commit a local Arrow file")
+    path = Path(unquote(parsed.path)).resolve()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(8 * 1024 * 1024):
+            digest.update(chunk)
+    file_sha256 = digest.hexdigest()
+    organization_id = request.source.organization_id if request.source is not None else "legacy"
+    object_key = "/".join(
+        (
+            "staging/alignment",
+            quote(organization_id, safe="-._~"),
+            quote(request.project_id, safe="-._~"),
+            quote(request.dataset_id, safe="-._~"),
+            quote(manifest.rollout_id, safe="-._~"),
+            quote(manifest.attempt_id, safe="-._~"),
+            f"{file_sha256}.arrow",
+        )
+    )
+    published_keys: list[str] = []
+    camera_shards: dict[str, AlignmentCameraStagingArtifactV1] = {}
+    try:
+        size = store.publish_file(object_key, path, sha256=file_sha256)
+        published_keys.append(object_key)
+        shard_paths: dict[str, Path] = {}
+        try:
+            for camera_id in tuple(dict.fromkeys(camera_ids)):
+                descriptor, shard_name = tempfile.mkstemp(
+                    prefix="aligned-camera-",
+                    suffix=".arrow.part",
+                    dir=path.parent,
+                )
+                os.close(descriptor)
+                shard_paths[camera_id] = Path(shard_name)
+            _write_alignment_camera_shards(
+                source_path=path,
+                destinations=shard_paths,
+                rollout_id=manifest.rollout_id,
+                expected_rows=manifest.row_count,
+            )
+            for camera_id, shard_path in shard_paths.items():
+                shard_sha256 = _file_sha256(shard_path)
+                camera_component = hashlib.sha256(camera_id.encode()).hexdigest()[:24]
+                shard_key = f"{object_key.removesuffix('.arrow')}/cameras/{camera_component}.arrow"
+                shard_size = store.publish_file(
+                    shard_key,
+                    shard_path,
+                    sha256=shard_sha256,
+                )
+                published_keys.append(shard_key)
+                camera_shards[camera_id] = AlignmentCameraStagingArtifactV1(
+                    object_key=shard_key,
+                    content_sha256=shard_sha256,
+                    size_bytes=shard_size,
+                    row_count=manifest.row_count,
+                )
+        finally:
+            for shard_path in shard_paths.values():
+                with suppress(OSError):
+                    shard_path.unlink()
+    except Exception:
+        for published_key in reversed(published_keys):
+            with suppress(Exception):
+                store.delete(published_key)
+        raise
+    finally:
+        with suppress(OSError):
+            path.unlink()
+        with suppress(OSError):
+            path.parent.rmdir()
+    now = datetime.now(timezone.utc)
+    return AlignmentStagingArtifactV1(
+        object_key=object_key,
+        content_sha256=file_sha256,
+        size_bytes=size,
+        row_count=manifest.row_count,
+        alignment_version=f"{manifest.converter_version}:{manifest.profile_id}",
+        camera_shards=camera_shards,
+        created_at=now,
+        expires_at=now + _dependencies.alignment_staging_ttl,
+    )
+
+
+def _write_alignment_camera_shard(
+    *,
+    source_path: Path,
+    destination_path: Path,
+    rollout_id: str,
+    camera_id: str,
+    expected_rows: int,
+) -> None:
+    """Compatibility wrapper for tests and one-camera callers."""
+
+    _write_alignment_camera_shards(
+        source_path=source_path,
+        destinations={camera_id: destination_path},
+        rollout_id=rollout_id,
+        expected_rows=expected_rows,
+    )
+
+
+def _write_alignment_camera_shards(
+    *,
+    source_path: Path,
+    destinations: Mapping[str, Path],
+    rollout_id: str,
+    expected_rows: int,
+) -> None:
+    """Scan alignment Arrow once and fan out bounded camera-only shards."""
+
+    try:
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+    except ImportError as exc:
+        raise RuntimeError("alignment camera sharding requires PyArrow") from exc
+    from hc_data_platform.alignment.canonical import denormalize_from_json
+    from hc_data_platform.alignment.models import AlignedValueV1
+
+    if not destinations:
+        return
+    states: dict[str, dict[str, Any]] = {}
+    for camera_id, destination_path in destinations.items():
+        if not camera_id:
+            raise ValueError("camera shard identity must be non-empty")
+        schema = pa.schema(
+            [
+                pa.field("rollout_id", pa.string(), nullable=False),
+                pa.field("step_index", pa.int64(), nullable=False),
+                pa.field("timestamp_ns", pa.int64(), nullable=False),
+                pa.field("image", pa.binary()),
+                pa.field("valid", pa.bool_(), nullable=False),
+                pa.field("repeated", pa.bool_(), nullable=False),
+            ],
+            metadata={
+                b"hc.schema": b"aligned-camera/v1",
+                b"hc.camera_id": camera_id.encode(),
+            },
+        )
+        sink = pa.OSFile(str(destination_path), "wb")
+        states[camera_id] = {
+            "schema": schema,
+            "sink": sink,
+            "writer": ipc.new_file(sink, schema),
+            "buffers": {field.name: [] for field in schema},
+        }
+
+    buffered_bytes = 0
+    buffered_rows = 0
+    observed = 0
+
+    def flush() -> None:
+        nonlocal buffered_bytes, buffered_rows
+        if buffered_rows == 0:
+            return
+        for state in states.values():
+            schema = state["schema"]
+            buffers = state["buffers"]
+            batch = pa.record_batch(
+                [buffers[field.name] for field in schema],
+                schema=schema,
+            )
+            state["writer"].write_batch(batch)
+            del batch
+            state["buffers"] = {field.name: [] for field in schema}
+        buffered_bytes = 0
+        buffered_rows = 0
+        pa.default_memory_pool().release_unused()
+
+    try:
+        with pa.memory_map(str(source_path), "r") as source:
+            reader = ipc.open_file(source)
+            for batch_index in range(reader.num_record_batches):
+                batch = reader.get_batch(batch_index)
+                rollouts = batch.column("rollout_id")
+                indexes = batch.column("step_index")
+                timestamps = batch.column("timestamp_ns")
+                modalities = batch.column("modalities_json")
+                for row_index in range(batch.num_rows):
+                    row_rollout = str(rollouts[row_index].as_py())
+                    step_index = int(indexes[row_index].as_py())
+                    if row_rollout != rollout_id or step_index != observed:
+                        raise ValueError("aligned staging rows are not contiguous for camera shard")
+                    encoded = modalities[row_index].as_py()
+                    payload = denormalize_from_json(json.loads(bytes(encoded).decode("utf-8")))
+                    if not isinstance(payload, dict):
+                        raise ValueError("aligned staging modalities must be an object")
+                    projected: dict[str, tuple[AlignedValueV1, bytes | None]] = {}
+                    row_bytes = 0
+                    for camera_id in states:
+                        if camera_id not in payload:
+                            raise ValueError(f"camera {camera_id!r} is absent from aligned staging")
+                        aligned = AlignedValueV1.model_validate(payload[camera_id])
+                        image = aligned.value if isinstance(aligned.value, bytes) else None
+                        projected[camera_id] = aligned, image
+                        row_bytes += 0 if image is None else len(image)
+                    if buffered_rows and buffered_bytes + row_bytes > 16 * 1024 * 1024:
+                        flush()
+                    timestamp_ns = int(timestamps[row_index].as_py())
+                    for camera_id, (aligned, image) in projected.items():
+                        buffers = states[camera_id]["buffers"]
+                        buffers["rollout_id"].append(row_rollout)
+                        buffers["step_index"].append(step_index)
+                        buffers["timestamp_ns"].append(timestamp_ns)
+                        buffers["image"].append(image)
+                        buffers["valid"].append(aligned.valid and image is not None)
+                        buffers["repeated"].append(aligned.repeated)
+                    buffered_bytes += row_bytes
+                    buffered_rows += 1
+                    observed += 1
+                    if buffered_rows >= 2_048 or buffered_bytes >= 16 * 1024 * 1024:
+                        flush()
+                del batch
+        if observed != expected_rows:
+            raise ValueError("camera shard row count does not match alignment manifest")
+        flush()
+        for state in states.values():
+            state["writer"].close()
+            state["sink"].close()
+    except Exception:
+        for state in states.values():
+            with suppress(Exception):
+                state["writer"].close()
+            with suppress(Exception):
+                state["sink"].close()
+        raise
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(8 * 1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+@activity.defn(name=COMMIT_ALIGNED_BUNDLE_ACTIVITY)
+async def commit_aligned_bundle(
+    request: AlignedBundleCommitActivityInput,
+) -> AlignedBundleCommitActivityOutput:
+    def commit() -> AlignedBundleCommitActivityOutput:
+        alignment_request = request.alignment
+        source = _require(alignment_request.source, "workflow.IngestProjectionSourceV1")
+        if any(
+            artifact.status.value != "READY"
+            or artifact.dataset_id != alignment_request.dataset_id
+            or artifact.rollout_id != source.rollout_id
+            or artifact.dataset_version != request.expected_dataset_version
+            or artifact.frame_count != request.staged_manifest.row_count
+            or artifact.alignment_version != request.alignment_staging.alignment_version
+            for artifact in request.media_artifacts
+        ):
+            raise ValueError("aligned media bundle is incomplete or has mismatched lineage")
+        camera_ids = [artifact.camera_id for artifact in request.media_artifacts]
+        if len(camera_ids) != len(set(camera_ids)):
+            raise ValueError("aligned media bundle contains duplicate cameras")
+        if request.expected_camera_ids and (
+            len(request.expected_camera_ids) != len(set(request.expected_camera_ids))
+            or set(camera_ids) != set(request.expected_camera_ids)
+        ):
+            raise ValueError("aligned media bundle does not cover the manifest cameras")
+        catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
+        current = catalog.current_version(
+            alignment_request.dataset_id,
+            project_id=alignment_request.project_id,
+        )
+        actual_next = 1 if current is None else current.version + 1
+        recovering_same_rollout = (
+            current is not None
+            and current.version == request.expected_dataset_version
+            and source.rollout_id in current.committed_rollouts
+        )
+        if actual_next != request.expected_dataset_version and not recovering_same_rollout:
+            raise ApplicationError(
+                "reserved Dataset version changed before aligned media commit",
+                type="ALIGNED_MEDIA_VERSION_CONFLICT",
+                non_retryable=True,
+            )
+        scope = AlignedMediaScopeV1(
+            organization_id=_require(
+                source.organization_id,
+                "workflow.IngestProjectionSourceV1.organization_id",
+            ),
+            project_id=alignment_request.project_id,
+            region_code=_require(alignment_request.region_code, "alignment.region_code"),
+        )
+        artifact_ids = tuple(artifact.artifact_id for artifact in request.media_artifacts)
+        repository = _require(
+            _dependencies.aligned_media_repository,
+            "aligned_media.AlignedMediaRepositoryPort",
+        )
+        now = datetime.now(timezone.utc)
+        repository.begin_dataset_commit(
+            scope=scope,
+            artifact_ids=artifact_ids,
+            lease_expires_at=now + timedelta(hours=6),
+            now=now,
+        )
+        store = _require(
+            _dependencies.alignment_staging,
+            "workflow.ProjectionArtifactStorePort",
+        )
+        adapter = _require(
+            _dependencies.catalog_fragments,
+            "workflow.CatalogFragmentAdapterPort",
+        )
+        with store.local_file(
+            request.alignment_staging.object_key,
+            expected_sha256=request.alignment_staging.content_sha256,
+            expected_size=request.alignment_staging.size_bytes,
+        ) as path:
+            local_manifest = request.staged_manifest.model_copy(
+                update={"staging_uri": path.resolve().as_uri()}
+            )
+            catalog_manifest, steps = adapter.prepare_streaming(
+                alignment_request,
+                local_manifest,
+                request.media_artifacts,
+            )
+            version, ready = catalog.commit_fragment(catalog_manifest, steps)
+        if version.version != request.expected_dataset_version:
+            raise RuntimeError("Lance committed a Dataset version different from its media key")
+        repository.mark_dataset_committed(
+            scope=scope,
+            artifact_ids=artifact_ids,
+            now=datetime.now(timezone.utc),
+        )
+        projection = _require(
+            _dependencies.ingest_projection,
+            "workflow.IngestProjectionPort",
+        )
+        alignment = projection.project_alignment_metadata(source)
+        viewer_target = _require(
+            _dependencies.dataset_ingest_projection,
+            "workflow.DatasetIngestProjectionPort",
+        ).project(
+            source=source,
+            alignment=alignment,
+            schema_snapshot_id=alignment_request.schema_snapshot_id,
+            frequency_hz=alignment_request.profile.frequency_hz,
+            version=version,
+            ready=ready,
+            media_artifacts=request.media_artifacts,
+        )
+        LANCE_COMMITS.labels(outcome="success").inc()
+        return AlignedBundleCommitActivityOutput(
+            version=version,
+            derived_ready=ready,
+            viewer_target=viewer_target,
+        )
+
+    source = _require(request.alignment.source, "workflow.IngestProjectionSourceV1")
+    with _worker_scope(
+        request.alignment.project_id,
+        request.alignment.region_code,
+        source.rollout_id,
+        organization_id=source.organization_id,
+    ):
+        return await _invoke("aligned_bundle_commit", commit)
 
 
 @activity.defn(name=COMMIT_FRAGMENT_ACTIVITY)
@@ -712,17 +1410,8 @@ async def commit_fragment(request: CatalogCommitActivityInput) -> CatalogCommitA
             request.fragment.manifest,
             request.fragment.steps,
         )
-        workflow_id = locator_workflow_id(
-            "dataset-writer",
-            request.fragment.manifest.project_id,
-            request.fragment.manifest.dataset_id,
-        )
         LANCE_COMMITS.labels(
-            project_id=request.fragment.manifest.project_id,
-            resource_id=request.fragment.manifest.rollout_id,
-            workflow_id=workflow_id,
             outcome="success",
-            dataset_id=request.fragment.manifest.dataset_id,
         ).inc()
         return CatalogCommitActivityOutput(version=version, derived_ready=ready)
 
@@ -772,42 +1461,137 @@ async def create_annotation_task(
         return await _invoke("annotation_task", create)
 
 
-@activity.defn(name=CREATE_PREVIEW_ACTIVITY)
-async def create_preview(request: PreviewActivityInput) -> PreviewActivityOutput:
-    preview_request = request.request
+@activity.defn(name=CREATE_ALIGNED_MEDIA_ACTIVITY)
+async def create_aligned_media(
+    request: AlignedMediaActivityInput,
+) -> AlignedMediaActivityOutput:
+    media_request = request.request
     with _worker_scope(
-        preview_request.project_id,
+        media_request.project_id,
         request.region_code,
-        f"{preview_request.dataset_id}/{preview_request.rollout_id}",
+        f"{media_request.dataset_id}/{media_request.rollout_id}/{media_request.camera_id}",
         organization_id=request.organization_id,
     ):
         while True:
             try:
-                await asyncio.wait_for(_PREVIEW_ACTIVITY_SLOTS.acquire(), timeout=10)
+                await asyncio.wait_for(_MEDIA_ACTIVITY_SLOTS.acquire(), timeout=10)
                 break
             except TimeoutError:
-                _heartbeat("preview", "queued")
+                _heartbeat("aligned_media", "queued")
         try:
             cancel_event = Event()
-            artifact = await _invoke(
-                "preview",
-                lambda: _require(
-                    _dependencies.preview, "preview.PreviewGenerationService"
-                ).generate(
-                    PreviewScopeV1(
-                        organization_id=request.organization_id,
-                        project_id=preview_request.project_id,
-                        region_code=request.region_code,
+            with _media_attempt_scope(
+                f"{media_request.dataset_id}/{media_request.rollout_id}/{media_request.camera_id}"
+            ):
+                artifact = await _invoke(
+                    "aligned_media",
+                    lambda: _require(
+                        _dependencies.aligned_media,
+                        "aligned_media.AlignedMediaGenerationService",
+                    ).generate(
+                        AlignedMediaScopeV1(
+                            organization_id=request.organization_id,
+                            project_id=media_request.project_id,
+                            region_code=request.region_code,
+                        ),
+                        media_request,
+                        cancelled=cancel_event.is_set,
                     ),
-                    preview_request,
-                    job_id=request.job_id,
-                    cancelled=cancel_event.is_set,
-                ),
-                on_cancel=cancel_event.set,
-            )
+                    on_cancel=cancel_event.set,
+                )
         finally:
-            _PREVIEW_ACTIVITY_SLOTS.release()
-    return PreviewActivityOutput(artifact=artifact)
+            _MEDIA_ACTIVITY_SLOTS.release()
+    return AlignedMediaActivityOutput(artifact=artifact)
+
+
+@activity.defn(name=CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY)
+async def cleanup_uncommitted_aligned_media(
+    request: AlignedMediaCleanupActivityInput,
+) -> AlignedMediaCleanupActivityOutput:
+    scope = AlignedMediaScopeV1(
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        region_code=request.region_code,
+    )
+    artifact_ids = tuple(artifact.artifact_id for artifact in request.artifacts)
+
+    def cleanup() -> AlignedMediaCleanupActivityOutput:
+        repository = _require(
+            _dependencies.aligned_media_repository,
+            "aligned_media.AlignedMediaRepositoryPort",
+        )
+        store = _require(
+            _dependencies.aligned_media_store,
+            "aligned_media.AlignedMediaArtifactStorePort",
+        )
+        identities = {
+            (artifact.dataset_id, artifact.dataset_version, artifact.rollout_id)
+            for artifact in request.artifacts
+        }
+        if len(identities) != 1:
+            raise ValueError("aligned media cleanup requires one Dataset-version rollout")
+        dataset_id, dataset_version, rollout_id = identities.pop()
+        current = _require(
+            _dependencies.catalog,
+            "lance_catalog.LanceCatalogPort",
+        ).current_version(dataset_id, project_id=request.project_id)
+        if (
+            current is not None
+            and current.version >= dataset_version
+            and rollout_id in current.committed_rollouts
+        ):
+            # The cross-system commit won the race. Repair the PostgreSQL marker
+            # instead of deleting MP4s already referenced by the visible Lance version.
+            repository.mark_dataset_committed(
+                scope=scope,
+                artifact_ids=artifact_ids,
+                now=datetime.now(timezone.utc),
+            )
+            return AlignedMediaCleanupActivityOutput(deleted_bytes=0)
+        objects = repository.begin_abandon_uncommitted(
+            scope=scope,
+            artifact_ids=artifact_ids,
+            error_code="ALIGNED_MEDIA_BUNDLE_ABORTED",
+            now=datetime.now(timezone.utc),
+        )
+        deleted = store.delete_exact(objects)
+        repository.complete_abandon_uncommitted(
+            scope=scope,
+            artifact_ids=artifact_ids,
+            now=datetime.now(timezone.utc),
+        )
+        return AlignedMediaCleanupActivityOutput(deleted_bytes=deleted)
+
+    with _worker_scope(
+        request.project_id,
+        request.region_code,
+        "aligned-media-bundle-cleanup",
+        organization_id=request.organization_id,
+    ):
+        return await _invoke("aligned_media_bundle_cleanup", cleanup)
+
+
+@activity.defn(name=CLEANUP_ALIGNMENT_STAGING_ACTIVITY)
+async def cleanup_alignment_staging(
+    request: AlignmentStagingCleanupActivityInput,
+) -> AlignmentStagingCleanupActivityOutput:
+    def cleanup() -> AlignmentStagingCleanupActivityOutput:
+        store = _require(
+            _dependencies.alignment_staging,
+            "workflow.ProjectionArtifactStorePort",
+        )
+        for shard in request.staging.camera_shards.values():
+            store.delete(shard.object_key)
+        store.delete(request.staging.object_key)
+        return AlignmentStagingCleanupActivityOutput()
+
+    with _worker_scope(
+        request.project_id,
+        request.region_code,
+        request.staging.object_key,
+        organization_id=request.organization_id,
+    ):
+        return await _invoke("alignment_staging_cleanup", cleanup)
 
 
 @activity.defn(name=PUBLISH_DATASET_ACTIVITY)
@@ -933,13 +1717,17 @@ ALL_ACTIVITIES = (
     persist_workflow_job,
     parse_manifest,
     verify_raw,
+    process_ingest_source,
     materialize_ingest_projection,
     cleanup_ingest_projection,
     evaluate_quality,
     align_fragment,
     commit_fragment,
+    commit_aligned_bundle,
     create_annotation_task,
-    create_preview,
+    create_aligned_media,
+    cleanup_uncommitted_aligned_media,
+    cleanup_alignment_staging,
     publish_dataset,
     preflight_export,
     export_dataset,

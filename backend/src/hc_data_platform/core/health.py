@@ -87,6 +87,24 @@ class ObjectStorageProbe:
     settings: Settings
 
     async def check(self) -> None:
+        from hc_data_platform.platform_ops.object_store_config import (
+            settings_object_store_configured,
+        )
+
+        if not settings_object_store_configured(self.settings):
+            raise RuntimeError("object storage is not configured")
+        if self.settings.object_store_provider == "oss":
+            from hc_data_platform.storage.oss_client import build_oss_bucket
+
+            bucket = build_oss_bucket(
+                endpoint=self.settings.object_store_endpoint,
+                bucket=self.settings.object_store_bucket,
+                access_key=self.settings.object_store_access_key,
+                secret_key=self.settings.object_store_secret_key,
+                connect_timeout=self.settings.readiness_timeout_seconds,
+            )
+            await asyncio.to_thread(bucket.get_bucket_info)
+            return
         boto3: Any = importlib.import_module("boto3")
         config_module: Any = importlib.import_module("botocore.config")
         config = config_module.Config(

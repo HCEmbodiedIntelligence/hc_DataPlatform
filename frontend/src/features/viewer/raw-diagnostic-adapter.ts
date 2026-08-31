@@ -112,7 +112,7 @@ function cameraTimelineTracks(
           id: `coverage:${stream.id}`,
           label: stream.availability === 'partial'
             ? '可用帧（存在缺口）'
-            : stream.availability === 'preview-generating'
+            : stream.availability === 'media-preparing'
               ? '慢流缓冲中'
               : '视频覆盖',
           startNs: clock.startNs,

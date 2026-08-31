@@ -75,7 +75,7 @@ backend/src/hc_data_platform/
 +-- core/                   # FastAPI 装配、配置、请求上下文、错误、健康检查和合同聚合
 +-- ingest/                 # 采集任务、分片直传、Raw 清单提交和离线导入 CLI
 +-- lance_catalog/          # Lance Schema、逻辑版本、Rollout 血缘和稳定 Step 读取
-+-- preview/                # 基于逻辑 Step/标注修订生成临时 HLS 预览和缓存
++-- aligned_media/          # 接入期逐相机固定 30 Hz H.264 MP4、发布收据和直接授权
 +-- publishing/             # 冻结审核快照并导出 Lance/LeRobot V3 发布版本
 +-- quality/                # 频率、丢帧、图像/点云等规则驱动的数据质量评估
 +-- security/               # JWT、Scope/RLS、工作单元、幂等、审计和 Outbox
@@ -108,7 +108,7 @@ backend/
 |   +-- core/               # 应用公共能力
 |   +-- ingest/             # 上传控制面、CLI、路由和 MinIO
 |   +-- lance_catalog/      # Schema、目录、Port 和 Lance 集成
-|   +-- preview/            # 预览服务、适配器、OpenAPI 和 FFmpeg
+|   +-- aligned_media/      # 固定帧率 MP4、精确对象发布、提交门禁和 FFmpeg
 |   +-- publishing/         # 发布冻结和导出
 |   +-- quality/            # 质量规则和合同
 |   +-- security/           # 鉴权、迁移、RLS 和 PostgreSQL

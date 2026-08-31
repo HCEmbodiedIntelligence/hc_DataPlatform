@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
+from hc_data_platform.core.context import retain_current_writer_permit
 from hc_data_platform.core.errors import problem
 
 from .models import CompletedPart
@@ -130,6 +131,7 @@ class InMemoryObjectStorage:
         _validate_part_number(part_number)
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
+        retain_current_writer_permit(expires_seconds)
         return f"memory://multipart/{upload_id}/{part_number}?key={key}&expires={expires_seconds}"
 
     def upload_part(

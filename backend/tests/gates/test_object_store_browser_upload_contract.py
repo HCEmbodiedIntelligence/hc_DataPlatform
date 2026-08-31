@@ -15,19 +15,25 @@ def _compose(name: str) -> dict[str, object]:
     return yaml.safe_load((ROOT / name).read_text(encoding="utf-8"))
 
 
-def test_compose_keeps_server_operations_internal_and_api_presigning_public() -> None:
+def test_development_compose_uses_oss_while_isolated_tests_keep_local_storage() -> None:
     development = _compose("compose.dev.yaml")["services"]
     real_api = _compose("compose.real-api.yaml")["services"]
     test = _compose("compose.test.yaml")["services"]
 
     dev_api = development["api"]["environment"]
     dev_worker = development["worker"]["environment"]
-    assert "http://minio:9000" in dev_api["HC_OBJECT_STORE_ENDPOINT"]
-    assert "http://127.0.0.1:9000" in dev_api["HC_OBJECT_STORE_PUBLIC_ENDPOINT"]
-    assert "http://minio:9000" in dev_worker["HC_OBJECT_STORE_ENDPOINT"]
+    assert dev_api["HC_OBJECT_STORE_PROVIDER"] == "oss"
+    assert "HC_OBJECT_STORE_ENDPOINT" in dev_api["HC_OBJECT_STORE_ENDPOINT"]
+    assert "HC_OBJECT_STORE_PUBLIC_ENDPOINT" in dev_api["HC_OBJECT_STORE_PUBLIC_ENDPOINT"]
+    assert dev_worker["HC_OBJECT_STORE_PROVIDER"] == "oss"
+    assert "HC_OBJECT_STORE_ENDPOINT" in dev_worker["HC_OBJECT_STORE_ENDPOINT"]
     assert "HC_OBJECT_STORE_PUBLIC_ENDPOINT" not in dev_worker
+    assert "minio" not in development
+    assert "minio-init" not in development
+    assert "object-store-browser" not in development
     assert (
-        "http://127.0.0.1:9000" in real_api["api"]["environment"]["HC_OBJECT_STORE_PUBLIC_ENDPOINT"]
+        "HC_OBJECT_STORE_PUBLIC_ENDPOINT"
+        in (real_api["api"]["environment"]["HC_OBJECT_STORE_PUBLIC_ENDPOINT"])
     )
 
     test_api = test["api"]["environment"]
@@ -38,11 +44,11 @@ def test_compose_keeps_server_operations_internal_and_api_presigning_public() ->
     assert "HC_OBJECT_STORE_PUBLIC_ENDPOINT" not in test_worker
 
     runtime = (ROOT / "backend/src/hc_data_platform/runtime.py").read_text(encoding="utf-8")
-    assert '"aws_endpoint": resolved.object_store_endpoint' in runtime
-    assert '"aws_endpoint": resolved.object_store_public_endpoint' not in runtime
+    assert '"oss_endpoint": settings.object_store_endpoint' in runtime
+    assert '"oss_endpoint": settings.object_store_public_endpoint' not in runtime
 
 
-def test_minio_init_applies_idempotent_exact_origin_browser_upload_cors() -> None:
+def test_isolated_minio_test_stack_applies_exact_origin_browser_upload_cors() -> None:
     expected_origins = {
         "http://127.0.0.1:8088",
         "http://localhost:8088",
@@ -63,20 +69,19 @@ def test_minio_init_applies_idempotent_exact_origin_browser_upload_cors() -> Non
     assert root.find(".//s3:MaxAgeSeconds", S3_XML_NAMESPACE).text == "600"
     assert "AllowCredentials" not in CORS_PATH.read_text(encoding="utf-8")
 
-    for compose_name in ("compose.dev.yaml", "compose.test.yaml"):
-        services = _compose(compose_name)["services"]
-        init = services["minio-init"]
-        browser_edge = services["object-store-browser"]
-        command = "\n".join(init["entrypoint"])
-        assert (
-            set(services["minio"]["environment"]["MINIO_API_CORS_ALLOW_ORIGIN"].split(","))
-            == expected_origins
-        )
-        assert "mc mb --ignore-existing" in command
-        assert "mc cors set" in command
-        assert "functionality that is not implemented" in command
-        assert any(str(CORS_PATH.relative_to(ROOT)) in volume for volume in init["volumes"])
-        assert any("127.0.0.1:9000:9000" in str(port) for port in browser_edge["ports"])
+    services = _compose("compose.test.yaml")["services"]
+    init = services["minio-init"]
+    browser_edge = services["object-store-browser"]
+    command = "\n".join(init["entrypoint"])
+    assert (
+        set(services["minio"]["environment"]["MINIO_API_CORS_ALLOW_ORIGIN"].split(","))
+        == expected_origins
+    )
+    assert "mc mb --ignore-existing" in command
+    assert "mc cors set" in command
+    assert "functionality that is not implemented" in command
+    assert any(str(CORS_PATH.relative_to(ROOT)) in volume for volume in init["volumes"])
+    assert any("127.0.0.1:9000:9000" in str(port) for port in browser_edge["ports"])
 
     edge_config = (ROOT / "deploy/compose/object-store-browser.conf").read_text(encoding="utf-8")
     assert expected_origins == {

@@ -25,7 +25,7 @@ import {
 } from "../../shared/lib/metric-presentation";
 import { safeReturnTo } from "../../shared/routing/route-registry";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
-import { createDatasetPreviewMediaSource } from "../p06-dataset-detail/preview-media-source";
+import { createDatasetAlignedMediaSource } from "../p06-dataset-detail/aligned-media-source";
 import {
   PageState,
   StatusTag,
@@ -37,12 +37,12 @@ import {
   getFormalUploadProcessingStatus,
   getFormalUploadRawMedia,
   loadFormalUploadDetail,
-  resolveFormalUploadPreviewTarget,
+  resolveFormalUploadAlignedMediaTarget,
   resolveFormalUploadViewerTarget,
   type FormalUploadProcessingStatus,
   type FormalQcReport,
   type FormalUploadDetail,
-  type FormalUploadPreviewTarget,
+  type FormalUploadAlignedMediaTarget,
   type FormalUploadViewerTarget,
   type FormalRawMediaSource,
 } from "./formal-detail-client";
@@ -180,15 +180,15 @@ function rawCameraStreams(
   detail: FormalUploadDetail,
   scope: NonNullable<ReturnType<typeof useIngestScope>>,
   workflow: FormalUploadProcessingStatus | undefined,
-  previewTarget: FormalUploadPreviewTarget | null | undefined,
+  mediaTarget: FormalUploadAlignedMediaTarget | null | undefined,
 ): Readonly<Record<string, StreamDescriptor>> {
   const streams: Record<string, StreamDescriptor> = {};
   for (const camera of manifest.cameras) {
     const modality = camera.encoding?.toLowerCase().includes("depth")
       ? "depth"
       : "rgb";
-    const previewReady = Boolean(previewTarget);
-    const previewPending =
+    const mediaReady = Boolean(mediaTarget);
+    const mediaPending =
       !workflow ||
       workflow.status === "PENDING" ||
       workflow.status === "RUNNING";
@@ -208,37 +208,34 @@ function rawCameraStreams(
       ...(camera.frame_id
         ? { frame: { id: camera.frame_id, name: camera.frame_id } }
         : {}),
-      availability: previewReady
+      availability: mediaReady
         ? "ready"
-        : previewPending
-          ? "preview-generating"
+        : mediaPending
+          ? "media-preparing"
           : "missing",
-      accessibleSummary: previewReady
-        ? `${camera.camera_id} 已从固定 Lance 版本生成受权 HLS；面板可见时才会按需签发播放地址。`
-        : previewPending
-          ? `${camera.camera_id} 正在完成校验、对齐和 Lance 持久化，完成后会自动显示。`
+      accessibleSummary: mediaReady
+        ? `${camera.camera_id} 已完成 canonical MP4 与 Lance 引用提交；面板可见时只签发读取地址。`
+        : mediaPending
+          ? `${camera.camera_id} 正在完成校验、30Hz 对齐、MP4 编码和 Lance 提交。`
           : rawSourceAvailable
             ? `${camera.camera_id} 的 Raw MCAP 仍可下载，但本次工作流未生成可播放的 Lance 版本。`
             : `${camera.camera_id} 尚无可用的 Raw 证据源或可播放版本。`,
-      ...(previewTarget
+      ...(mediaTarget
         ? {
-            mediaSource: createDatasetPreviewMediaSource({
+            mediaSource: createDatasetAlignedMediaSource({
               scope: {
                 organizationId: scope.organizationId,
                 projectId: scope.projectId,
                 regionCode: scope.regionCode,
               },
-              datasetId: previewTarget.datasetId,
+              datasetId: mediaTarget.datasetId,
               binding: {
                 rollout_id: detail.session.rollout_id,
-                lance_version: previewTarget.lanceVersion,
-                annotation_revision: 0,
-                // Lance fields from ingest use the immutable Manifest topic,
-                // so the preview request must use that exact key.
+                dataset_version: mediaTarget.datasetVersion,
                 camera_id: camera.topic,
-                frequency_hz: previewTarget.frequencyHz,
-                start_step: previewTarget.startStep,
-                end_step: previewTarget.endStep,
+                fps: mediaTarget.fps,
+                start_step: mediaTarget.startStep,
+                end_step: mediaTarget.endStep,
               },
               modality,
             }),
@@ -249,10 +246,10 @@ function rawCameraStreams(
   return streams;
 }
 
-function ProcessingPreviewState({
+function ProcessingMediaState({
   session,
   workflow,
-  previewTarget,
+  mediaTarget,
   viewerTarget,
   pending,
   error,
@@ -260,7 +257,7 @@ function ProcessingPreviewState({
 }: {
   readonly session: FormalUploadDetail["session"];
   readonly workflow: FormalUploadProcessingStatus | undefined;
-  readonly previewTarget: FormalUploadPreviewTarget | null | undefined;
+  readonly mediaTarget: FormalUploadAlignedMediaTarget | null | undefined;
   readonly viewerTarget: FormalUploadViewerTarget | null | undefined;
   readonly pending: boolean;
   readonly error: unknown;
@@ -269,7 +266,7 @@ function ProcessingPreviewState({
   if (!session.workflow) {
     return (
       <div className={styles.processingState} role="alert">
-        已提交上传缺少持久化处理工作流，无法生成真实预览。
+        已提交上传缺少持久化处理工作流，无法生成 canonical media。
       </div>
     );
   }
@@ -290,7 +287,7 @@ function ProcessingPreviewState({
       </output>
     );
   }
-  if (previewTarget) {
+  if (mediaTarget) {
     const viewerPath = viewerTarget
       ? datasetRoutes.episodeViewer.build({
           datasetId: viewerTarget.datasetId,
@@ -301,8 +298,8 @@ function ProcessingPreviewState({
     return (
       <div className={styles.processingState} role="status" aria-live="polite">
         <span>
-          可视化数据已生成 · 数据集版本 {previewTarget.datasetVersion} · Lance
-          版本 {previewTarget.lanceVersion}
+          Canonical MP4 与 Lance 引用已提交 · 数据集版本{" "}
+          {mediaTarget.datasetVersion}
         </span>
         {viewerPath ? (
           <Link className={styles.viewerLink} to={viewerPath}>
@@ -391,9 +388,9 @@ function RawMediaEvidence({
   );
 }
 
-interface WorkflowPreviewView {
+interface WorkflowMediaView {
   readonly job: FormalUploadProcessingStatus | undefined;
-  readonly target: FormalUploadPreviewTarget | null | undefined;
+  readonly target: FormalUploadAlignedMediaTarget | null | undefined;
   readonly viewer: FormalUploadViewerTarget | null | undefined;
   readonly pending: boolean;
   readonly error: unknown;
@@ -404,7 +401,7 @@ function UploadDiagnostic({
   detail,
   rawSourceAvailable,
   scope,
-  workflowPreview,
+  workflowMedia,
   returnTo = problemDataPath,
   problemDataContext = false,
   showContextBar = true,
@@ -412,7 +409,7 @@ function UploadDiagnostic({
   readonly detail: ResolvedFormalUploadDetail;
   readonly rawSourceAvailable: boolean;
   readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
-  readonly workflowPreview: WorkflowPreviewView;
+  readonly workflowMedia: WorkflowMediaView;
   readonly returnTo?: string;
   readonly problemDataContext?: boolean;
   readonly showContextBar?: boolean;
@@ -442,8 +439,8 @@ function UploadDiagnostic({
         rawSourceAvailable,
         detail,
         scope,
-        workflowPreview.job,
-        workflowPreview.target,
+        workflowMedia.job,
+        workflowMedia.target,
       ),
     [
       clock,
@@ -451,8 +448,8 @@ function UploadDiagnostic({
       manifest,
       rawSourceAvailable,
       scope,
-      workflowPreview.job,
-      workflowPreview.target,
+      workflowMedia.job,
+      workflowMedia.target,
     ],
   );
 
@@ -478,14 +475,14 @@ function UploadDiagnostic({
           </Space>
         </div>
       ) : null}
-      <ProcessingPreviewState
+      <ProcessingMediaState
         session={detail.session}
-        workflow={workflowPreview.job}
-        previewTarget={workflowPreview.target}
-        viewerTarget={workflowPreview.viewer}
-        pending={workflowPreview.pending}
-        error={workflowPreview.error}
-        onRefresh={workflowPreview.onRefresh}
+        workflow={workflowMedia.job}
+        mediaTarget={workflowMedia.target}
+        viewerTarget={workflowMedia.viewer}
+        pending={workflowMedia.pending}
+        error={workflowMedia.error}
+        onRefresh={workflowMedia.onRefresh}
       />
       <RawDiagnosticWorkbench
         id={`upload-diagnostic:${detail.session.session_id ?? detail.session.rollout_id}`}
@@ -596,11 +593,11 @@ function PassedUploadDetail({
   detail,
   rawMedia,
   scope,
-  workflowPreview,
+  workflowMedia,
 }: {
   readonly detail: ResolvedFormalUploadDetail;
   readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
-  readonly workflowPreview: WorkflowPreviewView;
+  readonly workflowMedia: WorkflowMediaView;
   readonly rawMedia: {
     readonly source: FormalRawMediaSource | undefined;
     readonly pending: boolean;
@@ -662,7 +659,7 @@ function PassedUploadDetail({
         detail={detail}
         rawSourceAvailable={Boolean(rawMedia.source)}
         scope={scope}
-        workflowPreview={workflowPreview}
+        workflowMedia={workflowMedia}
         showContextBar={false}
       />
       <div className={styles.passedGrid}>
@@ -688,11 +685,11 @@ function PassedUploadDetail({
 function PendingQualityUploadDetail({
   detail,
   rawMedia,
-  workflowPreview,
+  workflowMedia,
   onRefreshQuality,
 }: {
   readonly detail: FormalUploadDetail;
-  readonly workflowPreview: WorkflowPreviewView;
+  readonly workflowMedia: WorkflowMediaView;
   readonly onRefreshQuality: () => void;
   readonly rawMedia: {
     readonly source: FormalRawMediaSource | undefined;
@@ -746,14 +743,14 @@ function PendingQualityUploadDetail({
           description="等待自动质检计算时长"
         />
       </div>
-      <ProcessingPreviewState
+      <ProcessingMediaState
         session={detail.session}
-        workflow={workflowPreview.job}
-        previewTarget={workflowPreview.target}
-        viewerTarget={workflowPreview.viewer}
-        pending={workflowPreview.pending}
-        error={workflowPreview.error}
-        onRefresh={workflowPreview.onRefresh}
+        workflow={workflowMedia.job}
+        mediaTarget={workflowMedia.target}
+        viewerTarget={workflowMedia.viewer}
+        pending={workflowMedia.pending}
+        error={workflowMedia.error}
+        onRefresh={workflowMedia.onRefresh}
       />
       <RawMediaEvidence {...rawMedia} />
       <div className={styles.passedGrid}>
@@ -866,7 +863,7 @@ export default function FormalUploadDetailPage() {
       );
       return {
         job,
-        target: resolveFormalUploadPreviewTarget(workflowSession, job),
+        target: resolveFormalUploadAlignedMediaTarget(workflowSession, job),
         viewer: resolveFormalUploadViewerTarget(workflowSession, job),
       };
     },
@@ -938,7 +935,7 @@ export default function FormalUploadDetailPage() {
     );
   }
 
-  const workflowPreview: WorkflowPreviewView = {
+  const workflowMedia: WorkflowMediaView = {
     job: workflow.data?.job,
     target: workflow.data?.target,
     viewer: workflow.data?.viewer,
@@ -958,7 +955,7 @@ export default function FormalUploadDetailPage() {
       <main className={styles.page}>
         <PendingQualityUploadDetail
           detail={detail.data}
-          workflowPreview={workflowPreview}
+          workflowMedia={workflowMedia}
           rawMedia={rawMediaView}
           onRefreshQuality={() => void detail.refetch()}
         />
@@ -977,7 +974,7 @@ export default function FormalUploadDetailPage() {
         <PassedUploadDetail
           detail={resolvedDetail}
           scope={scope}
-          workflowPreview={workflowPreview}
+          workflowMedia={workflowMedia}
           rawMedia={rawMediaView}
         />
       ) : (
@@ -992,7 +989,7 @@ export default function FormalUploadDetailPage() {
             detail={resolvedDetail}
             rawSourceAvailable={Boolean(rawMedia.data)}
             scope={scope}
-            workflowPreview={workflowPreview}
+            workflowMedia={workflowMedia}
             returnTo={problemDataReturnTo}
             problemDataContext={problemDataContext}
           />

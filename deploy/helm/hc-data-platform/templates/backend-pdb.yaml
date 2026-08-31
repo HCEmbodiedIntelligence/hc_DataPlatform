@@ -1,3 +1,47 @@
+{{- if .Values.highAvailability.enabled }}
+{{- if not .Values.podDisruptionBudget.enabled }}
+{{- fail "highAvailability requires podDisruptionBudget.enabled=true" }}
+{{- end }}
+{{- $apiReplicas := ternary .Values.backend.api.autoscaling.minReplicas .Values.backend.api.replicaCount .Values.backend.api.autoscaling.enabled }}
+{{- $workerReplicas := ternary .Values.backend.worker.autoscaling.minReplicas .Values.backend.worker.replicaCount .Values.backend.worker.autoscaling.enabled }}
+{{- range $name, $pair := dict "frontend" (list .Values.frontend.replicaCount .Values.podDisruptionBudget.frontendMinAvailable) "api" (list $apiReplicas .Values.podDisruptionBudget.apiMinAvailable) "worker" (list $workerReplicas .Values.podDisruptionBudget.workerMinAvailable) "media-worker" (list .Values.backend.mediaWorker.replicaCount .Values.podDisruptionBudget.mediaWorkerMinAvailable) }}
+{{- $replicas := int (index $pair 0) }}
+{{- $minimum := int (index $pair 1) }}
+{{- if or (lt $replicas 2) (lt $minimum 1) (ge $minimum $replicas) }}
+{{- fail (printf "highAvailability %s requires replicas>=2 and 1<=minAvailable<replicas" $name) }}
+{{- end }}
+{{- end }}
+{{- if or (lt (int .Values.highAvailability.nodeMinDomains) 2) (lt (int .Values.highAvailability.zoneMinDomains) 2) (ne (int .Values.highAvailability.maxSkew) 1) }}
+{{- fail "highAvailability requires nodeMinDomains>=2, zoneMinDomains>=2, and maxSkew=1" }}
+{{- end }}
+{{- if or (not .Values.highAvailability.nodeTopologyKey) (not .Values.highAvailability.zoneTopologyKey) (eq .Values.highAvailability.nodeTopologyKey .Values.highAvailability.zoneTopologyKey) }}
+{{- fail "highAvailability requires distinct non-empty node and zone topology keys" }}
+{{- end }}
+{{- if or (not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.backend.config.secretBundleRevision)) (eq .Values.backend.config.secretBundleRevision (printf "sha256:%s" (repeat 64 "0"))) }}
+{{- fail "highAvailability requires a non-zero backend.config.secretBundleRevision sha256 digest" }}
+{{- end }}
+{{- if or (lt (int .Values.frontend.drainDelaySeconds) 1) (ge (int .Values.frontend.drainDelaySeconds) (int .Values.frontend.terminationGracePeriodSeconds)) }}
+{{- fail "frontend drainDelaySeconds must be positive and less than terminationGracePeriodSeconds" }}
+{{- end }}
+{{- if or (lt (int .Values.backend.api.drainDelaySeconds) 1) (lt (int .Values.backend.api.gracefulShutdownSeconds) 1) }}
+{{- fail "backend.api drainDelaySeconds and gracefulShutdownSeconds must be positive" }}
+{{- end }}
+{{- if ge (add (int .Values.backend.api.drainDelaySeconds) (int .Values.backend.api.gracefulShutdownSeconds)) (int .Values.backend.api.terminationGracePeriodSeconds) }}
+{{- fail "backend.api drainDelaySeconds + gracefulShutdownSeconds must be less than terminationGracePeriodSeconds" }}
+{{- end }}
+{{- if lt (int .Values.backend.worker.gracefulShutdownSeconds) 1 }}
+{{- fail "backend.worker gracefulShutdownSeconds must be positive" }}
+{{- end }}
+{{- if ge (int .Values.backend.worker.gracefulShutdownSeconds) (int .Values.backend.worker.terminationGracePeriodSeconds) }}
+{{- fail "backend.worker gracefulShutdownSeconds must be less than terminationGracePeriodSeconds" }}
+{{- end }}
+{{- if lt (int .Values.backend.mediaWorker.gracefulShutdownSeconds) 1 }}
+{{- fail "backend.mediaWorker gracefulShutdownSeconds must be positive" }}
+{{- end }}
+{{- if ge (int .Values.backend.mediaWorker.gracefulShutdownSeconds) (int .Values.backend.mediaWorker.terminationGracePeriodSeconds) }}
+{{- fail "backend.mediaWorker gracefulShutdownSeconds must be less than terminationGracePeriodSeconds" }}
+{{- end }}
+{{- end }}
 {{- if .Values.podDisruptionBudget.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget

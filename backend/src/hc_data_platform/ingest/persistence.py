@@ -104,6 +104,15 @@ class IngestPersistencePort(Protocol):
         request_id: str,
     ) -> IngestWorkflowLocator: ...
 
+    def commit_raw_without_workflow(
+        self,
+        *,
+        session: UploadSession,
+        event: RawObjectCommittedV1,
+        actor_id: str,
+        request_id: str,
+    ) -> None: ...
+
     def record_raw_media_access(self, event: RawMediaAccessAuditEvent) -> None: ...
 
     def get_workflow_trigger(self, session_id: str) -> IngestWorkflowLocator | None: ...
@@ -160,10 +169,7 @@ class InMemoryIngestPersistence:
                 existing_source = self.get_rollout_by_source_fingerprint(
                     rollout.project_id, rollout.source_fingerprint
                 )
-                if (
-                    existing_source is not None
-                    and existing_source.rollout_id != rollout.rollout_id
-                ):
+                if existing_source is not None and existing_source.rollout_id != rollout.rollout_id:
                     raise source_recording_duplicate(existing_source)
             self.save_collection_job(job)
             self.save_rollout(rollout)
@@ -205,9 +211,7 @@ class InMemoryIngestPersistence:
         self, project_id: str, source_fingerprint: str
     ) -> Rollout | None:
         with self._lock:
-            rollout_id = self._rollout_by_source_fingerprint.get(
-                (project_id, source_fingerprint)
-            )
+            rollout_id = self._rollout_by_source_fingerprint.get((project_id, source_fingerprint))
             return None if rollout_id is None else self._rollouts[(project_id, rollout_id)]
 
     def save_rollout(self, rollout: Rollout) -> None:
@@ -485,6 +489,63 @@ class InMemoryIngestPersistence:
                     self._rollouts,
                     self._rollout_by_source_fingerprint,
                     self._workflow_triggers,
+                ) = snapshots
+                raise
+
+    def commit_raw_without_workflow(
+        self,
+        *,
+        session: UploadSession,
+        event: RawObjectCommittedV1,
+        actor_id: str,
+        request_id: str,
+    ) -> None:
+        """Commit an immutable long recording without pretending it is one episode."""
+
+        del actor_id, request_id
+        with self._lock:
+            snapshots = (
+                dict(self._committed),
+                dict(self._sessions),
+                dict(self._objects),
+                dict(self._rollouts),
+                dict(self._rollout_by_source_fingerprint),
+            )
+            try:
+                self.save_committed(event.model_copy(update={"workflow": None}))
+                now = utc_now()
+                self.save_session(
+                    session.model_copy(
+                        update={"status": UploadStatus.RAW_COMMITTED, "updated_at": now}
+                    )
+                )
+                upload_object = self.get_upload_object(session.session_id)
+                if upload_object is None:
+                    raise RuntimeError("upload object is missing")
+                self.save_upload_object(
+                    upload_object.model_copy(
+                        update={
+                            "status": UploadObjectStatus.COMMITTED,
+                            "actual_size": event.file_size,
+                            "actual_sha256": event.sha256,
+                            "updated_at": now,
+                        }
+                    )
+                )
+                rollout = self.get_rollout(session.project_id, session.rollout_id)
+                if rollout is not None:
+                    self.save_rollout(
+                        rollout.model_copy(
+                            update={"status": RolloutStatus.RAW_COMMITTED, "updated_at": now}
+                        )
+                    )
+            except Exception:
+                (
+                    self._committed,
+                    self._sessions,
+                    self._objects,
+                    self._rollouts,
+                    self._rollout_by_source_fingerprint,
                 ) = snapshots
                 raise
 

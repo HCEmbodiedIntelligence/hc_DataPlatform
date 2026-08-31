@@ -9,12 +9,44 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-REQUIRED_FIELDS = ("request_id", "project_id", "resource_id", "workflow_id")
+REQUIRED_FIELDS = (
+    "timestamp",
+    "severity",
+    "service",
+    "instance_id",
+    "node_name",
+    "role",
+    "release_id",
+    "request_id",
+    "trace_id",
+    "operation_id",
+    "workflow_id",
+    "event_code",
+    "duration_ms",
+    "retry_count",
+    "error_type",
+)
+ALLOWED_FIELDS = frozenset(
+    {
+        "schema_version",
+        *REQUIRED_FIELDS,
+        "route",
+        "http_method",
+        "status_code",
+    }
+)
+CORRELATED_FIELDS = ("request_id", "operation_id", "workflow_id")
 FORBIDDEN_KEY_PARTS = (
     "authorization",
     "access_token",
     "refresh_token",
     "jwt",
+    "cookie",
+    "credential",
+    "password",
+    "request_body",
+    "response_body",
+    "secret",
     "signed_url",
     "signature",
     "object_store_secret_key",
@@ -24,6 +56,8 @@ FORBIDDEN_PATTERNS = (
     re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
     re.compile(r"[?&](?:X-Amz-Signature|Signature|sig)=[^&\s]+", re.IGNORECASE),
     re.compile(r"[?&](?:X-Amz-Credential|OSSAccessKeyId)=[^&\s]+", re.IGNORECASE),
+    re.compile(r"\b(?:postgres(?:ql)?|s3|minio)://[^\s]+", re.IGNORECASE),
+    re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
 )
 
 
@@ -40,8 +74,16 @@ def _walk(value: Any, path: str = "$") -> Iterable[tuple[str, str, Any]]:
 
 def inspect_record(record: dict[str, Any], *, require_context: bool) -> list[str]:
     errors: list[str] = []
+    if record.get("schema_version") != "hc-runtime-log/v1":
+        errors.append("invalid schema_version")
+    missing_fields = sorted(set(REQUIRED_FIELDS) - record.keys())
+    if missing_fields:
+        errors.append(f"missing required fields: {missing_fields}")
+    unknown_fields = sorted(record.keys() - ALLOWED_FIELDS)
+    if unknown_fields:
+        errors.append(f"unknown fields: {unknown_fields}")
     if require_context:
-        for field in REQUIRED_FIELDS:
+        for field in CORRELATED_FIELDS:
             if not record.get(field):
                 errors.append(f"missing non-empty {field}")
     for path, key, value in _walk(record):

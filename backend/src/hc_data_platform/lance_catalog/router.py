@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Query
 
 from hc_data_platform.core.context import current_request_context
@@ -20,6 +22,7 @@ from .ports import LanceCatalogPort
 router = APIRouter(prefix="/api/v1", tags=["lance_catalog"])
 _catalog: LanceCatalogPort | None = None
 _audit_recorder: LanceCatalogAuditRecorder = InMemoryLanceCatalogAuditRecorder()
+ColumnsQuery = Annotated[list[str] | None, Query(min_length=1)]
 
 
 def configure_lance_catalog(catalog: LanceCatalogPort) -> None:
@@ -98,6 +101,7 @@ def read_step_window(
     start_step: int = Query(ge=0),
     end_step: int = Query(ge=0),
     version: int | None = Query(default=None, ge=1),
+    columns: ColumnsQuery = None,
 ) -> StepWindow:
     authorize_read(auth, project_id)
     if end_step < start_step:
@@ -115,6 +119,7 @@ def read_step_window(
             end_step,
             version=version,
             project_id=project_id,
+            columns=columns,
         )
         _record_step_window_read(result, actor_id=auth.subject_id)
         return result

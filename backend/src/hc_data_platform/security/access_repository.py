@@ -287,7 +287,11 @@ class AccessRepository(AccountRecoveryRepository, AdminAccountRepository, Protoc
     ) -> SessionIssueResult: ...
 
     def resolve_session(
-        self, token_hash: str, *, request_id: str | None = None
+        self,
+        token_hash: str,
+        *,
+        request_id: str | None = None,
+        allow_session_mutation: bool = True,
     ) -> ResolvedSession | None: ...
 
     def revoke_session(self, *, token_hash: str, request_id: str) -> None: ...
@@ -1180,7 +1184,11 @@ class InMemoryAccessRepository:
             return SessionIssued(session_id=session_id)
 
     def resolve_session(
-        self, token_hash: str, *, request_id: str | None = None
+        self,
+        token_hash: str,
+        *,
+        request_id: str | None = None,
+        allow_session_mutation: bool = True,
     ) -> ResolvedSession | None:
         with self._lock:
             session = self._sessions.get(token_hash)
@@ -1189,31 +1197,36 @@ class InMemoryAccessRepository:
             audit_request_id = request_id or str(uuid4())
             timestamp = _utc_timestamp(self._clock)
             if self._session_expired(session, timestamp):
-                self._expire_session(
-                    session,
-                    timestamp=timestamp,
-                    request_id=audit_request_id,
-                )
+                if allow_session_mutation:
+                    self._expire_session(
+                        session,
+                        timestamp=timestamp,
+                        request_id=audit_request_id,
+                    )
                 return None
             principal_id = session.principal_id
             account = self._accounts.get(principal_id)
             if account is None or account.principal.status is not AccountStatus.ACTIVE:
-                self._revoke_invalid_session(
-                    session,
-                    reason="ACCOUNT_DISABLED",
-                    timestamp=timestamp,
-                    request_id=audit_request_id,
-                )
+                if allow_session_mutation:
+                    self._revoke_invalid_session(
+                        session,
+                        reason="ACCOUNT_DISABLED",
+                        timestamp=timestamp,
+                        request_id=audit_request_id,
+                    )
                 return None
             if session.credential_revision != account.credential_revision:
-                self._revoke_invalid_session(
-                    session,
-                    reason="PASSWORD_CHANGED",
-                    timestamp=timestamp,
-                    request_id=audit_request_id,
-                )
+                if allow_session_mutation:
+                    self._revoke_invalid_session(
+                        session,
+                        reason="PASSWORD_CHANGED",
+                        timestamp=timestamp,
+                        request_id=audit_request_id,
+                    )
                 return None
-            if timestamp >= session.last_seen_at + self._session_touch_interval:
+            if allow_session_mutation and timestamp >= (
+                session.last_seen_at + self._session_touch_interval
+            ):
                 session.last_seen_at = timestamp
             platform_capabilities = self._platform_capabilities.get(principal_id, set())
             projects = (

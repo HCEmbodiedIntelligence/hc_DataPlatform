@@ -1459,6 +1459,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+backup = [
+    { name = "boto3" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "zstandard" },
+]
 data = [
     { name = "mcap" },
     { name = "mcap-ros2-support" },
@@ -1500,6 +1505,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30,<1" },
     { name = "asyncpg", marker = "extra == 'database'", specifier = ">=0.30,<1" },
     { name = "boto3", specifier = ">=1.35,<2" },
+    { name = "boto3", marker = "extra == 'backup'", specifier = ">=1.35,<2" },
     { name = "boto3", marker = "extra == 'storage'", specifier = ">=1.35,<2" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "httpx", specifier = ">=0.27,<1" },
@@ -1515,6 +1521,7 @@ requires-dist = [
     { name = "oss2", marker = "extra == 'storage'", specifier = ">=2.19,<3" },
     { name = "pillow", marker = "extra == 'data'", specifier = ">=10" },
     { name = "prometheus-client", specifier = ">=0.21,<1" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'backup'", specifier = ">=3.2,<4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'database'", specifier = ">=3.2,<4" },
     { name = "pyarrow", marker = "extra == 'data'", specifier = ">=16" },
     { name = "pydantic", specifier = ">=2.10,<3" },
@@ -1531,8 +1538,9 @@ requires-dist = [
     { name = "temporalio", marker = "extra == 'workflow'", specifier = ">=1.8,<2" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32,<1" },
+    { name = "zstandard", marker = "extra == 'backup'", specifier = ">=0.25,<1" },
 ]
-provides-extras = ["database", "workflow", "storage", "data", "dev", "lerobot-v3-validation"]
+provides-extras = ["database", "workflow", "storage", "backup", "data", "dev", "lerobot-v3-validation"]
 
 [[package]]
 name = "hf-xet"

@@ -23,7 +23,7 @@ import { resolveViewerComposition } from "./ViewerCompositionResolver";
 import { RobotSceneCore } from "./RobotSceneCore";
 import type { RobotSceneCoreProps } from "./RobotSceneCore";
 import { ViewerResourceRegistry } from "./runtime/ViewerResourceRegistry";
-import { attachAuthorizedMedia } from "./runtime/hls-media";
+import { attachAuthorizedMedia } from "./runtime/authorized-media";
 import { isSignedResourceExpired } from "./runtime/signed-resource";
 import {
   createDomainError,
@@ -295,12 +295,13 @@ function StreamPanel({
     if (videoRef.current && stream.mediaSource) {
       const video = videoRef.current;
       resources.trackMedia(video);
-      let refreshed = false;
+      let mediaErrorRefreshUsed = false;
       let mediaAttached = false;
       let playRequested = false;
       let latestClockNs = clock.currentNs();
       let detachMedia: (() => void) | undefined;
       let revokeDescriptor: (() => void) | undefined;
+      let expiryRefreshTimer: number | undefined;
       const streamRateHz = Math.max(stream.rateHz ?? 30, 1);
       const playbackDriftToleranceSeconds = Math.max(0.25, 4 / streamRateHz);
       const pausedDriftToleranceSeconds = 0.5 / streamRateHz;
@@ -314,7 +315,7 @@ function StreamPanel({
         playRequested = true;
         try {
           void video.play().catch(() => {
-            // Loading a replacement HLS descriptor can interrupt play(). The
+            // Refreshing an expiring direct MP4 URL can interrupt play(). The
             // next media-ready event retries without surfacing a false failure.
           });
         } catch {
@@ -377,7 +378,14 @@ function StreamPanel({
         video.removeEventListener("loadedmetadata", synchronizeWhenReady);
         video.removeEventListener("canplay", synchronizeWhenReady);
       });
-      const installMedia = async (refresh: boolean): Promise<void> => {
+      const installMedia = async (
+        refresh: boolean,
+        reason: "initial" | "expiry" | "error" = "initial",
+      ): Promise<void> => {
+        if (expiryRefreshTimer !== undefined) {
+          window.clearTimeout(expiryRefreshTimer);
+          expiryRefreshTimer = undefined;
+        }
         let descriptor;
         try {
           descriptor = await (refresh
@@ -390,9 +398,9 @@ function StreamPanel({
                   setMediaPreparing(status === "preparing");
               }));
         } catch (cause) {
-          if (!refresh && !refreshed && isSignedResourceExpired(cause)) {
-            refreshed = true;
-            return installMedia(true);
+          if (!refresh && !mediaErrorRefreshUsed && isSignedResourceExpired(cause)) {
+            mediaErrorRefreshUsed = true;
+            return installMedia(true, "error");
           }
           throw cause;
         }
@@ -410,9 +418,9 @@ function StreamPanel({
           resources.trackObjectUrl(descriptor.url),
           (cause) => {
             if (controller.signal.aborted) return;
-            if (!refreshed) {
-              refreshed = true;
-              void installMedia(true).catch(fail);
+            if (!mediaErrorRefreshUsed) {
+              mediaErrorRefreshUsed = true;
+              void installMedia(true, "error").catch(fail);
               return;
             }
             fail(cause);
@@ -426,15 +434,27 @@ function StreamPanel({
           return;
         }
         mediaAttached = true;
+        if (reason !== "error") mediaErrorRefreshUsed = false;
         synchronizeVideo(latestClockNs, clockUpdate(), true);
+        const expiresAt = Date.parse(descriptor.expiresAt);
+        if (Number.isFinite(expiresAt)) {
+          const refreshDelay = Math.max(0, expiresAt - Date.now() - 30_000);
+          expiryRefreshTimer = window.setTimeout(() => {
+            expiryRefreshTimer = undefined;
+            if (!controller.signal.aborted)
+              void installMedia(true, "expiry").catch(fail);
+          }, Math.min(refreshDelay, 2_147_483_647));
+        }
       };
       // Defer the first authorization past React StrictMode's synchronous
       // mount/cleanup probe. The discarded effect is aborted before it can
-      // launch an expensive server-side transcode that cannot be cancelled.
+      // launch a duplicate authorization request.
       queueMicrotask(() => {
         if (!controller.signal.aborted) void installMedia(false).catch(fail);
       });
       resources.add(() => {
+        if (expiryRefreshTimer !== undefined)
+          window.clearTimeout(expiryRefreshTimer);
         detachMedia?.();
         revokeDescriptor?.();
       });

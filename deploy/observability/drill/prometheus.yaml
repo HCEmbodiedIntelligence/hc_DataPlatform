@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 2s
+  evaluation_interval: 2s
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [obs-drill-alertmanager:9093]
+rule_files:
+  - /etc/prometheus/rules/*.yaml
+scrape_configs:
+  - job_name: observability-delivery-canary
+    static_configs:
+      - targets: [obs-drill-receiver:8081]

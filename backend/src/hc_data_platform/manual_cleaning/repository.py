@@ -587,14 +587,14 @@ class PostgresManualIssueRepository:
                         if (
                             item.episode_stream_id == stream_ref
                             or item.channel_path == stream_ref
-                            or item.preview_binding is not None
-                            and item.preview_binding.camera_id == stream_ref
+                            or item.aligned_media_binding is not None
+                            and item.aligned_media_binding.camera_id == stream_ref
                             or item.data_binding is not None
                             and item.data_binding.modality_key == stream_ref
                         )
                         and (
-                            item.preview_binding is not None
-                            and item.preview_binding.rollout_id == rollout_id
+                            item.aligned_media_binding is not None
+                            and item.aligned_media_binding.rollout_id == rollout_id
                             or item.data_binding is not None
                             and item.data_binding.rollout_id == rollout_id
                         )

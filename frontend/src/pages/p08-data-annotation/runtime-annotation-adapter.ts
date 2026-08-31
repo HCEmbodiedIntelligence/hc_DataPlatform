@@ -1,9 +1,9 @@
 import type { Scope } from "../../entities/scope";
 import { z } from "zod";
 import {
-  authorizePreview,
-  type PreviewPreparationStatus,
-} from "../../features/previews/authorize-preview";
+  authorizeAlignedMedia,
+  type MediaAuthorizationStatus,
+} from "../../features/aligned-media/authorize-aligned-media";
 import {
   createDomainError,
   isDomainError,
@@ -44,8 +44,6 @@ export type RuntimeTagSchemaVersion = components["schemas"]["TagSchemaVersion"];
 export type RuntimeManifestDiscovery =
   components["schemas"]["ManifestDiscoveryV1"];
 export type RuntimeDatasetVersion = components["schemas"]["DatasetVersionRef"];
-export type RuntimePreviewDescriptor =
-  components["schemas"]["PreviewDescriptorV1"];
 export type RuntimeReviewDecision = components["schemas"]["ReviewDecision"];
 export type RuntimeReviewCheckKind = components["schemas"]["ReviewCheckKind"];
 
@@ -831,57 +829,47 @@ export function createRuntimeAnnotationCommands(
   };
 }
 
-function createPreviewMediaSource(
+function createAlignedMediaSource(
   scope: RuntimeAnnotationScope,
   task: RuntimeAnnotationTask,
   cameraId: string,
-  annotationRevision: number,
-  viewMode: components["schemas"]["ViewMode"],
-  frequencyHz: number,
 ): ViewerMediaSource {
   const authorize = async (
     signal: AbortSignal,
-    onStatus?: (status: PreviewPreparationStatus) => void,
+    onStatus?: (status: MediaAuthorizationStatus) => void,
   ) => {
-    const body = {
-      annotation_revision: annotationRevision,
+    const selector = {
       camera_id: cameraId,
       dataset_id: task.dataset_id,
-      frequency_hz: normalizeStepRateHz(frequencyHz),
-      lance_version: String(task.base_lance_version),
+      dataset_version: task.dataset_version,
       project_id: task.project_id,
       rollout_id: task.rollout_id,
-      view_mode: viewMode,
-      profile_id: "annotation-h264-720p-v1",
-      ...(task.base_step_count === null || task.base_step_count === undefined
-        ? {}
-        : { start_step: 0, end_step: task.base_step_count }),
-    } satisfies components["schemas"]["PreviewRequestV1"];
-    const descriptor = await authorizePreview(
+    };
+    const descriptor = await authorizeAlignedMedia(
       scopeForRequest(scope),
-      body,
+      selector,
       signal,
       onStatus,
     );
     if (
       descriptor.project_id !== task.project_id ||
+      descriptor.dataset_id !== task.dataset_id ||
+      descriptor.dataset_version !== task.dataset_version ||
       descriptor.rollout_id !== task.rollout_id ||
-      descriptor.camera_id !== cameraId ||
-      descriptor.annotation_revision !== annotationRevision ||
-      descriptor.profile_id !== "annotation-h264-720p-v1"
+      descriptor.camera_id !== cameraId
     ) {
-      contractMismatch("预览授权与当前任务、相机或修订不一致。");
+      contractMismatch("媒体授权与当前任务、Dataset 版本或相机不一致。");
     }
     return {
-      url: resolvePreviewMediaUrl(descriptor.playlist_url),
-      expiresAt: descriptor.signed_url_expires_at,
+      url: resolveAlignedMediaUrl(descriptor.media_url),
+      expiresAt: descriptor.expires_at,
       kind: "rgb-video" as const,
     };
   };
   return { authorize, refresh: authorize };
 }
 
-function resolvePreviewMediaUrl(url: string): string {
+function resolveAlignedMediaUrl(url: string): string {
   if (/^https?:\/\//u.test(url)) return url;
   const origin = globalThis.location?.origin ?? "http://localhost";
   const apiOrigin = new URL(getRuntimeConfig().apiBaseUrl, origin).origin;
@@ -968,14 +956,7 @@ function streamForCamera(
       : {}),
     availability: "ready",
     accessibleSummary: `${camera.camera_id}，来自数据清单的只读相机流，与其他模态共享 ${frequencyHz} Hz 时间光标。`,
-    mediaSource: createPreviewMediaSource(
-      scope,
-      task,
-      camera.topic,
-      0,
-      "original",
-      frequencyHz,
-    ),
+    mediaSource: createAlignedMediaSource(scope, task, camera.topic),
   };
 }
 
@@ -1257,12 +1238,7 @@ export function buildRuntimeCameraStreams(input: {
         ? allCameras.slice(0, input.cameraLimit)
         : allCameras;
   const cameraStreams = cameras.map((camera) =>
-    streamForCamera(
-      input.scope,
-      bundle.task,
-      camera,
-      frequencyHz,
-    ),
+    streamForCamera(input.scope, bundle.task, camera, frequencyHz),
   );
   const slotCount = Math.max(cameraStreams.length, input.cameraSlotCount ?? 0);
   const paddedCameraStreams = [

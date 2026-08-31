@@ -22,7 +22,7 @@ from .models import (
     StepWindow,
     StorageCommitReceipt,
 )
-from .ports import CatalogRepositoryPort, DatasetWriterLockPort, LanceStoragePort
+from .ports import CatalogRepositoryPort, DatasetWriterLockPort, LanceStoragePort, _project_step
 from .schema import (
     LanceDependencyError,
     compile_arrow_schema,
@@ -61,8 +61,14 @@ def _dump_json(value: object) -> str:
 def compute_fragment_hash(steps: Sequence[StepRecord]) -> str:
     """Return a deterministic logical hash independent of Python object identity."""
 
-    payload = [normalize_for_json(step.model_dump(mode="python")) for step in steps]
-    return hashlib.sha256(_dump_json(payload).encode()).hexdigest()
+    digest = hashlib.sha256()
+    digest.update(b"[")
+    for index, step in enumerate(steps):
+        if index:
+            digest.update(b",")
+        digest.update(_dump_json(normalize_for_json(step.model_dump(mode="python"))).encode())
+    digest.update(b"]")
+    return digest.hexdigest()
 
 
 def _manifest_semantic_hash(manifest: AlignedFragmentManifestV1) -> str:
@@ -131,13 +137,14 @@ def _validate_steps(
 ) -> None:
     if len(steps) != manifest.step_count:
         raise CatalogConflictError("fragment step_count does not match supplied steps")
-    indexes = [step.step_index for step in steps]
-    if any(step.rollout_id != manifest.rollout_id for step in steps):
-        raise CatalogConflictError("fragment contains a step from another rollout")
-    if indexes != list(range(len(steps))):
-        raise CatalogConflictError("fragment step indexes must be ordered and contiguous from zero")
     expected_fields = set(schema.fields)
-    for step in steps:
+    for expected_index, step in enumerate(steps):
+        if step.rollout_id != manifest.rollout_id:
+            raise CatalogConflictError("fragment contains a step from another rollout")
+        if step.step_index != expected_index:
+            raise CatalogConflictError(
+                "fragment step indexes must be ordered and contiguous from zero"
+            )
         mappings = {
             "modalities": set(step.modalities),
             "source_timestamps_ns": set(step.source_timestamps_ns),
@@ -405,6 +412,7 @@ class InMemoryLanceCatalog:
         *,
         version: int | None = None,
         project_id: str | None = None,
+        columns: Sequence[str] | None = None,
     ) -> StepWindow:
         if start_step < 0 or end_step < start_step:
             raise ValueError("step window must be a valid half-open interval")
@@ -413,7 +421,7 @@ class InMemoryLanceCatalog:
             selected = self._resolve_version(key, version)
             snapshot = self._indexed_steps[(*key, selected.version)]
             steps = tuple(
-                snapshot[(rollout_id, index)]
+                _project_step(snapshot[(rollout_id, index)], columns)
                 for index in range(start_step, end_step)
                 if (rollout_id, index) in snapshot
             )
@@ -630,12 +638,23 @@ class LanceCatalogService:
         *,
         version: int | None = None,
         project_id: str | None = None,
+        columns: Sequence[str] | None = None,
     ) -> StepWindow:
         if start_step < 0 or end_step < start_step:
             raise ValueError("step window must be a valid half-open interval")
         selected_project = self._project(dataset_id, project_id)
         selected = self.version_snapshot(dataset_id, version=version, project_id=selected_project)
-        steps = self._storage.read_steps(selected, rollout_id, start_step, end_step)
+        steps = (
+            self._storage.read_steps(selected, rollout_id, start_step, end_step)
+            if columns is None
+            else self._storage.read_steps(
+                selected,
+                rollout_id,
+                start_step,
+                end_step,
+                columns=columns,
+            )
+        )
         return StepWindow(
             project_id=selected_project,
             dataset_id=dataset_id,

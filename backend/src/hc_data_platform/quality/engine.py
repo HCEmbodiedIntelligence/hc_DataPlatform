@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import math
+import sqlite3
+import tempfile
 from collections import Counter
 from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 from .models import (
     NANOSECONDS_PER_SECOND,
@@ -16,6 +20,7 @@ from .models import (
     QualityInputV1,
     QualityProfileV1,
     QualityStatus,
+    QualityStreamObservationV1,
     QualitySummaryV1,
     TopicTimingMetricsV1,
     TopicTimingProfileV1,
@@ -100,6 +105,385 @@ class QualityEngine:
         )
         self._persist(report)
         return report
+
+    def evaluate_stream(
+        self,
+        data: QualityInputV1,
+        observations: Iterable[QualityStreamObservationV1],
+        profile: QualityProfileV1,
+    ) -> QcReportV1:
+        """Evaluate ingest facts online with exact timestamp state spilled to SQLite."""
+
+        findings: list[QcFinding] = []
+        metrics: list[TopicTimingMetricsV1] = []
+        order: dict[str, dict[str, int | None]] = {}
+        images: dict[str, dict[str, object]] = {}
+        with tempfile.TemporaryDirectory(prefix="hc-quality-online-") as directory:
+            database = sqlite3.connect(str(Path(directory) / "quality.sqlite3"))
+            try:
+                database.execute(
+                    "CREATE TABLE timestamps (topic TEXT NOT NULL, ts INTEGER NOT NULL, "
+                    "PRIMARY KEY (topic, ts)) WITHOUT ROWID"
+                )
+                database.execute(
+                    "CREATE TABLE intervals (topic TEXT NOT NULL, value INTEGER NOT NULL)"
+                )
+                for observation in observations:
+                    if not data.start_ns <= observation.timestamp_ns < data.end_ns:
+                        raise ValueError("quality stream timestamp is outside the rollout window")
+                    state = order.setdefault(
+                        observation.topic,
+                        {
+                            "count": 0,
+                            "last": None,
+                            "backward": 0,
+                            "backward_min": None,
+                            "backward_max": None,
+                            "duplicates": 0,
+                            "duplicate_min": None,
+                            "duplicate_max": None,
+                        },
+                    )
+                    state["count"] = int(state["count"] or 0) + 1
+                    last = state["last"]
+                    if isinstance(last, int) and observation.timestamp_ns < last:
+                        state["backward"] = int(state["backward"] or 0) + 1
+                        _expand_range(state, "backward", last)
+                        _expand_range(state, "backward", observation.timestamp_ns)
+                    state["last"] = observation.timestamp_ns
+                    cursor = database.execute(
+                        "INSERT OR IGNORE INTO timestamps (topic, ts) VALUES (?, ?)",
+                        (observation.topic, observation.timestamp_ns),
+                    )
+                    if cursor.rowcount == 0:
+                        state["duplicates"] = int(state["duplicates"] or 0) + 1
+                        _expand_range(state, "duplicate", observation.timestamp_ns)
+                    if observation.is_camera:
+                        image = images.setdefault(
+                            observation.topic,
+                            {
+                                "count": 0,
+                                "black": 0,
+                                "black_min": None,
+                                "black_max": None,
+                                "corrupt": 0,
+                                "corrupt_min": None,
+                                "corrupt_max": None,
+                                "repeated": 0,
+                                "repeated_min": None,
+                                "repeated_max": None,
+                                "last_fingerprint": None,
+                                "last_timestamp": None,
+                            },
+                        )
+                        image["count"] = _required_state_int(image["count"], "count") + 1
+                        threshold = profile.image_for(observation.topic).black_luma_threshold
+                        if observation.luma_mean is not None and observation.luma_mean <= threshold:
+                            image["black"] = _required_state_int(image["black"], "black") + 1
+                            _expand_range(image, "black", observation.timestamp_ns)
+                        if observation.corrupt:
+                            image["corrupt"] = _required_state_int(image["corrupt"], "corrupt") + 1
+                            _expand_range(image, "corrupt", observation.timestamp_ns)
+                        prior_fingerprint = image["last_fingerprint"]
+                        prior_timestamp = image["last_timestamp"]
+                        if (
+                            observation.fingerprint is not None
+                            and observation.fingerprint == prior_fingerprint
+                        ):
+                            image["repeated"] = (
+                                _required_state_int(image["repeated"], "repeated") + 1
+                            )
+                            if isinstance(prior_timestamp, int):
+                                _expand_range(image, "repeated", prior_timestamp)
+                            _expand_range(image, "repeated", observation.timestamp_ns)
+                        image["last_fingerprint"] = observation.fingerprint
+                        image["last_timestamp"] = observation.timestamp_ns
+                database.commit()
+                topics = set(order) | set(profile.required_topics)
+                for topic in sorted(topics):
+                    if topic not in order:
+                        findings.append(
+                            self._finding(
+                                QualityCode.REQUIRED_TOPIC_MISSING,
+                                FindingSeverity.ERROR,
+                                "required topic is absent",
+                                topic,
+                                data.start_ns,
+                                data.end_ns,
+                                observed=False,
+                                threshold="required=true",
+                            )
+                        )
+                    topic_metrics, topic_findings = self._online_timing(
+                        database,
+                        topic,
+                        order.get(topic, {}),
+                        data,
+                        profile.timing_for(topic),
+                    )
+                    metrics.append(topic_metrics)
+                    findings.extend(topic_findings)
+                findings.extend(self._online_images(images, data, profile))
+            finally:
+                database.close()
+
+        # These ingest projections do not currently populate richer decoded facts.
+        findings.extend(self._joints(data, profile))
+        findings.extend(self._actions(data, profile))
+        findings.extend(self._point_clouds(data, profile))
+        findings.extend(self._offsets(data, profile))
+        findings.extend(self._complete_steps(data, profile))
+        findings.sort(key=self._finding_key)
+        report = QcReportV1.build(
+            rollout_id=data.rollout_id,
+            source_sha256=data.source_sha256,
+            profile_id=profile.profile_id,
+            profile_version=profile.profile_version,
+            profile_sha256=profile.content_sha256(),
+            engine_version=self._engine_version or profile.engine_version,
+            start_ns=data.start_ns,
+            end_ns=data.end_ns,
+            status=self._status(findings),
+            topic_metrics=tuple(metrics),
+            findings=tuple(findings),
+        )
+        self._persist(report)
+        return report
+
+    def _online_timing(
+        self,
+        database: sqlite3.Connection,
+        topic: str,
+        state: dict[str, int | None],
+        data: QualityInputV1,
+        thresholds: TopicTimingProfileV1,
+    ) -> tuple[TopicTimingMetricsV1, list[QcFinding]]:
+        duration_ns = data.end_ns - data.start_ns
+        expected = max(
+            1,
+            self._ceil_div(
+                duration_ns * thresholds.target_frequency_hz,
+                NANOSECONDS_PER_SECOND,
+            ),
+        )
+        timestamps = database.execute(
+            "SELECT ts FROM timestamps WHERE topic = ? ORDER BY ts", (topic,)
+        )
+        first: int | None = None
+        previous: int | None = None
+        unique_count = 0
+        maximum_gap = duration_ns
+        gap_start, gap_end = data.start_ns, data.end_ns
+        maximum_missing = expected
+        missing_start, missing_end = data.start_ns, data.end_ns
+
+        def slot(timestamp_ns: int) -> int:
+            return (
+                (timestamp_ns - data.start_ns) * thresholds.target_frequency_hz
+                + NANOSECONDS_PER_SECOND // 2
+            ) // NANOSECONDS_PER_SECOND
+
+        for raw in timestamps:
+            timestamp = int(raw[0])
+            unique_count += 1
+            if first is None:
+                first = timestamp
+                maximum_gap = timestamp - data.start_ns
+                gap_start, gap_end = data.start_ns, timestamp
+                maximum_missing = max(0, slot(timestamp))
+                missing_start, missing_end = data.start_ns, timestamp
+            if previous is not None:
+                interval = timestamp - previous
+                database.execute(
+                    "INSERT INTO intervals (topic, value) VALUES (?, ?)", (topic, interval)
+                )
+                if interval > maximum_gap:
+                    maximum_gap, gap_start, gap_end = interval, previous, timestamp
+                missing = max(0, slot(timestamp) - slot(previous) - 1)
+                if missing > maximum_missing:
+                    maximum_missing = missing
+                    missing_start, missing_end = previous, timestamp
+            previous = timestamp
+        if previous is not None:
+            final_gap = data.end_ns - previous
+            if final_gap > maximum_gap:
+                maximum_gap, gap_start, gap_end = final_gap, previous, data.end_ns
+            final_missing = max(0, expected - slot(previous) - 1)
+            if final_missing > maximum_missing:
+                maximum_missing = final_missing
+                missing_start, missing_end = previous, data.end_ns
+        database.commit()
+        message_count = int(state.get("count") or 0)
+        duplicates = int(state.get("duplicates") or 0)
+        backward = int(state.get("backward") or 0)
+        frequency = unique_count * NANOSECONDS_PER_SECOND / duration_ns
+        coverage = min(1.0, unique_count / expected)
+        result: list[QcFinding] = []
+
+        checks = (
+            (
+                QualityCode.TIMESTAMP_DUPLICATE,
+                self._higher_is_worse(
+                    duplicates,
+                    thresholds.maximum_duplicate_timestamps_risk,
+                    thresholds.maximum_duplicate_timestamps_reject,
+                ),
+                "duplicate timestamps exceed the profile limit",
+                int(state.get("duplicate_min") or data.start_ns),
+                int(state.get("duplicate_max") or data.end_ns),
+                duplicates,
+            ),
+            (
+                QualityCode.FREQUENCY_LOW,
+                self._lower_is_worse(
+                    frequency,
+                    thresholds.minimum_frequency_hz_risk,
+                    thresholds.minimum_frequency_hz_reject,
+                ),
+                "topic frequency is below the profile limit",
+                data.start_ns,
+                data.end_ns,
+                self._rounded(frequency),
+            ),
+            (
+                QualityCode.GAP_EXCESSIVE,
+                self._higher_is_worse(
+                    maximum_gap,
+                    thresholds.maximum_gap_ns_risk,
+                    thresholds.maximum_gap_ns_reject,
+                ),
+                "maximum topic gap exceeds the profile limit",
+                gap_start,
+                gap_end,
+                maximum_gap,
+            ),
+            (
+                QualityCode.CONSECUTIVE_FRAMES_MISSING,
+                self._higher_is_worse(
+                    maximum_missing,
+                    thresholds.maximum_consecutive_missing_risk,
+                    thresholds.maximum_consecutive_missing_reject,
+                ),
+                "consecutive missing frames exceed the profile limit",
+                missing_start,
+                missing_end,
+                maximum_missing,
+            ),
+            (
+                QualityCode.COVERAGE_LOW,
+                self._lower_is_worse(
+                    coverage,
+                    thresholds.minimum_coverage_ratio_risk,
+                    thresholds.minimum_coverage_ratio_reject,
+                ),
+                "topic coverage is below the profile limit",
+                data.start_ns,
+                data.end_ns,
+                self._rounded(coverage),
+            ),
+        )
+        for code, severity, message, start, end, observed in checks:
+            if severity is not None:
+                level, threshold = severity
+                result.append(
+                    self._finding(
+                        code,
+                        level,
+                        message,
+                        topic,
+                        start,
+                        end,
+                        observed=observed,
+                        threshold=threshold,
+                    )
+                )
+        if backward > thresholds.maximum_backward_timestamps_reject:
+            result.append(
+                self._finding(
+                    QualityCode.TIMESTAMP_BACKWARD,
+                    FindingSeverity.ERROR,
+                    "timestamp order moves backwards",
+                    topic,
+                    int(state.get("backward_min") or data.start_ns),
+                    int(state.get("backward_max") or data.end_ns),
+                    observed=backward,
+                    threshold=thresholds.maximum_backward_timestamps_reject,
+                )
+            )
+        return (
+            TopicTimingMetricsV1(
+                topic=topic,
+                message_count=message_count,
+                unique_frame_count=unique_count,
+                expected_frame_count=expected,
+                duplicate_count=duplicates,
+                backward_count=backward,
+                actual_frequency_hz=self._rounded(frequency),
+                interval_p50_ns=_sqlite_percentile(database, topic, 0.50),
+                interval_p95_ns=_sqlite_percentile(database, topic, 0.95),
+                interval_p99_ns=_sqlite_percentile(database, topic, 0.99),
+                maximum_gap_ns=maximum_gap,
+                maximum_consecutive_missing=maximum_missing,
+                coverage_ratio=self._rounded(coverage),
+            ),
+            result,
+        )
+
+    def _online_images(
+        self,
+        images: dict[str, dict[str, object]],
+        data: QualityInputV1,
+        profile: QualityProfileV1,
+    ) -> list[QcFinding]:
+        result: list[QcFinding] = []
+        for topic, state in sorted(images.items()):
+            count = _required_state_int(state["count"], "count")
+            thresholds = profile.image_for(topic)
+            definitions = (
+                (
+                    "black",
+                    QualityCode.IMAGE_BLACK,
+                    "black or underexposed frame ratio exceeds the profile limit",
+                    thresholds.maximum_black_frame_ratio_risk,
+                    thresholds.maximum_black_frame_ratio_reject,
+                    count,
+                ),
+                (
+                    "repeated",
+                    QualityCode.IMAGE_REPEATED,
+                    "consecutive repeated-frame ratio exceeds the profile limit",
+                    thresholds.maximum_repeated_frame_ratio_risk,
+                    thresholds.maximum_repeated_frame_ratio_reject,
+                    max(1, count - 1),
+                ),
+                (
+                    "corrupt",
+                    QualityCode.IMAGE_CORRUPT,
+                    "corrupt image-frame ratio exceeds the profile limit",
+                    thresholds.maximum_corrupt_frame_ratio_risk,
+                    thresholds.maximum_corrupt_frame_ratio_reject,
+                    count,
+                ),
+            )
+            for name, code, message, risk, reject, denominator in definitions:
+                ratio = _required_state_int(state[name], name) / denominator
+                severity = self._higher_is_worse(ratio, risk, reject)
+                if severity is None:
+                    continue
+                level, threshold = severity
+                result.append(
+                    self._finding(
+                        code,
+                        level,
+                        message,
+                        topic,
+                        _optional_state_int(state.get(f"{name}_min"), data.start_ns, name),
+                        _optional_state_int(state.get(f"{name}_max"), data.end_ns, name),
+                        observed=self._rounded(ratio),
+                        threshold=threshold,
+                    )
+                )
+        return result
 
     def _persist(self, report: QcReportV1) -> None:
         if self._report_sink is None or self._metadata_sink is None:
@@ -736,3 +1120,36 @@ class QualityEngine:
     @staticmethod
     def _ceil_div(dividend: int, divisor: int) -> int:
         return (dividend + divisor - 1) // divisor
+
+
+def _required_state_int(value: object, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"quality stream state {name!r} must be an integer")
+    return value
+
+
+def _optional_state_int(value: object, default: int, name: str) -> int:
+    if value is None:
+        return default
+    return _required_state_int(value, name)
+
+
+def _expand_range(state: dict[str, Any], name: str, timestamp: int) -> None:
+    minimum = state.get(f"{name}_min")
+    maximum = state.get(f"{name}_max")
+    state[f"{name}_min"] = timestamp if minimum is None else min(int(minimum), timestamp)
+    state[f"{name}_max"] = timestamp if maximum is None else max(int(maximum), timestamp)
+
+
+def _sqlite_percentile(database: sqlite3.Connection, topic: str, quantile: float) -> int | None:
+    count = int(
+        database.execute("SELECT count(*) FROM intervals WHERE topic = ?", (topic,)).fetchone()[0]
+    )
+    if count == 0:
+        return None
+    offset = max(0, math.ceil(quantile * count) - 1)
+    row = database.execute(
+        "SELECT value FROM intervals WHERE topic = ? ORDER BY value LIMIT 1 OFFSET ?",
+        (topic, offset),
+    ).fetchone()
+    return None if row is None else int(row[0])

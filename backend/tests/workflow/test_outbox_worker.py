@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.platform_ops.maintenance import InMemoryMaintenanceWriteGate
 from hc_data_platform.workflow import outbox_worker
 
 
@@ -67,3 +68,30 @@ async def test_worker_binds_exact_organization_scope_and_resets_context(
     assert dispatcher.calls == [("project-a", "cn-east", "organization-a", True)]
     with pytest.raises(RuntimeError, match="no RequestContext"):
         current_request_context()
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_claim_outbox_while_environment_is_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dispatcher = _RecordingDispatcher()
+    gate = InMemoryMaintenanceWriteGate()
+    gate.set_mode("maintenance-test", "READ_ONLY_MAINTENANCE")
+
+    async def stop_after_empty_poll(_seconds: float) -> None:
+        raise _StopOutboxLoop
+
+    monkeypatch.setattr(outbox_worker.asyncio, "sleep", stop_after_empty_poll)
+
+    with pytest.raises(_StopOutboxLoop):
+        await outbox_worker.serve_outbox(
+            dispatcher,  # type: ignore[arg-type]
+            scopes=("organization-a/project-a/cn-east",),
+            poll_interval_seconds=0.01,
+            batch_size=2,
+            maintenance_gate=gate,
+            environment_id="maintenance-test",
+            writer_id="outbox-test-worker",
+        )
+
+    assert dispatcher.calls == []

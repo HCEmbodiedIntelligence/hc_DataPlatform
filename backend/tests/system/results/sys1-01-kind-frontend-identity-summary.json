@@ -1,0 +1,84 @@
+{
+  "format_version": "hc-sys1-01-kind-frontend-identity/v1",
+  "status": "PASS",
+  "completed_at": "2026-08-29T05:57:50Z",
+  "environment": {
+    "kind_cluster": "hc-sys101-20260829",
+    "kubernetes_version": "v1.32.2",
+    "node_count": 3,
+    "namespace": "hc-sys101",
+    "helm_release": "hc-sys101",
+    "helm_revision": 1,
+    "retained_for_next_dependency": "SYS1-03"
+  },
+  "release": {
+    "release_id": "platform-v0.1.0-sys101-20260829",
+    "git_commit": "024d172a17bb8a3b3f5280304e458d2cc998cf3b",
+    "release_manifest": "backend/tests/system/results/sys1-01-kind-release-manifest.json",
+    "release_manifest_digest": "sha256:b22636f3bac5f30abd60c11f57a9b5e61d599255a7734514a43cfb2437baa9ec",
+    "migration_manifest_digest": "sha256:b915430410917f147d9622f8917ed192be832d890a0e7c09f8d8aa6e683d8bfa",
+    "frontend_image": "hc-data-platform-frontend@sha256:0e9c65855136d273a3d0986278283c83976b19557524a0e95f0dfe38e48acb9e",
+    "heartbeat_image": "hc-data-platform-api@sha256:aead201261274f1bdea1d8334589526f75e80b79664b4e84d8904d6803cd9a10"
+  },
+  "database": {
+    "engine": "PostgreSQL 16.10",
+    "applied_migrations": 108,
+    "expected_migrations": 108
+  },
+  "initial_pod": {
+    "pod_name": "hc-sys101-hc-data-platform-frontend-9bf7595df-rxrtk",
+    "pod_uid": "cef90f3d-ae7e-4ed0-abd8-5b0ce6b19e3a",
+    "node_name": "hc-sys101-20260829-worker2",
+    "containers_ready": 2,
+    "containers_total": 2,
+    "container_restarts": 0,
+    "database_readiness": "ready"
+  },
+  "replacement_pod": {
+    "pod_name": "hc-sys101-hc-data-platform-frontend-9bf7595df-bgwkd",
+    "pod_uid": "430e46be-5fa8-49dd-b985-1c1aaa5bfd8b",
+    "node_name": "hc-sys101-20260829-worker",
+    "containers_ready": 2,
+    "containers_total": 2,
+    "container_restarts": 0,
+    "database_readiness": "ready",
+    "heartbeat_age_seconds_at_final_query": 6
+  },
+  "replacement_fencing": {
+    "old_instance_stale": true,
+    "old_instance_heartbeat_age_seconds": 103,
+    "new_instance_stale": false,
+    "old_and_new_pod_uids_distinct": true,
+    "old_and_new_nodes_distinct": true
+  },
+  "identity_surfaces": {
+    "frontend_runtime_config_matches_release": true,
+    "pod_label_and_annotations_match_release": true,
+    "container_image_ids_match_digest_pins": true,
+    "frontend_json_access_log_matches_release": true,
+    "postgres_node_directory_matches_pod_uid_and_release": true,
+    "frontend_service_account_token_absent": true,
+    "heartbeat_service_account_token_absent": true,
+    "heartbeat_secret_references": [
+      "postgres_dsn"
+    ]
+  },
+  "retained_failure": {
+    "scope": "disposable PostgreSQL infrastructure image",
+    "result": "ImagePullBackOff",
+    "cause": "Kind had the local tag but the initial registry digest reference attempted an unavailable proxy resolution",
+    "correction": "Use the already loaded PostgreSQL 16.10 tag with imagePullPolicy Never; application images remained digest-pinned and were registered by exact digest in containerd"
+  },
+  "tests": {
+    "focused_pytest": "20 passed",
+    "helm_lint": "PASS",
+    "helm_render": "PASS",
+    "real_kubernetes_replacement": "PASS"
+  },
+  "cleanup": {
+    "completed": true,
+    "completed_with_dependency": "SYS1-03",
+    "deleted_kind_cluster": "hc-sys101-20260829",
+    "residual_cluster_container_network_context_and_task_image_count": 0
+  }
+}

@@ -142,6 +142,8 @@ const pageReadCapability: Readonly<Record<string, string | null>> = {
   P19: "audit.read",
   P20: "upload.read",
   P21: "export.read",
+  P22: "platform.operations.read",
+  P23: "episode.read",
 };
 
 function routeCapabilities(

@@ -99,7 +99,7 @@ def _profile(manifest: RolloutManifestV1) -> QualityProfileV1:
     )
 
 
-def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
+def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignment(
     tmp_path: Path,
 ) -> None:
     manifest = _manifest()
@@ -125,7 +125,7 @@ def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
         preflight.manifest_fingerprint,
         preflight.model_dump(mode="json"),
     )
-    projection_connections = tuple(_Connection([projection_row]) for _ in range(3))
+    projection_connections = (_Connection([projection_row]),)
     connections = iter((plan_connection, *projection_connections))
     catalog = InMemoryLanceCatalog()
     storage = _Storage()
@@ -156,18 +156,18 @@ def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
             data_package_id="package-a",
         )
         assert request.alignment.source is not None
-        materialized = resolver.materialize(request.alignment.source)
-        quality = resolver.project_quality(materialized)
-        alignment = resolver.project_alignment(materialized)
-        resolver.cleanup(materialized)
+        with resolver.open_local_session(request.alignment.source) as session:
+            quality = session.quality_data
+            quality_observations = tuple(session.quality_observations())
+            alignment = session.alignment_data
+            alignment_samples = tuple(session.alignment_samples())
+            selection_ref = session.frame_selection()
     finally:
         reset_request_context(token)
 
     assert plan_connection.closed
     assert all(connection.closed for connection in projection_connections)
     assert storage.open_count == 1
-    assert materialized.materialization is not None
-    selection_ref = materialized.materialization.frame_selection
     selection = projection_store.read_json(
         selection_ref.object_key,
         expected_sha256=selection_ref.content_sha256,
@@ -177,12 +177,8 @@ def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
     assert selection["source_frame_count"] == selection_ref.source_frame_count
     assert len(selection["groups"]) == selection_ref.selected_group_count
     assert 0 < selection_ref.selected_group_count <= selection_ref.source_frame_count
-    with pytest.raises(FileNotFoundError), projection_store.local_file(
-        materialized.materialization.object_key,
-        expected_sha256=materialized.materialization.content_sha256,
-        expected_size=materialized.materialization.size_bytes,
-    ):
-        pass
+    assert not tuple((tmp_path / "projection-store").rglob("*.arrow"))
+    assert not tuple((tmp_path / "projection-staging").glob("*.mcap.part"))
     assert request.dataset_id == "dataset_ab"
     assert request.organization_id == "organization-a"
     assert request.verification.organization_id == "organization-a"
@@ -195,14 +191,18 @@ def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
     serialized = request.model_dump_json()
     assert len(serialized.encode()) < 16_384
     assert "JFIF" not in serialized
-    assert set(quality.topic_timestamps_ns) == set(manifest.actual_topics)
-    assert quality.images["/camera/front/image"]
+    assert quality.topic_timestamps_ns == {}
+    assert {item.topic for item in quality_observations} == set(manifest.actual_topics)
+    assert any(item.is_camera for item in quality_observations)
     assert set(alignment.streams) == set(manifest.actual_topics)
-    assert sum(len(stream.samples) for stream in alignment.streams.values()) == 90
-    camera_samples = alignment.streams["/camera/front/image"].samples
+    assert sum(len(stream.samples) for stream in alignment.streams.values()) == 0
+    assert len(alignment_samples) == 90
+    camera_samples = tuple(
+        sample for topic, sample in alignment_samples if topic == "/camera/front/image"
+    )
     assert camera_samples
     assert all(isinstance(sample.value, bytes) and sample.value for sample in camera_samples)
-    joint_samples = alignment.streams["/joint_states"].samples
+    joint_samples = tuple(sample for topic, sample in alignment_samples if topic == "/joint_states")
     assert joint_samples
     assert all(
         isinstance(sample.value, list)
@@ -212,11 +212,11 @@ def test_resolver_materializes_mcap_once_for_quality_alignment_and_sampling(
     )
     assert all(
         "mcap://" not in str(sample.value)
-        for topic in ("/joint_states", "/action")
-        for sample in alignment.streams[topic].samples
+        for topic, sample in alignment_samples
+        if topic in ("/joint_states", "/action")
     )
     assert ("project-a", "dataset_ab") in catalog._schemas
-    assert catalog._schemas[("project-a", "dataset_ab")].fields["/camera/front/image"] == ("binary")
+    assert catalog._schemas[("project-a", "dataset_ab")].fields["/camera/front/image"] == "json"
     assert catalog._schemas[("project-a", "dataset_ab")].fields["/joint_states"] == "json"
     assert catalog._schemas[("project-a", "dataset_ab")].fields["/action"] == "json"
     assert plan_connection._cursor.executions[2][1] == (

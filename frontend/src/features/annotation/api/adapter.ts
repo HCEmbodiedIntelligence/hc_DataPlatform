@@ -143,8 +143,8 @@ function adaptStream(raw: Readonly<Record<string, unknown>>): StreamDescriptor |
   const normalizedModality = raw.modality.toLowerCase();
   const rawModality = modalityAlias[normalizedModality] ?? normalizedModality;
   const availabilityValue = safeWireLabel(raw.availability, '').toLowerCase().replaceAll('_', '-');
-  const availability = availabilityValue === 'preview-generating' || availabilityValue === 'generating'
-    ? 'preview-generating'
+  const availability = availabilityValue === 'media-preparing' || availabilityValue === 'generating'
+    ? 'media-preparing'
     : availabilityValue === 'partial' || availabilityValue === 'unsupported' || availabilityValue === 'missing' || availabilityValue === 'ready'
       ? availabilityValue
       : null;

@@ -26,7 +26,13 @@ ENV VITE_API_BASE_URL=/api/v1 \
     VITE_SSE_BASE_URL=/api/v1/events \
     VITE_MOCK_MODE=off \
     VITE_BUILD_VERSION=${APP_VERSION} \
-    VITE_RELEASE_ENV=production
+    VITE_RELEASE_ENV=production \
+    VITE_PLATFORM_VERSION=0.1.0 \
+    VITE_GIT_COMMIT=${VCS_REF} \
+    VITE_CHART_VERSION=0.1.0 \
+    VITE_RELEASE_MANIFEST_DIGEST=unreleased \
+    VITE_MIGRATION_MANIFEST_DIGEST=unreleased \
+    VITE_COMPONENT_IMAGE_DIGEST=unreleased
 
 WORKDIR /app
 RUN corepack enable

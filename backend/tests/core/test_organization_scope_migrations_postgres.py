@@ -95,7 +95,7 @@ async def _bootstrap_before_organization_identity(dsn: str) -> tuple[str, ...]:
     return tuple(migration.version for migration in migrations[position:])
 
 
-async def _bootstrap_before_core_organization_identity(dsn: str) -> None:
+async def _bootstrap_before_core_organization_identity(dsn: str) -> tuple[str, ...]:
     migrations = load_migrations()
     position = next(
         index
@@ -110,9 +110,10 @@ async def _bootstrap_before_core_organization_identity(dsn: str) -> None:
             await migration_module._apply_pending_migration(connection, migration)
     finally:
         await connection.close()
+    return tuple(migration.version for migration in migrations[position:])
 
 
-async def _bootstrap_before_product_organization_identity(dsn: str) -> None:
+async def _bootstrap_before_product_organization_identity(dsn: str) -> tuple[str, ...]:
     migrations = load_migrations()
     position = next(
         index
@@ -127,6 +128,7 @@ async def _bootstrap_before_product_organization_identity(dsn: str) -> None:
             await migration_module._apply_pending_migration(connection, migration)
     finally:
         await connection.close()
+    return tuple(migration.version for migration in migrations[position:])
 
 
 def _seed_legacy_core_rows(dsn: str, *, organizations: tuple[str, ...]) -> str:
@@ -401,14 +403,15 @@ def test_populated_core_upgrade_backfills_identity_rebuilds_chain_and_rekeys_led
     isolated_organization_migration_dsn: str,
 ) -> None:
     dsn = isolated_organization_migration_dsn
-    asyncio.run(_bootstrap_before_core_organization_identity(dsn))
+    expected_pending = asyncio.run(_bootstrap_before_core_organization_identity(dsn))
     legacy_event_hash = _seed_legacy_core_rows(dsn, organizations=(_ORGANIZATION_ID,))
 
-    assert asyncio.run(apply_migrations(dsn)) == [
+    assert expected_pending[:3] == (
         _CORE_ORGANIZATION_VERSION,
         _PRODUCT_ORGANIZATION_VERSION,
         _LEGACY_CLEANING_IMPORT_VERSION,
-    ]
+    )
+    assert tuple(asyncio.run(apply_migrations(dsn))) == expected_pending
     assert asyncio.run(apply_migrations(dsn)) == []
 
     with psycopg.connect(dsn) as connection:
@@ -571,13 +574,14 @@ def test_product_tables_backfill_and_restrict_same_project_across_organizations(
     isolated_organization_migration_dsn: str,
 ) -> None:
     dsn = isolated_organization_migration_dsn
-    asyncio.run(_bootstrap_before_product_organization_identity(dsn))
+    expected_pending = asyncio.run(_bootstrap_before_product_organization_identity(dsn))
     _seed_legacy_product_row(dsn, organizations=(_ORGANIZATION_ID,))
 
-    assert asyncio.run(apply_migrations(dsn)) == [
+    assert expected_pending[:2] == (
         _PRODUCT_ORGANIZATION_VERSION,
         _LEGACY_CLEANING_IMPORT_VERSION,
-    ]
+    )
+    assert tuple(asyncio.run(apply_migrations(dsn))) == expected_pending
     assert asyncio.run(apply_migrations(dsn)) == []
 
     role_name = f"hc_product_scope_{uuid4().hex[:12]}"

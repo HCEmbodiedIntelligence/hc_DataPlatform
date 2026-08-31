@@ -127,8 +127,14 @@ PostgreSQL
 
 `preview` schema 现在包含 `artifacts`、`jobs` 和 `sessions` 三张持久表。预览媒体仍存放在
 对象存储，PostgreSQL 保存精确对象清单、租户身份、状态、血缘、TTL、LRU 和回收保护。
+`preview/0002_publication_leases_and_timeline.sql` 为媒体 Worker 增加 owner/尝试 token/心跳/
+租约栅栏，并把发布 token、timeline 和 placeholder manifest 作为持久回执保存。
+`preview/0003_global_media_capacity.sql` 增加部署级固定 FFmpeg capacity slot，所有媒体 Worker
+通过带 owner/attempt token/过期时间的 PostgreSQL lease 共享全局并发上限。
 `annotation.frame_selection_manifests` 保存 ingest 生成的不可变抽帧引用；候选清单本体在
-对象存储，自动标注 job 固化同一引用，避免 provider 回退到全量视频解码。
+对象存储，自动标注 job 固化同一引用，避免 provider 回退到全量视频解码。其 project quota、
+保留期、hold、`ACTIVE -> DELETING` 栅栏由 0011 管理；后续 0012 以只向前迁移补充 task
+dataset/rollout 血缘绑定和 job 只能引用 ACTIVE selection 的触发器，已应用的 0011 保持不变。
 
 ## 4. 主要关系图
 
@@ -1126,6 +1132,30 @@ annotation.annotation_drafts [VIEW]
 `-- published_at           timestamptz  NN DEFAULT   发布时间
 ```
 
+### 13.5 Episode 与 Dataset 发布版本
+
+`annotation.annotation_submissions.episode_version` 是任务内从 1 开始的稳定业务版本号，只在
+提交审核时递增；保存草稿不会创建新的 Episode 业务版本。唯一索引
+`(task_id, episode_version)` 防止同一任务重复分配版本。
+
+`publishing.episode_version_finalizations` 在 Dataset 发布时冻结精确的 Episode 提交版本：
+
+```text
++ publishing.episode_version_finalizations
+| PK: (project_id, dataset_id, dataset_version, rollout_id)
+| UK: (project_id, dataset_id, dataset_version,
+|      annotation_task_id, annotation_submission_id)
+| FK: (project_id, dataset_id, dataset_version)
+|     -> publishing.dataset_versions
+| FK: (annotation_task_id, annotation_submission_id)
+|     -> annotation.annotation_submissions
+| RLS: 是，project_id
+| IMMUTABLE: UPDATE/DELETE 由触发器拒绝
+```
+
+`dataset_registry.dataset_versions.version_scope` 区分用户显式发布的 `DATASET_RELEASE` 与内部
+工作快照 `INTERNAL`。历史 `version_lance_*` 行回填为 `INTERNAL`，不得再作为业务发布版本展示。
+
 ## 14. 跨模块逻辑关联
 
 以下关联在业务上存在，但当前 SQL 没有创建跨模块外键。删除或修改上游数据时，PostgreSQL
@@ -1191,8 +1221,60 @@ workflow.jobs.resource_id
   lance_pending_reconciliation
   annotation.annotation_tasks
   publishing.export_attempts
+  platform.platform_instances
+  platform.platform_task_leases
 ```
 
-迁移程序会在一个 PostgreSQL 事务中执行待应用的 SQL，使用 advisory lock 防止多个实例并发
-迁移，并将校验值写入 `core.schema_migrations`。迁移是只向前执行的：已经应用的迁移文件不应
-重排或修改。
+`platform.platform_instances` 是无租户 scope 的运维控制面事实。每个进程以 Pod UID（本地为
+启动时 UUID）做主键，每 30 秒 upsert；目录查询以 PostgreSQL 时钟判定 90 秒未上报的实例为
+`stale`，并仅清理超过保留期的历史记录。该目录只用于可见性，不承担 lease 或一致性判定。
+
+`platform.environment_fences`、`platform.maintenance_operations`、`platform.writer_permits` 和
+append-only `platform.maintenance_events` 实现全局维护控制面。租约到期、接管、writer inventory
+和提交许可只使用 PostgreSQL 时钟；fencing token 来自永不回退的数据库序列。同一环境由 partial
+unique index 保证最多一个 nonterminal operation，`platform.assert_writer_permit()` 是各写路径在
+自身提交事务内复核 mode、epoch 和 expiry 的统一数据库原语。
+
+`platform.platform_task_leases` 以 `(environment_id, task_id)` 保存平台循环的唯一当前 owner，
+使用不可复用实例 UUID、数据库时钟 30 秒租约和全局单调 fencing token。接管会替换 lease UUID，
+因此断连旧 owner 恢复后即使仍持有本地状态，也会在同一写事务提交前被
+`platform.assert_task_lease()` 以稳定错误拒绝。`platform.platform_task_lease_events` 只追加
+acquire、reacquire、takeover 和 release 事实，trigger 禁止 UPDATE/DELETE；只读维护模式拒绝
+新 claim、renew 和带旧 lease 的提交。
+
+`platform.backup_catalog_entries` 保存由独立仓库签名清单重建的不可变、脱敏索引；
+`platform.backup_catalog_status_facts` 只追加生命周期和验证事实。`platform/004` 允许同一备份从
+`INTEGRITY_VERIFIED` 追加新的 `INTEGRITY_VERIFIED` 独立复验事实，并增加按
+`source_environment_id/status/backup_completed_at/backup_id` 的稳定 keyset 查询索引。相同
+`operation_id` 只可幂等重放完全一致的事实，不能回退状态或伪造 `RESTORE_VERIFIED`。
+
+`platform/005_runtime_config_revisions.sql` 增加环境级 monotonic head、完整有效值 snapshot 和
+append-only APPLY/ROLLBACK event，并在节点目录心跳中报告 `applied_config_revision`。revision/event
+由 trigger 禁止 UPDATE/DELETE；rollback 写入新的递增 revision，不回退 head。该表只承载应用层
+精确 allowlist 的低风险值，不是 Secret、DSN、credential、TLS、镜像或 schema identity 通道。
+
+`platform/006_platform_audit_integrity.sql` 把全局 `PLATFORM` access audit 接入独立的 P19
+SHA-256 predecessor chain。既有事件按 `occurred_at/event_id` 稳定回填，后续 insert 在同一事务由
+trigger 串链；source event 和 integrity entry 均禁止 UPDATE/DELETE。平台投影只返回 HMAC 引用、
+事件分类、结果、request ID 和保留的安全字段名，不返回 actor/resource 原值或 `safe_details` 值；
+viewer 只能分页读取，verifier 才能校验并导出受控 NDJSON。
+
+`platform/007_release_control.sql` 保存 environment/release 级发布状态和 source/target 四组件精确
+镜像引用；每次 preflight、四眼批准和外部 controller transition 都在同一数据库事务追加 event。
+state version 作为 CAS 前置，requester 与 approver 必须不同；event 由 trigger 禁止 UPDATE/DELETE。
+浏览器只写批准事实，不保存或接收 Kubernetes、Temporal、registry 或 GitOps credential。
+
+`security/022_platform_operation_capabilities.sql` 增加只按全局精确 grant 判定的 viewer、
+maintenance operator、release operator、verifier 和 break-glass capability。它们不被
+`platform.admin` 通配，且同一 principal 最多只能持有一个 active operation capability；grant
+变更会提升 capability revision 并撤销旧 session，避免旧身份继续执行高危操作。
+
+`phases.json` 是显式、严格版本化的迁移分相合同：未列入 `contract_migrations` 的 manifest 条目
+全部属于 expand。`hc-data-migrate upgrade-expand` 在同一 PostgreSQL session advisory lock 下只
+执行 expand 并做 repeatable security reconciliation；`upgrade-contract` 只执行显式 contract 条目，
+在数据库连接前要求 `sha256:<64 lowercase hex>` 批准 digest，且不会顺带 replay expand DDL。
+Helm expand Job 可作为 pre-install/pre-upgrade hook，contract Job 默认关闭且绝不是 upgrade hook。
+
+普通迁移各自在事务中执行并把校验值写入 `core.schema_migrations`；需要 concurrent index/backfill
+的专用 executor 使用相同 session lock 和分阶段事务。迁移只向前：已应用文件不得重排或修改，
+contract 后也没有盲目 down migration。

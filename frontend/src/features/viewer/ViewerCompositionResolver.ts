@@ -29,7 +29,7 @@ const priorities: Readonly<Record<ViewerPanelKind, number>> = {
 };
 
 function availabilityState(stream: StreamDescriptor): ViewerPanelSpec["state"] {
-  if (stream.availability === "preview-generating") return "pending";
+  if (stream.availability === "media-preparing") return "pending";
   if (stream.availability === "partial") return "partial";
   if (stream.availability === "unsupported") return "unsupported";
   if (stream.availability === "missing") return "missing";

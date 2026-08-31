@@ -3,6 +3,40 @@
 Status: **NOT PASSED — the complete pipeline could not run and the MinIO upload stage was below
 the required throughput.**
 
+## 2026-08-31 canonical aligned-media component run
+
+This new measurement is independent of the BE-12 5 TB/day verdict above. It is retained as
+`tests/load/results/aligned-media-capacity-20260831.json` and is explicitly classified
+`LOCAL_COMPONENT_CAPACITY_NOT_PRODUCTION`; it must not be extrapolated into a deployed capacity
+claim.
+
+The default benchmark generated four distinct 320×180 JPEG camera streams in a raw MCAP at
+30 Hz for 60 seconds (7,200 unique JPEGs), verified MCAP framing/indexes/CRCs/topics, obtained a
+camera-only QC `PASS` with zero findings, wrote a bounded 1,800-row causal-alignment fragment,
+encoded immutable H.264 CRF20/yuv420p MP4s, committed Lance rows containing MP4 frame references,
+set the Dataset commit marker, and then issued 100 concurrent authorization plus `Range:
+bytes=0-4095` clients for each case. The workflow camera batch size was two and the shared media
+capacity was two.
+
+| Upload concurrency | MP4 jobs | Generation wall | Max FFmpeg active | Queue wait P95 | Process RSS peak | Temp disk peak | 100-client auth+Range P95 | Failures |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 4 | 18.318 s | 2 | 0.002 s | 381.3 MB | 12.1 MB | 0.264 s | 0 |
+| 2 | 8 | 28.823 s | 2 | 11.026 s | 479.1 MB | 22.3 MB | 0.298 s | 0 |
+| 4 | 16 | 47.885 s | 2 | 19.898 s | 569.3 MB | 40.8 MB | 0.245 s | 0 |
+
+Every case committed all four camera artifacts before visibility, had exact 1,800-frame/60-second
+timelines, returned 100 successful `206` responses and 100 authorization audit events, and kept
+`active_ffmpeg=0` plus encoder-call, generation-job, and Lance-commit counters unchanged across
+authorization. Exact
+receipt teardown deleted test-owned media without prefix deletion; raw MCAP remained until the
+temporary test root was removed, and alignment staging was deleted by exact key.
+
+The WSL host exposes only the root cgroup and no `memory.current`, so the JSON truthfully records
+that field as unavailable. It retains process RSS, root-cgroup anonymous-memory delta, CPU, IO,
+network-namespace traffic, and temporary-disk samples. Production conclusions still require the
+deployed PostgreSQL lease path, S3/MinIO, pod resource limits, network contention, failure rates,
+and headroom targets.
+
 ## Target
 
 - Daily volume: 5,000,000,000,000 bytes (5 decimal TB).

@@ -152,6 +152,28 @@ EXPECTED_MANIFEST = (
     "ingest/006_grandfather_completed_source_recordings.sql",
     "preview/0001_durable_preview_artifacts.sql",
     "annotation/0009_frame_selection_manifests.sql",
+    "dataset_registry/0008_dataset_version_semantics.sql",
+    "annotation/0010_episode_review_versions.sql",
+    "publishing/0003_episode_version_finalization.sql",
+    "preview/0002_publication_leases_and_timeline.sql",
+    "annotation/0011_frame_selection_lifecycle.sql",
+    "preview/0003_global_media_capacity.sql",
+    "annotation/0012_frame_selection_reference_guards.sql",
+    "platform/001_platform_instances.sql",
+    "platform/002_maintenance_operations.sql",
+    "security/022_platform_operation_capabilities.sql",
+    "security/023_default_admin.sql",
+    "platform/003_backup_catalog.sql",
+    "platform/004_backup_catalog_verification_and_query.sql",
+    "platform/005_runtime_config_revisions.sql",
+    "platform/006_platform_audit_integrity.sql",
+    "platform/007_release_control.sql",
+    "platform/008_platform_task_leases.sql",
+    "preview/0004_canonical_aligned_media.sql",
+    "ingest/007_continuous_recording_slices.sql",
+    "ingest/008_recording_video_assets.sql",
+    "preview/0005_commit_fence_and_media_retirement.sql",
+    "platform/009_object_store_configuration.sql",
 )
 
 
@@ -161,6 +183,31 @@ def test_manifest_is_ordered_unique_and_checksum_bound() -> None:
     assert len({migration.version for migration in migrations}) == len(migrations)
     for migration in migrations:
         assert migration.checksum_sha256 == hashlib.sha256(migration.path.read_bytes()).hexdigest()
+
+
+def test_phase_manifest_assigns_every_current_migration_to_expand() -> None:
+    migrations = load_migrations()
+
+    assert migrations
+    assert {migration.phase for migration in migrations} == {"expand"}
+
+
+@pytest.mark.asyncio
+async def test_contract_phase_rejects_missing_or_invalid_approval_before_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unexpected_connect(dsn: str) -> object:
+        del dsn
+        raise AssertionError("database connection must not be attempted")
+
+    monkeypatch.setattr(migration_module.asyncpg, "connect", unexpected_connect)
+    for approval_digest in (None, "", "sha256:not-a-digest", "a" * 64):
+        with pytest.raises(RuntimeError, match="signed approval digest"):
+            await apply_migrations(
+                "postgresql://localhost/test",
+                phase="contract",
+                contract_approval_digest=approval_digest,
+            )
 
 
 def test_applied_history_bytes_are_immutable() -> None:

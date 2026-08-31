@@ -1,0 +1,269 @@
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/platform/releases:
+    get:
+      operationId: listPlatformReleaseHistory
+      tags: [platform-operations]
+      x-hc-platform-capability-policy:
+        mode: any-exact
+        capabilities: [platform.admin, platform.operations.read]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        "200":
+          description: Redacted immutable release history.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReleaseHistoryPage"}
+        "401": {$ref: "#/components/responses/PlatformAuthenticationRequired"}
+        "403": {$ref: "#/components/responses/PlatformCapabilityRequired"}
+        "422":
+          description: Query validation failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/platform/releases:preflight:
+    post:
+      operationId: preflightPlatformRelease
+      tags: [platform-operations]
+      x-hc-platform-capability-policy:
+        mode: one-exact
+        capabilities: [platform.release.operate]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ReleasePreflightRequest"}
+      responses:
+        "200":
+          description: Signed compatible release awaiting distinct approval.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReleaseRun"}
+        "401": {$ref: "#/components/responses/PlatformAuthenticationRequired"}
+        "403": {$ref: "#/components/responses/PlatformCapabilityRequired"}
+        "409":
+          description: Signature, compatibility, digest, or platform preflight failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422":
+          description: Release document validation failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "503":
+          description: Release-feed trust is not configured.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/platform/releases/{release_id}:approve:
+    post:
+      operationId: approvePlatformRelease
+      tags: [platform-operations]
+      x-hc-platform-capability-policy:
+        mode: one-exact
+        capabilities: [platform.release.operate]
+      parameters:
+        - name: release_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ReleaseApprovalRequest"}
+      responses:
+        "200":
+          description: Release approved by a distinct operator.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReleaseRun"}
+        "401": {$ref: "#/components/responses/PlatformAuthenticationRequired"}
+        "403": {$ref: "#/components/responses/PlatformCapabilityRequired"}
+        "404":
+          description: Release not found.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "409":
+          description: Approval is stale, self-approved, or in the wrong state.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422":
+          description: Approval validation failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/platform/releases/{release_id}:transition:
+    post:
+      operationId: transitionPlatformRelease
+      tags: [platform-operations]
+      x-hc-platform-capability-policy:
+        mode: one-exact
+        capabilities: [platform.release.operate]
+      parameters:
+        - name: release_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ReleaseTransitionRequest"}
+      responses:
+        "200":
+          description: Controller state transition recorded and audited.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReleaseRun"}
+        "401": {$ref: "#/components/responses/PlatformAuthenticationRequired"}
+        "403": {$ref: "#/components/responses/PlatformCapabilityRequired"}
+        "404":
+          description: Release not found.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "409":
+          description: Controller transition is stale or invalid.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422":
+          description: Transition validation failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+components:
+  schemas:
+    ReleaseState:
+      type: string
+      enum:
+        - PREFLIGHT_BLOCKED
+        - AWAITING_APPROVAL
+        - APPROVED
+        - EXPAND
+        - CANARY
+        - ROLLOUT
+        - CONTRACT_PENDING
+        - COMPLETED
+        - ROLLED_BACK
+        - FAILED
+    ReleaseImagesV1:
+      type: object
+      additionalProperties: false
+      required: [frontend, api, worker, media_worker]
+      properties:
+        frontend: {$ref: "#/components/schemas/ReleaseImageReference"}
+        api: {$ref: "#/components/schemas/ReleaseImageReference"}
+        worker: {$ref: "#/components/schemas/ReleaseImageReference"}
+        media_worker: {$ref: "#/components/schemas/ReleaseImageReference"}
+    ReleaseImageReference:
+      type: string
+      minLength: 10
+      maxLength: 512
+      pattern: '^[^@\s]+@sha256:[0-9a-f]{64}$'
+    ReleasePreflightRequest:
+      type: object
+      additionalProperties: false
+      required: [target_release_id, minimum_feed_sequence, source_images, signed_feed]
+      properties:
+        target_release_id:
+          type: string
+          pattern: '^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$'
+        minimum_feed_sequence: {type: integer, exclusiveMinimum: 0}
+        source_images: {$ref: "#/components/schemas/ReleaseImagesV1"}
+        signed_feed:
+          type: object
+          additionalProperties: true
+    ReleaseApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_state_version, reason]
+      properties:
+        expected_state_version: {type: integer, exclusiveMinimum: 0}
+        reason: {type: string, minLength: 8, maxLength: 500}
+    ReleaseTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_state_version, next_state, reason_code]
+      properties:
+        expected_state_version: {type: integer, exclusiveMinimum: 0}
+        next_state: {$ref: "#/components/schemas/ReleaseState"}
+        reason_code: {type: string, pattern: '^[A-Z][A-Z0-9_]{0,127}$'}
+    ReleaseEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - state_version
+        - event_kind
+        - state
+        - actor_ref
+        - reason_code
+        - occurred_at
+      properties:
+        state_version: {type: integer, exclusiveMinimum: 0}
+        event_kind: {type: string, pattern: '^[A-Z][A-Z0-9_]{0,127}$'}
+        state: {$ref: "#/components/schemas/ReleaseState"}
+        actor_ref: {type: string, pattern: '^id-hmac-sha256:[0-9a-f]{64}$'}
+        reason_code: {type: string, pattern: '^[A-Z][A-Z0-9_]{0,127}$'}
+        occurred_at: {type: string, format: date-time}
+    ReleaseRun:
+      type: object
+      additionalProperties: false
+      required:
+        - release_id
+        - source_version
+        - target_version
+        - manifest_sha256
+        - state
+        - state_version
+        - approved
+        - created_at
+        - updated_at
+        - events
+      properties:
+        format_version:
+          type: string
+          const: hc-platform-release-run/v1
+          default: hc-platform-release-run/v1
+        release_id:
+          type: string
+          pattern: '^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$'
+        source_version: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
+        target_version: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
+        manifest_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        state: {$ref: "#/components/schemas/ReleaseState"}
+        state_version: {type: integer, exclusiveMinimum: 0}
+        approval_required: {type: boolean, const: true, default: true}
+        approved: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        events:
+          type: array
+          items: {$ref: "#/components/schemas/ReleaseEvent"}
+    ReleaseHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [count, items]
+      properties:
+        format_version:
+          type: string
+          const: hc-platform-release-history/v1
+          default: hc-platform-release-history/v1
+        count: {type: integer, minimum: 0, maximum: 50}
+        items:
+          type: array
+          maxItems: 50
+          items: {$ref: "#/components/schemas/ReleaseRun"}

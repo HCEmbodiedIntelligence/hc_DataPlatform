@@ -18,7 +18,7 @@ from hc_data_platform.alignment import (
     TimedSampleV1,
 )
 from hc_data_platform.alignment.canonical import denormalize_from_json, normalize_for_json
-from hc_data_platform.alignment.models import AlignedRowV1
+from hc_data_platform.alignment.models import AlignedRowV1, AlignedValueV1
 
 SHA = "c" * 64
 
@@ -422,6 +422,82 @@ def test_align_to_writer_does_not_materialize_output_rows() -> None:
 
     assert manifest.row_count == writer.row_count == 1800
     assert writer.aborted is False
+
+
+def test_streaming_k_way_alignment_matches_materialized_alignment() -> None:
+    streams = {
+        "camera": _stream(
+            ModalityKind.IMAGE,
+            [(0, b"f0"), (40_000_000, b"f1"), (80_000_000, b"f2")],
+        ),
+        "action": _stream(
+            ModalityKind.ACTION,
+            [(0, [0.0]), (50_000_000, [1.0])],
+        ),
+    }
+    data = _input(end_ns=100_000_000, streams=streams)
+    profile = _profile(set(streams), default_tolerance_ns=100_000_000)
+    engine = AlignmentEngine()
+    offline_writer = FakeFragmentWriter()
+    streaming_writer = FakeFragmentWriter()
+    offline = engine.align_to_writer(data, profile, offline_writer)
+    ordered_samples = sorted(
+        ((topic, sample) for topic, stream in streams.items() for sample in stream.samples),
+        key=lambda item: (item[1].timestamp_ns, item[0]),
+    )
+
+    streaming = engine.align_stream_to_writer(
+        rollout_id=data.rollout_id,
+        source_sha256=data.source_sha256,
+        attempt_id=data.attempt_id,
+        start_ns=data.start_ns,
+        end_ns=data.end_ns,
+        stream_kinds={topic: stream.kind for topic, stream in streams.items()},
+        samples=ordered_samples,
+        profile=profile,
+        writer=streaming_writer,
+    )
+
+    assert streaming == offline
+    assert streaming_writer.rows == offline_writer.rows
+
+
+def test_arrow_writer_flushes_on_byte_limit_before_row_limit(tmp_path: Path) -> None:
+    pyarrow = pytest.importorskip("pyarrow")
+    ipc = pytest.importorskip("pyarrow.ipc")
+    payload = b"j" * (6 * 1024 * 1024)
+    writer = ArrowFragmentWriter(tmp_path, batch_bytes=32 * 1024 * 1024)
+    writer.begin(rollout_id="rollout-byte-bounded", attempt_id="byte-attempt")
+    for index in range(5):
+        writer.write_row(
+            AlignedRowV1(
+                rollout_id="rollout-byte-bounded",
+                step_index=index,
+                timestamp_ns=index,
+                modalities={
+                    "camera": AlignedValueV1(
+                        value=payload,
+                        source_timestamps_ns=(index,),
+                        time_error_ns=0,
+                        strategy=AlignmentStrategy.NEAREST,
+                        valid=True,
+                    )
+                },
+                sample_valid=True,
+            )
+        )
+    uri = writer.commit(
+        row_count=5,
+        content_sha256="d" * 64,
+        schema_sha256="e" * 64,
+    )
+
+    with pyarrow.memory_map(str(Path(uri.removeprefix("file://"))), "r") as source:
+        reader = ipc.open_file(source)
+        assert reader.num_record_batches > 1
+        assert (
+            max(reader.get_batch(index).num_rows for index in range(reader.num_record_batches)) < 5
+        )
 
 
 def test_profile_cannot_silently_configure_an_absent_stream() -> None:

@@ -342,15 +342,35 @@ class McapVerifier:
         required_topics: set[str],
         known_optional_topics: set[str] | None = None,
     ) -> RawVerificationReportV1:
+        return self.verify_stream(
+            rollout_id=rollout_id,
+            object_key=object_key,
+            source_sha256=source_sha256,
+            required_topics=required_topics,
+            known_optional_topics=known_optional_topics,
+            stream=self._storage.open_reader(object_key),
+        )
+
+    def verify_stream(
+        self,
+        *,
+        rollout_id: str,
+        object_key: str,
+        source_sha256: str,
+        required_topics: set[str],
+        known_optional_topics: set[str] | None = None,
+        stream: ReadableBinaryStream,
+    ) -> RawVerificationReportV1:
+        """Verify an already-open stream without performing another object-store GET."""
+
         state = _ParseState()
-        raw_stream = self._storage.open_reader(object_key)
-        with closing(_CountingReader(raw_stream)) as stream:
+        with closing(_CountingReader(stream)) as counted:
             try:
-                self._parse_stream(stream, state)
+                self._parse_stream(counted, state)
             except _MalformedMcap as exc:
                 self._add_finding(state, exc.code, str(exc), offset=exc.offset)
-                self._drain(stream)
-            object_size = stream.count
+                self._drain(counted)
+            object_size = counted.count
 
         self._finalize_findings(state, required_topics, known_optional_topics or set())
         findings = tuple(sorted(state.findings, key=self._finding_key))

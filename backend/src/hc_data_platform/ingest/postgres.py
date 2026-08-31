@@ -713,6 +713,171 @@ class PostgresIngestPersistence:
         finally:
             connection.close()
 
+    def commit_raw_without_workflow(
+        self,
+        *,
+        session: UploadSession,
+        event: RawObjectCommittedV1,
+        actor_id: str,
+        request_id: str,
+    ) -> None:
+        """Commit a continuous recording without dispatching the episode workflow."""
+
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT status FROM ingest.upload_sessions
+                    WHERE session_id = %s AND project_id = %s AND region_code = %s
+                    FOR UPDATE
+                    """,
+                    (session.session_id, session.project_id, session.region_code),
+                )
+                if cursor.fetchone() is None:
+                    raise problem(
+                        status=404,
+                        code="UPLOAD_SESSION_NOT_FOUND",
+                        title="Upload session not found",
+                        detail="The upload session does not exist in this scope.",
+                    )
+                cursor.execute(
+                    """
+                    INSERT INTO ingest.rollout_objects (
+                        project_id, region_code, rollout_id, data_package_id,
+                        object_key, manifest_key, source_sha256, crc64,
+                        file_size, status, committed_at
+                    )
+                    SELECT %s, %s, %s, %s, %s, %s, %s,
+                           expected_crc64, %s, 'COMMITTED', %s
+                    FROM ingest.upload_sessions
+                    WHERE session_id = %s AND project_id = %s AND region_code = %s
+                    ON CONFLICT (project_id, rollout_id) DO NOTHING
+                    """,
+                    (
+                        event.project_id,
+                        event.region_code,
+                        event.rollout_id,
+                        event.data_package_id,
+                        event.object_key,
+                        event.manifest_key,
+                        event.sha256,
+                        event.file_size,
+                        event.committed_at,
+                        session.session_id,
+                        session.project_id,
+                        session.region_code,
+                    ),
+                )
+                cursor.execute(
+                    """
+                    SELECT data_package_id, object_key, manifest_key, source_sha256
+                    FROM ingest.rollout_objects
+                    WHERE project_id = %s AND region_code = %s AND rollout_id = %s
+                    """,
+                    (event.project_id, event.region_code, event.rollout_id),
+                )
+                raw = cursor.fetchone()
+                if raw is None or tuple(map(str, raw)) != (
+                    event.data_package_id,
+                    event.object_key,
+                    event.manifest_key,
+                    event.sha256,
+                ):
+                    raise problem(
+                        status=409,
+                        code="ROLLOUT_CONTENT_CONFLICT",
+                        title="Rollout content conflict",
+                        detail="The committed rollout object is immutable.",
+                    )
+                cursor.execute(
+                    """
+                    UPDATE ingest.upload_objects
+                    SET actual_size = %s, actual_sha256 = %s,
+                        status = 'COMMITTED', updated_at = %s
+                    WHERE session_id = %s AND project_id = %s AND region_code = %s
+                      AND rollout_id = %s AND object_key = %s
+                    """,
+                    (
+                        event.file_size,
+                        event.sha256,
+                        event.committed_at,
+                        session.session_id,
+                        session.project_id,
+                        session.region_code,
+                        session.rollout_id,
+                        session.object_key,
+                    ),
+                )
+                self._require_write(cursor, "upload object")
+                cursor.execute(
+                    """
+                    UPDATE ingest.upload_sessions
+                    SET status = 'RAW_COMMITTED', updated_at = %s
+                    WHERE session_id = %s AND project_id = %s AND region_code = %s
+                      AND rollout_id = %s AND data_package_id = %s
+                    """,
+                    (
+                        event.committed_at,
+                        session.session_id,
+                        session.project_id,
+                        session.region_code,
+                        session.rollout_id,
+                        session.data_package_id,
+                    ),
+                )
+                self._require_write(cursor, "upload session")
+                cursor.execute(
+                    """
+                    UPDATE ingest.rollouts
+                    SET status = 'RAW_COMMITTED', updated_at = %s
+                    WHERE project_id = %s AND region_code = %s AND rollout_id = %s
+                    """,
+                    (
+                        event.committed_at,
+                        session.project_id,
+                        session.region_code,
+                        session.rollout_id,
+                    ),
+                )
+                self._require_write(cursor, "rollout")
+                audit_id = str(
+                    uuid5(NAMESPACE_URL, f"{session.session_id}:continuous-raw-committed")
+                )
+                safe_after = {
+                    "status": "RAW_COMMITTED",
+                    "processing_mode": "CONTINUOUS_RECORDING",
+                    "recording_id": event.continuous_recording_id,
+                }
+                cursor.execute(
+                    """
+                    INSERT INTO core.audit_events (
+                        audit_id, project_id, region_code, actor_id, action,
+                        resource_type, resource_id, request_id, before_hash,
+                        after_hash, details, occurred_at
+                    ) VALUES (%s, %s, %s, %s, 'ingest.continuous_recording.raw_committed',
+                              'upload_session', %s, %s, NULL, %s, %s::jsonb, %s)
+                    ON CONFLICT (audit_id) DO NOTHING
+                    """,
+                    (
+                        audit_id,
+                        session.project_id,
+                        session.region_code,
+                        actor_id,
+                        session.session_id,
+                        request_id,
+                        canonical_hash(safe_after),
+                        json.dumps(safe_after),
+                        event.committed_at,
+                    ),
+                )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def get_workflow_trigger(self, session_id: str) -> IngestWorkflowLocator | None:
         connection = self._connection_factory()
         try:

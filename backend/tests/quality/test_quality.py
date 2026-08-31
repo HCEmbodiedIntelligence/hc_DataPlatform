@@ -30,7 +30,10 @@ from hc_data_platform.quality import (
     TopicTimingProfileV1,
     VisualAnomalyProbe,
 )
-from hc_data_platform.quality.models import ImageQualityProfileV1
+from hc_data_platform.quality.models import (
+    ImageQualityProfileV1,
+    QualityStreamObservationV1,
+)
 
 SHA = "b" * 64
 DURATION_NS = 60_000_000_000
@@ -111,6 +114,62 @@ def test_unique_duplicate_and_backward_timestamp_metrics_are_independent() -> No
     assert duplicate.start_ns == duplicate.end_ns == timestamps[19]
     assert backward.severity == FindingSeverity.ERROR
     assert backward.start_ns < backward.end_ns
+
+
+def test_online_timing_matches_materialized_rules_without_retaining_rollout_lists() -> None:
+    timestamps = list(_timestamps(30))
+    timestamps.insert(20, timestamps[19])
+    timestamps[50], timestamps[51] = timestamps[51], timestamps[50]
+    offline_data = _input(tuple(timestamps))
+    stream_data = offline_data.model_copy(update={"topic_timestamps_ns": {}})
+    observations = (
+        QualityStreamObservationV1(
+            topic="/camera/front",
+            timestamp_ns=timestamp_ns,
+            is_camera=False,
+        )
+        for timestamp_ns in timestamps
+    )
+
+    offline = QualityEngine().evaluate(offline_data, _profile())
+    online = QualityEngine().evaluate_stream(stream_data, observations, _profile())
+
+    assert online.status == offline.status
+    assert online.topic_metrics == offline.topic_metrics
+    assert online.findings == offline.findings
+
+
+def test_online_image_aggregation_matches_black_corrupt_and_repeated_evidence() -> None:
+    timestamps = tuple(index * 2_000_000_000 for index in range(30))
+    images = tuple(
+        ImageObservation(
+            timestamp_ns=timestamp_ns,
+            luma_mean=0 if index == 3 else 100,
+            fingerprint="repeat" if index in (5, 6) else f"frame-{index}",
+            corrupt=index == 9,
+        )
+        for index, timestamp_ns in enumerate(timestamps)
+    )
+    offline_data = _input(timestamps, images={"/camera/front": images})
+    stream_data = offline_data.model_copy(update={"topic_timestamps_ns": {}, "images": {}})
+    observations = (
+        QualityStreamObservationV1(
+            topic="/camera/front",
+            timestamp_ns=image.timestamp_ns,
+            is_camera=True,
+            luma_mean=image.luma_mean,
+            fingerprint=image.fingerprint,
+            corrupt=image.corrupt,
+        )
+        for image in images
+    )
+
+    offline = QualityEngine().evaluate(offline_data, _profile())
+    online = QualityEngine().evaluate_stream(stream_data, observations, _profile())
+
+    assert online.status == offline.status
+    assert online.topic_metrics == offline.topic_metrics
+    assert online.findings == offline.findings
 
 
 def test_28hz_is_risk_and_warnings_never_accumulate_into_reject() -> None:

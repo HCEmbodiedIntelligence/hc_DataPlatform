@@ -1,5 +1,10 @@
 global:
   releaseId: platform-v2026.08.17.1
+  releaseManifestDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  gitCommit: 0123456789abcdef0123456789abcdef01234567
+  migrationManifestDigest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+highAvailability:
+  enabled: true
 frontend:
   image:
     repository: registry.example.com/hc-data-platform/frontend
@@ -18,6 +23,29 @@ networkPolicy:
     podSelector:
       matchLabels:
         app.kubernetes.io/name: prometheus
+observability:
+  enabled: true
+  # Production uses the managed multi-zone Loki gateway; this is its native
+  # OTLP base URL and the Collector appends /v1/logs.
+  loki:
+    embedded: false
+    endpoint: https://loki-gateway.observability.svc/otlp
+    query:
+      enabled: true
+      existingBearerTokenSecret:
+        name: hc-platform-loki-query
+        key: token
+  prometheusOperator:
+    enabled: true
+    ruleLabels:
+      prometheus: platform
+    serviceMonitorLabels:
+      prometheus: platform
+  grafana:
+    dashboardConfigMap:
+      enabled: true
+      labels:
+        grafana_dashboard: "1"
 backend:
   api:
     image:
@@ -26,19 +54,45 @@ backend:
     metrics:
       enabled: true
       servicePort: 9090
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
   worker:
     image:
       repository: registry.example.com/hc-data-platform/worker
       digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 20
+      targetCPUUtilizationPercentage: 70
+  # A production install remains blocked until an operator creates this external
+  # ConfigMap from a real production-like 5 TB/day + 30% run and replaces the
+  # placeholder digest with the exact artifact SHA-256.
+  capacityGate:
+    enabled: true
+    evidenceConfigMap:
+      name: replace-with-capacity-evidence-configmap
+      key: capacity-evidence.json
+      sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  mediaWorker:
+    replicaCount: 2
   config:
     environment: production
-    serviceVersion: platform-v2026.08.17.1
+    platformEnvironmentId: hc-production
+    secretBundleRevision: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     # Replace with the exact organization/project/region triples consumed by this worker pool.
     outboxScopes: '["production-organization/production-project/production-region"]'
     storageInventoryScopes: '["production-organization/production-project/production-region"]'
     storageInventoryIntervalSeconds: "3600"
-    previewGcIntervalSeconds: "300"
+    mediaMaintenanceIntervalSeconds: "300"
+    objectStoreProvider: oss
+    objectStoreEndpoint: https://oss-cn-hangzhou-internal.aliyuncs.com
+    objectStoreBucket: replace-with-production-oss-bucket
+    objectStoreRegion: cn-hangzhou
     # Internal/provider gateway credentials are referenced via
     # backend.existingSecrets.application.autoAnnotationProviderApiKey.
     autoAnnotationProviderEndpoint: https://annotation-gateway.example.com/v1/annotate
@@ -62,7 +116,7 @@ backend:
     authRecoveryEmailFrom: no-reply@example.com
     authSmtpHost: smtp.example.com
     authSmtpUsername: hc-data-platform-production
-    # Replace with the real browser-reachable HTTPS S3 endpoint. Infrastructure must
+    # Replace with the real browser-reachable HTTPS OSS endpoint. Infrastructure must
     # separately configure the bucket's exact platform-origin CORS allowlist.
-    objectStorePublicEndpoint: https://uploads.example.com
+    objectStorePublicEndpoint: https://oss-cn-hangzhou.aliyuncs.com
     apiDocsEnabled: "false"

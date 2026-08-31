@@ -1,40 +1,49 @@
-"""Prometheus domain metrics with mandatory cross-signal locator labels."""
+"""Bounded-cardinality Prometheus domain metrics and locator helpers."""
 
 from __future__ import annotations
 
 from prometheus_client import Counter, Gauge, Histogram
 
-LOCATOR_LABELS = ("project_id", "resource_id", "workflow_id")
-
 UPLOAD_BACKLOG = Gauge(
     "hc_data_upload_backlog",
     "Upload sessions waiting for raw verification.",
-    LOCATOR_LABELS,
+    ("queue",),
 )
 WORKFLOW_FAILURES = Counter(
     "hc_data_workflow_failures_total",
     "Durable workflow or activity failures.",
-    (*LOCATOR_LABELS, "workflow_kind", "error_code"),
+    ("workflow_kind", "error_code"),
 )
 QC_OUTCOMES = Counter(
     "hc_data_qc_outcomes_total",
     "Deterministic quality outcomes.",
-    (*LOCATOR_LABELS, "outcome", "profile_id"),
+    ("outcome", "profile_id"),
 )
 LANCE_COMMITS = Counter(
     "hc_data_lance_commits_total",
     "Lance commit and catalog registration outcomes.",
-    (*LOCATOR_LABELS, "outcome", "dataset_id"),
+    ("outcome",),
 )
 TRANSCODE_DURATION = Histogram(
     "hc_data_transcode_duration_seconds",
-    "Preview transcode latency through atomic cache publication.",
-    (*LOCATOR_LABELS, "outcome", "view_mode"),
+    "Canonical aligned MP4 transcode latency through immutable publication.",
+    ("outcome", "profile_id"),
 )
 EXPORTS = Counter(
     "hc_data_exports_total",
     "Immutable training export attempts.",
-    (*LOCATOR_LABELS, "outcome", "format"),
+    ("outcome", "format"),
+)
+
+HTTP_REQUESTS = Counter(
+    "hc_platform_http_requests_total",
+    "HTTP requests by bounded route template, method, status class, and status code.",
+    ("route", "method", "status_class", "status_code"),
+)
+HTTP_REQUEST_DURATION = Histogram(
+    "hc_platform_http_request_duration_seconds",
+    "HTTP request latency by bounded route template and method.",
+    ("route", "method"),
 )
 
 

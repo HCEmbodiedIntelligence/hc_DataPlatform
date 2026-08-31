@@ -9,6 +9,12 @@ from hc_data_platform.core.config import Settings
 def _production_settings(**updates: object) -> Settings:
     values: dict[str, object] = {
         "environment": "production",
+        "secret_bundle_revision": f"sha256:{'d' * 64}",
+        "release_id": "platform-v0.1.0-test.1",
+        "git_commit": "1" * 40,
+        "release_manifest_digest": f"sha256:{'a' * 64}",
+        "migration_manifest_digest": f"sha256:{'b' * 64}",
+        "component_image_digest": f"sha256:{'c' * 64}",
         "object_store_endpoint": "http://minio:9000",
         "object_store_public_endpoint": "https://uploads.example.com",
         "object_store_secret_key": "production-object-store-secret",
@@ -55,6 +61,64 @@ def test_local_legacy_single_endpoint_falls_back_without_changing_server_operati
         _env_file=None,
     )
     assert settings.object_store_public_endpoint == settings.object_store_endpoint
+
+
+def test_oss_provider_requires_https_native_endpoints() -> None:
+    settings = Settings(
+        environment="test",
+        object_store_provider="oss",
+        object_store_endpoint="https://oss-cn-hangzhou-internal.aliyuncs.com",
+        object_store_public_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+        object_store_bucket="hc-oss-test",
+        object_store_access_key="test-access-key",
+        object_store_secret_key="test-secret-key",
+        _env_file=None,
+    )
+    assert settings.object_store_provider == "oss"
+    assert settings.object_store_bucket == "hc-oss-test"
+
+    unconfigured = Settings(
+        environment="test",
+        object_store_provider="oss",
+        object_store_endpoint="",
+        object_store_public_endpoint="",
+        object_store_bucket="",
+        object_store_access_key="",
+        object_store_secret_key="",
+        object_store_region="",
+        _env_file=None,
+    )
+    assert unconfigured.object_store_endpoint == "https://object-store-unconfigured.invalid"
+    assert unconfigured.object_store_public_endpoint == "https://object-store-unconfigured.invalid"
+    assert unconfigured.object_store_bucket == "hc-unconfigured"
+    assert unconfigured.object_store_access_key == "unconfigured-access-key"
+    assert unconfigured.object_store_secret_key == "unconfigured-secret-key"
+    assert unconfigured.object_store_region == "cn-hangzhou"
+
+    with pytest.raises(ValidationError, match="OSS endpoints must use HTTPS"):
+        Settings(
+            environment="test",
+            object_store_provider="oss",
+            object_store_endpoint="http://oss-cn-hangzhou.aliyuncs.com",
+            object_store_public_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+            object_store_bucket="hc-oss-test",
+            object_store_access_key="test-access-key",
+            object_store_secret_key="test-secret-key",
+            _env_file=None,
+        )
+
+
+def test_production_oss_operations_may_use_public_endpoint_before_vpc_deployment() -> None:
+    settings = _production_settings(
+        object_store_provider="oss",
+        object_store_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+        object_store_public_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+        object_store_bucket="hc-oss-production",
+        object_store_access_key="production-access-key",
+        object_store_secret_key="production-object-store-secret",
+    )
+
+    assert settings.object_store_endpoint == "https://oss-cn-hangzhou.aliyuncs.com"
 
 
 def test_production_requires_an_explicit_public_https_fqdn() -> None:

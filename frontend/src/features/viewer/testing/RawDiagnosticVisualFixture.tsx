@@ -109,7 +109,7 @@ function VisualCameraPanel({ context }: { readonly context: ViewerPanelRenderCon
 function statusFor(index: number, scenario: RawDiagnosticVisualScenario): StreamDescriptor['availability'] {
   if (scenario === 'missing-slow') {
     if (index === 0) return 'missing';
-    if (index === 1) return 'preview-generating';
+    if (index === 1) return 'media-preparing';
   }
   if (scenario === 'reference' && index === 2) return 'partial';
   return 'ready';

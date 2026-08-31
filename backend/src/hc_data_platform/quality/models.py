@@ -287,6 +287,19 @@ class ImageObservation(BaseModel):
         return self
 
 
+class QualityStreamObservationV1(BaseModel):
+    """One bounded ingest observation consumed by the online evaluator."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    topic: str = Field(min_length=1)
+    timestamp_ns: int = Field(ge=0)
+    is_camera: bool = False
+    luma_mean: float | None = Field(default=None, ge=0, le=255)
+    fingerprint: str | None = None
+    corrupt: bool = False
+
+
 class JointObservation(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

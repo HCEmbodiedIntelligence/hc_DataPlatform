@@ -291,9 +291,7 @@ class DatasetPublisher:
                 status=422,
                 code="NO_ELIGIBLE_ROLLOUTS",
                 title="No eligible rollouts",
-                detail=(
-                    "Publication requires materialized data and an approved Episode version."
-                ),
+                detail=("Publication requires materialized data and an approved Episode version."),
                 details={
                     "excluded_rollouts": [
                         item.model_dump(mode="json") for item in preflight.excluded_rollouts
@@ -438,12 +436,9 @@ class ExportCoordinator:
             outcome = "failure"
             raise
         finally:
-            from hc_data_platform.core.observability import EXPORTS, locator_workflow_id
+            from hc_data_platform.core.observability import EXPORTS
 
             EXPORTS.labels(
-                project_id=manifest.project_id,
-                resource_id=manifest.dataset_id,
-                workflow_id=locator_workflow_id("export", manifest.project_id, manifest.dataset_id),
                 outcome=outcome,
                 format=format.value,
             ).inc()

@@ -55,15 +55,8 @@ def test_production_helm_has_public_deny_and_selector_bound_internal_metrics_pat
     documents = _render_production_chart()
     services = {item["metadata"]["name"]: item for item in _by_kind(documents, "Service")}
     ingress_documents = _by_kind(documents, "Ingress")
-    assert len(ingress_documents) == 2
-    ingress = next(
-        item
-        for item in ingress_documents
-        if not item["metadata"]["name"].endswith("-preview-media")
-    )
-    preview_ingress = next(
-        item for item in ingress_documents if item["metadata"]["name"].endswith("-preview-media")
-    )
+    assert len(ingress_documents) == 1
+    ingress = ingress_documents[0]
 
     rules = ingress["spec"]["rules"][0]["http"]["paths"]
     backends = {
@@ -76,11 +69,6 @@ def test_production_helm_has_public_deny_and_selector_bound_internal_metrics_pat
     )
 
     api_backend = backends[("/docs", "Exact")]
-    api_service_port = next(
-        item["backend"]["service"]["port"]
-        for item in rules
-        if item["path"] == "/api" and item["pathType"] == "Prefix"
-    )
     assert api_backend.endswith("-backend-api")
     for path in ("/docs/oauth2-redirect", "/redoc", "/openapi.json"):
         assert backends[(path, "Exact")] == api_backend
@@ -96,25 +84,6 @@ def test_production_helm_has_public_deny_and_selector_bound_internal_metrics_pat
         {"name": "metrics", "port": 9090, "targetPort": "http", "protocol": "TCP"}
     ]
     assert internal_metrics["metadata"]["annotations"]["prometheus.io/path"] == "/metrics"
-
-    preview_paths = preview_ingress["spec"]["rules"][0]["http"]["paths"]
-    assert preview_paths == [
-        {
-            "path": "/api/v1/previews/sessions/",
-            "pathType": "Prefix",
-            "backend": {
-                "service": {
-                    "name": api_backend,
-                    "port": api_service_port,
-                }
-            },
-        }
-    ]
-    assert preview_ingress["metadata"]["annotations"] == {
-        "nginx.ingress.kubernetes.io/limit-rps": "30",
-        "nginx.ingress.kubernetes.io/limit-burst-multiplier": "4",
-        "nginx.ingress.kubernetes.io/limit-connections": "8",
-    }
 
     deployments = _by_kind(documents, "Deployment")
     pod_components = {
@@ -156,5 +125,29 @@ def test_production_network_policy_allows_only_selected_monitor_to_api_metrics_p
     ]
 
     config_maps = _by_kind(documents, "ConfigMap")
-    assert len(config_maps) == 1
-    assert config_maps[0]["data"]["HC_API_DOCS_ENABLED"] == "false"
+    backend_config_maps = [
+        item for item in config_maps if item["metadata"]["name"].endswith("-backend")
+    ]
+    assert len(backend_config_maps) == 1
+    assert backend_config_maps[0]["data"]["HC_API_DOCS_ENABLED"] == "false"
+    observability_config_maps = {
+        item["metadata"]["name"]
+        for item in config_maps
+        if "observability" in item["metadata"]["name"]
+    }
+    assert len(observability_config_maps) == 4
+    assert any(name.endswith("-collector") for name in observability_config_maps)
+    assert any(name.endswith("-agent") for name in observability_config_maps)
+    assert any(name.endswith("-dashboard") for name in observability_config_maps)
+    assert any(name.endswith("-prometheus-rules") for name in observability_config_maps)
+
+    observability_policy_name = next(
+        name for name in policies if name.endswith("-allow-observability-internal")
+    )
+    observability_policy = policies[observability_policy_name]
+    assert observability_policy["spec"]["policyTypes"] == ["Ingress"]
+    assert observability_policy["spec"]["podSelector"]["matchExpressions"][1] == {
+        "key": "app.kubernetes.io/component",
+        "operator": "In",
+        "values": ["otel-collector", "loki", "grafana"],
+    }

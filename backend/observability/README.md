@@ -1,20 +1,18 @@
-# 可观测性验收资源
+# 可观测性部署与验收资源
 
-- `metrics-contract.yaml` 是跨模块的语义指标与安全日志契约。
-- `otel-collector-config.yaml` 接收 OTLP 链路/指标，并公开 Prometheus 指标。
-- `grafana-dashboard.json` 提供按项目、资源和工作流划分的数据流水线视图。
-- `prometheus-rules.yaml` 包含可执行的告警，每条告警都链接到一份 BE-12 运维手册。
+- `metrics-contract.yaml` 固定低基数指标和禁用标签；项目、用户、对象、资源、工作流和请求
+  标识只能用于受控日志/链路检索，不能成为指标标签。
+- `otel-collector-config.yaml` 是中央 OTLP 网关：日志先经固定 JSON 前缀门禁，再通过原生
+  OTLP 写入 Loki；指标供 Prometheus 抓取；链路只接收并丢弃，避免未配置后端时泄露正文。
+- `otel-agent-config.yaml` 只读取本发布 Frontend Pod 的容器标准输出，使用持久化检查点和
+  磁盘队列转发到中央网关。
+- `grafana-dashboard.json` 提供低基数运行指标和结构化 Loki 日志面板。
+- `prometheus-rules.yaml` 覆盖备份、深校验、节点/版本、迁移、Outbox、Temporal、对象复制、
+  审计、HTTP、磁盘、数据库池和告警投递链路。
 
-采集器和仪表盘不会凭空生成领域指标。每个具名业务负责人必须在事务成功或失败的边界发送
-其契约指标。缺少发送器属于集成失败，无法通过部署配置掩盖。
-
-BE-12 Helm Chart 通过 `opentelemetry-instrument` 启动 API 和 Worker，经由 OTLP
-导出链路、指标和日志，并为两个服务分配不同的名称。这只提供框架级钩子和日志关联能力；
-它本身不能满足六项领域指标门禁。
-
-一次性 kind 试运行已通过 `tests/system/otlp_capture.py` 验证该传输链路：两个服务名称
-均导出了 Span、日志信封和 HTTP 框架指标。接收端有意丢弃了日志正文和属性。脱敏后的摘要位于
-`tests/system/results/pilot-otlp-summary.json`；其中不包含六项领域指标中的任何一项。
+Helm 在非生产环境可部署 PVC 单体 Loki 做验收；生产环境强制使用外部托管的原生 OTLP
+Loki 端点。Collector 固定两副本和 PDB，Frontend 日志代理是 DaemonSet。Grafana 面板以
+ConfigMap 交给 sidecar，也可启用受管实例；管理员凭据只能引用既有 Secret。
 
 验证捕获的试运行证据：
 
@@ -23,5 +21,7 @@ python backend/observability/verify_metrics.py --url http://prometheus-target:94
 python backend/observability/verify_logs.py --require-context pilot-api.ndjson pilot-worker.ndjson
 ```
 
-日志捕获结果为空视为失败。日志校验器会拒绝敏感键、形似 Bearer/JWT 的值，以及对象存储
-签名查询参数。
+日志捕获结果为空视为失败。日志校验器要求完整 `hc-runtime-log/v1` 固定字段、拒绝未知或
+敏感键，以及形似 Bearer/JWT、DSN、PII email 和对象存储签名查询参数的值。
+
+生产响应和端到端验收见 `deploy/runbooks/observability-alerts.md`。

@@ -192,8 +192,8 @@
 }
 
 .regionField {
-  width: clamp(140px, 12vw, 158px);
-  flex: 0 1 158px;
+  width: clamp(188px, 17vw, 236px);
+  flex: 0 1 236px;
 }
 
 .scopeField :global(.ant-select) {
@@ -464,6 +464,67 @@
     background-color 150ms ease,
     color 150ms ease,
     box-shadow 150ms ease;
+}
+
+.releaseStamp {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  width: 142px;
+  min-height: 38px;
+  grid-template-columns: 3px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border-subtle);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--hc-color-surface-muted) 82%, white);
+  color: var(--hc-color-text-muted);
+}
+
+.releaseStampRail {
+  background: linear-gradient(
+    180deg,
+    var(--hc-color-primary) 0%,
+    var(--hc-color-signal) 100%
+  );
+}
+
+.releaseStampCopy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  padding: 5px 7px 4px;
+  font-size: 9px;
+  letter-spacing: 0.055em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.releaseStampCopy strong,
+.releaseStampCopy code {
+  overflow: hidden;
+  color: var(--hc-color-text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.releaseStampCopy code {
+  color: var(--hc-color-text-muted);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.releaseStampMobile {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  margin-top: 18px;
 }
 
 .collapseNavigation:hover {

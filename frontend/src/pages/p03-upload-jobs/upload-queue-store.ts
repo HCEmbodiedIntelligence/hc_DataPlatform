@@ -1084,7 +1084,11 @@ async function prepareUploadSession(
   const grant = await createFormalUploadSession(
     scope,
     {
-      manifest: preflight.manifest,
+      manifest: {
+        ...preflight.manifest,
+        processing_mode:
+          preflight.manifest.processing_mode ?? "DIRECT_EPISODE",
+      },
       ...(sourceType === "BROWSER_MULTIPART"
         ? { part_numbers: initialPartNumbers }
         : { object_storage_uri: objectStorageUri?.trim() }),

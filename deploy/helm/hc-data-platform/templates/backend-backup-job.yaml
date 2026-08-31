@@ -1,0 +1,209 @@
+{{- if .Values.backend.backupJob.enabled }}
+{{- $job := .Values.backend.backupJob -}}
+{{- if not (has $job.operation (list "create" "verify")) -}}
+{{- fail "backend.backupJob.operation must be create or verify" -}}
+{{- end -}}
+{{- $planSecret := required "backend.backupJob.planSecret.name is required" $job.planSecret.name -}}
+{{- $stagingClaim := required "backend.backupJob.staging.existingClaim is required" $job.staging.existingClaim -}}
+{{- $environmentConfigMap := required "backend.backupJob.environmentConfigMap.name is required" $job.environmentConfigMap.name -}}
+{{- $environmentSecret := required "backend.backupJob.environmentSecret.name is required" $job.environmentSecret.name -}}
+{{- $serviceAccount := required "backend.backupJob.serviceAccountName is required" $job.serviceAccountName -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $job.planSecret.key) -}}
+{{- fail "backend.backupJob.planSecret.key is invalid" -}}
+{{- end -}}
+{{- if eq $job.operation "create" -}}
+{{- $_ := required "backend.backupJob.helmRenderedConfigMap.name is required for create" $job.helmRenderedConfigMap.name -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $job.helmRenderedConfigMap.key) -}}
+{{- fail "backend.backupJob.helmRenderedConfigMap.key is invalid" -}}
+{{- end -}}
+{{- end -}}
+{{- if and $job.ageIdentitySecret.name (not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $job.ageIdentitySecret.key)) -}}
+{{- fail "backend.backupJob.ageIdentitySecret.key is invalid" -}}
+{{- end -}}
+{{- if eq $job.operation "verify" -}}
+{{- $_ := required "backend.backupJob.operationId is required for verify" $job.operationId -}}
+{{- $_ := required "backend.backupJob.verifiedAt is required for verify" $job.verifiedAt -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-backup-{{ $job.operation }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup-maintenance
+  {{- with $job.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ $job.backoffLimit }}
+  activeDeadlineSeconds: {{ $job.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backup-maintenance
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $serviceAccount | quote }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: private-staging-bootstrap
+          image: {{ include "hc-data-platform.backendImage" $job.image | quote }}
+          imagePullPolicy: {{ $job.image.pullPolicy }}
+          command: ["python", "-c"]
+          args:
+            - |
+              import os
+              from pathlib import Path
+              work = Path("/backup-staging/work")
+              work.mkdir(mode=0o700, exist_ok=True)
+              work.chmod(0o700)
+              copies = [(Path("/input/plan/{{ $job.planSecret.key }}"), work / "whole-backup-plan.json")]
+              {{- if eq $job.operation "create" }}
+              copies.append((Path("/input/helm/{{ $job.helmRenderedConfigMap.key }}"), work / "rendered.yaml"))
+              {{- end }}
+              {{- if $job.ageIdentitySecret.name }}
+              private = Path("/private-input")
+              private.mkdir(mode=0o700, exist_ok=True)
+              private.chmod(0o700)
+              copies.append((Path("/input/age/{{ $job.ageIdentitySecret.key }}"), private / "age-identity.txt"))
+              {{- end }}
+              for source, destination in copies:
+                  payload = source.read_bytes()
+                  if destination.exists():
+                      if destination.read_bytes() != payload:
+                          raise RuntimeError("immutable backup input conflict")
+                  else:
+                      descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                      with os.fdopen(descriptor, "wb", buffering=0) as stream:
+                          stream.write(payload)
+                          stream.flush()
+                          os.fsync(stream.fileno())
+                  destination.chmod(0o600)
+          securityContext:
+            {{- toYaml .Values.backend.backupContainerSecurityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: staging
+              mountPath: /backup-staging
+            - name: plan
+              mountPath: /input/plan
+              readOnly: true
+            {{- if eq $job.operation "create" }}
+            - name: helm-rendered
+              mountPath: /input/helm
+              readOnly: true
+            {{- end }}
+            {{- if $job.ageIdentitySecret.name }}
+            - name: age-identity
+              mountPath: /input/age
+              readOnly: true
+            - name: private-input
+              mountPath: /private-input
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: backup-maintenance
+          image: {{ include "hc-data-platform.backendImage" $job.image | quote }}
+          imagePullPolicy: {{ $job.image.pullPolicy }}
+          command: ["hc-platform"]
+          {{- if eq $job.operation "create" }}
+          args:
+            - backup
+            - create
+            - --plan
+            - /backup-staging/work/whole-backup-plan.json
+            - --staging-directory
+            - /backup-staging/work
+            - --helm-rendered-manifest
+            - /backup-staging/work/rendered.yaml
+          {{- else }}
+          args:
+            - backup
+            - verify
+            - --plan
+            - /backup-staging/work/whole-backup-plan.json
+            - --operation-id
+            - {{ $job.operationId | quote }}
+            - --verified-at
+            - {{ $job.verifiedAt | quote }}
+            - --staging-directory
+            - /backup-staging/work
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.backend.backupContainerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ $environmentConfigMap | quote }}
+            - secretRef:
+                name: {{ $environmentSecret | quote }}
+          {{- if $job.ageIdentitySecret.name }}
+          env:
+            - name: HC_BACKUP_AGE_IDENTITY_FILE
+              value: /private-input/age-identity.txt
+          {{- end }}
+          resources:
+            {{- toYaml $job.resources | nindent 12 }}
+          volumeMounts:
+            - name: staging
+              mountPath: /backup-staging
+            {{- if $job.ageIdentitySecret.name }}
+            - name: private-input
+              mountPath: /private-input
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: staging
+          persistentVolumeClaim:
+            claimName: {{ $stagingClaim | quote }}
+        - name: plan
+          secret:
+            secretName: {{ $planSecret | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $job.planSecret.key | quote }}
+                path: {{ $job.planSecret.key | quote }}
+        {{- if eq $job.operation "create" }}
+        - name: helm-rendered
+          configMap:
+            name: {{ $job.helmRenderedConfigMap.name | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $job.helmRenderedConfigMap.key | quote }}
+                path: {{ $job.helmRenderedConfigMap.key | quote }}
+        {{- end }}
+        {{- if $job.ageIdentitySecret.name }}
+        - name: age-identity
+          secret:
+            secretName: {{ $job.ageIdentitySecret.name | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $job.ageIdentitySecret.key | quote }}
+                path: {{ $job.ageIdentitySecret.key | quote }}
+        - name: private-input
+          emptyDir:
+            sizeLimit: 1Mi
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+{{- end }}

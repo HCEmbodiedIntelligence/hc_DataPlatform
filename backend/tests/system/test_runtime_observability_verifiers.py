@@ -40,13 +40,22 @@ def _load_system_script(name: str) -> ModuleType:
 def test_log_verifier_accepts_contextual_records_and_rejects_secrets() -> None:
     verifier = _load("verify_logs")
     safe = {
-        "level": "INFO",
-        "message": "workflow activity completed",
+        "schema_version": "hc-runtime-log/v1",
+        "timestamp": "2026-08-29T00:00:00.000Z",
+        "severity": "INFO",
+        "service": "hc-data-platform-worker",
+        "instance_id": "instance-1",
+        "node_name": "node-1",
+        "role": "worker",
+        "release_id": "platform-v1.0.0",
         "request_id": "request-1",
-        "project_id": "project-1",
-        "resource_id": "rollout-1",
+        "trace_id": "a" * 32,
+        "operation_id": "ingest:v1:project-1:rollout-1",
         "workflow_id": "ingest:v1:project-1:rollout-1",
-        "error_code": None,
+        "event_code": "ACTIVITY.COMPLETED",
+        "duration_ms": 12.5,
+        "retry_count": 0,
+        "error_type": None,
     }
     assert verifier.inspect_record(safe, require_context=True) == []
 
@@ -60,22 +69,40 @@ def test_log_verifier_accepts_contextual_records_and_rejects_secrets() -> None:
     assert any("signature" in failure.lower() for failure in failures)
 
 
-def test_metric_verifier_requires_all_six_metrics_with_locator_labels() -> None:
+def test_metric_verifier_requires_runtime_metrics_with_bounded_labels() -> None:
     verifier = _load("verify_metrics")
-    labels = 'project_id="p",resource_id="r",workflow_id="w"'
     lines = [
-        f"hc_data_upload_backlog{{{labels}}} 1",
-        f"hc_data_workflow_failures_total{{{labels}}} 0",
-        f'hc_data_qc_outcomes_total{{{labels},outcome="PASS"}} 1',
-        f'hc_data_lance_commits_total{{{labels},outcome="success"}} 1',
-        f'hc_data_transcode_duration_seconds_bucket{{{labels},le="1"}} 1',
-        f'hc_data_exports_total{{{labels},outcome="success"}} 1',
+        'hc_data_upload_backlog{queue="raw-verification"} 1',
+        'hc_data_workflow_failures_total{workflow_kind="ingest",error_code="timeout"} 0',
+        'hc_data_qc_outcomes_total{outcome="PASS",profile_id="default"} 1',
+        'hc_data_lance_commits_total{outcome="success"} 1',
+        'hc_data_transcode_duration_seconds_bucket{outcome="success",view_mode="grid",le="1"} 1',
+        'hc_data_exports_total{outcome="success",format="parquet"} 1',
+        (
+            'hc_platform_http_requests_total{route="/health/ready",method="GET",'
+            'status_class="2xx",status_code="200"} 1'
+        ),
+        (
+            "hc_platform_http_request_duration_seconds_bucket"
+            '{route="/health/ready",method="GET",le="1"} 1'
+        ),
     ]
     assert verifier.verify(lines)["passed"] is True
 
     incomplete = verifier.verify(lines[:-1])
     assert incomplete["passed"] is False
-    assert any("hc_data_exports_total" in item for item in incomplete["failures"])
+    assert any(
+        "hc_platform_http_request_duration_seconds" in item for item in incomplete["failures"]
+    )
+
+    leaking = verifier.verify(
+        [
+            *lines,
+            'hc_data_upload_backlog{queue="raw-verification",project_id="private"} 1',
+        ]
+    )
+    assert leaking["passed"] is False
+    assert any("forbidden high-cardinality" in item for item in leaking["failures"])
 
 
 def test_otlp_capture_retains_counts_and_names_but_never_log_bodies(tmp_path: Path) -> None:

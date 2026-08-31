@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from functools import lru_cache
+from pathlib import PurePosixPath
 from typing import Literal
 from urllib.parse import urlparse
+from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _LOCAL_CURSOR_SECRET = "local-cursor-secret-change-me"
 _LOCAL_OBJECT_STORE_SECRET = "minio-local-only"
 _LOCAL_DATA_SOURCE_CREDENTIAL_KEY = "local-data-source-credential-key-change-me"
+_UNCONFIGURED_OBJECT_STORE_ENDPOINT = "https://object-store-unconfigured.invalid"
 
 
 class Settings(BaseSettings):
@@ -25,41 +29,58 @@ class Settings(BaseSettings):
     )
 
     environment: Literal["local", "test", "staging", "production"] = "local"
+    platform_environment_id: str = Field(default="local", min_length=1, max_length=128)
+    secret_bundle_revision: str = "unversioned"
     runtime_backend: Literal["memory", "production"] = "production"
+    release_id: str = "unreleased"
+    platform_version: str = "0.1.0"
+    git_commit: str = "unknown"
+    chart_version: str = "0.1.0"
+    release_manifest_digest: str = "unreleased"
+    migration_manifest_digest: str = "unreleased"
+    component_role: Literal["api", "worker", "media-worker", "migration", "frontend"] = "api"
+    component_image_digest: str = "unreleased"
+    instance_id: UUID | None = None
+    node_name: str | None = Field(default=None, min_length=1, max_length=253)
+    pod_name: str | None = Field(default=None, min_length=1, max_length=253)
+    kubernetes_node_name: str | None = Field(default=None, min_length=1, max_length=253)
+    kubernetes_zone: str | None = Field(default=None, min_length=1, max_length=253)
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
     postgres_dsn: str = "postgresql+asyncpg://hc:hc@localhost:5432/hc_data"
     temporal_target: str = "localhost:7233"
+    temporal_worker_build_id: str | None = Field(default=None, min_length=1, max_length=127)
+    worker_graceful_shutdown_seconds: int = Field(default=60, ge=1, le=600)
+    worker_max_concurrent_workflow_tasks: int = Field(default=4, ge=1, le=1_000)
+    worker_max_concurrent_activities: int = Field(default=2, ge=1, le=128)
+    worker_max_cached_workflows: int = Field(default=16, ge=1, le=10_000)
     outbox_scopes: tuple[str, ...] = ()
     outbox_poll_interval_seconds: float = Field(default=0.5, gt=0, le=60)
     outbox_batch_size: int = Field(default=32, ge=1, le=1000)
     storage_inventory_scopes: tuple[str, ...] = ()
     storage_inventory_interval_seconds: float = Field(default=3_600, ge=10, le=86_400)
+    object_store_provider: Literal["s3", "oss"] = "s3"
     object_store_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_public_endpoint: str | None = Field(default=None, repr=False)
-    object_store_bucket: str = Field(default="hc-data-local", min_length=3, max_length=63)
-    object_store_access_key: str = Field(default="minio", min_length=1, repr=False)
+    object_store_bucket: str = Field(default="hc-data-local", max_length=63)
+    object_store_access_key: str = Field(default="minio", max_length=512, repr=False)
     object_store_secret_key: str = Field(
         default=_LOCAL_OBJECT_STORE_SECRET,
-        min_length=8,
+        max_length=2_048,
         repr=False,
     )
-    object_store_region: str = Field(default="us-east-1", min_length=1)
+    object_store_region: str = Field(default="us-east-1", max_length=63)
     ingest_part_authorization_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
-    preview_cache_root: str = "/tmp/hc-data/previews"
+    aligned_media_staging_root: str = "/tmp/hc-data/aligned-media"
     media_temporal_task_queue: str = Field(default="hc-media-pipeline", min_length=1)
-    preview_artifact_ttl_days: int = Field(default=30, ge=1, le=3650)
-    preview_session_ttl_minutes: int = Field(default=30, ge=1, le=1440)
-    preview_staging_ttl_hours: int = Field(default=24, ge=1, le=168)
-    preview_gc_interval_seconds: float = Field(default=300, ge=10, le=86_400)
-    preview_project_quota_bytes: int = Field(default=100 * 1024**3, ge=1)
-    preview_global_quota_bytes: int = Field(default=1024 * 1024**3, ge=1)
-    preview_high_watermark_percent: int = Field(default=85, ge=1, le=100)
-    preview_low_watermark_percent: int = Field(default=70, ge=1, le=99)
-    preview_allowed_profiles: tuple[str, ...] = ("annotation-h264-720p-v1",)
+    aligned_media_staging_ttl_hours: int = Field(default=24, ge=1, le=168)
+    aligned_media_publication_orphan_ttl_minutes: int = Field(default=30, ge=10, le=10_080)
+    media_maintenance_interval_seconds: float = Field(default=300, ge=10, le=86_400)
+    aligned_media_allowed_profiles: tuple[str, ...] = ("canonical-h264-crf20-v1",)
     media_max_concurrent_generations: int = Field(default=2, ge=1, le=128)
+    media_global_max_concurrent_generations: int = Field(default=4, ge=1, le=128)
     media_ffmpeg_threads: int = Field(default=2, ge=1, le=64)
     artifact_prefix: str = "artifacts"
     auto_annotation_provider_name: str = Field(default="vlm", min_length=1, max_length=128)
@@ -130,8 +151,114 @@ class Settings(BaseSettings):
     auth_smtp_starttls: bool = True
     auth_smtp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    observability_log_query_url: str | None = Field(default=None, repr=False)
+    observability_log_query_bearer_token: SecretStr | None = Field(default=None, repr=False)
+    release_feed_trusted_public_keys: tuple[str, ...] = ()
     enforce_schema_migrations: bool = False
     api_docs_enabled: bool = False
+
+    @field_validator("release_id")
+    @classmethod
+    def validate_release_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if (
+            re.fullmatch(r"(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})", normalized)
+            is None
+        ):
+            raise ValueError("must be unreleased or a platform-v release identifier")
+        return normalized
+
+    @field_validator("platform_environment_id")
+    @classmethod
+    def validate_platform_environment_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if (
+            re.fullmatch(
+                r"[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,126}[A-Za-z0-9])?",
+                normalized,
+            )
+            is None
+        ):
+            raise ValueError("must be an explicit safe environment identifier")
+        return normalized
+
+    @field_validator("secret_bundle_revision")
+    @classmethod
+    def validate_secret_bundle_revision(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized != "unversioned" and re.fullmatch(r"sha256:[0-9a-f]{64}", normalized) is None:
+            raise ValueError("must be unversioned or a lowercase sha256 digest")
+        return normalized
+
+    @field_validator("platform_version", "chart_version")
+    @classmethod
+    def validate_release_semver(cls, value: str) -> str:
+        normalized = value.strip()
+        if (
+            re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", normalized)
+            is None
+        ):
+            raise ValueError("must be a three-component semantic version")
+        return normalized
+
+    @field_validator("git_commit")
+    @classmethod
+    def validate_git_commit(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized != "unknown" and re.fullmatch(r"[0-9a-f]{40}", normalized) is None:
+            raise ValueError("must be unknown or a full lowercase Git SHA-1")
+        return normalized
+
+    @field_validator(
+        "release_manifest_digest",
+        "migration_manifest_digest",
+        "component_image_digest",
+    )
+    @classmethod
+    def validate_release_digest(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized != "unreleased" and re.fullmatch(r"sha256:[0-9a-f]{64}", normalized) is None:
+            raise ValueError("must be unreleased or a lowercase sha256 digest")
+        return normalized
+
+    @field_validator(
+        "node_name",
+        "pod_name",
+        "kubernetes_node_name",
+        "kubernetes_zone",
+        mode="before",
+    )
+    @classmethod
+    def validate_optional_instance_metadata(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?", normalized) is None:
+            raise ValueError("must contain only safe node metadata characters")
+        return normalized
+
+    @field_validator("temporal_worker_build_id")
+    @classmethod
+    def validate_temporal_worker_build_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,125}[A-Za-z0-9])?", normalized) is None:
+            raise ValueError("must contain only safe Temporal build-ID characters")
+        return normalized
+
+    @field_validator("release_feed_trusted_public_keys")
+    @classmethod
+    def validate_release_feed_public_keys(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("release-feed trusted public keys must be unique")
+        if any(re.fullmatch(r"[A-Za-z0-9_-]{43}", item) is None for item in value):
+            raise ValueError("release-feed trusted public keys must be raw Ed25519 base64url")
+        return value
 
     @field_validator("postgres_dsn")
     @classmethod
@@ -155,6 +282,28 @@ class Settings(BaseSettings):
             raise ValueError("must contain a valid host:port")
         return value
 
+    @field_validator("observability_log_query_url")
+    @classmethod
+    def validate_observability_log_query_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        parsed = urlparse(normalized)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != "/loki/api/v1/query_range"
+        ):
+            raise ValueError(
+                "must be an HTTP(S) Loki endpoint ending in /loki/api/v1/query_range "
+                "without credentials, query, or fragment"
+            )
+        return normalized
+
     @field_validator("outbox_scopes", "storage_inventory_scopes")
     @classmethod
     def validate_worker_scopes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
@@ -170,9 +319,9 @@ class Settings(BaseSettings):
             raise ValueError("must not contain duplicate scope triples")
         return normalized
 
-    @field_validator("preview_allowed_profiles", mode="before")
+    @field_validator("aligned_media_allowed_profiles", mode="before")
     @classmethod
-    def normalize_preview_profiles(cls, value: object) -> object:
+    def normalize_aligned_media_profiles(cls, value: object) -> object:
         if isinstance(value, str):
             return tuple(item.strip() for item in value.split(",") if item.strip())
         return value
@@ -180,6 +329,8 @@ class Settings(BaseSettings):
     @field_validator("object_store_endpoint", mode="before")
     @classmethod
     def validate_object_store_endpoint(cls, value: object) -> str:
+        if isinstance(value, str) and not value.strip():
+            return _UNCONFIGURED_OBJECT_STORE_ENDPOINT
         return _validated_object_store_endpoint(value)
 
     @field_validator("object_store_public_endpoint", mode="before")
@@ -330,16 +481,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_local_secrets_outside_local_environments(self) -> Settings:
-        if self.preview_low_watermark_percent >= self.preview_high_watermark_percent:
+        if self.worker_max_cached_workflows < self.worker_max_concurrent_workflow_tasks:
             raise ValueError(
-                "HC_PREVIEW_LOW_WATERMARK_PERCENT must be below "
-                "HC_PREVIEW_HIGH_WATERMARK_PERCENT"
+                "HC_WORKER_MAX_CACHED_WORKFLOWS must be greater than or equal to "
+                "HC_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS"
             )
-        if self.preview_project_quota_bytes > self.preview_global_quota_bytes:
-            raise ValueError(
-                "HC_PREVIEW_PROJECT_QUOTA_BYTES must not exceed "
-                "HC_PREVIEW_GLOBAL_QUOTA_BYTES"
-            )
+        alignment_root = PurePosixPath(self.alignment_staging_root)
+        media_root = PurePosixPath(self.aligned_media_staging_root)
+        if (
+            alignment_root == media_root
+            or alignment_root in media_root.parents
+            or media_root in alignment_root.parents
+        ):
+            raise ValueError("alignment and aligned-media staging roots must not overlap")
         if self.password_min_length > self.password_max_length:
             raise ValueError("HC_PASSWORD_MIN_LENGTH must not exceed HC_PASSWORD_MAX_LENGTH")
         if self.password_scrypt_n & (self.password_scrypt_n - 1):
@@ -423,7 +577,27 @@ class Settings(BaseSettings):
                 raise ValueError("HC_AUTH_SMTP_STARTTLS must be enabled outside local/test")
         if self.object_store_public_endpoint is None and self.environment in {"local", "test"}:
             self.object_store_public_endpoint = self.object_store_endpoint
-
+        if self.object_store_provider == "oss":
+            # An OSS deployment may be configured after boot from the platform page.
+            # Canonical non-secret sentinels keep dependency composition lazy while
+            # readiness reports the object store as unconfigured.
+            self.object_store_bucket = self.object_store_bucket.strip() or "hc-unconfigured"
+            self.object_store_access_key = (
+                self.object_store_access_key.strip() or "unconfigured-access-key"
+            )
+            self.object_store_secret_key = (
+                self.object_store_secret_key.strip() or "unconfigured-secret-key"
+            )
+            self.object_store_region = self.object_store_region.strip() or "cn-hangzhou"
+            if self.object_store_public_endpoint is None:
+                self.object_store_public_endpoint = self.object_store_endpoint
+            endpoints = tuple(
+                endpoint
+                for endpoint in (self.object_store_endpoint, self.object_store_public_endpoint)
+                if endpoint
+            )
+            if any(urlparse(endpoint).scheme != "https" for endpoint in endpoints):
+                raise ValueError("Alibaba Cloud OSS endpoints must use HTTPS")
         provider_endpoint = self.auto_annotation_provider_endpoint
         if provider_endpoint is not None:
             provider_url = urlparse(provider_endpoint)
@@ -450,9 +624,49 @@ class Settings(BaseSettings):
 
         if self.environment in {"staging", "production"}:
             insecure: list[str] = []
+            for path, environment_name in (
+                (self.alignment_staging_root, "HC_ALIGNMENT_STAGING_ROOT"),
+                (self.aligned_media_staging_root, "HC_ALIGNED_MEDIA_STAGING_ROOT"),
+            ):
+                if not _is_pod_ephemeral_path(path):
+                    insecure.append(environment_name)
+            if self.release_id == "unreleased":
+                insecure.append("HC_RELEASE_ID")
+            if self.secret_bundle_revision in {
+                "unversioned",
+                f"sha256:{'0' * 64}",
+            }:
+                insecure.append("HC_SECRET_BUNDLE_REVISION")
+            if self.git_commit == "unknown":
+                insecure.append("HC_GIT_COMMIT")
+            for field_name, environment_name in (
+                (self.release_manifest_digest, "HC_RELEASE_MANIFEST_DIGEST"),
+                (self.migration_manifest_digest, "HC_MIGRATION_MANIFEST_DIGEST"),
+                (self.component_image_digest, "HC_COMPONENT_IMAGE_DIGEST"),
+            ):
+                if field_name == "unreleased" or field_name == f"sha256:{'0' * 64}":
+                    insecure.append(environment_name)
+            page_managed_object_store_pending = self.object_store_provider == "oss" and not all(
+                value
+                not in {
+                    "",
+                    "hc-unconfigured",
+                    "unconfigured-access-key",
+                    "unconfigured-secret-key",
+                    _UNCONFIGURED_OBJECT_STORE_ENDPOINT,
+                }
+                for value in (
+                    self.object_store_endpoint,
+                    self.object_store_public_endpoint or "",
+                    self.object_store_bucket,
+                    self.object_store_access_key,
+                    self.object_store_secret_key,
+                )
+            )
             public_endpoint = self.object_store_public_endpoint
-            if public_endpoint is None or not _is_safe_public_object_store_endpoint(
-                public_endpoint
+            if not page_managed_object_store_pending and (
+                public_endpoint is None
+                or not _is_safe_public_object_store_endpoint(public_endpoint)
             ):
                 insecure.append("HC_OBJECT_STORE_PUBLIC_ENDPOINT")
             if self.cursor_secret == _LOCAL_CURSOR_SECRET:
@@ -489,6 +703,22 @@ class Settings(BaseSettings):
                 joined = ", ".join(insecure)
                 raise ValueError(f"insecure local values are forbidden: {joined}")
         return self
+
+
+def require_durable_runtime(settings: Settings) -> None:
+    """Reject test-only process state for a normal staging/production process."""
+
+    if (
+        settings.environment in {"staging", "production"}
+        and settings.runtime_backend != "production"
+    ):
+        raise RuntimeError("staging and production processes require the durable runtime backend")
+
+
+def _is_pod_ephemeral_path(value: str) -> bool:
+    path = PurePosixPath(value)
+    root = PurePosixPath("/tmp/hc-data")
+    return path.is_absolute() and root in path.parents and str(path) == value
 
 
 def _validated_object_store_endpoint(value: object) -> str:

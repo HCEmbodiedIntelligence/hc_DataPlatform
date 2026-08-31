@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
   Bot,
@@ -23,7 +24,6 @@ import {
   House,
   ListChecks,
   LogOut,
-  MapPin,
   Menu as MenuIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -31,6 +31,7 @@ import {
   Settings,
   ShieldAlert,
   ScrollText,
+  ServerCog,
   Tags,
   UserRound,
   X,
@@ -42,7 +43,6 @@ import {
   Button,
   Drawer,
   Dropdown,
-  Input,
   Layout,
   Menu,
   Select,
@@ -57,7 +57,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import type { AuthorizationSnapshot } from "../../entities/capability";
-import { makeScopeKey, type Scope } from "../../entities/scope";
+import type { Scope } from "../../entities/scope";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -74,6 +74,11 @@ import styles from "./PlatformShell.module.css";
 import { ShellLoadingPage } from "./ShellLoadingPage";
 import { datasetContextKind } from "./dataset-context";
 import { useUnreadNotificationCount } from "../../features/notifications/api";
+import { getReleaseIdentityIfConfigured } from "../../shared/config/release-identity";
+import {
+  getPlatformObjectStoreLocation,
+  type PlatformObjectStoreLocation,
+} from "../../features/platform-operations/api";
 
 const { Content, Header, Sider } = Layout;
 const DatasetContextSelector = lazy(() => import("./DatasetContextSelector"));
@@ -124,6 +129,13 @@ const e02VisualScopeOptions: readonly ScopeOption[] = Object.freeze([
     regionName: "华东-01",
   },
 ]);
+const e02VisualStorageLocation: PlatformObjectStoreLocation = Object.freeze({
+  format_version: "hc-object-store-location/v1",
+  configured: true,
+  provider: "oss",
+  public_endpoint: "https://oss-cn-hangzhou.aliyuncs.com",
+  region: "cn-east-01",
+});
 const e02VisualPrincipal = Object.freeze({
   actorId: "actor_e02_visual",
   displayName: "张驰",
@@ -146,6 +158,7 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P16: <Crosshair aria-hidden="true" size={18} strokeWidth={1.8} />,
   P18: <UserRound aria-hidden="true" size={18} strokeWidth={1.8} />,
   P19: <ScrollText aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P22: <ServerCog aria-hidden="true" size={18} strokeWidth={1.8} />,
 };
 
 function BrandMark() {
@@ -153,6 +166,29 @@ function BrandMark() {
     <span className={styles.brandMark}>
       <img alt="杭叉集团" height="62" src={hangchaLogo} width="106" />
     </span>
+  );
+}
+
+function ReleaseStamp({ mobile = false }: Readonly<{ mobile?: boolean }>) {
+  const identity = getReleaseIdentityIfConfigured();
+  if (identity === null) return null;
+  const manifest =
+    identity.release_manifest_digest === "unreleased"
+      ? "unreleased"
+      : `${identity.release_manifest_digest.slice(0, 15)}…`;
+  return (
+    <div
+      aria-label={`运行版本 ${identity.release_id}，发布清单 ${identity.release_manifest_digest}`}
+      className={`${styles.releaseStamp} ${mobile ? styles.releaseStampMobile : ""}`}
+      title={`${identity.release_id}\n${identity.release_manifest_digest}`}
+    >
+      <span aria-hidden="true" className={styles.releaseStampRail} />
+      <span className={styles.releaseStampCopy}>
+        <span>运行版本</span>
+        <strong>{identity.release_id}</strong>
+        <code>清单 {manifest}</code>
+      </span>
+    </div>
   );
 }
 
@@ -298,8 +334,14 @@ interface ScopeSelectorsProps {
   disabled: boolean;
   scope: Scope | null;
   scopeOptions: readonly ScopeOption[];
+  storageLocation: PlatformObjectStoreLocation | null;
+  storageLoading: boolean;
+  onJoinProject: () => void;
   onSelect: (scope: Scope) => void;
+  onStorageOpen: () => void;
 }
+
+const joinProjectOption = "__join_project__";
 
 function toScope(option: ScopeOption): Scope {
   return {
@@ -317,20 +359,35 @@ function projectOptionKey(
   return JSON.stringify([scope.organizationId, scope.projectId]);
 }
 
+function storageLocationKey(location: PlatformObjectStoreLocation): string {
+  return JSON.stringify([
+    location.provider,
+    location.region,
+    location.public_endpoint,
+  ]);
+}
+
+function storageLocationLabel(location: PlatformObjectStoreLocation): string {
+  let endpoint = location.public_endpoint;
+  try {
+    endpoint = new URL(location.public_endpoint).host;
+  } catch {
+    // The API schema already validates the value; retaining it is safer for
+    // non-URL-compatible private endpoints.
+  }
+  return `${location.provider.toUpperCase()} · ${location.region} · ${endpoint}`;
+}
+
 function ScopeSelectors({
   disabled,
   scope,
   scopeOptions,
+  storageLocation,
+  storageLoading,
+  onJoinProject,
   onSelect,
+  onStorageOpen,
 }: ScopeSelectorsProps) {
-  const [manualRegion, setManualRegion] = useState(scope?.regionCode ?? "");
-  useEffect(
-    () => setManualRegion(scope?.regionCode ?? ""),
-    [scope?.regionCode],
-  );
-  const selectedOption = scopeOptions.find(
-    (option) => scope !== null && makeScopeKey(option) === makeScopeKey(scope),
-  );
   const projectCandidates = [
     ...new Map(
       scopeOptions.flatMap((option) =>
@@ -340,52 +397,27 @@ function ScopeSelectors({
       ),
     ).values(),
   ];
-  const projectOptions = projectCandidates.map((option) => ({
-    value: projectOptionKey(option),
-    label: `${option.organizationName} / ${option.projectName ?? option.projectId}`,
-  }));
+  const projectOptions = [
+    ...projectCandidates.map((option) => ({
+      value: projectOptionKey(option),
+      label: `${option.organizationName} / ${option.projectName ?? option.projectId}`,
+    })),
+    { value: joinProjectOption, label: "加入项目" },
+  ];
   const selectedProject = projectCandidates.find(
     (option) =>
       option.organizationId === scope?.organizationId &&
       option.projectId === scope?.projectId,
   );
-  const regionCandidates = scopeOptions.filter(
-    (option) =>
-      option.organizationId === scope?.organizationId &&
-      option.projectId === scope?.projectId &&
-      option.regionCode !== undefined,
-  );
-  const regionOptions = [
-    ...new Map(
-      regionCandidates.map((option) => [
-        option.regionCode ?? "",
-        {
-          value: option.regionCode ?? "",
-          label: option.regionName ?? option.regionCode ?? "",
-        },
-      ]),
-    ).values(),
-  ];
-  const acceptsManualRegion =
-    scope?.projectId !== undefined &&
-    scopeOptions.some(
-      (option) =>
-        option.organizationId === scope.organizationId &&
-        option.projectId === scope.projectId &&
-        option.projectWide === true,
-    );
-  const applyManualRegion = () => {
-    const regionCode = manualRegion.trim();
-    if (!scope || !regionCode || regionCode === scope.regionCode) return;
-    onSelect({ ...scope, regionCode });
-  };
-  if (
-    acceptsManualRegion &&
-    scope?.regionCode &&
-    !regionOptions.some((option) => option.value === scope.regionCode)
-  ) {
-    regionOptions.push({ value: scope.regionCode, label: scope.regionCode });
-  }
+  const storageOptions =
+    storageLocation?.configured === true
+      ? [
+          {
+            value: storageLocationKey(storageLocation),
+            label: storageLocationLabel(storageLocation),
+          },
+        ]
+      : [];
 
   return (
     <div aria-label="当前作用域" className={styles.scopePanel} role="group">
@@ -413,6 +445,10 @@ function ScopeSelectors({
             selectedProject ? projectOptionKey(selectedProject) : undefined
           }
           onChange={(selectedProjectKey: string) => {
+            if (selectedProjectKey === joinProjectOption) {
+              onJoinProject();
+              return;
+            }
             const candidate =
               scopeOptions.find(
                 (option) =>
@@ -422,55 +458,57 @@ function ScopeSelectors({
               scopeOptions.find(
                 (option) => projectOptionKey(option) === selectedProjectKey,
               );
-            if (candidate !== undefined) onSelect(toScope(candidate));
+            if (candidate !== undefined) {
+              const next = toScope(candidate);
+              onSelect(
+                next.regionCode === undefined && scope?.regionCode
+                  ? { ...next, regionCode: scope.regionCode }
+                  : next,
+              );
+            }
           }}
         />
       </label>
       <label
         className={`${styles.scopeField} ${styles.regionField}`}
-        data-scope-slot="region"
+        data-scope-slot="storage"
       >
-        <MapPin
+        <HardDrive
           aria-hidden="true"
           className={styles.scopeIcon}
           size={17}
           strokeWidth={1.8}
         />
-        <span className={styles.srOnly}>当前区域</span>
-        {acceptsManualRegion && regionOptions.length === 0 ? (
-          <Input
-            aria-label="当前区域"
-            disabled={disabled}
-            placeholder="输入区域后回车"
-            title="当前项目为项目级授权，服务端未返回区域目录；请输入真实区域代码。"
-            value={manualRegion}
-            onBlur={applyManualRegion}
-            onChange={(event) => setManualRegion(event.target.value)}
-            onPressEnter={applyManualRegion}
-          />
-        ) : (
-          <Select
-            aria-label="当前区域"
-            disabled={disabled}
-            loading={disabled && scope !== null}
-            optionFilterProp="label"
-            options={regionOptions}
-            placeholder="请选择区域"
-            showSearch
-            value={scope?.regionCode}
-            onChange={(regionCode: string) => {
-              const candidate =
-                scopeOptions.find(
-                  (option) =>
-                    option.organizationId === scope?.organizationId &&
-                    option.projectId === scope?.projectId &&
-                    option.regionCode === regionCode,
-                ) ?? selectedOption;
-              if (candidate !== undefined)
-                onSelect({ ...toScope(candidate), regionCode });
-            }}
-          />
-        )}
+        <span className={styles.srOnly}>当前存储地址</span>
+        <Select
+          aria-label="当前存储地址"
+          disabled={disabled || scope?.projectId === undefined}
+          loading={storageLoading}
+          optionFilterProp="label"
+          options={storageOptions}
+          placeholder={
+            scope?.projectId === undefined
+              ? "请先选择项目"
+              : storageLocation?.configured === false
+                ? "暂无可用存储地址"
+                : "请选择存储地址"
+          }
+          showSearch
+          value={
+            storageLocation?.configured === true &&
+            scope?.regionCode === storageLocation.region
+              ? storageLocationKey(storageLocation)
+              : undefined
+          }
+          onChange={() => {
+            if (scope && storageLocation?.configured === true) {
+              onSelect({ ...scope, regionCode: storageLocation.region });
+            }
+          }}
+          onOpenChange={(open) => {
+            if (open) onStorageOpen();
+          }}
+        />
       </label>
     </div>
   );
@@ -485,6 +523,7 @@ export function PlatformShell({
   onLogout,
 }: PlatformShellProps) {
   const storedPrincipal = useShellStore((state) => state.principal);
+  const sessionToken = useShellStore((state) => state.sessionToken);
   const storedScope = useShellStore((state) => state.scope);
   const authorization = useShellStore((state) => state.authorization);
   const platformCapabilities = useShellStore(
@@ -501,6 +540,7 @@ export function PlatformShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [storageSelectorOpened, setStorageSelectorOpened] = useState(false);
   const [navigationCollapsed, setNavigationCollapsed] = useState(
     readNavigationCollapsedPreference,
   );
@@ -513,6 +553,17 @@ export function PlatformShell({
   const availableScopeOptions = useVisualFixture
     ? e02VisualScopeOptions
     : scopeOptions;
+  const objectStoreLocation = useQuery({
+    queryKey: ["platform-operations", "object-store-location"],
+    queryFn: ({ signal }) => getPlatformObjectStoreLocation(signal),
+    enabled:
+      storageSelectorOpened && sessionToken !== null && !useVisualFixture,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const availableStorageLocation = useVisualFixture
+    ? e02VisualStorageLocation
+    : (objectStoreLocation.data ?? null);
   const unreadNotifications = useUnreadNotificationCount();
 
   const desktopNavigationCollapsed =
@@ -630,7 +681,11 @@ export function PlatformShell({
         }
         scope={scope}
         scopeOptions={availableScopeOptions}
+        storageLocation={availableStorageLocation}
+        storageLoading={objectStoreLocation.isFetching}
+        onJoinProject={() => void navigate("/account/settings?tab=memberships")}
         onSelect={(next) => void selectScope(next)}
+        onStorageOpen={() => setStorageSelectorOpened(true)}
       />
     ) : (
       <div
@@ -638,9 +693,8 @@ export function PlatformShell({
         className={`${styles.scopePanel} ${styles.unscopedScopePanel}`}
         role="group"
       >
-        <div
-          aria-label="当前项目：尚未加入组织或项目"
-          className={`${styles.scopeField} ${styles.projectField} ${styles.unscopedScopeField}`}
+        <label
+          className={`${styles.scopeField} ${styles.projectField}`}
           data-scope-slot="project"
         >
           <FolderKanban
@@ -649,21 +703,33 @@ export function PlatformShell({
             size={17}
             strokeWidth={1.8}
           />
-          <span>尚未加入组织或项目</span>
-        </div>
-        <Link
-          className={`${styles.scopeField} ${styles.regionField} ${styles.unscopedScopeField} ${styles.unscopedManageLink}`}
-          data-scope-slot="region"
-          to="/account/settings?tab=memberships"
+          <span className={styles.srOnly}>当前项目</span>
+          <Select
+            aria-label="当前项目"
+            options={[{ value: joinProjectOption, label: "加入项目" }]}
+            placeholder="尚未加入组织或项目"
+            value={undefined}
+            onChange={() => void navigate("/account/settings?tab=memberships")}
+          />
+        </label>
+        <label
+          className={`${styles.scopeField} ${styles.regionField}`}
+          data-scope-slot="storage"
         >
-          <MapPin
+          <HardDrive
             aria-hidden="true"
             className={styles.scopeIcon}
             size={17}
             strokeWidth={1.8}
           />
-          <span>到账户设置管理</span>
-        </Link>
+          <span className={styles.srOnly}>当前存储地址</span>
+          <Select
+            aria-label="当前存储地址"
+            disabled
+            options={[]}
+            placeholder="请先加入并选择项目"
+          />
+        </label>
       </div>
     );
 
@@ -834,6 +900,9 @@ export function PlatformShell({
               label={viewportMode === "compact" ? "折叠主导航" : "主导航"}
               manifest={visibleManifest}
             />
+            {viewportMode === "desktop" && !navigationCollapsed ? (
+              <ReleaseStamp />
+            ) : null}
             {viewportMode === "desktop" ? (
               <Button
                 aria-label={navigationCollapsed ? "展开导航" : "折叠导航"}
@@ -923,6 +992,7 @@ export function PlatformShell({
           manifest={visibleManifest}
           onNavigate={closeMobileNavigation}
         />
+        <ReleaseStamp mobile />
       </Drawer>
 
       <Drawer

@@ -19,7 +19,7 @@ from hc_data_platform.workflow.names import INGEST_ROLLOUT_WORKFLOW
 
 from .models import (
     IngestTriggerStatus,
-    UploadPreviewTargetV1,
+    UploadAlignedMediaTargetV1,
     UploadProcessingState,
     UploadProcessingStatusV1,
     UploadSession,
@@ -71,7 +71,7 @@ def _pending_status(session: UploadSession) -> UploadProcessingStatusV1:
         status=UploadProcessingState.PENDING,
         stage=stage,
         attempt=locator.attempts,
-        preview=None,
+        aligned_media=None,
         viewer=None,
         error_code=_safe_error_code(locator.last_error_code),
         updated_at=locator.updated_at,
@@ -81,7 +81,7 @@ def _pending_status(session: UploadSession) -> UploadProcessingStatusV1:
 def _successful_targets(
     session: UploadSession,
     job: JobRecord,
-) -> tuple[UploadPreviewTargetV1 | None, DatasetIngestViewerTarget | None]:
+) -> tuple[UploadAlignedMediaTargetV1 | None, DatasetIngestViewerTarget | None]:
     if job.status is not JobStatus.SUCCEEDED:
         return None, None
     try:
@@ -91,7 +91,7 @@ def _successful_targets(
             status=500,
             code="UPLOAD_PROCESSING_RESULT_INVALID",
             title="Upload processing result is invalid",
-            detail="The completed upload does not expose a valid preview target.",
+            detail="The completed upload does not expose valid canonical media.",
         ) from exc
     derived = result.derived
     if (
@@ -105,18 +105,17 @@ def _successful_targets(
             status=500,
             code="UPLOAD_PROCESSING_LINEAGE_INVALID",
             title="Upload processing lineage is invalid",
-            detail="The completed upload preview does not match the committed Raw capture.",
+            detail="The completed upload media does not match the committed Raw capture.",
         )
     return (
-        UploadPreviewTargetV1(
-            schema_version="upload-preview-target/v1",
+        UploadAlignedMediaTargetV1(
+            schema_version="upload-aligned-media-target/v1",
             project_id=derived.project_id,
             dataset_id=derived.dataset_id,
             rollout_id=derived.rollout_id,
             dataset_version=derived.dataset_version,
-            lance_version=derived.lance_version,
             annotation_task_id=result.annotation_task.task_id,
-            frequency_hz=result.alignment.frequency_hz,
+            fps=30,
             start_step=0,
             end_step=derived.step_count,
         ),
@@ -143,7 +142,7 @@ def project_upload_processing_status(
             title="Upload processing identity is invalid",
             detail="The workflow result does not match the selected upload session.",
         )
-    preview, viewer = _successful_targets(session, job)
+    aligned_media, viewer = _successful_targets(session, job)
     return UploadProcessingStatusV1(
         schema_version="upload-processing-status/v1",
         session_id=session.session_id,
@@ -152,7 +151,7 @@ def project_upload_processing_status(
         status=UploadProcessingState(job.status.value),
         stage=job.stage,
         attempt=job.attempt,
-        preview=preview,
+        aligned_media=aligned_media,
         viewer=viewer,
         error_code=_safe_error_code(job.error_code),
         updated_at=job.updated_at,

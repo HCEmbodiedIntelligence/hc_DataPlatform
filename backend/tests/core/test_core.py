@@ -15,6 +15,10 @@ from prometheus_client import REGISTRY, Gauge
 from pydantic import ValidationError
 from starlette.responses import JSONResponse
 
+from hc_data_platform.backup.catalog import (
+    InMemoryBackupCatalogRepository,
+    PostgresBackupCatalogRepository,
+)
 from hc_data_platform.core import health as health_module
 from hc_data_platform.core import migrations as migration_module
 from hc_data_platform.core.app import _request_id, create_app
@@ -43,6 +47,18 @@ from hc_data_platform.core.openapi import (
     main as openapi_main,
 )
 from hc_data_platform.core.pagination import CursorCodec
+from hc_data_platform.platform_ops.instances import (
+    InMemoryPlatformInstanceRepository,
+    PostgresPlatformInstanceRepository,
+)
+from hc_data_platform.platform_ops.maintenance import (
+    InMemoryMaintenanceWriteGate,
+    PostgresMaintenanceRepository,
+)
+from hc_data_platform.platform_ops.runtime_config import (
+    InMemoryRuntimeConfigRepository,
+    PostgresRuntimeConfigRepository,
+)
 
 
 class FakeProbe:
@@ -75,29 +91,41 @@ def _empty_package() -> ModuleType:
 
 
 def _settings() -> Settings:
-    return Settings(environment="test", readiness_timeout_seconds=0.5, _env_file=None)
+    return Settings(
+        environment="test",
+        runtime_backend="memory",
+        secret_bundle_revision=f"sha256:{'d' * 64}",
+        readiness_timeout_seconds=0.5,
+        _env_file=None,
+    )
 
 
 def _production_settings(**updates: object) -> Settings:
-    return Settings(
-        environment="production",
-        runtime_backend="memory",
-        cursor_secret="production-cursor-secret",
-        data_source_credential_key="production-data-source-credential-key",
-        auth_abuse_enabled=True,
-        auth_abuse_hmac_secret="production-auth-abuse-hmac-secret-at-least-32",
-        auth_challenge_provider="turnstile",
-        auth_turnstile_site_key="production-turnstile-site-key",
-        auth_turnstile_secret="production-turnstile-secret-at-least-32",
-        auth_turnstile_expected_hostnames=("app.example.com",),
-        object_store_secret_key="production-object-secret",
-        object_store_public_endpoint="https://uploads.example.com",
-        jwt_issuer="https://issuer.example/",
-        jwt_signing_key="production-jwt-signing-key",
-        enforce_schema_migrations=True,
-        _env_file=None,
-        **updates,
-    )
+    values: dict[str, object] = {
+        "environment": "production",
+        "runtime_backend": "memory",
+        "secret_bundle_revision": f"sha256:{'d' * 64}",
+        "release_id": "platform-v0.1.0-test.1",
+        "git_commit": "1" * 40,
+        "release_manifest_digest": f"sha256:{'a' * 64}",
+        "migration_manifest_digest": f"sha256:{'b' * 64}",
+        "component_image_digest": f"sha256:{'c' * 64}",
+        "cursor_secret": "production-cursor-secret",
+        "data_source_credential_key": "production-data-source-credential-key",
+        "auth_abuse_enabled": True,
+        "auth_abuse_hmac_secret": "production-auth-abuse-hmac-secret-at-least-32",
+        "auth_challenge_provider": "turnstile",
+        "auth_turnstile_site_key": "production-turnstile-site-key",
+        "auth_turnstile_secret": "production-turnstile-secret-at-least-32",
+        "auth_turnstile_expected_hostnames": ("app.example.com",),
+        "object_store_secret_key": "production-object-secret",
+        "object_store_public_endpoint": "https://uploads.example.com",
+        "jwt_issuer": "https://issuer.example/",
+        "jwt_signing_key": "production-jwt-signing-key",
+        "enforce_schema_migrations": True,
+    }
+    values.update(updates)
+    return Settings(**values, _env_file=None)
 
 
 def _probes(*, postgres_error: str | None = None) -> dict[str, FakeProbe]:
@@ -144,6 +172,10 @@ def test_invalid_configuration_is_rejected(monkeypatch: pytest.MonkeyPatch) -> N
         Settings(postgres_dsn="sqlite:///local.db", _env_file=None)
     with pytest.raises(ValidationError, match="insecure local values"):
         Settings(environment="production", _env_file=None)
+    with pytest.raises(ValidationError, match="secret_bundle_revision"):
+        Settings(secret_bundle_revision="latest", _env_file=None)
+    with pytest.raises(ValidationError, match="HC_SECRET_BUNDLE_REVISION"):
+        _production_settings(secret_bundle_revision="unversioned")
 
     monkeypatch.setenv("HC_JWT_JWKS_URL", "")
     assert Settings(environment="local", _env_file=None).jwt_jwks_url is None
@@ -172,6 +204,67 @@ def test_invalid_configuration_is_rejected(monkeypatch: pytest.MonkeyPatch) -> N
         Settings(jwt_issuer="https://issuer.example/?tenant=one", _env_file=None)
     with pytest.raises(ValidationError, match="HC_API_DOCS_ENABLED"):
         _production_settings(api_docs_enabled=True)
+    with pytest.raises(ValidationError, match="HC_ALIGNMENT_STAGING_ROOT"):
+        _production_settings(alignment_staging_root="/var/lib/hc-data/alignment")
+    with pytest.raises(ValidationError, match="HC_ALIGNED_MEDIA_STAGING_ROOT"):
+        _production_settings(aligned_media_staging_root="relative/aligned-media")
+    with pytest.raises(ValidationError, match="must not overlap"):
+        Settings(
+            alignment_staging_root="/tmp/hc-data/shared",
+            aligned_media_staging_root="/tmp/hc-data/shared/aligned-media",
+            _env_file=None,
+        )
+
+
+def test_normal_production_app_rejects_the_in_memory_runtime() -> None:
+    with pytest.raises(RuntimeError, match="durable runtime backend"):
+        create_app(settings=_production_settings())
+
+
+def test_platform_control_persistence_is_reserved_for_staging_and_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    local = create_app(
+        settings=Settings(
+            environment="local",
+            runtime_backend="production",
+            secret_bundle_revision=f"sha256:{'d' * 64}",
+            _env_file=None,
+        ),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+    assert isinstance(
+        local.state.platform_instance_service.repository,
+        InMemoryPlatformInstanceRepository,
+    )
+    assert isinstance(
+        local.state.runtime_config_service.repository,
+        InMemoryRuntimeConfigRepository,
+    )
+    assert isinstance(local.state.maintenance_write_gate, InMemoryMaintenanceWriteGate)
+    assert isinstance(local.state.backup_catalog_repository, InMemoryBackupCatalogRepository)
+
+    monkeypatch.setattr(
+        PostgresMaintenanceRepository,
+        "ensure_environment",
+        lambda self, environment_id: None,
+    )
+    staging = create_app(
+        settings=_production_settings(environment="staging", runtime_backend="production"),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+    assert isinstance(
+        staging.state.platform_instance_service.repository,
+        PostgresPlatformInstanceRepository,
+    )
+    assert isinstance(
+        staging.state.runtime_config_service.repository,
+        PostgresRuntimeConfigRepository,
+    )
+    assert isinstance(staging.state.maintenance_write_gate, PostgresMaintenanceRepository)
+    assert isinstance(staging.state.backup_catalog_repository, PostgresBackupCatalogRepository)
 
 
 def test_outbox_scopes_require_exact_organization_project_region_triples() -> None:
@@ -336,6 +429,7 @@ def test_production_docs_are_closed_and_test_profile_requires_explicit_enablemen
     test_open = create_app(
         settings=Settings(
             environment="test",
+            runtime_backend="memory",
             api_docs_enabled=True,
             readiness_timeout_seconds=0.5,
             _env_file=None,
@@ -611,10 +705,17 @@ def test_framework_and_unexpected_errors_use_problem_details(
         "UnhandledException",
         "UnsafeHTTPResponse",
     }
-    failure_records = [record for record in caplog.records if record.msg == "request_failed"]
+    failure_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event_code", "").startswith("HTTP.REQUEST_FAILED.")
+    ]
     assert failure_records
-    assert all(record.exception_type in safe_exception_types for record in failure_records)
-    assert all(record.error_code == "INTERNAL_SERVER_ERROR" for record in failure_records)
+    assert all(record.error_type in safe_exception_types for record in failure_records)
+    assert all(
+        record.event_code == "HTTP.REQUEST_FAILED.INTERNAL_SERVER_ERROR"
+        for record in failure_records
+    )
     assert all(not hasattr(record, "project_id") for record in failure_records)
     assert "problem-password" not in caplog.text
     assert "header-password" not in caplog.text

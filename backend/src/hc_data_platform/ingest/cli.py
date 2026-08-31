@@ -14,7 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from .models import RolloutManifestV1, raw_object_key
+from .models import IngestProcessingMode, RolloutManifestV1, raw_object_key
 from .ports import crc64_ecma
 
 DEFAULT_PART_SIZE = 64 * 1024 * 1024
@@ -97,9 +97,12 @@ def effective_part_size(*, file_size: int, requested_part_size: int) -> int:
 
 
 def inspect_offline_bundle(mcap_path: Path, manifest_path: Path) -> dict[str, Any]:
-    if mcap_path.suffix.lower() != ".mcap":
-        raise ValueError("offline raw file must use the .mcap extension")
     manifest = RolloutManifestV1.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+    if (
+        manifest.processing_mode is IngestProcessingMode.DIRECT_EPISODE
+        and mcap_path.suffix.lower() != ".mcap"
+    ):
+        raise ValueError("a direct Episode raw file must use the .mcap extension")
     sha256 = hashlib.sha256()
     crc64 = 0
     size = 0
@@ -144,7 +147,7 @@ def import_offline_bundle(
     _validate_retry_policy(max_part_retries, retry_base_seconds)
     inspection = inspect_offline_bundle(mcap_path, manifest_path)
     if not inspection["valid"]:
-        raise ValueError("offline MCAP bytes do not match the manifest integrity fields")
+        raise ValueError("offline package bytes do not match the manifest integrity fields")
     part_size = effective_part_size(
         file_size=int(inspection["size"]), requested_part_size=part_size
     )
@@ -583,9 +586,11 @@ def _raise_for_status(response: HttpResponse, expected: set[int]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Validate an offline MCAP/manifest bundle and import it via the upload API"
+        description=(
+            "Validate an offline MCAP or continuous capture bundle and import it via the upload API"
+        )
     )
-    parser.add_argument("mcap", type=Path)
+    parser.add_argument("package", type=Path)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--api-base-url")
@@ -616,7 +621,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.validate_only:
-        print(json.dumps(inspect_offline_bundle(args.mcap, args.manifest), indent=2))
+        print(json.dumps(inspect_offline_bundle(args.package, args.manifest), indent=2))
         return
     required = {
         "--api-base-url": args.api_base_url,
@@ -628,7 +633,7 @@ def main() -> None:
     if missing:
         parser.error(f"missing required import options: {', '.join(missing)}")
     result = import_offline_bundle(
-        args.mcap,
+        args.package,
         args.manifest,
         api_base_url=args.api_base_url,
         region_code=args.region_code,

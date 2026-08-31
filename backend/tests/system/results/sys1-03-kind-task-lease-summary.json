@@ -1,0 +1,207 @@
+{
+  "schema_version": "sys1-03-kind-task-lease-drill/v1",
+  "task": "SYS1-03",
+  "status": "PASSED",
+  "observed_at": "2026-08-29T06:22:43Z",
+  "scope": {
+    "environment_id": "hc-sys101",
+    "task_id": "storage-inventory:sha256:6f5078472b52a91ede489d702e24d4c3a8908f7836d627db28c7c7b33c1a1e8a",
+    "raw_scope_persisted_in_task_id": false
+  },
+  "release": {
+    "release_id": "platform-v0.1.0-sys103-20260829",
+    "release_manifest_sha256": "c83488717b862b6804985a8239860175ba3a277681e0b4b9b58a9d2dccf1f035",
+    "git_commit": "024d172a17bb8a3b3f5280304e458d2cc998cf3b",
+    "api_image": "hc-data-platform-api@sha256:e7c1b96ddd03518fcb9a4bcf666d0ba99d3422e90060e5ce0b29f8d42e9736af",
+    "api_image_size_bytes": 469431334,
+    "migration_manifest_sha256": "1b19ffebd3fd243e51640d2cf5d68b37d66be32145399f3f3200849d2916655f",
+    "applied_migrations": 109,
+    "expected_migrations": 109,
+    "helm_release": "hc-sys101",
+    "helm_revision": 2,
+    "helm_status": "deployed"
+  },
+  "cluster": {
+    "kind_cluster": "hc-sys101-20260829",
+    "context": "kind-hc-sys101-20260829",
+    "namespace": "hc-sys101",
+    "kubernetes_server_version": "v1.32.2",
+    "postgresql_version": "16.10 (Debian 16.10-1.pgdg12+1)",
+    "nodes": [
+      {
+        "name": "hc-sys101-20260829-control-plane",
+        "uid": "d899bf97-e4b8-4ec7-89c3-1864f894595f",
+        "zone": "zone-a"
+      },
+      {
+        "name": "hc-sys101-20260829-worker",
+        "uid": "bbcfba10-885d-44c6-972c-2a5682f0a817",
+        "zone": "zone-b"
+      },
+      {
+        "name": "hc-sys101-20260829-worker2",
+        "uid": "002e96cc-913c-4f0e-95fc-67eef02eefa5",
+        "zone": "zone-c"
+      }
+    ]
+  },
+  "pods": {
+    "owner_a": {
+      "pod": "sys103-task-owner-a-drvlh",
+      "uid": "5d32f856-b5e0-4a92-a8d8-ea1419bc21f3",
+      "node": "hc-sys101-20260829-worker2",
+      "zone": "zone-c",
+      "pod_ip": "10.244.2.5",
+      "phase": "Succeeded",
+      "restart_count": 0,
+      "started_at": "2026-08-29T06:21:05Z",
+      "completed_at": "2026-08-29T06:22:24Z"
+    },
+    "owner_b": {
+      "pod": "sys103-task-owner-b-xmq6g",
+      "uid": "d85fddb7-0097-4116-a368-c2570bd46e72",
+      "node": "hc-sys101-20260829-worker",
+      "zone": "zone-b",
+      "pod_ip": "10.244.1.6",
+      "phase": "Succeeded",
+      "restart_count": 0,
+      "started_at": "2026-08-29T06:21:39Z",
+      "completed_at": "2026-08-29T06:22:12Z"
+    },
+    "summary": {
+      "pod": "sys103-task-summary-lxr25",
+      "uid": "21fcedc1-3ffd-494c-afbe-98796354aa3b",
+      "node": "hc-sys101-20260829-worker",
+      "phase": "Succeeded",
+      "restart_count": 0
+    },
+    "all_exact_image_digest": true,
+    "service_account_token_automount": false
+  },
+  "fault_injection": {
+    "kind": "single_pod_postgresql_network_partition",
+    "node_firewall": "hc-sys101-20260829-worker2/FORWARD",
+    "source": "10.244.2.5/32",
+    "destination": "10.244.1.3/32:5432",
+    "action": "REJECT",
+    "comment": "hc-sys103-owner-a-postgres",
+    "observed_packet_count": 4,
+    "observed_byte_count": 240,
+    "rule_removed": true,
+    "rule_absent_after_drill": true,
+    "unrelated_cluster_traffic_blocked": false
+  },
+  "lease_timeline": [
+    {
+      "event": "OWNER_A_ACQUIRED",
+      "observed_at": "2026-08-29T06:21:08.370022Z",
+      "lease_id": "92a36841-3f43-497f-a7c0-032b501e704d",
+      "fencing_token": 2,
+      "lease_version": 1
+    },
+    {
+      "event": "OWNER_A_RENEWED",
+      "observed_at": "2026-08-29T06:21:38.459753Z",
+      "lease_id": "92a36841-3f43-497f-a7c0-032b501e704d",
+      "fencing_token": 2,
+      "lease_version": 4
+    },
+    {
+      "event": "OWNER_A_RENEWAL_DISCONNECTED",
+      "observed_at": "2026-08-29T06:21:48.461099Z",
+      "error_type": "OperationalError"
+    },
+    {
+      "event": "OWNER_B_TAKEN_OVER",
+      "observed_at": "2026-08-29T06:22:09.763119Z",
+      "lease_id": "cd5018a5-0a8d-4bf9-baef-b9b38ee462ed",
+      "fencing_token": 31,
+      "previous_token": 2,
+      "lease_version": 5,
+      "acquisition_attempts": 14
+    },
+    {
+      "event": "OWNER_A_OLD_LEASE_RENEWAL_REJECTED",
+      "observed_at": "2026-08-29T06:22:21.964119Z",
+      "error_code": "PLATFORM_TASK_LEASE_STALE"
+    },
+    {
+      "event": "OWNER_A_STALE_COMMIT_REJECTED",
+      "observed_at": "2026-08-29T06:22:21.971059Z",
+      "error_code": "PLATFORM_TASK_LEASE_STALE"
+    }
+  ],
+  "database_evidence": {
+    "event_codes": [
+      "PLATFORM_TASK_LEASE_ACQUIRED",
+      "PLATFORM_TASK_LEASE_TAKEN_OVER",
+      "PLATFORM_TASK_LEASE_RELEASED"
+    ],
+    "current_lease_released": true,
+    "current_fencing_token": 31,
+    "committed_writer_labels": [
+      "owner-a-before-partition",
+      "owner-b-after-takeover"
+    ],
+    "owner_a_after_reconnect_write_present": false,
+    "duplicate_side_effects": 0,
+    "summary_probe_passed": true
+  },
+  "assertions": {
+    "database_clock_controls_expiry": true,
+    "only_one_current_owner_per_environment_and_task": true,
+    "takeover_replaces_lease_id": true,
+    "takeover_token_strictly_increases": true,
+    "old_owner_renewal_fails_after_reconnect": true,
+    "old_owner_commit_fails_in_the_same_transaction": true,
+    "new_owner_commit_succeeds": true,
+    "event_history_is_append_only": true,
+    "read_only_acquisition_fails_closed_in_postgresql_test": true
+  },
+  "verification": {
+    "focused_postgresql_and_contract_tests": "68 passed",
+    "backend_standard_suite": "1195 passed, 121 explicit external skips, 1 known xfailed",
+    "frontend_suite": "107 files, 615 passed",
+    "ruff": "PASS",
+    "ruff_files_checked": 541,
+    "mypy_source_files": 264,
+    "openapi_generated_client_helm_compose_and_diff": "PASS",
+    "real_kubernetes_fault_probe": "PASS"
+  },
+  "artifact_sha256": {
+    "probe": "4b76ac03ef97f959d84ccedf4ba508f0e24484cd157b42968373b8d2b89e54cc",
+    "owner_a_job": "b8af60b22edcd0d3c2416ee71af1dd619fcd7f6422dde65cb74617665433f8fd",
+    "owner_b_job": "462f40399656c631a11995d05368039ae0bae047ade69c2f9a45c6ae8ecffdce",
+    "summary_job": "1c36dacae81c9f4dcfb63c634faab667dbc37690db147da1d4b03c23a67a81fe",
+    "migration": "8402e7cf81b0b032ed2e804ba39f3d80fa18c66e821b8755d6a06eed707128dd"
+  },
+  "retained_failures": [
+    {
+      "stage": "first_image_build",
+      "cause": "environment HTTP proxy returned invalid Debian repository metadata",
+      "effect": "build stopped before an image was emitted",
+      "correction": "reused the already accepted exact runtime-base build metadata and its cached FFmpeg layer, then rebuilt all changed application and migration layers"
+    }
+  ],
+  "cleanup": {
+    "completed": true,
+    "cluster_retained_for_evidence_sealing": false,
+    "firewall_rule_removed": true,
+    "deleted_kind_cluster": "hc-sys101-20260829",
+    "deleted_node_containers": 3,
+    "deleted_task_image_tags": [
+      "hc-data-platform-api:sys103-20260829",
+      "hc-data-platform-api:sys101-20260829",
+      "hc-data-platform-frontend:sys101-20260829"
+    ],
+    "deleted_temporary_paths": [
+      "/tmp/hc-sys103-release-values.json"
+    ],
+    "residual_cluster_count": 0,
+    "residual_container_count": 0,
+    "residual_network_count": 0,
+    "residual_task_image_tag_count": 0,
+    "residual_kube_context_count": 0,
+    "residual_temporary_path_count": 0
+  }
+}

@@ -10,6 +10,8 @@ from hc_data_platform.core.openapi import render, runtime_document
 
 _PATH_PREFIX = "/api/v1/projects/{project_id}/datasets"
 _SHARED_SCHEMAS = frozenset({"ProblemDetails", "HTTPValidationError", "ValidationError"})
+
+
 def _schema_references(value: object) -> set[str]:
     references: set[str] = set()
     if isinstance(value, dict):
@@ -55,9 +57,7 @@ def document() -> dict[str, Any]:
         )
 
     paths = {
-        path: item
-        for path, item in runtime["paths"].items()
-        if belongs_to_dataset_page(path, item)
+        path: item for path, item in runtime["paths"].items() if belongs_to_dataset_page(path, item)
     }
     return {
         "openapi": "3.1.0",

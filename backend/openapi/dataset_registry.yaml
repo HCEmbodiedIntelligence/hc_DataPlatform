@@ -899,24 +899,18 @@ components:
       - success_state
       title: DatasetPageEpisodeListItem
       type: object
-    DatasetPageEpisodePreviewBinding:
+    DatasetPageEpisodeAlignedMediaBinding:
       additionalProperties: false
-      description: 'Immutable, safe link from one collection stream to aligned preview data.
-
-
-        A dataset-page revision deliberately never stores a physical Lance URI, object
-
-        key, credential, or signed media URL.  This binding carries only the logical
-
-        lineage the browser needs to ask the preview service for a short-lived HLS
-
-        capability.  It is optional so historic revisions remain readable, but a
-
-        camera stream is *not* browser-playable unless its projection supplies one.'
+      description: Immutable logical selector for one already-READY canonical MP4.
       properties:
-        annotation_revision:
-          minimum: 0.0
-          title: Annotation Revision
+        artifact_id:
+          maxLength: 256
+          minLength: 1
+          title: Artifact Id
+          type: string
+        dataset_version:
+          minimum: 1.0
+          title: Dataset Version
           type: integer
         camera_id:
           maxLength: 256
@@ -928,14 +922,10 @@ components:
           maximum: 9007199254740991.0
           title: End Step
           type: integer
-        frequency_hz:
-          exclusiveMinimum: 0.0
-          maximum: 240.0
-          title: Frequency Hz
-          type: number
-        lance_version:
-          minimum: 1.0
-          title: Lance Version
+        fps:
+          const: 30
+          default: 30
+          title: Fps
           type: integer
         rollout_id:
           maxLength: 256
@@ -949,13 +939,12 @@ components:
           type: integer
       required:
       - rollout_id
-      - lance_version
-      - annotation_revision
+      - dataset_version
+      - artifact_id
       - camera_id
-      - frequency_hz
       - start_step
       - end_step
-      title: DatasetPageEpisodePreviewBinding
+      title: DatasetPageEpisodeAlignedMediaBinding
       type: object
     DatasetPageEpisodeRevision:
       additionalProperties: false
@@ -1153,9 +1142,9 @@ components:
           minLength: 1
           title: Kind
           type: string
-        preview_binding:
+        aligned_media_binding:
           anyOf:
-          - $ref: '#/components/schemas/DatasetPageEpisodePreviewBinding'
+          - $ref: '#/components/schemas/DatasetPageEpisodeAlignedMediaBinding'
           - type: 'null'
         t_end_ns:
           pattern: ^(0|[1-9][0-9]*)$

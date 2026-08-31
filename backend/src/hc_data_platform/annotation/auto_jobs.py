@@ -553,9 +553,7 @@ class AutoAnnotationJobService:
                 detail="The selected step range must fit the task's immutable Lance snapshot.",
             )
         normalized_selection = input_selection.model_copy(update={"end_step": end_step})
-        sampling_reference = (
-            None if self._sampling is None else self._sampling.get_for_task(task)
-        )
+        sampling_reference = None if self._sampling is None else self._sampling.get_for_task(task)
         if self._require_sampling and sampling_reference is None:
             raise problem(
                 status=409,

@@ -9,11 +9,12 @@
 `IngestPersistencePort`。单元测试使用 `InMemoryObjectStorage` 和
 `InMemoryIngestPersistence`。生产环境应注入：
 
-- 使用 boto3 客户端的 `S3ObjectStorage`，用于本地 MinIO/S3；或
-- 使用 `oss2.Bucket` 的 `OssObjectStorage`，用于阿里云 OSS；以及
+- 使用 `oss2.Bucket` 的 `OssObjectStorage`，用于阿里云 OSS；或
+- 在隔离测试中使用 boto3 客户端的 `S3ObjectStorage`；以及
 - 基于 `migrations/ingest/001_ingest.sql` 实现的 PostgreSQL 仓库。
 
-MinIO 客户端必须使用 SigV4（boto3 使用 `Config(signature_version="s3v4")`）。
+正式运行时通过 `HC_OBJECT_STORE_PROVIDER=oss` 选择 OSS 原生签名、上传和对象操作；
+Lance 同时使用原生 `oss://` 存储后端。
 
 分片 URL 默认在 15 分钟后过期，并且只返回给已认证的上传者。客户端将字节直接 PUT 到
 对象存储，调用 `GET .../parts`，再把已排序的 `part_number`/`etag` 列表发送到
@@ -37,6 +38,10 @@ hc-offline-import recording.mcap rollout_manifest.json \
 
 请设置 `HC_DATA_ACCESS_TOKEN`，不要把 Bearer 令牌写入 Shell 历史记录。
 使用 `--validate-only` 可以生成本地完整性报告。
+
+连续长时录制使用同一命令上传单个 `CAPTURE_BUNDLE`（例如 `capture.tar.zst`）。其 Manifest
+必须设置 `processing_mode=CONTINUOUS_RECORDING` 并提供 `CONTINUOUS_CAPTURE` 源身份；Raw
+提交后不会启动单 Episode 工作流，而是由 `continuous-recordings` 数据服务进行人工软切片。
 
 `hc-offline-import` 是大体积离线包的推荐入口。它不会把原始字节经过 API 进程；会根据
 文件大小自动增大分片以满足 S3/OSS 的最多 10,000 分片限制（包括 5 TiB 上限），并在每次

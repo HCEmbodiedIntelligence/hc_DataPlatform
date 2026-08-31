@@ -1,0 +1,188 @@
+api_version: hc-data-platform.io/v1alpha1
+kind: PlatformReleaseCompatibilityMatrix
+metadata:
+  contract_version: 1
+  effective_date: "2026-08-29"
+  adr: docs/architecture/ADR-0004-release-compatibility-and-expand-contract.md
+  implementation_task: REL0-01
+  evidence_status: RELEASE_PIPELINE_IMPLEMENTED_NO_TARGET_RELEASE_EXECUTED
+
+current_development_baseline:
+  semantic_version: 0.1.0
+  release_id: unreleased
+  signed_release_manifest: false
+  production_release_eligible: false
+  components:
+    backend_package: 0.1.0
+    backend_runtime: 0.1.0
+    frontend_package: 0.1.0
+    helm_chart: 0.1.0
+    helm_app_version: 0.1.0
+  database:
+    migration_count: 115
+    manifest_sha256: b55cf90a106712f21a11bab5d9630c29dda3cdd76afd53626e583ce2769bd030
+    forward_only: true
+    checksum_drift_allowed: false
+  api:
+    openapi_sha256: efba4ffedd1d1295796847aa9bc8ee8bd45d7f600a4f7a29a7e03bbcc21cb413
+    generated_client_drift_gate: enabled
+    previous_to_current_compatibility_gate: enabled
+  temporal:
+    production_mode: external_managed
+    production_server_version: UNSPECIFIED_RELEASE_BLOCKER
+    development_compose_server_version: 1.25.2
+    worker_build_id_routing: ENABLED
+    patch_ids:
+      - annotation-organization-scope-v1
+      - cleanup-ingest-projection-v1
+      - cleanup-uncommitted-aligned-media-v1
+      - export-attempt-identity-v1
+      - export-phase-progress-v1
+      - object-store-free-ingest-processing-v1
+      - persist-ingest-workflow-job-v1
+      - single-pass-ingest-projection-v1
+    patch_set_sha256: 3ca173032ce6d891b028884558770bc1bf406df3f70465d745c0a449a8c40ca3
+  configuration:
+    helm_values_sha256: fa4996c3cb2d00f916244f3b31d774d6d6c47284b333a60a839fa1b8f0b32730
+    runtime_config_hot_reload_allowlist:
+      - scheduling.media_maintenance_interval_seconds
+      - scheduling.storage_inventory_interval_seconds
+      - ui.maintenance_banner_enabled
+    unknown_hot_reload_keys_allowed: false
+
+adjacent_release_edges:
+  - schema_version: release-compatibility-edge/v1
+    edge_id: 0.1.0-to-0.1.1-contract-only
+    source_version: 0.1.0
+    target_version: 0.1.1
+    release_type: patch
+    status: DESIGN_ONLY_TARGET_ARTIFACTS_NOT_BUILT
+    target_artifacts_built_and_signed: false
+    database:
+      change_mode: no_schema_change
+      source_migration_count: 115
+      source_manifest_sha256: b55cf90a106712f21a11bab5d9630c29dda3cdd76afd53626e583ce2769bd030
+      target_migration_count: 115
+      target_manifest_sha256: b55cf90a106712f21a11bab5d9630c29dda3cdd76afd53626e583ce2769bd030
+      expand_migrations: []
+      data_migration: none
+      contract_migrations: []
+      old_app_on_target_schema: PASS
+      new_app_on_source_schema: PASS
+      database_downgrade_allowed: false
+    temporal:
+      source_patch_ids:
+        - annotation-organization-scope-v1
+        - cleanup-ingest-projection-v1
+        - cleanup-uncommitted-aligned-media-v1
+        - export-attempt-identity-v1
+        - export-phase-progress-v1
+        - object-store-free-ingest-processing-v1
+        - persist-ingest-workflow-job-v1
+        - single-pass-ingest-projection-v1
+      target_patch_ids:
+        - annotation-organization-scope-v1
+        - cleanup-ingest-projection-v1
+        - cleanup-uncommitted-aligned-media-v1
+        - export-attempt-identity-v1
+        - export-phase-progress-v1
+        - object-store-free-ingest-processing-v1
+        - persist-ingest-workflow-job-v1
+        - single-pass-ingest-projection-v1
+      added_patch_ids: []
+      removed_patch_ids: []
+      existing_history_replay: PASS
+      source_worker_on_target_history: PASS
+      target_worker_on_source_history: PASS
+      worker_build_id_routing: ENABLED
+      production_server_version_range: UNSPECIFIED_RELEASE_BLOCKER
+    api:
+      source_openapi_sha256: efba4ffedd1d1295796847aa9bc8ee8bd45d7f600a4f7a29a7e03bbcc21cb413
+      target_openapi_sha256: efba4ffedd1d1295796847aa9bc8ee8bd45d7f600a4f7a29a7e03bbcc21cb413
+      old_client_on_target_server: PASS
+      target_client_on_source_server: PASS
+      removed_operations: []
+      removed_schema_fields: []
+      generated_client_drift_check: required
+    configuration:
+      source_values_sha256: fa4996c3cb2d00f916244f3b31d774d6d6c47284b333a60a839fa1b8f0b32730
+      target_values_sha256: fa4996c3cb2d00f916244f3b31d774d6d6c47284b333a60a839fa1b8f0b32730
+      added_required_keys_without_defaults: []
+      removed_keys: []
+      old_app_with_target_config: PASS
+      target_app_with_source_config: PASS
+      secret_key_removal_allowed: false
+    rollback:
+      before_contract_application: application_digest_rollback_allowed
+      after_contract_application: not_applicable_no_contract_migration
+      exact_source_artifacts_required: true
+      database_down_migration_allowed: false
+      temporal_source_build_must_remain_available: true
+    release_blockers:
+      - TARGET_0_1_1_ARTIFACTS_NOT_BUILT_OR_SIGNED
+      - PRODUCTION_TEMPORAL_SERVER_VERSION_UNSPECIFIED
+      - PRODUCTION_CAPACITY_5TB_DAY_PLUS_30_PERCENT_NOT_PASSED
+      - VERIFIED_BACKUP_AND_RESTORE_DRILL_EVIDENCE_MISSING
+      - SIGNED_DR7_PRODUCTION_EVIDENCE_BUNDLE_MISSING
+      - ADJACENT_0_1_0_0_1_1_BIDIRECTIONAL_EXECUTION_NOT_PASSED
+
+global_rules:
+  supported_application_window:
+    minimum_adjacent_versions: 2
+    direction:
+      - source_application_on_target_expand_schema
+      - target_application_on_source_schema_during_canary
+      - source_frontend_on_target_api
+      - target_frontend_on_source_api_during_rollback
+  expand_phase:
+    allowed:
+      - add_nullable_column
+      - add_column_with_backward_compatible_default
+      - add_table_or_index_without_removing_old_access_path
+      - add_enum_value_only_after_old_reader_unknown_value_test
+      - introduce_dual_read_or_dual_write_path
+    forbidden:
+      - drop_or_rename_column
+      - narrow_type_or_constraint_before_backfill
+      - remove_enum_value
+      - change_meaning_of_existing_field
+      - require_new_config_or_secret_without_source_default
+    acceptance:
+      - source_and_target_application_tests_on_expanded_schema
+      - migration_advisory_lock_single_owner
+      - forward_only_checksum_ledger_current
+  migrate_phase:
+    requirements:
+      - checkpointed_and_idempotent
+      - bounded_batches_and_rate_limits
+      - source_and_target_read_paths_remain_valid
+      - progress_and_failure_audited
+  contract_phase:
+    separate_release_gate: true
+    prerequisites:
+      - no_source_release_instances_or_temporal_tasks_on_contract_path
+      - rollback_observation_window_expired
+      - current_release_stable
+      - integrity_verified_backup_current
+      - restore_verified_drill_within_policy
+      - explicit_approval
+    database_down_migration_allowed: false
+  temporal:
+    patch_id_reuse_allowed: false
+    patch_removal_requires_replay_evidence_and_worker_routing: true
+    old_worker_build_retention_required_through_rollback_window: true
+    unknown_or_unrouted_history_policy: stop_rollout
+  api_and_client:
+    incompatible_change_requires_new_versioned_path_or_dual_contract: true
+    deprecation_minimum_adjacent_releases: 2
+    generated_client_must_match_target_openapi: true
+    both_canary_directions_must_pass: true
+  configuration:
+    expand_keys_require_source_safe_default: true
+    secret_key_removal_is_contract_phase: true
+    hot_reload_default: forbidden
+    hot_reload_requires_allowlist_schema_revision_audit_and_rollback: true
+  rollback:
+    database_restore_is_not_routine_application_rollback: true
+    before_contract_keep_forward_schema_and_deploy_exact_source_digests: true
+    after_incompatible_contract_use_forward_fix_or_verified_restore: true

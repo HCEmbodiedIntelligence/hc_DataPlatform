@@ -23,8 +23,8 @@ from hc_data_platform.dataset_registry.models import (
     DatasetPageApproveReviewMutationRecord,
     DatasetPageContentReference,
     DatasetPageContentSnapshot,
+    DatasetPageEpisodeAlignedMediaBinding,
     DatasetPageEpisodeDataBinding,
-    DatasetPageEpisodePreviewBinding,
     DatasetPageEpisodeRecord,
     DatasetPageEpisodeRevision,
     DatasetPageEpisodeStream,
@@ -238,12 +238,12 @@ def _review_bundle(*, version_id: str, marker: str, foreign: bool = False) -> Re
                 kind="RGB_VIDEO",
                 t_start_ns="100",
                 t_end_ns="1100",
-                preview_binding=DatasetPageEpisodePreviewBinding(
+                aligned_media_binding=DatasetPageEpisodeAlignedMediaBinding(
                     rollout_id=f"rollout_p07{suffix}",
-                    lance_version=7,
-                    annotation_revision=2,
+                    dataset_version=7,
+                    artifact_id=f"aligned-media-p07{suffix}",
                     camera_id="front-rgb",
-                    frequency_hz=30,
+                    fps=30,
                     start_step=0,
                     end_step=30,
                 ),
@@ -828,12 +828,12 @@ def test_postgres_p07_review_paths_are_rls_scoped_durable_and_idempotent() -> No
             )
             assert approve_revision.data.streams[
                 0
-            ].preview_binding == DatasetPageEpisodePreviewBinding(
+            ].aligned_media_binding == DatasetPageEpisodeAlignedMediaBinding(
                 rollout_id="rollout_p07approve",
-                lance_version=7,
-                annotation_revision=2,
+                dataset_version=7,
+                artifact_id="aligned-media-p07approve",
                 camera_id="front-rgb",
-                frequency_hz=30,
+                fps=30,
                 start_step=0,
                 end_step=30,
             )

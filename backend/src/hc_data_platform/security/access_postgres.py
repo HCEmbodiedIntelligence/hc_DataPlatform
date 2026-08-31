@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from hc_data_platform.core.dbapi import normalize_postgres_dsn
+from hc_data_platform.core.dbapi import fence_connection_if_bound, normalize_postgres_dsn
 from hc_data_platform.core.errors import problem
 
 from .access_models import (
@@ -234,7 +234,9 @@ class PostgresAccessRepository:
             session_touch_interval_seconds=session_touch_interval_seconds,
             max_active_sessions=max_active_sessions,
         )
-        self._connection_factory = connection_factory
+        self._connection_factory: Callable[[], Any] = lambda: fence_connection_if_bound(
+            connection_factory()
+        )
         self._session_idle_ttl_seconds = session_idle_ttl_seconds
         self._session_absolute_ttl_seconds = session_absolute_ttl_seconds
         self._session_touch_interval_seconds = session_touch_interval_seconds
@@ -1601,7 +1603,11 @@ class PostgresAccessRepository:
             connection.close()
 
     def resolve_session(
-        self, token_hash: str, *, request_id: str | None = None
+        self,
+        token_hash: str,
+        *,
+        request_id: str | None = None,
+        allow_session_mutation: bool = True,
     ) -> ResolvedSession | None:
         connection = self._connection_factory()
         cursor = connection.cursor()
@@ -1633,15 +1639,16 @@ class PostgresAccessRepository:
             if raw_account is None:
                 return None
             account = _row(cursor, raw_account)
+            session_lock = "FOR UPDATE" if allow_session_mutation else "FOR SHARE"
             cursor.execute(
-                """
+                f"""
                 SELECT session_id::text AS session_id,
                        principal_id::text AS principal_id,
                        token_hash, credential_revision, issued_at, last_seen_at,
                        revoked_at, revocation_reason
                 FROM access_control.sessions
                 WHERE token_hash = %s AND principal_id = %s::uuid
-                FOR UPDATE
+                {session_lock}
                 """,
                 (token_hash, principal_id),
             )
@@ -1662,18 +1669,19 @@ class PostgresAccessRepository:
             ):
                 reason = "PASSWORD_CHANGED"
             if reason is not None:
-                self._mark_locked_session_invalid(
-                    cursor,
-                    session,
-                    reason=reason,
-                    timestamp=timestamp,
-                    request_id=audit_request_id,
-                )
-                connection.commit()
+                if allow_session_mutation:
+                    self._mark_locked_session_invalid(
+                        cursor,
+                        session,
+                        reason=reason,
+                        timestamp=timestamp,
+                        request_id=audit_request_id,
+                    )
+                    connection.commit()
                 return None
-            if timestamp >= cast(datetime, session["last_seen_at"]) + timedelta(
-                seconds=self._session_touch_interval_seconds
-            ):
+            if allow_session_mutation and timestamp >= cast(
+                datetime, session["last_seen_at"]
+            ) + timedelta(seconds=self._session_touch_interval_seconds):
                 cursor.execute(
                     """
                     UPDATE access_control.sessions

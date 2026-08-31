@@ -39,9 +39,7 @@ from hc_data_platform.verification.engine import McapVerifier
 from hc_data_platform.verification.models import VerificationStatus
 from hc_data_platform.verification.ports import RegisteredDecoderProbe
 
-DEFAULT_REPOSITORY = (
-    "unitreerobotics/G1_WBT_Dex1_Put_Clothes_into_Washing_Machine"
-)
+DEFAULT_REPOSITORY = "unitreerobotics/G1_WBT_Dex1_Put_Clothes_into_Washing_Machine"
 DEFAULT_REVISION = "6d698e2641cc4bb765cd738835fe3a4ecc0fe2c7"
 DEFAULT_SOURCE_LICENSE = "Apache-2.0"
 DEFAULT_CAPTURE_START = datetime(2026, 4, 16, tzinfo=timezone.utc)
@@ -287,9 +285,7 @@ def _remote_size(url: str) -> int | None:
     )
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
-            value = response.headers.get("Content-Length") or response.headers.get(
-                "X-Linked-Size"
-            )
+            value = response.headers.get("Content-Length") or response.headers.get("X-Linked-Size")
     except (OSError, urllib.error.URLError) as exc:
         raise RuntimeError(f"failed to inspect {url}") from exc
     return int(value) if value else None
@@ -303,9 +299,7 @@ def _download_file(url: str, destination: Path) -> Path:
     except RuntimeError:
         if destination.is_file():
             return destination
-    if destination.is_file() and (
-        total_size is None or destination.stat().st_size == total_size
-    ):
+    if destination.is_file() and (total_size is None or destination.stat().st_size == total_size):
         return destination
     partial = destination.with_suffix(destination.suffix + ".part")
     if destination.exists():
@@ -381,16 +375,53 @@ def _essential_episode_metadata(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _source_file(
+    *,
+    repository: str,
+    revision: str,
+    root: Path,
+    relative_path: str,
+    local_source: bool,
+) -> Path:
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"unsafe LeRobot source path: {relative_path}") from exc
+    if local_source:
+        if not candidate.is_file():
+            raise RuntimeError(f"local LeRobot source file is missing: {candidate}")
+        return candidate
+    return _download_file(_hf_url(repository, revision, relative_path), candidate)
+
+
 def acquire_source(
-    *, repository: str, revision: str, episode_index: int, cache_root: Path
+    *,
+    repository: str,
+    revision: str,
+    episode_index: int,
+    cache_root: Path,
+    source_root: Path | None = None,
 ) -> SourceLayout:
-    root = cache_root / repository.replace("/", "--") / revision
-    info_path = _download_file(
-        _hf_url(repository, revision, "meta/info.json"), root / "meta/info.json"
+    root = (
+        source_root.expanduser().resolve()
+        if source_root is not None
+        else cache_root / repository.replace("/", "--") / revision
     )
-    episode_meta_path = _download_file(
-        _hf_url(repository, revision, "meta/episodes/chunk-000/file-000.parquet"),
-        root / "meta/episodes/chunk-000/file-000.parquet",
+    local_source = source_root is not None
+    info_path = _source_file(
+        repository=repository,
+        revision=revision,
+        root=root,
+        relative_path="meta/info.json",
+        local_source=local_source,
+    )
+    episode_meta_path = _source_file(
+        repository=repository,
+        revision=revision,
+        root=root,
+        relative_path="meta/episodes/chunk-000/file-000.parquet",
+        local_source=local_source,
     )
     info = cast(dict[str, Any], json.loads(info_path.read_text(encoding="utf-8")))
     episode_rows = _parquet_rows(episode_meta_path)
@@ -407,8 +438,12 @@ def acquire_source(
         chunk_index=int(episode_metadata["data/chunk_index"]),
         file_index=int(episode_metadata["data/file_index"]),
     )
-    data_file = _download_file(
-        _hf_url(repository, revision, data_relative), root / data_relative
+    data_file = _source_file(
+        repository=repository,
+        revision=revision,
+        root=root,
+        relative_path=data_relative,
+        local_source=local_source,
     )
     videos: dict[str, VideoSlice] = {}
     for camera in CAMERAS:
@@ -422,8 +457,12 @@ def acquire_source(
             video_key=camera.feature_key,
         )
         videos[camera.feature_key] = VideoSlice(
-            file=_download_file(
-                _hf_url(repository, revision, relative), root / relative
+            file=_source_file(
+                repository=repository,
+                revision=revision,
+                root=root,
+                relative_path=relative,
+                local_source=local_source,
             ),
             source_relative_path=relative,
             from_timestamp=float(episode_metadata[f"{prefix}/from_timestamp"]),
@@ -571,23 +610,16 @@ def load_episode_data(data_file: Path, episode_index: int, fps: float) -> Episod
         target_root_orientations_wxyz=tuple(item[3:7] for item in desired),
         target_joints=tuple(item[7:] for item in desired),
         hand_commands_raw=tuple(
-            _finite_vector(
-                row["action.hand_cmd"], field="action.hand_cmd", width=2
-            )
-            for row in rows
+            _finite_vector(row["action.hand_cmd"], field="action.hand_cmd", width=2) for row in rows
         ),
         end_effector_actions=tuple(
-            _finite_vector(
-                row["action.ee_action"], field="action.ee_action", width=12
-            )
+            _finite_vector(row["action.ee_action"], field="action.ee_action", width=12)
             for row in rows
         ),
     )
 
 
-def _extract_frames(
-    video: VideoSlice, *, frame_count: int, destination: Path
-) -> tuple[Path, ...]:
+def _extract_frames(video: VideoSlice, *, frame_count: int, destination: Path) -> tuple[Path, ...]:
     destination.mkdir(parents=True, exist_ok=True)
     command = (
         "ffmpeg",
@@ -740,9 +772,7 @@ def _register_channels(writer: Writer) -> dict[str, int]:
     action_schema = writer.register_schema(
         "hc.robot.Action", "jsonschema", _json_bytes(ACTION_SCHEMA)
     )
-    pose_schema = writer.register_schema(
-        "hc.robot.Pose", "jsonschema", _json_bytes(POSE_SCHEMA)
-    )
+    pose_schema = writer.register_schema("hc.robot.Pose", "jsonschema", _json_bytes(POSE_SCHEMA))
     source_schema = writer.register_schema(
         "hc.source.HuggingFace", "jsonschema", _json_bytes(SOURCE_SCHEMA)
     )
@@ -762,9 +792,7 @@ def _register_channels(writer: Writer) -> dict[str, int]:
         channels[topic] = writer.register_channel(topic, "json", action_schema)
     for topic in (BASE_POSE_TOPIC, BASE_TARGET_TOPIC):
         channels[topic] = writer.register_channel(topic, "json", pose_schema)
-    channels[SOURCE_TOPIC] = writer.register_channel(
-        SOURCE_TOPIC, "json", source_schema
-    )
+    channels[SOURCE_TOPIC] = writer.register_channel(SOURCE_TOPIC, "json", source_schema)
     return channels
 
 
@@ -918,8 +946,8 @@ def build_recording_config(
             strict=False,
         )
     ]
-    median = sorted(intervals)[len(intervals) // 2] if intervals else round(
-        1_000_000_000 / episode.fps
+    median = (
+        sorted(intervals)[len(intervals) // 2] if intervals else round(1_000_000_000 / episode.fps)
     )
     features = layout.info.get("features", {})
     cameras: list[dict[str, object]] = []
@@ -1147,8 +1175,7 @@ def validate_package(package: Path) -> None:
         raise RuntimeError(f"generated MCAP failed platform verification: {codes}")
     with raw_file.open("rb") as stream:
         observed = {
-            channel.topic
-            for _schema, channel, _message in make_reader(stream).iter_messages()
+            channel.topic for _schema, channel, _message in make_reader(stream).iter_messages()
         }
     if observed != set(manifest.actual_topics):
         raise RuntimeError("generated MCAP topic inventory differs from Manifest")
@@ -1284,22 +1311,14 @@ def acquire_robot_model_assets(*, cache_root: Path, output_root: Path) -> Path:
     if root.tag != "robot":
         raise RuntimeError("official Unitree model is not a URDF robot document")
     mesh_references = sorted(
-        {
-            mesh.attrib["filename"]
-            for mesh in root.findall(".//mesh")
-            if "filename" in mesh.attrib
-        }
+        {mesh.attrib["filename"] for mesh in root.findall(".//mesh") if "filename" in mesh.attrib}
     )
     for reference in mesh_references:
         relative = Path(reference)
         if relative.is_absolute() or ".." in relative.parts:
             raise RuntimeError(f"unsafe official URDF mesh reference: {reference}")
-        _download_file(
-            _raw_github_url(f"{ROBOT_SOURCE_ROOT}/{reference}"), cache / relative
-        )
-    license_file = _download_file(
-        _raw_github_url("LICENSE"), cache / "UNITREE_LICENSE.txt"
-    )
+        _download_file(_raw_github_url(f"{ROBOT_SOURCE_ROOT}/{reference}"), cache / relative)
+    license_file = _download_file(_raw_github_url("LICENSE"), cache / "UNITREE_LICENSE.txt")
     actuated = tuple(
         joint.attrib["name"]
         for joint in root.findall("joint")
@@ -1318,8 +1337,7 @@ def acquire_robot_model_assets(*, cache_root: Path, output_root: Path) -> Path:
         shutil.copy2(license_file, staging / license_file.name)
         config_path_in_staging = staging / ROBOT_CONFIG_NAME
         config_path_in_staging.write_text(
-            json.dumps(_robot_configuration(actuated), ensure_ascii=False, indent=2)
-            + "\n",
+            json.dumps(_robot_configuration(actuated), ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         (staging / "MODEL_PROVENANCE.md").write_text(
@@ -1348,6 +1366,7 @@ def _convert_episode(
     episode_index: int,
     cache_root: Path,
     output_root: Path,
+    source_root: Path | None,
 ) -> Path:
     request = ConversionRequest(
         project_id=cast(str, args.project_id),
@@ -1369,6 +1388,7 @@ def _convert_episode(
         revision=resolved_revision,
         episode_index=episode_index,
         cache_root=cache_root,
+        source_root=source_root,
     )
     fps_value = layout.info.get("fps")
     if not isinstance(fps_value, (int, float)) or not 0 < float(fps_value) <= 240:
@@ -1398,6 +1418,15 @@ def convert(args: argparse.Namespace) -> tuple[Path, ...]:
     resolved_revision = _resolved_revision(repository, requested_revision)
     cache_root = cast(Path, args.cache_dir).expanduser().resolve()
     output_root = cast(Path, args.output_dir).expanduser().resolve()
+    source_dir = cast(Path | None, args.source_dir)
+    source_root = None if source_dir is None else source_dir.expanduser().resolve()
+    if source_root is not None:
+        if not (source_root / "meta/info.json").is_file():
+            raise ValueError(
+                "--source-dir must be a LeRobot revision root containing meta/info.json"
+            )
+        if cast(bool, args.prune_source_cache):
+            raise ValueError("--prune-source-cache cannot be used with an explicit --source-dir")
     model = acquire_robot_model_assets(cache_root=cache_root, output_root=output_root)
     print(f"official robot model {model}", file=sys.stderr)
     indexes = (
@@ -1414,6 +1443,7 @@ def convert(args: argparse.Namespace) -> tuple[Path, ...]:
             episode_index=index,
             cache_root=cache_root,
             output_root=output_root,
+            source_root=source_root,
         )
         for index in indexes
     )
@@ -1437,6 +1467,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(".cache/huggingface/hc-unitree-g1-import"),
     )
     parser.add_argument(
+        "--source-dir",
+        type=Path,
+        help=(
+            "read an existing LeRobot v3 revision directory containing meta/info.json; "
+            "missing source files fail instead of being downloaded"
+        ),
+    )
+    parser.add_argument(
         "--prune-source-cache",
         action="store_true",
         help=(
@@ -1444,9 +1482,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Parquet/video source files while retaining shared metadata"
         ),
     )
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path("artifacts/hf-unitree-g1-mcap")
-    )
+    parser.add_argument("--output-dir", type=Path, default=Path("artifacts/hf-unitree-g1-mcap"))
     return parser
 
 

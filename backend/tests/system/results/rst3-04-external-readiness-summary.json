@@ -1,0 +1,45 @@
+{
+  "schema_version": "hc-implementation-evidence/v1",
+  "scope": "RST3-04",
+  "observed_at": "2026-08-29T06:57:18Z",
+  "status": "IMPLEMENTATION_PASSED_EXTERNAL_CAPACITY_BLOCKED",
+  "required_acceptance": {
+    "reference_object_scale_bytes": 5000000000000,
+    "required_target_capacity_bytes": 6500000000000,
+    "rpo_target_bytes": 0,
+    "rpo_target_seconds": 0,
+    "maximum_write_pause_seconds": 1800,
+    "synthetic_or_sparse_bytes_allowed": false
+  },
+  "current_environment": {
+    "workspace_mount": "/",
+    "filesystem_type": "ext4",
+    "filesystem_total_bytes": 1081101176832,
+    "filesystem_available_bytes": 750493618176,
+    "kubernetes_context_present": false,
+    "migration_plan_present": false,
+    "migration_approval_present": false,
+    "migration_observation_present": false,
+    "migration_checkpoint_present": false,
+    "production_capacity_evidence_present": false,
+    "signed_target_release_present": false,
+    "signed_dr_evidence_bundle_present": false
+  },
+  "assertions": {
+    "host_total_capacity_satisfies_target_requirement": false,
+    "host_available_capacity_satisfies_target_requirement": false,
+    "non_sparse_five_tb_transfer_proven": false,
+    "production_equivalent_network_proven": false,
+    "rpo_zero_cutover_proven": false,
+    "write_pause_within_limit_proven": false,
+    "target_write_enable_executed": false,
+    "rst3_04_pass_checkpoint_created": false
+  },
+  "verification": {
+    "focused_planned_migration_helm_and_runbook_suite": "40 passed",
+    "capacity_probe_command": "findmnt -b -o TARGET,SOURCE,FSTYPE,SIZE,AVAIL -T /home/czy/hc_DataPlatform",
+    "kubernetes_context_probe": "kubectl config current-context"
+  },
+  "next_command_after_external_inputs_are_mounted": "hc-platform migration plan --document /migration-staging/work/migration-plan.json --validated-at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "claim_boundary": "This readiness artifact proves that the current execution environment cannot satisfy RST3-04. It is not capacity, migration, RPO, cutover, or production evidence and cannot be converted into a PASS by signing it."
+}

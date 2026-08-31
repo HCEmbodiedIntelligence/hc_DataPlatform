@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "RestoreStepReceiptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Sha256",
+          "type": "string"
+        },
+        "executor_identity": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Executor Identity",
+          "type": "string"
+        },
+        "fence_evidence_after_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fence Evidence After Sha256",
+          "type": "string"
+        },
+        "fence_evidence_before_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fence Evidence Before Sha256",
+          "type": "string"
+        },
+        "safe_checkpoint": {
+          "const": true,
+          "default": true,
+          "title": "Safe Checkpoint",
+          "type": "boolean"
+        },
+        "step": {
+          "enum": [
+            "payload_verified",
+            "objects_restored",
+            "postgresql_restored",
+            "temporal_ready",
+            "services_read_only"
+          ],
+          "title": "Step",
+          "type": "string"
+        },
+        "target_mutated": {
+          "title": "Target Mutated",
+          "type": "boolean"
+        },
+        "writes_enabled": {
+          "const": false,
+          "default": false,
+          "title": "Writes Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "step",
+        "evidence_sha256",
+        "executor_identity",
+        "target_mutated",
+        "completed_at",
+        "fence_evidence_before_sha256",
+        "fence_evidence_after_sha256"
+      ],
+      "title": "RestoreStepReceiptV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-restore-checkpoint-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approval_reference": {
+      "pattern": "^approval://[A-Za-z0-9._:-]+(?:/[A-Za-z0-9._:-]+)+$",
+      "title": "Approval Reference",
+      "type": "string"
+    },
+    "approval_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Approval Sha256",
+      "type": "string"
+    },
+    "backup_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Backup Id",
+      "type": "string"
+    },
+    "completed_steps": {
+      "items": {
+        "enum": [
+          "payload_verified",
+          "objects_restored",
+          "postgresql_restored",
+          "temporal_ready",
+          "services_read_only"
+        ],
+        "type": "string"
+      },
+      "title": "Completed Steps",
+      "type": "array"
+    },
+    "execution_owner_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Execution Owner Id",
+      "type": "string"
+    },
+    "fencing_token": {
+      "exclusiveMinimum": 0,
+      "title": "Fencing Token",
+      "type": "integer"
+    },
+    "format_version": {
+      "const": "hc-platform-restore-checkpoint/v1",
+      "default": "hc-platform-restore-checkpoint/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "plan_checkpoint_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Checkpoint Sha256",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "previous_checkpoint_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Checkpoint Sha256"
+    },
+    "receipts": {
+      "items": {
+        "$ref": "#/$defs/RestoreStepReceiptV1"
+      },
+      "title": "Receipts",
+      "type": "array"
+    },
+    "reconciliation_completed": {
+      "const": false,
+      "default": false,
+      "title": "Reconciliation Completed",
+      "type": "boolean"
+    },
+    "restore_verified": {
+      "const": false,
+      "default": false,
+      "title": "Restore Verified",
+      "type": "boolean"
+    },
+    "state": {
+      "enum": [
+        "PAYLOAD_VERIFIED",
+        "OBJECTS_RESTORED",
+        "POSTGRESQL_RESTORED",
+        "TEMPORAL_READY",
+        "READ_ONLY_READY"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "state_version": {
+      "exclusiveMinimum": 0,
+      "title": "State Version",
+      "type": "integer"
+    },
+    "target_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Environment Id",
+      "type": "string"
+    },
+    "target_instance_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Instance Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "writes_enabled": {
+      "const": false,
+      "default": false,
+      "title": "Writes Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "plan_id",
+    "plan_checkpoint_sha256",
+    "operation_id",
+    "backup_id",
+    "target_instance_id",
+    "target_environment_id",
+    "approval_id",
+    "approval_reference",
+    "approval_sha256",
+    "execution_owner_id",
+    "fencing_token",
+    "state_version",
+    "completed_steps",
+    "receipts",
+    "state",
+    "updated_at"
+  ],
+  "title": "hc-platform-restore-checkpoint/v1",
+  "type": "object"
+}

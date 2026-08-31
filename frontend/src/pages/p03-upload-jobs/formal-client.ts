@@ -5,9 +5,16 @@ import type {
   operations,
 } from "../../shared/api/generated/platform";
 
-export type UploadManifest = components["schemas"]["RolloutManifestV1"];
-export type ManifestPreflight =
+type RuntimeUploadManifest = components["schemas"]["RolloutManifestV1"];
+export type UploadManifest = Omit<RuntimeUploadManifest, "processing_mode"> & {
+  /** Omitted by legacy direct-episode recorders; the API defaults it server-side. */
+  processing_mode?: RuntimeUploadManifest["processing_mode"];
+};
+type RuntimeManifestPreflight =
   components["schemas"]["ManifestPreflightResultV1"];
+export type ManifestPreflight = Omit<RuntimeManifestPreflight, "manifest"> & {
+  manifest: UploadManifest;
+};
 export type FormalUploadSession = components["schemas"]["UploadSession"];
 export type FormalUploadSessionList =
   components["schemas"]["UploadSessionListV1"];

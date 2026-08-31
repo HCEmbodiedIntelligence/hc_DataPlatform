@@ -1129,10 +1129,7 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
             standard_bucket = "waiting"
         _increment(counts, TaskProcessingStage.STANDARDIZATION, standard_bucket)
 
-        if (
-            fact.duplicate_of_rollout_id is not None
-            or fact.qc_status in {"RISK", "REJECT"}
-        ):
+        if fact.duplicate_of_rollout_id is not None or fact.qc_status in {"RISK", "REJECT"}:
             annotation_bucket = "isolated"
         elif fact.annotation_task_id is None:
             annotation_bucket = "waiting"
@@ -1141,10 +1138,7 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
         else:
             annotation_bucket = "running"
         _increment(counts, TaskProcessingStage.ANNOTATION, annotation_bucket)
-        if (
-            fact.duplicate_of_rollout_id is not None
-            or fact.qc_status in {"RISK", "REJECT"}
-        ):
+        if fact.duplicate_of_rollout_id is not None or fact.qc_status in {"RISK", "REJECT"}:
             review_bucket = "isolated"
         elif fact.annotation_status == "SUBMITTED":
             review_bucket = "waiting"
@@ -1157,8 +1151,7 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
         _increment(counts, TaskProcessingStage.REVIEW, review_bucket)
         publication_bucket = (
             "isolated"
-            if fact.duplicate_of_rollout_id is not None
-            or fact.qc_status in {"RISK", "REJECT"}
+            if fact.duplicate_of_rollout_id is not None or fact.qc_status in {"RISK", "REJECT"}
             else "succeeded"
             if fact.published
             else "waiting"
@@ -1354,9 +1347,7 @@ def _selected_task_status(
     facts: TaskStatusProjectionFacts,
 ) -> SelectedTaskStatus:
     packages = tuple(item for item in facts.packages if item.task_id == task.task_id)
-    canonical_packages = tuple(
-        item for item in packages if item.duplicate_of_rollout_id is None
-    )
+    canonical_packages = tuple(item for item in packages if item.duplicate_of_rollout_id is None)
     main_counts: dict[TaskPackageMainState, int] = {}
     for fact in packages:
         state = _package_main_state(fact)
@@ -1386,8 +1377,7 @@ def _selected_task_status(
         ready=sum(item.lance_ready for item in canonical_packages),
         blocked_by_quality=0,
         isolated_by_quality=sum(
-            item.duplicate_of_rollout_id is not None
-            or item.qc_status in {"RISK", "REJECT"}
+            item.duplicate_of_rollout_id is not None or item.qc_status in {"RISK", "REJECT"}
             for item in packages
         ),
         unavailable=len(canonical_packages)

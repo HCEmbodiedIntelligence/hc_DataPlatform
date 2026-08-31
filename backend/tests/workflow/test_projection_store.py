@@ -64,5 +64,10 @@ def test_projection_sweeper_deletes_only_expired_arrow_keys_exactly() -> None:
             "staging/projections/project/source/arrow-projection-v1.arrow",
         )
     ]
-    assert all(call["Prefix"] == "staging/projections/" for call in client.calls)
+    assert [call["Prefix"] for call in client.calls] == [
+        "staging/projections/",
+        "staging/projections/",
+        "staging/alignment/",
+        "staging/alignment/",
+    ]
     assert client.calls[1]["ContinuationToken"] == "page-2"

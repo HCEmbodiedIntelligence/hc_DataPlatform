@@ -21,6 +21,8 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum }}
+        hc-data-platform.io/release-manifest-digest: {{ .Values.global.releaseManifestDigest | quote }}
+        hc-data-platform.io/component-image-digest: {{ .Values.backend.mediaWorker.image.digest | quote }}
         {{- with .Values.backend.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -50,8 +52,38 @@ spec:
           env:
             - name: OTEL_SERVICE_NAME
               value: hc-data-media-worker
+            - name: HC_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: HC_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HC_COMPONENT_ROLE
+              value: media-worker
+            - name: HC_COMPONENT_IMAGE_DIGEST
+              value: {{ .Values.backend.mediaWorker.image.digest | quote }}
             - name: HC_WORKER_ROLE
               value: media
+            - name: HC_WORKER_GRACEFUL_SHUTDOWN_SECONDS
+              value: {{ .Values.backend.mediaWorker.gracefulShutdownSeconds | quote }}
+            - name: HC_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS
+              value: {{ .Values.backend.mediaWorker.maxConcurrentWorkflowTasks | quote }}
+            - name: HC_WORKER_MAX_CONCURRENT_ACTIVITIES
+              value: {{ .Values.backend.mediaWorker.maxConcurrentActivities | quote }}
+            - name: HC_WORKER_MAX_CACHED_WORKFLOWS
+              value: {{ .Values.backend.mediaWorker.maxCachedWorkflows | quote }}
+            - name: HC_WORKER_READINESS_FILE
+              value: /tmp/hc-runtime/worker-ready
             - name: HC_WORKFLOW_ACTIVITY_FACTORY
               value: hc_data_platform.runtime:media_activity_dependencies
             {{- include "hc-data-platform.backendSecretEnv" . | nindent 12 }}
@@ -61,17 +93,7 @@ spec:
             {{- toYaml .Values.backend.worker.probes.startup | nindent 12 }}
           readinessProbe:
             exec:
-              command:
-                - python
-                - -c
-                - |-
-                  import os, socket
-                  assert os.environ["HC_WORKER_ROLE"] == "media"
-                  assert os.environ["HC_MEDIA_TEMPORAL_TASK_QUEUE"]
-                  host, separator, port = os.environ["HC_TEMPORAL_TARGET"].rpartition(":")
-                  assert separator and host and port
-                  with socket.create_connection((host, int(port)), timeout=2):
-                      pass
+              command: ["/bin/sh", "-c", "test -f /tmp/hc-runtime/worker-ready"]
             {{- toYaml .Values.backend.worker.probes.readiness | nindent 12 }}
           livenessProbe:
             exec:
@@ -81,11 +103,16 @@ spec:
             {{- toYaml .Values.backend.mediaWorker.resources | nindent 12 }}
           volumeMounts:
             - name: staging
-              mountPath: /tmp/hc-data/previews
+              mountPath: /tmp/hc-data/aligned-media
+            - name: runtime
+              mountPath: /tmp/hc-runtime
       volumes:
         - name: staging
           emptyDir:
             sizeLimit: {{ .Values.backend.mediaWorker.stagingSizeLimit }}
+        - name: runtime
+          emptyDir:
+            sizeLimit: {{ required "backend.mediaWorker.runtimeSizeLimit is required" .Values.backend.mediaWorker.runtimeSizeLimit | quote }}
       {{- with .Values.backend.mediaWorker.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -97,4 +124,12 @@ spec:
       {{- with .Values.backend.mediaWorker.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.highAvailability.enabled }}
+      {{- include "hc-data-platform.haTopologySpreadConstraints" (dict "root" . "component" "media-worker") | nindent 6 }}
+      {{- else }}
+      {{- with .Values.backend.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}

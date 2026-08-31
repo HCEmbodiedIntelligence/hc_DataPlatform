@@ -88,7 +88,12 @@ describe("P06 immutable Lance window source", () => {
         path: "/projects/project-p06/datasets/dataset_p06fixture/rollouts/rollout-p06/steps",
         scope,
         cache: "no-store",
-        query: { startStep: 30, endStep: 50, version: 7 },
+        query: {
+          startStep: 30,
+          endStep: 50,
+          version: 7,
+          columns: ["joint.position"],
+        },
       }),
     );
   });
@@ -105,7 +110,12 @@ describe("P06 immutable Lance window source", () => {
         { startNs: "200", endNs: "400", lod: 1 },
         new AbortController().signal,
       ),
-    ).resolves.toMatchObject({ values: [[1, 2], [3, 4]] });
+    ).resolves.toMatchObject({
+      values: [
+        [1, 2],
+        [3, 4],
+      ],
+    });
 
     requestMock.mockResolvedValue(
       stepWindow({}, vectorBinding.modality_key, [

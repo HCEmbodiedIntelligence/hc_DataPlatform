@@ -99,4 +99,21 @@ describe("RouteCapabilityGuard", () => {
     expect(screen.getByText("无权访问")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "数据集页面" })).toBeNull();
   });
+
+  it("opens global operations routes for an unscoped platform administrator", () => {
+    useShellStore.setState({
+      scope: null,
+      scopeKey: makeScopeKey({ organizationId: "unscoped" }),
+      authorization: null,
+      authorizationLoading: false,
+      authorizationFailed: false,
+      bootstrapLoaded: true,
+      platformCapabilities: ["platform.admin"],
+    });
+
+    renderGuard(["platform.operations.read"]);
+
+    expect(screen.getByRole("heading", { name: "数据集页面" })).toBeVisible();
+    expect(screen.queryByText("无权访问")).not.toBeInTheDocument();
+  });
 });

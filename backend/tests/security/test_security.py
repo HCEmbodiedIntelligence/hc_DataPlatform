@@ -14,6 +14,8 @@ from hc_data_platform.security.audit import AuditRecord, canonical_hash
 from hc_data_platform.security.auth import AuthContext, JwtVerifier, Permission, Role
 from hc_data_platform.security.capabilities import (
     CAPABILITY_PLATFORM_ADMIN,
+    CAPABILITY_PLATFORM_BREAK_GLASS,
+    CAPABILITY_PLATFORM_MAINTENANCE_OPERATE,
     legacy_roles_from_capabilities,
 )
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
@@ -324,6 +326,35 @@ def test_platform_admin_has_every_business_operation_across_existing_scopes_only
     _assert_problem(
         "PROJECT_NOT_FOUND",
         lambda: ScopeGuard.require(unverified_directory_claim, "invented-project"),
+    )
+
+
+def test_platform_operation_capabilities_do_not_inherit_the_admin_wildcard() -> None:
+    platform_admin = AuthContext(
+        subject_id="platform-admin",
+        project_ids=frozenset(),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
+    )
+    operator = AuthContext(
+        subject_id="maintenance-operator",
+        project_ids=frozenset(),
+        region_codes=frozenset(),
+        roles=frozenset(),
+        capabilities=frozenset({CAPABILITY_PLATFORM_MAINTENANCE_OPERATE}),
+    )
+
+    assert platform_admin.has_capability(CAPABILITY_PLATFORM_BREAK_GLASS)
+    assert not platform_admin.has_exact_platform_capability(CAPABILITY_PLATFORM_BREAK_GLASS)
+    _assert_problem(
+        "PLATFORM_CAPABILITY_REQUIRED",
+        lambda: platform_admin.require_exact_platform_capability(CAPABILITY_PLATFORM_BREAK_GLASS),
+    )
+    operator.require_exact_platform_capability(CAPABILITY_PLATFORM_MAINTENANCE_OPERATE)
+    _assert_problem(
+        "PLATFORM_CAPABILITY_REQUIRED",
+        lambda: operator.require_exact_platform_capability(CAPABILITY_PLATFORM_BREAK_GLASS),
     )
 
 

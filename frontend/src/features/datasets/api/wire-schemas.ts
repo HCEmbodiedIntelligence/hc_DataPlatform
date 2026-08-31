@@ -677,13 +677,13 @@ export const episodeStreamWireSchema = z
     kind: z.string().min(1).max(64),
     t_start_ns: decimalNsWireSchema,
     t_end_ns: decimalNsWireSchema,
-    preview_binding: z
+    aligned_media_binding: z
       .object({
         rollout_id: z.string().min(1).max(256),
-        lance_version: z.number().int().positive(),
-        annotation_revision: z.number().int().nonnegative(),
+        dataset_version: z.number().int().positive(),
+        artifact_id: z.string().min(1).max(256),
         camera_id: z.string().min(1).max(256),
-        frequency_hz: z.number().positive().max(240),
+        fps: z.literal(30),
         start_step: z.number().int().nonnegative(),
         end_step: z.number().int().positive(),
       })
@@ -713,26 +713,27 @@ export const episodeStreamWireSchema = z
       });
     }
     if (
-      value.preview_binding &&
-      value.preview_binding.end_step <= value.preview_binding.start_step
+      value.aligned_media_binding &&
+      value.aligned_media_binding.end_step <=
+        value.aligned_media_binding.start_step
     ) {
       context.addIssue({
         code: "custom",
-        path: ["preview_binding", "end_step"],
-        message: "preview step window must be non-empty",
+        path: ["aligned_media_binding", "end_step"],
+        message: "aligned media step window must be non-empty",
       });
     }
     if (
-      value.preview_binding &&
+      value.aligned_media_binding &&
       !["VIDEO", "RGB", "RGB_VIDEO", "DEPTH"].includes(
         value.kind.trim().toUpperCase(),
       )
     ) {
       context.addIssue({
         code: "custom",
-        path: ["preview_binding"],
+        path: ["aligned_media_binding"],
         message:
-          "preview binding is only valid for RGB or depth camera streams",
+          "aligned media binding is only valid for RGB or depth camera streams",
       });
     }
     if (

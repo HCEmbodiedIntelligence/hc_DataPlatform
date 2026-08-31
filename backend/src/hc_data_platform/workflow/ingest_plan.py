@@ -10,7 +10,7 @@ import math
 import os
 import tempfile
 from collections import defaultdict, deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import closing, suppress
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -32,15 +32,23 @@ from hc_data_platform.dataset_registry.models import DatasetId
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
-from hc_data_platform.preview.metrics import (
+from hc_data_platform.quality.models import (
+    ImageObservation,
+    QualityInputV1,
+    QualityProfileV1,
+    QualityStreamObservationV1,
+)
+from hc_data_platform.verification.ports import (
+    DecoderProbe,
+    ReadableObjectStorage,
+)
+
+from .ingest_dispatch import IngestWorkflowPlanBlocked
+from .ingest_metrics import (
     AUTO_ANNOTATION_SAMPLE_RATIO,
     PROJECTION_SCAN,
     PROJECTION_SOURCE_PASSES,
 )
-from hc_data_platform.quality.models import ImageObservation, QualityInputV1, QualityProfileV1
-from hc_data_platform.verification.ports import DecoderProbe, ReadableObjectStorage
-
-from .ingest_dispatch import IngestWorkflowPlanBlocked
 from .models import (
     AlignmentActivityInput,
     FrameSelectionManifestRefV1,
@@ -188,9 +196,7 @@ class PostgresIngestWorkflowInputResolver:
             region_code=region_code,
             dataset_id=dataset_id,
             rollout_id=rollout_id,
-            media_task_queue=os.getenv(
-                "HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline"
-            ),
+            media_task_queue=os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline"),
             manifest=ManifestActivityInput(
                 project_id=project_id,
                 region_code=region_code,
@@ -229,28 +235,120 @@ class PostgresIngestWorkflowInputResolver:
         )
 
     def project_quality(self, source: IngestProjectionSourceV1) -> QualityInputV1:
+        del source
+        raise _blocked(
+            "bulk quality projection is disabled; materialize once and use online aggregation"
+        )
+
+    def open_local_session(self, source: IngestProjectionSourceV1) -> _LocalProjectionSession:
+        """Localize Raw once; no projection Arrow object is created or uploaded."""
+
         preflight = self._reload_projection_source(source)
-        if source.materialization is not None:
-            return self._read_materialized_quality(source, preflight)
-        quality, _alignment = self._project_mcap(
-            object_key=source.object_key,
+        return _LocalProjectionSession(
+            source=source,
+            preflight=preflight,
+            storage=self._storage,
+            decoder=self._decoder,
+            maximum_messages=self._maximum_messages,
+            staging_root=self._projection_staging_root,
+            artifact_store=self._projection_store,
+        )
+
+    def project_alignment_metadata(self, source: IngestProjectionSourceV1) -> AlignmentInputV1:
+        return _alignment_metadata(source, self._reload_projection_source(source))
+
+    def project_quality_stream(
+        self, source: IngestProjectionSourceV1
+    ) -> tuple[QualityInputV1, Iterable[QualityStreamObservationV1]]:
+        preflight = self._reload_projection_source(source)
+        if source.materialization is None:
+            raise _blocked("streaming quality requires a materialized projection")
+        metadata = QualityInputV1(
             rollout_id=source.rollout_id,
             source_sha256=source.source_sha256,
-            preflight=preflight,
+            start_ns=_datetime_ns(preflight.manifest.start_time),
+            end_ns=_datetime_ns(preflight.manifest.end_time),
+            topic_timestamps_ns={},
         )
-        return quality
+        return metadata, self._iter_materialized_quality(source)
+
+    def _iter_materialized_quality(
+        self, source: IngestProjectionSourceV1
+    ) -> Iterator[QualityStreamObservationV1]:
+        materialization = source.materialization
+        if materialization is None or self._projection_store is None:
+            raise _blocked("the quality projection materialization is unavailable")
+        with self._projection_store.local_file(
+            materialization.object_key,
+            expected_sha256=materialization.content_sha256,
+            expected_size=materialization.size_bytes,
+        ) as path:
+            for row in _projection_rows(
+                path,
+                columns=(
+                    "topic",
+                    "timestamp_ns",
+                    "is_camera",
+                    "luma_mean",
+                    "fingerprint",
+                    "corrupt",
+                ),
+            ):
+                yield QualityStreamObservationV1(
+                    topic=str(row["topic"]),
+                    timestamp_ns=int(row["timestamp_ns"]),
+                    is_camera=bool(row["is_camera"]),
+                    luma_mean=(None if row["luma_mean"] is None else float(row["luma_mean"])),
+                    fingerprint=(None if row["fingerprint"] is None else str(row["fingerprint"])),
+                    corrupt=bool(row["corrupt"]),
+                )
 
     def project_alignment(self, source: IngestProjectionSourceV1) -> AlignmentInputV1:
-        preflight = self._reload_projection_source(source)
-        if source.materialization is not None:
-            return self._read_materialized_alignment(source, preflight)
-        _quality, alignment = self._project_mcap(
-            object_key=source.object_key,
-            rollout_id=source.rollout_id,
-            source_sha256=source.source_sha256,
-            preflight=preflight,
+        del source
+        raise _blocked(
+            "bulk alignment projection is disabled; materialize once and stream to Arrow"
         )
-        return alignment
+
+    def project_alignment_stream(
+        self, source: IngestProjectionSourceV1
+    ) -> tuple[AlignmentInputV1, Iterable[tuple[str, TimedSampleV1]]]:
+        """Return bounded stream metadata plus a lazy Arrow sample iterator."""
+
+        preflight = self._reload_projection_source(source)
+        if source.materialization is None:
+            raise _blocked("streaming alignment requires a materialized projection")
+        expected_topics = tuple(sorted(preflight.manifest.actual_topics))
+        metadata = _alignment_metadata(source, preflight)
+        return metadata, self._iter_materialized_alignment(source, expected_topics)
+
+    def _iter_materialized_alignment(
+        self,
+        source: IngestProjectionSourceV1,
+        expected_topics: Sequence[str],
+    ) -> Iterator[tuple[str, TimedSampleV1]]:
+        materialization = source.materialization
+        if materialization is None or self._projection_store is None:
+            raise _blocked("the alignment projection materialization is unavailable")
+        seen: set[str] = set()
+        with self._projection_store.local_file(
+            materialization.object_key,
+            expected_sha256=materialization.content_sha256,
+            expected_size=materialization.size_bytes,
+        ) as path:
+            for row in _projection_sample_rows(path):
+                if not row[3]:
+                    continue
+                topic, timestamp_ns, is_camera, _accepted, value_json, image = row
+                seen.add(topic)
+                if is_camera:
+                    value: object = b"" if image is None else image
+                else:
+                    if value_json is None:
+                        raise _blocked("a materialized non-camera value is missing")
+                    value = json.loads(value_json)
+                yield topic, TimedSampleV1(timestamp_ns=timestamp_ns, value=value)
+        if seen != set(expected_topics):
+            raise _blocked("the projection artifact topic inventory is incomplete")
 
     def materialize(self, source: IngestProjectionSourceV1) -> IngestProjectionSourceV1:
         """Scan the committed MCAP exactly once into a short-lived Arrow artifact."""
@@ -480,11 +578,9 @@ class PostgresIngestWorkflowInputResolver:
         frequency_hz = profile.target_frequency_hz
         if not 1 <= frequency_hz <= 1000:
             raise _blocked("the quality profile frequency cannot be used for alignment")
-        camera_topics = {camera.topic for camera in preflight.manifest.cameras}
-        fields = {
-            topic: "binary" if topic in camera_topics else "json"
-            for topic in preflight.manifest.actual_topics
-        }
+        # Camera rows carry compact aligned-media frame references. Raw JPEG bytes
+        # remain only in short-lived alignment staging and are never committed to Lance.
+        fields = {topic: "json" for topic in preflight.manifest.actual_topics}
         return DatasetSchemaSnapshot.create(
             project_id=project_id,
             dataset_id=dataset_id,
@@ -569,9 +665,7 @@ class PostgresIngestWorkflowInputResolver:
                     else:
                         if schema is None or self._decoder is None:
                             raise _blocked(f"topic {topic!r} has no configured value decoder")
-                        if not self._decoder.supports(
-                            channel.message_encoding, schema.encoding
-                        ):
+                        if not self._decoder.supports(channel.message_encoding, schema.encoding):
                             raise _blocked(f"topic {topic!r} has no supported value decoder")
                         value = _bounded_decoded_value(
                             self._decoder.probe(
@@ -660,224 +754,259 @@ class PostgresIngestWorkflowInputResolver:
             with suppress(OSError):
                 temporary.unlink()
 
-    def _read_materialized_quality(
-        self,
-        source: IngestProjectionSourceV1,
-        preflight: ManifestPreflightResultV1,
-    ) -> QualityInputV1:
-        materialization = source.materialization
-        if materialization is None or self._projection_store is None:
-            raise _blocked("the quality projection materialization is unavailable")
-        timestamps: dict[str, list[int]] = defaultdict(list)
-        images: dict[str, list[ImageObservation]] = defaultdict(list)
-        with self._projection_store.local_file(
-            materialization.object_key,
-            expected_sha256=materialization.content_sha256,
-            expected_size=materialization.size_bytes,
-        ) as path:
-            for row in _projection_rows(
-                path,
-                columns=(
-                    "topic",
-                    "timestamp_ns",
-                    "is_camera",
-                    "luma_mean",
-                    "fingerprint",
-                    "corrupt",
-                ),
-            ):
-                topic = str(row["topic"])
-                timestamp_ns = int(row["timestamp_ns"])
-                timestamps[topic].append(timestamp_ns)
-                if bool(row["is_camera"]):
-                    images[topic].append(
-                        ImageObservation(
-                            timestamp_ns=timestamp_ns,
-                            luma_mean=(
-                                None
-                                if row["luma_mean"] is None
-                                else float(row["luma_mean"])
-                            ),
-                            fingerprint=(
-                                None
-                                if row["fingerprint"] is None
-                                else str(row["fingerprint"])
-                            ),
-                            corrupt=bool(row["corrupt"]),
-                        )
-                    )
-        return QualityInputV1(
-            rollout_id=source.rollout_id,
-            source_sha256=source.source_sha256,
-            start_ns=_datetime_ns(preflight.manifest.start_time),
-            end_ns=_datetime_ns(preflight.manifest.end_time),
-            topic_timestamps_ns={
-                topic: tuple(values) for topic, values in sorted(timestamps.items())
-            },
-            images={topic: tuple(values) for topic, values in sorted(images.items())},
-        )
 
-    def _read_materialized_alignment(
-        self,
-        source: IngestProjectionSourceV1,
-        preflight: ManifestPreflightResultV1,
-    ) -> AlignmentInputV1:
-        materialization = source.materialization
-        if materialization is None or self._projection_store is None:
-            raise _blocked("the alignment projection materialization is unavailable")
-        samples: dict[str, list[TimedSampleV1]] = defaultdict(list)
-        camera_topics = {camera.topic for camera in preflight.manifest.cameras}
-        with self._projection_store.local_file(
-            materialization.object_key,
-            expected_sha256=materialization.content_sha256,
-            expected_size=materialization.size_bytes,
-        ) as path:
-            for row in _projection_rows(
-                path,
-                columns=(
-                    "topic",
-                    "timestamp_ns",
-                    "is_camera",
-                    "alignment_accepted",
-                    "value_json",
-                    "image",
-                ),
-            ):
-                if not bool(row["alignment_accepted"]):
-                    continue
-                topic = str(row["topic"])
-                if bool(row["is_camera"]):
-                    raw_image = row["image"]
-                    value: object = b"" if raw_image is None else bytes(raw_image)
-                else:
-                    raw_json = row["value_json"]
-                    if raw_json is None:
-                        raise _blocked("a materialized non-camera value is missing")
-                    value = json.loads(bytes(raw_json))
-                samples[topic].append(
-                    TimedSampleV1(timestamp_ns=int(row["timestamp_ns"]), value=value)
-                )
-        expected_topics = set(preflight.manifest.actual_topics)
-        if set(samples) != expected_topics:
-            raise _blocked("the projection artifact topic inventory is incomplete")
-        return AlignmentInputV1(
-            rollout_id=source.rollout_id,
-            source_sha256=source.source_sha256,
-            attempt_id=f"automatic-{source.source_sha256[:24]}",
-            start_ns=_datetime_ns(preflight.manifest.start_time),
-            end_ns=_datetime_ns(preflight.manifest.end_time),
-            streams={
-                topic: ModalityStreamV1(
-                    kind=_modality_kind(topic, camera_topics),
-                    samples=tuple(samples[topic]),
-                )
-                for topic in sorted(expected_topics)
-            },
-        )
+class _LocalProjectionSession:
+    """Worker-ephemeral Raw session shared by verification, QC, and alignment."""
 
-    def _project_mcap(
+    _COPY_CHUNK_BYTES = 8 * 1024 * 1024
+
+    def __init__(
         self,
         *,
-        object_key: str,
-        rollout_id: str,
-        source_sha256: str,
+        source: IngestProjectionSourceV1,
         preflight: ManifestPreflightResultV1,
-    ) -> tuple[QualityInputV1, AlignmentInputV1]:
-        PROJECTION_SCAN.inc()
+        storage: ReadableObjectStorage,
+        decoder: DecoderProbe | None,
+        maximum_messages: int,
+        staging_root: Path,
+        artifact_store: ProjectionArtifactStorePort | None,
+    ) -> None:
+        self.source = source
+        self.preflight = preflight
+        self.quality_data = QualityInputV1(
+            rollout_id=source.rollout_id,
+            source_sha256=source.source_sha256,
+            start_ns=_datetime_ns(preflight.manifest.start_time),
+            end_ns=_datetime_ns(preflight.manifest.end_time),
+            topic_timestamps_ns={},
+        )
+        self.alignment_data = _alignment_metadata(source, preflight)
+        self._storage = storage
+        self._decoder = decoder
+        self._maximum_messages = maximum_messages
+        self._staging_root = staging_root
+        self._artifact_store = artifact_store
+        self._path: Path | None = None
+        self._frame_selection: FrameSelectionManifestRefV1 | None = None
+
+    def __enter__(self) -> _LocalProjectionSession:
+        self._staging_root.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f"raw-{self.source.source_sha256[:16]}-",
+            suffix=".mcap.part",
+            dir=self._staging_root,
+        )
+        os.close(descriptor)
+        path = Path(temporary_name)
+        digest = hashlib.sha256()
         PROJECTION_SOURCE_PASSES.inc()
+        try:
+            with (
+                closing(self._storage.open_reader(self.source.object_key)) as source_stream,
+                path.open("wb") as destination,
+            ):
+                while chunk := source_stream.read(self._COPY_CHUNK_BYTES):
+                    if not isinstance(chunk, bytes):
+                        raise TypeError("object storage reader must return bytes")
+                    digest.update(chunk)
+                    destination.write(chunk)
+                destination.flush()
+                os.fsync(destination.fileno())
+            if digest.hexdigest() != self.source.source_sha256:
+                raise _blocked("localized Raw SHA-256 differs from the committed Manifest")
+        except Exception:
+            with suppress(OSError):
+                path.unlink()
+            raise
+        self._path = path
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        path = self._path
+        self._path = None
+        if path is not None:
+            with suppress(OSError):
+                path.unlink()
+
+    def open_reader(self) -> IO[bytes]:
+        path = self._require_path()
+        return path.open("rb")
+
+    def quality_observations(self) -> Iterator[QualityStreamObservationV1]:
+        camera_topics = {camera.topic for camera in self.preflight.manifest.cameras}
+        seen_topics: set[str] = set()
+        topic_counts: dict[str, int] = defaultdict(int)
+        for schema, channel, message in self._messages():
+            del schema
+            topic = str(channel.topic)
+            timestamp_ns = int(message.log_time)
+            seen_topics.add(topic)
+            topic_counts[topic] += 1
+            if topic in camera_topics:
+                if channel.message_encoding != "json":
+                    raise _blocked(
+                        f"camera topic {topic!r} must use the supported JSON/JPEG message encoding"
+                    )
+                observation, _image, _perceptual_hash = _decode_image_projection(
+                    message.data,
+                    timestamp_ns=timestamp_ns,
+                )
+                yield QualityStreamObservationV1(
+                    topic=topic,
+                    timestamp_ns=timestamp_ns,
+                    is_camera=True,
+                    luma_mean=observation.luma_mean,
+                    fingerprint=observation.fingerprint,
+                    corrupt=observation.corrupt,
+                )
+            else:
+                yield QualityStreamObservationV1(
+                    topic=topic,
+                    timestamp_ns=timestamp_ns,
+                    is_camera=False,
+                )
+        self._validate_topic_inventory(seen_topics, topic_counts)
+
+    def alignment_samples(self) -> Iterator[tuple[str, TimedSampleV1]]:
+        sampler = _FrameSelectionSampler()
+        camera_topics = {camera.topic for camera in self.preflight.manifest.cameras}
+        seen_topics: set[str] = set()
+        topic_counts: dict[str, int] = defaultdict(int)
+        last_alignment_timestamp: dict[str, int] = {}
+        for schema, channel, message in self._messages():
+            topic = str(channel.topic)
+            timestamp_ns = int(message.log_time)
+            seen_topics.add(topic)
+            topic_counts[topic] += 1
+            accepted = timestamp_ns > last_alignment_timestamp.get(topic, -1)
+            if accepted:
+                last_alignment_timestamp[topic] = timestamp_ns
+            if topic in camera_topics:
+                if channel.message_encoding != "json":
+                    raise _blocked(
+                        f"camera topic {topic!r} must use the supported JSON/JPEG message encoding"
+                    )
+                observation, image, perceptual_hash = _decode_image_projection(
+                    message.data,
+                    timestamp_ns=timestamp_ns,
+                )
+                sampler.observe_camera(
+                    topic,
+                    timestamp_ns,
+                    luma_mean=observation.luma_mean,
+                    perceptual_hash=perceptual_hash,
+                    corrupt=observation.corrupt,
+                )
+                value: object = b"" if image is None else image
+            else:
+                if schema is None or self._decoder is None:
+                    raise _blocked(f"topic {topic!r} has no configured value decoder")
+                if not self._decoder.supports(channel.message_encoding, schema.encoding):
+                    raise _blocked(f"topic {topic!r} has no supported value decoder")
+                value = _bounded_decoded_value(
+                    self._decoder.probe(
+                        message_encoding=channel.message_encoding,
+                        schema_encoding=schema.encoding,
+                        schema_name=schema.name,
+                        schema_data=schema.data,
+                        message_data=message.data,
+                    )
+                )
+                sampler.observe_signal(topic, timestamp_ns, value)
+            if accepted:
+                yield topic, TimedSampleV1(timestamp_ns=timestamp_ns, value=value)
+        self._validate_topic_inventory(seen_topics, topic_counts)
+        self._frame_selection = self._publish_frame_selection(sampler, camera_topics)
+
+    def frame_selection(self) -> FrameSelectionManifestRefV1:
+        if self._frame_selection is None:
+            raise RuntimeError("alignment stream was not completely consumed")
+        return self._frame_selection
+
+    def _messages(self) -> Iterator[tuple[Any, Any, Any]]:
         try:
             from mcap.reader import make_reader
         except ImportError as exc:
             raise _blocked("the production MCAP data dependency is not installed") from exc
+        PROJECTION_SCAN.inc()
+        with self.open_reader() as stream:
+            messages = make_reader(stream).iter_messages()
+            for count, item in enumerate(messages, start=1):
+                if count > self._maximum_messages:
+                    raise _blocked("the MCAP message count exceeds the ingest processing limit")
+                yield item
 
-        timestamps: dict[str, list[int]] = defaultdict(list)
-        samples: dict[str, list[TimedSampleV1]] = defaultdict(list)
-        images: dict[str, list[ImageObservation]] = defaultdict(list)
-        camera_topics = {camera.topic for camera in preflight.manifest.cameras}
-        message_count = 0
-        with closing(self._storage.open_reader(object_key)) as stream:
-            try:
-                messages = make_reader(cast(IO[bytes], stream)).iter_messages()
-                for schema, channel, message in messages:
-                    message_count += 1
-                    if message_count > self._maximum_messages:
-                        raise _blocked("the MCAP message count exceeds the workflow input limit")
-                    topic = str(channel.topic)
-                    timestamp_ns = int(message.log_time)
-                    timestamps[topic].append(timestamp_ns)
-                    value: object
-                    if topic in camera_topics:
-                        if channel.message_encoding != "json":
-                            raise _blocked(
-                                f"camera topic {topic!r} must use the supported JSON/JPEG "
-                                "message encoding"
-                            )
-                        observation, encoded_image = _decode_image_observation(
-                            message.data,
-                            timestamp_ns=timestamp_ns,
-                        )
-                        images[topic].append(observation)
-                        # Empty bytes preserve the aligned step while allowing the
-                        # preview adapter to render an explicit invalid-frame placeholder.
-                        value = encoded_image or b""
-                    else:
-                        if schema is None or self._decoder is None:
-                            raise _blocked(f"topic {topic!r} has no configured value decoder")
-                        if not self._decoder.supports(channel.message_encoding, schema.encoding):
-                            raise _blocked(f"topic {topic!r} has no supported value decoder")
-                        value = _bounded_decoded_value(
-                            self._decoder.probe(
-                                message_encoding=channel.message_encoding,
-                                schema_encoding=schema.encoding,
-                                schema_name=schema.name,
-                                schema_data=schema.data,
-                                message_data=message.data,
-                            )
-                        )
-                    if not samples[topic] or samples[topic][-1].timestamp_ns < timestamp_ns:
-                        samples[topic].append(TimedSampleV1(timestamp_ns=timestamp_ns, value=value))
-            except IngestWorkflowPlanBlocked:
-                raise
-            except Exception as exc:
-                raise _blocked(
-                    "the committed MCAP could not be projected into workflow input"
-                ) from exc
+    def _publish_frame_selection(
+        self,
+        sampler: _FrameSelectionSampler,
+        camera_topics: set[str],
+    ) -> FrameSelectionManifestRefV1:
+        if self._artifact_store is None:
+            raise _blocked("the frame-selection artifact store is not configured")
+        camera_set = tuple(sorted(camera_topics))
+        selection = sampler.manifest(
+            source_sha256=self.source.source_sha256,
+            camera_topics=camera_set,
+        )
+        project_component = hashlib.sha256(self.source.project_id.encode()).hexdigest()[:24]
+        selection_key = (
+            f"derived/frame-selections/{project_component}/{self.source.source_sha256}/"
+            "adaptive-2fps-v1.json"
+        )
+        selection_sha256, selection_size = self._artifact_store.publish_json(
+            selection_key, selection
+        )
+        source_frames = sampler.source_frame_count
+        selected_groups = len(cast(list[object], selection["groups"]))
+        AUTO_ANNOTATION_SAMPLE_RATIO.set(
+            0 if source_frames == 0 else selected_groups / source_frames
+        )
+        return FrameSelectionManifestRefV1(
+            object_key=selection_key,
+            content_sha256=selection_sha256,
+            size_bytes=selection_size,
+            source_frame_count=source_frames,
+            selected_group_count=selected_groups,
+            camera_set=camera_set,
+        )
 
-        expected_topics = set(preflight.manifest.actual_topics)
-        if set(timestamps) != expected_topics or any(
-            not timestamps[name] for name in expected_topics
+    def _validate_topic_inventory(
+        self,
+        seen_topics: set[str],
+        topic_counts: Mapping[str, int],
+    ) -> None:
+        expected_topics = set(self.preflight.manifest.actual_topics)
+        if seen_topics != expected_topics or any(
+            topic_counts.get(name, 0) < 1 for name in expected_topics
         ):
             raise _blocked("the MCAP topic inventory differs from the committed Manifest")
-        start_ns = _datetime_ns(preflight.manifest.start_time)
-        end_ns = _datetime_ns(preflight.manifest.end_time)
-        camera_topics = {camera.topic for camera in preflight.manifest.cameras}
-        streams = {
+
+    def _require_path(self) -> Path:
+        if self._path is None:
+            raise RuntimeError("local ingest projection session is not active")
+        return self._path
+
+
+def _alignment_metadata(
+    source: IngestProjectionSourceV1,
+    preflight: ManifestPreflightResultV1,
+) -> AlignmentInputV1:
+    camera_topics = {camera.topic for camera in preflight.manifest.cameras}
+    expected_topics = tuple(sorted(preflight.manifest.actual_topics))
+    return AlignmentInputV1(
+        rollout_id=source.rollout_id,
+        source_sha256=source.source_sha256,
+        attempt_id=f"automatic-{source.source_sha256[:24]}",
+        start_ns=_datetime_ns(preflight.manifest.start_time),
+        end_ns=_datetime_ns(preflight.manifest.end_time),
+        streams={
             topic: ModalityStreamV1(
                 kind=_modality_kind(topic, camera_topics),
-                samples=tuple(samples[topic]),
+                samples=(),
             )
-            for topic in sorted(expected_topics)
-        }
-        return (
-            QualityInputV1(
-                rollout_id=rollout_id,
-                source_sha256=source_sha256,
-                start_ns=start_ns,
-                end_ns=end_ns,
-                topic_timestamps_ns={
-                    topic: tuple(values) for topic, values in sorted(timestamps.items())
-                },
-                images={topic: tuple(values) for topic, values in sorted(images.items())},
-            ),
-            AlignmentInputV1(
-                rollout_id=rollout_id,
-                source_sha256=source_sha256,
-                attempt_id=f"automatic-{source_sha256[:24]}",
-                start_ns=start_ns,
-                end_ns=end_ns,
-                streams=streams,
-            ),
-        )
+            for topic in expected_topics
+        },
+    )
 
 
 def _datetime_ns(value: datetime) -> int:
@@ -888,9 +1017,10 @@ def _datetime_ns(value: datetime) -> int:
 
 
 class _ArrowProjectionWriter:
-    """One Arrow batch per 4096 MCAP messages, independent of rollout duration."""
+    """Arrow batches bounded by rows and bytes, independent of rollout duration."""
 
     _BATCH_ROWS = 4_096
+    _BATCH_BYTES = 48 * 1024 * 1024
 
     def __init__(self, path: Path, *, source_sha256: str) -> None:
         import pyarrow as pa
@@ -917,9 +1047,9 @@ class _ArrowProjectionWriter:
             },
         )
         self._writer = ipc.new_file(self._sink, self._schema)
-        self._columns: dict[str, list[object]] = {
-            field.name: [] for field in self._schema
-        }
+        self._columns: dict[str, list[object]] = {field.name: [] for field in self._schema}
+        self._buffered_bytes = 0
+        self.peak_buffered_bytes = 0
         self._closed = False
 
     def append(self, **row: object) -> None:
@@ -927,9 +1057,17 @@ class _ArrowProjectionWriter:
             raise RuntimeError("projection writer is closed")
         if set(row) != set(self._columns):
             raise ValueError("projection row does not match its Arrow schema")
+        row_bytes = sum(_projection_value_size(value) for value in row.values())
+        if self._columns["topic"] and self._buffered_bytes + row_bytes > self._BATCH_BYTES:
+            self._flush()
         for name in self._columns:
             self._columns[name].append(row[name])
-        if len(self._columns["topic"]) >= self._BATCH_ROWS:
+        self._buffered_bytes += row_bytes
+        self.peak_buffered_bytes = max(self.peak_buffered_bytes, self._buffered_bytes)
+        if (
+            len(self._columns["topic"]) >= self._BATCH_ROWS
+            or self._buffered_bytes >= self._BATCH_BYTES
+        ):
             self._flush()
 
     def close(self) -> None:
@@ -938,6 +1076,7 @@ class _ArrowProjectionWriter:
         self._flush()
         self._writer.close()
         self._sink.close()
+        self._pa.default_memory_pool().release_unused()
         self._closed = True
 
     def abort(self) -> None:
@@ -956,7 +1095,20 @@ class _ArrowProjectionWriter:
             [self._columns[field.name] for field in self._schema], schema=self._schema
         )
         self._writer.write_batch(batch)
+        del batch
         self._columns = {field.name: [] for field in self._schema}
+        self._buffered_bytes = 0
+        self._pa.default_memory_pool().release_unused()
+
+
+def _projection_value_size(value: object) -> int:
+    if value is None:
+        return 1
+    if isinstance(value, bytes):
+        return len(value)
+    if isinstance(value, str):
+        return len(value.encode())
+    return 8
 
 
 def _projection_rows(path: Path, *, columns: Sequence[str]):  # type: ignore[no-untyped-def]
@@ -972,6 +1124,42 @@ def _projection_rows(path: Path, *, columns: Sequence[str]):  # type: ignore[no-
         for index in range(reader.num_record_batches):
             batch = reader.get_batch(index).select(columns)
             yield from batch.to_pylist()
+
+
+def _projection_sample_rows(
+    path: Path,
+) -> Iterator[tuple[str, int, bool, bool, bytes | None, bytes | None]]:
+    """Read JPEG projection columns scalar-by-scalar without batch.to_pylist()."""
+
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    columns = (
+        "topic",
+        "timestamp_ns",
+        "is_camera",
+        "alignment_accepted",
+        "value_json",
+        "image",
+    )
+    with pa.memory_map(str(path), "r") as source:
+        reader = ipc.open_file(source)
+        if (reader.schema.metadata or {}).get(b"hc.schema") != b"ingest-projection/arrow-v1":
+            raise ValueError("projection artifact schema marker is invalid")
+        for batch_index in range(reader.num_record_batches):
+            batch = reader.get_batch(batch_index).select(columns)
+            arrays = {name: batch.column(name) for name in columns}
+            for row_index in range(batch.num_rows):
+                raw_value = arrays["value_json"][row_index].as_py()
+                raw_image = arrays["image"][row_index].as_py()
+                yield (
+                    str(arrays["topic"][row_index].as_py()),
+                    int(arrays["timestamp_ns"][row_index].as_py()),
+                    bool(arrays["is_camera"][row_index].as_py()),
+                    bool(arrays["alignment_accepted"][row_index].as_py()),
+                    None if raw_value is None else bytes(raw_value),
+                    None if raw_image is None else bytes(raw_image),
+                )
 
 
 class _FrameSelectionSampler:
@@ -1033,14 +1221,14 @@ class _FrameSelectionSampler:
             self._select(timestamp_ns, "corrupt-frame-boundary")
 
     def observe_signal(self, topic: str, timestamp_ns: int, value: object) -> None:
-        normalized = json.dumps(
-            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
+        normalized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         prior = self._last_signal.get(topic)
         self._last_signal[topic] = normalized
         lowered = topic.lower()
-        if prior is None or prior == normalized or not any(
-            marker in lowered for marker in ("action", "joint", "command", "event")
+        if (
+            prior is None
+            or prior == normalized
+            or not any(marker in lowered for marker in ("action", "joint", "command", "event"))
         ):
             return
         self._select(timestamp_ns, "robot-state-change")
@@ -1049,9 +1237,7 @@ class _FrameSelectionSampler:
                 self._select(camera_timestamp, "event-refinement")
         self._refine_until = max(self._refine_until, timestamp_ns + self._REFINEMENT_NS)
 
-    def manifest(
-        self, *, source_sha256: str, camera_topics: tuple[str, ...]
-    ) -> dict[str, object]:
+    def manifest(self, *, source_sha256: str, camera_topics: tuple[str, ...]) -> dict[str, object]:
         groups = [
             {
                 "timestamp_ns": timestamp_ns,
@@ -1186,7 +1372,7 @@ def _decode_image_observation(
     *,
     timestamp_ns: int,
 ) -> tuple[ImageObservation, bytes | None]:
-    """Return both QC facts and the verified JPEG bytes used by Lance/preview."""
+    """Return both QC facts and the verified JPEG bytes used by alignment/media."""
 
     observation, encoded_image, _perceptual_hash = _decode_image_projection(
         message_data,
@@ -1229,9 +1415,7 @@ def _decode_image_projection(
             for row in range(8):
                 offset = row * 9
                 for column in range(8):
-                    bits = (bits << 1) | int(
-                        pixels[offset + column] > pixels[offset + column + 1]
-                    )
+                    bits = (bits << 1) | int(pixels[offset + column] > pixels[offset + column + 1])
             perceptual_hash = f"{bits:016x}"
     except (
         binascii.Error,

@@ -211,17 +211,16 @@ function workflowFixture(
     status,
     stage: status === "SUCCEEDED" ? "succeeded" : "alignment",
     attempt: 1,
-    preview:
+    aligned_media:
       status === "SUCCEEDED"
         ? {
-            schema_version: "upload-preview-target/v1",
+            schema_version: "upload-aligned-media-target/v1",
             project_id: "project-a",
             dataset_id: "dataset_ingest_a",
             rollout_id: "rollout-a",
             dataset_version: 4,
-            lance_version: 7,
             annotation_task_id: "annotation-a",
-            frequency_hz: 30,
+            fps: 30,
             start_step: 0,
             end_step: 300,
           }
@@ -313,7 +312,7 @@ describe("P04 formal upload detail page", () => {
         "4",
       ),
     );
-    expect(screen.getByText(/可视化数据已生成/u)).toBeVisible();
+    expect(screen.getByText(/Canonical MP4 与 Lance 引用已提交/u)).toBeVisible();
     expect(
       screen.getByRole("link", { name: "打开完整数据视图" }),
     ).toHaveAttribute(

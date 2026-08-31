@@ -248,6 +248,7 @@ export function createDatasetLanceWindowSource(input: {
           startStep,
           endStep,
           version: input.binding.lance_version,
+          columns: [input.binding.modality_key],
         },
       });
       const window = parseWire(stepWindowWireSchema, raw, { endpoint });

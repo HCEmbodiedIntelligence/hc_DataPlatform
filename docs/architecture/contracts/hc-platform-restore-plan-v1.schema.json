@@ -1,0 +1,285 @@
+{
+  "$defs": {
+    "RestoreCapacityCheckV1": {
+      "additionalProperties": false,
+      "properties": {
+        "available_bytes": {
+          "minimum": 0,
+          "title": "Available Bytes",
+          "type": "integer"
+        },
+        "domain": {
+          "enum": [
+            "postgresql",
+            "object_store",
+            "staging"
+          ],
+          "title": "Domain",
+          "type": "string"
+        },
+        "headroom_percent": {
+          "const": 30,
+          "default": 30,
+          "title": "Headroom Percent",
+          "type": "integer"
+        },
+        "passed": {
+          "const": true,
+          "default": true,
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "required_bytes": {
+          "minimum": 0,
+          "title": "Required Bytes",
+          "type": "integer"
+        },
+        "source_bytes": {
+          "minimum": 0,
+          "title": "Source Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "domain",
+        "source_bytes",
+        "required_bytes",
+        "available_bytes"
+      ],
+      "title": "RestoreCapacityCheckV1",
+      "type": "object"
+    },
+    "RestorePreflightCheckV1": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Sha256",
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "backup_signature",
+            "source_target_identity",
+            "target_fence",
+            "exact_release",
+            "kms_versions",
+            "postgresql_empty",
+            "object_store_mode_ready",
+            "object_store_versioning",
+            "capacity",
+            "temporal_identity",
+            "external_dependencies",
+            "domains_and_certificates"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "passed": {
+          "const": true,
+          "default": true,
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "evidence_sha256"
+      ],
+      "title": "RestorePreflightCheckV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-restore-plan-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "backup_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Backup Id",
+      "type": "string"
+    },
+    "backup_signing_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Backup Signing Key Sha256",
+      "type": "string"
+    },
+    "capacities": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/RestoreCapacityCheckV1"
+        },
+        {
+          "$ref": "#/$defs/RestoreCapacityCheckV1"
+        },
+        {
+          "$ref": "#/$defs/RestoreCapacityCheckV1"
+        }
+      ],
+      "title": "Capacities",
+      "type": "array"
+    },
+    "checkpoint_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Checkpoint Sha256",
+      "type": "string"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/RestorePreflightCheckV1"
+      },
+      "maxItems": 12,
+      "minItems": 12,
+      "title": "Checks",
+      "type": "array"
+    },
+    "dry_run": {
+      "const": true,
+      "default": true,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "exact_release_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Exact Release Sha256",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-restore-plan/v1",
+      "default": "hc-platform-restore-plan/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "next_action": {
+      "const": "restore_execute_requires_signed_approval",
+      "default": "restore_execute_requires_signed_approval",
+      "title": "Next Action",
+      "type": "string"
+    },
+    "object_restore_mode": {
+      "enum": [
+        "reuse_external",
+        "copy_referenced",
+        "portable"
+      ],
+      "title": "Object Restore Mode",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "payloads_downloaded": {
+      "const": false,
+      "default": false,
+      "title": "Payloads Downloaded",
+      "type": "boolean"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "planned_at": {
+      "format": "date-time",
+      "title": "Planned At",
+      "type": "string"
+    },
+    "readiness_evidence_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Readiness Evidence Sha256",
+      "type": "string"
+    },
+    "request_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "signature_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Signature Sha256",
+      "type": "string"
+    },
+    "source_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Source Environment Id",
+      "type": "string"
+    },
+    "source_platform_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Source Platform Id",
+      "type": "string"
+    },
+    "status": {
+      "const": "PREFLIGHT_PASSED",
+      "default": "PREFLIGHT_PASSED",
+      "title": "Status",
+      "type": "string"
+    },
+    "target_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Environment Id",
+      "type": "string"
+    },
+    "target_instance_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Instance Id",
+      "type": "string"
+    },
+    "target_object_store_bucket_reference": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Target Object Store Bucket Reference",
+      "type": "string"
+    },
+    "target_object_store_prefix": {
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,510}[A-Za-z0-9._-])?$",
+      "title": "Target Object Store Prefix",
+      "type": "string"
+    },
+    "target_postgresql_database": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Postgresql Database",
+      "type": "string"
+    },
+    "writes_enabled": {
+      "const": false,
+      "default": false,
+      "title": "Writes Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "plan_id",
+    "request_id",
+    "operation_id",
+    "planned_at",
+    "backup_id",
+    "source_platform_id",
+    "source_environment_id",
+    "target_instance_id",
+    "target_environment_id",
+    "target_postgresql_database",
+    "object_restore_mode",
+    "target_object_store_bucket_reference",
+    "target_object_store_prefix",
+    "manifest_sha256",
+    "signature_sha256",
+    "backup_signing_key_sha256",
+    "exact_release_sha256",
+    "readiness_evidence_sha256",
+    "capacities",
+    "checks",
+    "checkpoint_sha256"
+  ],
+  "title": "hc-platform-restore-plan/v1",
+  "type": "object"
+}

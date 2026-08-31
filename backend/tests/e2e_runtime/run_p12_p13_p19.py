@@ -612,6 +612,7 @@ def _runtime_environment(
         {
             "HC_ENVIRONMENT": "test",
             "HC_RUNTIME_BACKEND": "production",
+            "HC_COMPONENT_ROLE": "api",
             "HC_API_HOST": "127.0.0.1",
             "HC_API_PORT": "5197",
             "HC_POSTGRES_DSN": app_dsn,
@@ -1161,11 +1162,13 @@ def main() -> None:
                 nonlocal worker
                 if worker is not None:
                     return worker
+                worker_environment = runtime_env.copy()
+                worker_environment["HC_COMPONENT_ROLE"] = "worker"
                 worker = _start_process(
                     "worker",
                     [str(WORKER_BIN)],
                     cwd=BACKEND_ROOT,
-                    environment=runtime_env,
+                    environment=worker_environment,
                     log_dir=log_dir,
                 )
                 processes.append(worker)

@@ -49,6 +49,11 @@ def test_isolated_test_compose_has_repeatable_dependency_and_worker_health_contr
     assert services["worker"]["depends_on"]["migration-check"]["condition"] == (
         "service_completed_successfully"
     )
+    assert services["worker"]["environment"]["HC_COMPONENT_ROLE"] == "worker"
+    assert services["api"]["environment"]["HC_COMPONENT_ROLE"] == "api"
+    assert services["worker"]["environment"]["HC_PLATFORM_ENVIRONMENT_ID"] == ("hc-test-gates")
+    assert services["api"]["environment"]["HC_PLATFORM_ENVIRONMENT_ID"] == "hc-test-gates"
+    assert services["gate-runner"]["environment"]["HC_PLATFORM_ENVIRONMENT_ID"] == ("hc-test-gates")
     assert services["api"]["depends_on"]["migration-check"]["condition"] == (
         "service_completed_successfully"
     )
@@ -68,6 +73,17 @@ def test_isolated_test_compose_has_repeatable_dependency_and_worker_health_contr
     assert services["gate-runner"]["environment"]["HC_MIGRATIONS_DIR"] == (
         "/workspace/backend/migrations"
     )
+
+
+def test_development_api_and_workers_share_one_explicit_environment_fence() -> None:
+    compose = load_yaml("compose.dev.yaml")
+    services = compose["services"]
+    assert isinstance(services, dict)
+    environment_ids = {
+        services[service]["environment"]["HC_PLATFORM_ENVIRONMENT_ID"]
+        for service in ("api", "worker", "media-worker")
+    }
+    assert environment_ids == {"${HC_PLATFORM_ENVIRONMENT_ID:-hc-local}"}
 
 
 def test_production_frontend_has_three_independent_mock_off_guards() -> None:
@@ -93,7 +109,7 @@ def test_media_runtime_prepares_writable_worker_staging_directories() -> None:
     dockerfile = (ROOT / "backend/Dockerfile").read_text(encoding="utf-8")
     assert "install -d -o 65532 -g 65532 -m 0750" in dockerfile
     assert "/tmp/hc-data/alignment" in dockerfile
-    assert "/tmp/hc-data/previews" in dockerfile
+    assert "/tmp/hc-data/aligned-media" in dockerfile
 
 
 def test_worker_images_install_and_import_the_production_ros2_decoder() -> None:

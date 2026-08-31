@@ -60,7 +60,7 @@ def test_step_binary_modalities_are_bounded_markers_on_the_public_wire() -> None
         "camera.front": {
             "$type": "binary",
             "byte_length": 3,
-            "transport": "preview_media",
+            "transport": "aligned_media",
         },
         "joint.position": [0.1, -0.2],
     }

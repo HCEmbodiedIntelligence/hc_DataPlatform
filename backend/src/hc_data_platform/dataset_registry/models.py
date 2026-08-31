@@ -8,7 +8,7 @@ the user-visible dataset identity and safe page projections.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -492,18 +492,28 @@ class DatasetPageEpisodeStream(_DatasetPageModel):
     kind: str = Field(min_length=1, max_length=64)
     t_start_ns: DecimalString
     t_end_ns: DecimalString
-    preview_binding: DatasetPageEpisodePreviewBinding | None = None
+    aligned_media_binding: DatasetPageEpisodeAlignedMediaBinding | None = None
     data_binding: DatasetPageEpisodeDataBinding | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def ignore_historical_on_demand_binding(cls, value: Any) -> Any:
+        """Read old projection documents without reviving request-time generation."""
+
+        if isinstance(value, dict) and "preview_binding" in value:
+            value = dict(value)
+            value.pop("preview_binding", None)
+        return value
+
     @model_validator(mode="after")
-    def validate_preview_binding_kind(self) -> DatasetPageEpisodeStream:
-        if self.preview_binding is not None and self.kind.strip().upper() not in {
+    def validate_aligned_media_binding_kind(self) -> DatasetPageEpisodeStream:
+        if self.aligned_media_binding is not None and self.kind.strip().upper() not in {
             "VIDEO",
             "RGB",
             "RGB_VIDEO",
             "DEPTH",
         }:
-            raise ValueError("preview_binding is only valid for RGB or depth camera streams")
+            raise ValueError("aligned_media_binding is only valid for RGB or depth camera streams")
         non_camera_kinds = {
             "POINTCLOUD",
             "JOINT_STATE",
@@ -531,26 +541,19 @@ class DatasetPageEpisodeStream(_DatasetPageModel):
         return self
 
 
-class DatasetPageEpisodePreviewBinding(_DatasetPageModel):
-    """Immutable, safe link from one collection stream to aligned preview data.
-
-    A dataset-page revision deliberately never stores a physical Lance URI, object
-    key, credential, or signed media URL.  This binding carries only the logical
-    lineage the browser needs to ask the preview service for a short-lived HLS
-    capability.  It is optional so historic revisions remain readable, but a
-    camera stream is *not* browser-playable unless its projection supplies one.
-    """
+class DatasetPageEpisodeAlignedMediaBinding(_DatasetPageModel):
+    """Immutable logical selector for one already-READY canonical MP4."""
 
     rollout_id: str = Field(min_length=1, max_length=256)
-    lance_version: int = Field(ge=1)
-    annotation_revision: int = Field(ge=0)
+    dataset_version: int = Field(ge=1)
+    artifact_id: str = Field(min_length=1, max_length=256)
     camera_id: str = Field(min_length=1, max_length=256)
-    frequency_hz: float = Field(gt=0, le=240)
+    fps: Literal[30] = 30
     start_step: int = Field(ge=0, le=9_007_199_254_740_991)
     end_step: int = Field(gt=0, le=9_007_199_254_740_991)
 
     @model_validator(mode="after")
-    def validate_window(self) -> DatasetPageEpisodePreviewBinding:
+    def validate_window(self) -> DatasetPageEpisodeAlignedMediaBinding:
         if self.end_step <= self.start_step:
             raise ValueError("end_step must be greater than start_step")
         return self

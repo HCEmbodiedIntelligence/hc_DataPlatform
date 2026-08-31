@@ -154,6 +154,13 @@ class IngestTriggerStatus(str, Enum):
     RETRY_WAIT = "RETRY_WAIT"
 
 
+class IngestProcessingMode(str, Enum):
+    """Whether a committed package is already one episode or needs manual slicing."""
+
+    DIRECT_EPISODE = "DIRECT_EPISODE"
+    CONTINUOUS_RECORDING = "CONTINUOUS_RECORDING"
+
+
 class DeviceCaptureEventType(str, Enum):
     CAPTURED = "CAPTURED"
     SAVED = "SAVED"
@@ -244,7 +251,7 @@ class ManifestFileV1(BaseModel):
     sha256: Sha256
     crc64: Crc64
     media_type: str = Field(default="application/octet-stream", min_length=1, max_length=128)
-    role: Literal["RAW_MCAP", "AUXILIARY"] = "RAW_MCAP"
+    role: Literal["RAW_MCAP", "CAPTURE_BUNDLE", "AUXILIARY"] = "RAW_MCAP"
 
     @field_validator("path")
     @classmethod
@@ -301,6 +308,17 @@ class HuggingFaceEpisodeSourceV1(BaseModel):
         return value.lower()
 
 
+class ContinuousCaptureSourceV1(BaseModel):
+    """Stable identity of one uninterrupted device recording, not an episode."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["CONTINUOUS_CAPTURE"] = "CONTINUOUS_CAPTURE"
+    recording_id: Identifier
+    device_id: Identifier
+    recorder_boot_id: Identifier | None = None
+
+
 class RolloutManifestV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -331,7 +349,8 @@ class RolloutManifestV1(BaseModel):
         max_length=256,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._/+:-]*$",
     )
-    source_recording: HuggingFaceEpisodeSourceV1 | None = None
+    processing_mode: IngestProcessingMode = IngestProcessingMode.DIRECT_EPISODE
+    source_recording: HuggingFaceEpisodeSourceV1 | ContinuousCaptureSourceV1 | None = None
 
     @model_validator(mode="after")
     def validate_time_range(self) -> RolloutManifestV1:
@@ -357,11 +376,27 @@ class RolloutManifestV1(BaseModel):
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("files must not contain duplicate paths")
         raw_files = [item for item in self.files if item.role == "RAW_MCAP"]
-        if len(raw_files) != 1:
-            raise ValueError("schema v1 requires exactly one RAW_MCAP file")
-        raw = raw_files[0]
-        if (raw.size, raw.sha256, raw.crc64) != (self.file_size, self.sha256, self.crc64):
-            raise ValueError("top-level size and checksums must match the RAW_MCAP file")
+        capture_bundles = [item for item in self.files if item.role == "CAPTURE_BUNDLE"]
+        if self.processing_mode is IngestProcessingMode.DIRECT_EPISODE:
+            if len(raw_files) != 1 or capture_bundles:
+                raise ValueError("direct episode ingest requires exactly one RAW_MCAP file")
+            if isinstance(self.source_recording, ContinuousCaptureSourceV1):
+                raise ValueError("a continuous capture source requires continuous recording mode")
+            primary = raw_files[0]
+        else:
+            if len(capture_bundles) != 1 or raw_files:
+                raise ValueError(
+                    "continuous recording ingest requires exactly one CAPTURE_BUNDLE file"
+                )
+            if not isinstance(self.source_recording, ContinuousCaptureSourceV1):
+                raise ValueError("continuous recording ingest requires a CONTINUOUS_CAPTURE source")
+            primary = capture_bundles[0]
+        if (primary.size, primary.sha256, primary.crc64) != (
+            self.file_size,
+            self.sha256,
+            self.crc64,
+        ):
+            raise ValueError("top-level size and checksums must match the primary package file")
         if sum(item.size for item in self.files) > 5 * 1024**4:
             raise ValueError("manifest package exceeds the 5 TiB resource limit")
         return self
@@ -381,14 +416,18 @@ class RolloutManifestV1(BaseModel):
 
         if self.source_recording is None:
             return None
-        canonical = "\n".join(
-            (
-                "source-recording/v1",
-                self.task_id,
-                self.source_recording.kind,
+        if isinstance(self.source_recording, HuggingFaceEpisodeSourceV1):
+            identity = (
                 self.source_recording.repository,
                 str(self.source_recording.episode_index),
             )
+        else:
+            identity = (
+                self.source_recording.device_id,
+                self.source_recording.recording_id,
+            )
+        canonical = "\n".join(
+            ("source-recording/v1", self.task_id, self.source_recording.kind, *identity)
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -565,18 +604,20 @@ class RawObjectCommittedV1(BaseModel):
     manifest_key: str
     sha256: Sha256
     file_size: int = Field(gt=0)
+    processing_mode: IngestProcessingMode = IngestProcessingMode.DIRECT_EPISODE
+    continuous_recording_id: Identifier | None = None
     committed_at: datetime = Field(default_factory=utc_now)
     workflow: IngestWorkflowLocator | None = None
 
 
 class RawMediaSourceV1(BaseModel):
-    """A short-lived, project-authorized handle to one immutable MCAP capture."""
+    """A short-lived handle to one immutable MCAP or whole capture bundle."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["raw-media-source/v1"] = "raw-media-source/v1"
-    format: Literal["MCAP"] = "MCAP"
-    media_type: Literal["application/x-mcap"] = "application/x-mcap"
+    format: Literal["MCAP", "CAPTURE_BUNDLE"] = "MCAP"
+    media_type: str = Field(default="application/x-mcap", min_length=1, max_length=128)
     download_url: str = Field(min_length=1, max_length=8_192)
     expires_at: datetime
     byte_length: int = Field(gt=0)
@@ -593,26 +634,25 @@ class UploadProcessingState(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-class UploadPreviewTargetV1(BaseModel):
-    """Bounded, lineage-checked facts needed to authorize one upload preview."""
+class UploadAlignedMediaTargetV1(BaseModel):
+    """Bounded facts for authorizing ingest-created canonical camera MP4s."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["upload-preview-target/v1"]
+    schema_version: Literal["upload-aligned-media-target/v1"]
     project_id: Identifier
     dataset_id: Identifier
     rollout_id: Identifier
     dataset_version: int = Field(ge=1)
-    lance_version: int = Field(ge=1)
     annotation_task_id: Identifier
-    frequency_hz: float = Field(gt=0)
+    fps: Literal[30] = 30
     start_step: int = Field(ge=0)
     end_step: int = Field(gt=0)
 
     @model_validator(mode="after")
-    def non_empty_window(self) -> UploadPreviewTargetV1:
+    def non_empty_window(self) -> UploadAlignedMediaTargetV1:
         if self.end_step <= self.start_step:
-            raise ValueError("preview step window must be non-empty")
+            raise ValueError("aligned media step window must be non-empty")
         return self
 
 
@@ -628,28 +668,28 @@ class UploadProcessingStatusV1(BaseModel):
     status: UploadProcessingState
     stage: str = Field(min_length=1, max_length=128)
     attempt: int = Field(ge=0)
-    preview: UploadPreviewTargetV1 | None
+    aligned_media: UploadAlignedMediaTargetV1 | None
     viewer: DatasetIngestViewerTarget | None
     error_code: str | None = Field(max_length=128, pattern=r"^[A-Z0-9_]+$")
     updated_at: datetime
 
     @model_validator(mode="after")
-    def preview_matches_state(self) -> UploadProcessingStatusV1:
-        if (self.status is UploadProcessingState.SUCCEEDED) != (self.preview is not None):
-            raise ValueError("only a successful upload may expose a preview target")
+    def aligned_media_matches_state(self) -> UploadProcessingStatusV1:
+        if (self.status is UploadProcessingState.SUCCEEDED) != (self.aligned_media is not None):
+            raise ValueError("only a successful upload may expose aligned media")
         if (self.status is UploadProcessingState.SUCCEEDED) != (self.viewer is not None):
             raise ValueError("only a successful upload may expose a viewer target")
-        if self.preview is not None and self.preview.rollout_id != self.rollout_id:
-            raise ValueError("preview rollout must match processing rollout")
+        if self.aligned_media is not None and self.aligned_media.rollout_id != self.rollout_id:
+            raise ValueError("aligned media rollout must match processing rollout")
         if (
-            self.preview is not None
+            self.aligned_media is not None
             and self.viewer is not None
             and (
-                self.preview.dataset_id != self.viewer.dataset_id
-                or self.viewer.version_id != f"version_lance_{self.preview.dataset_version}"
+                self.aligned_media.dataset_id != self.viewer.dataset_id
+                or self.viewer.version_id != f"version_lance_{self.aligned_media.dataset_version}"
             )
         ):
-            raise ValueError("preview and viewer targets must identify the same Dataset version")
+            raise ValueError("media and viewer targets must identify the same Dataset version")
         return self
 
 
@@ -669,6 +709,11 @@ class RawMediaAccessAuditEvent(BaseModel):
 
 
 def raw_object_key(manifest: RolloutManifestV1) -> str:
+    filename = (
+        "capture.bundle"
+        if manifest.processing_mode is IngestProcessingMode.CONTINUOUS_RECORDING
+        else "recording.mcap"
+    )
     return (
         "raw/v1/"
         f"project={manifest.project_id}/"
@@ -677,7 +722,7 @@ def raw_object_key(manifest: RolloutManifestV1) -> str:
         f"job={manifest.collection_job_id}/"
         f"package={manifest.data_package_id}/"
         f"rollout={manifest.sequence_no:06d}-{manifest.rollout_id}/"
-        f"sha256={manifest.sha256}/recording.mcap"
+        f"sha256={manifest.sha256}/{filename}"
     )
 
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import bisect
 import hashlib
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Iterable, Iterator, Mapping
 from itertools import islice
 from typing import Any
 
@@ -94,6 +95,141 @@ class AlignmentEngine:
         manifest = self.align_to_writer(data, profile, writer)
         return manifest, tuple(writer.rows)
 
+    def align_stream_to_writer(
+        self,
+        *,
+        rollout_id: str,
+        source_sha256: str,
+        attempt_id: str,
+        start_ns: int,
+        end_ns: int,
+        stream_kinds: Mapping[str, ModalityKind],
+        samples: Iterable[tuple[str, TimedSampleV1]],
+        profile: AlignmentProfileV1,
+        writer: FragmentWriterPort,
+    ) -> AlignedFragmentManifestV1:
+        """Align a per-topic ordered stream with bounded lookahead deques."""
+
+        missing = profile.required_modalities - stream_kinds.keys()
+        if missing:
+            raise ValueError(f"required modality streams are absent: {sorted(missing)}")
+        schema_input = AlignmentInputV1(
+            rollout_id=rollout_id,
+            source_sha256=source_sha256,
+            attempt_id=attempt_id,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            streams={
+                name: ModalityStreamV1(kind=kind, samples=())
+                for name, kind in sorted(stream_kinds.items())
+            },
+        )
+        schema_sha256 = self._schema_hash(schema_input, profile)
+        buffers: dict[str, deque[TimedSampleV1]] = {name: deque() for name in stream_kinds}
+        watermark = -1
+        previous_sources: dict[str, tuple[int, ...]] = {}
+        timestamps = self.iter_timestamps(schema_input, profile)
+        target = next(timestamps, None)
+        step_index = 0
+        row_count = 0
+        digest = hashlib.sha256()
+
+        def safe_to_emit() -> bool:
+            if target is None:
+                return False
+            return watermark >= target + max(
+                (
+                    profile.stream_tolerance_ns.get(name, profile.default_tolerance_ns)
+                    for name in stream_kinds
+                ),
+                default=0,
+            )
+
+        def emit() -> AlignedRowV1:
+            assert target is not None
+            modalities: dict[str, AlignedValueV1] = {}
+            for name, kind in sorted(stream_kinds.items()):
+                strategy = profile.stream_strategies.get(name, _DEFAULT_STRATEGIES[kind])
+                tolerance = profile.stream_tolerance_ns.get(name, profile.default_tolerance_ns)
+                aligned = self._select(
+                    ModalityStreamV1(kind=kind, samples=tuple(buffers[name])),
+                    target,
+                    strategy,
+                    tolerance,
+                )
+                repeated = (
+                    aligned.valid
+                    and len(aligned.source_timestamps_ns) == 1
+                    and previous_sources.get(name) == aligned.source_timestamps_ns
+                )
+                if aligned.valid and len(aligned.source_timestamps_ns) == 1:
+                    previous_sources[name] = aligned.source_timestamps_ns
+                else:
+                    previous_sources.pop(name, None)
+                modalities[name] = aligned.model_copy(update={"repeated": repeated})
+            return AlignedRowV1(
+                rollout_id=rollout_id,
+                step_index=step_index,
+                timestamp_ns=target,
+                modalities=modalities,
+                sample_valid=all(modalities[name].valid for name in profile.required_modalities),
+            )
+
+        def write_one() -> None:
+            nonlocal target, step_index, row_count
+            row = emit()
+            writer.write_row(row)
+            digest.update(canonical_json_bytes(row.model_dump(mode="python")))
+            digest.update(b"\n")
+            row_count += 1
+            step_index += 1
+            target = next(timestamps, None)
+            if target is None:
+                return
+            for name, values in buffers.items():
+                tolerance = profile.stream_tolerance_ns.get(name, profile.default_tolerance_ns)
+                cutoff = target - tolerance
+                while len(values) > 2 and values[1].timestamp_ns < cutoff:
+                    values.popleft()
+
+        writer.begin(rollout_id=rollout_id, attempt_id=attempt_id)
+        try:
+            for topic, sample in samples:
+                if sample.timestamp_ns < watermark:
+                    raise ValueError("streaming alignment input must be globally time ordered")
+                watermark = sample.timestamp_ns
+                if topic not in buffers:
+                    raise ValueError(f"sample belongs to undeclared stream {topic!r}")
+                values = buffers[topic]
+                if values and sample.timestamp_ns <= values[-1].timestamp_ns:
+                    raise ValueError(f"stream {topic!r} is not strictly time ordered")
+                values.append(sample)
+                while safe_to_emit():
+                    write_one()
+            while target is not None:
+                write_one()
+            content_sha256 = digest.hexdigest()
+            staging_uri = writer.commit(
+                row_count=row_count,
+                content_sha256=content_sha256,
+                schema_sha256=schema_sha256,
+            )
+        except Exception:
+            writer.abort()
+            raise
+        return AlignedFragmentManifestV1(
+            rollout_id=rollout_id,
+            source_sha256=source_sha256,
+            attempt_id=attempt_id,
+            profile_id=profile.profile_id,
+            converter_version=profile.converter_version,
+            frequency_hz=profile.frequency_hz,
+            row_count=row_count,
+            schema_sha256=schema_sha256,
+            content_sha256=content_sha256,
+            staging_uri=staging_uri,
+        )
+
     def iter_rows(
         self, data: AlignmentInputV1, profile: AlignmentProfileV1
     ) -> Iterator[AlignedRowV1]:
@@ -123,9 +259,7 @@ class AlignmentEngine:
             for local_index, timestamp_ns in enumerate(batch):
                 modalities: dict[str, AlignedValueV1] = {}
                 for name, stream, strategy, tolerance, _source_times in stream_specs:
-                    search = tuple(
-                        int(indexes[local_index]) for indexes in search_plans[name]
-                    )
+                    search = tuple(int(indexes[local_index]) for indexes in search_plans[name])
                     aligned = self._select(
                         stream,
                         timestamp_ns,
@@ -143,9 +277,7 @@ class AlignmentEngine:
                     else:
                         previous_sources.pop(name, None)
                     modalities[name] = aligned.model_copy(update={"repeated": repeated})
-                sample_valid = all(
-                    modalities[name].valid for name in profile.required_modalities
-                )
+                sample_valid = all(modalities[name].valid for name in profile.required_modalities)
                 yield AlignedRowV1(
                     rollout_id=data.rollout_id,
                     step_index=step_index,

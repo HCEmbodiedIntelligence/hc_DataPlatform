@@ -1,0 +1,106 @@
+api_version: hc-data-platform.io/v1alpha1
+kind: RuntimeLoggingContract
+metadata:
+  contract_version: 1
+  effective_date: "2026-08-29"
+  implementation_task: OBS5-01
+  evidence_status: IMPLEMENTATION_AND_REDACTION_TESTS_PASSED
+
+schema:
+  version: hc-runtime-log/v1
+  encoding: newline_delimited_json
+  required_fields:
+    - timestamp
+    - severity
+    - service
+    - instance_id
+    - node_name
+    - role
+    - release_id
+    - request_id
+    - trace_id
+    - operation_id
+    - workflow_id
+    - event_code
+    - duration_ms
+    - retry_count
+    - error_type
+  bounded_http_fields:
+    - route
+    - http_method
+    - status_code
+  message_policy: event_code_only
+  exception_policy: class_name_only
+  unknown_attributes: drop
+  identifier_policy:
+    accepted: controlled_identifier
+    otherwise: id-sha256
+    maximum_length: 253
+
+producers:
+  - service: hc-data-platform-api
+    role: api
+    transport: stdout_and_otel_logging_handler
+  - service: hc-data-platform-worker
+    role: worker
+    transport: stdout_and_otel_logging_handler
+  - service: hc-data-platform-media-worker
+    role: media-worker
+    transport: stdout_and_otel_logging_handler
+  - service: hc-data-platform-frontend
+    role: frontend
+    transport: stdout
+  - service: hc-data-platform-gateway
+    role: gateway
+    transport: stdout
+
+correlation:
+  http_request:
+    request_id: validated_uuid_or_server_generated_uuid
+    route: framework_route_template_only
+  workflow_start:
+    request_id: inherited_from_http_request_context
+    workflow_id: controlled_temporal_workflow_id
+    operation_id: workflow_job_operation_id
+  worker_activity:
+    workflow_id: temporal_activity_info_workflow_id
+    operation_id: workflow_job_operation_id
+  distributed_trace:
+    trace_id: active_opentelemetry_span_only
+
+redaction:
+  forbidden_values:
+    - authorization_header
+    - cookie
+    - token
+    - password
+    - secret
+    - data_source_credential
+    - database_dsn
+    - object_body
+    - object_key_or_path
+    - signed_url
+    - request_or_response_body
+    - exception_message_or_traceback
+    - query_string
+  nginx_forbidden_variables:
+    - $args
+    - $cookie_*
+    - $http_*
+    - $query_string
+    - $request_body
+    - $request_uri
+    - $uri
+  business_scope: controlled_id_or_irreversible_sha256_only
+
+boundaries:
+  audit_events: p19_append_only_audit_not_runtime_log
+  metric_and_trace_retention: OBS5-02
+  central_log_storage_and_retention: OBS5-02
+  dashboard_and_alert_delivery: OBS5-02
+
+acceptance:
+  request_workflow_operation_link: required
+  hostile_secret_and_pii_scan_matches: 0
+  raw_url_or_body_in_gateway_access_log: forbidden
+  node_loss_searchability: OBS5-02

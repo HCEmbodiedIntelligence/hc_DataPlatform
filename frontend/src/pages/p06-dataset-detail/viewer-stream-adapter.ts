@@ -4,7 +4,7 @@ import type {
 } from "../../features/viewer";
 import type { EpisodeRevisionWire } from "../../features/datasets/api/wire-schemas";
 import { createDatasetLanceWindowSource } from "./lance-window-source";
-import { createDatasetPreviewMediaSource } from "./preview-media-source";
+import { createDatasetAlignedMediaSource } from "./aligned-media-source";
 
 function modality(kind: string, channelPath: string): ViewerStreamModality {
   const byContractKind: Readonly<Record<string, ViewerStreamModality>> = {
@@ -63,7 +63,7 @@ export function adaptP06ViewerStreams(
 ): readonly StreamDescriptor[] {
   return revision.streams.map((stream) => {
     const streamModality = modality(stream.kind, stream.channel_path);
-    const previewBinding = stream.preview_binding;
+    const mediaBinding = stream.aligned_media_binding;
     const declaredDataBinding = stream.data_binding;
     const dataBinding =
       declaredDataBinding?.value_kind === "EVENT" &&
@@ -71,16 +71,16 @@ export function adaptP06ViewerStreams(
       streamModality !== "other"
         ? { ...declaredDataBinding, value_kind: "VECTOR" as const }
         : declaredDataBinding;
-    const previewModality =
+    const mediaModality =
       streamModality === "rgb" || streamModality === "depth"
         ? streamModality
         : null;
-    const previewReady =
-      previewModality !== null &&
-      previewBinding !== null &&
-      previewBinding !== undefined;
+    const mediaReady =
+      mediaModality !== null &&
+      mediaBinding !== null &&
+      mediaBinding !== undefined;
     const dataReady =
-      previewModality === null &&
+      mediaModality === null &&
       streamModality !== "other" &&
       dataBinding !== null &&
       dataBinding !== undefined;
@@ -95,25 +95,25 @@ export function adaptP06ViewerStreams(
       },
       startNs: stream.t_start_ns,
       endNs: stream.t_end_ns,
-      availability: previewReady || dataReady ? "ready" : "missing",
-      accessibleSummary: previewReady
-        ? `${stream.channel_path} 是固定 Lance 版本中的受权相机流；播放授权会在面板可见时按需签发。`
+      availability: mediaReady || dataReady ? "ready" : "missing",
+      accessibleSummary: mediaReady
+        ? `${stream.channel_path} 是该 Dataset 版本的 canonical MP4；面板可见时只签发短期读取权限。`
         : dataReady
           ? `${stream.channel_path} 是固定 Lance 版本中的受权数据流；可视化数据会在面板可见时按需读取。`
-          : previewModality
-            ? `${stream.channel_path} 没有可用的固定预览绑定，因此不会伪造浏览器视频。`
+          : mediaModality
+            ? `${stream.channel_path} 尚无 READY canonical MP4，因此不会在页面打开时创建媒体任务。`
             : `${stream.channel_path} 尚未提供与固定 Lance 数据对应的可视化绑定。`,
-      ...(previewReady
+      ...(mediaReady
         ? {
-            mediaSource: createDatasetPreviewMediaSource({
+            mediaSource: createDatasetAlignedMediaSource({
               scope: {
                 organizationId: revision.scope.organization_id,
                 projectId: revision.scope.project_id,
                 regionCode: revision.scope.region_code,
               },
               datasetId,
-              binding: previewBinding,
-              modality: previewModality,
+              binding: mediaBinding,
+              modality: mediaModality,
             }),
           }
         : {}),

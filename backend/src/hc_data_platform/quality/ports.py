@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Literal, Protocol, runtime_checkable
 
 from .models import (
@@ -9,6 +10,7 @@ from .models import (
     QcReportV1,
     QualityInputV1,
     QualityProfileV1,
+    QualityStreamObservationV1,
     QualitySummaryV1,
 )
 
@@ -24,6 +26,13 @@ class QualityPersistenceError(RuntimeError):
 @runtime_checkable
 class QualityEvaluationPort(Protocol):
     def evaluate(self, data: QualityInputV1, profile: QualityProfileV1) -> QcReportV1: ...
+
+    def evaluate_stream(
+        self,
+        data: QualityInputV1,
+        observations: Iterable[QualityStreamObservationV1],
+        profile: QualityProfileV1,
+    ) -> QcReportV1: ...
 
 
 @runtime_checkable

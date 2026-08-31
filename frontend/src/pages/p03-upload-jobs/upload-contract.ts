@@ -343,6 +343,14 @@ export async function discoverFolderUploadBundles(
 function manifestSourceKey(manifest: UploadManifest): string | null {
   const source = manifest.source_recording;
   if (!source) return null;
+  if (source.kind === "CONTINUOUS_CAPTURE") {
+    return [
+      manifest.task_id,
+      source.kind,
+      source.device_id,
+      source.recording_id,
+    ].join("\n");
+  }
   return [
     manifest.task_id,
     source.kind,

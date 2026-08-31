@@ -24,6 +24,8 @@ const allPages: PageAvailability = Object.freeze({
   P19: true,
   P20: true,
   P21: true,
+  P22: true,
+  P23: true,
 });
 
 describe("navigation manifest", () => {
@@ -73,6 +75,7 @@ describe("navigation manifest", () => {
       "采集任务",
       "数据源",
       "数据上传",
+      "录制切片",
       "数据集",
       "数据标注",
       "数据导出",
@@ -80,6 +83,19 @@ describe("navigation manifest", () => {
     ]);
     expect(items.every((item) => !item.administratorOnly)).toBe(true);
     expect(items.every((item) => !("role" in item))).toBe(true);
+  });
+
+  it("links the recording cutter to its list and deep workbench route", () => {
+    const item = navigationManifest
+      .flatMap((group) => group.items)
+      .find((candidate) => candidate.pageId === "P23");
+
+    expect(item).toMatchObject({
+      label: "录制切片",
+      path: "/recordings",
+      requiredCapability: "episode.read",
+    });
+    expect(item?.activePatterns).toContain("/recordings/:recordingId/slice");
   });
 
   it("keeps schema authoring out of navigation for every role", () => {
@@ -121,5 +137,19 @@ describe("navigation manifest", () => {
     expect(labels).toContain("审计日志");
     expect(labels).not.toContain("生命周期");
     expect(labels).not.toContain("账户与权限");
+  });
+
+  it("exposes platform operations for either exact read or platform admin", () => {
+    for (const capability of ["platform.operations.read", "platform.admin"]) {
+      const items = filterNavigationManifest(
+        new Set([capability]),
+        allPages,
+      ).flatMap((group) => group.items);
+      expect(items.find((item) => item.pageId === "P22")).toMatchObject({
+        label: "平台设置",
+        path: "/settings/platform-operations",
+        administratorOnly: true,
+      });
+    }
   });
 });

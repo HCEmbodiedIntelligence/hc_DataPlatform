@@ -14,7 +14,7 @@ from hc_data_platform.storage.inventory import (
     ProviderInventoryObject,
     StorageInventorySnapshotProducer,
 )
-from hc_data_platform.storage.inventory_worker import run_inventory_cycle
+from hc_data_platform.storage.inventory_worker import _inventory_task_id, run_inventory_cycle
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
     InventoryDisposition,
@@ -196,8 +196,7 @@ def test_producer_counts_leftover_lance_attempts_as_temporary_physical_bytes() -
             "lance/_attempts/project-inventory/dataset-1/a.lance/data/part.arrow": (
                 ProviderInventoryObject(
                     object_key=(
-                        "lance/_attempts/project-inventory/dataset-1/"
-                        "a.lance/data/part.arrow"
+                        "lance/_attempts/project-inventory/dataset-1/a.lance/data/part.arrow"
                     ),
                     physical_bytes=50,
                     observed_at=OBSERVED_AT,
@@ -260,3 +259,16 @@ def test_worker_cycle_binds_exact_scope_and_replays_the_same_sealed_snapshot() -
     assert len(first) == 1
     with pytest.raises(RuntimeError, match="no RequestContext"):
         current_request_context()
+
+
+def test_inventory_singleton_task_id_is_stable_and_does_not_expose_scope() -> None:
+    scope = "organization-sensitive/project-sensitive/cn-east"
+
+    first = _inventory_task_id(scope)
+    second = _inventory_task_id(scope)
+
+    assert first == second
+    assert first.startswith("storage-inventory:sha256:")
+    assert len(first.removeprefix("storage-inventory:sha256:")) == 64
+    assert "organization-sensitive" not in first
+    assert "project-sensitive" not in first

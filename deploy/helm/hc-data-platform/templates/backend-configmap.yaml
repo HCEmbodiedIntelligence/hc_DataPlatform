@@ -6,7 +6,16 @@ metadata:
     {{- include "hc-data-platform.labels" . | nindent 4 }}
 data:
   HC_ENVIRONMENT: {{ .Values.backend.config.environment | quote }}
+  HC_PLATFORM_ENVIRONMENT_ID: {{ required "backend.config.platformEnvironmentId is required" .Values.backend.config.platformEnvironmentId | quote }}
+  HC_SECRET_BUNDLE_REVISION: {{ required "backend.config.secretBundleRevision is required" .Values.backend.config.secretBundleRevision | quote }}
   HC_RUNTIME_BACKEND: production
+  HC_RELEASE_ID: {{ .Values.global.releaseId | quote }}
+  HC_PLATFORM_VERSION: {{ .Chart.AppVersion | quote }}
+  HC_GIT_COMMIT: {{ .Values.global.gitCommit | quote }}
+  HC_CHART_VERSION: {{ .Chart.Version | quote }}
+  HC_RELEASE_MANIFEST_DIGEST: {{ .Values.global.releaseManifestDigest | quote }}
+  HC_MIGRATION_MANIFEST_DIGEST: {{ .Values.global.migrationManifestDigest | quote }}
+  HC_TEMPORAL_WORKER_BUILD_ID: {{ .Values.global.releaseId | quote }}
   HC_API_PORT: {{ .Values.backend.api.port | quote }}
   HC_TEMPORAL_TARGET: {{ .Values.backend.config.temporalTarget | quote }}
   HC_OUTBOX_SCOPES: {{ .Values.backend.config.outboxScopes | quote }}
@@ -15,20 +24,18 @@ data:
   HC_ARTIFACT_PREFIX: {{ .Values.backend.config.artifactPrefix | quote }}
   HC_TEMPORAL_TASK_QUEUE: {{ .Values.backend.worker.taskQueue | quote }}
   HC_MEDIA_TEMPORAL_TASK_QUEUE: {{ .Values.backend.mediaWorker.taskQueue | quote }}
-  HC_PREVIEW_ARTIFACT_TTL_DAYS: {{ .Values.backend.config.previewArtifactTtlDays | quote }}
-  HC_PREVIEW_SESSION_TTL_MINUTES: {{ .Values.backend.config.previewSessionTtlMinutes | quote }}
-  HC_PREVIEW_STAGING_TTL_HOURS: {{ .Values.backend.config.previewStagingTtlHours | quote }}
-  HC_PREVIEW_GC_INTERVAL_SECONDS: {{ .Values.backend.config.previewGcIntervalSeconds | quote }}
-  HC_PREVIEW_PROJECT_QUOTA_BYTES: {{ .Values.backend.config.previewProjectQuotaBytes | quote }}
-  HC_PREVIEW_GLOBAL_QUOTA_BYTES: {{ .Values.backend.config.previewGlobalQuotaBytes | quote }}
-  HC_PREVIEW_HIGH_WATERMARK_PERCENT: {{ .Values.backend.config.previewHighWatermarkPercent | quote }}
-  HC_PREVIEW_LOW_WATERMARK_PERCENT: {{ .Values.backend.config.previewLowWatermarkPercent | quote }}
-  HC_PREVIEW_ALLOWED_PROFILES: {{ .Values.backend.config.previewAllowedProfiles | quote }}
+  HC_ALIGNED_MEDIA_STAGING_ROOT: {{ .Values.backend.config.alignedMediaStagingRoot | quote }}
+  HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: {{ .Values.backend.config.alignedMediaStagingTtlHours | quote }}
+  HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES: {{ .Values.backend.config.alignedMediaPublicationOrphanTtlMinutes | quote }}
+  HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS: {{ .Values.backend.config.mediaMaintenanceIntervalSeconds | quote }}
+  HC_ALIGNED_MEDIA_ALLOWED_PROFILES: {{ .Values.backend.config.alignedMediaAllowedProfiles | quote }}
   HC_MEDIA_MAX_CONCURRENT_GENERATIONS: {{ .Values.backend.mediaWorker.maxConcurrentGenerations | quote }}
+  HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS: {{ .Values.backend.mediaWorker.globalMaxConcurrentGenerations | quote }}
   HC_MEDIA_FFMPEG_THREADS: {{ .Values.backend.mediaWorker.ffmpegThreads | quote }}
   {{- with .Values.backend.config.workflowActivityFactory }}
   HC_WORKFLOW_ACTIVITY_FACTORY: {{ . | quote }}
   {{- end }}
+  HC_OBJECT_STORE_PROVIDER: {{ .Values.backend.config.objectStoreProvider | quote }}
   HC_OBJECT_STORE_ENDPOINT: {{ .Values.backend.config.objectStoreEndpoint | quote }}
   HC_OBJECT_STORE_PUBLIC_ENDPOINT: {{ required "backend.config.objectStorePublicEndpoint is required" .Values.backend.config.objectStorePublicEndpoint | quote }}
   HC_OBJECT_STORE_BUCKET: {{ .Values.backend.config.objectStoreBucket | quote }}
@@ -92,10 +99,21 @@ data:
   HC_AUTH_SMTP_TIMEOUT_SECONDS: {{ .Values.backend.config.authSmtpTimeoutSeconds | quote }}
   HC_ENFORCE_SCHEMA_MIGRATIONS: {{ .Values.backend.config.enforceSchemaMigrations | quote }}
   HC_API_DOCS_ENABLED: {{ .Values.backend.config.apiDocsEnabled | quote }}
+  {{- if .Values.observability.enabled }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ printf "http://%s-otel-collector:4317" (include "hc-data-platform.observabilityFullname" .) | quote }}
+  {{- if .Values.observability.loki.query.enabled }}
+  {{- if .Values.observability.loki.embedded }}
+  HC_OBSERVABILITY_LOG_QUERY_URL: {{ printf "http://%s-loki:3100/loki/api/v1/query_range" (include "hc-data-platform.observabilityFullname" .) | quote }}
+  {{- else }}
+  HC_OBSERVABILITY_LOG_QUERY_URL: {{ printf "%s/loki/api/v1/query_range" (trimSuffix "/otlp" .Values.observability.loki.endpoint) | quote }}
+  {{- end }}
+  {{- end }}
+  {{- else }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.backend.config.otelExporterOtlpEndpoint | quote }}
+  {{- end }}
   OTEL_TRACES_EXPORTER: otlp
   OTEL_METRICS_EXPORTER: otlp
   OTEL_LOGS_EXPORTER: otlp
-  OTEL_RESOURCE_ATTRIBUTES: {{ printf "deployment.environment.name=%s,service.version=%s" .Values.backend.config.environment .Values.backend.config.serviceVersion | quote }}
+  OTEL_RESOURCE_ATTRIBUTES: {{ printf "deployment.environment.name=%s,service.version=%s,hc.release.manifest.digest=%s" .Values.backend.config.environment .Values.global.releaseId .Values.global.releaseManifestDigest | quote }}
   OTEL_PYTHON_LOG_CORRELATION: "true"
   OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"

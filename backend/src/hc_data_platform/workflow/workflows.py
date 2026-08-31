@@ -46,7 +46,7 @@ class IngestRolloutWorkflow:
                 "_job_status": JobStatus.QUALITY_RISK,
                 "quality_status": outcome,
                 "qc_report": report,
-                "preview_state": "ISOLATED",
+                "media_state": "NOT_PRODUCED",
                 "raw_preserved": True,
                 "training_eligible": False,
             }
@@ -93,18 +93,6 @@ class PublishDatasetWorkflow:
 
     def run(self, request: dict[str, Any]) -> dict[str, Any]:
         return self.publisher.publish(request)
-
-
-class PreviewGenerator(Protocol):
-    def create(self, request: dict[str, Any]) -> dict[str, Any]: ...
-
-
-@dataclass(slots=True)
-class PreviewWorkflow:
-    preview: PreviewGenerator
-
-    def run(self, request: dict[str, Any]) -> dict[str, Any]:
-        return self.preview.create(request)
 
 
 class Exporter(Protocol):

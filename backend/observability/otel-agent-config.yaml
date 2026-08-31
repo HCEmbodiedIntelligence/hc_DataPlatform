@@ -1,0 +1,58 @@
+extensions:
+  file_storage:
+    directory: /var/lib/hc-otel-agent
+    create_directory: true
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  file_log/frontend:
+    include:
+      - ${env:HC_FRONTEND_LOG_GLOB}
+    include_file_path: true
+    start_at: beginning
+    storage: file_storage
+    operators:
+      - type: container
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 192
+    spike_limit_mib: 48
+  filter/runtime_contract:
+    error_mode: propagate
+    logs:
+      log_record:
+        - 'not IsMatch(body, "^\\{\\\"schema_version\\\":\\\"hc-runtime-log/v1\\\",")'
+  resource/frontend:
+    attributes:
+      - key: service.name
+        value: hc-data-platform-frontend
+        action: upsert
+  batch:
+    send_batch_size: 1024
+    timeout: 2s
+
+exporters:
+  otlp_grpc/gateway:
+    endpoint: ${env:HC_OTEL_GATEWAY_ENDPOINT}
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      storage: file_storage
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 0s
+
+service:
+  extensions: [file_storage, health_check]
+  pipelines:
+    logs:
+      receivers: [file_log/frontend]
+      processors: [memory_limiter, filter/runtime_contract, resource/frontend, batch]
+      exporters: [otlp_grpc/gateway]

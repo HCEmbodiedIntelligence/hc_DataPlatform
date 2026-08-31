@@ -19,7 +19,7 @@ from threading import RLock
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-from hc_data_platform.core.dbapi import normalize_postgres_dsn
+from hc_data_platform.core.dbapi import fence_connection_if_bound, normalize_postgres_dsn
 from hc_data_platform.core.errors import ProblemException, problem
 
 PublicAuthOperation = Literal["LOGIN", "REGISTER", "PASSWORD_RECOVERY"]
@@ -501,7 +501,9 @@ class PostgresAbuseProtection:
     ) -> None:
         if len(hmac_secret) < 32:
             raise ValueError("auth abuse HMAC secret must contain at least 32 characters")
-        self._connection_factory = connection_factory
+        self._connection_factory: Callable[[], Any] = lambda: fence_connection_if_bound(
+            connection_factory()
+        )
         self._secret = hmac_secret.encode("utf-8")
         self._policy = policy or AuthAbusePolicy()
 

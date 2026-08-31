@@ -19,6 +19,9 @@ spec:
       app.kubernetes.io/component: frontend
   template:
     metadata:
+      annotations:
+        hc-data-platform.io/release-manifest-digest: {{ .Values.global.releaseManifestDigest | quote }}
+        hc-data-platform.io/component-image-digest: {{ .Values.frontend.image.digest | quote }}
       labels:
         {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
@@ -49,6 +52,18 @@ spec:
               value: {{ .Values.global.releaseId | quote }}
             - name: VITE_RELEASE_ENV
               value: {{ .Values.frontend.runtimeConfig.releaseEnvironment | quote }}
+            - name: VITE_PLATFORM_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+            - name: VITE_GIT_COMMIT
+              value: {{ .Values.global.gitCommit | quote }}
+            - name: VITE_CHART_VERSION
+              value: {{ .Chart.Version | quote }}
+            - name: VITE_RELEASE_MANIFEST_DIGEST
+              value: {{ .Values.global.releaseManifestDigest | quote }}
+            - name: VITE_MIGRATION_MANIFEST_DIGEST
+              value: {{ .Values.global.migrationManifestDigest | quote }}
+            - name: VITE_COMPONENT_IMAGE_DIGEST
+              value: {{ .Values.frontend.image.digest | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.frontend.port }}
@@ -67,14 +82,62 @@ spec:
               path: /healthz
               port: http
             {{- toYaml .Values.frontend.probes.liveness | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep {{ .Values.frontend.drainDelaySeconds }}; kill -QUIT 1; while kill -0 1 2>/dev/null; do sleep 1; done
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+        - name: release-identity-heartbeat
+          image: {{ include "hc-data-platform.backendImage" .Values.backend.api.image | quote }}
+          imagePullPolicy: {{ .Values.backend.api.image.pullPolicy }}
+          command: ["hc-frontend-heartbeat"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: HC_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "backend.existingSecrets.postgres.name is required" .Values.backend.existingSecrets.postgres.name | quote }}
+                  key: {{ required "backend.existingSecrets.postgres.dsnKey is required" .Values.backend.existingSecrets.postgres.dsnKey | quote }}
+            - name: HC_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: HC_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HC_RELEASE_ID
+              value: {{ .Values.global.releaseId | quote }}
+            - name: HC_RELEASE_MANIFEST_DIGEST
+              value: {{ .Values.global.releaseManifestDigest | quote }}
+            - name: HC_FRONTEND_IMAGE_DIGEST
+              value: {{ .Values.frontend.image.digest | quote }}
+            - name: HC_PLATFORM_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+            - name: HC_FRONTEND_READINESS_URL
+              value: http://127.0.0.1:8080/healthz
+          resources:
+            {{- toYaml .Values.frontend.identitySidecar.resources | nindent 12 }}
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: {{ required "frontend.tmpSizeLimit is required" .Values.frontend.tmpSizeLimit | quote }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -87,9 +150,13 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.highAvailability.enabled }}
+      {{- include "hc-data-platform.haTopologySpreadConstraints" (dict "root" . "component" "frontend") | nindent 6 }}
+      {{- else }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
 ---
 apiVersion: v1
@@ -108,4 +175,3 @@ spec:
     - name: http
       port: {{ .Values.frontend.service.port }}
       targetPort: http
-

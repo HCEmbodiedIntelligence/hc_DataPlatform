@@ -111,7 +111,7 @@ export interface StreamDescriptor {
   readonly calibrationSetId?: string;
   readonly availability:
     | "ready"
-    | "preview-generating"
+    | "media-preparing"
     | "partial"
     | "unsupported"
     | "missing";

@@ -14,6 +14,10 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { ProviderHarness } from "../providers";
 import { makeScopeKey } from "../../entities/scope";
 import { useShellStore } from "../../shared/scope/shell-store";
+import {
+  configureReleaseIdentity,
+  resetReleaseIdentityForTests,
+} from "../../shared/config/release-identity";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
 
 const scope = {
@@ -73,12 +77,24 @@ beforeEach(() => {
     ],
     fetchedAt: "2026-08-17T00:00:00Z",
   });
+  configureReleaseIdentity({
+    format_version: "hc-platform-release-identity/v1",
+    release_id: "platform-v0.1.0-shell-test",
+    semantic_version: "0.1.0",
+    git_commit: "1".repeat(40),
+    chart_version: "0.1.0",
+    release_manifest_digest: `sha256:${"a".repeat(64)}`,
+    migration_manifest_digest: `sha256:${"b".repeat(64)}`,
+    component: "frontend",
+    component_image_digest: `sha256:${"c".repeat(64)}`,
+  });
 });
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   window.localStorage.clear();
+  resetReleaseIdentityForTests();
   useShellStore.setState({
     principal: null,
     sessionToken: null,
@@ -89,6 +105,12 @@ afterEach(() => {
     authorizationLoading: false,
     authorizationFailed: false,
   });
+});
+
+it("shows the immutable frontend release and manifest in the application shell", () => {
+  renderShell();
+  expect(screen.getByText("platform-v0.1.0-shell-test")).toBeVisible();
+  expect(screen.getByText("清单 sha256:aaaaaaaa…")).toBeVisible();
 });
 
 const defaultScopeOptions = [
@@ -187,16 +209,62 @@ describe("PlatformShell", () => {
     expect(screen.queryByText("清洗草稿")).not.toBeInTheDocument();
   });
 
-  it("shows project and region context and exposes the account notification inbox", () => {
+  it("shows project and storage selectors and exposes the account notification inbox", () => {
     renderShell();
 
     expect(screen.getByRole("combobox", { name: "当前项目" })).toBeEnabled();
-    expect(screen.getByRole("combobox", { name: "当前区域" })).toBeEnabled();
+    expect(
+      screen.getByRole("combobox", { name: "当前存储地址" }),
+    ).toBeEnabled();
     expect(screen.getByText(/双臂采集一期/u)).toBeVisible();
-    expect(screen.getByText("华东-01")).toBeVisible();
+    expect(screen.queryByText("到账户设置管理")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "全局搜索" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "通知" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "账户菜单" })).toBeEnabled();
+  });
+
+  it("loads the administrator-provided OSS address only when its selector opens", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes("/platform/object-store-location")) {
+          return new Response(
+            JSON.stringify({
+              format_version: "hc-object-store-location/v1",
+              configured: true,
+              provider: "oss",
+              public_endpoint: "https://oss-cn-shanghai.aliyuncs.com",
+              region: "cn-shanghai",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        return new Response("{}", {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+    const user = userEvent.setup();
+    renderShell();
+
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/platform/object-store-location"),
+      ),
+    ).toBe(false);
+    await user.click(
+      screen.getByRole("combobox", { name: "当前存储地址" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "OSS · cn-shanghai · oss-cn-shanghai.aliyuncs.com",
+      ),
+    ).toBeVisible();
   });
 
   it("switches duplicate project ids across organizations by their composite identity", async () => {
@@ -263,21 +331,31 @@ describe("PlatformShell", () => {
     const scopeSlots = scopeGroup.querySelectorAll("[data-scope-slot]");
     expect(scopeSlots).toHaveLength(2);
     expect(scopeSlots[0]).toHaveAttribute("data-scope-slot", "project");
-    expect(scopeSlots[1]).toHaveAttribute("data-scope-slot", "region");
+    expect(scopeSlots[1]).toHaveAttribute("data-scope-slot", "storage");
     expect(
-      within(scopeGroup).getByLabelText("当前项目：尚未加入组织或项目"),
+      within(scopeGroup).getByRole("combobox", { name: "当前项目" }),
     ).toBeVisible();
+    expect(screen.getByText("尚未加入组织或项目")).toBeVisible();
     expect(
       screen.queryByRole("link", { name: "个人主页" }),
     ).not.toBeInTheDocument();
     expect(
-      within(scopeGroup).getByRole("link", {
-        name: "到账户设置管理",
-      }),
-    ).toHaveAttribute("href", "/account/settings?tab=memberships");
-    expect(
-      screen.queryByRole("combobox", { name: "当前项目" }),
+      screen.queryByRole("link", { name: "到账户设置管理" }),
     ).not.toBeInTheDocument();
+    expect(
+      within(scopeGroup).getByRole("combobox", { name: "当前存储地址" }),
+    ).toBeDisabled();
+    await user.click(
+      within(scopeGroup).getByRole("combobox", { name: "当前项目" }),
+    );
+    const joinProject = await screen.findByRole("option", {
+      name: "加入项目",
+    });
+    expect(joinProject).toBeVisible();
+    await user.click(joinProject);
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/account/settings",
+    );
     expect(
       screen.queryByRole("button", { name: "全局搜索" }),
     ).not.toBeInTheDocument();

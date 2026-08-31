@@ -1071,6 +1071,29 @@ components:
       - maximum_jump_reject
       - dimension_mismatch_is_reject
       type: object
+    AdvanceEpisodeProcessingCommand:
+      additionalProperties: false
+      properties:
+        alignment_attempt_id:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
+        expected_status:
+          $ref: '#/components/schemas/EpisodeProcessingStatus'
+        new_status:
+          $ref: '#/components/schemas/EpisodeProcessingStatus'
+        qc_report_id:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      required:
+      - expected_status
+      - new_status
+      type: object
     AlignedFragmentManifestV1:
       additionalProperties: false
       properties:
@@ -1152,6 +1175,131 @@ components:
       - converter_version
       - content_sha256
       - staging_uri
+      type: object
+    AlignedMediaAuthorizationV1:
+      properties:
+        alignment_version:
+          type: string
+        artifact_id:
+          type: string
+        artifact_key:
+          type: string
+        camera_id:
+          type: string
+        content_type:
+          const: video/mp4
+          default: video/mp4
+          type: string
+        dataset_id:
+          type: string
+        dataset_version:
+          type: integer
+        duration_seconds:
+          exclusiveMinimum: 0
+          type: number
+        expires_at:
+          format: date-time
+          type: string
+        fps:
+          const: 30
+          default: 30
+          type: integer
+        frame_count:
+          minimum: 1
+          type: integer
+        height:
+          minimum: 2
+          type: integer
+        media_url:
+          type: string
+        profile_id:
+          type: string
+        profile_version:
+          type: string
+        project_id:
+          type: string
+        rollout_id:
+          type: string
+        schema_version:
+          const: aligned-media-authorization/v1
+          default: aligned-media-authorization/v1
+          type: string
+        timeline:
+          $ref: '#/components/schemas/AlignedMediaTimelineV1'
+        width:
+          minimum: 2
+          type: integer
+      required:
+      - artifact_id
+      - artifact_key
+      - project_id
+      - dataset_id
+      - rollout_id
+      - dataset_version
+      - camera_id
+      - media_url
+      - expires_at
+      - frame_count
+      - duration_seconds
+      - width
+      - height
+      - timeline
+      - alignment_version
+      - profile_id
+      - profile_version
+      type: object
+    AlignedMediaSelectorV1:
+      properties:
+        camera_id:
+          minLength: 1
+          type: string
+        dataset_id:
+          minLength: 1
+          type: string
+        dataset_version:
+          minimum: 1
+          type: integer
+        project_id:
+          minLength: 1
+          type: string
+        rollout_id:
+          minLength: 1
+          type: string
+      required:
+      - project_id
+      - dataset_id
+      - rollout_id
+      - dataset_version
+      - camera_id
+      type: object
+    AlignedMediaTimelineV1:
+      description: Exact mapping from step N to frame N and PTS N at time base 1/30.
+      properties:
+        first_step:
+          default: 0
+          minimum: 0
+          type: integer
+        fps:
+          const: 30
+          default: 30
+          type: integer
+        frame_count:
+          minimum: 0
+          type: integer
+        pts_time_base_denominator:
+          const: 30
+          default: 30
+          type: integer
+        pts_time_base_numerator:
+          const: 1
+          default: 1
+          type: integer
+        start_timestamp_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          type: string
+      required:
+      - frame_count
+      - start_timestamp_ns
       type: object
     AlignedRowV1:
       additionalProperties: false
@@ -3408,6 +3556,21 @@ components:
       - roles
       - service_identity
       type: object
+    AuthorizeRecordingAssetPartsCommand:
+      additionalProperties: false
+      properties:
+        part_numbers:
+          items:
+            maximum: 10000
+            minimum: 1
+            type: integer
+          maxItems: 256
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+      - part_numbers
+      type: object
     AuthorizeRobotModelAssetPartsRequest:
       additionalProperties: false
       properties:
@@ -3893,6 +4056,111 @@ components:
       - region_codes
       - project_wide
       - capabilities
+      type: object
+    BackupCatalogListItem:
+      additionalProperties: false
+      description: Redacted immutable catalog projection safe for the online API.
+      properties:
+        backup_completed_at:
+          format: date-time
+          title: Backup Completed At
+          type: string
+        backup_created_at:
+          format: date-time
+          title: Backup Created At
+          type: string
+        backup_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$
+          title: Backup Id
+          type: string
+        format_version:
+          const: hc-platform-backup/v1
+          title: Format Version
+          type: string
+        mode:
+          enum:
+          - portable
+          - snapshot
+          title: Mode
+          type: string
+        release_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Release Manifest Sha256
+          type: string
+        repository_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$
+          title: Repository Id
+          type: string
+        source_environment_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$
+          title: Source Environment Id
+          type: string
+        status:
+          enum:
+          - CREATING
+          - CREATED
+          - INTEGRITY_VERIFIED
+          - RESTORE_VERIFIED
+          - FAILED
+          - CORRUPT
+          - EXPIRED
+          title: Status
+          type: string
+        status_occurred_at:
+          format: date-time
+          title: Status Occurred At
+          type: string
+      required:
+      - backup_id
+      - format_version
+      - mode
+      - status
+      - source_environment_id
+      - repository_id
+      - release_manifest_sha256
+      - backup_created_at
+      - backup_completed_at
+      - status_occurred_at
+      title: BackupCatalogListItem
+      type: object
+    BackupCatalogPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-backup-catalog-page/v1
+          default: hc-platform-backup-catalog-page/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/BackupCatalogListItem'
+          title: Items
+          type: array
+        next_cursor:
+          anyOf:
+          - maxLength: 1024
+            type: string
+          - type: 'null'
+          title: Next Cursor
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+      required:
+      - observed_at
+      - count
+      - items
+      title: BackupCatalogPage
       type: object
     BasicCredentialInput:
       additionalProperties: false
@@ -4654,6 +4922,55 @@ components:
       - created_by
       - created_at
       title: CalibrationVersionSummary
+      type: object
+    CameraRecordingConfig:
+      additionalProperties: false
+      properties:
+        camera_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        clock_domain:
+          maxLength: 128
+          minLength: 1
+          type: string
+        codec:
+          maxLength: 64
+          minLength: 1
+          type: string
+        fps:
+          exclusiveMinimum: 0
+          maximum: 1000
+          type: number
+        height:
+          maximum: 32768
+          minimum: 2
+          type:
+          - integer
+          - 'null'
+        time_base_denominator:
+          maximum: 1000000000
+          minimum: 1
+          type: integer
+        time_base_numerator:
+          default: 1
+          minimum: 1
+          type: integer
+        topic:
+          type:
+          - string
+          - 'null'
+        width:
+          maximum: 32768
+          minimum: 2
+          type:
+          - integer
+          - 'null'
+      required:
+      - camera_id
+      - fps
+      - codec
+      - clock_domain
+      - time_base_numerator
+      - time_base_denominator
       type: object
     CancelLifecycleExecutionRequest:
       additionalProperties: false
@@ -7391,6 +7708,18 @@ components:
       - operation_hash
       title: CommitSucceeded
       type: object
+    CompleteRecordingAssetCommand:
+      additionalProperties: false
+      properties:
+        parts:
+          items:
+            $ref: '#/components/schemas/CompletedPart'
+          maxItems: 10000
+          minItems: 1
+          type: array
+      required:
+      - parts
+      type: object
     CompleteRobotModelAssetFileRequest:
       additionalProperties: false
       properties:
@@ -7555,6 +7884,138 @@ components:
       required:
       - state
       title: Connectivity
+      type: object
+    ContinuousCaptureSourceV1:
+      additionalProperties: false
+      properties:
+        device_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        kind:
+          const: CONTINUOUS_CAPTURE
+          default: CONTINUOUS_CAPTURE
+          type: string
+        recorder_boot_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+      required:
+      - recording_id
+      - device_id
+      type: object
+    ContinuousRecording:
+      additionalProperties: false
+      properties:
+        capture_ended_at:
+          format: date-time
+          type: string
+        capture_started_at:
+          format: date-time
+          type: string
+        collection_job_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        collection_task_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        created_at:
+          format: date-time
+          type: string
+        current_revision:
+          minimum: 0
+          type: integer
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        device_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        duration_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        etag:
+          pattern: ^"v[1-9][0-9]*"$
+          type: string
+        finalized_revision:
+          minimum: 1
+          type:
+          - integer
+          - 'null'
+        manifest_fingerprint:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        recording_upload_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        robot_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          enum:
+          - continuous-recording/v1
+          - continuous-recording/v2
+          type: string
+        scope:
+          $ref: '#/components/schemas/RecordingScope'
+        source_sha256:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        status:
+          $ref: '#/components/schemas/RecordingStatus'
+        updated_at:
+          format: date-time
+          type: string
+        upload_session_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        video_asset_count:
+          maximum: 128
+          minimum: 0
+          type: integer
+      required:
+      - scope
+      - recording_id
+      - rollout_id
+      - data_package_id
+      - collection_task_id
+      - collection_job_id
+      - robot_id
+      - device_id
+      - capture_started_at
+      - capture_ended_at
+      - duration_ns
+      - source_sha256
+      - manifest_fingerprint
+      - etag
+      type: object
+    ContinuousRecordingEnvelope:
+      additionalProperties: false
+      properties:
+        current_slice_revision:
+          anyOf:
+          - $ref: '#/components/schemas/RecordingSliceRevision'
+          - type: 'null'
+        data:
+          $ref: '#/components/schemas/ContinuousRecording'
+      required:
+      - data
+      type: object
+    ContinuousRecordingPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ContinuousRecording'
+          type: array
+        total:
+          minimum: 0
+          type: integer
+      required:
+      - items
+      - total
       type: object
     CooperativeLease:
       additionalProperties: false
@@ -8012,6 +8473,53 @@ components:
       - severity
       - note
       title: CreateManualIssueCommand
+      type: object
+    CreateRecordingUploadCommand:
+      additionalProperties: false
+      properties:
+        assets:
+          items:
+            $ref: '#/components/schemas/RecordingAssetManifest'
+          maxItems: 256
+          minItems: 3
+          type: array
+        capture_ended_at:
+          format: date-time
+          type: string
+        capture_started_at:
+          format: date-time
+          type: string
+        collection_job_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        collection_task_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        device_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        recording_config:
+          $ref: '#/components/schemas/RecordingConfiguration'
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        robot_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: continuous-recording-upload/v2
+          type: string
+      required:
+      - recording_id
+      - rollout_id
+      - data_package_id
+      - collection_task_id
+      - collection_job_id
+      - robot_id
+      - device_id
+      - capture_started_at
+      - capture_ended_at
+      - recording_config
+      - assets
       type: object
     CreateRobotModelAssetUploadRequest:
       additionalProperties: false
@@ -11113,6 +11621,53 @@ components:
       - snapshot_token
       title: DatasetPageDiffJobCommand
       type: object
+    DatasetPageEpisodeAlignedMediaBinding:
+      additionalProperties: false
+      description: Immutable logical selector for one already-READY canonical MP4.
+      properties:
+        artifact_id:
+          maxLength: 256
+          minLength: 1
+          title: Artifact Id
+          type: string
+        camera_id:
+          maxLength: 256
+          minLength: 1
+          title: Camera Id
+          type: string
+        dataset_version:
+          minimum: 1.0
+          title: Dataset Version
+          type: integer
+        end_step:
+          exclusiveMinimum: 0.0
+          maximum: 9007199254740991.0
+          title: End Step
+          type: integer
+        fps:
+          const: 30
+          default: 30
+          title: Fps
+          type: integer
+        rollout_id:
+          maxLength: 256
+          minLength: 1
+          title: Rollout Id
+          type: string
+        start_step:
+          maximum: 9007199254740991.0
+          minimum: 0.0
+          title: Start Step
+          type: integer
+      required:
+      - rollout_id
+      - dataset_version
+      - artifact_id
+      - camera_id
+      - start_step
+      - end_step
+      title: DatasetPageEpisodeAlignedMediaBinding
+      type: object
     DatasetPageEpisodeDataBinding:
       additionalProperties: false
       description: 'Immutable logical lineage for a non-camera Viewer stream.
@@ -11276,64 +11831,6 @@ components:
       - included
       - success_state
       title: DatasetPageEpisodeListItem
-      type: object
-    DatasetPageEpisodePreviewBinding:
-      additionalProperties: false
-      description: 'Immutable, safe link from one collection stream to aligned preview data.
-
-
-        A dataset-page revision deliberately never stores a physical Lance URI, object
-
-        key, credential, or signed media URL.  This binding carries only the logical
-
-        lineage the browser needs to ask the preview service for a short-lived HLS
-
-        capability.  It is optional so historic revisions remain readable, but a
-
-        camera stream is *not* browser-playable unless its projection supplies one.'
-      properties:
-        annotation_revision:
-          minimum: 0.0
-          title: Annotation Revision
-          type: integer
-        camera_id:
-          maxLength: 256
-          minLength: 1
-          title: Camera Id
-          type: string
-        end_step:
-          exclusiveMinimum: 0.0
-          maximum: 9007199254740991.0
-          title: End Step
-          type: integer
-        frequency_hz:
-          exclusiveMinimum: 0.0
-          maximum: 240.0
-          title: Frequency Hz
-          type: number
-        lance_version:
-          minimum: 1.0
-          title: Lance Version
-          type: integer
-        rollout_id:
-          maxLength: 256
-          minLength: 1
-          title: Rollout Id
-          type: string
-        start_step:
-          maximum: 9007199254740991.0
-          minimum: 0.0
-          title: Start Step
-          type: integer
-      required:
-      - rollout_id
-      - lance_version
-      - annotation_revision
-      - camera_id
-      - frequency_hz
-      - start_step
-      - end_step
-      title: DatasetPageEpisodePreviewBinding
       type: object
     DatasetPageEpisodeRevision:
       additionalProperties: false
@@ -11513,6 +12010,10 @@ components:
     DatasetPageEpisodeStream:
       additionalProperties: false
       properties:
+        aligned_media_binding:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetPageEpisodeAlignedMediaBinding'
+          - type: 'null'
         channel_path:
           maxLength: 512
           minLength: 1
@@ -11531,10 +12032,6 @@ components:
           minLength: 1
           title: Kind
           type: string
-        preview_binding:
-          anyOf:
-          - $ref: '#/components/schemas/DatasetPageEpisodePreviewBinding'
-          - type: 'null'
         t_end_ns:
           pattern: ^(0|[1-9][0-9]*)$
           title: T End Ns
@@ -13753,44 +14250,247 @@ components:
       - etag
       title: EffectiveModelBinding
       type: object
-    EncodingProfileV1:
-      description: Server-selected immutable profile; never accepted as request input.
+    EpisodeProcessing:
+      additionalProperties: false
       properties:
-        height:
-          maximum: 2160
-          minimum: 16
+        alignment_attempt_id:
+          type:
+          - string
+          - 'null'
+        created_at:
+          format: date-time
+          type: string
+        end_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          type: string
+        finalized_revision:
+          minimum: 1
           type: integer
-        name:
+        qc_report_id:
+          type:
+          - string
+          - 'null'
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: recording-episode/v1
           type: string
-        pixel_format:
-          const: yuv420p
+        scope:
+          $ref: '#/components/schemas/RecordingScope'
+        start_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        status:
+          $ref: '#/components/schemas/EpisodeProcessingStatus'
+        updated_at:
+          format: date-time
           type: string
-        preset:
-          type: string
-        segment_duration_seconds:
-          maximum: 10
-          minimum: 0.25
-          type: number
-        video_bitrate_kbps:
-          maximum: 50000
-          minimum: 64
-          type: integer
-        video_codec:
-          const: h264
-          type: string
-        width:
-          maximum: 4096
-          minimum: 16
+      required:
+      - scope
+      - recording_id
+      - episode_id
+      - finalized_revision
+      - start_offset_ns
+      - end_offset_ns
+      - status
+      - created_at
+      - updated_at
+      type: object
+    EpisodeProcessingEnvelope:
+      additionalProperties: false
+      properties:
+        episode:
+          $ref: '#/components/schemas/EpisodeProcessing'
+      required:
+      - episode
+      type: object
+    EpisodeProcessingPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/EpisodeProcessing'
+          type: array
+        total:
+          minimum: 0
           type: integer
       required:
-      - name
-      - width
-      - height
-      - video_codec
-      - pixel_format
-      - video_bitrate_kbps
-      - segment_duration_seconds
-      - preset
+      - items
+      - total
+      type: object
+    EpisodeProcessingStatus:
+      enum:
+      - PENDING_QC
+      - QC_RUNNING
+      - QC_FAILED
+      - PENDING_ALIGNMENT
+      - ALIGNING
+      - READY
+      - FAILED
+      type: string
+    EpisodeSlice:
+      additionalProperties: false
+      properties:
+        end_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        ended_at:
+          format: date-time
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          type: string
+        notes:
+          maxLength: 4096
+          type:
+          - string
+          - 'null'
+        ordinal:
+          minimum: 0
+          type: integer
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        revision:
+          minimum: 1
+          type: integer
+        schema_version:
+          const: recording-episode-slice/v1
+          type: string
+        scope:
+          $ref: '#/components/schemas/RecordingScope'
+        source_recording_upload_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        source_sha256:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        source_upload_session_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        start_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        started_at:
+          format: date-time
+          type: string
+        task_label:
+          maxLength: 128
+          minLength: 1
+          type:
+          - string
+          - 'null'
+        title:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      required:
+      - scope
+      - recording_id
+      - revision
+      - ordinal
+      - episode_id
+      - start_offset_ns
+      - end_offset_ns
+      - started_at
+      - ended_at
+      - source_sha256
+      type: object
+    EpisodeSliceInput:
+      additionalProperties: false
+      properties:
+        end_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          type: string
+        notes:
+          maxLength: 4096
+          type:
+          - string
+          - 'null'
+        start_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        task_label:
+          maxLength: 128
+          minLength: 1
+          type:
+          - string
+          - 'null'
+        title:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      required:
+      - episode_id
+      - start_offset_ns
+      - end_offset_ns
+      type: object
+    EpisodeVideoSource:
+      additionalProperties: false
+      properties:
+        asset_id:
+          format: uuid
+          type: string
+        byte_range_supported:
+          const: true
+          type: boolean
+        camera_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        codec:
+          type: string
+        end_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        episode_id:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        fps:
+          exclusiveMinimum: 0
+          type: number
+        materialization:
+          const: ORIGINAL_VIDEO_TIME_WINDOW
+          type: string
+        media_type:
+          type: string
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: episode-video-source/v1
+          type: string
+        source_url:
+          type: string
+        start_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+      required:
+      - recording_id
+      - episode_id
+      - asset_id
+      - camera_id
+      - media_type
+      - source_url
+      - start_offset_ns
+      - end_offset_ns
+      - fps
+      - codec
+      - expires_at
+      type: object
+    EpisodeVideoSourceEnvelope:
+      additionalProperties: false
+      properties:
+        sources:
+          items:
+            $ref: '#/components/schemas/EpisodeVideoSource'
+          type: array
+      required:
+      - sources
       type: object
     EvidenceScalar:
       anyOf:
@@ -14077,6 +14777,15 @@ components:
       required:
       - part_number
       - failure_code
+      type: object
+    FinalizeSliceCommand:
+      additionalProperties: false
+      properties:
+        expected_draft_revision:
+          minimum: 1
+          type: integer
+      required:
+      - expected_draft_revision
       type: object
     FindingSeverity:
       enum:
@@ -14389,6 +15098,11 @@ components:
       minLength: 1
       pattern: ^[A-Za-z0-9._-]+$
       type: string
+    IngestProcessingMode:
+      enum:
+      - DIRECT_EPISODE
+      - CONTINUOUS_RECORDING
+      type: string
     IngestWorkflowLocator:
       additionalProperties: false
       properties:
@@ -14421,6 +15135,29 @@ components:
       - status
       - attempts
       - updated_at
+      type: object
+    InstanceReadinessSummary:
+      additionalProperties: false
+      description: Small allowlisted readiness projection; never stores dependency error text.
+      properties:
+        failed_checks:
+          default: []
+          items:
+            pattern: ^[a-z][a-z0-9_-]{0,63}$
+            type: string
+          title: Failed Checks
+          type: array
+        status:
+          enum:
+          - starting
+          - ready
+          - not_ready
+          - draining
+          title: Status
+          type: string
+      required:
+      - status
+      title: InstanceReadinessSummary
       type: object
     InvalidMaskOperation:
       additionalProperties: false
@@ -15190,6 +15927,222 @@ components:
       - username
       - password
       type: object
+    MaintenanceLeaseRequest:
+      additionalProperties: false
+      properties:
+        fencing_token:
+          exclusiveMinimum: 0.0
+          title: Fencing Token
+          type: integer
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      - fencing_token
+      title: MaintenanceLeaseRequest
+      type: object
+    MaintenanceOperation:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        environment_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,126}[A-Za-z0-9])?$
+          title: Environment Id
+          type: string
+        fencing_token:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Fencing Token
+        lease_until:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Lease Until
+        manual_approval_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Manual Approval Id
+        operation_id:
+          maxLength: 128
+          minLength: 1
+          title: Operation Id
+          type: string
+        operation_kind:
+          enum:
+          - BACKUP
+          - RESTORE
+          - MIGRATION
+          - RELEASE
+          - OTHER
+          title: Operation Kind
+          type: string
+        owner_instance_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Owner Instance Id
+        plan_digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Plan Digest
+          type: string
+        reconciliation_passed:
+          title: Reconciliation Passed
+          type: boolean
+        requested_by:
+          maxLength: 255
+          minLength: 1
+          title: Requested By
+          type: string
+        state:
+          $ref: '#/components/schemas/MaintenanceState'
+        state_version:
+          minimum: 0.0
+          title: State Version
+          type: integer
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - operation_id
+      - environment_id
+      - operation_kind
+      - plan_digest
+      - requested_by
+      - state
+      - owner_instance_id
+      - lease_until
+      - state_version
+      - reconciliation_passed
+      - manual_approval_id
+      - created_at
+      - updated_at
+      title: MaintenanceOperation
+      type: object
+    MaintenanceOperationRequest:
+      additionalProperties: false
+      properties:
+        operation_id:
+          maxLength: 128
+          minLength: 1
+          title: Operation Id
+          type: string
+        operation_kind:
+          enum:
+          - BACKUP
+          - RESTORE
+          - MIGRATION
+          - RELEASE
+          - OTHER
+          title: Operation Kind
+          type: string
+        plan_digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Plan Digest
+          type: string
+      required:
+      - operation_id
+      - operation_kind
+      - plan_digest
+      title: MaintenanceOperationRequest
+      type: object
+    MaintenanceOwnerRequest:
+      additionalProperties: false
+      properties:
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      title: MaintenanceOwnerRequest
+      type: object
+    MaintenanceReconciliationRequest:
+      additionalProperties: false
+      properties:
+        expected_state_version:
+          minimum: 0.0
+          title: Expected State Version
+          type: integer
+        fencing_token:
+          exclusiveMinimum: 0.0
+          title: Fencing Token
+          type: integer
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      - fencing_token
+      - expected_state_version
+      title: MaintenanceReconciliationRequest
+      type: object
+    MaintenanceState:
+      enum:
+      - REQUESTED
+      - LEASED
+      - READ_ONLY
+      - DRAINING
+      - FENCED
+      - EXECUTING
+      - VERIFYING
+      - RELEASING
+      - WRITE_ENABLE_PENDING
+      - SUCCEEDED
+      - FAILED_RELEASED
+      - FAILED_READ_ONLY
+      - CANCELLED
+      title: MaintenanceState
+      type: string
+    MaintenanceTransitionRequest:
+      additionalProperties: false
+      properties:
+        expected_state:
+          $ref: '#/components/schemas/MaintenanceState'
+        expected_state_version:
+          minimum: 0.0
+          title: Expected State Version
+          type: integer
+        fencing_token:
+          exclusiveMinimum: 0.0
+          title: Fencing Token
+          type: integer
+        manual_approval_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Manual Approval Id
+        next_state:
+          $ref: '#/components/schemas/MaintenanceState'
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      - fencing_token
+      - expected_state
+      - expected_state_version
+      - next_state
+      title: MaintenanceTransitionRequest
+      type: object
     ManagedAccount:
       additionalProperties: false
       properties:
@@ -15565,6 +16518,7 @@ components:
           default: RAW_MCAP
           enum:
           - RAW_MCAP
+          - CAPTURE_BUNDLE
           - AUXILIARY
           type: string
         sha256:
@@ -16672,6 +17626,33 @@ components:
       - kind
       - samples
       type: object
+    ModelSliceProposalMetadata:
+      additionalProperties: false
+      properties:
+        confidence:
+          maximum: 1
+          minimum: 0
+          type:
+          - number
+          - 'null'
+        model_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        model_version:
+          maxLength: 256
+          minLength: 1
+          type: string
+        prompt_version:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      required:
+      - model_id
+      - model_version
+      type: object
     MutualExclusionConstraint:
       properties:
         constraint_id:
@@ -16690,6 +17671,10 @@ components:
       - tag_ids
       title: MutualExclusionConstraint
       type: object
+    NanosecondsDecimal:
+      description: Nanoseconds encoded as a canonical decimal string for JSON precision.
+      pattern: ^(?:0|[1-9][0-9]*)$
+      type: string
     ObjectRelationConstraint:
       properties:
         relation_type:
@@ -16727,6 +17712,167 @@ components:
       - REBUILDABLE_DERIVATIVE
       - OTHER
       type: string
+    ObjectStoreConfigurationStatus:
+      additionalProperties: false
+      properties:
+        access_key_configured:
+          title: Access Key Configured
+          type: boolean
+        access_key_hint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Access Key Hint
+        activation_required:
+          default: false
+          title: Activation Required
+          type: boolean
+        bucket:
+          title: Bucket
+          type: string
+        configured:
+          title: Configured
+          type: boolean
+        endpoint:
+          title: Endpoint
+          type: string
+        environment_id:
+          title: Environment Id
+          type: string
+        format_version:
+          const: hc-object-store-config/v1
+          default: hc-object-store-config/v1
+          title: Format Version
+          type: string
+        provider:
+          enum:
+          - oss
+          - s3
+          title: Provider
+          type: string
+        public_endpoint:
+          title: Public Endpoint
+          type: string
+        region:
+          title: Region
+          type: string
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        source:
+          enum:
+          - unconfigured
+          - environment
+          - database
+          title: Source
+          type: string
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated At
+      required:
+      - environment_id
+      - revision
+      - source
+      - configured
+      - provider
+      - endpoint
+      - public_endpoint
+      - bucket
+      - region
+      - access_key_configured
+      title: ObjectStoreConfigurationStatus
+      type: object
+    ObjectStoreConfigurationUpdate:
+      additionalProperties: false
+      properties:
+        access_key:
+          anyOf:
+          - format: password
+            maxLength: 512
+            minLength: 1
+            type: string
+            writeOnly: true
+          - type: 'null'
+          title: Access Key
+        bucket:
+          pattern: ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$
+          title: Bucket
+          type: string
+        endpoint:
+          maxLength: 2048
+          minLength: 1
+          title: Endpoint
+          type: string
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        provider:
+          const: oss
+          default: oss
+          title: Provider
+          type: string
+        public_endpoint:
+          maxLength: 2048
+          minLength: 1
+          title: Public Endpoint
+          type: string
+        region:
+          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
+          title: Region
+          type: string
+        secret_key:
+          anyOf:
+          - format: password
+            maxLength: 2048
+            minLength: 1
+            type: string
+            writeOnly: true
+          - type: 'null'
+          title: Secret Key
+      required:
+      - expected_revision
+      - endpoint
+      - public_endpoint
+      - bucket
+      - region
+      title: ObjectStoreConfigurationUpdate
+      type: object
+    ObjectStoreLocationStatus:
+      additionalProperties: false
+      description: Authenticated, credential-free storage location for the shell selector.
+      properties:
+        configured:
+          title: Configured
+          type: boolean
+        format_version:
+          const: hc-object-store-location/v1
+          default: hc-object-store-location/v1
+          title: Format Version
+          type: string
+        provider:
+          enum:
+          - oss
+          - s3
+          title: Provider
+          type: string
+        public_endpoint:
+          title: Public Endpoint
+          type: string
+        region:
+          title: Region
+          type: string
+      required:
+      - configured
+      - provider
+      - public_endpoint
+      - region
+      title: ObjectStoreLocationStatus
+      type: object
     OperationKind:
       enum:
       - EXCLUDE
@@ -16940,31 +18086,829 @@ components:
       - publish
       - administer
       type: string
-    PlaceholderDescriptorV1:
-      properties:
-        code:
-          const: INVALID_IMAGE_STEP
-          type: string
-        invalid_reason:
-          minLength: 1
-          type: string
-        playback_frame:
-          minimum: 0
-          type: integer
-        step_index:
-          minimum: 0
-          type: integer
-      required:
-      - code
-      - invalid_reason
-      - playback_frame
-      - step_index
-      type: object
     PlatformAccountRole:
       enum:
       - USER
       - PLATFORM_ADMIN
       type: string
+    PlatformAuditEventProjection:
+      additionalProperties: false
+      properties:
+        actor:
+          $ref: '#/components/schemas/PlatformAuditSubjectRef'
+        domain:
+          enum:
+          - BACKUP
+          - RESTORE
+          - RELEASE
+          - PLATFORM
+          title: Domain
+          type: string
+        event_id:
+          format: uuid
+          title: Event Id
+          type: string
+        event_name:
+          maxLength: 255
+          minLength: 1
+          title: Event Name
+          type: string
+        integrity:
+          const: CHAINED
+          default: CHAINED
+          title: Integrity
+          type: string
+        occurred_at:
+          format: date-time
+          title: Occurred At
+          type: string
+        outcome:
+          enum:
+          - SUCCEEDED
+          - DENIED
+          - FAILED
+          title: Outcome
+          type: string
+        redaction:
+          $ref: '#/components/schemas/PlatformAuditRedaction'
+        request_id:
+          maxLength: 255
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,253}[A-Za-z0-9])?$
+          title: Request Id
+          type: string
+        resource:
+          $ref: '#/components/schemas/PlatformAuditResourceRef'
+        schema_version:
+          const: hc-platform-audit-event/v1
+          default: hc-platform-audit-event/v1
+          title: Schema Version
+          type: string
+        sequence_no:
+          exclusiveMinimum: 0.0
+          title: Sequence No
+          type: integer
+      required:
+      - event_id
+      - sequence_no
+      - domain
+      - event_name
+      - occurred_at
+      - actor
+      - resource
+      - request_id
+      - outcome
+      - redaction
+      title: PlatformAuditEventProjection
+      type: object
+    PlatformAuditIntegrity:
+      additionalProperties: false
+      properties:
+        checked_at:
+          format: date-time
+          title: Checked At
+          type: string
+        checked_chain_count:
+          maximum: 1.0
+          minimum: 0.0
+          title: Checked Chain Count
+          type: integer
+        checked_event_count:
+          minimum: 0.0
+          title: Checked Event Count
+          type: integer
+        format_version:
+          const: hc-platform-audit-integrity/v1
+          default: hc-platform-audit-integrity/v1
+          title: Format Version
+          type: string
+        status:
+          enum:
+          - PASSED
+          - FAILED
+          title: Status
+          type: string
+        verified_through:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Verified Through
+      required:
+      - status
+      - checked_at
+      - checked_event_count
+      - checked_chain_count
+      title: PlatformAuditIntegrity
+      type: object
+    PlatformAuditPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-audit-page/v1
+          default: hc-platform-audit-page/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformAuditEventProjection'
+          title: Items
+          type: array
+        next_cursor:
+          anyOf:
+          - maxLength: 16384
+            type: string
+          - type: 'null'
+          title: Next Cursor
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - snapshot_at
+      - count
+      - items
+      title: PlatformAuditPage
+      type: object
+    PlatformAuditRedaction:
+      additionalProperties: false
+      properties:
+        omitted_field_classes:
+          default:
+          - actor_identifier
+          - resource_identifier
+          - safe_details_values
+          items:
+            type: string
+          title: Omitted Field Classes
+          type: array
+        policy_version:
+          const: platform-audit-redaction/v1
+          default: platform-audit-redaction/v1
+          title: Policy Version
+          type: string
+        retained_detail_keys:
+          default: []
+          items:
+            type: string
+          title: Retained Detail Keys
+          type: array
+      title: PlatformAuditRedaction
+      type: object
+    PlatformAuditResourceRef:
+      additionalProperties: false
+      properties:
+        id_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Id Ref
+          type: string
+        type:
+          maxLength: 128
+          minLength: 1
+          title: Type
+          type: string
+      required:
+      - type
+      - id_ref
+      title: PlatformAuditResourceRef
+      type: object
+    PlatformAuditSubjectRef:
+      additionalProperties: false
+      properties:
+        id_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Id Ref
+          type: string
+        type:
+          const: USER_OR_SERVICE
+          default: USER_OR_SERVICE
+          title: Type
+          type: string
+      required:
+      - id_ref
+      title: PlatformAuditSubjectRef
+      type: object
+    PlatformInstance:
+      additionalProperties: false
+      description: One database-observed platform process in the node directory.
+      properties:
+        applied_config_revision:
+          minimum: 0.0
+          title: Applied Config Revision
+          type: integer
+        component_image_digest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - const: unreleased
+            type: string
+          title: Component Image Digest
+        instance_id:
+          format: uuid
+          title: Instance Id
+          type: string
+        kubernetes_node_name:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Kubernetes Node Name
+        kubernetes_zone:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Kubernetes Zone
+        last_heartbeat_at:
+          format: date-time
+          title: Last Heartbeat At
+          type: string
+        node_name:
+          maxLength: 253
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+          title: Node Name
+          type: string
+        pod_name:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Pod Name
+        readiness:
+          $ref: '#/components/schemas/InstanceReadinessSummary'
+        release_id:
+          pattern: ^(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})$
+          title: Release Id
+          type: string
+        release_manifest_digest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - const: unreleased
+            type: string
+          title: Release Manifest Digest
+        role:
+          enum:
+          - frontend
+          - api
+          - worker
+          - media-worker
+          - maintenance-controller
+          title: Role
+          type: string
+        runtime_version:
+          maxLength: 128
+          minLength: 1
+          title: Runtime Version
+          type: string
+        stale:
+          title: Stale
+          type: boolean
+        started_at:
+          format: date-time
+          title: Started At
+          type: string
+      required:
+      - instance_id
+      - node_name
+      - role
+      - release_id
+      - release_manifest_digest
+      - component_image_digest
+      - runtime_version
+      - started_at
+      - last_heartbeat_at
+      - readiness
+      - applied_config_revision
+      - stale
+      title: PlatformInstance
+      type: object
+    PlatformInstancePage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-instance-directory/v1
+          default: hc-platform-instance-directory/v1
+          title: Format Version
+          type: string
+        heartbeat_interval_seconds:
+          const: 30
+          default: 30
+          title: Heartbeat Interval Seconds
+          type: integer
+        instances:
+          items:
+            $ref: '#/components/schemas/PlatformInstance'
+          title: Instances
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        stale_after_seconds:
+          const: 90
+          default: 90
+          title: Stale After Seconds
+          type: integer
+      required:
+      - observed_at
+      - count
+      - instances
+      title: PlatformInstancePage
+      type: object
+    PlatformLogEvent:
+      additionalProperties: false
+      properties:
+        duration_ms:
+          anyOf:
+          - minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Duration Ms
+        error_type:
+          anyOf:
+          - pattern: ^[A-Za-z][A-Za-z0-9_.]{0,127}$
+            type: string
+          - type: 'null'
+          title: Error Type
+        event_code:
+          pattern: ^[A-Z][A-Z0-9_.-]{0,127}$
+          title: Event Code
+          type: string
+        http_method:
+          anyOf:
+          - enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - HEAD
+            - OPTIONS
+            type: string
+          - type: 'null'
+          title: Http Method
+        operation_id:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Operation Id
+        release_id:
+          maxLength: 253
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+          title: Release Id
+          type: string
+        request_id:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Request Id
+        retry_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Retry Count
+        role:
+          enum:
+          - api
+          - worker
+          - media-worker
+          - frontend
+          - gateway
+          title: Role
+          type: string
+        route:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            pattern: ^/[A-Za-z0-9{}_.:/-]*$
+            type: string
+          - type: 'null'
+          title: Route
+        schema_version:
+          const: hc-platform-log-event/v1
+          default: hc-platform-log-event/v1
+          title: Schema Version
+          type: string
+        service:
+          enum:
+          - hc-data-platform-api
+          - hc-data-platform-worker
+          - hc-data-platform-media-worker
+          - hc-data-platform-frontend
+          - hc-data-platform-gateway
+          title: Service
+          type: string
+        severity:
+          enum:
+          - TRACE
+          - DEBUG
+          - INFO
+          - WARN
+          - ERROR
+          - FATAL
+          title: Severity
+          type: string
+        status_code:
+          anyOf:
+          - maximum: 599.0
+            minimum: 100.0
+            type: integer
+          - type: 'null'
+          title: Status Code
+        timestamp:
+          format: date-time
+          title: Timestamp
+          type: string
+        workflow_id:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Workflow Id
+      required:
+      - timestamp
+      - severity
+      - service
+      - role
+      - release_id
+      - event_code
+      - request_id
+      - operation_id
+      - workflow_id
+      - error_type
+      title: PlatformLogEvent
+      type: object
+    PlatformLogPage:
+      additionalProperties: false
+      properties:
+        count:
+          maximum: 200.0
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-log-page/v1
+          default: hc-platform-log-page/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformLogEvent'
+          maxItems: 200
+          title: Items
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        occurred_from:
+          format: date-time
+          title: Occurred From
+          type: string
+        occurred_to:
+          format: date-time
+          title: Occurred To
+          type: string
+        truncated:
+          title: Truncated
+          type: boolean
+      required:
+      - observed_at
+      - occurred_from
+      - occurred_to
+      - count
+      - truncated
+      - items
+      title: PlatformLogPage
+      type: object
+    PlatformOperationsBackup:
+      additionalProperties: false
+      description: A backup projection without repository, environment, or object locators.
+      properties:
+        backup_completed_at:
+          format: date-time
+          title: Backup Completed At
+          type: string
+        backup_created_at:
+          format: date-time
+          title: Backup Created At
+          type: string
+        backup_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Backup Ref
+          type: string
+        format_version:
+          const: hc-platform-backup/v1
+          title: Format Version
+          type: string
+        mode:
+          enum:
+          - portable
+          - snapshot
+          title: Mode
+          type: string
+        release_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Release Manifest Sha256
+          type: string
+        status:
+          enum:
+          - CREATING
+          - CREATED
+          - INTEGRITY_VERIFIED
+          - RESTORE_VERIFIED
+          - FAILED
+          - CORRUPT
+          - EXPIRED
+          title: Status
+          type: string
+        status_occurred_at:
+          format: date-time
+          title: Status Occurred At
+          type: string
+      required:
+      - backup_ref
+      - format_version
+      - mode
+      - status
+      - release_manifest_sha256
+      - backup_created_at
+      - backup_completed_at
+      - status_occurred_at
+      title: PlatformOperationsBackup
+      type: object
+    PlatformOperationsNode:
+      additionalProperties: false
+      description: An operational node projection with every host and process locator removed.
+      properties:
+        applied_config_revision:
+          minimum: 0.0
+          title: Applied Config Revision
+          type: integer
+        failed_checks:
+          items:
+            pattern: ^[a-z][a-z0-9_-]{0,63}$
+            type: string
+          title: Failed Checks
+          type: array
+        last_heartbeat_at:
+          format: date-time
+          title: Last Heartbeat At
+          type: string
+        node_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Node Ref
+          type: string
+        readiness:
+          enum:
+          - starting
+          - ready
+          - not_ready
+          - draining
+          title: Readiness
+          type: string
+        release_id:
+          pattern: ^(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})$
+          title: Release Id
+          type: string
+        release_manifest_digest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - const: unreleased
+            type: string
+          title: Release Manifest Digest
+        role:
+          enum:
+          - frontend
+          - api
+          - worker
+          - media-worker
+          - maintenance-controller
+          title: Role
+          type: string
+        stale:
+          title: Stale
+          type: boolean
+        started_at:
+          format: date-time
+          title: Started At
+          type: string
+      required:
+      - node_ref
+      - role
+      - release_id
+      - release_manifest_digest
+      - started_at
+      - last_heartbeat_at
+      - readiness
+      - failed_checks
+      - applied_config_revision
+      - stale
+      title: PlatformOperationsNode
+      type: object
+    PlatformOperationsOverview:
+      additionalProperties: false
+      properties:
+        backup_count:
+          maximum: 20.0
+          minimum: 0.0
+          title: Backup Count
+          type: integer
+        backups:
+          items:
+            $ref: '#/components/schemas/PlatformOperationsBackup'
+          maxItems: 20
+          title: Backups
+          type: array
+        environment_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Environment Ref
+          type: string
+        format_version:
+          const: hc-platform-operations-overview/v1
+          default: hc-platform-operations-overview/v1
+          title: Format Version
+          type: string
+        node_count:
+          minimum: 0.0
+          title: Node Count
+          type: integer
+        nodes:
+          items:
+            $ref: '#/components/schemas/PlatformOperationsNode'
+          title: Nodes
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        release:
+          $ref: '#/components/schemas/PlatformReleaseIdentityV1'
+        upgrade_preflight:
+          $ref: '#/components/schemas/UpgradePreflight'
+      required:
+      - observed_at
+      - environment_ref
+      - release
+      - node_count
+      - nodes
+      - backup_count
+      - backups
+      - upgrade_preflight
+      title: PlatformOperationsOverview
+      type: object
+    PlatformProject:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Project Id
+          type: string
+        project_name:
+          maxLength: 256
+          minLength: 1
+          title: Project Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      - project_id
+      - project_name
+      title: PlatformProject
+      type: object
+    PlatformProjectCreate:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Project Id
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      - project_id
+      title: PlatformProjectCreate
+      type: object
+    PlatformProjectPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          default: hc-platform-project-directory/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformProject'
+          title: Items
+          type: array
+      required:
+      - count
+      - items
+      title: PlatformProjectPage
+      type: object
+    PlatformReleaseIdentityV1:
+      additionalProperties: false
+      properties:
+        chart_version:
+          pattern: ^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$
+          type: string
+        component:
+          enum:
+          - api
+          - worker
+          - media-worker
+          - migration
+          - frontend
+          type: string
+        component_image_digest:
+          $ref: '#/components/schemas/ReleaseIdentityDigest'
+        format_version:
+          const: hc-platform-release-identity/v1
+          default: hc-platform-release-identity/v1
+          type: string
+        git_commit:
+          oneOf:
+          - pattern: ^[0-9a-f]{40}$
+            type: string
+          - const: unknown
+            type: string
+        migration_manifest_digest:
+          $ref: '#/components/schemas/ReleaseIdentityDigest'
+        release_id:
+          pattern: ^(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})$
+          type: string
+        release_manifest_digest:
+          $ref: '#/components/schemas/ReleaseIdentityDigest'
+        semantic_version:
+          pattern: ^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$
+          type: string
+      required:
+      - release_id
+      - semantic_version
+      - git_commit
+      - chart_version
+      - release_manifest_digest
+      - migration_manifest_digest
+      - component
+      - component_image_digest
+      type: object
     PointCloudQualityProfileV1:
       additionalProperties: false
       properties:
@@ -17049,86 +18993,6 @@ components:
       - scope
       - request_id
       title: PreviewAcceptedEnvelope
-      type: object
-    PreviewDescriptorV1:
-      properties:
-        annotation_revision:
-          type: integer
-        artifact_expires_at:
-          format: date-time
-          type: string
-        artifact_key:
-          pattern: ^[0-9a-f]{64}$
-          type: string
-        camera_id:
-          type: string
-        dataset_id:
-          type: string
-        duration_seconds:
-          minimum: 0
-          type: number
-        encoding_profile:
-          $ref: '#/components/schemas/EncodingProfileV1'
-        frame_count:
-          minimum: 0
-          type: integer
-        lance_version:
-          type: string
-        media_type:
-          type: string
-        placeholder_count:
-          minimum: 0
-          type: integer
-        placeholders:
-          items:
-            $ref: '#/components/schemas/PlaceholderDescriptorV1'
-          type: array
-        playlist_url:
-          type: string
-        profile_id:
-          type: string
-        project_id:
-          type: string
-        rollout_id:
-          type: string
-        schema_version:
-          const: 1
-          type: integer
-        session_id:
-          type: string
-        signed_url_expires_at:
-          format: date-time
-          type: string
-        timeline:
-          $ref: '#/components/schemas/TimelineMappingV1'
-        view_mode:
-          enum:
-          - original
-          - edited
-          - compare
-          type: string
-      required:
-      - schema_version
-      - session_id
-      - artifact_key
-      - project_id
-      - dataset_id
-      - rollout_id
-      - lance_version
-      - annotation_revision
-      - camera_id
-      - view_mode
-      - profile_id
-      - encoding_profile
-      - playlist_url
-      - media_type
-      - frame_count
-      - placeholder_count
-      - placeholders
-      - duration_seconds
-      - timeline
-      - artifact_expires_at
-      - signed_url_expires_at
       type: object
     PreviewExpiredOrStale:
       additionalProperties: false
@@ -17243,93 +19107,6 @@ components:
       - created_at
       - error_ref
       title: PreviewFailed
-      type: object
-    PreviewJobDescriptorV1:
-      properties:
-        artifact_key:
-          pattern: ^[0-9a-f]{64}$
-          type: string
-        completed_at:
-          format: date-time
-          type:
-          - string
-          - 'null'
-        created_at:
-          format: date-time
-          type: string
-        error_code:
-          type:
-          - string
-          - 'null'
-        job_id:
-          type: string
-        progress:
-          maximum: 100
-          minimum: 0
-          type: integer
-        retry_after_seconds:
-          maximum: 60
-          minimum: 1
-          type:
-          - integer
-          - 'null'
-        schema_version:
-          const: 1
-          type: integer
-        started_at:
-          format: date-time
-          type:
-          - string
-          - 'null'
-        status:
-          enum:
-          - QUEUED
-          - RUNNING
-          - SUCCEEDED
-          - FAILED
-          - CANCELLED
-          type: string
-      required:
-      - schema_version
-      - job_id
-      - artifact_key
-      - status
-      - progress
-      - created_at
-      type: object
-    PreviewPendingDescriptorV1:
-      properties:
-        artifact_key:
-          pattern: ^[0-9a-f]{64}$
-          type: string
-        error_code:
-          type:
-          - string
-          - 'null'
-        job_id:
-          type: string
-        retry_after_seconds:
-          maximum: 60
-          minimum: 1
-          type: integer
-        schema_version:
-          const: 1
-          type: integer
-        status:
-          enum:
-          - QUEUED
-          - RUNNING
-          - FAILED
-          type: string
-        status_url:
-          type: string
-      required:
-      - schema_version
-      - status
-      - artifact_key
-      - job_id
-      - status_url
-      - retry_after_seconds
       type: object
     PreviewQueued:
       additionalProperties: false
@@ -17446,60 +19223,6 @@ components:
       - summary
       - expires_at
       title: PreviewReady
-      type: object
-    PreviewRequestV1:
-      properties:
-        annotation_revision:
-          default: 0
-          minimum: 0
-          type: integer
-        camera_id:
-          minLength: 1
-          type: string
-        dataset_id:
-          minLength: 1
-          type: string
-        end_step:
-          minimum: 1
-          type:
-          - integer
-          - 'null'
-        frequency_hz:
-          default: 30
-          exclusiveMinimum: 0
-          maximum: 240
-          type: number
-        lance_version:
-          minLength: 1
-          type: string
-        profile_id:
-          default: annotation-h264-720p-v1
-          pattern: ^[a-z0-9][a-z0-9-]*$
-          type: string
-        project_id:
-          minLength: 1
-          type: string
-        rollout_id:
-          minLength: 1
-          type: string
-        start_step:
-          minimum: 0
-          type:
-          - integer
-          - 'null'
-        view_mode:
-          default: original
-          enum:
-          - original
-          - edited
-          - compare
-          type: string
-      required:
-      - project_id
-      - dataset_id
-      - rollout_id
-      - lance_version
-      - camera_id
       type: object
     PreviewRunning:
       additionalProperties: false
@@ -17632,6 +19355,21 @@ components:
       - publisher
       - admin
       type: string
+    ProposeModelSlicesCommand:
+      additionalProperties: false
+      properties:
+        model:
+          $ref: '#/components/schemas/ModelSliceProposalMetadata'
+        slices:
+          items:
+            $ref: '#/components/schemas/EpisodeSliceInput'
+          maxItems: 10000
+          minItems: 1
+          type: array
+      required:
+      - slices
+      - model
+      type: object
     PublicAuthChallengeConfiguration:
       additionalProperties: false
       properties:
@@ -18144,10 +19882,15 @@ components:
           format: date-time
           type: string
         format:
-          const: MCAP
+          default: MCAP
+          enum:
+          - MCAP
+          - CAPTURE_BUNDLE
           type: string
         media_type:
-          const: application/x-mcap
+          default: application/x-mcap
+          maxLength: 128
+          minLength: 1
           type: string
         schema_version:
           const: raw-media-source/v1
@@ -18169,6 +19912,10 @@ components:
         committed_at:
           format: date-time
           type: string
+        continuous_recording_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
         data_package_id:
           $ref: '#/components/schemas/IngestIdentifier'
         event_type:
@@ -18183,6 +19930,10 @@ components:
         object_key:
           pattern: ^raw/v1/
           type: string
+        processing_mode:
+          allOf:
+          - $ref: '#/components/schemas/IngestProcessingMode'
+          default: DIRECT_EPISODE
         project_id:
           $ref: '#/components/schemas/IngestIdentifier'
         region_code:
@@ -18327,6 +20078,331 @@ components:
       - change_summary
       title: RecalibrateCalibrationSetRequest
       type: object
+    RecordingAssetManifest:
+      additionalProperties: false
+      properties:
+        camera_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
+        crc64:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        media_type:
+          maxLength: 255
+          minLength: 1
+          type: string
+        part_count:
+          default: 1
+          maximum: 10000
+          minimum: 1
+          type: integer
+        path:
+          maxLength: 1024
+          minLength: 1
+          type: string
+        role:
+          $ref: '#/components/schemas/RecordingAssetRole'
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        size:
+          minimum: 1
+          type: integer
+      required:
+      - path
+      - role
+      - media_type
+      - size
+      - sha256
+      type: object
+    RecordingAssetPartGrant:
+      additionalProperties: false
+      properties:
+        asset_id:
+          format: uuid
+          type: string
+        parts:
+          items:
+            $ref: '#/components/schemas/PartAuthorization'
+          type: array
+      required:
+      - asset_id
+      - parts
+      type: object
+    RecordingAssetRole:
+      enum:
+      - RAW_VIDEO
+      - SENSOR_DATA
+      - RECORDING_CONFIG
+      - CALIBRATION
+      - AUXILIARY
+      type: string
+    RecordingAssetStatus:
+      enum:
+      - UPLOADING
+      - COMMITTED
+      - FAILED
+      type: string
+    RecordingAssetSummary:
+      additionalProperties: false
+      properties:
+        asset_id:
+          format: uuid
+          type: string
+        camera_id:
+          anyOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
+        media_type:
+          type: string
+        path:
+          type: string
+        role:
+          $ref: '#/components/schemas/RecordingAssetRole'
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        size:
+          minimum: 1
+          type: integer
+        status:
+          $ref: '#/components/schemas/RecordingAssetStatus'
+      required:
+      - asset_id
+      - path
+      - role
+      - media_type
+      - size
+      - sha256
+      - status
+      type: object
+    RecordingAssetUploadGrant:
+      additionalProperties: false
+      properties:
+        asset:
+          $ref: '#/components/schemas/RecordingAssetSummary'
+        multipart_upload_id:
+          type: string
+        parts:
+          items:
+            $ref: '#/components/schemas/PartAuthorization'
+          type: array
+      required:
+      - asset
+      - multipart_upload_id
+      - parts
+      type: object
+    RecordingConfiguration:
+      additionalProperties: false
+      properties:
+        cameras:
+          items:
+            $ref: '#/components/schemas/CameraRecordingConfig'
+          maxItems: 128
+          minItems: 1
+          type: array
+        primary_clock_domain:
+          maxLength: 128
+          minLength: 1
+          type: string
+        recorder_version:
+          maxLength: 128
+          minLength: 1
+          type: string
+        schema_version:
+          const: recording-config/v1
+          type: string
+      required:
+      - recorder_version
+      - primary_clock_domain
+      - cameras
+      type: object
+    RecordingScope:
+      additionalProperties: false
+      properties:
+        organization_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        region_code:
+          $ref: '#/components/schemas/IngestIdentifier'
+      required:
+      - organization_id
+      - project_id
+      - region_code
+      type: object
+    RecordingSliceRevision:
+      additionalProperties: false
+      properties:
+        authoring_mode:
+          $ref: '#/components/schemas/SliceAuthoringMode'
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          maxLength: 512
+          minLength: 1
+          type: string
+        model:
+          anyOf:
+          - $ref: '#/components/schemas/ModelSliceProposalMetadata'
+          - type: 'null'
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        revision:
+          minimum: 1
+          type: integer
+        schema_version:
+          const: recording-slice-revision/v1
+          type: string
+        scope:
+          $ref: '#/components/schemas/RecordingScope'
+        slices:
+          items:
+            $ref: '#/components/schemas/EpisodeSlice'
+          type: array
+        status:
+          $ref: '#/components/schemas/SliceRevisionStatus'
+      required:
+      - scope
+      - recording_id
+      - revision
+      - status
+      - slices
+      - created_by
+      - created_at
+      type: object
+    RecordingStatus:
+      enum:
+      - READY_FOR_SLICING
+      - SLICED
+      type: string
+    RecordingUpload:
+      additionalProperties: false
+      properties:
+        command:
+          $ref: '#/components/schemas/CreateRecordingUploadCommand'
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        schema_version:
+          const: continuous-recording-upload/v2
+          type: string
+        scope:
+          $ref: '#/components/schemas/RecordingScope'
+        status:
+          $ref: '#/components/schemas/RecordingUploadStatus'
+        updated_at:
+          format: date-time
+          type: string
+        upload_id:
+          format: uuid
+          type: string
+      required:
+      - scope
+      - upload_id
+      - command
+      - manifest_sha256
+      - status
+      - created_by
+      - created_at
+      - updated_at
+      type: object
+    RecordingUploadEnvelope:
+      additionalProperties: false
+      properties:
+        assets:
+          items:
+            $ref: '#/components/schemas/RecordingAssetSummary'
+          type: array
+        upload:
+          $ref: '#/components/schemas/RecordingUpload'
+      required:
+      - upload
+      - assets
+      type: object
+    RecordingUploadGrant:
+      additionalProperties: false
+      properties:
+        assets:
+          items:
+            $ref: '#/components/schemas/RecordingAssetUploadGrant'
+          type: array
+        upload:
+          $ref: '#/components/schemas/RecordingUpload'
+      required:
+      - upload
+      - assets
+      type: object
+    RecordingUploadStatus:
+      enum:
+      - UPLOADING
+      - READY_TO_COMMIT
+      - COMMITTED
+      - FAILED
+      type: string
+    RecordingVideoSource:
+      additionalProperties: false
+      properties:
+        asset_id:
+          format: uuid
+          type: string
+        byte_range_supported:
+          const: true
+          type: boolean
+        camera_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        codec:
+          type: string
+        duration_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        expires_at:
+          format: date-time
+          type: string
+        fps:
+          exclusiveMinimum: 0
+          type: number
+        materialization:
+          const: ORIGINAL_RECORDING
+          type: string
+        media_type:
+          type: string
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: recording-video-source/v1
+          type: string
+        source_url:
+          type: string
+      required:
+      - recording_id
+      - asset_id
+      - camera_id
+      - media_type
+      - source_url
+      - duration_ns
+      - fps
+      - codec
+      - expires_at
+      type: object
+    RecordingVideoSourceEnvelope:
+      additionalProperties: false
+      properties:
+        sources:
+          items:
+            $ref: '#/components/schemas/RecordingVideoSource'
+          type: array
+      required:
+      - sources
+      type: object
     RecoveryEmailConfigured:
       additionalProperties: false
       properties:
@@ -18358,6 +20434,15 @@ components:
           type: string
       required:
       - recovery_email
+      type: object
+    RegisterContinuousRecordingCommand:
+      additionalProperties: false
+      properties:
+        upload_session_id:
+          format: uuid
+          type: string
+      required:
+      - upload_session_id
       type: object
     RegistrationCommand:
       additionalProperties: false
@@ -18403,6 +20488,197 @@ components:
       required:
       - organization_id
       title: RegistryScope
+      type: object
+    ReleaseApprovalRequest:
+      additionalProperties: false
+      properties:
+        expected_state_version:
+          exclusiveMinimum: 0
+          type: integer
+        reason:
+          maxLength: 500
+          minLength: 8
+          type: string
+      required:
+      - expected_state_version
+      - reason
+      type: object
+    ReleaseEvent:
+      additionalProperties: false
+      properties:
+        actor_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          type: string
+        event_kind:
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        reason_code:
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: string
+        state:
+          $ref: '#/components/schemas/ReleaseState'
+        state_version:
+          exclusiveMinimum: 0
+          type: integer
+      required:
+      - state_version
+      - event_kind
+      - state
+      - actor_ref
+      - reason_code
+      - occurred_at
+      type: object
+    ReleaseHistoryPage:
+      additionalProperties: false
+      properties:
+        count:
+          maximum: 50
+          minimum: 0
+          type: integer
+        format_version:
+          const: hc-platform-release-history/v1
+          default: hc-platform-release-history/v1
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/ReleaseRun'
+          maxItems: 50
+          type: array
+      required:
+      - count
+      - items
+      type: object
+    ReleaseIdentityDigest:
+      oneOf:
+      - pattern: ^sha256:[0-9a-f]{64}$
+        type: string
+      - const: unreleased
+        type: string
+    ReleaseImageReference:
+      maxLength: 512
+      minLength: 10
+      pattern: ^[^@\s]+@sha256:[0-9a-f]{64}$
+      type: string
+    ReleaseImagesV1:
+      additionalProperties: false
+      properties:
+        api:
+          $ref: '#/components/schemas/ReleaseImageReference'
+        frontend:
+          $ref: '#/components/schemas/ReleaseImageReference'
+        media_worker:
+          $ref: '#/components/schemas/ReleaseImageReference'
+        worker:
+          $ref: '#/components/schemas/ReleaseImageReference'
+      required:
+      - frontend
+      - api
+      - worker
+      - media_worker
+      type: object
+    ReleasePreflightRequest:
+      additionalProperties: false
+      properties:
+        minimum_feed_sequence:
+          exclusiveMinimum: 0
+          type: integer
+        signed_feed:
+          additionalProperties: true
+          type: object
+        source_images:
+          $ref: '#/components/schemas/ReleaseImagesV1'
+        target_release_id:
+          pattern: ^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$
+          type: string
+      required:
+      - target_release_id
+      - minimum_feed_sequence
+      - source_images
+      - signed_feed
+      type: object
+    ReleaseRun:
+      additionalProperties: false
+      properties:
+        approval_required:
+          const: true
+          default: true
+          type: boolean
+        approved:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        events:
+          items:
+            $ref: '#/components/schemas/ReleaseEvent'
+          type: array
+        format_version:
+          const: hc-platform-release-run/v1
+          default: hc-platform-release-run/v1
+          type: string
+        manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        release_id:
+          pattern: ^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$
+          type: string
+        source_version:
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+          type: string
+        state:
+          $ref: '#/components/schemas/ReleaseState'
+        state_version:
+          exclusiveMinimum: 0
+          type: integer
+        target_version:
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - release_id
+      - source_version
+      - target_version
+      - manifest_sha256
+      - state
+      - state_version
+      - approved
+      - created_at
+      - updated_at
+      - events
+      type: object
+    ReleaseState:
+      enum:
+      - PREFLIGHT_BLOCKED
+      - AWAITING_APPROVAL
+      - APPROVED
+      - EXPAND
+      - CANARY
+      - ROLLOUT
+      - CONTRACT_PENDING
+      - COMPLETED
+      - ROLLED_BACK
+      - FAILED
+      type: string
+    ReleaseTransitionRequest:
+      additionalProperties: false
+      properties:
+        expected_state_version:
+          exclusiveMinimum: 0
+          type: integer
+        next_state:
+          $ref: '#/components/schemas/ReleaseState'
+        reason_code:
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: string
+      required:
+      - expected_state_version
+      - next_state
+      - reason_code
       type: object
     ReplaceRobotModelJointMappingsRequest:
       additionalProperties: false
@@ -19887,6 +22163,10 @@ components:
           anyOf:
           - $ref: '#/components/schemas/IngestIdentifier'
           - type: 'null'
+        processing_mode:
+          allOf:
+          - $ref: '#/components/schemas/IngestProcessingMode'
+          default: DIRECT_EPISODE
         project_id:
           $ref: '#/components/schemas/IngestIdentifier'
         recorder_version:
@@ -19912,6 +22192,7 @@ components:
         source_recording:
           anyOf:
           - $ref: '#/components/schemas/HuggingFaceEpisodeSourceV1'
+          - $ref: '#/components/schemas/ContinuousCaptureSourceV1'
           - type: 'null'
         start_time:
           format: date-time
@@ -19971,6 +22252,148 @@ components:
       - credential_input
       - reason
       title: RotateCredentialCommand
+      type: object
+    RuntimeConfigHistoryPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-runtime-config-history/v1
+          default: hc-runtime-config-history/v1
+          title: Format Version
+          type: string
+        revisions:
+          items:
+            $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          title: Revisions
+          type: array
+      required:
+      - count
+      - revisions
+      title: RuntimeConfigHistoryPage
+      type: object
+    RuntimeConfigPublishRequest:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        reason:
+          maxLength: 500
+          minLength: 8
+          title: Reason
+          type: string
+        schema_version:
+          const: hc-runtime-config/v1
+          title: Schema Version
+          type: string
+        values:
+          additionalProperties: true
+          maxProperties: 3
+          minProperties: 1
+          title: Values
+          type: object
+      required:
+      - expected_revision
+      - schema_version
+      - values
+      - reason
+      title: RuntimeConfigPublishRequest
+      type: object
+    RuntimeConfigRollbackRequest:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        reason:
+          maxLength: 500
+          minLength: 8
+          title: Reason
+          type: string
+      required:
+      - expected_revision
+      - reason
+      title: RuntimeConfigRollbackRequest
+      type: object
+    RuntimeConfigSnapshot:
+      additionalProperties: false
+      properties:
+        actor_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Actor Id
+        content_sha256:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Content Sha256
+          type: string
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created At
+        environment_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,126}[A-Za-z0-9])?$
+          title: Environment Id
+          type: string
+        format_version:
+          const: hc-runtime-config-snapshot/v1
+          default: hc-runtime-config-snapshot/v1
+          title: Format Version
+          type: string
+        reason:
+          anyOf:
+          - maxLength: 500
+            minLength: 8
+            type: string
+          - type: 'null'
+          title: Reason
+        request_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Request Id
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        rollback_of_revision:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Rollback Of Revision
+        schema_version:
+          const: hc-runtime-config/v1
+          default: hc-runtime-config/v1
+          title: Schema Version
+          type: string
+        values:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+          title: Values
+          type: object
+      required:
+      - environment_id
+      - revision
+      - values
+      - content_sha256
+      title: RuntimeConfigSnapshot
       type: object
     SaveCleaningEdlCommand:
       additionalProperties: false
@@ -20093,6 +22516,16 @@ components:
       - client_mutation_id
       - operations
       title: SaveDraftRequest
+      type: object
+    SaveSliceDraftCommand:
+      additionalProperties: false
+      properties:
+        slices:
+          default: []
+          items:
+            $ref: '#/components/schemas/EpisodeSliceInput'
+          maxItems: 10000
+          type: array
       type: object
     SchemaBlockedReason:
       additionalProperties: false
@@ -20346,6 +22779,27 @@ components:
       - ANNOTATION
       - REVIEW
       - PUBLISHED
+      type: string
+    SliceAuthoringMode:
+      enum:
+      - HUMAN
+      - MODEL
+      type: string
+    SliceRevisionEnvelope:
+      additionalProperties: false
+      properties:
+        recording:
+          $ref: '#/components/schemas/ContinuousRecording'
+        revision:
+          $ref: '#/components/schemas/RecordingSliceRevision'
+      required:
+      - recording
+      - revision
+      type: object
+    SliceRevisionStatus:
+      enum:
+      - DRAFT
+      - FINALIZED
       type: string
     SourceStateCommand:
       additionalProperties: false
@@ -21302,42 +23756,6 @@ components:
       - timestamp_ns
       - value
       type: object
-    TimelineMappingV1:
-      properties:
-        frequency_hz:
-          exclusiveMinimum: 0
-          type: number
-        segments:
-          items:
-            $ref: '#/components/schemas/TimelineSegmentV1'
-          type: array
-      required:
-      - frequency_hz
-      - segments
-      type: object
-    TimelineSegmentV1:
-      properties:
-        excluded:
-          type: boolean
-        playback_end_seconds:
-          exclusiveMinimum: 0
-          type: number
-        playback_start_seconds:
-          minimum: 0
-          type: number
-        source_end_step:
-          minimum: 1
-          type: integer
-        source_start_step:
-          minimum: 0
-          type: integer
-      required:
-      - playback_start_seconds
-      - playback_end_seconds
-      - source_start_step
-      - source_end_step
-      - excluded
-      type: object
     TokenCredentialInput:
       additionalProperties: false
       properties:
@@ -21820,6 +24238,94 @@ components:
       - change_summary
       title: UpdateStreamSchemaDraftRequest
       type: object
+    UpgradePreflight:
+      additionalProperties: false
+      properties:
+        checks:
+          items:
+            $ref: '#/components/schemas/UpgradePreflightCheck'
+          maxItems: 7
+          minItems: 7
+          title: Checks
+          type: array
+        status:
+          enum:
+          - READY
+          - BLOCKED
+          title: Status
+          type: string
+      required:
+      - status
+      - checks
+      title: UpgradePreflight
+      type: object
+    UpgradePreflightCheck:
+      additionalProperties: false
+      properties:
+        code:
+          enum:
+          - RELEASE_IDENTITY
+          - NODE_CONVERGENCE
+          - NODE_READINESS
+          - CONFIG_CONVERGENCE
+          - VERIFIED_BACKUP
+          - VERIFIED_RESTORE
+          - CENTRAL_LOG_SEARCH
+          title: Code
+          type: string
+        reason_code:
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Reason Code
+          type: string
+        status:
+          enum:
+          - PASS
+          - BLOCKED
+          title: Status
+          type: string
+      required:
+      - code
+      - status
+      - reason_code
+      title: UpgradePreflightCheck
+      type: object
+    UploadAlignedMediaTargetV1:
+      additionalProperties: false
+      properties:
+        annotation_task_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        dataset_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        dataset_version:
+          minimum: 1
+          type: integer
+        end_step:
+          minimum: 1
+          type: integer
+        fps:
+          const: 30
+          default: 30
+          type: integer
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        schema_version:
+          const: upload-aligned-media-target/v1
+          type: string
+        start_step:
+          minimum: 0
+          type: integer
+      required:
+      - schema_version
+      - project_id
+      - dataset_id
+      - rollout_id
+      - dataset_version
+      - annotation_task_id
+      - start_step
+      - end_step
+      type: object
     UploadPart:
       properties:
         authorization_expires_at:
@@ -21900,50 +24406,13 @@ components:
       - max_object_size_bytes
       title: UploadPolicySummary
       type: object
-    UploadPreviewTargetV1:
-      additionalProperties: false
-      properties:
-        annotation_task_id:
-          $ref: '#/components/schemas/IngestIdentifier'
-        dataset_id:
-          $ref: '#/components/schemas/IngestIdentifier'
-        dataset_version:
-          minimum: 1
-          type: integer
-        end_step:
-          minimum: 1
-          type: integer
-        frequency_hz:
-          exclusiveMinimum: 0
-          type: number
-        lance_version:
-          minimum: 1
-          type: integer
-        project_id:
-          $ref: '#/components/schemas/IngestIdentifier'
-        rollout_id:
-          $ref: '#/components/schemas/IngestIdentifier'
-        schema_version:
-          const: upload-preview-target/v1
-          type: string
-        start_step:
-          minimum: 0
-          type: integer
-      required:
-      - schema_version
-      - project_id
-      - dataset_id
-      - rollout_id
-      - dataset_version
-      - lance_version
-      - annotation_task_id
-      - frequency_hz
-      - start_step
-      - end_step
-      type: object
     UploadProcessingStatusV1:
       additionalProperties: false
       properties:
+        aligned_media:
+          oneOf:
+          - $ref: '#/components/schemas/UploadAlignedMediaTargetV1'
+          - type: 'null'
         attempt:
           minimum: 0
           type: integer
@@ -21953,10 +24422,6 @@ components:
           type:
           - string
           - 'null'
-        preview:
-          oneOf:
-          - $ref: '#/components/schemas/UploadPreviewTargetV1'
-          - type: 'null'
         rollout_id:
           $ref: '#/components/schemas/IngestIdentifier'
         schema_version:
@@ -21997,7 +24462,7 @@ components:
       - status
       - stage
       - attempt
-      - preview
+      - aligned_media
       - viewer
       - error_code
       - updated_at
@@ -22740,6 +25205,52 @@ paths:
       summary: Confirm a current-account recovery email with a single-use token.
       tags:
       - access
+  /api/v1/aligned-media/authorize:
+    post:
+      operationId: authorizeAlignedMedia
+      parameters:
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlignedMediaSelectorV1'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlignedMediaAuthorizationV1'
+          description: READY canonical aligned MP4 authorization
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The aligned media artifact failed or is being abandoned.
+        '422':
+          $ref: '#/components/responses/ValidationProblem'
+        '425':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The artifact is absent, generating, or not yet dataset-committed.
+      security:
+      - bearerAuth: []
+      summary: Authorize Aligned Media
+      tags:
+      - aligned-media
   /api/v1/annotation-tasks/{task_id}:
     get:
       operationId: getAnnotationTask
@@ -27252,188 +29763,1488 @@ paths:
       summary: Clear an active temporary login lock for a direct account.
       tags:
       - access
-  /api/v1/previews/jobs/{job_id}:
+  /api/v1/platform/audit/events:
     get:
-      operationId: getPreviewJob
+      operationId: listPlatformAuditEvents
       parameters:
-      - in: header
-        name: X-Organization-Id
-        required: true
-        schema:
-          minLength: 1
-          type: string
-      - in: header
-        name: X-Region-Code
-        required: true
-        schema:
-          minLength: 1
-          type: string
-      - in: path
-        name: job_id
-        required: true
-        schema:
-          minLength: 1
-          type: string
       - in: query
-        name: project_id
-        required: true
+        name: occurred_from
+        required: false
         schema:
-          minLength: 1
-          type: string
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred From
+      - in: query
+        name: occurred_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred To
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Cursor
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PreviewJobDescriptorV1'
-          description: Durable media job status
+                $ref: '#/components/schemas/PlatformAuditPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: List Platform Audit Events
       tags:
-      - preview
-  /api/v1/previews/sessions:
-    post:
-      operationId: createPreviewSession
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/audit/events:export:
+    get:
+      operationId: exportPlatformAuditEvents
       parameters:
-      - in: header
-        name: X-Organization-Id
+      - in: query
+        name: occurred_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred From
+      - in: query
+        name: occurred_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred To
+      responses:
+        '200':
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+          description: Capability-controlled redacted NDJSON export.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The platform audit integrity chain failed verification.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The requested export window is too large.
+      security:
+      - bearerAuth: []
+      summary: Export Platform Audit Events
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.maintenance.verify
+        mode: one-exact
+  /api/v1/platform/audit/integrity:
+    get:
+      operationId: verifyPlatformAuditIntegrity
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformAuditIntegrity'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Verify Platform Audit Integrity
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.maintenance.verify
+        mode: one-exact
+  /api/v1/platform/backups:
+    get:
+      operationId: listPlatformBackups
+      parameters:
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - CREATING
+            - CREATED
+            - INTEGRITY_VERIFIED
+            - RESTORE_VERIFIED
+            - FAILED
+            - CORRUPT
+            - EXPIRED
+            type: string
+          - type: 'null'
+          title: Status
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 1024
+            type: string
+          - type: 'null'
+          title: Cursor
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupCatalogPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The backup catalog query is invalid.
+      security:
+      - bearerAuth: []
+      summary: List Platform Backups
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/instances:
+    get:
+      operationId: listPlatformInstances
+      parameters:
+      - in: query
+        name: stale
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Stale
+      - in: query
+        name: role
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - frontend
+            - api
+            - worker
+            - media-worker
+            - maintenance-controller
+            type: string
+          - type: 'null'
+          title: Role
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformInstancePage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Platform Instances
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/logs:
+    get:
+      operationId: queryPlatformRuntimeLogs
+      parameters:
+      - in: query
+        name: occurred_from
         required: true
         schema:
-          minLength: 1
+          format: date-time
+          title: Occurred From
           type: string
-      - in: header
-        name: X-Region-Code
+      - in: query
+        name: occurred_to
         required: true
         schema:
-          minLength: 1
+          format: date-time
+          title: Occurred To
           type: string
+      - in: query
+        name: service
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - hc-data-platform-api
+            - hc-data-platform-worker
+            - hc-data-platform-media-worker
+            - hc-data-platform-frontend
+            - hc-data-platform-gateway
+            type: string
+          - type: 'null'
+          title: Service
+      - in: query
+        name: severity
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - TRACE
+            - DEBUG
+            - INFO
+            - WARN
+            - ERROR
+            - FATAL
+            type: string
+          - type: 'null'
+          title: Severity
+      - in: query
+        name: event_code
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^[A-Z][A-Z0-9_.-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Event Code
+      - in: query
+        name: request_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Request Id
+      - in: query
+        name: operation_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Operation Id
+      - in: query
+        name: workflow_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Workflow Id
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformLogPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The runtime-log query is invalid.
+        '502':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The central runtime-log backend violated its fixed contract.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Central runtime-log search is temporarily unavailable.
+      security:
+      - bearerAuth: []
+      summary: Query Platform Runtime Logs
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/maintenance-operations:
+    post:
+      operationId: requestPlatformMaintenanceOperation
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PreviewRequestV1'
+              $ref: '#/components/schemas/MaintenanceOperationRequest'
         required: true
       responses:
         '201':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PreviewDescriptorV1'
-          description: Durable preview is READY; no encoding runs in the API process
-        '202':
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/PreviewPendingDescriptorV1'
-          description: A single durable generation job is queued or running
-          headers:
-            Retry-After:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
               schema:
-                maximum: 60
-                minimum: 1
-                type: integer
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Request Maintenance Operation
       tags:
-      - preview
-  /api/v1/previews/sessions/{session_id}:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:
     get:
-      operationId: getPreviewSession
+      operationId: getPlatformMaintenanceOperation
       parameters:
-      - in: header
-        name: X-Organization-Id
-        required: true
-        schema:
-          minLength: 1
-          type: string
-      - in: header
-        name: X-Region-Code
-        required: true
-        schema:
-          minLength: 1
-          type: string
       - in: path
-        name: session_id
+        name: operation_id
         required: true
         schema:
-          minLength: 1
-          type: string
-      - in: query
-        name: project_id
-        required: true
-        schema:
-          minLength: 1
+          title: Operation Id
           type: string
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PreviewDescriptorV1'
-          description: READY descriptor with a refreshed short-lived playlist capability
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Get Maintenance Operation
       tags:
-      - preview
-  /api/v1/previews/sessions/{session_id}/media/index.m3u8:
-    get:
-      operationId: getPreviewPlaylist
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:acquire:
+    post:
+      operationId: acquirePlatformMaintenanceOperation
       parameters:
       - in: path
-        name: session_id
+        name: operation_id
         required: true
         schema:
-          minLength: 1
+          title: Operation Id
           type: string
-      - in: query
-        name: expires
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceOwnerRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Acquire Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:reconcile:
+    post:
+      operationId: reconcilePlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
         required: true
         schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceReconciliationRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Reconcile Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.maintenance.verify
+        mode: one-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:renew:
+    post:
+      operationId: renewPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceLeaseRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Renew Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:takeover:
+    post:
+      operationId: takeoverPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceOwnerRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Takeover Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.break_glass
+        mode: one-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:transition:
+    post:
+      operationId: transitionPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceTransitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Transition Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        break_glass_when:
+        - current_state=FAILED_READ_ONLY
+        - next_state=SUCCEEDED
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/object-store-config:
+    get:
+      operationId: getPlatformObjectStoreConfig
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreConfigurationStatus'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Get Object Store Config
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+    put:
+      operationId: updatePlatformObjectStoreConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectStoreConfigurationUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreConfigurationStatus'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The expected object-store configuration revision is stale.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The object-store configuration is incomplete or invalid.
+      security:
+      - bearerAuth: []
+      summary: Update Object Store Config
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+  /api/v1/platform/object-store-location:
+    get:
+      operationId: getPlatformObjectStoreLocation
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreLocationStatus'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+      security:
+      - bearerAuth: []
+      summary: Get Object Store Location
+      tags:
+      - platform-operations
+  /api/v1/platform/overview:
+    get:
+      operationId: getPlatformOperationsOverview
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperationsOverview'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Get Platform Operations Overview
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/projects:
+    get:
+      operationId: listPlatformProjects
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformProjectPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: List Platform Projects
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+    post:
+      operationId: createPlatformProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformProjectCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformProject'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The organization project already exists.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Platform Project
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+  /api/v1/platform/releases:
+    get:
+      operationId: listPlatformReleaseHistory
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 50
           minimum: 1
           type: integer
-      - in: query
-        name: sig
-        required: true
-        schema:
-          pattern: ^[0-9a-f]{64}$
-          type: string
-      - in: query
-        name: organization_id
-        required: true
-        schema:
-          minLength: 1
-          type: string
-      - in: query
-        name: project_id
-        required: true
-        schema:
-          minLength: 1
-          type: string
-      - in: query
-        name: region_code
-        required: true
-        schema:
-          minLength: 1
-          type: string
       responses:
         '200':
           content:
-            application/vnd.apple.mpegurl:
+            application/json:
               schema:
-                type: string
-          description: Small playlist with individually presigned direct object-store members
-          headers:
-            Cache-Control:
-              schema:
-                const: no-store
-                type: string
+                $ref: '#/components/schemas/ReleaseHistoryPage'
+          description: Redacted immutable release history.
+        '401':
+          $ref: '#/components/responses/PlatformAuthenticationRequired'
         '403':
-          description: Invalid or expired media capability
+          $ref: '#/components/responses/PlatformCapabilityRequired'
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Query validation failed.
+      security:
+      - bearerAuth: []
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/releases/{release_id}:approve:
+    post:
+      operationId: approvePlatformRelease
+      parameters:
+      - in: path
+        name: release_id
+        required: true
+        schema:
+          pattern: ^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseApprovalRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseRun'
+          description: Release approved by a distinct operator.
+        '401':
+          $ref: '#/components/responses/PlatformAuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/PlatformCapabilityRequired'
         '404':
-          description: Preview session not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Release not found.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Approval is stale, self-approved, or in the wrong state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Approval validation failed.
+      security:
+      - bearerAuth: []
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact
+  /api/v1/platform/releases/{release_id}:transition:
+    post:
+      operationId: transitionPlatformRelease
+      parameters:
+      - in: path
+        name: release_id
+        required: true
+        schema:
+          pattern: ^platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119}$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseTransitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseRun'
+          description: Controller state transition recorded and audited.
+        '401':
+          $ref: '#/components/responses/PlatformAuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/PlatformCapabilityRequired'
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Release not found.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Controller transition is stale or invalid.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Transition validation failed.
+      security:
+      - bearerAuth: []
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact
+  /api/v1/platform/releases:preflight:
+    post:
+      operationId: preflightPlatformRelease
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleasePreflightRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseRun'
+          description: Signed compatible release awaiting distinct approval.
+        '401':
+          $ref: '#/components/responses/PlatformAuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/PlatformCapabilityRequired'
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Signature, compatibility, digest, or platform preflight failed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Release document validation failed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Release-feed trust is not configured.
+      security:
+      - bearerAuth: []
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact
+  /api/v1/platform/runtime-config:
+    get:
+      operationId: getPlatformRuntimeConfig
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Get Runtime Config
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/runtime-config/revisions:
+    get:
+      operationId: listPlatformRuntimeConfigRevisions
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigHistoryPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Runtime Config Revisions
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+    post:
+      operationId: publishPlatformRuntimeConfigRevision
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeConfigPublishRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The expected runtime configuration revision is stale.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The runtime configuration command is not allowlisted.
+      security:
+      - bearerAuth: []
+      summary: Publish Runtime Config Revision
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact
+  /api/v1/platform/runtime-config/revisions/{target_revision}:rollback:
+    post:
+      operationId: rollbackPlatformRuntimeConfigRevision
+      parameters:
+      - in: path
+        name: target_revision
+        required: true
+        schema:
+          minimum: 0
+          title: Target Revision
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeConfigRollbackRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The target runtime configuration revision was not found.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The expected runtime configuration revision is stale.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The runtime configuration command is invalid.
+      security:
+      - bearerAuth: []
+      summary: Rollback Runtime Config Revision
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact
+  /api/v1/platform/version:
+    get:
+      operationId: getPlatformVersion
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReleaseIdentityV1'
+          description: Immutable identity of the running API release.
       security: []
       tags:
-      - preview
+      - platform-control
   /api/v1/projects/{project_id}/annotation-tasks:
     get:
       operationId: listAnnotationTasks
@@ -35805,6 +39616,233 @@ paths:
       summary: Transition Robot Component Lifecycle
       tags:
       - robotics
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings:
+    get:
+      operationId: listContinuousRecordings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContinuousRecordingPage'
+          description: Scoped continuous recordings
+      security:
+      - bearerAuth: []
+    post:
+      operationId: registerContinuousRecording
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterContinuousRecordingCommand'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContinuousRecordingEnvelope'
+          description: Continuous recording registered
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads:
+    post:
+      operationId: beginContinuousRecordingUpload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordingUploadCommand'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingUploadGrant'
+          description: Per-asset OSS multipart upload grants
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}:
+    get:
+      operationId: getContinuousRecordingUpload
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingUploadEnvelope'
+          description: Multi-object recording upload state
+      security:
+      - bearerAuth: []
+  ? /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}/assets/{asset_id}:authorize-parts
+  : post:
+      operationId: authorizeContinuousRecordingAssetParts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeRecordingAssetPartsCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingAssetPartGrant'
+          description: Renewed OSS multipart grants
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}/assets/{asset_id}:complete:
+    post:
+      operationId: completeContinuousRecordingAsset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteRecordingAssetCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingUploadEnvelope'
+          description: Asset completed and verified by size, CRC64, and SHA-256
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}:commit:
+    post:
+      operationId: commitContinuousRecordingUpload
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContinuousRecordingEnvelope'
+          description: Multi-object recording committed for slicing
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}:
+    get:
+      operationId: getContinuousRecording
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContinuousRecordingEnvelope'
+          description: Continuous recording and current slice revision
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes:
+    get:
+      operationId: listContinuousRecordingEpisodes
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeProcessingPage'
+          description: Finalized Episodes and QC/alignment state
+      security:
+      - bearerAuth: []
+  ? /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources
+  : get:
+      operationId: authorizeContinuousRecordingEpisodeVideos
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeVideoSourceEnvelope'
+          description: Signed original-video URLs plus Episode time windows
+      security:
+      - bearerAuth: []
+  ? /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:transition-processing
+  : post:
+      operationId: transitionContinuousRecordingEpisodeProcessing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceEpisodeProcessingCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeProcessingEnvelope'
+          description: Episode advanced through the enforced QC/alignment state machine
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:
+    put:
+      operationId: saveContinuousRecordingSliceDraft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveSliceDraftCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SliceRevisionEnvelope'
+          description: New immutable slice draft revision
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:finalize:
+    post:
+      operationId: finalizeContinuousRecordingSlices
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeSliceCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SliceRevisionEnvelope'
+          description: Finalized virtual Episodes
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-proposals:
+    post:
+      operationId: proposeContinuousRecordingSlices
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProposeModelSlicesCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SliceRevisionEnvelope'
+          description: Versioned model proposal awaiting human review
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/video-sources:
+    get:
+      operationId: authorizeContinuousRecordingVideos
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingVideoSourceEnvelope'
+          description: Signed original-video URLs for the manual slice editor
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/regions/{region_code}/data-sources:
     post:
       operationId: createDataSource

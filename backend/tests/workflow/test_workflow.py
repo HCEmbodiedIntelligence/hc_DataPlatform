@@ -174,10 +174,14 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
     }
     assert {item.__name__ for item in activities} == {
         "verify_raw",
+        "process_ingest_source",
         "evaluate_quality",
         "align_fragment",
         "commit_fragment",
+        "commit_aligned_bundle",
         "create_annotation_task",
+        "cleanup_uncommitted_aligned_media",
+        "cleanup_alignment_staging",
         "publish_dataset",
         "preflight_export",
         "export_dataset",
@@ -191,8 +195,8 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "persist_workflow_job",
     }
     media_workflows, media_activities = discover_temporal_registrations("media")
-    assert {item.__name__ for item in media_workflows} == {"PreviewWorkflow"}
-    assert {item.__name__ for item in media_activities} == {"create_preview"}
+    assert media_workflows == []
+    assert {item.__name__ for item in media_activities} == {"create_aligned_media"}
     assert ACTIVITY_RETRY_POLICY.maximum_attempts == 8
     assert ACTIVITY_RETRY_POLICY.backoff_coefficient == 2
     assert ACTIVITY_RETRY_POLICY.non_retryable_error_types is not None

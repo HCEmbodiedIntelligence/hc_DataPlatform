@@ -1,0 +1,120 @@
+{
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-restore-approval-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allow_restore_mutation": {
+      "const": true,
+      "default": true,
+      "title": "Allow Restore Mutation",
+      "type": "boolean"
+    },
+    "allow_restore_verified": {
+      "const": false,
+      "default": false,
+      "title": "Allow Restore Verified",
+      "type": "boolean"
+    },
+    "allow_write_enable": {
+      "const": false,
+      "default": false,
+      "title": "Allow Write Enable",
+      "type": "boolean"
+    },
+    "approval_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approval_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Approval Key Sha256",
+      "type": "string"
+    },
+    "approval_reference": {
+      "pattern": "^approval://[A-Za-z0-9._:-]+(?:/[A-Za-z0-9._:-]+)+$",
+      "title": "Approval Reference",
+      "type": "string"
+    },
+    "approved_at": {
+      "format": "date-time",
+      "title": "Approved At",
+      "type": "string"
+    },
+    "approver_identity": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Approver Identity",
+      "type": "string"
+    },
+    "approver_role": {
+      "const": "restore_approver",
+      "default": "restore_approver",
+      "title": "Approver Role",
+      "type": "string"
+    },
+    "backup_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Backup Id",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-restore-approval/v1",
+      "default": "hc-platform-restore-approval/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "plan_checkpoint_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Checkpoint Sha256",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "plan_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Sha256",
+      "type": "string"
+    },
+    "target_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Environment Id",
+      "type": "string"
+    },
+    "target_instance_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Instance Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval_id",
+    "approval_reference",
+    "plan_id",
+    "plan_sha256",
+    "plan_checkpoint_sha256",
+    "operation_id",
+    "backup_id",
+    "target_instance_id",
+    "target_environment_id",
+    "approver_identity",
+    "approval_key_sha256",
+    "approved_at",
+    "expires_at"
+  ],
+  "title": "hc-platform-restore-approval/v1",
+  "type": "object"
+}

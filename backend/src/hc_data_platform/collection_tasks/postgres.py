@@ -663,7 +663,7 @@ class PostgresCollectionTaskRepository:
                                            '[]'::jsonb
                                        )
                                    ) stream
-                                  WHERE stream -> 'preview_binding' ->> 'rollout_id'
+                                  WHERE stream -> 'aligned_media_binding' ->> 'rollout_id'
                                             = received.rollout_id
                                      OR stream -> 'data_binding' ->> 'rollout_id'
                                             = received.rollout_id

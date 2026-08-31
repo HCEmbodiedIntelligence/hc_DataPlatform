@@ -235,7 +235,18 @@ async def _assert_current_objects(dsn: str) -> None:
 
 def test_existing_twenty_migrations_upgrade_forward_without_data_loss() -> None:
     dsn = _required_dsn("HC_MIGRATION_RECOVERY_EXISTING_DSN")
+    migrations = load_migrations()
     expected_missing = _migrations_after_historical_baseline()
+    product_scope_index = next(
+        index
+        for index, migration in enumerate(migrations)
+        if migration.version == "security/019_product_organization_scope.sql"
+    )
+    blocked_suffix = tuple(migration.version for migration in migrations[product_scope_index:])
+    assert blocked_suffix[:2] == (
+        "security/019_product_organization_scope.sql",
+        "annotation/0008_scoped_legacy_cleaning_import.sql",
+    )
     asyncio.run(_bootstrap_historical_twenty(dsn))
     expected_counts = asyncio.run(_seed_historical_rows(dsn))
 
@@ -262,11 +273,8 @@ def test_existing_twenty_migrations_upgrade_forward_without_data_loss() -> None:
     assert stopped == {
         "status": "not_current",
         "expected": HISTORICAL_COUNT + len(expected_missing),
-        "applied": HISTORICAL_COUNT + len(expected_missing) - 2,
-        "missing": [
-            "annotation/0008_scoped_legacy_cleaning_import.sql",
-            "security/019_product_organization_scope.sql",
-        ],
+        "applied": product_scope_index,
+        "missing": sorted(blocked_suffix),
         "unknown": [],
         "checksum_drift": [],
     }
@@ -281,10 +289,7 @@ def test_existing_twenty_migrations_upgrade_forward_without_data_loss() -> None:
         )
 
     applied_now = asyncio.run(apply_migrations(dsn))
-    assert applied_now == [
-        "security/019_product_organization_scope.sql",
-        "annotation/0008_scoped_legacy_cleaning_import.sql",
-    ]
+    assert tuple(applied_now) == blocked_suffix
     assert asyncio.run(migration_status(dsn))["status"] == "current"
     assert asyncio.run(apply_migrations(dsn)) == []
     assert asyncio.run(_exact_counts(dsn, tuple(expected_counts))) == expected_counts

@@ -14,8 +14,8 @@
 
 BE-12 所需的 OpenTelemetry 发行包、OTLP gRPC 导出器、FastAPI/日志插桩组件和
 Prometheus 客户端均从同一个锁文件安装；领域专用的指标发送器仍归各自模块所有。
-BE-03 使用的阿里云 OSS V1 官方 SDK 固定在 `storage` 扩展依赖中，并与 S3/MinIO
-客户端一同安装到共享镜像。BE-08/BE-09 使用的同步 psycopg 驱动固定在 `database`
+BE-03 使用的阿里云 OSS V1 官方 SDK 固定在 `storage` 扩展依赖中，并安装到共享镜像。
+BE-08/BE-09 使用的同步 psycopg 驱动固定在 `database`
 扩展依赖中，也会安装到共享镜像。
 
 BE-11 中依赖繁重训练栈的 LeRobot 校验器被隔离在仅支持 Python 3.12 的
@@ -29,9 +29,12 @@ uv sync --frozen --extra dev --extra database --extra workflow --extra storage -
 uv run uvicorn hc_data_platform.core.app:create_app --factory --reload
 ```
 
-也可以启动 API 及其所需的全部本地依赖（PostgreSQL、Temporal 和 MinIO）：
+本地 Compose 不再启动 MinIO；API、Worker 和 Lance 会直接访问已创建的阿里云 OSS Bucket。
+先在 `backend` 目录执行以下命令，把仓库根目录配置样例复制为 Compose 会读取的 `.env`，
+填入该 Bucket 的真实值后再启动本地依赖：
 
 ```bash
+cp ../.env.example ../.env
 make up
 curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
@@ -50,24 +53,25 @@ API 启动前，Compose 会在 PostgreSQL 咨询锁保护下，按顺序且仅�
 Compose 使用一个明确仅限本地的 HS256 签名密钥，以便在没有外部身份提供方时测试受保护路由。
 在所有共享环境中，都必须改用 HTTPS JWKS 端点和 RS256；该签名密钥绝不能在本地开发以外复用。
 
-### 对象存储内外端点与浏览器上传
+### 阿里云 OSS 与浏览器直传
 
 `HC_OBJECT_STORE_ENDPOINT` 是 API、Worker、Lance、readiness 以及所有对象读写使用的服务端
-内部端点；在 Compose 中它是 `http://minio:9000`。`HC_OBJECT_STORE_PUBLIC_ENDPOINT` 只用于
-由独立的 path-style SigV4 client 生成浏览器 multipart part PUT URL，本地值是宿主可达的
-`http://127.0.0.1:9000`。公开端点完全由服务器配置决定，不能从请求头推导，也不能在签名后
-替换 URL 主机名；对象存储凭据不会返回浏览器。
+端点；阿里云内网部署可使用与 Bucket 地域一致的 internal endpoint。
+`HC_OBJECT_STORE_PUBLIC_ENDPOINT` 只用于生成浏览器 multipart part PUT URL，应使用同地域公网
+endpoint 或已绑定到该 Bucket 的 OSS CNAME。公开端点完全由服务器配置决定，不能从请求头推导，
+也不能在签名后替换 URL 主机名；对象存储凭据不会返回浏览器。Lance 数据使用原生 `oss://`
+地址以及相同的 OSS 凭据，不依赖 S3 兼容模式。
 
-本地 public endpoint 由 `object-store-browser` 直接流式转发到 MinIO，并保留签名所绑定的
-原始 `Host`。它只回答 exact-origin 的 PUT/HEAD 预检、只允许实际的 `content-type` 请求头、
-暴露 `ETag`，并移除 community MinIO 全局 CORS fallback 自动产生的 credentials 响应头。
-MinIO 的宿主管理/集成端口是 `127.0.0.1:19000`；容器内服务仍只用 `minio:9000`。
+Bucket 必须预先创建。还需在 OSS 控制台为实际前端来源配置精确 CORS：允许 `PUT`/`HEAD`，
+允许 `content-type` 请求头，暴露 `ETag`，`MaxAgeSeconds` 可设为 600；不要使用通配来源，也不要
+开启 credentials。开发时通常需要加入 `http://127.0.0.1:8088`、`http://localhost:8088`、
+`http://127.0.0.1:5174` 和 `http://localhost:5174`。
 
 staging/production 必须显式配置浏览器端点为 HTTPS 公网 FQDN，不能使用 localhost、loopback、
 容器服务名或裸主机名。生产对象存储的基础设施 owner 还必须在 bucket 上配置与平台实际域名
 一致的 exact CORS allowlist：仅开放浏览器上传所需的 `PUT`/`HEAD` 和实际请求 headers，暴露
-`ETag`，且不得使用 `AllowedOrigin=*` 或启用 credentials。Helm 只注入端点合同，不会假装管理
-外部 S3 vendor 的 bucket CORS。
+`ETag`，且不得使用 `AllowedOrigin=*` 或启用 credentials。Helm 只注入端点合同，不负责修改
+OSS Bucket 的 CORS。
 
 ## 契约与质量门禁
 

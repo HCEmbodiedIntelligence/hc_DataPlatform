@@ -475,9 +475,7 @@ class DatasetPageService:
             filters=DatasetPageVersionFilters(include_internal=True),
         )
         internal_versions = tuple(
-            version
-            for version in all_versions
-            if version.version_id.startswith("version_lance_")
+            version for version in all_versions if version.version_id.startswith("version_lance_")
         )
         working_version_id = self._suggested_version_id(internal_versions)
         facts = self._repository.detail_facts(scope=scope, dataset_id=dataset_id)
@@ -497,9 +495,7 @@ class DatasetPageService:
                 dataset=self._dataset(record, auth),
                 current_ready_version=self._current_ready_version(versions),
                 working_version_id=working_version_id,
-                suggested_version_id=(
-                    self._suggested_version_id(versions) or working_version_id
-                ),
+                suggested_version_id=(self._suggested_version_id(versions) or working_version_id),
                 summary=self._detail_summary(record=record, facts=facts),
             ),
             meta=self._meta(request_id=request_id, now=now),

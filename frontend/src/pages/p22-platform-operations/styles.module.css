@@ -1,0 +1,812 @@
+.pageGrid {
+  --ops-ink: #172033;
+  --ops-muted: #657087;
+  --ops-line: #dfe5f0;
+  --ops-surface: #ffffff;
+  --ops-violet: #6554c0;
+  display: grid;
+  gap: 18px;
+  color: var(--ops-ink);
+}
+
+.headerMeta,
+.safeQueryNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #53617b;
+  font-size: 13px;
+}
+
+.releasePanel,
+.gatePanel,
+.dataPanel,
+.logsPanel {
+  border: 1px solid var(--ops-line);
+  border-radius: 14px;
+  background: var(--ops-surface);
+  box-shadow: 0 10px 30px rgb(44 57 92 / 6%);
+}
+
+.releasePanel {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) minmax(420px, 1.5fr);
+  gap: 20px;
+  align-items: center;
+  overflow: hidden;
+  padding: 22px 24px;
+  background:
+    radial-gradient(circle at 92% 20%, rgb(112 93 205 / 15%), transparent 36%),
+    linear-gradient(120deg, #ffffff 0%, #f7f8ff 100%);
+}
+
+.releasePanel::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: "";
+  background: linear-gradient(#6554c0, #3b82f6);
+}
+
+.releaseMark,
+.backupIcon {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(145deg, #6554c0, #4f46a5);
+  box-shadow: 0 8px 18px rgb(101 84 192 / 24%);
+}
+
+.releaseMark {
+  width: 52px;
+  height: 52px;
+  border-radius: 13px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: #6b5bb6;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+}
+
+.releaseIdentity h2,
+.sectionHeading h2 {
+  margin: 0;
+  color: var(--ops-ink);
+  font-weight: 690;
+  letter-spacing: -0.02em;
+}
+
+.releaseIdentity h2 {
+  font-size: clamp(20px, 2vw, 27px);
+}
+
+.releaseIdentity p {
+  margin: 6px 0 0;
+  color: var(--ops-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.releaseFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-left: 1px solid var(--ops-line);
+}
+
+.releaseFacts div {
+  min-width: 0;
+  padding: 4px 16px;
+}
+
+.releaseFacts dt {
+  margin-bottom: 7px;
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.releaseFacts dd {
+  overflow: hidden;
+  margin: 0;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gatePanel,
+.dataPanel,
+.logsPanel {
+  padding: 20px;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 17px;
+}
+
+.sectionHeading h2 {
+  font-size: 18px;
+}
+
+.gateRail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gateStep {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 10px;
+  min-width: 0;
+  padding: 9px 16px 8px 0;
+}
+
+.gateStep:not(:last-child)::after {
+  position: absolute;
+  top: 25px;
+  right: 7px;
+  left: 30px;
+  z-index: 0;
+  height: 2px;
+  content: "";
+  background: #dce2ee;
+}
+
+.gateStep[data-status="PASS"]:not(:last-child)::after {
+  background: linear-gradient(90deg, #3aa878 0%, #83cbaa 80%, #dce2ee 80%);
+}
+
+.stepIndex {
+  grid-column: 1 / -1;
+  color: #8b95a9;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.stepIcon {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 2px solid #e3b5b5;
+  border-radius: 50%;
+  color: #c44545;
+  background: #fff7f7;
+}
+
+.gateStep[data-status="PASS"] .stepIcon {
+  border-color: #8fd0b2;
+  color: #18764e;
+  background: #f2fbf6;
+}
+
+.stepCopy {
+  display: grid;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.stepCopy strong {
+  font-size: 13px;
+}
+
+.stepCopy small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--ops-muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signalStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--ops-line);
+  border-radius: 12px;
+  background: #f9fafc;
+}
+
+.signalStrip > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 18px;
+}
+
+.signalStrip > div:not(:last-child) {
+  border-right: 1px solid var(--ops-line);
+}
+
+.signalStrip svg {
+  width: 17px;
+  color: var(--ops-violet);
+}
+
+.signalStrip span {
+  color: var(--ops-muted);
+  font-size: 13px;
+}
+
+.signalStrip strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.twoColumn {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.countBadge {
+  padding: 4px 9px;
+  border: 1px solid #d9dfea;
+  border-radius: 999px;
+  color: #5d6980;
+  background: #f8f9fb;
+  font-size: 12px;
+}
+
+.tableViewport {
+  overflow-x: auto;
+}
+
+.operationsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.operationsTable th {
+  padding: 9px 10px;
+  border-bottom: 1px solid #d8deea;
+  color: #6b7589;
+  background: #f8f9fc;
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0.04em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.operationsTable td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #edf0f5;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.operationsTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.operationsTable code,
+.backupCopy strong,
+.eventCode,
+.logCorrelation {
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.backupList {
+  display: grid;
+  gap: 10px;
+}
+
+.releaseHistoryList {
+  display: grid;
+  gap: 10px;
+}
+
+.releaseHistoryItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid #e1e6ef;
+  border-radius: 11px;
+  background: linear-gradient(110deg, #fbfcff, #f7f8fc);
+}
+
+.releaseHistoryMark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d8d0fa;
+  border-radius: 9px;
+  color: #5947b1;
+  background: #f2efff;
+}
+
+.releaseHistoryCopy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.releaseHistoryCopy > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+}
+
+.releaseHistoryCopy strong {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
+.releaseHistoryCopy span,
+.releaseHistoryCopy small,
+.releaseCredentialNote {
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.approvalRow {
+  display: grid !important;
+  grid-template-columns: minmax(240px, 520px) auto;
+  gap: 8px !important;
+  align-items: center !important;
+  margin-top: 5px;
+}
+
+.releaseCredentialNote {
+  margin: 13px 0 0;
+  padding-top: 11px;
+  border-top: 1px dashed #dce1ea;
+}
+
+.initializationPanel {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  scroll-margin-top: 88px;
+  border: 1px solid #d9d2f4;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f8f7ff 0%, #f4f7ff 100%);
+  box-shadow: 0 12px 32px rgb(80 66 160 / 8%);
+}
+
+.initializationHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.initializationHeading h2 {
+  margin: 0;
+  color: var(--ops-ink);
+  font-size: 20px;
+}
+
+.initializationHeading p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--ops-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: right;
+}
+
+.initializationGrid {
+  display: grid;
+  gap: 16px;
+}
+
+.initializationGrid > .dataPanel {
+  scroll-margin-top: 88px;
+  box-shadow: none;
+}
+
+.projectDirectory {
+  display: grid;
+  gap: 10px;
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.projectDirectory ul {
+  display: grid;
+  gap: 8px;
+  max-height: 232px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.projectDirectory li {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(
+      220px,
+      1.4fr
+    );
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid #e2e7f0;
+  border-radius: 10px;
+  color: var(--ops-muted);
+  background: #f9fafc;
+}
+
+.projectDirectory strong {
+  color: var(--ops-ink);
+}
+
+.projectDirectory code {
+  overflow: hidden;
+  color: #53617b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectForm {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e7f0;
+}
+
+.projectFields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.projectFields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.projectFields label > span:first-child {
+  color: #606b80;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.projectForm > :global(.ant-btn) {
+  justify-self: start;
+}
+
+.successAlert {
+  margin-top: 14px;
+}
+
+.configurationNote {
+  margin: 0 0 14px;
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.objectStoreForm {
+  display: grid;
+  gap: 14px;
+}
+
+.objectStoreStatus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.objectStoreFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e2e7f0;
+  border-radius: 11px;
+  background: #f7f8fb;
+}
+
+.objectStoreFields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.objectStoreFields label > span:first-child {
+  color: #606b80;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.objectStoreForm > :global(.ant-btn) {
+  justify-self: start;
+}
+
+.backupItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e9f1;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+.backupIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+}
+
+.backupCopy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.backupCopy > div {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+}
+
+.backupCopy strong {
+  font-size: 12px;
+}
+
+.backupCopy span,
+.backupCopy small {
+  color: var(--ops-muted);
+  font-size: 11px;
+}
+
+.backupCopy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logFilters {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(170px, 0.8fr)) repeat(2, minmax(125px, 0.55fr))
+    minmax(190px, 0.8fr) minmax(310px, 1.35fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #e2e7f0;
+  border-radius: 11px;
+  background: #f7f8fb;
+}
+
+.logFilters label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.logFilters label > span:first-child {
+  color: #606b80;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.logFilters :global(.ant-select) {
+  width: 100%;
+}
+
+.compoundField {
+  display: grid;
+  grid-template-columns: 105px minmax(150px, 1fr);
+}
+
+.compoundField :global(.ant-select-selector) {
+  border-radius: 6px 0 0 6px !important;
+}
+
+.compoundField :global(.ant-input) {
+  margin-left: -1px;
+  border-radius: 0 6px 6px 0;
+}
+
+.filterError {
+  margin: 8px 0 0;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.logResults {
+  margin-top: 15px;
+  overflow: hidden;
+  border: 1px solid #dce2ec;
+  border-radius: 10px;
+}
+
+.logSummary {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: #68738a;
+  background: #f7f8fb;
+  font-size: 11px;
+}
+
+.logHeader,
+.logRow {
+  display: grid;
+  grid-template-columns:
+    155px 78px 105px minmax(180px, 0.8fr) minmax(220px, 1.4fr)
+    100px;
+  gap: 10px;
+  align-items: center;
+}
+
+.logHeader {
+  padding: 8px 12px;
+  border-block: 1px solid #dce2ec;
+  color: #6b7589;
+  background: #fbfcfe;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.logList {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.logRow {
+  min-width: 900px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eceff4;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+  font-size: 12px;
+}
+
+.logRow:last-child {
+  border-bottom: 0;
+}
+
+.logRow time,
+.logCorrelation {
+  color: #68738a;
+  font-variant-numeric: tabular-nums;
+}
+
+.logService {
+  color: #4f5c74;
+  font-weight: 650;
+}
+
+.eventCode {
+  overflow: hidden;
+  color: #4d3fa0;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logDetail,
+.logCorrelation {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1480px) {
+  .logFilters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .correlationField {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 1100px) {
+  .projectFields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .releasePanel {
+    grid-template-columns: auto 1fr;
+  }
+
+  .releaseFacts {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--ops-line);
+    border-left: 0;
+    padding-top: 12px;
+  }
+
+  .gateRail {
+    grid-template-columns: repeat(3, 1fr);
+    row-gap: 14px;
+  }
+
+  .twoColumn {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .initializationPanel {
+    padding: 14px;
+  }
+
+  .initializationHeading {
+    display: grid;
+    align-items: start;
+  }
+
+  .initializationHeading p {
+    text-align: left;
+  }
+
+  .releasePanel,
+  .gatePanel,
+  .dataPanel,
+  .logsPanel {
+    padding: 16px;
+  }
+
+  .releaseFacts,
+  .signalStrip,
+  .gateRail,
+  .logFilters,
+  .projectFields,
+  .projectDirectory li,
+  .objectStoreFields,
+  .releaseHistoryItem,
+  .approvalRow {
+    grid-template-columns: 1fr;
+  }
+
+  .releaseHistoryItem > :global(.ant-tag) {
+    justify-self: start;
+  }
+
+  .releaseFacts div {
+    padding: 8px 0;
+  }
+
+  .signalStrip > div:not(:last-child) {
+    border-right: 0;
+    border-bottom: 1px solid var(--ops-line);
+  }
+
+  .gateStep:not(:last-child)::after {
+    display: none;
+  }
+
+  .correlationField {
+    grid-column: auto;
+  }
+}

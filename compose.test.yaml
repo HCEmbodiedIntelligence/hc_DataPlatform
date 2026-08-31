@@ -127,9 +127,13 @@ services:
     build:
       context: backend
       target: worker
+    tmpfs:
+      - /tmp/hc-runtime:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0750
     environment:
       HC_ENVIRONMENT: test
+      HC_PLATFORM_ENVIRONMENT_ID: hc-test-gates
       HC_RUNTIME_BACKEND: production
+      HC_COMPONENT_ROLE: worker
       HC_POSTGRES_DSN: postgresql+asyncpg://hc:hc-test-only@postgres:5432/hc_data
       HC_TEMPORAL_TARGET: temporal:7233
       HC_TEMPORAL_TASK_QUEUE: hc-data-pipeline-test
@@ -163,7 +167,9 @@ services:
       target: api
     environment:
       HC_ENVIRONMENT: test
+      HC_PLATFORM_ENVIRONMENT_ID: hc-test-gates
       HC_RUNTIME_BACKEND: production
+      HC_COMPONENT_ROLE: api
       HC_POSTGRES_DSN: postgresql+asyncpg://hc:hc-test-only@postgres:5432/hc_data
       HC_TEMPORAL_TARGET: temporal:7233
       HC_TEMPORAL_TASK_QUEUE: hc-data-pipeline-test
@@ -222,6 +228,7 @@ services:
     user: "${HC_GATE_UID:-1000}:${HC_GATE_GID:-1000}"
     environment:
       HC_ENVIRONMENT: test
+      HC_PLATFORM_ENVIRONMENT_ID: hc-test-gates
       HC_RUNTIME_BACKEND: production
       HC_POSTGRES_DSN: postgresql+asyncpg://hc:hc-test-only@postgres:5432/hc_data
       HC_TEST_POSTGRES_DSN: postgresql+asyncpg://hc:hc-test-only@postgres:5432/hc_data

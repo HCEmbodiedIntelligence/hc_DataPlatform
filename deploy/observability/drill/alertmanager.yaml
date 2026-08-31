@@ -1,0 +1,13 @@
+global:
+  resolve_timeout: 5s
+route:
+  receiver: drill-webhook
+  group_wait: 0s
+  group_interval: 1s
+  repeat_interval: 1m
+receivers:
+  - name: drill-webhook
+    webhook_configs:
+      - url: http://obs-drill-receiver:8081/alerts
+        send_resolved: true
+        max_alerts: 1

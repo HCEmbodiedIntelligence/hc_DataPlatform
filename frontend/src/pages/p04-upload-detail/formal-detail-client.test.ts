@@ -11,7 +11,7 @@ import {
   getFormalUploadProcessingStatus,
   getFormalUploadRawMedia,
   loadFormalUploadDetail,
-  resolveFormalUploadPreviewTarget,
+  resolveFormalUploadAlignedMediaTarget,
   resolveFormalUploadViewerTarget,
   type FormalUploadSession,
 } from "./formal-detail-client";
@@ -271,7 +271,7 @@ describe("P04 formal upload detail client", () => {
     expect(headers.get("X-Region-Code")).toBe(scope.regionCode);
   });
 
-  it("loads the exact ingest workflow and derives a fixed Lance preview target", async () => {
+  it("loads the exact ingest workflow and derives its committed media target", async () => {
     const processing = {
       schema_version: "upload-processing-status/v1",
       session_id: session.session_id,
@@ -280,15 +280,14 @@ describe("P04 formal upload detail client", () => {
       status: "SUCCEEDED",
       stage: "succeeded",
       attempt: 1,
-      preview: {
-        schema_version: "upload-preview-target/v1",
+      aligned_media: {
+        schema_version: "upload-aligned-media-target/v1",
         project_id: scope.projectId,
         dataset_id: "dataset_ingest_a",
         rollout_id: session.rollout_id,
         dataset_version: 4,
-        lance_version: 7,
         annotation_task_id: "annotation-a",
-        frequency_hz: 30,
+        fps: 30,
         start_step: 0,
         end_step: 300,
       },
@@ -310,12 +309,11 @@ describe("P04 formal upload detail client", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "/api/v1/projects/project-a/regions/cn-test/upload-sessions/52faee8f-f489-4c19-8b54-38a51cf46899/processing",
     );
-    expect(resolveFormalUploadPreviewTarget(session, loaded)).toEqual({
+    expect(resolveFormalUploadAlignedMediaTarget(session, loaded)).toEqual({
       datasetId: "dataset_ingest_a",
       datasetVersion: 4,
-      lanceVersion: 7,
       annotationTaskId: "annotation-a",
-      frequencyHz: 30,
+      fps: 30,
       startStep: 0,
       endStep: 300,
     });
@@ -336,15 +334,14 @@ describe("P04 formal upload detail client", () => {
       status: "SUCCEEDED",
       stage: "succeeded",
       attempt: 1,
-      preview: {
-        schema_version: "upload-preview-target/v1",
+      aligned_media: {
+        schema_version: "upload-aligned-media-target/v1",
         project_id: "project-other",
         dataset_id: "dataset_ingest_a",
         rollout_id: session.rollout_id,
         dataset_version: 4,
-        lance_version: 7,
         annotation_task_id: "annotation-a",
-        frequency_hz: 30,
+        fps: 30,
         start_step: 0,
         end_step: 300,
       },

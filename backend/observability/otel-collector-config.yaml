@@ -1,3 +1,7 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
   otlp:
     protocols:
@@ -10,43 +14,49 @@ processors:
   memory_limiter:
     check_interval: 2s
     limit_mib: 384
-  resource/environment:
-    attributes:
-      - key: deployment.environment.name
-        action: upsert
-        from_attribute: deployment.environment
+    spike_limit_mib: 96
+  filter/runtime_contract:
+    error_mode: propagate
+    logs:
+      log_record:
+        - 'not IsMatch(body, "^\\{\\\"schema_version\\\":\\\"hc-runtime-log/v1\\\",")'
   batch:
     send_batch_size: 2048
     timeout: 5s
 
-connectors:
-  spanmetrics:
-    histogram:
-      explicit:
-        buckets: [0.01s, 0.05s, 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s, 30s, 60s, 300s, 600s]
-    dimensions:
-      - name: project_id
-      - name: resource_id
-      - name: workflow_id
-
 exporters:
+  otlp_http/loki:
+    endpoint: ${env:HC_LOKI_OTLP_ENDPOINT}
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
   prometheus:
     endpoint: 0.0.0.0:9464
     resource_to_telemetry_conversion:
       enabled: true
-  debug:
-    verbosity: basic
+  nop: {}
 
 service:
+  extensions: [health_check]
   telemetry:
     logs:
       level: info
   pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/runtime_contract, batch]
+      exporters: [otlp_http/loki]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource/environment, batch]
-      exporters: [spanmetrics, debug]
-    metrics:
-      receivers: [otlp, spanmetrics]
-      processors: [memory_limiter, resource/environment, batch]
-      exporters: [prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [nop]

@@ -1,8 +1,8 @@
 # BE23 公网路径安全覆盖与严格回归差距矩阵
 
-审计时点：2026-08-18；2026-08-20 已追加当前 runtime 路径清单。事实源是当前工作树 `create_app(...).openapi()`，不是
-`backend/openapi.generated.yaml`、Mock 或历史验收统计。当前 runtime 有 159 个 schema path、
-173 个 HTTP operation（其中 171 个 `/api/v1` operation）；另有 5 个未进入 schema 的公开面。
+审计时点：2026-08-18；2026-08-29 已追加当前 runtime 路径清单。事实源是当前工作树 `create_app(...).openapi()`，不是
+`backend/openapi.generated.yaml`、Mock 或历史验收统计。当前 runtime 有 261 个 schema path、
+294 个 HTTP operation（其中 292 个 `/api/v1` operation）；另有 5 个未进入 schema 的公开面。
 
 状态口径：`PASS` 只表示该单元格列出的行为已真实执行；`PARTIAL`、`FAIL`、`G-*` 都不是
 发布通过。相同证据代码在每行重复出现，是为了让每个公网 path 都有测试路径或明确缺口。
@@ -122,9 +122,23 @@
 | `/api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation` | GET | N1；OpenAPI authn 缺口 N3 | Z4 局部 | rollout ID pair 未测 | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
 | `/api/v1/annotation-tasks/{task_id}/auto-annotation` | POST | N1；OpenAPI authn 缺口 N3 | Z4/feature disabled | task scope Z4 | G-AUDIT | G-RATE | X1 | 缺 Idempotency-Key/concurrent job test | provider error leakage未测 | PARTIAL |
 | `/api/v1/capabilities/auto-annotation` | GET | N0（公开 feature discovery） | N/A | N/A | N/A | G-RATE | X1 | N/A | 响应字段小；E1 | PARTIAL：公开性需产品确认 |
-| `/api/v1/previews/sessions` | POST | N1 | Z3 read permission | body project scope Z3；adapter IDOR 未全测 | G-AUDIT | G-RATE | X1 | 缺 Idempotency-Key/concurrent create test | signed URL 仅授权响应；日志 pilot 缺 | PARTIAL |
-| `/api/v1/previews/sessions/{session_id}` | GET | N1 | Z3 | descriptor project scope Z3；same ID pair不全 | G-AUDIT | G-RATE | X1 | N/A | signed URL/对象 locator 最小披露缺 pilot | PARTIAL |
-| `/api/v1/previews/sessions/{session_id}/media/{asset_name}` | GET | N0；仅会话/资产/过期时间三元 HMAC capability，不接受 bearer | descriptor 签发前 N1/Z3；媒体请求必须逐项验 session、artifact、asset、expiry | session UUID 不可枚举；asset 仅 allowlist，缓存根边界由 `test_preview_media_api.py` 覆盖 | G-AUDIT | URI、签名和 Range 有界；G-RATE | X1；不发 cookie | N/A（只读能力 URL） | 过期/篡改 403，无文件或对象定位器泄露；Range 206 | PARTIAL：本地 HLS 缓存已可用；对象存储原始媒体、下载审计与 gateway 限流仍缺 |
+| `/api/v1/platform/version` | GET | N0（公开最小 release identity） | N/A | N/A | N/A | G-RATE | X1 | N/A（不可变只读） | 仅 release/git/chart/migration/image digest，无主机或 Secret | PASS：staging/production sentinel/zero identity fail closed；OpenAPI `security: []` 显式 |
+| `/api/v1/platform/audit/events` | GET | N1；OpenAPI bearer 显式 | exact `platform.operations.read` 或只读兼容 `platform.admin`；release/backup/restore operator 不可代替 | 全局 PLATFORM stream；不接受 project/organization scope 猜测 | 成功/拒绝追加 PLATFORM audit；source 与 integrity entry 均 append-only | limit≤200、HMAC cursor≤16384、可选 UTC window；G-RATE | X1；private no-store | snapshot+occurred_at/event_id keyset | actor/resource 仅 HMAC ref，`safe_details` 值从不出站，只返回 allowlisted key 名；E1 | PASS：backup/restore/release 分类、分页、错 capability、sentinel zero match |
+| `/api/v1/platform/audit/integrity` | GET | N1；OpenAPI bearer 显式 | 仅 exact `platform.maintenance.verify`；admin/viewer/operator 不通配 | 单一全局 PLATFORM hash chain | 校验动作自身追加新链事件；结果不返回 digest | 单 aggregate；G-RATE | X1；private no-store | 重算 source hash、sequence、predecessor、head | 只返回 count/status/time；tamper 时 FAILED；E1 | PASS：真实 PostgreSQL source/entry mutation 拒绝与 tamper 检测 |
+| `/api/v1/platform/audit/events:export` | GET | N1；OpenAPI bearer 显式 | 仅 exact `platform.maintenance.verify`；viewer/operator 不可导出 | 与校验同一全局 chain；完整性失败不产生 payload | 成功导出追加 PLATFORM audit；payload 为同一脱敏 projection | ≤10000 event，超限/非法 window fail closed；G-RATE | X1；private no-store + attachment | export 前完整链验证；不覆盖旧 artifact | 无 actor/resource 原值、Secret/URL/object locator/`safe_details` value；E1 | PASS：三域真实事件 JSONL、wrong capability 403、tamper 409、sentinel zero match |
+| `/api/v1/platform/runtime-config` | GET | N1；OpenAPI bearer 显式 | exact `platform.operations.read` 或只读兼容 `platform.admin`；项目 capability 不可代替 | environment 固定为本部署；只返回本节点已应用 revision | 成功/拒绝均写 PLATFORM append-only audit，仅含 capability、schema/revision 和 environment | 固定三个 allowlist key；G-RATE | X1；private no-store | N/A（只读节点 snapshot） | 无 DSN/Secret/TLS/image/schema payload；受保护 reason metadata 先做敏感 marker 拒绝；E1 | PASS：匿名/错 capability/脱敏/正式与 runtime OpenAPI 有测试 |
+| `/api/v1/platform/runtime-config/revisions` | GET/POST | N1；OpenAPI bearer 显式 | GET 要 exact viewer/admin；POST 仅 exact `platform.release.operate`，admin/viewer 不通配 | environment 固定；PostgreSQL head row lock + expected revision CAS | GET/成功/拒绝/失败均写 PLATFORM append-only audit；mutation audit 只含 key 名，不含值/原因正文 | limit≤100；patch 1～3 key；整数 10～86400/严格 boolean；G-RATE | X1；private no-store | monotonic revision + expected revision CAS；同 revision 单 winner | unknown/Secret/DSN/TLS/image/schema key 在落库前 422；stale 409；response/audit 不回显拒绝值；E1 | PASS：真实 PG notification/lost-notification、职责和泄密负测 |
+| `/api/v1/platform/runtime-config/revisions/{target_revision}:rollback` | POST | N1；OpenAPI bearer 显式 | 仅 exact `platform.release.operate` | environment 固定；target revision 必须存在于同一环境 | rollback 追加新 revision/event + PLATFORM audit，不更新/删除历史 | target/expected revision 非负，reason 8～500；G-RATE | X1；private no-store | head CAS；rollback 新 revision 严格递增 | 不存在 404、stale 409、非法 metadata 422；无值/Secret audit；E1 | PASS：baseline/历史 rollback、immutable trigger 与 monotonic event 有真实 PG 测试 |
+| `/api/v1/platform/instances` | GET | N1；OpenAPI bearer 显式 | exact `platform.operations.read` 或只读兼容 `platform.admin`；项目 capability 不可代替 | 无租户 ID；PostgreSQL 全局控制面表，90 秒 stale 由 DB 时钟判定 | 成功/拒绝均写 PLATFORM append-only audit，包含 actor/request/capability，不含依赖 detail | stale/role 筛选，响应最多 1000 行；G-RATE | X1；private no-store | N/A（心跳由进程内部写入） | readiness 仅 allowlist 状态/检查名；无 DSN、错误 detail 或 Secret；E1 | PASS：viewer 与命令 capability 分离，真实/内存审计断言 |
+| `/api/v1/platform/backups` | GET | N1；OpenAPI bearer 显式 | exact `platform.operations.read` 或只读兼容 `platform.admin`；项目 capability 不可代替 | 强制当前 `HC_PLATFORM_ENVIRONMENT_ID`，不接受调用者指定环境 | 成功/拒绝均写 PLATFORM append-only audit，仅含 capability 与稳定资源 ID | status 枚举、limit≤100、签名 cursor≤1024；G-RATE | X1；private no-store | N/A（只读 keyset page） | 仅返回脱敏 catalog 摘要，不返回 manifest URI、signature hash、KMS 或物理 bucket；E1 | PASS：匿名/错 capability/非法 cursor/脱敏/正式与 runtime OpenAPI 均有测试 |
+| `/api/v1/platform/maintenance-operations` | POST | N1；OpenAPI bearer 显式 | BACKUP/OTHER=`platform.maintenance.operate`；MIGRATION/RELEASE=`platform.release.operate`；RESTORE=`platform.break_glass`；`platform.admin` 不通配 | environment 固定为本部署 `HC_PLATFORM_ENVIRONMENT_ID`；同环境只允许一个 nonterminal operation | 成功与 maintenance event 同事务追加 PLATFORM audit；拒绝/失败追加 outcome + 稳定错误码 | operation/actor/digest 长度有界；G-RATE | X1；private no-store | operation ID 唯一但无 Idempotency-Key | 403/409 固定脱敏 detail；审计无 digest/token/owner；E1 | PASS：5 种 operation kind 真实 PG capability pair |
+| `/api/v1/platform/maintenance-operations/{operation_id}` | GET | N1；OpenAPI bearer 显式 | exact viewer 或只读兼容 `platform.admin` | 只返回本部署 environment；跨 environment ID 与不存在均固定 404 | 成功/跨环境失败均为 PLATFORM append-only audit | 单行响应；G-RATE | X1；private no-store | N/A | 404 固定脱敏，不披露其他 environment；E1 | PASS：正式/runtime capability policy 与跨环境负向用例 |
+| `/api/v1/platform/maintenance-operations/{operation_id}:acquire` | POST | N1；OpenAPI bearer 显式 | 按 operation kind 要求 exact operator capability | 本 environment operation；PostgreSQL row lock + DB clock | acquire 成功与 operation mutation 同事务追加 maintenance + PLATFORM audit | 30 秒 lease；G-RATE | X1；private no-store | REQUESTED 单 winner；单调 fencing token | owner/state 失配固定 409；无 token/owner audit detail；E1 | PASS |
+| `/api/v1/platform/maintenance-operations/{operation_id}:renew` | POST | N1；OpenAPI bearer 显式 | 按 operation kind 要求 exact operator capability | 本 environment；exact owner/token/unexpired lease | 每次 lease renewal 追加 maintenance + PLATFORM audit；失败只记录稳定错误码 | 30 秒 lease、DB clock；G-RATE | X1；private no-store | exact owner/token/state/version CAS | stale owner/token 固定脱敏 409；E1 | PASS |
+| `/api/v1/platform/maintenance-operations/{operation_id}:takeover` | POST | N1；OpenAPI bearer 显式 | 仅 exact `platform.break_glass`；admin/operator 不通配 | 本 environment；仅 DB clock 已过期 lease | takeover 成功原子追加；拒绝/失败 outcome 可查 | 仅过期后接管；G-RATE | X1；private no-store | row lock 单 winner；新 token 严格递增 | 活跃 lease/非法 state 固定 409；E1 | PASS：高危授权独立 |
+| `/api/v1/platform/maintenance-operations/{operation_id}:transition` | POST | N1；OpenAPI bearer 显式 | 普通 transition 按 kind；FAILED_READ_ONLY recovery 与 SUCCEEDED write-enable 仅 exact break-glass | 本 environment；exact owner/token/state/version；writer inventory 为零才可 FENCED | transition/approval 与 PLATFORM audit 同事务；拒绝/失败另记 outcome | 冻结状态机；G-RATE | X1；private no-store | CAS；READ_ONLY/WRITE_ENABLE 与 fence 同事务；SUCCEEDED 要 reconciliation + approval | 旧 owner/epoch、非法 transition 固定脱敏 409；E1 | PASS：operator 无法 write-enable，break-glass 仍受状态机约束 |
+| `/api/v1/platform/maintenance-operations/{operation_id}:reconcile` | POST | N1；OpenAPI bearer 显式 | 仅 exact `platform.maintenance.verify` | 本 environment；exact owner/token/VERIFYING/version | reconciliation 成功原子追加；拒绝/失败另记 outcome | 单次 receipt；G-RATE | X1；private no-store | exact version CAS | 非 VERIFYING/旧 owner 固定脱敏 409；E1 | PASS：verifier 与 operator 分离 |
+| `/api/v1/aligned-media/authorize` | POST | N1 | Z3 read permission | body project + organization/region headers exact scope；selector includes Dataset version/rollout/camera | successful grant writes aligned-media audit | G-RATE | X1；private no-store | stateless read; no job/session mutation | only a short-lived direct S3 GET URL; no object credentials or local paths | PASS：425 before Lance commit, 409 stable failure, READY returns one MP4 URL |
 | `/api/v1/datasets/publication-preflight` | POST | N1 | publish permission Z3 | request project Z3；Repo pair不全 | G-AUDIT | G-RATE | X1 | N/A | E1 | PARTIAL |
 | `/api/v1/datasets/publications` | POST | N1 | publish permission Z3 | request project；Repo pair不全 | G-AUDIT | G-RATE | X1 | service idempotency局部；HTTP key缺 | E1 | PARTIAL |
 | `/api/v1/datasets/{dataset_id}/versions/{dataset_version}` | GET | N1 | read Z3 | project query/body source；same ID pair不全 | G-AUDIT | G-RATE | X1 | N/A | manifest/object locators最小披露未测 | PARTIAL |
@@ -251,6 +265,7 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/dashboard/task-status` | N1；dashboard capability 与 project/region 查询范围。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/device-capture-facts` | N1；ingest 读 capability 与 exact project/region 范围。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}` | N1；组织-项目范围与 robot-model capability。 |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:create-draft` | N1；组织范围、robot-model 写 capability、版本状态与幂等合同。 |
 | `/api/v1/platform/accounts/{principal_id}:unlock` | N1；仅全局 `platform.account_security.manage`，不接受项目管理员替代。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/upload-sessions` | N1；未批准上传合同。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:preflight-publish` | N1；未批准发布合同。 |
@@ -346,6 +361,7 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/platform/accounts/{principal_id}:enable` | N1；全局账户管理 capability 与安全审计。 |
 | `/api/v1/platform/accounts/{principal_id}:reset-password` | N1；管理员重置不回显凭据或恢复 token。 |
 | `/api/v1/platform/accounts/{principal_id}:role` | N1；全局角色变更受账户管理 capability 保护。 |
+| `/api/v1/platform/version` | N0；公开最小不可变 release identity，不包含节点、主机或 Secret。 |
 | `/api/v1/projects/{project_id}/audit/exports` | N1；P19 organization/project/region exact scope，创建持久化导出任务。 |
 | `/api/v1/projects/{project_id}/audit/exports/{job_id}` | N1；P19 导出任务按 organization/project/region 隔离。 |
 | `/api/v1/projects/{project_id}/audit/exports/{job_id}/download` | N1；仅成功任务可签发短时、no-store 下载授权。 |
@@ -388,8 +404,13 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/organizations/{organization_id}/stream-schemas/{schema_id}/versions/{schema_version}:validate` | N1；P17 schema 校验范围。 |
 | `/api/v1/organizations/{organization_id}/stream-schemas:import` | N1；P17 schema 导入范围。 |
 | `/api/v1/projects/{project_id}/audit/integrity` | N1；P19 审计完整性只读校验。 |
+| `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}/packages` | N1；P20 collection task 与 package 投影的同项目读取范围。 |
 | `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:cancel` | N1；P20 collection task 取消 capability。 |
 | `/api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:reopen` | N1；P20 collection task 重新打开 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings` | N1；project/region 精确读取范围，分页边界由路由合同限制。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}` | N1；project/region 与 recording 归属必须同时匹配。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft` | N1；切片草稿命令要求精确 project/region/recording 写权限。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:finalize` | N1；finalize 使用同一 scope 与草稿状态机约束。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions` | N1；P16 校准版本范围。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}/dataset-associations` | N1；P16 dataset 关联范围。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}/document` | N1；P16 版本文档范围。 |
@@ -400,4 +421,29 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}` | N1；P15 robot 单资源范围。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}/maintenance-records` | N1；P15 维保记录范围。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/robots/{robot_id}:transition` | N1；P15 robot 状态写 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/quality-problems` | N1；quality 读 capability 与精确 project/region 分页范围。 |
 | `/api/v1/projects/{project_id}/storage/capacity/history` | N1；P12 容量历史 project 范围。 |
+
+## 8. 2026-08-29 平台运维与安全发布增量
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `/api/v1/platform/overview` | N1；仅 `platform.admin` / `platform.operations.read`，主机、Pod、仓库和环境标识 HMAC 脱敏。 |
+| `/api/v1/platform/logs` | N1；仅固定 allowlist 过滤器，不接受自由 LogQL，结果移除节点/实例/trace 标识。 |
+| `/api/v1/platform/releases` | N1；只读脱敏发布历史；操作员标识只返回 HMAC reference。 |
+| `/api/v1/platform/releases:preflight` | N1；仅 `platform.release.operate`；验证固定 Ed25519 key、单调序列、兼容矩阵、节点 digest 和备份门禁。 |
+| `/api/v1/platform/releases/{release_id}:approve` | N1；仅 `platform.release.operate`；CAS 状态修订与 distinct approver，不接收集群凭据。 |
+| `/api/v1/platform/releases/{release_id}:transition` | N1；仅 `platform.release.operate`；外部控制器按有限状态机记录步骤，不接收集群凭据。 |
+| `/api/v1/platform/object-store-location` | N1；任意已认证账户可读取对象存储逻辑位置和配置来源，不返回 endpoint、bucket、access key 或 Secret。 |
+| `/api/v1/platform/object-store-config` | N1；仅 exact `platform.admin`；GET 不返回 Secret，PUT 使用 revision CAS，并将凭据加密后持久化，成功与拒绝均写 PLATFORM audit。 |
+| `/api/v1/platform/projects` | N1；仅 exact `platform.admin`；GET/POST 操作全局项目目录，创建冲突 fail closed，成功与拒绝均写 PLATFORM audit。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads` | N1；写 capability 与 organization/project/region 精确 scope；只签发有界 multipart 上传授权，不返回对象存储凭据。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}` | N1；读 capability 与精确 scope；upload ID 必须归属当前 scope，响应不含对象 key 或凭据。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}/assets/{asset_id}:authorize-parts` | N1；写 capability 与精确 scope；仅为当前 UPLOADING asset 的声明分片签发短期授权。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}/assets/{asset_id}:complete` | N1；写 capability 与精确 scope；按声明 part 集合完成上传，并校验 size、CRC64 与 SHA-256。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}:commit` | N1；写 capability 与精确 scope；仅在全部不可变资产校验通过后提交，并返回 no-store/ETag。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes` | N1；读 capability 与精确 scope；仅返回当前 recording 的 Episode 处理状态。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources` | N1；读 capability 与精确 scope；仅为 finalized Episode 返回短期原视频读取 URL，不物化预览副本。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:transition-processing` | N1；写 capability 与精确 scope；使用 expected status 防止并发状态覆盖。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-proposals` | N1；写 capability 与精确 scope；模型切片提案受 If-Match/ETag 并发保护。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/video-sources` | N1；读 capability 与精确 scope；仅签发短期原视频读取 URL，不返回对象存储凭据或物理 key。 |

@@ -44,9 +44,9 @@ def document() -> dict[str, Any]:
     paths = {
         path: item
         for path, item in runtime["paths"].items()
-        if path == _PATH_PREFIX or path.startswith(f"{_PATH_PREFIX}/") or path.startswith(
-            f"{_PATH_PREFIX}:"
-        )
+        if path == _PATH_PREFIX
+        or path.startswith(f"{_PATH_PREFIX}/")
+        or path.startswith(f"{_PATH_PREFIX}:")
     }
     return {
         "openapi": "3.1.0",

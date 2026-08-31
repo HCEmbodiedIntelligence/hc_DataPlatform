@@ -1,5 +1,8 @@
 global:
   releaseId: platform-v2026.08.17.1
+  releaseManifestDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  gitCommit: 0123456789abcdef0123456789abcdef01234567
+  migrationManifestDigest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 frontend:
   image:
     repository: registry.example.com/hc-data-platform/frontend
@@ -22,12 +25,18 @@ backend:
       digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
   config:
     environment: staging
-    serviceVersion: platform-v2026.08.17.1
+    platformEnvironmentId: hc-staging
+    secretBundleRevision: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
     outboxScopes: '["staging-organization/staging-project/staging-region"]'
     storageInventoryScopes: '["staging-organization/staging-project/staging-region"]'
     storageInventoryIntervalSeconds: "3600"
-    previewGcIntervalSeconds: "300"
+    mediaMaintenanceIntervalSeconds: "300"
+    objectStoreProvider: oss
+    objectStoreEndpoint: https://oss-cn-hangzhou-internal.aliyuncs.com
+    objectStorePublicEndpoint: https://oss-cn-hangzhou.aliyuncs.com
+    objectStoreBucket: replace-with-staging-oss-bucket
+    objectStoreRegion: cn-hangzhou
     # Internal/provider gateway credentials are referenced via
     # backend.existingSecrets.application.autoAnnotationProviderApiKey.
     autoAnnotationProviderEndpoint: https://annotation-gateway.staging.example.com/v1/annotate

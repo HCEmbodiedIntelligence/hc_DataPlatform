@@ -46,6 +46,19 @@ hc-data-platform.io/release-id: {{ .Values.global.releaseId | quote }}
 {{- printf "%s@%s" $repository $digest -}}
 {{- end }}
 
+{{- define "hc-data-platform.observabilityImage" -}}
+{{- $repository := required "observability image.repository is required" .repository -}}
+{{- $digest := required "observability image.digest is required" .digest -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) -}}
+{{- fail "observability image.digest must be a sha256 digest" -}}
+{{- end -}}
+{{- printf "%s@%s" $repository $digest -}}
+{{- end }}
+
+{{- define "hc-data-platform.observabilityFullname" -}}
+{{- printf "%s-observability" (include "hc-data-platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "hc-data-platform.backendFullname" -}}
 {{- printf "%s-backend" (include "hc-data-platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
@@ -58,6 +71,34 @@ hc-data-platform.io/release-id: {{ .Values.global.releaseId | quote }}
 {{- end }}
 {{- end }}
 
+{{- define "hc-data-platform.haTopologySpreadConstraints" -}}
+{{- $root := .root -}}
+{{- $component := .component -}}
+{{- if $root.Values.highAvailability.enabled }}
+topologySpreadConstraints:
+  - maxSkew: {{ $root.Values.highAvailability.maxSkew }}
+    minDomains: {{ $root.Values.highAvailability.nodeMinDomains }}
+    topologyKey: {{ $root.Values.highAvailability.nodeTopologyKey | quote }}
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        {{- include "hc-data-platform.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    matchLabelKeys:
+      - pod-template-hash
+  - maxSkew: {{ $root.Values.highAvailability.maxSkew }}
+    minDomains: {{ $root.Values.highAvailability.zoneMinDomains }}
+    topologyKey: {{ $root.Values.highAvailability.zoneTopologyKey | quote }}
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        {{- include "hc-data-platform.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    matchLabelKeys:
+      - pod-template-hash
+{{- end }}
+{{- end }}
+
 {{- define "hc-data-platform.backendSecretEnv" -}}
 {{- with .Values.backend.existingSecrets.application.autoAnnotationProviderApiKey }}
 - name: HC_AUTO_ANNOTATION_PROVIDER_API_KEY
@@ -66,6 +107,7 @@ hc-data-platform.io/release-id: {{ .Values.global.releaseId | quote }}
       name: {{ required "backend.existingSecrets.application.name is required" $.Values.backend.existingSecrets.application.name | quote }}
       key: {{ . | quote }}
 {{- end }}
+
 - name: HC_POSTGRES_DSN
   valueFrom:
     secretKeyRef:
@@ -108,4 +150,14 @@ hc-data-platform.io/release-id: {{ .Values.global.releaseId | quote }}
       name: {{ required "backend.existingSecrets.application.name is required" .Values.backend.existingSecrets.application.name | quote }}
       key: {{ required "backend.existingSecrets.application.authSmtpPasswordKey is required" .Values.backend.existingSecrets.application.authSmtpPasswordKey | quote }}
 {{ end }}
+{{- end }}
+
+{{- define "hc-data-platform.backendApiSecretEnv" -}}
+{{- with .Values.observability.loki.query.existingBearerTokenSecret.name }}
+- name: HC_OBSERVABILITY_LOG_QUERY_BEARER_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ . | quote }}
+      key: {{ required "observability.loki.query.existingBearerTokenSecret.key is required when its name is set" $.Values.observability.loki.query.existingBearerTokenSecret.key | quote }}
+{{- end }}
 {{- end }}

@@ -83,6 +83,6 @@ export const QUALITY_OUTCOMES: readonly QualityOutcome[] = [
 
 export const PREVIEW_POLICY = {
   code: 'EPHEMERAL_PREVIEW',
-  title: '按需预览',
-  description: '临时 HLS / fMP4 缓存，仅用于查看，不是正式资产或训练来源。',
+  title: '历史临时预览',
+  description: '仅治理旧预览对象；当前相机播放使用 Dataset 版本绑定的正式 MP4。',
 } as const;

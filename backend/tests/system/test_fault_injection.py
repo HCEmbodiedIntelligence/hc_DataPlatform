@@ -20,15 +20,6 @@ from hc_data_platform.lance_catalog import (
     StepRecord,
     compute_fragment_hash,
 )
-from hc_data_platform.preview.memory import (
-    HmacUrlSigner,
-    InMemoryExclusionReader,
-    InMemoryMediaEncoder,
-    InMemoryPreviewCache,
-    InMemoryStepReader,
-)
-from hc_data_platform.preview.models import PreviewFrameV1, PreviewRequestV1, ViewMode
-from hc_data_platform.preview.service import PreviewService
 from hc_data_platform.publishing.exporters import LeRobotV3Exporter
 from hc_data_platform.publishing.memory import (
     InMemoryAnnotationSnapshot,
@@ -80,18 +71,6 @@ class _FailOnceSummarySink(FakeQualityReportSink):
             self.fail_next_summary = False
             raise ConnectionError("injected metadata-store interruption")
         super().put_summary(summary)
-
-
-class _FailOnceCache(InMemoryPreviewCache):
-    def __init__(self) -> None:
-        super().__init__()
-        self.fail_next_put = True
-
-    def put(self, record: Any) -> None:
-        if self.fail_next_put:
-            self.fail_next_put = False
-            raise ConnectionError("injected cache commit interruption")
-        super().put(record)
 
 
 class _FailAfterPublishSink(InMemoryArtifactSink):
@@ -325,45 +304,6 @@ def test_worker_death_after_lance_side_effect_replays_without_duplicate_steps() 
     assert workflow.submit("fault-rollout:a:converter-v1", {}) == result
     assert result == {"version": 1, "steps": 3}
     assert len(catalog.list_versions("fault-dataset")) == 1
-
-
-def test_transcode_cache_commit_interruption_reuses_one_artifact_identity() -> None:
-    frames = [
-        PreviewFrameV1(
-            rollout_id="fault-rollout",
-            step_index=index,
-            timestamp_ns=index * 33_333_333,
-            source_timestamp_ns=index * 33_333_333,
-            image_ref=f"lance://camera/{index}",
-        )
-        for index in range(3)
-    ]
-    encoder = InMemoryMediaEncoder()
-    service = PreviewService(
-        step_reader=InMemoryStepReader(frames),
-        exclusions=InMemoryExclusionReader(),
-        encoder=encoder,
-        cache=_FailOnceCache(),
-        signer=HmacUrlSigner(b"fault-preview-secret"),
-        clock=lambda: datetime(2026, 8, 14, 8, tzinfo=timezone.utc),
-    )
-    request = PreviewRequestV1(
-        project_id="fault-project",
-        dataset_id="fault-dataset",
-        rollout_id="fault-rollout",
-        lance_version="1",
-        annotation_revision=1,
-        camera_id="camera",
-        view_mode=ViewMode.ORIGINAL,
-    )
-
-    with pytest.raises(ConnectionError, match="cache commit"):
-        service.create(request)
-    descriptor = service.create(request)
-    assert len(encoder.calls) == 2
-    assert descriptor.frame_count == 3
-    assert service.create(request) == descriptor
-    assert len(encoder.calls) == 2
 
 
 def test_worker_death_after_export_promotion_recovers_one_downloadable_version() -> None:

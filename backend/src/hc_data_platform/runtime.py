@@ -6,14 +6,39 @@ import importlib
 import json
 import os
 import socket
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
+from itertools import islice
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, overload
 from urllib.parse import unquote, urlparse
 
 from pydantic import TypeAdapter
 
+from hc_data_platform.aligned_media.artifact_store import (
+    S3AlignedMediaArtifactStore,
+    S3AlignedMediaOrphanReconciler,
+)
+from hc_data_platform.aligned_media.audit import (
+    AlignedMediaAuditRecorder,
+    PostgresAlignedMediaAuditRecorder,
+)
+from hc_data_platform.aligned_media.capacity import PostgresMediaCapacityGate
+from hc_data_platform.aligned_media.encoder import FFmpegMp4Encoder
+from hc_data_platform.aligned_media.models import (
+    AlignedMediaArtifactV1,
+    AlignedMediaFrameReferenceV1,
+)
+from hc_data_platform.aligned_media.ports import AlignedMediaArtifactStorePort
+from hc_data_platform.aligned_media.postgres import PostgresAlignedMediaRepository
+from hc_data_platform.aligned_media.profiles import AlignedMediaProfileCatalog
+from hc_data_platform.aligned_media.router import configure_aligned_media
+from hc_data_platform.aligned_media.service import (
+    AlignedMediaAuthorizationService,
+    AlignedMediaGenerationService,
+)
+from hc_data_platform.aligned_media.staging import ArrowAlignedFrameReader
 from hc_data_platform.alignment.arrow_writer import ArrowFragmentWriter
 from hc_data_platform.alignment.canonical import denormalize_from_json
 from hc_data_platform.alignment.engine import AlignmentEngine
@@ -29,6 +54,10 @@ from hc_data_platform.annotation.auto_jobs import (
 from hc_data_platform.annotation.automation import (
     AutomaticAnnotationTaskService,
     PostgresAutomaticAnnotationRepository,
+)
+from hc_data_platform.annotation.frame_selection_lifecycle import (
+    FrameSelectionLifecycleCollector,
+    PostgresFrameSelectionLifecycleRepository,
 )
 from hc_data_platform.annotation.postgres import PostgresAnnotationRepository
 from hc_data_platform.annotation.router import configure_annotation
@@ -59,6 +88,14 @@ from hc_data_platform.collection_tasks.models import CollectionTaskRecord
 from hc_data_platform.collection_tasks.postgres import PostgresCollectionTaskRepository
 from hc_data_platform.collection_tasks.router import configure_collection_tasks
 from hc_data_platform.collection_tasks.service import CollectionTaskService
+from hc_data_platform.continuous_recordings.asset_repository import (
+    PostgresRecordingAssetRepository,
+)
+from hc_data_platform.continuous_recordings.repository import (
+    PostgresContinuousRecordingRepository,
+)
+from hc_data_platform.continuous_recordings.router import configure_continuous_recordings
+from hc_data_platform.continuous_recordings.service import ContinuousRecordingService
 from hc_data_platform.core.config import Settings, get_settings
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.dashboard.postgres import PostgresDashboardRepository
@@ -81,7 +118,7 @@ from hc_data_platform.dataset_registry.models import (
 from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
 from hc_data_platform.dataset_registry.router import configure_dataset_page
 from hc_data_platform.dataset_registry.service import DatasetPageService
-from hc_data_platform.ingest.adapters import S3ObjectStorage
+from hc_data_platform.ingest.adapters import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.ingest.device_facts import (
     DeviceCaptureFactService,
     PostgresDeviceCaptureFactRepository,
@@ -115,27 +152,10 @@ from hc_data_platform.manual_cleaning.models import (
 from hc_data_platform.manual_cleaning.repository import PostgresManualIssueRepository
 from hc_data_platform.manual_cleaning.router import configure_manual_issues
 from hc_data_platform.manual_cleaning.service import ManualIssueService
-from hc_data_platform.preview.adapters import (
-    AnnotationExclusionAdapter,
-    FFmpegHlsEncoder,
-    LanceStepReaderAdapter,
-    S3ImageRefResolver,
+from hc_data_platform.platform_ops.maintenance import (
+    MaintenanceWriteGate,
+    PostgresMaintenanceRepository,
 )
-from hc_data_platform.preview.artifact_store import S3PreviewArtifactStore
-from hc_data_platform.preview.audit import PostgresPreviewAuditRecorder, PreviewAuditRecorder
-from hc_data_platform.preview.gc import PreviewGarbageCollector
-from hc_data_platform.preview.memory import HmacUrlSigner
-from hc_data_platform.preview.postgres import PostgresPreviewRepository
-from hc_data_platform.preview.profiles import PreviewProfileCatalog
-from hc_data_platform.preview.router import (
-    configure_preview_audit_recorder,
-    configure_preview_service,
-)
-from hc_data_platform.preview.service import (
-    PreviewControlPlaneService,
-    PreviewGenerationService,
-)
-from hc_data_platform.preview.temporal_queue import TemporalPreviewJobQueue
 from hc_data_platform.publishing.adapters import (
     ApprovedAnnotationSnapshotAdapter,
     CatalogSnapshotAdapter,
@@ -194,6 +214,7 @@ from hc_data_platform.storage.inventory import (
 )
 from hc_data_platform.storage.inventory_worker import StorageInventoryRuntime
 from hc_data_platform.storage.object_store import S3StorageObjectOperator
+from hc_data_platform.storage.oss_client import OssBotoCompatClient, build_oss_bucket
 from hc_data_platform.storage.postgres import (
     PostgresStorageIdempotencyStore,
     PostgresStorageRepository,
@@ -265,27 +286,22 @@ class ArrowCatalogFragmentAdapter:
     def prepare(
         self, request: AlignmentActivityInput, manifest: AlignedFragmentManifestV1
     ) -> CatalogFragmentPayloadV1:
+        catalog_manifest, sequence = self.prepare_streaming(request, manifest)
+        return CatalogFragmentPayloadV1(manifest=catalog_manifest, steps=tuple(sequence))
+
+    def prepare_streaming(
+        self,
+        request: AlignmentActivityInput,
+        manifest: AlignedFragmentManifestV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
+    ) -> tuple[CatalogFragmentManifestV1, Sequence[StepRecord]]:
         snapshot = self._catalog_repository.schema_for(request.project_id, request.dataset_id)
         if snapshot is None or snapshot.schema_snapshot_id != request.schema_snapshot_id:
             raise KeyError((request.project_id, request.dataset_id, request.schema_snapshot_id))
-        rows = self._read_rows(manifest.staging_uri)
-        steps = tuple(
-            StepRecord(
-                rollout_id=str(row["rollout_id"]),
-                step_index=int(row["step_index"]),
-                timestamp_ns=int(row["timestamp_ns"]),
-                modalities={name: value.value for name, value in row["modalities"].items()},
-                source_timestamps_ns={
-                    name: value.source_timestamps_ns for name, value in row["modalities"].items()
-                },
-                time_error_ns={
-                    name: value.time_error_ns for name, value in row["modalities"].items()
-                },
-                valid={name: value.valid for name, value in row["modalities"].items()},
-                repeated={name: value.repeated for name, value in row["modalities"].items()},
-                sample_valid=bool(row["sample_valid"]),
-            )
-            for row in rows
+        steps: Sequence[StepRecord] = _ArrowStepSequence(
+            manifest.staging_uri,
+            manifest.row_count,
+            media_artifacts=media_artifacts,
         )
         catalog_manifest = CatalogFragmentManifestV1(
             project_id=request.project_id,
@@ -298,13 +314,31 @@ class ArrowCatalogFragmentAdapter:
             converter_version=manifest.converter_version,
             attempt_id=manifest.attempt_id,
             fragment_uri=manifest.staging_uri,
-            step_count=len(steps),
+            step_count=manifest.row_count,
             content_hash=compute_fragment_hash(steps),
         )
-        return CatalogFragmentPayloadV1(manifest=catalog_manifest, steps=steps)
+        return catalog_manifest, steps
 
-    @staticmethod
-    def _read_rows(uri: str) -> list[dict[str, Any]]:
+
+class _ArrowStepSequence(Sequence[StepRecord]):
+    """Replayable, batch-bounded view over an aligned Arrow fragment."""
+
+    def __init__(
+        self,
+        uri: str,
+        row_count: int,
+        *,
+        media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
+    ) -> None:
+        self._uri = uri
+        self._row_count = row_count
+        self._media = {artifact.camera_id: artifact for artifact in media_artifacts}
+
+    def __len__(self) -> int:
+        return self._row_count
+
+    def __iter__(self) -> Iterator[StepRecord]:
+        uri = self._uri
         parsed = urlparse(uri)
         if parsed.scheme != "file":
             raise ValueError("the Arrow fragment adapter requires a committed file URI")
@@ -313,23 +347,75 @@ class ArrowCatalogFragmentAdapter:
 
         path = unquote(parsed.path)
         with pa.memory_map(path, "r") as source:
-            raw_rows = ipc.open_file(source).read_all().to_pylist()
-        rows: list[dict[str, Any]] = []
-        for raw in raw_rows:
-            encoded = raw["modalities_json"]
-            payload = denormalize_from_json(json.loads(bytes(encoded).decode("utf-8")))
-            if not isinstance(payload, dict):
-                raise ValueError("aligned fragment modalities must be a JSON object")
-            rows.append(
-                {
-                    **raw,
-                    "modalities": {
+            reader = ipc.open_file(source)
+            for batch_index in range(reader.num_record_batches):
+                batch = reader.get_batch(batch_index)
+                rollout = batch.column("rollout_id")
+                indexes = batch.column("step_index")
+                timestamps = batch.column("timestamp_ns")
+                modalities_json = batch.column("modalities_json")
+                sample_valid = batch.column("sample_valid")
+                for row_index in range(batch.num_rows):
+                    encoded = modalities_json[row_index].as_py()
+                    payload = denormalize_from_json(json.loads(bytes(encoded).decode("utf-8")))
+                    if not isinstance(payload, dict):
+                        raise ValueError("aligned fragment modalities must be a JSON object")
+                    modalities = {
                         name: AlignedValueV1.model_validate(value)
                         for name, value in payload.items()
-                    },
-                }
-            )
-        return rows
+                    }
+                    values: dict[str, object] = {}
+                    for name, value in modalities.items():
+                        artifact = self._media.get(name)
+                        if artifact is None:
+                            values[name] = value.value
+                            continue
+                        if artifact.media_object_key is None:
+                            raise ValueError("READY media artifact has no object key")
+                        values[name] = AlignedMediaFrameReferenceV1(
+                            camera_id=name,
+                            artifact_id=artifact.artifact_id,
+                            object_key=artifact.media_object_key,
+                            frame_index=int(indexes[row_index].as_py()),
+                            pts=int(indexes[row_index].as_py()),
+                            timestamp_ns=int(timestamps[row_index].as_py()),
+                            valid=value.valid and isinstance(value.value, bytes),
+                            placeholder=not value.valid or not isinstance(value.value, bytes),
+                            repeated=value.repeated,
+                            dropped=not value.source_timestamps_ns,
+                            source_timestamps_ns=value.source_timestamps_ns,
+                            alignment_version=artifact.alignment_version,
+                        ).model_dump(mode="json")
+                    yield StepRecord(
+                        rollout_id=str(rollout[row_index].as_py()),
+                        step_index=int(indexes[row_index].as_py()),
+                        timestamp_ns=int(timestamps[row_index].as_py()),
+                        modalities=values,
+                        source_timestamps_ns={
+                            name: value.source_timestamps_ns for name, value in modalities.items()
+                        },
+                        time_error_ns={
+                            name: value.time_error_ns for name, value in modalities.items()
+                        },
+                        valid={name: value.valid for name, value in modalities.items()},
+                        repeated={name: value.repeated for name, value in modalities.items()},
+                        sample_valid=bool(sample_valid[row_index].as_py()),
+                    )
+
+    @overload
+    def __getitem__(self, index: int) -> StepRecord: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[StepRecord]: ...
+
+    def __getitem__(self, index: int | slice) -> StepRecord | Sequence[StepRecord]:
+        if isinstance(index, slice):
+            start, stop, stride = index.indices(self._row_count)
+            return tuple(islice(self, start, stop, stride))
+        normalized = index if index >= 0 else self._row_count + index
+        if normalized < 0 or normalized >= self._row_count:
+            raise IndexError(index)
+        return next(islice(self, normalized, normalized + 1))
 
 
 class PublicationReconciler:
@@ -349,6 +435,7 @@ class RuntimeComponents:
     audit_governance: AuditGovernanceService
     dashboard: DashboardService
     ingest: UploadSessionService
+    continuous_recordings: ContinuousRecordingService
     device_capture_facts: DeviceCaptureFactService
     collection_tasks: CollectionTaskService
     storage: StorageGovernanceService
@@ -368,8 +455,9 @@ class RuntimeComponents:
     verification_repository: PostgresVerificationRepository
     quality_repository: PostgresQualityRepository
     alignment_repository: PostgresAlignmentRepository
-    preview: PreviewControlPlaneService
-    preview_audit: PreviewAuditRecorder
+    aligned_media: AlignedMediaAuthorizationService
+    aligned_media_store: AlignedMediaArtifactStorePort
+    aligned_media_audit: AlignedMediaAuditRecorder
     publisher: DatasetPublisher
     exporter: ExportCoordinator
     export_audit: PostgresExportAuditRecorder
@@ -383,6 +471,9 @@ class WorkerOutboxRuntime:
     poll_interval_seconds: float
     batch_size: int
     schedule_enqueuer: StorageScheduleEnqueuer
+    maintenance_gate: MaintenanceWriteGate
+    environment_id: str
+    writer_id: str
 
 
 def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
@@ -417,6 +508,61 @@ def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
             presign_client=presign_client,
         ),
     )
+
+
+def _oss(settings: Settings) -> tuple[Any, Any, OssObjectStorage]:
+    public_endpoint = settings.object_store_public_endpoint
+    if public_endpoint is None:  # Defensive: Settings resolves local/test and rejects prod absence.
+        raise RuntimeError("public object-store endpoint is not configured")
+    operation_bucket = build_oss_bucket(
+        endpoint=settings.object_store_endpoint,
+        bucket=settings.object_store_bucket,
+        access_key=settings.object_store_access_key,
+        secret_key=settings.object_store_secret_key,
+        connect_timeout=settings.readiness_timeout_seconds,
+    )
+    presign_bucket = build_oss_bucket(
+        endpoint=public_endpoint,
+        bucket=settings.object_store_bucket,
+        access_key=settings.object_store_access_key,
+        secret_key=settings.object_store_secret_key,
+        connect_timeout=settings.readiness_timeout_seconds,
+    )
+    return (
+        OssBotoCompatClient(operation_bucket),
+        OssBotoCompatClient(presign_bucket),
+        OssObjectStorage(operation_bucket, presign_bucket=presign_bucket),
+    )
+
+
+def _object_store_clients(settings: Settings) -> tuple[Any, Any, Any]:
+    if settings.object_store_provider == "oss":
+        return _oss(settings)
+    return _s3(settings)
+
+
+def _lance_root(settings: Settings) -> str:
+    if settings.lance_root_uri is not None:
+        return settings.lance_root_uri
+    scheme = "oss" if settings.object_store_provider == "oss" else "s3"
+    return f"{scheme}://{settings.object_store_bucket}/lance"
+
+
+def _lance_storage_options(settings: Settings) -> dict[str, str]:
+    if settings.object_store_provider == "oss":
+        return {
+            "oss_endpoint": settings.object_store_endpoint,
+            "oss_access_key_id": settings.object_store_access_key,
+            "oss_secret_access_key": settings.object_store_secret_key,
+            "oss_region": settings.object_store_region,
+        }
+    return {
+        "aws_endpoint": settings.object_store_endpoint,
+        "aws_access_key_id": settings.object_store_access_key,
+        "aws_secret_access_key": settings.object_store_secret_key,
+        "aws_region": settings.object_store_region,
+        "allow_http": str(settings.object_store_endpoint.startswith("http://")).lower(),
+    }
 
 
 def _decoder(settings: Settings) -> DecoderProbe:
@@ -507,7 +653,7 @@ def build_runtime(
         PostgresDashboardRepository(connection_factory),
         cursor_secret=resolved.cursor_secret,
     )
-    s3_client, s3_presign_client, object_storage = _s3(resolved)
+    s3_client, s3_presign_client, object_storage = _object_store_clients(resolved)
     audit_governance = AuditGovernanceService(
         audit_governance_repository,
         audit_projection,
@@ -524,6 +670,12 @@ def build_runtime(
         persistence=PostgresIngestPersistence(connection_factory),
         authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
         cursor_secret=resolved.cursor_secret,
+    )
+    continuous_recordings = ContinuousRecordingService(
+        PostgresContinuousRecordingRepository(connection_factory),
+        ingest,
+        PostgresRecordingAssetRepository(connection_factory),
+        object_storage,
     )
     collection_tasks = CollectionTaskService(
         PostgresCollectionTaskRepository(connection_factory),
@@ -635,17 +787,11 @@ def build_runtime(
     alignment_repository = PostgresAlignmentRepository(connection_factory)
 
     catalog_repository = PostgresCatalogAdapter(connection_factory)
-    lance_root = resolved.lance_root_uri or f"s3://{resolved.object_store_bucket}/lance"
+    lance_root = _lance_root(resolved)
     lance_storage = LanceAdapter(
         lance_root,
         object_store_client=s3_client,
-        storage_options={
-            "aws_endpoint": resolved.object_store_endpoint,
-            "aws_access_key_id": resolved.object_store_access_key,
-            "aws_secret_access_key": resolved.object_store_secret_key,
-            "aws_region": resolved.object_store_region,
-            "allow_http": str(resolved.object_store_endpoint.startswith("http://")).lower(),
-        },
+        storage_options=_lance_storage_options(resolved),
     )
     catalog = LanceCatalogService(
         lance_storage,
@@ -653,54 +799,43 @@ def build_runtime(
         PostgresAdvisoryDatasetLock(connection_factory),
     )
 
-    preview_repository = PostgresPreviewRepository(connection_factory)
-    preview_store = S3PreviewArtifactStore(
+    aligned_media_repository = PostgresAlignedMediaRepository(connection_factory)
+    aligned_media_store = S3AlignedMediaArtifactStore(
         s3_client,
         resolved.object_store_bucket,
         presign_client=s3_presign_client,
     )
-    preview_profiles = PreviewProfileCatalog(resolved.preview_allowed_profiles)
-    preview_queue = TemporalPreviewJobQueue(
-        TemporalWorkflowLauncher(
-            resolved.temporal_target,
-            namespace=os.getenv("HC_TEMPORAL_NAMESPACE", "default"),
-            task_queue=resolved.media_temporal_task_queue,
-        )
+    aligned_media_profiles = AlignedMediaProfileCatalog(resolved.aligned_media_allowed_profiles)
+    aligned_media = AlignedMediaAuthorizationService(
+        repository=aligned_media_repository,
+        store=aligned_media_store,
+        profiles=aligned_media_profiles,
     )
-    preview = PreviewControlPlaneService(
-        repository=preview_repository,
-        store=preview_store,
-        signer=HmacUrlSigner(resolved.cursor_secret.encode()),
-        queue=preview_queue,
-        profiles=preview_profiles,
-        artifact_ttl=timedelta(days=resolved.preview_artifact_ttl_days),
-        session_ttl=timedelta(minutes=resolved.preview_session_ttl_minutes),
+    shared_staging_store = S3ProjectionArtifactStore(
+        s3_client,
+        resolved.object_store_bucket,
+        Path(resolved.alignment_staging_root) / "shared",
     )
-    preview_generation = (
-        PreviewGenerationService(
-            step_reader=LanceStepReaderAdapter(
-                catalog,
-                page_size=512,
-                image_ref_resolver=S3ImageRefResolver(
-                    s3_client,
-                    resolved.object_store_bucket,
-                ),
-            ),
-            exclusions=AnnotationExclusionAdapter(annotation),
-            encoder=FFmpegHlsEncoder(
-                Path(resolved.preview_cache_root) / "staging",
-                profiles=preview_profiles,
+    aligned_media_generation = (
+        AlignedMediaGenerationService(
+            frame_reader=ArrowAlignedFrameReader(shared_staging_store),
+            encoder=FFmpegMp4Encoder(
+                Path(resolved.aligned_media_staging_root),
+                profiles=aligned_media_profiles,
                 ffmpeg_threads=resolved.media_ffmpeg_threads,
             ),
-            repository=preview_repository,
-            store=preview_store,
-            profiles=preview_profiles,
-            artifact_ttl=timedelta(days=resolved.preview_artifact_ttl_days),
+            repository=aligned_media_repository,
+            store=aligned_media_store,
+            profiles=aligned_media_profiles,
+            capacity_gate=PostgresMediaCapacityGate(
+                connection_factory,
+                limit=resolved.media_global_max_concurrent_generations,
+            ),
         )
         if include_media
         else None
     )
-    preview_audit = PostgresPreviewAuditRecorder(connection_factory)
+    aligned_media_audit = PostgresAlignedMediaAuditRecorder(connection_factory)
     catalog_audit = PostgresLanceCatalogAuditRecorder(connection_factory)
 
     artifact_sink = S3ArtifactSink(
@@ -742,21 +877,19 @@ def build_runtime(
             ChunkedObjectStorageReader(object_storage),
             catalog,
             decoder=decoder,
-            projection_store=S3ProjectionArtifactStore(
-                s3_client,
-                resolved.object_store_bucket,
-                Path(resolved.alignment_staging_root) / "projections",
-            ),
-            projection_staging_root=(
-                Path(resolved.alignment_staging_root) / "projections"
-            ),
-            projection_ttl=timedelta(hours=resolved.preview_staging_ttl_hours),
+            projection_store=shared_staging_store,
+            projection_staging_root=(Path(resolved.alignment_staging_root) / "raw-localization"),
+            projection_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
         ),
         dataset_ingest_projection=PostgresDatasetIngestProjector(connection_factory),
         fragment_writers=ArrowFragmentWriterFactory(Path(resolved.alignment_staging_root)),
+        alignment_staging=shared_staging_store,
+        alignment_staging_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
         catalog_fragments=ArrowCatalogFragmentAdapter(catalog_repository),
         catalog=catalog,
-        preview=preview_generation,
+        aligned_media=aligned_media_generation,
+        aligned_media_repository=aligned_media_repository,
+        aligned_media_store=aligned_media_store,
         publisher=publisher,
         exporter=exporter,
         catalog_reconciler=catalog,
@@ -779,6 +912,7 @@ def build_runtime(
         audit_governance=audit_governance,
         dashboard=dashboard,
         ingest=ingest,
+        continuous_recordings=continuous_recordings,
         device_capture_facts=DeviceCaptureFactService(
             PostgresDeviceCaptureFactRepository(connection_factory)
         ),
@@ -800,8 +934,9 @@ def build_runtime(
         verification_repository=verification_repository,
         quality_repository=quality_repository,
         alignment_repository=alignment_repository,
-        preview=preview,
-        preview_audit=preview_audit,
+        aligned_media=aligned_media,
+        aligned_media_store=aligned_media_store,
+        aligned_media_audit=aligned_media_audit,
         publisher=publisher,
         exporter=exporter,
         export_audit=export_audit,
@@ -813,6 +948,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_audit_projection(runtime.audit_projection, runtime.audit_governance)
     configure_dashboard(runtime.dashboard)
     configure_ingest_service(runtime.ingest)
+    configure_continuous_recordings(runtime.continuous_recordings)
     configure_device_capture_facts(runtime.device_capture_facts)
     configure_collection_tasks(runtime.collection_tasks)
     configure_storage_governance(runtime.storage)
@@ -833,8 +969,11 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_alignment_repository(runtime.alignment_repository)
     configure_lance_catalog(runtime.catalog)
     configure_lance_catalog_audit_recorder(runtime.catalog_audit)
-    configure_preview_service(runtime.preview)
-    configure_preview_audit_recorder(runtime.preview_audit)
+    configure_aligned_media(
+        runtime.aligned_media,
+        runtime.aligned_media_store,
+        runtime.aligned_media_audit,
+    )
     configure_dataset_publisher(runtime.publisher)
     configure_export_coordinator(runtime.exporter)
     configure_export_audit_recorder(runtime.export_audit)
@@ -852,19 +991,20 @@ def media_activity_dependencies() -> ActivityDependencies:
     return build_runtime(include_media=True).activities
 
 
-def build_preview_gc(settings: Settings | None = None) -> PreviewGarbageCollector:
-    """Compose exact-manifest preview GC for the main worker's scoped loop."""
-
+def build_aligned_media_orphan_reconciler(
+    settings: Settings | None = None,
+) -> S3AlignedMediaOrphanReconciler:
     resolved = settings or get_settings()
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
-    s3_client, _, _ = _s3(resolved)
-    return PreviewGarbageCollector(
-        PostgresPreviewRepository(connection_factory),
-        S3PreviewArtifactStore(s3_client, resolved.object_store_bucket),
-        project_quota_bytes=resolved.preview_project_quota_bytes,
-        global_quota_bytes=resolved.preview_global_quota_bytes,
-        high_watermark_percent=resolved.preview_high_watermark_percent,
-        low_watermark_percent=resolved.preview_low_watermark_percent,
+    repository = PostgresAlignedMediaRepository(connection_factory)
+    client, _, _ = _object_store_clients(resolved)
+    return S3AlignedMediaOrphanReconciler(
+        client,
+        resolved.object_store_bucket,
+        lambda scope, artifact_key, token, now: repository.publication_is_referenced(
+            scope, artifact_key, token, now=now
+        ),
+        orphan_ttl=timedelta(minutes=resolved.aligned_media_publication_orphan_ttl_minutes),
     )
 
 
@@ -872,11 +1012,29 @@ def build_projection_staging_sweeper(
     settings: Settings | None = None,
 ) -> S3ProjectionStagingSweeper:
     resolved = settings or get_settings()
-    s3_client, _, _ = _s3(resolved)
+    s3_client, _, _ = _object_store_clients(resolved)
     return S3ProjectionStagingSweeper(
         s3_client,
         resolved.object_store_bucket,
-        ttl=timedelta(hours=resolved.preview_staging_ttl_hours),
+        ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
+    )
+
+
+def build_frame_selection_lifecycle_collector(
+    settings: Settings | None = None,
+) -> FrameSelectionLifecycleCollector:
+    """Compose fenced exact-key cleanup for task-bound sampling manifests."""
+
+    resolved = settings or get_settings()
+    connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
+    s3_client, _, _ = _object_store_clients(resolved)
+    return FrameSelectionLifecycleCollector(
+        PostgresFrameSelectionLifecycleRepository(connection_factory),
+        S3ProjectionArtifactStore(
+            s3_client,
+            resolved.object_store_bucket,
+            Path(resolved.alignment_staging_root) / "projections",
+        ),
     )
 
 
@@ -892,7 +1050,7 @@ def build_storage_inventory(
     if not configured_scopes:
         raise ValueError("at least one exact storage inventory scope is required")
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
-    s3_client, _, _ = _s3(resolved)
+    s3_client, _, _ = _object_store_clients(resolved)
     service = StorageGovernanceService(
         PostgresStorageRepository(connection_factory),
         cursor_secret=resolved.cursor_secret,
@@ -902,10 +1060,12 @@ def build_storage_inventory(
             PostgresStorageInventoryCatalog(
                 connection_factory,
                 object_store_bucket=resolved.object_store_bucket,
+                object_store_scheme=resolved.object_store_provider,
                 artifact_prefix=resolved.artifact_prefix,
             ),
             S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
             service,
+            provider_name=resolved.object_store_provider,
             observation_interval_seconds=max(int(resolved.storage_inventory_interval_seconds), 1),
         ),
         scopes=configured_scopes,
@@ -917,6 +1077,7 @@ def build_worker_outbox(
     settings: Settings | None = None,
     *,
     temporal_client: Any | None = None,
+    worker_instance_id: str | None = None,
 ) -> WorkerOutboxRuntime | None:
     """Compose durable upload-event delivery for explicitly authorized scopes."""
 
@@ -924,20 +1085,14 @@ def build_worker_outbox(
     if not resolved.outbox_scopes:
         return None
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
-    s3_client, s3_presign_client, object_storage = _s3(resolved)
+    s3_client, s3_presign_client, object_storage = _object_store_clients(resolved)
     catalog_repository = PostgresCatalogAdapter(connection_factory)
-    lance_root = resolved.lance_root_uri or f"s3://{resolved.object_store_bucket}/lance"
+    lance_root = _lance_root(resolved)
     catalog = LanceCatalogService(
         LanceAdapter(
             lance_root,
             object_store_client=s3_client,
-            storage_options={
-                "aws_endpoint": resolved.object_store_endpoint,
-                "aws_access_key_id": resolved.object_store_access_key,
-                "aws_secret_access_key": resolved.object_store_secret_key,
-                "aws_region": resolved.object_store_region,
-                "allow_http": str(resolved.object_store_endpoint.startswith("http://")).lower(),
-            },
+            storage_options=_lance_storage_options(resolved),
         ),
         catalog_repository,
         PostgresAdvisoryDatasetLock(connection_factory),
@@ -1030,4 +1185,7 @@ def build_worker_outbox(
         poll_interval_seconds=resolved.outbox_poll_interval_seconds,
         batch_size=resolved.outbox_batch_size,
         schedule_enqueuer=schedule_enqueuer,
+        maintenance_gate=PostgresMaintenanceRepository.from_dsn(resolved.postgres_dsn),
+        environment_id=resolved.platform_environment_id,
+        writer_id=f"outbox:{worker_instance_id or resolved.instance_id or socket.gethostname()}",
     )

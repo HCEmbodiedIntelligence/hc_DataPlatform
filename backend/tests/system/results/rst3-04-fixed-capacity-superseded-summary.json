@@ -1,0 +1,40 @@
+{
+  "schema_version": "hc-product-decision-supersession/v1",
+  "scope": "RST3-04_DR7-02_FUNCTIONAL_MIGRATION_CAPACITY",
+  "decided_at": "2026-08-31T00:00:00+08:00",
+  "status": "SUPERSEDED_BY_PRODUCT_DECISION",
+  "reason": "FIXED_5TB_NOT_REQUIRED_FOR_FUNCTIONAL_MIGRATION",
+  "supersedes": {
+    "path": "backend/tests/system/results/rst3-04-external-readiness-summary.json",
+    "sha256": "6128fa54f174a068d97d649f757bc9195fad923675d6fcc42dee691072d66ccf"
+  },
+  "related_historical_blockers": [
+    {
+      "path": "backend/tests/system/results/dr7-drill-readiness-summary.json",
+      "sha256": "81014efe107fe7cb9d195a7db2ad6e6f375e3bfe5932970e7c1aa715477c7d21"
+    },
+    {
+      "path": "backend/tests/system/results/rel6-safe-rolling-release-summary.json",
+      "sha256": "9345f4be096dc3ecd424e0042c2a80144ca42cd37a52acc92206d53a67fecbbf"
+    }
+  ],
+  "functional_contract": {
+    "minimum_real_object_bytes": 0,
+    "reference_rehearsal_object_bytes": 100000000,
+    "default_object_migration_mode": "reuse_external",
+    "supported_object_migration_modes": [
+      "reuse_external",
+      "copy_referenced",
+      "portable"
+    ],
+    "capacity_basis": "actual_referenced_bytes",
+    "default_headroom_ratio": 0.3,
+    "fixed_6500000000000_target_bytes_required": false
+  },
+  "performance_boundary": {
+    "five_tb_per_day_benchmark_preserved": true,
+    "blocks_foundational_backup_restore_or_migration": false,
+    "functional_100mb_evidence_counts_as_performance_benchmark": false
+  },
+  "historical_evidence_mutated": false
+}

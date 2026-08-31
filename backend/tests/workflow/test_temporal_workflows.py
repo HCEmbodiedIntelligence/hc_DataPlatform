@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import tempfile
 import threading
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -13,6 +16,14 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
 
+from hc_data_platform.aligned_media.models import (
+    AlignedMediaArtifactStatus,
+    AlignedMediaArtifactV1,
+    AlignedMediaGenerationRequestV1,
+    AlignedMediaScopeV1,
+    AlignedMediaTimelineV1,
+)
+from hc_data_platform.aligned_media.service import aligned_media_artifact_key
 from hc_data_platform.alignment.engine import AlignmentEngine
 from hc_data_platform.alignment.models import (
     AlignedFragmentManifestV1 as StagedManifestV1,
@@ -37,6 +48,7 @@ from hc_data_platform.annotation.models import (
     TagSchemaVersion,
 )
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
 from hc_data_platform.ingest.manifest import preflight_manifest
 from hc_data_platform.ingest.models import (
     ManifestCameraV1,
@@ -55,14 +67,6 @@ from hc_data_platform.lance_catalog.service import (
     InMemoryLanceCatalog,
     compute_fragment_hash,
 )
-from hc_data_platform.preview.models import (
-    PreviewArtifactStatus,
-    PreviewArtifactV1,
-    PreviewRequestV1,
-    PreviewScopeV1,
-    ViewMode,
-)
-from hc_data_platform.preview.service import preview_artifact_key
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
@@ -93,11 +97,13 @@ from hc_data_platform.workflow.models import (
     CatalogReconciliationWorkflowInput,
     DatasetWriterWorkflowInput,
     ExportWorkflowInput,
+    FrameSelectionManifestRefV1,
+    IngestProjectionSourceV1,
     IngestRolloutWorkflowInput,
     JobRecord,
     JobStatus,
     ManifestActivityInput,
-    PreviewWorkflowInput,
+    ProjectionMaterializationV1,
     PublishDatasetWorkflowInput,
     PublishReconciliationWorkflowInput,
     QualityActivityInput,
@@ -106,6 +112,7 @@ from hc_data_platform.workflow.models import (
     workflow_id,
 )
 from hc_data_platform.workflow.names import INGEST_ROLLOUT_WORKFLOW
+from hc_data_platform.workflow.projection_store import LocalProjectionArtifactStore
 from hc_data_platform.workflow.service import TemporalWorkflowLauncher
 from hc_data_platform.workflow.temporal_workflows import (
     ALL_WORKFLOWS,
@@ -113,12 +120,17 @@ from hc_data_platform.workflow.temporal_workflows import (
     DatasetWriterWorkflow,
     ExportWorkflow,
     IngestRolloutWorkflow,
-    PreviewWorkflow,
     PublishDatasetWorkflow,
     PublishReconciliationWorkflow,
 )
 
 SHA = "a" * 64
+FOUR_CAMERAS = (
+    "/camera/front/image",
+    "/camera/rear/image",
+    "/camera/left/image",
+    "/camera/right/image",
+)
 
 
 def _verification_report(
@@ -185,6 +197,7 @@ def _schema() -> DatasetSchemaSnapshot:
 def _manifest_preflight(
     rollout_id: str = "r1",
     data_package_id: str | None = None,
+    camera_topics: tuple[str, ...] = ("/camera/front/image",),
 ) -> ManifestPreflightResultV1:
     package_id = data_package_id or f"package-{rollout_id}"
     return preflight_manifest(
@@ -202,20 +215,22 @@ def _manifest_preflight(
             end_time=datetime(2026, 8, 14, 0, 0, 1, tzinfo=timezone.utc),
             cameras=[
                 ManifestCameraV1(
-                    camera_id="front",
-                    topic="/camera/front/image",
+                    camera_id=topic.removeprefix("/camera/").removesuffix("/image"),
+                    topic=topic,
                     encoding="jpeg",
                 )
+                for topic in camera_topics
             ],
             topics=[
                 ManifestTopicV1(
-                    name="/camera/front/image",
+                    name=topic,
                     message_encoding="cdr",
                     schema_name="hc.camera.JpegEnvelope",
                 )
+                for topic in camera_topics
             ],
             expected_topics=["/camera/required"],
-            actual_topics=["/camera/front/image"],
+            actual_topics=list(camera_topics),
             files=[
                 ManifestFileV1(
                     path="recording.mcap",
@@ -236,8 +251,9 @@ def _manifest_preflight(
 def _manifest_input(
     rollout_id: str = "r1",
     data_package_id: str | None = None,
+    camera_topics: tuple[str, ...] = ("/camera/front/image",),
 ) -> ManifestActivityInput:
-    preflight = _manifest_preflight(rollout_id, data_package_id)
+    preflight = _manifest_preflight(rollout_id, data_package_id, camera_topics)
     return ManifestActivityInput(
         project_id="p1",
         region_code="cn",
@@ -249,26 +265,21 @@ def _manifest_input(
     )
 
 
-def _ingest_input() -> IngestRolloutWorkflowInput:
-    quality_data = QualityInputV1(
+def _ingest_input(
+    camera_topics: tuple[str, ...] = ("/camera/front/image",),
+) -> IngestRolloutWorkflowInput:
+    preflight = _manifest_preflight(camera_topics=camera_topics)
+    source = IngestProjectionSourceV1(
+        organization_id="organization-a",
+        project_id="p1",
+        region_code="cn",
+        session_id="session-1",
         rollout_id="r1",
+        data_package_id=preflight.identifiers.data_package_id,
+        object_key="raw/r1.mcap",
+        manifest_key="raw/r1/rollout_manifest.json",
+        manifest_fingerprint=preflight.manifest_fingerprint,
         source_sha256=SHA,
-        start_ns=0,
-        end_ns=1,
-        topic_timestamps_ns={},
-    )
-    alignment_data = AlignmentInputV1(
-        rollout_id="r1",
-        source_sha256=SHA,
-        attempt_id="attempt-r1-v1",
-        start_ns=0,
-        end_ns=1,
-        streams={
-            "x": ModalityStreamV1(
-                kind=ModalityKind.CONTINUOUS,
-                samples=(TimedSampleV1(timestamp_ns=0, value=1.0),),
-            )
-        },
     )
     return IngestRolloutWorkflowInput(
         organization_id="organization-a",
@@ -276,7 +287,8 @@ def _ingest_input() -> IngestRolloutWorkflowInput:
         region_code="cn",
         dataset_id="d1",
         rollout_id="r1",
-        manifest=_manifest_input(),
+        media_task_queue="workflow-tests",
+        manifest=_manifest_input(camera_topics=camera_topics),
         verification=VerificationActivityInput(
             organization_id="organization-a",
             project_id="p1",
@@ -289,7 +301,7 @@ def _ingest_input() -> IngestRolloutWorkflowInput:
         quality=QualityActivityInput(
             project_id="p1",
             region_code="cn",
-            data=quality_data,
+            source=source,
             profile=_quality_profile(),
         ),
         alignment=AlignmentActivityInput(
@@ -297,7 +309,7 @@ def _ingest_input() -> IngestRolloutWorkflowInput:
             region_code="cn",
             dataset_id="d1",
             schema_snapshot_id="schema-1",
-            data=alignment_data,
+            source=source,
             profile=AlignmentProfileV1(
                 profile_id="align-v1",
                 frequency_hz=30,
@@ -315,7 +327,7 @@ def test_ingest_workflow_rejects_missing_or_mismatched_persistence_scope() -> No
 
     payload = _ingest_input().model_dump(mode="json")
     payload["quality"]["region_code"] = "eu"
-    with pytest.raises(ValidationError, match="region_codes"):
+    with pytest.raises(ValidationError, match="source scope"):
         IngestRolloutWorkflowInput.model_validate(payload)
 
 
@@ -339,14 +351,23 @@ class StaticVerifier:
         self.last_required_topics = required_topics
         return _verification_report(self.status, rollout_id=rollout_id)
 
+    def verify_stream(self, *, stream: object, **kwargs: object) -> RawVerificationReportV1:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            close()
+        return self.verify(**kwargs)  # type: ignore[arg-type]
+
 
 class StaticManifestParser:
+    def __init__(self, camera_topics: tuple[str, ...] = ("/camera/front/image",)) -> None:
+        self.camera_topics = camera_topics
+
     def parse(self, manifest_key: str) -> ManifestPreflightResultV1:
         marker = "/rollout_manifest.json"
         if not manifest_key.startswith("raw/") or not manifest_key.endswith(marker):
             raise ValueError("unexpected manifest key")
         rollout_id = manifest_key.removeprefix("raw/").removesuffix(marker)
-        return _manifest_preflight(rollout_id)
+        return _manifest_preflight(rollout_id, camera_topics=self.camera_topics)
 
 
 class StaticQuality:
@@ -361,15 +382,151 @@ class StaticQuality:
             raise OSError("temporary network failure")
         return _quality_report(self.status, rollout_id=data.rollout_id, profile=profile)
 
+    def evaluate_stream(
+        self,
+        data: QualityInputV1,
+        observations: object,
+        profile: QualityProfileV1,
+    ) -> QcReportV1:
+        del observations
+        return self.evaluate(data, profile)
+
+
+def _alignment_data(rollout_id: str = "r1", attempt_id: str | None = None) -> AlignmentInputV1:
+    return AlignmentInputV1(
+        rollout_id=rollout_id,
+        source_sha256=SHA,
+        attempt_id=attempt_id or f"attempt-{rollout_id}-v1",
+        start_ns=0,
+        end_ns=1,
+        streams={
+            "x": ModalityStreamV1(
+                kind=ModalityKind.CONTINUOUS,
+                samples=(),
+            )
+        },
+    )
+
+
+class StaticProjection:
+    class Session:
+        def __init__(self, source: IngestProjectionSourceV1) -> None:
+            self.source = source
+            self.quality_data = QualityInputV1(
+                rollout_id=source.rollout_id,
+                source_sha256=source.source_sha256,
+                start_ns=0,
+                end_ns=1,
+                topic_timestamps_ns={},
+            )
+            self.alignment_data = _alignment_data(source.rollout_id)
+
+        def __enter__(self) -> StaticProjection.Session:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def open_reader(self) -> io.BytesIO:
+            return io.BytesIO(b"localized-raw")
+
+        def quality_observations(self) -> tuple[object, ...]:
+            return ()
+
+        def alignment_samples(self) -> tuple[tuple[str, TimedSampleV1], ...]:
+            return (("x", TimedSampleV1(timestamp_ns=0, value=1.0)),)
+
+        def frame_selection(self) -> FrameSelectionManifestRefV1:
+            return FrameSelectionManifestRefV1(
+                object_key="derived/frame-selections/test.json",
+                content_sha256="c" * 64,
+                size_bytes=1,
+                source_frame_count=1,
+                selected_group_count=1,
+                camera_set=("/camera/front/image",),
+            )
+
+    def open_local_session(self, source: IngestProjectionSourceV1) -> StaticProjection.Session:
+        return self.Session(source)
+
+    def project_alignment_metadata(self, source: IngestProjectionSourceV1) -> AlignmentInputV1:
+        return _alignment_data(source.rollout_id)
+
+    def materialize(self, source: IngestProjectionSourceV1) -> IngestProjectionSourceV1:
+        now = datetime(2026, 8, 14, tzinfo=timezone.utc)
+        return source.model_copy(
+            update={
+                "materialization": ProjectionMaterializationV1(
+                    object_key="staging/projections/test.arrow",
+                    content_sha256="b" * 64,
+                    size_bytes=1,
+                    created_at=now,
+                    expires_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+                    frame_selection=FrameSelectionManifestRefV1(
+                        object_key="staging/projections/selection.json",
+                        content_sha256="c" * 64,
+                        size_bytes=1,
+                        source_frame_count=1,
+                        selected_group_count=1,
+                        camera_set=("/camera/front/image",),
+                    ),
+                )
+            }
+        )
+
+    def cleanup(self, source: IngestProjectionSourceV1) -> None:
+        del source
+
+    def project_quality_stream(
+        self, source: IngestProjectionSourceV1
+    ) -> tuple[QualityInputV1, tuple[object, ...]]:
+        return (
+            QualityInputV1(
+                rollout_id=source.rollout_id,
+                source_sha256=source.source_sha256,
+                start_ns=0,
+                end_ns=1,
+                topic_timestamps_ns={},
+            ),
+            (),
+        )
+
+    def project_alignment_stream(
+        self, source: IngestProjectionSourceV1
+    ) -> tuple[AlignmentInputV1, tuple[tuple[str, TimedSampleV1], ...]]:
+        return _alignment_data(source.rollout_id), (
+            ("x", TimedSampleV1(timestamp_ns=0, value=1.0)),
+        )
+
+
+class FileFragmentWriter(FakeFragmentWriter):
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self._root = root
+
+    def commit(self, *, row_count: int, content_sha256: str, schema_sha256: str) -> str:
+        super().commit(
+            row_count=row_count,
+            content_sha256=content_sha256,
+            schema_sha256=schema_sha256,
+        )
+        self._root.mkdir(parents=True, exist_ok=True)
+        path = self._root / f"{content_sha256}.arrow"
+        path.write_bytes(b"bounded-test-alignment")
+        return path.resolve().as_uri()
+
 
 class Writers(FragmentWriterFactoryPort):
     def __init__(self) -> None:
-        self.by_attempt: dict[str, FakeFragmentWriter] = {}
+        self.root = Path(tempfile.mkdtemp(prefix="workflow-alignment-"))
+        self.by_attempt: dict[str, FileFragmentWriter] = {}
         self.calls = 0
 
-    def create(self, request: AlignmentActivityInput) -> FakeFragmentWriter:
+    def create(self, request: AlignmentActivityInput) -> FileFragmentWriter:
         self.calls += 1
-        writer = FakeFragmentWriter()
+        if request.data is None:
+            raise ValueError("test writer requires projected alignment data")
+        writer = FileFragmentWriter(self.root)
         self.by_attempt[request.data.attempt_id] = writer
         return writer
 
@@ -417,6 +574,22 @@ class CatalogAdapter(CatalogFragmentAdapterPort):
             content_hash=compute_fragment_hash(steps),
         )
         return CatalogFragmentPayloadV1(manifest=catalog_manifest, steps=steps)
+
+    def prepare_streaming(
+        self,
+        request: AlignmentActivityInput,
+        manifest: StagedManifestV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
+    ) -> tuple[CatalogManifestV1, Sequence[StepRecord]]:
+        del media_artifacts
+        projected = request.model_copy(
+            update={
+                "data": _alignment_data(manifest.rollout_id, manifest.attempt_id),
+                "source": None,
+            }
+        )
+        payload = self.prepare(projected, manifest)
+        return payload.manifest, payload.steps
 
 
 class CrashAfterCommitCatalog:
@@ -500,46 +673,111 @@ class PendingPublicationRecovery:
         )
 
 
-class StaticPreview:
+class StaticAlignedMedia:
     def __init__(self) -> None:
-        self.requests: list[PreviewRequestV1] = []
+        self.requests: list[AlignedMediaGenerationRequestV1] = []
+        self.committed_artifact_ids: tuple[str, ...] = ()
+        self.abandoned_artifact_ids: tuple[str, ...] = ()
+        self.abandon_completed = False
 
     def generate(
         self,
-        scope: PreviewScopeV1,
-        request: PreviewRequestV1,
+        scope: AlignedMediaScopeV1,
+        request: AlignedMediaGenerationRequestV1,
         *,
-        job_id: str | None = None,
         cancelled: object = None,
-    ) -> PreviewArtifactV1:
-        del job_id, cancelled
+    ) -> AlignedMediaArtifactV1:
+        del cancelled
         assert current_request_context().project_id == request.project_id
         assert scope.project_id == request.project_id
         self.requests.append(request)
         now = datetime(2026, 8, 14, tzinfo=timezone.utc)
-        return PreviewArtifactV1(
-            artifact_id="preview-artifact",
-            artifact_key=preview_artifact_key(request),
+        return AlignedMediaArtifactV1(
+            artifact_id=f"media-{request.camera_id}",
+            artifact_key=aligned_media_artifact_key(request),
             scope=scope,
             dataset_id=request.dataset_id,
             rollout_id=request.rollout_id,
-            lance_version=request.lance_version,
+            dataset_version=request.expected_dataset_version,
             camera_id=request.camera_id,
             profile_id=request.profile_id,
-            pipeline_revision="test-v1",
-            source_start_step=request.start_step,
-            source_end_step=request.end_step,
-            status=PreviewArtifactStatus.READY,
-            object_prefix="derived/previews/p1/test",
-            playlist_key="derived/previews/p1/test/index.m3u8",
-            frame_count=0,
-            duration_seconds=0,
+            profile_version="1",
+            alignment_version=request.alignment.alignment_version,
+            source_sha256=request.source_sha256,
+            status=AlignedMediaArtifactStatus.READY,
+            object_prefix="aligned-media/p1/test",
+            media_object_key="aligned-media/p1/test/media.mp4",
+            frame_count=request.alignment.row_count,
+            duration_seconds=request.alignment.row_count / 30,
             content_sha256="a" * 64,
-            rebuild_source_id="lance:d1:1:r1",
+            timeline=AlignedMediaTimelineV1(
+                frame_count=request.alignment.row_count,
+                start_timestamp_ns=0,
+            ),
+            width=1280,
+            height=720,
             created_at=now,
             ready_at=now,
-            last_accessed_at=now,
-            expires_at=now,
+        )
+
+    def begin_dataset_commit(self, **kwargs: object) -> None:
+        assert kwargs["artifact_ids"]
+
+    def mark_dataset_committed(self, **kwargs: object) -> None:
+        self.committed_artifact_ids = tuple(cast(Sequence[str], kwargs["artifact_ids"]))
+
+    def begin_abandon_uncommitted(self, **kwargs: object) -> tuple[object, ...]:
+        self.abandoned_artifact_ids = tuple(cast(Sequence[str], kwargs["artifact_ids"]))
+        return ()
+
+    def complete_abandon_uncommitted(self, **kwargs: object) -> None:
+        del kwargs
+        self.abandon_completed = True
+
+    def delete_exact(self, objects: Sequence[object]) -> int:
+        return len(objects)
+
+
+class FailingAlignedMedia(StaticAlignedMedia):
+    def __init__(self, failing_camera_id: str) -> None:
+        super().__init__()
+        self.failing_camera_id = failing_camera_id
+        self.failure_calls = 0
+
+    def generate(
+        self,
+        scope: AlignedMediaScopeV1,
+        request: AlignedMediaGenerationRequestV1,
+        *,
+        cancelled: object = None,
+    ) -> AlignedMediaArtifactV1:
+        if request.camera_id == self.failing_camera_id:
+            self.failure_calls += 1
+            raise RuntimeError("injected camera encoder failure")
+        return super().generate(scope, request, cancelled=cancelled)
+
+
+class CommitMarkerFailsUntilCleanup(StaticAlignedMedia):
+    def __init__(self) -> None:
+        super().__init__()
+        self.commit_marker_calls = 0
+
+    def mark_dataset_committed(self, **kwargs: object) -> None:
+        self.commit_marker_calls += 1
+        if self.commit_marker_calls <= 8:
+            raise ConnectionError("injected PostgreSQL commit marker failure")
+        super().mark_dataset_committed(**kwargs)
+
+
+class StaticDatasetIngestProjection:
+    def project(self, **kwargs: object) -> DatasetIngestViewerTarget:
+        version = cast(object, kwargs["version"])
+        version_number = int(version.version)
+        return DatasetIngestViewerTarget(
+            dataset_id="dataset_d1",
+            version_id=f"version_lance_{version_number}",
+            episode_id="episode_r1",
+            revision_id="revision_r1",
         )
 
 
@@ -597,9 +835,11 @@ def _dependencies(
     verifier: StaticVerifier,
     quality: StaticQuality,
     catalog: InMemoryLanceCatalog,
-    preview: StaticPreview | None = None,
+    aligned_media: StaticAlignedMedia | None = None,
+    camera_topics: tuple[str, ...] = ("/camera/front/image",),
 ) -> tuple[ActivityDependencies, Writers]:
     writers = Writers()
+    media = aligned_media or StaticAlignedMedia()
     workflow_jobs = WorkflowJobRecorder()
     annotations = InMemoryAutomaticAnnotationRepository()
     draft = TagSchemaVersion(
@@ -639,15 +879,22 @@ def _dependencies(
     )
     return (
         ActivityDependencies(
-            manifest_parser=StaticManifestParser(),
+            manifest_parser=StaticManifestParser(camera_topics),
             verifier=verifier,
             quality=quality,
             alignment=AlignmentEngine(),
+            ingest_projection=StaticProjection(),
+            dataset_ingest_projection=StaticDatasetIngestProjection(),
             fragment_writers=writers,
+            alignment_staging=LocalProjectionArtifactStore(
+                Path(tempfile.mkdtemp(prefix="workflow-staging-"))
+            ),
             catalog_fragments=CatalogAdapter(writers, _schema()),
             catalog=catalog,
             catalog_reconciler=catalog,
-            preview=preview or StaticPreview(),
+            aligned_media=media,
+            aligned_media_repository=media,  # type: ignore[arg-type]
+            aligned_media_store=media,  # type: ignore[arg-type]
             annotation_tasks=AutomaticAnnotationTaskService(annotations),
             workflow_jobs=workflow_jobs,
         ),
@@ -665,12 +912,12 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
         catalog.register_schema(_schema())
         verifier = StaticVerifier()
         quality = StaticQuality(QualityStatus.PASS, failures=2)
-        preview = StaticPreview()
+        aligned_media = StaticAlignedMedia()
         dependencies, writers = _dependencies(
             verifier=verifier,
             quality=quality,
             catalog=catalog,
-            preview=preview,
+            aligned_media=aligned_media,
         )
         configure_activity_dependencies(dependencies)
 
@@ -695,21 +942,10 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             assert verifier.last_required_topics == {"/camera/required"}
             assert writers.calls == 1
             assert len(catalog.list_versions("d1", project_id="p1")) == 1
-            assert result.result["preview_count"] == 1
-            assert preview.requests == [
-                PreviewRequestV1(
-                    project_id="p1",
-                    dataset_id="d1",
-                    rollout_id="r1",
-                    lance_version="1",
-                    annotation_revision=0,
-                    camera_id="/camera/front/image",
-                    view_mode=ViewMode.ORIGINAL,
-                    frequency_hz=30,
-                    start_step=0,
-                    end_step=1,
-                )
-            ]
+            assert result.result["aligned_media_count"] == 1
+            assert len(aligned_media.requests) == 1
+            assert aligned_media.requests[0].camera_id == "/camera/front/image"
+            assert aligned_media.requests[0].expected_dataset_version == 1
 
             history = await handle.fetch_history()
             await Replayer(
@@ -726,26 +962,23 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             )
             configure_activity_dependencies(risk_dependencies)
             risk_input = _ingest_input().model_copy(update={"rollout_id": "r-risk"})
+            risk_preflight = _manifest_preflight("r-risk")
+            risk_source = risk_input.quality.source.model_copy(
+                update={
+                    "rollout_id": "r-risk",
+                    "data_package_id": risk_preflight.identifiers.data_package_id,
+                    "manifest_key": "raw/r-risk/rollout_manifest.json",
+                    "manifest_fingerprint": risk_preflight.manifest_fingerprint,
+                }
+            )
             risk_input = risk_input.model_copy(
                 update={
                     "manifest": _manifest_input("r-risk"),
                     "verification": risk_input.verification.model_copy(
                         update={"rollout_id": "r-risk"}
                     ),
-                    "quality": risk_input.quality.model_copy(
-                        update={
-                            "data": risk_input.quality.data.model_copy(
-                                update={"rollout_id": "r-risk"}
-                            )
-                        }
-                    ),
-                    "alignment": risk_input.alignment.model_copy(
-                        update={
-                            "data": risk_input.alignment.data.model_copy(
-                                update={"rollout_id": "r-risk", "attempt_id": "risk-attempt"}
-                            )
-                        }
-                    ),
+                    "quality": risk_input.quality.model_copy(update={"source": risk_source}),
+                    "alignment": risk_input.alignment.model_copy(update={"source": risk_source}),
                 }
             )
             risk_id = workflow_id("ingest-rollout", "p1", "r-risk")
@@ -778,7 +1011,7 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
                 result_type=JobRecord,
             ).result()
             assert risk_result.status is JobStatus.QUALITY_RISK
-            assert risk_result.result["preview_state"] == "ISOLATED"
+            assert risk_result.result["media_state"] == "NOT_PRODUCED"
             assert risk_result.result["training_eligible"] is False
             assert risk_verifier.calls == 1
             assert risk_writers.calls == 0
@@ -815,13 +1048,6 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             new_pass_input = risk_input.model_copy(
                 update={
                     "automatic_qc_run_id": "auto-pass-2",
-                    "alignment": risk_input.alignment.model_copy(
-                        update={
-                            "data": risk_input.alignment.data.model_copy(
-                                update={"attempt_id": "risk-auto-pass-attempt"}
-                            )
-                        }
-                    ),
                 }
             )
             pass_result = await environment.client.execute_workflow(
@@ -966,30 +1192,9 @@ async def test_temporal_commit_retries_without_duplicate_version_and_reconciles(
 
             configure_activity_dependencies(
                 ActivityDependencies(
-                    preview=StaticPreview(),
                     publisher=publication,
                     exporter=StaticExporter(),
                 )
-            )
-            preview_request = PreviewRequestV1(
-                project_id="p1",
-                dataset_id="d1",
-                rollout_id="r1",
-                lance_version="2",
-                annotation_revision=0,
-                camera_id="front",
-                view_mode=ViewMode.ORIGINAL,
-            )
-            preview_job = await environment.client.execute_workflow(
-                PreviewWorkflow.run,
-                PreviewWorkflowInput(
-                    organization_id="organization-1",
-                    region_code="cn-test",
-                    job_id="preview-job-1",
-                    request=preview_request,
-                ),
-                id=workflow_id("preview", "p1", "d1/r1/front"),
-                task_queue="workflow-tests",
             )
             publish_job = await environment.client.execute_workflow(
                 PublishDatasetWorkflow.run,
@@ -1009,7 +1214,6 @@ async def test_temporal_commit_retries_without_duplicate_version_and_reconciles(
                 id=workflow_id("export", "p1", "d1/v1/lance"),
                 task_queue="workflow-tests",
             )
-            assert preview_job.status is JobStatus.SUCCEEDED
             assert publish_job.status is JobStatus.SUCCEEDED
             assert export_job.status is JobStatus.SUCCEEDED
             assert export_job.stage == "completed"
@@ -1095,5 +1299,143 @@ async def test_temporal_quality_reject_and_cancellation_never_start_alignment() 
             persisted_jobs = cast(WorkflowJobRecorder, cancel_dependencies.workflow_jobs).jobs
             assert persisted_jobs[-1].status is JobStatus.CANCELLED
             assert persisted_jobs[-1].stage == "cancelled"
+    finally:
+        await environment.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_four_camera_bundle_commits_before_annotation_ready() -> None:
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        aligned_media = StaticAlignedMedia()
+        dependencies, _writers = _dependencies(
+            verifier=StaticVerifier(),
+            quality=StaticQuality(QualityStatus.PASS),
+            catalog=catalog,
+            aligned_media=aligned_media,
+            camera_topics=FOUR_CAMERAS,
+        )
+        configure_activity_dependencies(dependencies)
+
+        async with Worker(
+            environment.client,
+            task_queue="four-camera-workflow-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            request = _ingest_input(FOUR_CAMERAS).model_copy(
+                update={"media_task_queue": "four-camera-workflow-tests"}
+            )
+            result = await environment.client.execute_workflow(
+                IngestRolloutWorkflow.run,
+                request,
+                id=workflow_id("ingest-rollout", "p1", "four-camera-ready"),
+                task_queue="four-camera-workflow-tests",
+            )
+
+        assert result.status is JobStatus.SUCCEEDED
+        assert result.result is not None
+        assert result.result["aligned_media_count"] == 4
+        assert result.result["training_eligible"] is True
+        assert result.result["annotation_task"]["status"] == "CREATED"
+        assert {request.camera_id for request in aligned_media.requests} == set(FOUR_CAMERAS)
+        assert set(aligned_media.committed_artifact_ids) == {
+            f"media-{camera}" for camera in FOUR_CAMERAS
+        }
+        assert len(catalog.list_versions("d1", project_id="p1")) == 1
+    finally:
+        await environment.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_visible_lance_commit_is_reconciled_instead_of_deleting_media() -> None:
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        aligned_media = CommitMarkerFailsUntilCleanup()
+        dependencies, _writers = _dependencies(
+            verifier=StaticVerifier(),
+            quality=StaticQuality(QualityStatus.PASS),
+            catalog=catalog,
+            aligned_media=aligned_media,
+        )
+        configure_activity_dependencies(dependencies)
+
+        async with Worker(
+            environment.client,
+            task_queue="commit-reconciliation-workflow-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            request = _ingest_input().model_copy(
+                update={"media_task_queue": "commit-reconciliation-workflow-tests"}
+            )
+            result = await environment.client.execute_workflow(
+                IngestRolloutWorkflow.run,
+                request,
+                id=workflow_id("ingest-rollout", "p1", "commit-marker-reconciliation"),
+                task_queue="commit-reconciliation-workflow-tests",
+            )
+
+        assert result.status is JobStatus.TECHNICAL_FAILED
+        assert len(catalog.list_versions("d1", project_id="p1")) == 1
+        assert aligned_media.commit_marker_calls == 9
+        assert aligned_media.committed_artifact_ids == ("media-/camera/front/image",)
+        assert aligned_media.abandoned_artifact_ids == ()
+        assert aligned_media.abandon_completed is False
+    finally:
+        await environment.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_one_failed_camera_keeps_lance_and_annotation_closed_and_cleans_siblings() -> None:
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        aligned_media = FailingAlignedMedia("/camera/right/image")
+        dependencies, _writers = _dependencies(
+            verifier=StaticVerifier(),
+            quality=StaticQuality(QualityStatus.PASS),
+            catalog=catalog,
+            aligned_media=aligned_media,
+            camera_topics=FOUR_CAMERAS,
+        )
+        configure_activity_dependencies(dependencies)
+
+        async with Worker(
+            environment.client,
+            task_queue="failed-camera-workflow-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            request = _ingest_input(FOUR_CAMERAS).model_copy(
+                update={"media_task_queue": "failed-camera-workflow-tests"}
+            )
+            result = await environment.client.execute_workflow(
+                IngestRolloutWorkflow.run,
+                request,
+                id=workflow_id("ingest-rollout", "p1", "one-camera-failed"),
+                task_queue="failed-camera-workflow-tests",
+            )
+
+        assert result.status is JobStatus.TECHNICAL_FAILED
+        assert result.result is None
+        assert len(catalog.list_versions("d1", project_id="p1")) == 0
+        assert aligned_media.committed_artifact_ids == ()
+        assert set(aligned_media.abandoned_artifact_ids) == {
+            f"media-{camera}" for camera in FOUR_CAMERAS[:-1]
+        }
+        assert aligned_media.abandon_completed is True
+        assert aligned_media.failure_calls > 0
     finally:
         await environment.shutdown()

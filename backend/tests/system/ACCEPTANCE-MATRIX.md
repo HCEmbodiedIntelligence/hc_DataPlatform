@@ -50,15 +50,15 @@ concurrently changing source tree audited above.
 | Executable current-state release blockers | `test_release_blockers.py` | XFAIL: 8 passed, BE12-008 capacity remains expected-failing |
 | Legal/truncated/bad-CRC/missing-topic MCAP | generator, manifest hashes, and `test_fixture_contracts.py` | PASS; regeneration was byte-identical and 11 fixture checks passed |
 | 28 Hz/time-backward/black-frame/empty-point-cloud QC | structured fixtures plus `test_fixture_contracts.py` | PASS |
-| upload→manifest→verify→QC→align→Lance→preview→annotation→review→publish→LeRobot reload | `test_e2e_pipeline.py` | PASS for in-memory/reference ports |
+| upload→manifest→verify→QC→30 Hz align→all-camera MP4→Lance refs→annotation→review→publish→LeRobot reload | `test_temporal_workflows.py`, `test_e2e_pipeline.py` | PASS for workflow/reference ports |
 | Duplicate messages create no duplicate Rollout/Step/Revision/Version | E2E replay assertions and `test_fault_injection.py` | PASS for reference ports |
-| SHA/QC/Lance/DB/transcode/export interruption recovery | six injected side-effect/interruption tests | PASS for deterministic reference ports |
+| SHA/QC/Lance/DB/media publication/export interruption recovery | fault injection plus aligned-media exact-receipt tests | PASS for deterministic reference ports |
 | Actual Worker kill after durable Lance-style commit | `test_temporal_worker_recovery.py`; real Temporal Worker subprocess | PASS; SIGKILL, attempt 2 takeover, one commit/version |
 | Actual object-store network partition | `test_minio_network_recovery.py`; disposable MinIO container pause | PASS; real timeout and same-session recovery |
 | Temporal workflow execution | `INTEGRATION-EVIDENCE.md`; Temporal test environment | PASS; 3 tests |
 | PostgreSQL security + annotation adapters | `INTEGRATION-EVIDENCE.md`; disposable PostgreSQL 16.10 | PASS; 2 tests after applying annotation migration |
 | MinIO multipart adapter | `INTEGRATION-EVIDENCE.md`; disposable MinIO `RELEASE.2025-07-23T15-54-02Z` | PASS; 1 test |
-| FFmpeg HLS/CMAF and failed-decode atomicity | current source in cached runtime image via `container_preview_smoke.py` | PASS; FFprobe reload and no partial artifact |
+| FFmpeg canonical MP4, exact 30 Hz/1800-frame/60-second timeline | `tests/aligned_media/test_aligned_media_service.py` | PASS with real FFmpeg/FFprobe when installed |
 | Production Worker executes all pipeline activities | composition gate, current image, and historical kind pilot | PARTIAL; all 14 production ports construct in the image, but current pilot execution is not rerun |
 | Production Worker dependency scope | BE12-010 source gate | PASS; production target installs the data extra and excludes validation-only LeRobot/PyTorch/CUDA dependencies |
 | Unconfigured Worker ports fail non-retryably | BE12-009 source gate plus historical pilot | PASS in source; old pilot retried, current configured pilot not rerun |

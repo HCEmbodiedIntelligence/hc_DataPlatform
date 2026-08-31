@@ -12,8 +12,18 @@ import { request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 
 export type FormalUploadSession = components["schemas"]["UploadSession"];
-export type FormalManifestPreflight =
+type RuntimeRolloutManifest = components["schemas"]["RolloutManifestV1"];
+type FormalRolloutManifest = Omit<RuntimeRolloutManifest, "processing_mode"> & {
+  processing_mode?: RuntimeRolloutManifest["processing_mode"];
+};
+type RuntimeManifestPreflight =
   components["schemas"]["ManifestPreflightResultV1"];
+export type FormalManifestPreflight = Omit<
+  RuntimeManifestPreflight,
+  "manifest"
+> & {
+  manifest: FormalRolloutManifest;
+};
 export type FormalQcReport = components["schemas"]["QcReportV1"];
 export type FormalRawMediaSource = components["schemas"]["RawMediaSourceV1"];
 export type FormalUploadProcessingStatus =
@@ -25,22 +35,21 @@ export interface FormalUploadDetail {
   readonly quality: FormalQcReport | null;
 }
 
-const uploadPreviewTargetSchema = z
+const uploadAlignedMediaTargetSchema = z
   .object({
-    schema_version: z.literal("upload-preview-target/v1"),
+    schema_version: z.literal("upload-aligned-media-target/v1"),
     project_id: z.string().min(1),
     dataset_id: z.string().min(1),
     rollout_id: z.string().min(1),
     dataset_version: z.number().int().positive(),
-    lance_version: z.number().int().positive(),
     annotation_task_id: z.string().min(1),
-    frequency_hz: z.number().positive(),
+    fps: z.literal(30),
     start_step: z.number().int().nonnegative(),
     end_step: z.number().int().positive(),
   })
   .strict()
   .refine((target) => target.end_step > target.start_step, {
-    message: "preview step window must be non-empty",
+    message: "aligned media step window must be non-empty",
   });
 
 const uploadViewerTargetSchema = z
@@ -70,7 +79,7 @@ const uploadProcessingStatusSchema = z
     ]),
     stage: z.string().min(1).max(128),
     attempt: z.number().int().nonnegative(),
-    preview: uploadPreviewTargetSchema.nullable(),
+    aligned_media: uploadAlignedMediaTargetSchema.nullable(),
     viewer: uploadViewerTargetSchema.nullable(),
     error_code: z
       .string()
@@ -82,22 +91,22 @@ const uploadProcessingStatusSchema = z
   .strict()
   .refine(
     (processing) =>
-      (processing.status === "SUCCEEDED") === (processing.preview !== null) &&
+      (processing.status === "SUCCEEDED") ===
+        (processing.aligned_media !== null) &&
       (processing.status === "SUCCEEDED") === (processing.viewer !== null) &&
-      (processing.preview === null ||
+      (processing.aligned_media === null ||
         processing.viewer === null ||
-        (processing.preview.dataset_id === processing.viewer.dataset_id &&
+        (processing.aligned_media.dataset_id === processing.viewer.dataset_id &&
           processing.viewer.version_id ===
-            `version_lance_${processing.preview.dataset_version}`)),
+            `version_lance_${processing.aligned_media.dataset_version}`)),
     { message: "successful upload targets must share one Dataset version" },
   );
 
-export interface FormalUploadPreviewTarget {
+export interface FormalUploadAlignedMediaTarget {
   readonly datasetId: string;
   readonly datasetVersion: number;
-  readonly lanceVersion: number;
   readonly annotationTaskId: string;
-  readonly frequencyHz: number;
+  readonly fps: 30;
   readonly startStep: number;
   readonly endStep: number;
 }
@@ -245,29 +254,28 @@ export async function getFormalUploadProcessingStatus(
     processing.session_id !== session.session_id ||
     processing.workflow_id !== locator.workflow_id ||
     processing.rollout_id !== session.rollout_id ||
-    (processing.preview !== null &&
-      (processing.preview.project_id !== session.project_id ||
-        processing.preview.rollout_id !== session.rollout_id))
+    (processing.aligned_media !== null &&
+      (processing.aligned_media.project_id !== session.project_id ||
+        processing.aligned_media.rollout_id !== session.rollout_id))
   ) {
     throw contractMismatch("上传处理工作流与当前上传会话不匹配。");
   }
   return processing;
 }
 
-export function resolveFormalUploadPreviewTarget(
+export function resolveFormalUploadAlignedMediaTarget(
   session: FormalUploadSession,
   processing: FormalUploadProcessingStatus,
-): FormalUploadPreviewTarget | null {
-  const preview = processing.preview;
-  if (!preview) return null;
+): FormalUploadAlignedMediaTarget | null {
+  const media = processing.aligned_media;
+  if (!media) return null;
   return {
-    datasetId: preview.dataset_id,
-    datasetVersion: preview.dataset_version,
-    lanceVersion: preview.lance_version,
-    annotationTaskId: preview.annotation_task_id,
-    frequencyHz: preview.frequency_hz,
-    startStep: preview.start_step,
-    endStep: preview.end_step,
+    datasetId: media.dataset_id,
+    datasetVersion: media.dataset_version,
+    annotationTaskId: media.annotation_task_id,
+    fps: media.fps,
+    startStep: media.start_step,
+    endStep: media.end_step,
   };
 }
 
@@ -276,13 +284,13 @@ export function resolveFormalUploadViewerTarget(
   processing: FormalUploadProcessingStatus,
 ): FormalUploadViewerTarget | null {
   const viewer = processing.viewer;
-  const preview = processing.preview;
-  if (!viewer || !preview) return null;
+  const media = processing.aligned_media;
+  if (!viewer || !media) return null;
   if (
-    preview.project_id !== session.project_id ||
-    preview.rollout_id !== session.rollout_id ||
-    viewer.dataset_id !== preview.dataset_id ||
-    viewer.version_id !== `version_lance_${preview.dataset_version}`
+    media.project_id !== session.project_id ||
+    media.rollout_id !== session.rollout_id ||
+    viewer.dataset_id !== media.dataset_id ||
+    viewer.version_id !== `version_lance_${media.dataset_version}`
   ) {
     throw contractMismatch("上传数据视图与当前上传会话不匹配。");
   }

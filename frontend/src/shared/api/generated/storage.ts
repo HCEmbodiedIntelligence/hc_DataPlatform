@@ -308,38 +308,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/previews/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["createPreviewSession"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/previews/sessions/{session_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getPreviewSession"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/projects/{project_id}/annotation-tasks": {
         parameters: {
             query?: never;
@@ -1554,47 +1522,6 @@ export interface components {
             maximum_point_count: number | null;
             /** @default null */
             minimum_point_count: number | null;
-        };
-        PreviewDescriptorV1: {
-            annotation_revision: number;
-            /** Format: date-time */
-            cache_expires_at: string;
-            cache_key: string;
-            camera_id: string;
-            dataset_id: string;
-            duration_seconds: number;
-            encoding_profile: components["schemas"]["EncodingProfileV1"];
-            frame_count: number;
-            lance_version: string;
-            media_type: string;
-            placeholder_count: number;
-            placeholders: components["schemas"]["PlaceholderDescriptorV1"][];
-            playlist_url: string;
-            project_id: string;
-            rollout_id: string;
-            /** @constant */
-            schema_version: 1;
-            session_id: string;
-            /** Format: date-time */
-            signed_url_expires_at: string;
-            timeline: components["schemas"]["TimelineMappingV1"];
-            /** @enum {string} */
-            view_mode: "original" | "edited" | "compare";
-        };
-        PreviewRequestV1: {
-            annotation_revision: number;
-            camera_id: string;
-            dataset_id: string;
-            encoding_profile?: components["schemas"]["EncodingProfileV1"];
-            end_step?: number | null;
-            /** @default 30 */
-            frequency_hz: number;
-            lance_version: string;
-            project_id: string;
-            rollout_id: string;
-            start_step?: number | null;
-            /** @enum {string} */
-            view_mode: "original" | "edited" | "compare";
         };
         ProblemDetails: {
             code: string;
@@ -2970,52 +2897,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    createPreviewSession: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewRequestV1"];
-            };
-        };
-        responses: {
-            /** @description Preview generated or reused from the temporary cache */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewDescriptorV1"];
-                };
-            };
-        };
-    };
-    getPreviewSession: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Preview descriptor with a refreshed short-lived URL */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewDescriptorV1"];
-                };
             };
         };
     };

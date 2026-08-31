@@ -134,6 +134,28 @@ def test_real_lance_shared_dataset_idempotency_and_compaction(tmp_path: Path) ->
     assert service.read_steps("dataset-a", "rollout-1", 0, 2).steps == first[1]
 
 
+@pytest.mark.integration
+def test_real_lance_camera_projection_excludes_other_modality_columns(tmp_path: Path) -> None:
+    service, _, _ = _service(tmp_path)
+    fragment = _fragment(_schema(), "rollout-projected")
+    service.commit_fragment(*fragment)
+
+    projected = service.read_steps(
+        "dataset-a",
+        "rollout-projected",
+        0,
+        2,
+        columns=("camera.front",),
+    ).steps
+
+    assert [step.modalities for step in projected] == [
+        {"camera.front": b"frame-0"},
+        {"camera.front": b"frame-1"},
+    ]
+    assert all(set(step.valid) == {"camera.front"} for step in projected)
+    assert all("joint.position" not in step.modalities for step in projected)
+
+
 class _FailOnceRepository(InMemoryCatalogRepository):
     def __init__(self) -> None:
         super().__init__()
@@ -211,18 +233,20 @@ def test_real_lance_step_window_http_wire_is_precise_scoped_and_audited(tmp_path
     with TestClient(app) as client:
         response = client.get(
             "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-p06/steps",
-            params={"start_step": 0, "end_step": 2, "version": version.version},
+            params={
+                "start_step": 0,
+                "end_step": 2,
+                "version": version.version,
+                "columns": "joint.position",
+            },
         )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["dataset_version"] == version.version
-    assert payload["steps"][0]["modalities"]["camera.front"] == {
-        "$type": "binary",
-        "byte_length": len(b"frame-0"),
-        "transport": "preview_media",
-    }
+    assert "camera.front" not in payload["steps"][0]["modalities"]
     assert payload["steps"][0]["modalities"]["joint.position"] == [0.0]
+    assert set(payload["steps"][0]["valid"]) == {"joint.position"}
     assert payload["steps"][1]["timestamp_ns"] == "33333333"
     assert [(event.rollout_id, event.returned_step_count) for event in audit.events] == [
         ("rollout-p06", 2)

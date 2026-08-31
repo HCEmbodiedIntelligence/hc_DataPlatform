@@ -43,7 +43,7 @@ function installRuntime(apiBaseUrl = "/api/v1"): void {
 }
 
 function installBundleResponses(
-  playlistUrl = "https://media.invalid/preview.m3u8",
+  mediaUrl = "https://media.invalid/canonical.mp4",
 ) {
   const fixture = createVisualAnnotationBundle({
     mode: "annotation",
@@ -64,20 +64,35 @@ function installBundleResponses(
       return fixture.datasetVersion as never;
     if (options.path.endsWith("/manifest-discovery"))
       return fixture.manifest as never;
-    if (options.path === "/previews/sessions")
+    if (options.path === "/aligned-media/authorize")
       return {
-        schema_version: 1,
-        session_id: "preview-session-p08",
+        schema_version: "aligned-media-authorization/v1",
+        artifact_id: "artifact-p08",
         artifact_key: "a".repeat(64),
         project_id: fixture.task.project_id,
         dataset_id: fixture.task.dataset_id,
         rollout_id: fixture.task.rollout_id,
-        lance_version: String(fixture.task.base_lance_version),
+        dataset_version: fixture.task.dataset_version,
         camera_id: fixture.manifest?.cameras[0]?.topic,
-        annotation_revision: 0,
-        profile_id: "annotation-h264-720p-v1",
-        playlist_url: playlistUrl,
-        signed_url_expires_at: "2026-08-18T12:00:00Z",
+        media_url: mediaUrl,
+        content_type: "video/mp4",
+        expires_at: "2026-08-18T12:00:00Z",
+        fps: 30,
+        frame_count: fixture.task.base_step_count,
+        duration_seconds: (fixture.task.base_step_count ?? 1) / 30,
+        width: 1280,
+        height: 720,
+        timeline: {
+          fps: 30,
+          frame_count: fixture.task.base_step_count,
+          first_step: 0,
+          pts_time_base_numerator: 1,
+          pts_time_base_denominator: 30,
+          start_timestamp_ns: "0",
+        },
+        alignment_version: "causal-30hz-v1",
+        profile_id: "canonical-h264-crf20-v1",
+        profile_version: "1",
       } as never;
     throw new Error(`Unexpected request ${options.method} ${options.path}`);
   });
@@ -592,7 +607,7 @@ describe("P08 formal runtime annotation adapter", () => {
     );
   });
 
-  it("authorizes preview media only through the formal preview session operation", async () => {
+  it("authorizes canonical media once through the stateless operation", async () => {
     installRuntime();
     const fixture = installBundleResponses();
     const bundle = await loadRuntimeAnnotationBundle(
@@ -613,16 +628,14 @@ describe("P08 formal runtime annotation adapter", () => {
     const media = await adapter.cameraStreams[0]?.mediaSource?.authorize(
       controller.signal,
     );
-    expect(media?.url).toBe("https://media.invalid/preview.m3u8");
+    expect(media?.url).toBe("https://media.invalid/canonical.mp4");
     expect(requestMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         method: "POST",
-        path: "/previews/sessions",
+        path: "/aligned-media/authorize",
         body: expect.objectContaining({
           camera_id: fixture.manifest?.cameras[0]?.topic,
-          annotation_revision: 0,
-          view_mode: "original",
-          profile_id: "annotation-h264-720p-v1",
+          dataset_version: fixture.task.dataset_version,
         }),
       }),
     );
@@ -632,7 +645,7 @@ describe("P08 formal runtime annotation adapter", () => {
   it("resolves a relative signed media capability on the configured API origin", async () => {
     installRuntime("https://api.example.test/api/v1");
     const fixture = installBundleResponses(
-      "/api/v1/previews/sessions/s1/media/index.m3u8?expires=1&sig=a",
+      "/objects/canonical.mp4?expires=1&sig=a",
     );
     const bundle = await loadRuntimeAnnotationBundle(
       visualAnnotationScope,
@@ -653,7 +666,7 @@ describe("P08 formal runtime annotation adapter", () => {
     );
 
     expect(media?.url).toBe(
-      "https://api.example.test/api/v1/previews/sessions/s1/media/index.m3u8?expires=1&sig=a",
+      "https://api.example.test/objects/canonical.mp4?expires=1&sig=a",
     );
     clock.dispose();
   });

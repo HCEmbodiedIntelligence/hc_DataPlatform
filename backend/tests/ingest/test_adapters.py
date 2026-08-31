@@ -11,7 +11,13 @@ from hc_data_platform.core.config import Settings
 from hc_data_platform.ingest.adapters import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.ingest.models import CompletedPart
 from hc_data_platform.ingest.ports import crc64_ecma
-from hc_data_platform.runtime import _s3
+from hc_data_platform.runtime import (
+    _lance_root,
+    _lance_storage_options,
+    _object_store_clients,
+    _s3,
+)
+from hc_data_platform.storage.oss_client import OssBotoCompatClient
 
 
 class MissingObject(Exception):
@@ -221,6 +227,34 @@ def test_runtime_builds_distinct_path_style_sigv4_internal_and_public_clients() 
     assert "partNumber" not in parse_qs(raw_read_parsed.query)
 
 
+def test_runtime_builds_native_oss_upload_clients_and_lance_configuration() -> None:
+    settings = Settings(
+        environment="test",
+        object_store_provider="oss",
+        object_store_endpoint="https://oss-cn-hangzhou-internal.aliyuncs.com",
+        object_store_public_endpoint="https://oss-cn-hangzhou.aliyuncs.com",
+        object_store_bucket="hc-oss-test",
+        object_store_access_key="test-access-key",
+        object_store_secret_key="test-secret-key",
+        object_store_region="cn-hangzhou",
+        _env_file=None,
+    )
+
+    internal, public, storage = _object_store_clients(settings)
+    signed = storage.presign_part("raw/recording.mcap", "upload-1", 2, 900)
+
+    assert isinstance(internal, OssBotoCompatClient)
+    assert isinstance(public, OssBotoCompatClient)
+    assert urlparse(signed).hostname == "hc-oss-test.oss-cn-hangzhou.aliyuncs.com"
+    assert _lance_root(settings) == "oss://hc-oss-test/lance"
+    assert _lance_storage_options(settings) == {
+        "oss_endpoint": "https://oss-cn-hangzhou-internal.aliyuncs.com",
+        "oss_access_key_id": "test-access-key",
+        "oss_secret_access_key": "test-secret-key",
+        "oss_region": "cn-hangzhou",
+    }
+
+
 @dataclass
 class OssPart:
     part_number: int
@@ -249,6 +283,7 @@ class FakeOssBucket:
         self.uploads: dict[tuple[str, str], dict[int, bytes]] = {}
         self.signed: dict[str, Any] = {}
         self.completed_key: str | None = None
+        self.initiation_headers: dict[str, str] = {}
         self.completion_headers: dict[str, str] = {}
 
     def get_object_meta(self, key: str) -> Any:
@@ -263,7 +298,8 @@ class FakeOssBucket:
             },
         )
 
-    def init_multipart_upload(self, key: str) -> Any:
+    def init_multipart_upload(self, key: str, **kwargs: Any) -> Any:
+        self.initiation_headers = kwargs["headers"]
         upload_id = "oss-upload"
         self.uploads[(key, upload_id)] = {}
         return SimpleNamespace(upload_id=upload_id)
@@ -322,6 +358,7 @@ def test_oss_adapter_exposes_server_crc64_and_uses_persisted_key() -> None:
     )
 
     assert bucket.completed_key == key
+    assert bucket.initiation_headers == {"x-oss-forbid-overwrite": "true"}
     assert bucket.completion_headers == {"x-oss-forbid-overwrite": "true"}
     assert metadata.crc64 == crc64_ecma(b"firstsecond")
     assert b"".join(adapter.read_chunks(key, chunk_size=2)) == b"firstsecond"
@@ -331,4 +368,5 @@ def test_oss_adapter_exposes_server_crc64_and_uses_persisted_key() -> None:
         "key": key,
         "expires": 120,
         "params": {"response-cache-control": "no-store"},
+        "slash_safe": True,
     }

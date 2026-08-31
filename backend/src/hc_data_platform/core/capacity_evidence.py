@@ -23,13 +23,21 @@ REQUIRED_STAGES = frozenset(
         "temporal",
         "quality_control",
         "lance",
-        "preview",
+        "aligned_media",
         "export",
     }
 )
-BYTE_THROUGHPUT_STAGES = frozenset({"object_storage", "lance", "preview", "export"})
+BYTE_THROUGHPUT_STAGES = frozenset({"object_storage", "lance", "aligned_media", "export"})
 REQUIRED_RESOURCES = frozenset(
-    {"api", "postgresql", "object_storage", "temporal_worker", "lance", "preview", "export"}
+    {
+        "api",
+        "postgresql",
+        "object_storage",
+        "temporal_worker",
+        "lance",
+        "aligned_media",
+        "export",
+    }
 )
 REQUIRED_RECOVERY_FAULTS = frozenset({"object_storage_interruption", "worker_restart"})
 

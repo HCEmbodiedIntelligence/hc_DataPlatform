@@ -154,6 +154,16 @@ def test_public_access_models_keep_login_compatibility_resource_ceilings() -> No
         CapabilityRequestCreate(capability_keys=tuple(f"cap-{index}" for index in range(65)))
     with pytest.raises(ValidationError):
         CapabilityRequestCreate(capability_keys=("c" * 129,))
+    for platform_capability in (
+        "platform.admin",
+        "platform.operations.read",
+        "platform.maintenance.operate",
+        "platform.release.operate",
+        "platform.maintenance.verify",
+        "platform.break_glass",
+    ):
+        with pytest.raises(ValidationError, match="global identity plane"):
+            CapabilityRequestCreate(capability_keys=(platform_capability,))
 
 
 def test_membership_request_replay_is_exact_body_change_conflicts_and_header_is_bounded() -> None:

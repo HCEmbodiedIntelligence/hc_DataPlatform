@@ -37,7 +37,7 @@ def _passing_capacity_evidence() -> dict[str, object]:
         "error_rate": 0.0,
         "retry_rate": 0.01,
     }
-    byte_stages = {"object_storage", "lance", "preview", "export"}
+    byte_stages = {"object_storage", "lance", "aligned_media", "export"}
     stages = {
         name: {
             "status": "PASS",
@@ -52,7 +52,7 @@ def _passing_capacity_evidence() -> dict[str, object]:
             "temporal",
             "quality_control",
             "lance",
-            "preview",
+            "aligned_media",
             "export",
         )
     }
@@ -70,7 +70,7 @@ def _passing_capacity_evidence() -> dict[str, object]:
             "object_storage",
             "temporal_worker",
             "lance",
-            "preview",
+            "aligned_media",
             "export",
         )
     }
@@ -194,7 +194,7 @@ def test_50_concurrent_20gib_manifests_pass_the_real_fastapi_route() -> None:
         capture_output=True,
         text=True,
     )
-    result = json.loads(completed.stdout)
+    result = json.loads(completed.stdout.splitlines()[-1])
 
     assert result["passed"] is True
     assert result["statuses"] == {"201": 50}

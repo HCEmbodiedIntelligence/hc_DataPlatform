@@ -23,7 +23,7 @@ ANONYMOUS_OPERATIONS = frozenset(
         ("POST", "/api/v1/auth/password-recovery-requests"),
         ("POST", "/api/v1/auth/password-recovery-confirmations"),
         ("GET", "/api/v1/capabilities/auto-annotation"),
-        ("GET", "/api/v1/previews/sessions/{session_id}/media/{asset_name}"),
+        ("GET", "/api/v1/platform/version"),
     }
 )
 PATH_VALUES = {
@@ -172,10 +172,13 @@ def test_unexpected_exception_response_and_log_do_not_echo_sensitive_values(
     for value in SENSITIVE_SENTINELS:
         assert value not in response.text
         assert value not in caplog.text
-    records = [record for record in caplog.records if record.msg == "request_failed"]
+    records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event_code", "") == "HTTP.REQUEST_FAILED.INTERNAL_SERVER_ERROR"
+    ]
     assert records
-    assert all(record.exception_type == "UnhandledException" for record in records)
-    assert all(record.error_code == "INTERNAL_SERVER_ERROR" for record in records)
+    assert all(record.error_type == "UnhandledException" for record in records)
     assert any(record.request_id == response.headers["X-Request-ID"] for record in records)
 
 

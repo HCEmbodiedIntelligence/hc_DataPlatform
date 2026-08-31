@@ -27,7 +27,7 @@ function revision(
 }
 
 describe("P06 viewer stream adapter", () => {
-  it("uses only a server-projected camera binding to expose a lazy authorized HLS source", () => {
+  it("uses only a server-projected camera binding to expose a lazy authorized MP4 source", () => {
     const [stream] = adaptP06ViewerStreams(
       revision([
         {
@@ -36,12 +36,12 @@ describe("P06 viewer stream adapter", () => {
           kind: "RGB_VIDEO",
           t_start_ns: "100",
           t_end_ns: "1100",
-          preview_binding: {
+          aligned_media_binding: {
             rollout_id: "rollout-p06",
-            lance_version: 7,
-            annotation_revision: 2,
+            dataset_version: 7,
+            artifact_id: "artifact-p06",
             camera_id: "front-rgb",
-            frequency_hz: 30,
+            fps: 30,
             start_step: 0,
             end_step: 30,
           },
@@ -68,7 +68,7 @@ describe("P06 viewer stream adapter", () => {
           kind: "VIDEO",
           t_start_ns: "100",
           t_end_ns: "1100",
-          preview_binding: null,
+          aligned_media_binding: null,
           data_binding: null,
         },
       ]),
@@ -77,7 +77,7 @@ describe("P06 viewer stream adapter", () => {
 
     expect(stream).toMatchObject({ modality: "rgb", availability: "missing" });
     expect(stream?.mediaSource).toBeUndefined();
-    expect(stream?.accessibleSummary).toContain("不会伪造浏览器视频");
+    expect(stream?.accessibleSummary).toContain("不会在页面打开时创建媒体任务");
   });
 
   it("marks an unbound non-camera modality as missing rather than claiming its format is unsupported", () => {
@@ -89,7 +89,7 @@ describe("P06 viewer stream adapter", () => {
           kind: "FORCE",
           t_start_ns: "100",
           t_end_ns: "1100",
-          preview_binding: null,
+          aligned_media_binding: null,
           data_binding: null,
         },
       ]),
@@ -112,7 +112,7 @@ describe("P06 viewer stream adapter", () => {
           kind: "JOINT_STATE",
           t_start_ns: "100",
           t_end_ns: "1100",
-          preview_binding: null,
+          aligned_media_binding: null,
           data_binding: {
             rollout_id: "rollout-p06",
             lance_version: 7,
@@ -144,7 +144,7 @@ describe("P06 viewer stream adapter", () => {
           kind: "EVENT",
           t_start_ns: "100",
           t_end_ns: "1100",
-          preview_binding: null,
+          aligned_media_binding: null,
           data_binding: {
             rollout_id: "rollout-p06",
             lance_version: 1,
@@ -160,7 +160,7 @@ describe("P06 viewer stream adapter", () => {
           kind: "EVENT",
           t_start_ns: "100",
           t_end_ns: "1100",
-          preview_binding: null,
+          aligned_media_binding: null,
           data_binding: {
             rollout_id: "rollout-p06",
             lance_version: 1,
@@ -176,14 +176,19 @@ describe("P06 viewer stream adapter", () => {
 
     expect(streams).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ modality: "joint_state", availability: "ready" }),
+        expect.objectContaining({
+          modality: "joint_state",
+          availability: "ready",
+        }),
         expect.objectContaining({ modality: "pose", availability: "ready" }),
       ]),
     );
-    expect(streams.every((stream) => stream.windowSource !== undefined)).toBe(true);
+    expect(streams.every((stream) => stream.windowSource !== undefined)).toBe(
+      true,
+    );
   });
 
-  it("fails closed on a malformed non-camera preview binding before it can reach the viewer", () => {
+  it("fails closed on a malformed non-camera media binding before it can reach the viewer", () => {
     expect(
       episodeStreamWireSchema.safeParse({
         episode_stream_id: "stream_p06bad",
@@ -191,12 +196,12 @@ describe("P06 viewer stream adapter", () => {
         kind: "FORCE",
         t_start_ns: "100",
         t_end_ns: "1100",
-        preview_binding: {
+        aligned_media_binding: {
           rollout_id: "rollout-p06",
-          lance_version: 7,
-          annotation_revision: 2,
+          dataset_version: 7,
+          artifact_id: "artifact-p06",
           camera_id: "front-rgb",
-          frequency_hz: 30,
+          fps: 30,
           start_step: 0,
           end_step: 30,
         },
@@ -211,7 +216,7 @@ describe("P06 viewer stream adapter", () => {
       kind: "RGB_VIDEO",
       t_start_ns: "100",
       t_end_ns: "1100",
-      preview_binding: null,
+      aligned_media_binding: null,
       data_binding: {
         rollout_id: "rollout-p06",
         lance_version: 7,

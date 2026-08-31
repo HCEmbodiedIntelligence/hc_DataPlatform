@@ -176,7 +176,10 @@ def main() -> None:
     parser.add_argument("--rollout-size", type=int, default=20 * 1024**3)
     args = parser.parse_args()
     result = run_probe(concurrency=args.concurrency, rollout_size=args.rollout_size)
-    print(json.dumps(result, indent=2, sort_keys=True))
+    # Runtime producers intentionally write one JSON object per stdout line. Keep this
+    # harness result framed the same way so callers can select the final JSON document
+    # without suppressing or redirecting the production logging path under test.
+    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
     if not result["passed"]:
         raise SystemExit(1)
 

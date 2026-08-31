@@ -3,6 +3,9 @@ fullnameOverride: ""
 
 global:
   releaseId: unreleased
+  releaseManifestDigest: unreleased
+  gitCommit: unknown
+  migrationManifestDigest: unreleased
 
 imagePullSecrets: []
 
@@ -28,10 +31,20 @@ frontend:
     limits:
       cpu: 500m
       memory: 512Mi
+  identitySidecar:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 96Mi
+  tmpSizeLimit: 64Mi
   strategy:
     maxUnavailable: 0
     maxSurge: 1
   terminationGracePeriodSeconds: 30
+  drainDelaySeconds: 10
   probes:
     startup:
       failureThreshold: 30
@@ -54,13 +67,6 @@ ingress:
   tls:
     enabled: true
     secretName: hc-data-platform-tls
-  # A separate Ingress gives the bearerless HLS gateway a bounded per-client
-  # budget without throttling authenticated control-plane APIs.
-  previewMediaRateLimit:
-    enabled: true
-    requestsPerSecond: "30"
-    burstMultiplier: "4"
-    connections: "8"
 
 networkPolicy:
   enabled: false
@@ -95,10 +101,93 @@ podDisruptionBudget:
   workerMinAvailable: 1
   mediaWorkerMinAvailable: 1
 
+highAvailability:
+  # Enable only on a target with at least two eligible nodes in two labeled zones.
+  enabled: false
+  nodeTopologyKey: kubernetes.io/hostname
+  zoneTopologyKey: topology.kubernetes.io/zone
+  nodeMinDomains: 2
+  zoneMinDomains: 2
+  maxSkew: 1
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
 topologySpreadConstraints: []
+
+observability:
+  # The application chart owns the sanitized OTel gateway and frontend stdout agent.
+  # Production may use the embedded PVC-backed Loki only after accepting its single-binary
+  # availability boundary; otherwise set loki.embedded=false and provide an external OTLP URL.
+  enabled: false
+  collector:
+    replicaCount: 2
+    nodeSelector: {}
+    image:
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      digest: sha256:f2f01157055a9b2aab9df7118e1f1c9abf345e99b23bc7a2bc791db374a7d0f6
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  frontendLogAgent:
+    enabled: true
+    nodeSelector: {}
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+  loki:
+    embedded: true
+    nodeSelector: {}
+    # Required native OTLP base endpoint when embedded=false; the Collector appends /v1/logs.
+    endpoint: ""
+    # The API exposes fixed-filter, host-redacted log search for platform operators.
+    query:
+      enabled: true
+      # Optional for gateways that do not use workload/network identity.
+      existingBearerTokenSecret:
+        name: ""
+        key: token
+    image:
+      repository: grafana/loki
+      digest: sha256:87f0a067673756a3cede1bcbf0c74875f7df9b09fddb53e399d0c576f756cfcc
+      pullPolicy: IfNotPresent
+    retentionPeriod: 720h
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClassName: ""
+    resources:
+      requests: {cpu: 250m, memory: 512Mi}
+      limits: {cpu: "1", memory: 2Gi}
+  grafana:
+    dashboardConfigMap:
+      enabled: true
+      labels:
+        grafana_dashboard: "1"
+    managed:
+      enabled: false
+      nodeSelector: {}
+      image:
+        repository: grafana/grafana
+        digest: sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
+        pullPolicy: IfNotPresent
+      existingAdminSecret:
+        name: ""
+        userKey: admin-user
+        passwordKey: admin-password
+      prometheusUrl: http://prometheus.observability.svc:9090
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: 500m, memory: 512Mi}
+  prometheusOperator:
+    enabled: false
+    ruleLabels:
+      prometheus: platform
+    serviceMonitorLabels:
+      prometheus: platform
+  tolerations: []
+  affinity: {}
 
 backend:
   serviceAccount:
@@ -111,6 +200,29 @@ backend:
       digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
       pullPolicy: IfNotPresent
     replicaCount: 2
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
     port: 8000
     service:
       type: ClusterIP
@@ -121,7 +233,9 @@ backend:
     strategy:
       maxUnavailable: 0
       maxSurge: 1
-    terminationGracePeriodSeconds: 30
+    terminationGracePeriodSeconds: 45
+    drainDelaySeconds: 10
+    gracefulShutdownSeconds: 30
     resources:
       requests:
         cpu: 250m
@@ -129,6 +243,7 @@ backend:
       limits:
         cpu: "1"
         memory: 1Gi
+    tmpSizeLimit: 256Mi
     probes:
       startup:
         failureThreshold: 30
@@ -148,11 +263,38 @@ backend:
       digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
       pullPolicy: IfNotPresent
     replicaCount: 2
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 20
+      targetCPUUtilizationPercentage: 70
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
     taskQueue: hc-data-pipeline
     strategy:
       maxUnavailable: 1
       maxSurge: 1
     terminationGracePeriodSeconds: 90
+    gracefulShutdownSeconds: 60
+    maxConcurrentWorkflowTasks: 4
+    maxConcurrentActivities: 2
+    maxCachedWorkflows: 16
     resources:
       requests:
         cpu: "1"
@@ -160,6 +302,8 @@ backend:
       limits:
         cpu: "4"
         memory: 8Gi
+    stagingSizeLimit: 20Gi
+    runtimeSizeLimit: 16Mi
     probes:
       startup:
         failureThreshold: 30
@@ -168,7 +312,7 @@ backend:
       readiness:
         failureThreshold: 3
         periodSeconds: 10
-        timeoutSeconds: 3
+        timeoutSeconds: 2
       liveness:
         failureThreshold: 3
         periodSeconds: 15
@@ -181,11 +325,16 @@ backend:
     replicaCount: 1
     taskQueue: hc-media-pipeline
     maxConcurrentGenerations: 2
+    globalMaxConcurrentGenerations: 4
     ffmpegThreads: 2
     strategy:
       maxUnavailable: 0
       maxSurge: 1
     terminationGracePeriodSeconds: 120
+    gracefulShutdownSeconds: 90
+    maxConcurrentWorkflowTasks: 4
+    maxConcurrentActivities: 2
+    maxCachedWorkflows: 16
     resources:
       requests:
         cpu: "2"
@@ -194,12 +343,15 @@ backend:
         cpu: "4"
         memory: 6Gi
     stagingSizeLimit: 20Gi
+    runtimeSizeLimit: 16Mi
     nodeSelector: {}
     tolerations: []
     affinity: {}
   config:
     environment: production
-    serviceVersion: unreleased
+    platformEnvironmentId: hc-production
+    # Non-secret digest of the immutable Secret Manager bundle version deployed to every backend Pod.
+    secretBundleRevision: unversioned
     temporalTarget: temporal-frontend.temporal.svc:7233
     # Exact organization/project/region scopes consumed by the durable outbox dispatcher.
     outboxScopes: '[]'
@@ -208,20 +360,17 @@ backend:
     storageInventoryIntervalSeconds: "3600"
     artifactPrefix: artifacts
     workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
-    previewArtifactTtlDays: "30"
-    previewSessionTtlMinutes: "30"
-    previewStagingTtlHours: "24"
-    previewGcIntervalSeconds: "300"
-    previewProjectQuotaBytes: "107374182400"
-    previewGlobalQuotaBytes: "1099511627776"
-    previewHighWatermarkPercent: "85"
-    previewLowWatermarkPercent: "70"
-    previewAllowedProfiles: annotation-h264-720p-v1
-    objectStoreEndpoint: https://object-store.example.invalid
-    # Required deployment input: browser-reachable HTTPS S3 endpoint used only for presigning.
+    alignedMediaStagingRoot: /tmp/hc-data/aligned-media
+    alignedMediaStagingTtlHours: "24"
+    alignedMediaPublicationOrphanTtlMinutes: "30"
+    mediaMaintenanceIntervalSeconds: "300"
+    alignedMediaAllowedProfiles: '["canonical-h264-crf20-v1"]'
+    objectStoreProvider: oss
+    objectStoreEndpoint: https://oss-cn-hangzhou-internal.aliyuncs.com
+    # Required deployment input: browser-reachable HTTPS OSS endpoint used only for presigning.
     objectStorePublicEndpoint: ""
     objectStoreBucket: hc-data-production
-    objectStoreRegion: us-east-1
+    objectStoreRegion: cn-hangzhou
     # Optional provider gateway.  When empty, the API reports a clear 503
     # capability state instead of pretending that automatic annotation exists.
     autoAnnotationProviderName: vlm
@@ -295,6 +444,163 @@ backend:
     activeDeadlineSeconds: 600
     ttlSecondsAfterFinished: 86400
     annotations: {}
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    contract:
+      # Contract DDL is never a Helm upgrade hook. Enable it only in a later,
+      # separately approved invocation after source Pods/build IDs are retired.
+      enabled: false
+      approvalDigest: ""
+  capacityGate:
+    # This pre-install/pre-upgrade gate accepts only a separately produced,
+    # digest-pinned hc-capacity-evidence/v1 artifact. Keep it disabled until
+    # the target production-like environment has completed the full 5 TB/day
+    # + 30%, >=30 minute, failure-recovery run.
+    enabled: false
+    evidenceConfigMap:
+      name: ""
+      key: capacity-evidence.json
+      sha256: ""
+    backoffLimit: 0
+    activeDeadlineSeconds: 300
+    ttlSecondsAfterFinished: 604800
+    annotations: {}
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+  backupJob:
+    # A backup is an explicit, immutable operation. Keep this disabled in normal releases
+    # and enable it only with a prepared plan Secret and a dedicated staging PVC.
+    enabled: false
+    operation: create
+    operationId: ""
+    verifiedAt: ""
+    image:
+      repository: registry.example.invalid/hc-data-platform/backup-maintenance
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullPolicy: IfNotPresent
+    serviceAccountName: ""
+    backoffLimit: 6
+    activeDeadlineSeconds: 28800
+    ttlSecondsAfterFinished: 604800
+    annotations: {}
+    planSecret:
+      name: ""
+      key: whole-backup-plan.json
+    helmRenderedConfigMap:
+      name: ""
+      key: rendered.yaml
+    environmentConfigMap:
+      name: ""
+    environmentSecret:
+      name: ""
+    ageIdentitySecret:
+      name: ""
+      key: identity.txt
+    staging:
+      existingClaim: ""
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 4Gi
+  restoreJob:
+    # RST3 restore execution is an explicit, approved operation in an isolated target.
+    enabled: false
+    operation: execute
+    # Required UTC RFC3339 timestamp only when operation=reconcile.
+    reconciledAt: ""
+    backupId: ""
+    targetEnvironment: ""
+    image:
+      repository: registry.example.invalid/hc-data-platform/backup-maintenance
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullPolicy: IfNotPresent
+    serviceAccountName: ""
+    backoffLimit: 6
+    activeDeadlineSeconds: 28800
+    ttlSecondsAfterFinished: 604800
+    annotations: {}
+    inputSecret:
+      name: ""
+      backupPlanKey: whole-backup-plan.json
+      targetDocumentKey: restore-target.json
+      restorePlanKey: restore-plan.json
+      approvalKey: restore-approval.json
+      approvalSignatureKey: restore-approval.sig
+    ageIdentitySecret:
+      name: ""
+      key: identity.txt
+    # Optional private trust bundle for external-managed Temporal.
+    # Client certificate and private key, when used, must be configured together.
+    temporalTlsSecret:
+      name: ""
+      caKey: ca.crt
+      clientCertificateKey: ""
+      clientPrivateKeyKey: ""
+    environmentConfigMap:
+      name: ""
+    environmentSecret:
+      name: ""
+    staging:
+      existingClaim: ""
+    kubernetesTokenAudience: https://kubernetes.default.svc.cluster.local
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 4Gi
+  migrationJob:
+    # RST3-04 advances one signed migration observation per explicit Job.
+    enabled: false
+    operation: advance
+    # reuse_external is the functional default. copy_referenced and portable
+    # must also match the immutable signed migration plan.
+    objectMigrationMode: reuse_external
+    validatedAt: ""
+    advancedAt: ""
+    executionOwnerId: ""
+    fencingToken: 0
+    image:
+      repository: registry.example.invalid/hc-data-platform/backup-maintenance
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullPolicy: IfNotPresent
+    serviceAccountName: ""
+    backoffLimit: 0
+    activeDeadlineSeconds: 3600
+    ttlSecondsAfterFinished: 604800
+    annotations: {}
+    inputSecret:
+      name: ""
+      planKey: migration-plan.json
+      approvalKey: migration-cutover-approval.json
+      approvalSignatureKey: migration-cutover-approval.sig
+      observationKey: migration-observation.json
+      observationSignatureKey: migration-observation.sig
+    environmentConfigMap:
+      name: ""
+    staging:
+      existingClaim: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
   existingSecrets:
     postgres:
       name: hc-data-postgres
@@ -319,6 +625,12 @@ backend:
   affinity: {}
   topologySpreadConstraints: []
   migrationContainerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+  backupContainerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
       drop: [ALL]

@@ -32,13 +32,19 @@ def _put(url: str, body: bytes) -> str:
 
 @pytest.mark.integration
 def test_minio_network_pause_recovers_one_raw_object_and_manifest() -> None:
-    endpoint = os.environ.get("HC_MINIO_ENDPOINT")
-    bucket = os.environ.get("HC_MINIO_BUCKET")
-    access_key = os.environ.get("HC_MINIO_ACCESS_KEY")
-    secret_key = os.environ.get("HC_MINIO_SECRET_KEY")
-    container = os.environ.get("HC_MINIO_TEST_CONTAINER")
+    endpoint = os.environ.get("HC_MINIO_NETWORK_ENDPOINT") or os.environ.get("HC_MINIO_ENDPOINT")
+    bucket = os.environ.get("HC_MINIO_NETWORK_BUCKET") or os.environ.get("HC_MINIO_BUCKET")
+    access_key = os.environ.get("HC_MINIO_NETWORK_ACCESS_KEY") or os.environ.get(
+        "HC_MINIO_ACCESS_KEY"
+    )
+    secret_key = os.environ.get("HC_MINIO_NETWORK_SECRET_KEY") or os.environ.get(
+        "HC_MINIO_SECRET_KEY"
+    )
+    container = os.environ.get("HC_MINIO_NETWORK_TEST_CONTAINER") or os.environ.get(
+        "HC_MINIO_TEST_CONTAINER"
+    )
     if not all((endpoint, bucket, access_key, secret_key, container)):
-        pytest.skip("MinIO variables plus HC_MINIO_TEST_CONTAINER are required")
+        pytest.skip("disposable MinIO network-recovery variables are required")
     if shutil.which("docker") is None:
         pytest.skip("docker is required to pause the disposable MinIO container")
     assert endpoint and bucket and access_key and secret_key and container

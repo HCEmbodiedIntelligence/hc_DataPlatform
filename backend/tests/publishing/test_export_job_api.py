@@ -329,7 +329,7 @@ def test_failed_export_can_be_retried_but_success_cannot(
     assert failed.status_code == 202
     assert failed.json()["status"] == "FAILED"
     assert failed.json()["error_code"] == "EXPORTER_UNAVAILABLE"
-    assert "501" not in failed.text
+    assert failed.json()["error_message"] == "Export worker is unavailable"
 
     sink = InMemoryArtifactSink()
     monkeypatch.setattr(

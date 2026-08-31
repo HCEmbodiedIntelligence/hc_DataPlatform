@@ -10,6 +10,13 @@ from hc_data_platform.core.context import (
     clear_request_context,
     reset_request_context,
 )
+from hc_data_platform.platform_control.maintenance_contract import MaintenanceContractError
+from hc_data_platform.platform_ops.maintenance import (
+    EnvironmentId,
+    MaintenanceWriteGate,
+    SafeActorId,
+    writer_permit_scope,
+)
 from hc_data_platform.security.outbox import OutboxDispatcher
 from hc_data_platform.storage.dispatch import StorageScheduleEnqueuer
 
@@ -28,6 +35,9 @@ async def serve_outbox(
     poll_interval_seconds: float,
     batch_size: int,
     schedule_enqueuer: StorageScheduleEnqueuer | None = None,
+    maintenance_gate: MaintenanceWriteGate | None = None,
+    environment_id: EnvironmentId = "local",
+    writer_id: SafeActorId = "outbox-worker",
 ) -> None:
     """Drain configured tenant scopes without ever opening an unscoped DB connection."""
 
@@ -45,21 +55,31 @@ async def serve_outbox(
                 )
             )
             try:
-                if schedule_enqueuer is not None:
-                    scheduled = schedule_enqueuer.enqueue(
-                        project_id=project_id,
-                        region_code=region_code,
-                        limit=batch_size,
-                    )
-                    dispatched = dispatched or scheduled > 0
-                for _ in range(batch_size):
-                    if not await dispatcher.dispatch_one(
-                        organization_id=organization_id,
-                        project_id=project_id,
-                        region_code=region_code,
+                try:
+                    with writer_permit_scope(
+                        maintenance_gate,
+                        environment_id=environment_id,
+                        writer_id=writer_id,
+                        writer_kind="outbox_claim",
                     ):
-                        break
-                    dispatched = True
+                        if schedule_enqueuer is not None:
+                            scheduled = schedule_enqueuer.enqueue(
+                                project_id=project_id,
+                                region_code=region_code,
+                                limit=batch_size,
+                            )
+                            dispatched = dispatched or scheduled > 0
+                        for _ in range(batch_size):
+                            if not await dispatcher.dispatch_one(
+                                organization_id=organization_id,
+                                project_id=project_id,
+                                region_code=region_code,
+                            ):
+                                break
+                            dispatched = True
+                except MaintenanceContractError as exc:
+                    if exc.code != "PLATFORM_MAINTENANCE":
+                        raise
             finally:
                 reset_request_context(token)
                 # A long-lived worker must never inherit a request/test scope

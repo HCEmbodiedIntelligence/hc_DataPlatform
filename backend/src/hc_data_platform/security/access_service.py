@@ -11,6 +11,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from typing import NoReturn, Protocol
 
+from hc_data_platform.core.context import session_mutations_allowed
 from hc_data_platform.core.errors import ProblemException, problem
 
 from .abuse import AbuseProtection, PublicAuthAttempt, UnconfiguredAbuseProtection
@@ -293,6 +294,7 @@ class AccessService:
         resolved = self._repository.resolve_session(
             self.token_hash(token),
             request_id=request_id,
+            allow_session_mutation=session_mutations_allowed(),
         )
         if resolved is None:
             return None
@@ -350,6 +352,7 @@ class AccessService:
         resolved = self._repository.resolve_session(
             self.token_hash(token),
             request_id=request_id,
+            allow_session_mutation=session_mutations_allowed(),
         )
         if resolved is None:
             raise problem(
@@ -536,6 +539,7 @@ class AccessService:
         resolved = self._repository.resolve_session(
             self.token_hash(token),
             request_id=request_id,
+            allow_session_mutation=session_mutations_allowed(),
         )
         if resolved is None:
             raise problem(

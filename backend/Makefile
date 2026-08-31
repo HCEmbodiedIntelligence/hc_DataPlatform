@@ -47,7 +47,7 @@ build-worker:
 	docker build --target worker --tag hc-data-platform-worker:local .
 
 up:
-	$(COMPOSE) up --build --detach postgres minio minio-init temporal migration api worker
+	$(COMPOSE) up --build --detach postgres temporal migration api worker
 
 down:
 	$(COMPOSE) down

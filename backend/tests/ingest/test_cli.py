@@ -16,10 +16,13 @@ from hc_data_platform.ingest.cli import (
     UploadTransportError,
     effective_part_size,
     import_offline_bundle,
+    inspect_offline_bundle,
 )
 from hc_data_platform.ingest.models import (
     CompletedPart,
+    ContinuousCaptureSourceV1,
     FailedPartV1,
+    IngestProcessingMode,
     ManifestFileV1,
     RolloutManifestV1,
 )
@@ -226,6 +229,38 @@ def test_offline_manifest_integrity_is_checked_before_any_http_call(tmp_path: Pa
     else:
         raise AssertionError("invalid offline bundle was accepted")
     assert not called
+
+
+def test_offline_inspection_accepts_a_whole_continuous_capture_bundle(tmp_path: Path) -> None:
+    body = b"video-sensor-and-action-archive"
+    direct = manifest_for(body)
+    bundle_path = tmp_path / "capture.tar.zst"
+    manifest_path = tmp_path / "rollout_manifest.json"
+    bundle_path.write_bytes(body)
+    manifest = direct.model_copy(
+        update={
+            "processing_mode": IngestProcessingMode.CONTINUOUS_RECORDING,
+            "source_recording": ContinuousCaptureSourceV1(
+                recording_id="recording-long-001",
+                device_id="device-a",
+            ),
+            "files": [
+                direct.files[0].model_copy(
+                    update={
+                        "path": "capture.tar.zst",
+                        "media_type": "application/zstd",
+                        "role": "CAPTURE_BUNDLE",
+                    }
+                )
+            ],
+        }
+    )
+    manifest_path.write_text(manifest.model_dump_json(), encoding="utf-8")
+
+    inspection = inspect_offline_bundle(bundle_path, manifest_path)
+
+    assert inspection["valid"] is True
+    assert inspection["object_key"].endswith("/capture.bundle")
 
 
 def test_effective_part_size_keeps_a_five_tib_import_within_s3_part_limit() -> None:

@@ -14,8 +14,8 @@ from hc_data_platform.dataset_registry.models import (
     DatasetPageContentSnapshot,
     DatasetPageDetailFacts,
     DatasetPageDetailSummary,
+    DatasetPageEpisodeAlignedMediaBinding,
     DatasetPageEpisodeDataBinding,
-    DatasetPageEpisodePreviewBinding,
     DatasetPageEpisodeRecord,
     DatasetPageEpisodeRevision,
     DatasetPageEpisodeStream,
@@ -326,12 +326,12 @@ def _service() -> DatasetPageService:
                         kind="RGB_VIDEO",
                         t_start_ns="100",
                         t_end_ns="1100",
-                        preview_binding=DatasetPageEpisodePreviewBinding(
+                        aligned_media_binding=DatasetPageEpisodeAlignedMediaBinding(
                             rollout_id="rollout_p07fixture",
-                            lance_version=7,
-                            annotation_revision=2,
+                            dataset_version=7,
+                            artifact_id="aligned-media-p07fixture-v7",
                             camera_id="front-rgb",
-                            frequency_hz=30,
+                            fps=30,
                             start_step=0,
                             end_step=30,
                         ),
@@ -370,12 +370,12 @@ def _service() -> DatasetPageService:
                         kind="RGB_VIDEO",
                         t_start_ns="100",
                         t_end_ns="1100",
-                        preview_binding=DatasetPageEpisodePreviewBinding(
+                        aligned_media_binding=DatasetPageEpisodeAlignedMediaBinding(
                             rollout_id="rollout_p07fixture",
-                            lance_version=6,
-                            annotation_revision=1,
+                            dataset_version=6,
+                            artifact_id="aligned-media-p07fixture-v6",
                             camera_id="front-rgb",
-                            frequency_hz=30,
+                            fps=30,
                             start_step=0,
                             end_step=30,
                         ),
@@ -578,12 +578,12 @@ def test_p07_fixed_version_reads_are_scoped_snapshot_bound_and_safe() -> None:
     )
     assert revision.status_code == 200
     assert revision.json()["data"]["streams"][0]["episode_stream_id"] == "stream_p07fixture"
-    assert revision.json()["data"]["streams"][0]["preview_binding"] == {
+    assert revision.json()["data"]["streams"][0]["aligned_media_binding"] == {
         "rollout_id": "rollout_p07fixture",
-        "lance_version": 7,
-        "annotation_revision": 2,
+        "dataset_version": 7,
+        "artifact_id": "aligned-media-p07fixture-v7",
         "camera_id": "front-rgb",
-        "frequency_hz": 30.0,
+        "fps": 30,
         "start_step": 0,
         "end_step": 30,
     }

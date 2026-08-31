@@ -84,9 +84,17 @@ class AdvanceAfterFirstResolveRepository(InMemoryAccessRepository):
         self._advance_after_resolve = True
 
     def resolve_session(
-        self, token_hash: str, *, request_id: str | None = None
+        self,
+        token_hash: str,
+        *,
+        request_id: str | None = None,
+        allow_session_mutation: bool = True,
     ) -> ResolvedSession | None:
-        resolved = super().resolve_session(token_hash, request_id=request_id)
+        resolved = super().resolve_session(
+            token_hash,
+            request_id=request_id,
+            allow_session_mutation=allow_session_mutation,
+        )
         if self._advance_after_resolve and resolved is not None:
             self._advance_after_resolve = False
             self._test_clock.advance(5)

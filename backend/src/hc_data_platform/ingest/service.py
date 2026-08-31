@@ -18,6 +18,7 @@ from .models import (
     CompletedPart,
     FailedPartV1,
     IdempotencyOutcome,
+    IngestProcessingMode,
     IngestTriggerStatus,
     IngestWorkflowLocator,
     ManifestDiscoveryV1,
@@ -86,9 +87,7 @@ class UploadSessionService:
         self._cursor = CursorCodec(cursor_secret)
         self._lock = RLock()
 
-    def preflight_upload_manifest(
-        self, manifest: RolloutManifestV1
-    ) -> ManifestPreflightResultV1:
+    def preflight_upload_manifest(self, manifest: RolloutManifestV1) -> ManifestPreflightResultV1:
         result = preflight_manifest(manifest)
         self._assert_source_recording_available(manifest, result)
         return result
@@ -637,6 +636,23 @@ class UploadSessionService:
                 or existing.object_key != session.object_key
             ):
                 raise _rollout_content_conflict()
+            if manifest.processing_mode is IngestProcessingMode.CONTINUOUS_RECORDING:
+                source = manifest.source_recording
+                recording_id = getattr(source, "recording_id", None)
+                event = existing.model_copy(
+                    update={
+                        "processing_mode": manifest.processing_mode,
+                        "continuous_recording_id": recording_id,
+                        "workflow": None,
+                    }
+                )
+                self.persistence.commit_raw_without_workflow(
+                    session=session,
+                    event=event,
+                    actor_id=actor_id,
+                    request_id=request_id,
+                )
+                return event
             workflow = self._stage_workflow_trigger(
                 session=session,
                 event=existing,
@@ -723,8 +739,18 @@ class UploadSessionService:
             manifest_key=manifest_object_key(session.object_key),
             sha256=manifest.sha256,
             file_size=manifest.file_size,
+            processing_mode=manifest.processing_mode,
+            continuous_recording_id=getattr(manifest.source_recording, "recording_id", None),
         )
         self._write_or_reconcile_manifest(event.manifest_key, manifest)
+        if manifest.processing_mode is IngestProcessingMode.CONTINUOUS_RECORDING:
+            self.persistence.commit_raw_without_workflow(
+                session=session,
+                event=event,
+                actor_id=actor_id,
+                request_id=request_id,
+            )
+            return event
         workflow = self._stage_workflow_trigger(
             session=session,
             event=event,
@@ -851,7 +877,13 @@ class UploadSessionService:
                 occurred_at=utc_now(),
             )
         )
+        preflight = self.get_manifest_preflight(session_id)
+        continuous = preflight.manifest.processing_mode is IngestProcessingMode.CONTINUOUS_RECORDING
+        primary_role = "CAPTURE_BUNDLE" if continuous else "RAW_MCAP"
+        primary = next(item for item in preflight.files if item.role == primary_role)
         return RawMediaSourceV1(
+            format="CAPTURE_BUNDLE" if continuous else "MCAP",
+            media_type=primary.media_type if continuous else "application/x-mcap",
             download_url=download_url,
             expires_at=expires_at,
             byte_length=committed.file_size,

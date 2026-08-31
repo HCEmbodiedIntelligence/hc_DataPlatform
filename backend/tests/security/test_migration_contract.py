@@ -1,4 +1,7 @@
+import re
 from pathlib import Path
+
+from hc_data_platform.security.passwords import PasswordHasher
 
 
 def test_security_migration_defines_unique_idempotency_and_forced_rls_contract() -> None:
@@ -48,6 +51,28 @@ def test_platform_super_admin_migration_is_role_based_idempotent_and_rls_aware()
     assert "core.organization_scope_matches" in migration
     assert "canonical_username" not in migration
     assert "hc-admin" not in migration
+
+
+def test_default_admin_is_seeded_only_for_an_empty_account_store() -> None:
+    migration = (
+        Path(__file__).parents[2] / "migrations" / "security" / "023_default_admin.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "'hc_admin'" in migration
+    assert "WHERE NOT EXISTS" in migration
+    assert "FROM access_control.accounts" in migration
+    assert "ON CONFLICT" not in migration
+    for capability in (
+        "platform.admin",
+        "platform.account.read",
+        "platform.account.manage",
+        "platform.account_security.manage",
+    ):
+        assert f"'{capability}'" in migration
+
+    encoded_password = re.search(r"'(scrypt\$[^']+)'", migration)
+    assert encoded_password is not None
+    assert PasswordHasher().verify("12345678", encoded_password.group(1))
 
 
 def test_auth_abuse_migration_persists_only_keyed_state_and_bounded_cleanup_indexes() -> None:

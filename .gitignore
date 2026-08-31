@@ -23,6 +23,7 @@ rad.json
 TestResults.xml
 
 # Local build output, dependencies, environments, and Python caches
+/node_modules/
 frontend/dist/
 frontend/node_modules/
 frontend/.env.local

@@ -6,7 +6,9 @@ metadata:
     {{- include "hc-data-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
 spec:
+  {{- if not .Values.backend.worker.autoscaling.enabled }}
   replicas: {{ .Values.backend.worker.replicaCount }}
+  {{- end }}
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -21,6 +23,8 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum }}
+        hc-data-platform.io/release-manifest-digest: {{ .Values.global.releaseManifestDigest | quote }}
+        hc-data-platform.io/component-image-digest: {{ .Values.backend.worker.image.digest | quote }}
         {{- with .Values.backend.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -54,8 +58,38 @@ spec:
           env:
             - name: OTEL_SERVICE_NAME
               value: hc-data-backend-worker
+            - name: HC_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: HC_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HC_COMPONENT_ROLE
+              value: worker
+            - name: HC_COMPONENT_IMAGE_DIGEST
+              value: {{ .Values.backend.worker.image.digest | quote }}
             - name: HC_WORKER_ROLE
               value: main
+            - name: HC_WORKER_GRACEFUL_SHUTDOWN_SECONDS
+              value: {{ .Values.backend.worker.gracefulShutdownSeconds | quote }}
+            - name: HC_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS
+              value: {{ .Values.backend.worker.maxConcurrentWorkflowTasks | quote }}
+            - name: HC_WORKER_MAX_CONCURRENT_ACTIVITIES
+              value: {{ .Values.backend.worker.maxConcurrentActivities | quote }}
+            - name: HC_WORKER_MAX_CACHED_WORKFLOWS
+              value: {{ .Values.backend.worker.maxCachedWorkflows | quote }}
+            - name: HC_WORKER_READINESS_FILE
+              value: /tmp/hc-runtime/worker-ready
             {{- include "hc-data-platform.backendSecretEnv" . | nindent 12 }}
           startupProbe:
             exec:
@@ -63,39 +97,26 @@ spec:
             {{- toYaml .Values.backend.worker.probes.startup | nindent 12 }}
           readinessProbe:
             exec:
-              command:
-                - python
-                - -c
-                - |-
-                  import importlib
-                  import os
-                  import socket
-
-                  factory_path = os.environ["HC_WORKFLOW_ACTIVITY_FACTORY"]
-                  module_name, separator, attribute = factory_path.partition(":")
-                  assert separator and module_name and attribute
-                  assert callable(getattr(importlib.import_module(module_name), attribute))
-                  host, separator, port = os.environ["HC_TEMPORAL_TARGET"].rpartition(":")
-                  assert separator and host and port
-                  with socket.create_connection((host, int(port)), timeout=2):
-                      pass
+              command: ["/bin/sh", "-c", "test -f /tmp/hc-runtime/worker-ready"]
             {{- toYaml .Values.backend.worker.probes.readiness | nindent 12 }}
           livenessProbe:
             exec:
               command: ["python", "-c", "import os; os.kill(1, 0)"]
             {{- toYaml .Values.backend.worker.probes.liveness | nindent 12 }}
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 10"]
           resources:
             {{- toYaml .Values.backend.worker.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: runtime
+              mountPath: /tmp/hc-runtime
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: {{ required "backend.worker.stagingSizeLimit is required" .Values.backend.worker.stagingSizeLimit | quote }}
+        - name: runtime
+          emptyDir:
+            sizeLimit: {{ required "backend.worker.runtimeSizeLimit is required" .Values.backend.worker.runtimeSizeLimit | quote }}
       {{- with .Values.backend.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -108,7 +129,11 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.highAvailability.enabled }}
+      {{- include "hc-data-platform.haTopologySpreadConstraints" (dict "root" . "component" "worker") | nindent 6 }}
+      {{- else }}
       {{- with .Values.backend.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}

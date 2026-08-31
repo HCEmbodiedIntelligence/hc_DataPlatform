@@ -411,6 +411,21 @@ components:
         repository: {type: string, minLength: 3, maxLength: 256, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"}
         resolved_revision: {type: string, minLength: 7, maxLength: 64, pattern: "^[A-Fa-f0-9]+$"}
         episode_index: {type: integer, minimum: 0}
+    ContinuousCaptureSourceV1:
+      type: object
+      additionalProperties: false
+      required: [recording_id, device_id]
+      properties:
+        kind: {type: string, const: CONTINUOUS_CAPTURE, default: CONTINUOUS_CAPTURE}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        recorder_boot_id:
+          anyOf:
+            - {$ref: "#/components/schemas/IngestIdentifier"}
+            - {type: "null"}
+    IngestProcessingMode:
+      type: string
+      enum: [DIRECT_EPISODE, CONTINUOUS_RECORDING]
     RolloutManifestV1:
       type: object
       additionalProperties: false
@@ -439,9 +454,13 @@ components:
         crc64: {$ref: "#/components/schemas/Crc64Decimal"}
         compression: {type: string, enum: [none, zstd]}
         recorder_version: {type: string, minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9][A-Za-z0-9._/+:-]*$"}
+        processing_mode:
+          allOf: [{$ref: "#/components/schemas/IngestProcessingMode"}]
+          default: DIRECT_EPISODE
         source_recording:
           anyOf:
             - {$ref: "#/components/schemas/HuggingFaceEpisodeSourceV1"}
+            - {$ref: "#/components/schemas/ContinuousCaptureSourceV1"}
             - {type: "null"}
     TopicName:
       type: string
@@ -458,7 +477,7 @@ components:
         sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
         crc64: {$ref: "#/components/schemas/Crc64Decimal"}
         media_type: {type: string, minLength: 1, maxLength: 128, default: application/octet-stream}
-        role: {type: string, enum: [RAW_MCAP, AUXILIARY], default: RAW_MCAP}
+        role: {type: string, enum: [RAW_MCAP, CAPTURE_BUNDLE, AUXILIARY], default: RAW_MCAP}
     ManifestCameraV1:
       type: object
       additionalProperties: false
@@ -669,6 +688,13 @@ components:
         manifest_key: {type: string, pattern: "/rollout_manifest.json$"}
         sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
         file_size: {type: integer, minimum: 1}
+        processing_mode:
+          allOf: [{$ref: "#/components/schemas/IngestProcessingMode"}]
+          default: DIRECT_EPISODE
+        continuous_recording_id:
+          anyOf:
+            - {$ref: "#/components/schemas/IngestIdentifier"}
+            - {type: "null"}
         committed_at: {type: string, format: date-time}
         workflow:
           oneOf:
@@ -680,25 +706,24 @@ components:
       required: [schema_version, format, media_type, download_url, expires_at, byte_length, sha256]
       properties:
         schema_version: {type: string, const: raw-media-source/v1}
-        format: {type: string, const: MCAP}
-        media_type: {type: string, const: application/x-mcap}
+        format: {type: string, enum: [MCAP, CAPTURE_BUNDLE], default: MCAP}
+        media_type: {type: string, minLength: 1, maxLength: 128, default: application/x-mcap}
         download_url: {type: string, format: uri, minLength: 1, maxLength: 8192, description: Short-lived signed GET URL; sensitive and never cacheable.}
         expires_at: {type: string, format: date-time}
         byte_length: {type: integer, minimum: 1}
         sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
-    UploadPreviewTargetV1:
+    UploadAlignedMediaTargetV1:
       type: object
       additionalProperties: false
-      required: [schema_version, project_id, dataset_id, rollout_id, dataset_version, lance_version, annotation_task_id, frequency_hz, start_step, end_step]
+      required: [schema_version, project_id, dataset_id, rollout_id, dataset_version, annotation_task_id, start_step, end_step]
       properties:
-        schema_version: {type: string, const: upload-preview-target/v1}
+        schema_version: {type: string, const: upload-aligned-media-target/v1}
         project_id: {$ref: "#/components/schemas/IngestIdentifier"}
         dataset_id: {$ref: "#/components/schemas/IngestIdentifier"}
         rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
         dataset_version: {type: integer, minimum: 1}
-        lance_version: {type: integer, minimum: 1}
         annotation_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
-        frequency_hz: {type: number, exclusiveMinimum: 0}
+        fps: {type: integer, const: 30, default: 30}
         start_step: {type: integer, minimum: 0}
         end_step: {type: integer, minimum: 1}
     DatasetIngestViewerTarget:
@@ -722,7 +747,7 @@ components:
     UploadProcessingStatusV1:
       type: object
       additionalProperties: false
-      required: [schema_version, session_id, rollout_id, workflow_id, status, stage, attempt, preview, viewer, error_code, updated_at]
+      required: [schema_version, session_id, rollout_id, workflow_id, status, stage, attempt, aligned_media, viewer, error_code, updated_at]
       properties:
         schema_version: {type: string, const: upload-processing-status/v1}
         session_id: {type: string, format: uuid}
@@ -731,9 +756,9 @@ components:
         status: {type: string, enum: [PENDING, RUNNING, SUCCEEDED, TECHNICAL_FAILED, QUALITY_RISK, QUALITY_REJECTED, CANCELLED]}
         stage: {type: string, minLength: 1, maxLength: 128}
         attempt: {type: integer, minimum: 0}
-        preview:
+        aligned_media:
           oneOf:
-            - {$ref: "#/components/schemas/UploadPreviewTargetV1"}
+            - {$ref: "#/components/schemas/UploadAlignedMediaTargetV1"}
             - {type: "null"}
         viewer:
           oneOf:

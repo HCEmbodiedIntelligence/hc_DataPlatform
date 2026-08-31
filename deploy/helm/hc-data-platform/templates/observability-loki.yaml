@@ -1,0 +1,116 @@
+{{- if and .Values.observability.enabled .Values.observability.loki.embedded }}
+{{- $name := include "hc-data-platform.observabilityFullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-loki
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+spec:
+  clusterIP: None
+  selector:
+    {{- include "hc-data-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+  ports:
+    - {name: http, port: 3100, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}-loki
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+spec:
+  serviceName: {{ $name }}-loki
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy: {type: RollingUpdate}
+  selector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: loki
+  template:
+    metadata:
+      annotations:
+        checksum/observability-config: {{ include (print $.Template.BasePath "/observability-config.yaml") . | sha256sum }}
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: loki
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: loki
+          image: {{ include "hc-data-platform.observabilityImage" .Values.observability.loki.image | quote }}
+          imagePullPolicy: {{ .Values.observability.loki.image.pullPolicy }}
+          args: ["-config.file=/etc/loki/loki.yaml"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 3100, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: {path: /ready, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.observability.loki.resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/loki, readOnly: true}
+            - {name: data, mountPath: /var/loki}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}-loki
+        {{- if not .Values.observability.loki.persistence.enabled }}
+        - name: data
+          emptyDir: {sizeLimit: {{ .Values.observability.loki.persistence.size | quote }}}
+        {{- end }}
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+      {{- with .Values.observability.loki.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observability.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observability.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.observability.loki.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.observability.loki.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ required "observability.loki.persistence.size is required" .Values.observability.loki.persistence.size | quote }}
+  {{- end }}
+{{- end }}

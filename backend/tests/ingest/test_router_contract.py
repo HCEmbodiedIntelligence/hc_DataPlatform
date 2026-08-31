@@ -473,15 +473,14 @@ def test_router_projects_only_the_processing_result_linked_to_the_upload_scope()
     assert response.headers["Cache-Control"] == "no-store"
     body = response.json()
     assert body["status"] == "SUCCEEDED"
-    assert body["preview"] == {
-        "schema_version": "upload-preview-target/v1",
+    assert body["aligned_media"] == {
+        "schema_version": "upload-aligned-media-target/v1",
         "project_id": "p1",
         "dataset_id": "dataset_ingest_1",
         "rollout_id": "r1",
         "dataset_version": 1,
-        "lance_version": 1,
         "annotation_task_id": "task1",
-        "frequency_hz": 30.0,
+        "fps": 30,
         "start_step": 0,
         "end_step": 30,
     }

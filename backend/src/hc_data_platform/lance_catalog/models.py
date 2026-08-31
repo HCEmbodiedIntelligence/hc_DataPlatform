@@ -68,7 +68,7 @@ class StepRecord(BaseModel):
         description=(
             "Logical modality values. Binary media payloads are never embedded in the "
             "JSON step window; they are represented by a bounded metadata marker and "
-            "served through the authorized preview-media API."
+            "served through the canonical aligned-media authorization API."
         ),
     )
     source_timestamps_ns: dict[str, tuple[int, ...]] = Field(default_factory=dict)
@@ -87,10 +87,9 @@ class StepRecord(BaseModel):
     def serialize_modalities(self, value: dict[str, Any]) -> dict[str, Any]:
         """Keep step windows bounded and JSON-safe when rows contain real media bytes.
 
-        Lance retains the original bytes for lineage and deterministic processing.
-        The viewer obtains camera media from its separately authorized HLS/Range
-        transport, so duplicating an entire frame as base64 in every step response
-        would be both unsafe and prohibitively expensive for large rollouts.
+        Canonical camera columns contain only aligned MP4 frame references. Other
+        binary modalities remain JSON-safe here; duplicating their bytes as base64
+        in every step response would be unsafe and prohibitively expensive.
         """
 
         def public_value(item: Any) -> Any:
@@ -98,7 +97,7 @@ class StepRecord(BaseModel):
                 return {
                     "$type": "binary",
                     "byte_length": len(item),
-                    "transport": "preview_media",
+                    "transport": "aligned_media",
                 }
             if isinstance(item, dict):
                 return {str(key): public_value(child) for key, child in item.items()}

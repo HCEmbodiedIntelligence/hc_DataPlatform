@@ -15,11 +15,20 @@ from .models import AlignedRowV1
 class ArrowFragmentWriter:
     """Write bounded Arrow record batches to an isolated attempt path."""
 
-    def __init__(self, staging_root: Path, *, batch_rows: int = 4_096) -> None:
+    def __init__(
+        self,
+        staging_root: Path,
+        *,
+        batch_rows: int = 4_096,
+        batch_bytes: int = 48 * 1024 * 1024,
+    ) -> None:
         if not 2_048 <= batch_rows <= 8_192:
             raise ValueError("batch_rows must be between 2048 and 8192")
+        if not 32 * 1024 * 1024 <= batch_bytes <= 64 * 1024 * 1024:
+            raise ValueError("batch_bytes must be between 32 and 64 MiB")
         self._staging_root = staging_root.resolve()
         self._batch_rows = batch_rows
+        self._batch_bytes = batch_bytes
         self._attempt_dir: Path | None = None
         self._partial_path: Path | None = None
         self._committed_path: Path | None = None
@@ -28,6 +37,7 @@ class ArrowFragmentWriter:
         self._schema: Any = None
         self._row_count = 0
         self._buffer: list[AlignedRowV1] = []
+        self._buffer_bytes = 0
 
     def begin(self, *, rollout_id: str, attempt_id: str) -> None:
         if self._attempt_dir is not None:
@@ -77,7 +87,11 @@ class ArrowFragmentWriter:
         if self._committed_path is not None:
             self._row_count += 1
             return
+        encoded_size = len(canonical_json_bytes(row.model_dump(mode="python")["modalities"]))
+        if self._buffer and self._buffer_bytes + encoded_size > self._batch_bytes:
+            self._flush_buffer()
         self._buffer.append(row)
+        self._buffer_bytes += encoded_size
         self._row_count += 1
         if len(self._buffer) >= self._batch_rows:
             self._flush_buffer()
@@ -92,18 +106,16 @@ class ArrowFragmentWriter:
                 [row.rollout_id for row in rows],
                 [row.step_index for row in rows],
                 [row.timestamp_ns for row in rows],
-                [
-                    canonical_json_bytes(
-                        row.model_dump(mode="python")["modalities"]
-                    )
-                    for row in rows
-                ],
+                [canonical_json_bytes(row.model_dump(mode="python")["modalities"]) for row in rows],
                 [row.sample_valid for row in rows],
             ],
             schema=self._schema,
         )
         self._ipc_writer.write_batch(batch)
+        del batch
         self._buffer = []
+        self._buffer_bytes = 0
+        pa.default_memory_pool().release_unused()
 
     def commit(self, *, row_count: int, content_sha256: str, schema_sha256: str) -> str:
         self._require_active()
@@ -124,6 +136,7 @@ class ArrowFragmentWriter:
         assert partial_path is not None
         self._ipc_writer.close()
         self._sink.close()
+        self._load_module("pyarrow").default_memory_pool().release_unused()
         self._ipc_writer = None
         self._sink = None
         final_path = attempt_dir / f"{content_sha256}.arrow"
@@ -152,9 +165,7 @@ class ArrowFragmentWriter:
             attempt_dir.rmdir()
 
     def _require_active(self) -> None:
-        if self._attempt_dir is None or (
-            self._ipc_writer is None and self._committed_path is None
-        ):
+        if self._attempt_dir is None or (self._ipc_writer is None and self._committed_path is None):
             raise RuntimeError("writer attempt is not active")
 
     def _clear_active(self) -> None:
@@ -166,6 +177,7 @@ class ArrowFragmentWriter:
         self._schema = None
         self._row_count = 0
         self._buffer = []
+        self._buffer_bytes = 0
 
     @staticmethod
     def _prepare_attempt_dir(attempt_dir: Path) -> Path | None:

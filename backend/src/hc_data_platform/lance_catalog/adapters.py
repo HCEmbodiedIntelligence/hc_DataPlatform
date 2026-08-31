@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import importlib
 import json
@@ -10,6 +11,7 @@ import shutil
 from base64 import b64encode
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from ctypes import CDLL
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -47,6 +49,19 @@ _RECEIPT_PROPERTY = "hc.catalog.receipt"
 _STAGE_MANIFEST_PROPERTY = "hc.stage.manifest"
 _STAGE_ARROW_HASH_PROPERTY = "hc.stage.arrow_content_hash"
 _STAGE_SEMANTIC_HASH_PROPERTY = "hc.stage.semantic_hash"
+_WRITE_MAX_ROWS = 4_096
+_WRITE_MAX_ROWS_PER_GROUP = 512
+_WRITE_MAX_BYTES = 32 * 1024 * 1024
+
+
+def _release_native_memory(arrow: Any) -> None:
+    gc.collect()
+    arrow.default_memory_pool().release_unused()
+    try:
+        malloc_trim = CDLL(None).malloc_trim
+    except (AttributeError, OSError):
+        return
+    malloc_trim(0)
 
 
 def _module(name: str) -> ModuleType:
@@ -96,9 +111,7 @@ def _normalize_arrow_value(value: object) -> object:
     if isinstance(value, (date, datetime, time)):
         return {"$temporal": value.isoformat()}
     if isinstance(value, dict):
-        return {
-            str(key): _normalize_arrow_value(item) for key, item in sorted(value.items())
-        }
+        return {str(key): _normalize_arrow_value(item) for key, item in sorted(value.items())}
     if isinstance(value, (list, tuple)):
         return [_normalize_arrow_value(item) for item in value]
     raise TypeError(f"unsupported Arrow scalar value {type(value).__name__}")
@@ -154,6 +167,72 @@ def _table_from_steps(snapshot: DatasetSchemaSnapshot, steps: Sequence[StepRecor
         ) from exc
 
 
+def _step_size(step: StepRecord) -> int:
+    size = 256
+    for value in step.modalities.values():
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            size += len(value)
+        elif isinstance(value, str):
+            size += len(value.encode())
+        else:
+            size += len(json.dumps(value, default=str).encode())
+    return size
+
+
+def _record_batches_from_steps(
+    snapshot: DatasetSchemaSnapshot,
+    steps: Sequence[StepRecord],
+    *,
+    max_rows: int = 4_096,
+    max_bytes: int = _WRITE_MAX_BYTES,
+) -> Iterator[Any]:
+    buffered: list[StepRecord] = []
+    buffered_bytes = 0
+    for step in steps:
+        size = _step_size(step)
+        if buffered and (len(buffered) >= max_rows or buffered_bytes + size > max_bytes):
+            yield from _table_from_steps(snapshot, buffered).to_batches()
+            buffered = []
+            buffered_bytes = 0
+        buffered.append(step)
+        buffered_bytes += size
+    if buffered:
+        yield from _table_from_steps(snapshot, buffered).to_batches()
+
+
+def _write_bounded_fragments(
+    lance: Any,
+    arrow: Any,
+    batches: Iterator[Any],
+    destination: Any,
+    *,
+    schema: Any,
+    mode: str,
+    storage_options: dict[str, str],
+) -> list[Any]:
+    """Write one bounded Arrow batch at a time without publishing a manifest."""
+
+    fragments: list[Any] = []
+    for batch in batches:
+        written = lance.fragment.write_fragments(
+            batch,
+            destination,
+            schema=schema,
+            mode=mode,
+            max_rows_per_file=_WRITE_MAX_ROWS,
+            max_rows_per_group=_WRITE_MAX_ROWS_PER_GROUP,
+            max_bytes_per_file=_WRITE_MAX_BYTES,
+            storage_options=storage_options,
+        )
+        fragments.extend(written)
+        del batch, written
+        _release_native_memory(arrow)
+    if not fragments:
+        raise CatalogConflictError("cannot commit an empty Lance fragment set")
+    _release_native_memory(arrow)
+    return fragments
+
+
 def _steps_from_table(table: Any) -> tuple[StepRecord, ...]:
     """Decode logical JSON modalities without exposing their physical encoding."""
 
@@ -180,6 +259,58 @@ def _steps_from_table(table: Any) -> tuple[StepRecord, ...]:
         raise SchemaIncompatibleError(
             f"stored Lance JSON modalities do not match schema metadata: {exc}"
         ) from exc
+
+
+def _steps_from_projected_table(
+    table: Any,
+    modality_names: Sequence[str],
+    *,
+    json_modalities: frozenset[str],
+) -> tuple[StepRecord, ...]:
+    """Decode camera-projected batches scalar-by-scalar, never batch.to_pylist()."""
+
+    rows: list[StepRecord] = []
+    for batch in table.to_batches(max_chunksize=4_096):
+        arrays = {name: batch.column(name) for name in batch.schema.names}
+        for index in range(batch.num_rows):
+            modalities: dict[str, object] = {}
+            source_timestamps: dict[str, tuple[int, ...]] = {}
+            errors: dict[str, int | None] = {}
+            valid: dict[str, bool] = {}
+            repeated: dict[str, bool] = {}
+            for position, name in enumerate(modality_names):
+                value = arrays[f"__hc_modality_{position}"][index].as_py()
+                if name in json_modalities and value is not None:
+                    if not isinstance(value, str):
+                        raise SchemaIncompatibleError(f"JSON modality {name!r} is not encoded text")
+                    value = json.loads(value)
+                modalities[name] = value
+                source_timestamps[name] = tuple(
+                    arrays[f"__hc_source_{position}"][index].as_py() or ()
+                )
+                errors[name] = arrays[f"__hc_error_{position}"][index].as_py()
+                valid[name] = bool(arrays[f"__hc_valid_{position}"][index].as_py())
+                repeated[name] = bool(arrays[f"__hc_repeated_{position}"][index].as_py())
+            rows.append(
+                StepRecord(
+                    rollout_id=str(arrays["rollout_id"][index].as_py()),
+                    step_index=int(arrays["step_index"][index].as_py()),
+                    timestamp_ns=int(arrays["timestamp_ns"][index].as_py()),
+                    modalities=modalities,
+                    source_timestamps_ns=source_timestamps,
+                    time_error_ns=errors,
+                    valid=valid,
+                    repeated=repeated,
+                    sample_valid=bool(arrays["sample_valid"][index].as_py()),
+                )
+            )
+    return tuple(rows)
+
+
+def _nested_column(parent: str, name: str) -> str:
+    if "`" in name:
+        raise ValueError("Lance projected modality names must not contain backticks")
+    return f"{parent}.`{name}`"
 
 
 class LanceAdapter:
@@ -251,24 +382,38 @@ class LanceAdapter:
             if self._open_optional(stage_uri) is not None:
                 self.validate_staged(snapshot, manifest, stage_uri)
                 return stage_uri
-            table = _table_from_steps(snapshot, steps)
+            arrow = _module("pyarrow")
+            schema = compile_arrow_schema(snapshot)
+            batches = _record_batches_from_steps(snapshot, steps)
             properties = {
                 _STAGE_MANIFEST_PROPERTY: manifest.model_dump_json(),
-                _STAGE_ARROW_HASH_PROPERTY: _arrow_table_hash(table),
+                _STAGE_ARROW_HASH_PROPERTY: manifest.content_hash,
                 _STAGE_SEMANTIC_HASH_PROPERTY: _manifest_semantic_hash(manifest),
             }
             try:
-                lance.write_dataset(
-                    table,
+                fragments = _write_bounded_fragments(
+                    lance,
+                    arrow,
+                    batches,
                     stage_uri,
-                    schema=table.schema,
+                    schema=schema,
                     mode="create",
                     storage_options=self._storage_options,
-                    commit_message=f"stage alignment attempt {manifest.attempt_id}",
+                )
+                transaction = lance.Transaction(
+                    read_version=0,
+                    operation=lance.LanceOperation.Overwrite(schema, fragments),
                     transaction_properties=properties,
+                )
+                lance.LanceDataset.commit(
+                    stage_uri,
+                    transaction,
+                    storage_options=self._storage_options,
                 )
             except (OSError, TypeError, ValueError) as exc:
                 raise CatalogConflictError(f"failed to stage Lance attempt: {exc}") from exc
+            finally:
+                _release_native_memory(arrow)
             return stage_uri
 
     @staticmethod
@@ -292,8 +437,7 @@ class LanceAdapter:
             raise SchemaIncompatibleError(
                 "staged attempt Arrow schema differs from the Dataset Schema Snapshot"
             )
-        table = dataset.to_table()
-        if table.num_rows != manifest.step_count:
+        if dataset.count_rows() != manifest.step_count:
             raise CatalogConflictError("staged attempt row count differs from its manifest")
         properties = self._transaction_properties(dataset, dataset.version)
         try:
@@ -310,17 +454,26 @@ class LanceAdapter:
             )
         if staged_semantic_hash != _manifest_semantic_hash(manifest):
             raise CatalogConflictError("staged attempt manifest hash is invalid")
-        if staged_arrow_hash != _arrow_table_hash(table):
-            raise CatalogConflictError("staged attempt content hash is invalid")
-        identity_table = table.select(["rollout_id", "step_index"])
-        for expected_index, row in enumerate(_arrow_rows(identity_table)):
-            if (row["rollout_id"], row["step_index"]) != (
-                manifest.rollout_id,
-                expected_index,
-            ):
-                raise CatalogConflictError(
-                    "staged attempt step_index values are not contiguous logical identities"
-                )
+        if staged_arrow_hash != manifest.content_hash:
+            raise CatalogConflictError("staged attempt content receipt is invalid")
+        expected_index = 0
+        scanner = dataset.scanner(
+            columns=["rollout_id", "step_index"],
+            batch_size=4_096,
+            batch_size_bytes=4 * 1024 * 1024,
+        )
+        for batch in scanner.to_batches():
+            rollout = batch.column("rollout_id")
+            indexes = batch.column("step_index")
+            for row_index in range(batch.num_rows):
+                if (
+                    rollout[row_index].as_py() != manifest.rollout_id
+                    or indexes[row_index].as_py() != expected_index
+                ):
+                    raise CatalogConflictError(
+                        "staged attempt step_index values are not contiguous logical identities"
+                    )
+                expected_index += 1
 
     def list_commits(self, snapshot: DatasetSchemaSnapshot) -> tuple[StorageCommitReceipt, ...]:
         dataset = self._open_optional(self.dataset_uri(snapshot))
@@ -415,22 +568,42 @@ class LanceAdapter:
             staged = self._open_optional(stage_uri)
             if staged is None:
                 raise CatalogConflictError(f"staged attempt is missing: {stage_uri}")
-            table = staged.to_table()
+            arrow = _module("pyarrow")
+            batches = staged.scanner(
+                batch_size=4_096,
+                batch_size_bytes=_WRITE_MAX_BYTES,
+            ).to_batches()
             mode = "create" if current is None else "append"
             try:
-                committed = lance.write_dataset(
-                    table,
-                    shared_uri,
+                destination = shared_uri if current is None else current
+                fragments = _write_bounded_fragments(
+                    lance,
+                    arrow,
+                    batches,
+                    destination,
                     schema=expected_schema,
                     mode=mode,
                     storage_options=self._storage_options,
-                    commit_message=(
-                        f"commit rollout {manifest.rollout_id} as logical version {logical_version}"
-                    ),
+                )
+                operation = (
+                    lance.LanceOperation.Overwrite(expected_schema, fragments)
+                    if current is None
+                    else lance.LanceOperation.Append(fragments)
+                )
+                transaction = lance.Transaction(
+                    read_version=0 if current is None else int(current.version),
+                    operation=operation,
                     transaction_properties={_RECEIPT_PROPERTY: receipt.model_dump_json()},
+                )
+                committed = lance.LanceDataset.commit(
+                    destination,
+                    transaction,
+                    storage_options=self._storage_options,
                 )
             except (OSError, TypeError, ValueError) as exc:
                 raise CatalogConflictError(f"failed to commit Lance attempt: {exc}") from exc
+            finally:
+                _release_native_memory(arrow)
             if int(committed.version) != lance_version:
                 raise DatasetReconciliationRequired(
                     "Lance physical version advanced outside the dataset writer lock"
@@ -446,10 +619,10 @@ class LanceAdapter:
 
         stage_uri = self._attempt_uri(snapshot, manifest)
         parsed = urlparse(stage_uri)
-        if parsed.scheme == "s3":
+        if parsed.scheme in {"s3", "oss"}:
             if self._object_store_client is None:
                 raise CatalogConflictError(
-                    "cannot clean an S3 Lance attempt without an object-store client"
+                    "cannot clean a remote Lance attempt without an object-store client"
                 )
             prefix = unquote(parsed.path.lstrip("/")).rstrip("/") + "/"
             continuation: str | None = None
@@ -496,6 +669,8 @@ class LanceAdapter:
         rollout_id: str,
         start_step: int,
         end_step: int,
+        *,
+        columns: Sequence[str] | None = None,
     ) -> tuple[StepRecord, ...]:
         arrow_compute = _module("pyarrow.compute")
         dataset = self._open_optional(version.dataset_uri, version=version.lance_version)
@@ -506,8 +681,41 @@ class LanceAdapter:
             & (arrow_compute.field("step_index") >= start_step)
             & (arrow_compute.field("step_index") < end_step)
         )
-        table = dataset.to_table(filter=predicate)
-        steps = list(_steps_from_table(table))
+        if columns is None:
+            table = dataset.to_table(filter=predicate)
+            steps = list(_steps_from_table(table))
+        else:
+            modality_type = dataset.schema.field("modalities").type
+            available = frozenset(field.name for field in modality_type)
+            selected = tuple(dict.fromkeys(name for name in columns if name in available))
+            projection: dict[str, str] = {
+                "rollout_id": "rollout_id",
+                "step_index": "step_index",
+                "timestamp_ns": "timestamp_ns",
+                "sample_valid": "sample_valid",
+            }
+            for index, name in enumerate(selected):
+                projection[f"__hc_modality_{index}"] = _nested_column("modalities", name)
+                projection[f"__hc_source_{index}"] = _nested_column("source_timestamps_ns", name)
+                projection[f"__hc_error_{index}"] = _nested_column("time_error_ns", name)
+                projection[f"__hc_valid_{index}"] = _nested_column("valid", name)
+                projection[f"__hc_repeated_{index}"] = _nested_column("repeated", name)
+            table = dataset.to_table(columns=projection, filter=predicate)
+            raw_json = json.loads(
+                (dataset.schema.metadata or {}).get(JSON_MODALITIES_METADATA_KEY, b"[]")
+            )
+            json_names = (
+                frozenset(name for name in raw_json if isinstance(name, str))
+                if isinstance(raw_json, list)
+                else frozenset()
+            )
+            steps = list(
+                _steps_from_projected_table(
+                    table,
+                    selected,
+                    json_modalities=json_names,
+                )
+            )
         steps.sort(key=lambda item: item.step_index)
         return tuple(steps)
 

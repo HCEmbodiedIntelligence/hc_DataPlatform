@@ -12,6 +12,11 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
+from hc_data_platform.aligned_media.models import (  # noqa: E402
+    AlignedMediaArtifactStatus,
+    AlignedMediaArtifactV1,
+    AlignedMediaScopeV1,
+)
 from hc_data_platform.alignment.models import (  # noqa: E402
     AlignmentInputV1,
     ModalityKind,
@@ -55,13 +60,11 @@ REGION = "cn-ingest-viewer"
 def test_unitree_object_payloads_project_as_numeric_viewer_streams() -> None:
     assert _value_kind(({"names": ["a"], "positions": [1.0]},)) == "VECTOR"
     assert _value_kind(({"names": ["a"], "values": [2.0]},)) == "VECTOR"
+    assert _value_kind(({"position_xyz": [1, 2, 3], "orientation_wxyz": [1, 0, 0, 0]},)) == "VECTOR"
     assert (
-        _value_kind(({"position_xyz": [1, 2, 3], "orientation_wxyz": [1, 0, 0, 0]},))
-        == "VECTOR"
+        _stream_kind("/humanoid/observation/state", ModalityKind.CONTINUOUS, "VECTOR")
+        == "JOINT_STATE"
     )
-    assert _stream_kind(
-        "/humanoid/observation/state", ModalityKind.CONTINUOUS, "VECTOR"
-    ) == "JOINT_STATE"
     assert _stream_kind("/robot/end_effector/state", ModalityKind.CONTINUOUS, "VECTOR") == "POSE"
     assert _value_kind(({"source_format": "lerobot"},)) == "EVENT"
 
@@ -242,6 +245,42 @@ def _ready(
         lance_version=number,
         step_count=2,
         content_hash=content_hash,
+    )
+
+
+def _media_artifacts(
+    *,
+    organization_id: str,
+    manifest: RolloutManifestV1,
+    ready: DerivedReadyV1,
+) -> tuple[AlignedMediaArtifactV1, ...]:
+    return tuple(
+        AlignedMediaArtifactV1(
+            artifact_id=f"media-{ready.dataset_version}-{camera.camera_id}",
+            artifact_key=(f"{ready.dataset_version:x}" * 64)[:64],
+            scope=AlignedMediaScopeV1(
+                organization_id=organization_id,
+                project_id=manifest.project_id,
+                region_code=REGION,
+            ),
+            dataset_id=ready.dataset_id,
+            rollout_id=ready.rollout_id,
+            dataset_version=ready.dataset_version,
+            camera_id=camera.topic,
+            profile_id="canonical-h264-crf20-v1",
+            profile_version="1",
+            alignment_version="causal-30hz-v1",
+            source_sha256=manifest.sha256,
+            status=AlignedMediaArtifactStatus.READY,
+            frame_count=ready.step_count,
+            duration_seconds=ready.step_count / 30,
+            width=1280,
+            height=720,
+            content_sha256="8" * 64,
+            created_at=NOW,
+            ready_at=NOW,
+        )
+        for camera in manifest.cameras
     )
 
 
@@ -500,6 +539,11 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
                 frequency_hz=first_version.frequency_hz,
                 version=first_version,
                 ready=first_ready,
+                media_artifacts=_media_artifacts(
+                    organization_id=organization_id,
+                    manifest=first_manifest,
+                    ready=first_ready,
+                ),
             )
 
     try:
@@ -557,6 +601,11 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
                 frequency_hz=second_version.frequency_hz,
                 version=second_version,
                 ready=second_ready,
+                media_artifacts=_media_artifacts(
+                    organization_id=organization_id,
+                    manifest=second_manifest,
+                    ready=second_ready,
+                ),
             )
 
         assert first_target.dataset_id == dataset_id
@@ -608,7 +657,7 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
             assert len(revisions) == 2
             for revision in revisions:
                 streams = {item["channel_path"]: item for item in revision["streams"]}
-                assert streams["/camera/front/image"]["preview_binding"]["frequency_hz"] == 30
+                assert streams["/camera/front/image"]["aligned_media_binding"]["fps"] == 30
                 assert streams["/joint_states"]["data_binding"]["value_kind"] == "VECTOR"
                 assert "object_key" not in str(revision)
                 assert "mcap://" not in str(revision)
@@ -636,6 +685,11 @@ def test_ingest_commit_projects_idempotent_cumulative_viewer_snapshots() -> None
                 frequency_hz=conflicting_version.frequency_hz,
                 version=conflicting_version,
                 ready=first_ready,
+                media_artifacts=_media_artifacts(
+                    organization_id=organization_id,
+                    manifest=first_manifest,
+                    ready=first_ready,
+                ),
             )
     finally:
         _cleanup(dsn, organization_id=organization_id, project_id=project_id)

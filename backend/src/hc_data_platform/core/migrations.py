@@ -5,10 +5,11 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import asyncpg
 
@@ -46,6 +47,7 @@ class Migration:
     path: Path
     checksum_sha256: str
     sql: str
+    phase: Literal["expand", "contract"] = "expand"
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +88,29 @@ def load_migrations(root: Path | None = None) -> tuple[Migration, ...]:
     ]
     if len(versions) != len(set(versions)):
         raise RuntimeError("migration manifest contains duplicate versions")
+    for version in versions:
+        path = (resolved_root / version).resolve()
+        if resolved_root not in path.parents or path.suffix != ".sql" or not path.is_file():
+            raise RuntimeError(f"invalid migration path in manifest: {version}")
+
+    phases_path = resolved_root / "phases.json"
+    try:
+        phases = json.loads(phases_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("migration phase manifest is missing or invalid") from exc
+    if phases.get("format_version") != "hc-migration-phases/v1" or set(phases) != {
+        "format_version",
+        "contract_migrations",
+    }:
+        raise RuntimeError("migration phase manifest has an unsupported contract")
+    raw_contract = phases["contract_migrations"]
+    if not isinstance(raw_contract, list) or any(
+        not isinstance(item, str) for item in raw_contract
+    ):
+        raise RuntimeError("contract_migrations must be a list of migration versions")
+    contract_versions = set(raw_contract)
+    if len(contract_versions) != len(raw_contract) or not contract_versions <= set(versions):
+        raise RuntimeError("contract migration phase entries must be unique manifest versions")
 
     migrations: list[Migration] = []
     for version in versions:
@@ -99,6 +124,7 @@ def load_migrations(root: Path | None = None) -> tuple[Migration, ...]:
                 path=path,
                 checksum_sha256=hashlib.sha256(sql.encode("utf-8")).hexdigest(),
                 sql=sql,
+                phase="contract" if version in contract_versions else "expand",
             )
         )
     if not migrations or migrations[0].version != "security/001_core.sql":
@@ -463,8 +489,18 @@ async def _apply_pending_migration(
         await _record_migration(connection, migration)
 
 
-async def apply_migrations(dsn: str) -> list[str]:
-    migrations = load_migrations()
+async def apply_migrations(
+    dsn: str,
+    *,
+    phase: Literal["expand", "contract"] = "expand",
+    contract_approval_digest: str | None = None,
+) -> list[str]:
+    migrations = tuple(migration for migration in load_migrations() if migration.phase == phase)
+    if phase == "contract" and (
+        contract_approval_digest is None
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", contract_approval_digest) is None
+    ):
+        raise RuntimeError("contract migrations require a signed approval digest")
     connection = await asyncpg.connect(_asyncpg_dsn(dsn))
     applied_now: list[str] = []
     lock_acquired = False
@@ -474,7 +510,7 @@ async def apply_migrations(dsn: str) -> list[str]:
         async with connection.transaction():
             await connection.execute(_TRACKING_TABLE_SQL)
         applied = await applied_migration_checksums(connection)
-        expected_versions = {migration.version for migration in migrations}
+        expected_versions = {migration.version for migration in load_migrations()}
         unknown = sorted(set(applied) - expected_versions)
         if unknown:
             raise RuntimeError(f"database contains migrations absent from this image: {unknown}")
@@ -489,34 +525,31 @@ async def apply_migrations(dsn: str) -> list[str]:
             applied[migration.version] = migration.checksum_sha256
             applied_now.append(migration.version)
 
-        # Security reconciliation is intentionally repeatable. The core pass installs
-        # baseline project RLS, the organization passes strengthen every table that
-        # carries an organization identity, and the access-control pass finally
-        # restores its repository-enforced boundary because bootstrap must discover
-        # all of a principal's active projects before any one project is selected. The
-        # platform-super-admin pass then restores the global RLS branch overwritten by
-        # the baseline function definitions.
-        repeatable = {
-            migration.version: migration
-            for migration in migrations
-            if migration.version in _REPEATABLE_SECURITY_MIGRATIONS
-        }
-        missing_repeatable = _REPEATABLE_SECURITY_MIGRATIONS - repeatable.keys()
-        if missing_repeatable:
-            raise RuntimeError(
-                f"repeatable security migrations missing: {sorted(missing_repeatable)}"
-            )
-        async with connection.transaction():
-            for version in (
-                "security/001_core.sql",
-                "security/012_organization_aware_rls.sql",
-                "security/019_product_organization_scope.sql",
-                "security/002_access_control.sql",
-                "security/020_platform_super_admin.sql",
-            ):
-                repeatable_migration = repeatable.get(version)
-                if repeatable_migration is not None:
-                    await connection.execute(repeatable_migration.sql)
+        if phase == "expand":
+            # Security reconciliation is intentionally repeatable during expand. The
+            # separate contract command may only execute entries explicitly assigned
+            # to the contract phase; it must not replay unrelated DDL as a side effect.
+            repeatable = {
+                migration.version: migration
+                for migration in load_migrations()
+                if migration.version in _REPEATABLE_SECURITY_MIGRATIONS
+            }
+            missing_repeatable = _REPEATABLE_SECURITY_MIGRATIONS - repeatable.keys()
+            if missing_repeatable:
+                raise RuntimeError(
+                    f"repeatable security migrations missing: {sorted(missing_repeatable)}"
+                )
+            async with connection.transaction():
+                for version in (
+                    "security/001_core.sql",
+                    "security/012_organization_aware_rls.sql",
+                    "security/019_product_organization_scope.sql",
+                    "security/002_access_control.sql",
+                    "security/020_platform_super_admin.sql",
+                ):
+                    repeatable_migration = repeatable.get(version)
+                    if repeatable_migration is not None:
+                        await connection.execute(repeatable_migration.sql)
     finally:
         if lock_acquired:
             await connection.execute(
@@ -526,24 +559,31 @@ async def apply_migrations(dsn: str) -> list[str]:
     return applied_now
 
 
-async def migration_status(dsn: str) -> dict[str, object]:
-    expected = expected_migration_checksums()
+async def migration_status(
+    dsn: str, *, phase: Literal["expand", "contract"] = "expand"
+) -> dict[str, object]:
+    selected = tuple(migration for migration in load_migrations() if migration.phase == phase)
+    expected = {migration.version: migration.checksum_sha256 for migration in selected}
+    all_expected = expected_migration_checksums()
     connection = await asyncpg.connect(_asyncpg_dsn(dsn))
     try:
         applied = await applied_migration_checksums(connection)
     finally:
         await connection.close()
     missing = sorted(set(expected) - set(applied))
-    unknown = sorted(set(applied) - set(expected))
+    unknown = sorted(set(applied) - set(all_expected))
     checksum_drift = sorted(
-        version for version in set(expected) & set(applied) if expected[version] != applied[version]
+        version
+        for version in set(all_expected) & set(applied)
+        if all_expected[version] != applied[version]
     )
+    applied_in_phase = len(set(applied) & set(expected))
     return {
         "status": "current"
         if not missing and not unknown and not checksum_drift
         else "not_current",
         "expected": len(expected),
-        "applied": len(applied),
+        "applied": applied_in_phase,
         "missing": missing,
         "unknown": unknown,
         "checksum_drift": checksum_drift,
@@ -552,7 +592,13 @@ async def migration_status(dsn: str) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="HC Data Platform forward-only schema migrations")
-    parser.add_argument("command", choices=("upgrade", "status"), nargs="?", default="upgrade")
+    parser.add_argument(
+        "command",
+        choices=("upgrade", "upgrade-expand", "upgrade-contract", "status", "status-contract"),
+        nargs="?",
+        default="upgrade-expand",
+    )
+    parser.add_argument("--approval-digest")
     return parser
 
 
@@ -561,11 +607,24 @@ def main() -> None:
     dsn = os.getenv("HC_POSTGRES_DSN")
     if not dsn:
         raise SystemExit("HC_POSTGRES_DSN is required")
-    if args.command == "upgrade":
-        applied = asyncio.run(apply_migrations(dsn))
-        print(json.dumps({"status": "current", "applied_now": applied}, sort_keys=True))
+    phase: Literal["expand", "contract"] = (
+        "contract" if args.command in {"upgrade-contract", "status-contract"} else "expand"
+    )
+    if args.command in {"upgrade", "upgrade-expand", "upgrade-contract"}:
+        applied = asyncio.run(
+            apply_migrations(
+                dsn,
+                phase=phase,
+                contract_approval_digest=args.approval_digest,
+            )
+        )
+        print(
+            json.dumps(
+                {"status": "current", "phase": phase, "applied_now": applied}, sort_keys=True
+            )
+        )
         return
-    status = asyncio.run(migration_status(dsn))
+    status = asyncio.run(migration_status(dsn, phase=phase))
     print(json.dumps(status, sort_keys=True))
     if status["status"] != "current":
         raise SystemExit(1)

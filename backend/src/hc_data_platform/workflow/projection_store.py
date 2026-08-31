@@ -23,9 +23,7 @@ class ProjectionArtifactStorePort(Protocol):
         self, key: str, *, expected_sha256: str, max_bytes: int = 8 * 1024 * 1024
     ) -> dict[str, object]: ...
 
-    def local_file(
-        self, key: str, *, expected_sha256: str, expected_size: int
-    ) -> Any: ...
+    def local_file(self, key: str, *, expected_sha256: str, expected_size: int) -> Any: ...
 
     def delete(self, key: str) -> None: ...
 
@@ -58,9 +56,7 @@ class S3ProjectionArtifactStore:
         return size
 
     def publish_json(self, key: str, value: Mapping[str, object]) -> tuple[str, int]:
-        body = json.dumps(
-            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode()
+        body = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         sha256 = hashlib.sha256(body).hexdigest()
         try:
             self._client.put_object(
@@ -98,9 +94,7 @@ class S3ProjectionArtifactStore:
         return value
 
     @contextmanager
-    def local_file(
-        self, key: str, *, expected_sha256: str, expected_size: int
-    ) -> Iterator[Path]:
+    def local_file(self, key: str, *, expected_sha256: str, expected_size: int) -> Iterator[Path]:
         self._staging_root.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(
             prefix="projection-read-", suffix=".arrow", dir=self._staging_root
@@ -173,9 +167,7 @@ class LocalProjectionArtifactStore:
         return target.stat().st_size
 
     def publish_json(self, key: str, value: Mapping[str, object]) -> tuple[str, int]:
-        body = json.dumps(
-            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode()
+        body = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         sha256 = hashlib.sha256(body).hexdigest()
         target = self._path(key)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -207,9 +199,7 @@ class LocalProjectionArtifactStore:
         return value
 
     @contextmanager
-    def local_file(
-        self, key: str, *, expected_sha256: str, expected_size: int
-    ) -> Iterator[Path]:
+    def local_file(self, key: str, *, expected_sha256: str, expected_size: int) -> Iterator[Path]:
         path = self._path(key)
         if path.stat().st_size != expected_size or _file_sha256(path) != expected_sha256:
             raise ValueError("projection artifact checksum mismatch")
@@ -230,9 +220,9 @@ class LocalProjectionArtifactStore:
 
 
 class S3ProjectionStagingSweeper:
-    """List a fixed staging namespace and delete expired Arrow keys one by one."""
+    """Delete expired projection/alignment Arrow keys by exact object key."""
 
-    _PREFIX = "staging/projections/"
+    _PREFIXES = ("staging/projections/", "staging/alignment/")
 
     def __init__(
         self,
@@ -252,11 +242,17 @@ class S3ProjectionStagingSweeper:
     def run_once(self) -> int:
         cutoff = self._clock() - self._ttl
         deleted = 0
+        for prefix in self._PREFIXES:
+            deleted += self._sweep_prefix(prefix, cutoff)
+        return deleted
+
+    def _sweep_prefix(self, prefix: str, cutoff: datetime) -> int:
+        deleted = 0
         continuation: str | None = None
         while True:
             parameters: dict[str, object] = {
                 "Bucket": self._bucket,
-                "Prefix": self._PREFIX,
+                "Prefix": prefix,
                 "MaxKeys": 1_000,
             }
             if continuation is not None:
@@ -272,7 +268,7 @@ class S3ProjectionStagingSweeper:
                 modified = item.get("LastModified")
                 if (
                     not isinstance(key, str)
-                    or not key.startswith(self._PREFIX)
+                    or not key.startswith(prefix)
                     or not key.endswith(".arrow")
                     or not isinstance(modified, datetime)
                 ):

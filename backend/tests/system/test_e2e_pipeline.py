@@ -40,14 +40,6 @@ from hc_data_platform.lance_catalog import (
     StepRecord,
     compute_fragment_hash,
 )
-from hc_data_platform.preview.memory import (
-    HmacUrlSigner,
-    InMemoryExclusionReader,
-    InMemoryMediaEncoder,
-    InMemoryPreviewCache,
-)
-from hc_data_platform.preview.models import PreviewFrameV1, PreviewRequestV1, ViewMode
-from hc_data_platform.preview.service import PreviewService
 from hc_data_platform.publishing.exporters import LeRobotV3Exporter
 from hc_data_platform.publishing.memory import (
     InMemoryAnnotationSnapshot,
@@ -88,52 +80,6 @@ class _ReadableIngestStorage:
 
     def open_reader(self, object_key: str) -> BinaryIO:
         return io.BytesIO(self._storage.objects[object_key])
-
-
-def _nearest_source_timestamp(step: StepRecord, camera_id: str) -> int | None:
-    timestamps = step.source_timestamps_ns.get(camera_id, ())
-    if not timestamps:
-        return None
-    return min(timestamps, key=lambda value: abs(value - step.timestamp_ns))
-
-
-class _CatalogPreviewReader:
-    def __init__(self, catalog: InMemoryLanceCatalog) -> None:
-        self._catalog = catalog
-
-    def read_steps(
-        self,
-        *,
-        project_id: str,
-        dataset_id: str,
-        rollout_id: str,
-        lance_version: str,
-        camera_id: str,
-        start_step: int | None,
-        end_step: int | None,
-    ) -> Sequence[PreviewFrameV1]:
-        del project_id
-        window = self._catalog.read_steps(
-            dataset_id,
-            rollout_id,
-            0 if start_step is None else start_step,
-            10_000 if end_step is None else end_step,
-            version=int(lance_version),
-        )
-        return tuple(
-            PreviewFrameV1(
-                rollout_id=step.rollout_id,
-                step_index=step.step_index,
-                timestamp_ns=step.timestamp_ns,
-                source_timestamp_ns=_nearest_source_timestamp(step, camera_id),
-                image_ref=f"lance://{dataset_id}/{lance_version}/{rollout_id}/{camera_id}/{step.step_index}",
-                valid=step.valid.get(camera_id, False),
-                invalid_reason=(
-                    None if step.valid.get(camera_id, False) else "invalid aligned image"
-                ),
-            )
-            for step in window.steps
-        )
 
 
 def _manifest(body: bytes) -> RolloutManifestV1:
@@ -351,30 +297,6 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
     assert (replay_version, replay_ready) == (version, ready)
     assert len(catalog.list_versions(DATASET_ID)) == 1
     assert len(catalog.read_steps(DATASET_ID, ROLLOUT_ID, 0, 100).steps) == 30
-
-    preview_encoder = InMemoryMediaEncoder()
-    preview = PreviewService(
-        step_reader=_CatalogPreviewReader(catalog),
-        exclusions=InMemoryExclusionReader(),
-        encoder=preview_encoder,
-        cache=InMemoryPreviewCache(),
-        signer=HmacUrlSigner(b"be12-preview-test-secret"),
-        clock=lambda: datetime(2026, 8, 14, 8, tzinfo=timezone.utc),
-    ).create(
-        PreviewRequestV1(
-            project_id=PROJECT_ID,
-            dataset_id=DATASET_ID,
-            rollout_id=ROLLOUT_ID,
-            lance_version=str(version.version),
-            annotation_revision=0,
-            camera_id="/camera/front/image",
-            view_mode=ViewMode.ORIGINAL,
-            start_step=0,
-            end_step=30,
-        )
-    )
-    assert preview.frame_count == 30
-    assert preview.placeholder_count == 0
 
     annotations = InMemoryAnnotationService()
     task = annotations.create_task(

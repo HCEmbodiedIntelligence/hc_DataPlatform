@@ -9,7 +9,7 @@ from datetime import timedelta
 from typing import Any, TypeVar, cast
 
 from temporalio import workflow
-from temporalio.common import RetryPolicy, WorkflowIDReusePolicy
+from temporalio.common import RetryPolicy
 from temporalio.exceptions import (
     ActivityError,
     ApplicationError,
@@ -19,22 +19,33 @@ from temporalio.exceptions import (
 from temporalio.workflow import ActivityCancellationType
 
 with workflow.unsafe.imports_passed_through():
+    from hc_data_platform.aligned_media.models import (
+        AlignedMediaArtifactV1,
+        AlignedMediaGenerationRequestV1,
+        AlignmentStagingArtifactV1,
+    )
     from hc_data_platform.annotation.models import AnnotationSubmission
     from hc_data_platform.annotation.validation import (
         TagValidationIssue,
         revision_content_hash,
         validate_tag_revision,
     )
-    from hc_data_platform.preview.models import PreviewRequestV1
     from hc_data_platform.quality.models import QualityStatus
     from hc_data_platform.verification.models import VerificationStatus
 
     from .models import (
+        AlignedBundleCommitActivityInput,
+        AlignedBundleCommitActivityOutput,
+        AlignedMediaActivityInput,
+        AlignedMediaActivityOutput,
+        AlignedMediaCleanupActivityInput,
+        AlignedMediaCleanupActivityOutput,
         AlignmentActivityOutput,
+        AlignmentStagingCleanupActivityInput,
+        AlignmentStagingCleanupActivityOutput,
         AnnotationReviewPreparationWorkflowInput,
         AutomaticAnnotationActivityInput,
         AutomaticAnnotationActivityOutput,
-        CatalogCommitActivityInput,
         CatalogCommitActivityOutput,
         CatalogReconciliationActivityInput,
         CatalogReconciliationActivityOutput,
@@ -47,16 +58,16 @@ with workflow.unsafe.imports_passed_through():
         ExportPreflightActivityInput,
         ExportPreflightActivityOutput,
         ExportWorkflowInput,
+        FrameSelectionManifestRefV1,
         IngestProjectionSourceV1,
         IngestRolloutWorkflowInput,
+        IngestSourceProcessingActivityInput,
+        IngestSourceProcessingActivityOutput,
         JobRecord,
         JobStatus,
         LegacyAutomaticAnnotationActivityInput,
         LegacyExportActivityInput,
         ManifestActivityOutput,
-        PreviewActivityInput,
-        PreviewActivityOutput,
-        PreviewWorkflowInput,
         ProjectionCleanupActivityInput,
         ProjectionCleanupActivityOutput,
         ProjectionMaterializationActivityInput,
@@ -70,16 +81,18 @@ with workflow.unsafe.imports_passed_through():
         QualityActivityOutput,
         VerificationActivityOutput,
         WorkflowJobPersistenceActivityInput,
-        workflow_id,
     )
     from .names import (
         ALIGN_FRAGMENT_ACTIVITY,
         ANNOTATION_REVIEW_PREPARATION_WORKFLOW,
         CATALOG_RECONCILIATION_WORKFLOW,
+        CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
         CLEANUP_INGEST_PROJECTION_ACTIVITY,
+        CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY,
+        COMMIT_ALIGNED_BUNDLE_ACTIVITY,
         COMMIT_FRAGMENT_ACTIVITY,
+        CREATE_ALIGNED_MEDIA_ACTIVITY,
         CREATE_ANNOTATION_TASK_ACTIVITY,
-        CREATE_PREVIEW_ACTIVITY,
         DATASET_WRITER_WORKFLOW,
         EVALUATE_QUALITY_ACTIVITY,
         EXPORT_DATASET_ACTIVITY,
@@ -89,7 +102,7 @@ with workflow.unsafe.imports_passed_through():
         PARSE_MANIFEST_ACTIVITY,
         PERSIST_WORKFLOW_JOB_ACTIVITY,
         PREFLIGHT_EXPORT_ACTIVITY,
-        PREVIEW_WORKFLOW,
+        PROCESS_INGEST_SOURCE_ACTIVITY,
         PUBLISH_DATASET_ACTIVITY,
         PUBLISH_DATASET_WORKFLOW,
         PUBLISH_RECONCILIATION_WORKFLOW,
@@ -152,6 +165,7 @@ async def _execute_activity(
     policy: ActivityPolicy,
     *,
     task_queue: str | None = None,
+    cancellation_type: ActivityCancellationType = ActivityCancellationType.TRY_CANCEL,
 ) -> _ResultT:
     result = await workflow.execute_activity(
         name,
@@ -161,7 +175,7 @@ async def _execute_activity(
         schedule_to_close_timeout=policy.schedule_to_close,
         heartbeat_timeout=policy.heartbeat,
         retry_policy=ACTIVITY_RETRY_POLICY,
-        cancellation_type=ActivityCancellationType.TRY_CANCEL,
+        cancellation_type=cancellation_type,
         task_queue=task_queue,
     )
     return cast(_ResultT, result)
@@ -297,6 +311,10 @@ class IngestRolloutWorkflow(_JobLifecycle):
         )
         self._job_persistence_enabled = workflow.patched("persist-ingest-workflow-job-v1")
         materialized_source: IngestProjectionSourceV1 | None = None
+        alignment_staging: AlignmentStagingArtifactV1 | None = None
+        frame_selection: FrameSelectionManifestRefV1 | None = None
+        media_artifacts: list[AlignedMediaArtifactV1] = []
+        bundle_committed = False
         try:
             self._stage("manifest")
             await self._persist_job(request)
@@ -307,8 +325,6 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 STANDARD_ACTIVITY,
             )
             manifest = parsed.preflight.manifest
-            self._stage("verification")
-            await self._persist_job(request)
             verification_request = request.verification.model_copy(
                 update={
                     "required_topics": frozenset(manifest.expected_topics),
@@ -317,12 +333,81 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     ),
                 }
             )
-            verified = await _execute_activity(
-                VERIFY_RAW_ACTIVITY,
-                verification_request,
-                VerificationActivityOutput,
-                STANDARD_ACTIVITY,
-            )
+            aligned = None
+            alignment_request = request.alignment
+            uses_local_ingest_processing = workflow.patched(
+                "object-store-free-ingest-processing-v1"
+            )  # noqa: E501
+            if uses_local_ingest_processing:
+                self._stage("ingest_processing")
+                await self._persist_job(request)
+                processed = await _execute_activity(
+                    PROCESS_INGEST_SOURCE_ACTIVITY,
+                    IngestSourceProcessingActivityInput(
+                        verification=verification_request,
+                        quality=request.quality,
+                        alignment=request.alignment,
+                    ),
+                    IngestSourceProcessingActivityOutput,
+                    LONG_ACTIVITY,
+                )
+                verified = processed.verification
+                quality = processed.quality
+                aligned = processed.alignment
+                frame_selection = processed.frame_selection
+            else:
+                # Replay-only compatibility for histories that already scheduled
+                # the former Projection Arrow activity sequence.
+                self._stage("verification")
+                await self._persist_job(request)
+                verified = await _execute_activity(
+                    VERIFY_RAW_ACTIVITY,
+                    verification_request,
+                    VerificationActivityOutput,
+                    STANDARD_ACTIVITY,
+                )
+                if verified.report.status is VerificationStatus.REJECTED:
+                    return await self._finish_and_persist(
+                        request,
+                        JobStatus.QUALITY_REJECTED,
+                        result={
+                            "manifest": parsed.preflight.model_dump(mode="json"),
+                            "verification": verified.report.model_dump(mode="json"),
+                            "raw_preserved": True,
+                            "training_eligible": False,
+                        },
+                        error_code="RAW_VERIFICATION_REJECTED",
+                    )
+                quality_request = request.quality
+                if (
+                    workflow.patched("single-pass-ingest-projection-v1")
+                    and request.quality.source is not None
+                ):
+                    self._stage("projection_materialization")
+                    await self._persist_job(request)
+                    projected = await _execute_activity(
+                        MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
+                        ProjectionMaterializationActivityInput(source=request.quality.source),
+                        ProjectionMaterializationActivityOutput,
+                        LONG_ACTIVITY,
+                    )
+                    materialized_source = projected.source
+                    quality_request = request.quality.model_copy(
+                        update={"source": projected.source}
+                    )
+                    alignment_request = request.alignment.model_copy(
+                        update={"source": projected.source}
+                    )
+                    if projected.source.materialization is not None:
+                        frame_selection = projected.source.materialization.frame_selection
+                self._stage("quality")
+                await self._persist_job(request)
+                quality = await _execute_activity(
+                    EVALUATE_QUALITY_ACTIVITY,
+                    quality_request,
+                    QualityActivityOutput,
+                    STANDARD_ACTIVITY,
+                )
             if verified.report.status is VerificationStatus.REJECTED:
                 return await self._finish_and_persist(
                     request,
@@ -335,41 +420,12 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     },
                     error_code="RAW_VERIFICATION_REJECTED",
                 )
-
-            quality_request = request.quality
-            alignment_request = request.alignment
-            materialized_projection = None
-            if (
-                workflow.patched("single-pass-ingest-projection-v1")
-                and request.quality.source is not None
-            ):
-                self._stage("projection_materialization")
-                await self._persist_job(request)
-                projected = await _execute_activity(
-                    MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
-                    ProjectionMaterializationActivityInput(
-                        source=request.quality.source
-                    ),
-                    ProjectionMaterializationActivityOutput,
-                    LONG_ACTIVITY,
+            if quality is None:
+                raise ApplicationError(
+                    "verified ingest processing did not return a QC report",
+                    type="INGEST_PROCESSING_INCOMPLETE",
+                    non_retryable=True,
                 )
-                materialized_projection = projected.source.materialization
-                materialized_source = projected.source
-                quality_request = request.quality.model_copy(
-                    update={"source": projected.source}
-                )
-                alignment_request = request.alignment.model_copy(
-                    update={"source": projected.source}
-                )
-
-            self._stage("quality")
-            await self._persist_job(request)
-            quality = await _execute_activity(
-                EVALUATE_QUALITY_ACTIVITY,
-                quality_request,
-                QualityActivityOutput,
-                STANDARD_ACTIVITY,
-            )
             common_result = {
                 "manifest": parsed.preflight.model_dump(mode="json"),
                 "verification": verified.report.model_dump(mode="json"),
@@ -378,9 +434,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 "automatic_qc_run_id": request.automatic_qc_run_id,
                 "raw_preserved": True,
                 "frame_selection": (
-                    None
-                    if materialized_projection is None
-                    else materialized_projection.frame_selection.model_dump(mode="json")
+                    None if frame_selection is None else frame_selection.model_dump(mode="json")
                 ),
             }
             if quality.report.status is QualityStatus.REJECT:
@@ -397,85 +451,135 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     result={
                         **common_result,
                         "training_eligible": False,
-                        "preview_state": "ISOLATED",
+                        "media_state": "NOT_PRODUCED",
                     },
                 )
 
-            self._stage("alignment")
-            await self._persist_job(request)
-            aligned = await _execute_activity(
-                ALIGN_FRAGMENT_ACTIVITY,
-                alignment_request,
-                result_type=AlignmentActivityOutput,
-                policy=LONG_ACTIVITY,
-            )
-            self._stage("lance_commit")
-            await self._persist_job(request)
-            if aligned.dataset_version is not None and aligned.derived_ready is not None:
-                writer_result = {
-                    "dataset_version": aligned.dataset_version.model_dump(mode="json"),
-                    "derived_ready": aligned.derived_ready.model_dump(mode="json"),
-                    "viewer_target": (
-                        None
-                        if aligned.viewer_target is None
-                        else aligned.viewer_target.model_dump(mode="json")
-                    ),
-                }
-                derived = aligned.derived_ready
-            else:
-                # Replay compatibility for histories produced before the alignment
-                # activity committed Lance inline and returned only compact facts.
-                commit_request = CatalogCommitActivityInput(fragment=aligned.catalog_fragment)
-                writer_resource = "/".join(
-                    (
-                        request.dataset_id,
-                        request.rollout_id,
-                        aligned.catalog_fragment.manifest.content_hash,
-                    )
+            if aligned is None and not uses_local_ingest_processing:
+                self._stage("alignment")
+                await self._persist_job(request)
+                aligned = await _execute_activity(
+                    ALIGN_FRAGMENT_ACTIVITY,
+                    alignment_request,
+                    result_type=AlignmentActivityOutput,
+                    policy=LONG_ACTIVITY,
                 )
-                writer = await workflow.execute_child_workflow(
-                    DATASET_WRITER_WORKFLOW,
-                    DatasetWriterWorkflowInput(
-                        project_id=request.project_id,
-                        dataset_id=request.dataset_id,
-                        resource_id=writer_resource,
-                        commit=commit_request,
-                    ),
-                    id=workflow_id(
-                        "dataset-writer",
-                        request.project_id,
-                        writer_resource,
-                    ),
-                    result_type=JobRecord,
-                    id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
-                )
-                if writer.status is not JobStatus.SUCCEEDED:
-                    return await self._finish_and_persist(
-                        request,
-                        JobStatus.TECHNICAL_FAILED,
-                        result={**common_result, "writer_job": writer.model_dump(mode="json")},
-                        error_code=writer.error_code or "DATASET_WRITER_FAILED",
-                    )
-                writer_result = writer.result or {}
-                derived_payload = writer_result.get("derived_ready")
-                if not isinstance(derived_payload, dict):
-                    raise ApplicationError(
-                        "dataset writer did not return an immutable DerivedReady event",
-                        type="VALIDATION_FAILED",
-                        non_retryable=True,
-                    )
-                derived = CatalogCommitActivityOutput.model_validate(
-                    {
-                        "version": writer_result.get("dataset_version"),
-                        "derived_ready": derived_payload,
-                    }
-                ).derived_ready
-            if alignment_request.source is not None and aligned.viewer_target is None:
+            if aligned is None:
                 raise ApplicationError(
-                    "ingest alignment did not publish a Dataset viewer target",
-                    type="DATASET_VIEWER_PROJECTION_MISSING",
+                    "passing ingest processing did not return alignment staging",
+                    type="INGEST_PROCESSING_INCOMPLETE",
                     non_retryable=True,
                 )
+            if aligned.alignment_staging is None or aligned.expected_dataset_version is None:
+                raise ApplicationError(
+                    "alignment did not publish bounded cross-worker staging",
+                    type="ALIGNMENT_STAGING_MISSING",
+                    non_retryable=True,
+                )
+            alignment_staging = aligned.alignment_staging
+            if aligned.staged_manifest.row_count < 1:
+                raise ApplicationError(
+                    "canonical media requires at least one aligned step",
+                    type="EMPTY_ALIGNED_ROLLOUT",
+                    non_retryable=True,
+                )
+            if request.organization_id is None:
+                raise ApplicationError(
+                    "aligned media generation requires an organization scope",
+                    type="ORGANIZATION_SCOPE_MISSING",
+                    non_retryable=True,
+                )
+            self._stage("aligned_media")
+            await self._persist_job(request)
+            media_inputs = tuple(
+                AlignedMediaActivityInput(
+                    organization_id=request.organization_id,
+                    region_code=request.region_code,
+                    request=AlignedMediaGenerationRequestV1(
+                        project_id=request.project_id,
+                        dataset_id=request.dataset_id,
+                        rollout_id=request.rollout_id,
+                        expected_dataset_version=aligned.expected_dataset_version,
+                        camera_id=camera.topic,
+                        source_sha256=request.verification.source_sha256,
+                        alignment=aligned.alignment_staging,
+                    ),
+                )
+                for camera in manifest.cameras
+            )
+            for offset in range(0, len(media_inputs), 2):
+                batch = media_inputs[offset : offset + 2]
+                results = await asyncio.gather(
+                    *(
+                        _execute_activity(
+                            CREATE_ALIGNED_MEDIA_ACTIVITY,
+                            item,
+                            AlignedMediaActivityOutput,
+                            LONG_ACTIVITY,
+                            task_queue=request.media_task_queue,
+                        )
+                        for item in batch
+                    ),
+                    return_exceptions=True,
+                )
+                media_artifacts.extend(
+                    item.artifact
+                    for item in results
+                    if isinstance(item, AlignedMediaActivityOutput)
+                )
+                batch_failure = next(
+                    (item for item in results if isinstance(item, BaseException)),
+                    None,
+                )
+                if batch_failure is not None:
+                    raise batch_failure
+            expected_camera_ids = tuple(camera.topic for camera in manifest.cameras)
+            if (
+                len(expected_camera_ids) != len(set(expected_camera_ids))
+                or {artifact.camera_id for artifact in media_artifacts} != set(expected_camera_ids)
+                or len(media_artifacts) != len(expected_camera_ids)
+                or any(
+                    artifact.status.value != "READY"
+                    or artifact.frame_count != aligned.staged_manifest.row_count
+                    or artifact.fps != 30
+                    or artifact.timeline is None
+                    or artifact.timeline.frame_count != aligned.staged_manifest.row_count
+                    or artifact.timeline.first_step != 0
+                    or artifact.timeline.pts_time_base_numerator != 1
+                    or artifact.timeline.pts_time_base_denominator != 30
+                    or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
+                    > 1 / 30
+                    for artifact in media_artifacts
+                )
+            ):
+                raise ApplicationError(
+                    "all camera MP4 receipts must be READY and timeline-identical",
+                    type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
+                    non_retryable=True,
+                )
+            self._stage("lance_commit")
+            await self._persist_job(request)
+            committed = await _execute_activity(
+                COMMIT_ALIGNED_BUNDLE_ACTIVITY,
+                AlignedBundleCommitActivityInput(
+                    alignment=alignment_request,
+                    staged_manifest=aligned.staged_manifest,
+                    alignment_staging=aligned.alignment_staging,
+                    expected_dataset_version=aligned.expected_dataset_version,
+                    expected_camera_ids=expected_camera_ids,
+                    media_artifacts=tuple(media_artifacts),
+                ),
+                AlignedBundleCommitActivityOutput,
+                LONG_ACTIVITY,
+                cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+            )
+            bundle_committed = True
+            derived = committed.derived_ready
+            writer_result = {
+                "dataset_version": committed.version.model_dump(mode="json"),
+                "derived_ready": derived.model_dump(mode="json"),
+                "viewer_target": committed.viewer_target.model_dump(mode="json"),
+            }
             if (
                 derived.project_id != request.project_id
                 or derived.dataset_id != request.dataset_id
@@ -486,46 +590,6 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     type="VALIDATION_FAILED",
                     non_retryable=True,
                 )
-            preview_count = 0
-            if (
-                workflow.patched("prewarm-original-camera-previews-v1")
-                and manifest.cameras
-                and derived.step_count > 0
-            ):
-                # Camera media is an immutable derived asset. Materialize it before
-                # publishing the annotation task so opening a task never starts a
-                # foreground transcode. Cameras are deliberately processed in
-                # sequence to keep one rollout from saturating the worker.
-                self._stage("preview_prewarm")
-                await self._persist_job(request)
-                if request.organization_id is None:
-                    raise ApplicationError(
-                        "preview prewarm requires an exact organization scope",
-                        type="ORGANIZATION_SCOPE_MISSING",
-                        non_retryable=True,
-                    )
-                for camera in manifest.cameras:
-                    await _execute_activity(
-                        CREATE_PREVIEW_ACTIVITY,
-                        PreviewActivityInput(
-                            organization_id=request.organization_id,
-                            region_code=request.region_code,
-                            request=PreviewRequestV1(
-                                project_id=request.project_id,
-                                dataset_id=request.dataset_id,
-                                rollout_id=request.rollout_id,
-                                lance_version=str(derived.lance_version),
-                                camera_id=camera.topic,
-                                frequency_hz=aligned.staged_manifest.frequency_hz,
-                                start_step=0,
-                                end_step=derived.step_count,
-                            )
-                        ),
-                        PreviewActivityOutput,
-                        LONG_ACTIVITY,
-                        task_queue=request.media_task_queue,
-                    )
-                    preview_count += 1
             self._stage("annotation_task")
             await self._persist_job(request)
             uses_organization_scope = workflow.patched("annotation-organization-scope-v1")
@@ -549,9 +613,9 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     source_workflow_id=workflow.info().workflow_id,
                     frame_selection=(
                         None
-                        if materialized_projection is None
+                        if frame_selection is None
                         else {
-                            **materialized_projection.frame_selection.model_dump(mode="json"),
+                            **frame_selection.model_dump(mode="json"),
                             "source_sha256": request.verification.source_sha256,
                         }
                     ),
@@ -585,7 +649,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "dataset_version": writer_result.get("dataset_version"),
                     "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
-                    "preview_count": preview_count,
+                    "aligned_media_count": len(media_artifacts),
                     "training_eligible": True,
                 },
             )
@@ -593,24 +657,68 @@ class IngestRolloutWorkflow(_JobLifecycle):
             self._cancelled()
             await self._persist_job(request)
             raise
-        except (ActivityError, ChildWorkflowError, ApplicationError) as exc:
-            failure = self._technical_failure(exc)
+        except ActivityError as exc:
+            if "cancel" in str(exc).lower():
+                self._cancelled()
+                await self._persist_job(request)
+                raise
+            failed_job = self._technical_failure(exc)
             await self._persist_job(request)
-            return failure
+            return failed_job
+        except (ChildWorkflowError, ApplicationError) as exc:
+            failed_job = self._technical_failure(exc)
+            await self._persist_job(request)
+            return failed_job
         finally:
             if (
-                materialized_source is not None
-                and workflow.patched("cleanup-ingest-projection-v1")
+                workflow.patched("cleanup-uncommitted-aligned-media-v1")
+                and media_artifacts
+                and not bundle_committed
+                and request.organization_id is not None
             ):
                 with suppress(ActivityError, asyncio.CancelledError, CancelledError):
                     await asyncio.shield(
                         _execute_activity(
-                            CLEANUP_INGEST_PROJECTION_ACTIVITY,
-                            ProjectionCleanupActivityInput(source=materialized_source),
-                            ProjectionCleanupActivityOutput,
+                            CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY,
+                            AlignedMediaCleanupActivityInput(
+                                organization_id=request.organization_id,
+                                project_id=request.project_id,
+                                region_code=request.region_code,
+                                artifacts=tuple(media_artifacts),
+                            ),
+                            AlignedMediaCleanupActivityOutput,
                             STANDARD_ACTIVITY,
+                            cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                         )
                     )
+            if alignment_staging is not None and request.organization_id is not None:
+                with suppress(ActivityError, asyncio.CancelledError, CancelledError):
+                    await asyncio.shield(
+                        _execute_activity(
+                            CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
+                            AlignmentStagingCleanupActivityInput(
+                                organization_id=request.organization_id,
+                                project_id=request.project_id,
+                                region_code=request.region_code,
+                                staging=alignment_staging,
+                            ),
+                            AlignmentStagingCleanupActivityOutput,
+                            STANDARD_ACTIVITY,
+                            cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+                        )
+                    )
+            if materialized_source is not None:
+                cleanup_projection = workflow.patched("cleanup-ingest-projection-v1")
+                if cleanup_projection:
+                    with suppress(ActivityError, asyncio.CancelledError, CancelledError):
+                        await asyncio.shield(
+                            _execute_activity(
+                                CLEANUP_INGEST_PROJECTION_ACTIVITY,
+                                ProjectionCleanupActivityInput(source=materialized_source),
+                                ProjectionCleanupActivityOutput,
+                                STANDARD_ACTIVITY,
+                            )
+                        )
 
     @workflow.query(name="job")
     def job(self) -> JobRecord:
@@ -641,53 +749,6 @@ class DatasetWriterWorkflow(_JobLifecycle):
                     "dataset_version": committed.version.model_dump(mode="json"),
                     "derived_ready": committed.derived_ready.model_dump(mode="json"),
                 },
-            )
-        except (asyncio.CancelledError, CancelledError):
-            self._cancelled()
-            raise
-        except ActivityError as exc:
-            return self._technical_failure(exc)
-
-    @workflow.query(name="job")
-    def job(self) -> JobRecord:
-        return self._record()
-
-
-@workflow.defn(name=PREVIEW_WORKFLOW)
-class PreviewWorkflow(_JobLifecycle):
-    @workflow.run
-    async def run(self, request: PreviewWorkflowInput) -> JobRecord:
-        preview = request.request
-        resource_id = "/".join(
-            (
-                preview.dataset_id,
-                preview.rollout_id,
-                preview.lance_version,
-                preview.camera_id,
-                preview.profile_id,
-            )
-        )
-        self._begin(
-            job_type=PREVIEW_WORKFLOW,
-            project_id=preview.project_id,
-            resource_id=resource_id,
-        )
-        try:
-            self._stage("preview")
-            result = await _execute_activity(
-                CREATE_PREVIEW_ACTIVITY,
-                PreviewActivityInput(
-                    organization_id=request.organization_id,
-                    region_code=request.region_code,
-                    job_id=request.job_id,
-                    request=preview,
-                ),
-                PreviewActivityOutput,
-                LONG_ACTIVITY,
-            )
-            return self._finish(
-                JobStatus.SUCCEEDED,
-                result={"preview": result.artifact.model_dump(mode="json")},
             )
         except (asyncio.CancelledError, CancelledError):
             self._cancelled()
@@ -950,7 +1011,6 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
 ALL_WORKFLOWS = (
     IngestRolloutWorkflow,
     DatasetWriterWorkflow,
-    PreviewWorkflow,
     PublishDatasetWorkflow,
     ExportWorkflow,
     CatalogReconciliationWorkflow,

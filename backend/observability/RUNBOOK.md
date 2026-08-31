@@ -1,8 +1,12 @@
-# Backend operational runbook
+# Backend operational quick reference
+
+The authoritative alert procedures, synthetic delivery drill, and node-loss log-retention drill
+are in `deploy/runbooks/observability-alerts.md`. The runtime JSON and redaction contract is in
+`deploy/runbooks/observability-runtime-logging.md`.
 
 ## Workflow failures
 
-Locate the `workflow_id`, `project_id`, and `rollout_id` in structured logs. Classify the
+Locate the `request_id`, `operation_id`, and `workflow_id` in structured logs. Classify the
 failure as retryable infrastructure failure, non-retryable raw validation failure, or data
 quality outcome. Never retry a quality `REJECT` as a technical failure.
 

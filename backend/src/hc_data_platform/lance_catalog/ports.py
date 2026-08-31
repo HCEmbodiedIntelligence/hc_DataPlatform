@@ -30,6 +30,7 @@ class StepReaderPort(Protocol):
         *,
         version: int | None = None,
         project_id: str | None = None,
+        columns: Sequence[str] | None = None,
     ) -> StepWindow: ...
 
     def lineage(
@@ -122,6 +123,8 @@ class LanceStoragePort(Protocol):
         rollout_id: str,
         start_step: int,
         end_step: int,
+        *,
+        columns: Sequence[str] | None = None,
     ) -> tuple[StepRecord, ...]: ...
 
 
@@ -156,6 +159,27 @@ class DatasetWriterLockPort(Protocol):
     """Cross-process lock held across storage append and catalog registration."""
 
     def acquire(self, project_id: str, dataset_id: str) -> AbstractContextManager[None]: ...
+
+
+def _project_step(step: StepRecord, columns: Sequence[str] | None) -> StepRecord:
+    if columns is None:
+        return step
+    selected = frozenset(columns)
+    return step.model_copy(
+        update={
+            "modalities": {
+                name: value for name, value in step.modalities.items() if name in selected
+            },
+            "source_timestamps_ns": {
+                name: value for name, value in step.source_timestamps_ns.items() if name in selected
+            },
+            "time_error_ns": {
+                name: value for name, value in step.time_error_ns.items() if name in selected
+            },
+            "valid": {name: value for name, value in step.valid.items() if name in selected},
+            "repeated": {name: value for name, value in step.repeated.items() if name in selected},
+        }
+    )
 
 
 class FakeStepReader:
@@ -195,10 +219,11 @@ class FakeStepReader:
         *,
         version: int | None = None,
         project_id: str | None = None,
+        columns: Sequence[str] | None = None,
     ) -> StepWindow:
         selected_version = self._check(dataset_id, version, project_id)
         selected = tuple(
-            step
+            _project_step(step, columns)
             for step in self._steps
             if step.rollout_id == rollout_id and start_step <= step.step_index < end_step
         )

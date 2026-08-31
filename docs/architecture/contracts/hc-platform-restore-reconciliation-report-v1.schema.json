@@ -1,0 +1,202 @@
+{
+  "$defs": {
+    "RestoreReconciliationCheckV1": {
+      "additionalProperties": false,
+      "properties": {
+        "checked_count": {
+          "minimum": 0,
+          "title": "Checked Count",
+          "type": "integer"
+        },
+        "coverage": {
+          "default": "FULL",
+          "enum": [
+            "FULL",
+            "SAMPLED"
+          ],
+          "title": "Coverage",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Sha256",
+          "type": "string"
+        },
+        "issue_codes": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Issue Codes",
+          "type": "array"
+        },
+        "issue_count": {
+          "minimum": 0,
+          "title": "Issue Count",
+          "type": "integer"
+        },
+        "name": {
+          "enum": [
+            "restore_checkpoint",
+            "database_content",
+            "object_inventory",
+            "database_object_references",
+            "audit_integrity",
+            "outbox",
+            "workflow_temporal",
+            "permissions",
+            "read_only_runtime"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "total_count": {
+          "minimum": 0,
+          "title": "Total Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "total_count",
+        "checked_count",
+        "issue_count",
+        "evidence_sha256"
+      ],
+      "title": "RestoreReconciliationCheckV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-restore-reconciliation-report-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "backup_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Backup Id",
+      "type": "string"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/RestoreReconciliationCheckV1"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "format_version": {
+      "const": "hc-platform-restore-reconciliation-report/v1",
+      "default": "hc-platform-restore-reconciliation-report/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "next_action": {
+      "const": "restore_smoke_and_write_enable_approval_required",
+      "default": "restore_smoke_and_write_enable_approval_required",
+      "title": "Next Action",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "overall_status": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ],
+      "title": "Overall Status",
+      "type": "string"
+    },
+    "plan_checkpoint_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Checkpoint Sha256",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "reconciled_at": {
+      "format": "date-time",
+      "title": "Reconciled At",
+      "type": "string"
+    },
+    "reconciliation_passed": {
+      "title": "Reconciliation Passed",
+      "type": "boolean"
+    },
+    "report_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Report Id",
+      "type": "string"
+    },
+    "restore_checkpoint_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Restore Checkpoint Sha256",
+      "type": "string"
+    },
+    "restore_verified": {
+      "const": false,
+      "default": false,
+      "title": "Restore Verified",
+      "type": "boolean"
+    },
+    "target_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Environment Id",
+      "type": "string"
+    },
+    "target_instance_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Instance Id",
+      "type": "string"
+    },
+    "verifier_identity": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Verifier Identity",
+      "type": "string"
+    },
+    "workers_enabled": {
+      "const": false,
+      "default": false,
+      "title": "Workers Enabled",
+      "type": "boolean"
+    },
+    "writes_enabled": {
+      "const": false,
+      "default": false,
+      "title": "Writes Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "report_id",
+    "plan_id",
+    "plan_checkpoint_sha256",
+    "restore_checkpoint_sha256",
+    "operation_id",
+    "backup_id",
+    "target_instance_id",
+    "target_environment_id",
+    "verifier_identity",
+    "reconciled_at",
+    "checks",
+    "overall_status",
+    "reconciliation_passed"
+  ],
+  "title": "hc-platform-restore-reconciliation-report/v1",
+  "type": "object"
+}

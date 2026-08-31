@@ -376,8 +376,7 @@ class InMemoryDatasetPageRepository:
                 if version.scope == scope
                 and version.dataset_id == dataset_id
                 and (
-                    filters.include_internal
-                    or not version.version_id.startswith("version_lance_")
+                    filters.include_internal or not version.version_id.startswith("version_lance_")
                 )
                 and _matches_version(version, filters)
             )

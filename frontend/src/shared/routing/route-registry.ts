@@ -36,6 +36,7 @@ const canonicalPatterns = new Set<string>([
   "/exports",
   "/settings/access",
   "/settings/audit",
+  "/settings/platform-operations",
 ]);
 
 const pageRoutes = new Map<string, Set<string>>();
