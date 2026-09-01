@@ -30,8 +30,6 @@ from .repository import (
     DashboardQueryAudit,
     DashboardScope,
     DashboardWindow,
-    PublicationLineageSummary,
-    SignalPipelineSummary,
     TaskStatusPackageFact,
     TaskStatusProjectionFacts,
     TaskStatusTaskFact,
@@ -112,110 +110,6 @@ JOIN ingest.collection_jobs job
  AND job.region_code = rollout.region_code
  AND job.collection_job_id = rollout.collection_job_id
 ORDER BY rollout.created_at DESC, rollout.rollout_id DESC
-""".strip()
-
-SIGNAL_PIPELINE_QUERY = f"""
-WITH {_SCOPE_CTE},
-scoped_rollouts AS (
-    SELECT rollout.organization_id, rollout.project_id, rollout.region_code,
-           rollout.rollout_id, rollout.data_package_id, rollout.created_at
-    FROM requested_scope scope
-    JOIN ingest.rollouts rollout
-      ON rollout.project_id = scope.project_id
-     AND rollout.region_code = scope.region_code
-    WHERE scope.principal_id = scope.authorized_principal_id
-)
-SELECT
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout, requested_scope scope
-        WHERE rollout.created_at >= scope.range_start
-          AND rollout.created_at < scope.range_end
-    ) AS collected_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN ingest.rollout_objects object
-          ON object.organization_id = rollout.organization_id
-         AND object.project_id = rollout.project_id
-         AND object.region_code = rollout.region_code
-         AND object.rollout_id = rollout.rollout_id
-        CROSS JOIN requested_scope scope
-        WHERE object.committed_at >= scope.range_start
-          AND object.committed_at < scope.range_end
-    ) AS received_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN qc_reports report
-          ON report.organization_id = rollout.organization_id
-         AND report.project_id = rollout.project_id
-         AND report.region_code = rollout.region_code
-         AND report.rollout_id = rollout.rollout_id
-        CROSS JOIN requested_scope scope
-        WHERE report.created_at >= scope.range_start
-          AND report.created_at < scope.range_end
-    ) AS auto_qc_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN aligned_fragment_attempts attempt
-          ON attempt.organization_id = rollout.organization_id
-         AND attempt.project_id = rollout.project_id
-         AND attempt.region_code = rollout.region_code
-         AND attempt.rollout_id = rollout.rollout_id
-        CROSS JOIN requested_scope scope
-        WHERE attempt.status = 'READY'
-          AND attempt.updated_at >= scope.range_start
-          AND attempt.updated_at < scope.range_end
-    ) AS aligned_30_hz_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN lance_rollout_lineage lineage
-          ON lineage.organization_id = rollout.organization_id
-         AND lineage.project_id = rollout.project_id
-         AND lineage.rollout_id = rollout.rollout_id
-        CROSS JOIN requested_scope scope
-        WHERE lineage.created_at >= scope.range_start
-          AND lineage.created_at < scope.range_end
-    ) AS lance_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN annotation.annotation_tasks task
-          ON task.organization_id = rollout.organization_id
-         AND task.project_id = rollout.project_id
-         AND task.rollout_id = rollout.rollout_id
-        CROSS JOIN requested_scope scope
-        WHERE task.created_at >= scope.range_start
-          AND task.created_at < scope.range_end
-    ) AS annotation_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN annotation.annotation_tasks task
-          ON task.organization_id = rollout.organization_id
-         AND task.project_id = rollout.project_id
-         AND task.rollout_id = rollout.rollout_id
-        JOIN annotation.annotation_reviews review
-          ON review.task_id = task.task_id
-        CROSS JOIN requested_scope scope
-        WHERE review.created_at >= scope.range_start
-          AND review.created_at < scope.range_end
-    ) AS review_count,
-    (
-        SELECT count(DISTINCT rollout.data_package_id)
-        FROM scoped_rollouts rollout
-        JOIN publishing.rollout_publication_lineage lineage
-          ON lineage.organization_id = rollout.organization_id
-         AND lineage.project_id = rollout.project_id
-         AND lineage.region_code = rollout.region_code
-         AND lineage.rollout_id = rollout.rollout_id
-        CROSS JOIN requested_scope scope
-        WHERE lineage.published_at >= scope.range_start
-          AND lineage.published_at < scope.range_end
-    ) AS published_count
 """.strip()
 
 TASK_STATUS_TASKS_QUERY = """
@@ -871,67 +765,6 @@ class PostgresDashboardRepository:
             else ()
         )
         return DashboardPendingFactPage(facts[:limit], len(facts) > limit, unavailable)
-
-    def publication_lineage_summary(
-        self,
-        *,
-        auth: AuthContext,
-        scope: DashboardScope,
-        window: DashboardWindow,
-    ) -> PublicationLineageSummary:
-        self.enforce_scope(auth, scope)
-        if not self._lineage_available():
-            return PublicationLineageSummary(False)
-        rows = self._read(
-            """
-            SELECT lineage_count, publication_count, unresolved_history_count,
-                   latest_published_at
-            FROM publishing.dashboard_publication_lineage_summary(%s, %s, %s, %s, %s)
-            """,
-            (
-                scope.principal_id,
-                scope.project_id,
-                scope.region_code,
-                window.start,
-                window.end,
-            ),
-        )
-        if len(rows) != 1:
-            raise RuntimeError("publication lineage summary did not return one row")
-        row = rows[0]
-        return PublicationLineageSummary(
-            True,
-            lineage_count=int(cast(int, row["lineage_count"])),
-            publication_count=int(cast(int, row["publication_count"])),
-            unresolved_history_count=int(cast(int, row["unresolved_history_count"])),
-            latest_published_at=cast(datetime | None, row["latest_published_at"]),
-        )
-
-    def signal_pipeline_summary(
-        self,
-        *,
-        auth: AuthContext,
-        scope: DashboardScope,
-        window: DashboardWindow,
-    ) -> SignalPipelineSummary:
-        self.enforce_scope(auth, scope)
-        rows = self._read(
-            SIGNAL_PIPELINE_QUERY,
-            self._scope_params(auth, scope, window),
-        )
-        if len(rows) != 1:
-            raise RuntimeError("signal-pipeline summary did not return one row")
-        row = rows[0]
-        return SignalPipelineSummary(
-            collected=int(cast(int, row["collected_count"])),
-            received=int(cast(int, row["received_count"])),
-            auto_qc=int(cast(int, row["auto_qc_count"])),
-            aligned_30_hz=int(cast(int, row["aligned_30_hz_count"])),
-            lance=int(cast(int, row["lance_count"])),
-            annotation=int(cast(int, row["annotation_count"])),
-            review=int(cast(int, row["review_count"])),
-            published=int(cast(int, row["published_count"])),
-        )
 
     def task_status_projection(
         self,

@@ -59,7 +59,7 @@ import {
 } from "../../shared/lib/metric-presentation";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
-  DataCursorPager,
+  CursorPager,
   DataTable,
   EntityDrawer,
   FilterToolbar,
@@ -1271,7 +1271,7 @@ export function ManualIssuesPage() {
         }
         pagination={
           list.data ? (
-            <DataCursorPager
+            <CursorPager
               pageInfo={{
                 startCursor: list.data.pageInfo.before,
                 endCursor: list.data.pageInfo.after,

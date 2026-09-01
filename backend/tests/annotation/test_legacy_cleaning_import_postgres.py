@@ -506,7 +506,16 @@ def test_existing_scoped_cleaning_rows_import_once_and_unresolved_lineage_fails_
     )
     actor = AnnotationActor(
         actor_id="legacy-import-verifier",
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         project_ids=frozenset({"project_alpha"}),
     )
     for draft_id in ("draft_shared", "draft_second"):

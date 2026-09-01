@@ -27,14 +27,14 @@ import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { formatTimeRange } from "../../shared/lib/metric-presentation";
 import {
-  DataCursorPager,
+  CursorPager,
   DataTable,
   EntityDrawer,
   FilterToolbar,
   PageState,
   StandardPageScaffold,
   StatusTag,
-  UiMetricCard,
+  MetricCard,
   type PageStateKind,
 } from "../../shared/ui";
 import {
@@ -581,23 +581,23 @@ export function CleaningDraftsPage() {
                 aria-label="草稿范围"
               />
               <div className={styles.metricGrid}>
-                <UiMetricCard
+                <MetricCard
                   label="编辑中"
                   value={summary.data?.scopeCounts.editing}
                   state={summary.isPending ? "loading" : undefined}
                   asOf={summary.data?.asOf}
                 />
-                <UiMetricCard
+                <MetricCard
                   label="已提交"
                   value={summary.data?.scopeCounts.committed}
                   state={summary.isPending ? "loading" : undefined}
                 />
-                <UiMetricCard
+                <MetricCard
                   label="已退回"
                   value={summary.data?.scopeCounts.returned}
                   state={summary.isPending ? "loading" : undefined}
                 />
-                <UiMetricCard
+                <MetricCard
                   label="活跃任务"
                   value={
                     summary.data
@@ -695,7 +695,7 @@ export function CleaningDraftsPage() {
         }
         pagination={
           list.data ? (
-            <DataCursorPager
+            <CursorPager
               pageInfo={{
                 startCursor: list.data.pageInfo.before,
                 endCursor: list.data.pageInfo.after,

@@ -59,7 +59,6 @@ def _auth(*, read: bool = True, edit: bool = False) -> AuthContext:
         subject_id="p10-operator",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset((PROJECT_ID, capability) for capability in capabilities),
     )

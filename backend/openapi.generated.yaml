@@ -4034,8 +4034,7 @@ components:
       additionalProperties: false
       properties:
         capabilities:
-          description: Authoritative approved capability keys for this exact project; legacy roles are
-            compatibility projections only.
+          description: Authoritative approved capability keys for this exact project.
           items:
             minLength: 1
             type: string
@@ -9001,44 +9000,6 @@ components:
       - MEDIUM
       - LOW
       type: string
-    DashboardPublishedRegionState:
-      additionalProperties: false
-      properties:
-        as_of:
-          format: date-time
-          type:
-          - string
-          - 'null'
-        error:
-          oneOf:
-          - $ref: '#/components/schemas/DashboardSectionError'
-          - type: 'null'
-        lineage_count:
-          description: Count of certain unique publication+rollout lineage facts.
-          minimum: 0
-          type:
-          - integer
-          - 'null'
-        publication_count:
-          description: Count of distinct certain publication identities in the exact scope.
-          minimum: 0
-          type:
-          - integer
-          - 'null'
-        status:
-          $ref: '#/components/schemas/DashboardSectionStatus'
-        unresolved_history_count:
-          description: Project/range historical rollout references not assigned to any region.
-          minimum: 0
-          type: integer
-      required:
-      - status
-      - as_of
-      - error
-      - lineage_count
-      - publication_count
-      - unresolved_history_count
-      type: object
     DashboardResourceType:
       enum:
       - UPLOAD_SESSION
@@ -9099,114 +9060,6 @@ components:
       - ERROR
       - BLOCKED
       type: string
-    DashboardSignalPipelineState:
-      additionalProperties: false
-      properties:
-        as_of:
-          format: date-time
-          type:
-          - string
-          - 'null'
-        error:
-          oneOf:
-          - $ref: '#/components/schemas/DashboardSectionError'
-          - type: 'null'
-        published_region:
-          $ref: '#/components/schemas/DashboardPublishedRegionState'
-        stage_counts:
-          description: Per-stage unique cloud data-package counts for the exact project, region, and [from,to)
-            window. Counts are independent stage events, not percentages or a forced funnel.
-          items:
-            $ref: '#/components/schemas/DashboardSignalStageCount'
-          maxItems: 8
-          minItems: 8
-          type: array
-        stages:
-          items: false
-          maxItems: 8
-          minItems: 8
-          prefixItems:
-          - const: COLLECTED
-          - const: RECEIVED
-          - const: AUTO_QC
-          - const: ALIGNED_30_HZ
-          - const: LANCE
-          - const: ANNOTATION
-          - const: REVIEW
-          - const: PUBLISHED
-          type: array
-        status:
-          $ref: '#/components/schemas/DashboardSectionStatus'
-      required:
-      - status
-      - as_of
-      - error
-      - stages
-      - stage_counts
-      - published_region
-      type: object
-    DashboardSignalStageCount:
-      additionalProperties: false
-      properties:
-        count:
-          minimum: 0
-          type: integer
-        stage:
-          $ref: '#/components/schemas/SignalStage'
-      required:
-      - stage
-      - count
-      type: object
-    DashboardSnapshotResponse:
-      additionalProperties: false
-      properties:
-        as_of:
-          format: date-time
-          type: string
-        from:
-          format: date-time
-          type: string
-        project_id:
-          $ref: '#/components/schemas/DashboardIdentifier'
-        region_code:
-          $ref: '#/components/schemas/DashboardIdentifier'
-        schema_version:
-          const: '1'
-          type: string
-        sections:
-          $ref: '#/components/schemas/DashboardSnapshotSections'
-        timezone:
-          maxLength: 64
-          minLength: 1
-          type: string
-        to:
-          format: date-time
-          type: string
-      required:
-      - schema_version
-      - project_id
-      - region_code
-      - from
-      - to
-      - timezone
-      - as_of
-      - sections
-      type: object
-    DashboardSnapshotSections:
-      additionalProperties: false
-      description: Region storage is intentionally absent; capacity belongs to P12.
-      properties:
-        episodes:
-          $ref: '#/components/schemas/DashboardSectionState'
-        signal_pipeline:
-          $ref: '#/components/schemas/DashboardSignalPipelineState'
-        work:
-          $ref: '#/components/schemas/DashboardSectionState'
-      required:
-      - signal_pipeline
-      - episodes
-      - work
-      type: object
     DashboardTargetResource:
       additionalProperties: false
       properties:
@@ -22778,19 +22631,6 @@ components:
     Sha256:
       pattern: ^[0-9a-f]{64}$
       type: string
-    SignalStage:
-      description: 'Legacy event catalog: 云端已登记、Raw已接收、自动质检、30 Hz 对齐、Lance、数据标注、 审核、已发布。COLLECTED is not
-        device采集完成. Cleaning is not a separate signal stage.'
-      enum:
-      - COLLECTED
-      - RECEIVED
-      - AUTO_QC
-      - ALIGNED_30_HZ
-      - LANCE
-      - ANNOTATION
-      - REVIEW
-      - PUBLISHED
-      type: string
     SliceAuthoringMode:
       enum:
       - HUMAN
@@ -23530,12 +23370,6 @@ components:
         alignment_failed:
           minimum: 0
           type: integer
-        blocked_by_quality:
-          default: 0
-          deprecated: true
-          description: Compatibility field; always zero because QC findings are not blockers.
-          minimum: 0
-          type: integer
         isolated_by_quality:
           default: 0
           description: Packages isolated into problem data after automatic QC.
@@ -23564,7 +23398,6 @@ components:
       - lance_writing
       - lance_failed
       - ready
-      - blocked_by_quality
       - unavailable
       type: object
     TaskStatusAction:
@@ -33370,52 +33203,6 @@ paths:
       - bearerAuth: []
       tags:
       - dashboard
-  /api/v1/projects/{project_id}/dashboard/snapshot:
-    get:
-      deprecated: true
-      description: Returns one project and one exact region for the explicit half-open UTC range. The
-        legacy Signal subsection is an event-window observation and must not be interpreted as a current-state
-        funnel; P01 uses task-status for current task state. COLLECTED in this legacy subsection means
-        cloud package registration, never a device CAPTURED/SAVED fact. The published-region subsection
-        separately reports certain rollout-publication lineage. Episode and work remain BLOCKED. Region
-        storage is not a P01 field.
-      operationId: getDashboardSnapshot
-      parameters:
-      - $ref: '#/components/parameters/DashboardProjectId'
-      - $ref: '#/components/parameters/DashboardRegionCode'
-      - $ref: '#/components/parameters/DashboardFrom'
-      - $ref: '#/components/parameters/DashboardTo'
-      - $ref: '#/components/parameters/DashboardTimezone'
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DashboardSnapshotResponse'
-          description: Factual and explicitly blocked snapshot sections at one response read time.
-          headers:
-            Cache-Control:
-              $ref: '#/components/headers/DashboardNoStore'
-            Deprecation:
-              schema:
-                const: 'true'
-                type: string
-            Link:
-              description: Successor task-status endpoint.
-              schema:
-                type: string
-        '401':
-          $ref: '#/components/responses/DashboardUnauthorized'
-        '403':
-          $ref: '#/components/responses/DashboardForbidden'
-        '422':
-          $ref: '#/components/responses/DashboardInvalidQuery'
-        '429':
-          $ref: '#/components/responses/DashboardRateLimited'
-      security:
-      - bearerAuth: []
-      tags:
-      - dashboard
   /api/v1/projects/{project_id}/dashboard/task-status:
     get:
       description: Returns the current durable state of collection tasks in one exact project-region scope.
@@ -42521,8 +42308,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.overview.read are required (datasets.read and project.access.manage
-            remain legacy-compatible grants).
+          description: Exact project scope and storage.overview.read are required.
         '404':
           description: No inventory snapshot exists in the selected scope.
       security:
@@ -42558,8 +42344,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.overview.read are required (datasets.read and project.access.manage
-            remain legacy-compatible grants).
+          description: Exact project scope and storage.overview.read are required.
         '404':
           description: No inventory snapshot exists in the selected scope/window.
         '422':
@@ -42623,8 +42408,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.overview.read are required (datasets.read and project.access.manage
-            remain legacy-compatible grants).
+          description: Exact project scope and storage.overview.read are required.
         '404':
           description: No inventory snapshot exists in the selected scope.
       security:
@@ -42650,8 +42434,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.read are required (storage.lifecycle.manage
-            and project.access.manage remain legacy-compatible grants).
+          description: Exact project scope and storage.lifecycle.read are required.
       security:
       - bearerAuth: []
       tags:
@@ -42865,8 +42648,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.read are required (storage.lifecycle.manage
-            and project.access.manage remain legacy-compatible grants).
+          description: Exact project scope and storage.lifecycle.read are required.
       security:
       - bearerAuth: []
       tags:
@@ -42897,8 +42679,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.manage are required (project.access.manage
-            remains legacy-compatible).
+          description: Exact project scope and storage.lifecycle.manage are required.
         '409':
           description: Policy name or idempotency key conflicts.
         '422':
@@ -42922,8 +42703,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.manage are required (project.access.manage
-            remains legacy-compatible).
+          description: Exact project scope and storage.lifecycle.manage are required.
         '404':
           description: Policy does not exist in the selected scope.
         '409':
@@ -42949,8 +42729,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.read are required (storage.lifecycle.manage
-            and project.access.manage remain legacy-compatible grants).
+          description: Exact project scope and storage.lifecycle.read are required.
         '404':
           description: Policy does not exist in the selected scope.
       security:
@@ -42986,8 +42765,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.manage are required (project.access.manage
-            remains legacy-compatible).
+          description: Exact project scope and storage.lifecycle.manage are required.
         '404':
           description: Policy does not exist in the selected scope.
         '409':
@@ -43023,8 +42801,7 @@ paths:
         '401':
           description: A verified identity is required.
         '403':
-          description: Exact project scope and storage.lifecycle.manage are required (project.access.manage
-            remains legacy-compatible).
+          description: Exact project scope and storage.lifecycle.manage are required.
         '404':
           description: Policy does not exist in the selected scope.
         '409':

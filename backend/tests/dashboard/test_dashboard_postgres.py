@@ -29,10 +29,8 @@ from hc_data_platform.core.errors import ProblemException  # noqa: E402
 from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
 from hc_data_platform.dashboard.models import (  # noqa: E402
     DashboardPendingItemType,
-    DashboardSectionStatus,
 )
 from hc_data_platform.dashboard.postgres import (  # noqa: E402
-    SIGNAL_PIPELINE_QUERY,
     PostgresDashboardRepository,
     _activity_query,
     _pending_query,
@@ -54,9 +52,9 @@ from hc_data_platform.security.auth import AuthContext  # noqa: E402
 from hc_data_platform.security.capabilities import (  # noqa: E402
     CAPABILITY_ANNOTATION_REVIEW,
     CAPABILITY_DASHBOARD_READ,
-    CAPABILITY_DATASETS_PUBLISH,
-    CAPABILITY_DATASETS_READ,
-    CAPABILITY_INGEST_UPLOAD,
+    CAPABILITY_DATASET_READ,
+    CAPABILITY_DATASET_VERSION_PUBLISH,
+    CAPABILITY_UPLOAD_MANAGE,
 )
 from hc_data_platform.workflow.models import (  # noqa: E402
     JobRecord,
@@ -133,7 +131,6 @@ def actor(
         subject_id="dashboard-postgres-principal",
         project_ids=frozenset({project_id}),
         region_codes=frozenset({region_code}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, region_code)}),
         scoped_capabilities=frozenset(
             (project_id, capability) for capability in (CAPABILITY_DASHBOARD_READ, *capabilities)
@@ -583,10 +580,10 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
     isolated_dsn: str,
 ) -> None:
     capabilities = (
-        CAPABILITY_INGEST_UPLOAD,
-        CAPABILITY_DATASETS_READ,
+        CAPABILITY_UPLOAD_MANAGE,
+        CAPABILITY_DATASET_READ,
         CAPABILITY_ANNOTATION_REVIEW,
-        CAPABILITY_DATASETS_PUBLISH,
+        CAPABILITY_DATASET_VERSION_PUBLISH,
     )
     auth = actor("project-a", "cn-east", capabilities=capabilities)
     repository = PostgresDashboardRepository(
@@ -642,22 +639,6 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
         assert all(item.target.deep_link is not None for item in pending)
         assert not any("published" in item.source_id for item in pending)
 
-        snapshot = service.snapshot(**common)
-        assert [item.count for item in snapshot.sections.signal_pipeline.stage_counts] == [
-            5,
-            1,
-            1,
-            0,
-            0,
-            3,
-            2,
-            1,
-        ]
-        published = snapshot.sections.signal_pipeline.published_region
-        assert published.status is DashboardSectionStatus.READY
-        assert published.lineage_count == 1
-        assert published.publication_count == 1
-
         task_list = service.task_status(
             auth=auth,
             project_id="project-a",
@@ -677,7 +658,6 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
         assert selected_task.selected is not None
         assert selected_task.selected.task.lifecycle.value == "ACTIVE"
         assert selected_task.selected.qc.rejected == 1
-        assert selected_task.selected.standardization.blocked_by_quality == 0
         assert selected_task.selected.standardization.isolated_by_quality == 1
         assert selected_task.selected.blocker_count == 0
         assert selected_task.selected.actions[0].action == "VIEW_QC_ANOMALIES"
@@ -716,7 +696,6 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
         assert {row[3] for row in audits} == {
             "activity",
             "pending-items",
-            "snapshot",
             "task-status",
         }
         assert all(row[0] == auth.subject_id and row[1] == "cn-east" for row in audits)
@@ -746,7 +725,7 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
 
 
 def test_postgres_capability_intersection_and_half_open_boundaries(isolated_dsn: str) -> None:
-    upload_actor = actor("project-a", "cn-east", capabilities=(CAPABILITY_INGEST_UPLOAD,))
+    upload_actor = actor("project-a", "cn-east", capabilities=(CAPABILITY_UPLOAD_MANAGE,))
     repository = PostgresDashboardRepository(
         psycopg_connection_factory(isolated_dsn), statement_timeout_ms=5000
     )
@@ -843,7 +822,7 @@ def test_postgres_device_fact_writer_is_idempotent_and_rejects_changed_retry(
         subject_id=subject_id,
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset({"cn-east"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
         service_identity=True,
         organization_ids=frozenset({organization_for("project-a")}),
         organization_scope_triples=frozenset(
@@ -912,10 +891,6 @@ def test_postgres_explain_business_feeds_keep_scope_range_order_and_limit(
             """,
             (organization_for("project-a"),),
         )
-        signal_plan = connection.execute(
-            "EXPLAIN (FORMAT JSON) " + SIGNAL_PIPELINE_QUERY,
-            scope_params,
-        ).fetchone()
         activity_plan = connection.execute(
             "EXPLAIN (FORMAT JSON) " + _activity_query(True),
             (*scope_params, None, None, None, None, 101),
@@ -933,14 +908,11 @@ def test_postgres_explain_business_feeds_keep_scope_range_order_and_limit(
             ),
         ).fetchone()
 
-    assert signal_plan is not None
     assert activity_plan is not None
     assert pending_plan is not None
-    signal_json = json.dumps(signal_plan[0], sort_keys=True)
     activity_json = json.dumps(activity_plan[0], sort_keys=True)
     pending_json = json.dumps(pending_plan[0], sort_keys=True)
     assert '"Node Type": "Limit"' in activity_json
     assert '"Node Type": "Limit"' in pending_json
-    assert "dashboard_rollouts_scope_created_idx" in signal_json
     assert "dashboard_rollout_objects_scope_committed_idx" in activity_json
     assert "dashboard_quality_pending_scope_idx" in pending_json

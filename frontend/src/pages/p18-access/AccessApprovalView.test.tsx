@@ -52,13 +52,13 @@ const riskyCapability: AccessRequestRow = {
   requestId: "capability-risky",
   requesterId: "internal-9",
   reason: "负责版本发布",
-  capabilityKeys: ["datasets.publish", "project.access.manage"],
+  capabilityKeys: ["dataset_version.publish", "access.manage"],
 };
 const ordinaryCapability: AccessRequestRow = {
   ...riskyCapability,
   requestId: "capability-ordinary",
   requesterId: "internal-10",
-  capabilityKeys: ["datasets.read", "custom.unknown"],
+  capabilityKeys: ["dataset.read"],
 };
 
 const defaultSearch: AccessSearch = {
@@ -512,7 +512,7 @@ describe("P18 access approval information architecture", () => {
     expect(screen.queryByText("请求包含高影响能力")).not.toBeInTheDocument();
     expect(screen.getByRole("note", { name: "影响提示" })).toBeVisible();
     expect(screen.getByText("数据集发布")).toBeVisible();
-    expect(screen.getByText("datasets.publish")).toBeVisible();
+    expect(screen.getByText("dataset_version.publish")).toBeVisible();
     expect(screen.queryByText("处理记录")).not.toBeInTheDocument();
     for (const forbiddenCopy of [
       "权限模板",
@@ -525,12 +525,11 @@ describe("P18 access approval information architecture", () => {
     }
   });
 
-  it("shows an unknown capability as its original key without an empty risk message", () => {
+  it("shows a current ordinary capability without an empty risk message", () => {
     renderView({ search: openedSearch(ordinaryCapability) });
 
-    expect(screen.getByText("数据集只读")).toBeVisible();
-    expect(screen.getByText("datasets.read")).toBeVisible();
-    expect(screen.getByText("custom.unknown")).toBeVisible();
+    expect(screen.getAllByText("数据集只读")).not.toHaveLength(0);
+    expect(screen.getByText("dataset.read")).toBeVisible();
     expect(screen.queryByRole("note", { name: "影响提示" })).toBeNull();
     expect(screen.queryByText(/未识别风险|不是服务端风险评级/u)).toBeNull();
   });

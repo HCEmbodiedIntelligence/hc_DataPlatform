@@ -11,7 +11,7 @@ from hc_data_platform.core.config import Settings
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
@@ -38,7 +38,7 @@ class ProjectAdminVerifier:
             organization_ids=frozenset({organization_id}),
             project_ids=frozenset({project_id}),
             region_codes=frozenset(),
-            roles=frozenset({Role.ADMIN.value}),
+            capabilities=frozenset({"access.manage"}),
             scope_pairs=frozenset({(project_id, None)}),
             organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         )
@@ -132,13 +132,13 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         delegate_grant = _grant_capability(
             client,
             token=delegate_token,
-            capability="project.access.manage",
+            capability="access.manage",
             suffix="delegate",
         )
         _grant_capability(
             client,
             token=reader_token,
-            capability="datasets.read",
+            capability="dataset.read",
             suffix="reader",
         )
 
@@ -179,7 +179,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         before = client.get(
             "/api/v1/auth/session/bootstrap", headers=_headers(delegate_token)
         ).json()
-        assert before["available_scopes"][0]["capabilities"] == ["project.access.manage"]
+        assert before["available_scopes"][0]["capabilities"] == ["access.manage"]
 
         revoked = client.post(
             f"/api/v1/organizations/organization-a/projects/project-a/capability-requests/{delegate_grant['request_id']}:revoke",
@@ -223,7 +223,7 @@ def _reader(project_id: str) -> AuthContext:
         subject_id=f"reader-{project_id}",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset({Role.UPLOADER.value}),
+        capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({(project_id, None)}),
     )
 
@@ -255,22 +255,20 @@ def test_pagination_cursor_cannot_be_reused_with_the_same_snapshot_id_in_another
     assert denied.value.problem.code == "CURSOR_SCOPE_MISMATCH"
 
 
-def test_legacy_multi_project_region_arrays_fail_closed_without_explicit_pairs() -> None:
+def test_independent_project_region_sets_do_not_replace_exact_scope_pairs() -> None:
     ambiguous = AuthContext(
-        subject_id="legacy-jwt-user",
+        subject_id="unpaired-context",
         project_ids=frozenset({"project-a", "project-b"}),
         region_codes=frozenset({"cn-hz", "us-west"}),
-        roles=frozenset({Role.UPLOADER.value}),
     )
     with pytest.raises(ProblemException) as denied:
         ScopeGuard.require(ambiguous, "project-a", "us-west")
-    assert denied.value.problem.code == "REGION_SCOPE_AMBIGUOUS"
+    assert denied.value.problem.code == "PROJECT_SCOPE_DENIED"
 
     paired = ambiguous.__class__(
         subject_id=ambiguous.subject_id,
         project_ids=ambiguous.project_ids,
         region_codes=ambiguous.region_codes,
-        roles=ambiguous.roles,
         scope_pairs=frozenset({("project-a", "cn-hz"), ("project-b", "us-west")}),
     )
     ScopeGuard.require(paired, "project-a", "cn-hz")

@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from hc_data_platform.core.errors import ProblemException
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
     CreateLifecyclePolicy,
@@ -26,7 +26,12 @@ NOW = datetime(2026, 8, 17, 3, tzinfo=timezone.utc)
 def operator(project_id: str = "project-a") -> AuthContext:
     return AuthContext.service(
         subject_id="storage-worker-admin",
-        roles={Role.ADMIN},
+        capabilities={
+            "storage.lifecycle.read",
+            "storage.lifecycle.manage",
+            "storage.lifecycle.execute",
+            "storage.lifecycle.approve",
+        },
         project_ids={project_id},
     )
 
@@ -36,7 +41,6 @@ def capability_actor(*capabilities: str, project_id: str = "project-a") -> AuthC
         subject_id="storage-capability-actor",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset(capabilities),
         scope_pairs=frozenset({(project_id, None)}),
     )

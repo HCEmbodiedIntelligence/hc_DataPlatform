@@ -21,7 +21,7 @@ import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
-  DataCursorPager,
+  CursorPager,
   PageState,
   StandardPageScaffold,
   type MetricState,
@@ -237,7 +237,7 @@ function TaskDatasetEpisodes({
         onInspect={(episode) => onInspect(item, episode)}
         onOpenViewer={(episode) => onOpenViewer(item, episode)}
       />
-      <DataCursorPager
+      <CursorPager
         pageInfo={{
           startCursor: episodes.data.pageInfo.before,
           endCursor: episodes.data.pageInfo.after,
@@ -837,7 +837,7 @@ export function DatasetsPage() {
         }
         pagination={
           query.data && query.data.items.length > 0 ? (
-            <DataCursorPager
+            <CursorPager
               pageInfo={{
                 startCursor: query.data.pageInfo.before,
                 endCursor: query.data.pageInfo.after,

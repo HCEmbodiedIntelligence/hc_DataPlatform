@@ -544,9 +544,7 @@ class LeRobotWebUploadService:
         ScopeGuard.require(auth, project_id, region_code, organization_id)
         select_request_scope(project_id, region_code, organization_id=organization_id)
         capabilities = auth.effective_capabilities(project_id, organization_id)
-        if not auth.is_platform_admin and not capabilities.intersection(
-            {"upload.manage", "ingest.upload"}
-        ):
+        if not auth.is_platform_admin and "upload.manage" not in capabilities:
             raise problem(
                 status=403,
                 code="CAPABILITY_REQUIRED",

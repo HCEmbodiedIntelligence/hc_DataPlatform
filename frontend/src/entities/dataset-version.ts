@@ -9,9 +9,6 @@ export type DatasetVersionId = string & {
   readonly [datasetVersionIdBrand]: 'DatasetVersionId';
 };
 
-/** Compatibility name used by the frozen cross-page contracts. */
-export type VersionId = DatasetVersionId;
-
 export const DATASET_VERSION_KINDS = ['RAW', 'CLEANED', 'UNKNOWN'] as const;
 export type DatasetVersionKind = (typeof DATASET_VERSION_KINDS)[number];
 

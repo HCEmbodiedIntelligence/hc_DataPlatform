@@ -23,7 +23,7 @@ def _auth() -> AuthContext:
         organization_ids=frozenset({"org-a"}),
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
         scope_pairs=frozenset({("project-a", "cn-hz")}),
         organization_scope_triples=frozenset({("org-a", "project-a", "cn-hz")}),
     )

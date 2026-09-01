@@ -25,7 +25,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/CapacitySnapshot'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.overview.read are required (datasets.read and project.access.manage remain legacy-compatible grants).}
+        '403': {description: Exact project scope and storage.overview.read are required.}
         '404': {description: No inventory snapshot exists in the selected scope.}
   /api/v1/projects/{project_id}/storage/inventory:
     get:
@@ -47,7 +47,7 @@ paths:
               schema: {$ref: '#/components/schemas/CapacityInventoryPage'}
         '400': {description: Cursor is malformed or belongs to another scope.}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.overview.read are required (datasets.read and project.access.manage remain legacy-compatible grants).}
+        '403': {description: Exact project scope and storage.overview.read are required.}
         '404': {description: No inventory snapshot exists in the selected scope.}
   /api/v1/projects/{project_id}/storage/capacity/history:
     get:
@@ -73,7 +73,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/CapacityHistory'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.overview.read are required (datasets.read and project.access.manage remain legacy-compatible grants).}
+        '403': {description: Exact project scope and storage.overview.read are required.}
         '404': {description: No inventory snapshot exists in the selected scope/window.}
         '422': {description: The requested history range is malformed, reversed, or exceeds 31 days.}
   /api/v1/projects/{project_id}/storage/capacity/portfolio:
@@ -249,7 +249,7 @@ paths:
               schema: {$ref: '#/components/schemas/LifecyclePolicyPage'}
         '400': {description: Cursor is malformed or belongs to another scope.}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.read are required (storage.lifecycle.manage and project.access.manage remain legacy-compatible grants).}
+        '403': {description: Exact project scope and storage.lifecycle.read are required.}
     post:
       operationId: createLifecyclePolicy
       tags: [storage]
@@ -271,7 +271,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LifecyclePolicy'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.manage are required (project.access.manage remains legacy-compatible).}
+        '403': {description: Exact project scope and storage.lifecycle.manage are required.}
         '409': {description: Policy name or idempotency key conflicts.}
         '422': {description: Policy action or target violates the contract.}
   /api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}:
@@ -290,7 +290,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LifecyclePolicy'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.read are required (storage.lifecycle.manage and project.access.manage remain legacy-compatible grants).}
+        '403': {description: Exact project scope and storage.lifecycle.read are required.}
         '404': {description: Policy does not exist in the selected scope.}
     put:
       operationId: updateLifecyclePolicy
@@ -313,7 +313,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LifecyclePolicy'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.manage are required (project.access.manage remains legacy-compatible).}
+        '403': {description: Exact project scope and storage.lifecycle.manage are required.}
         '404': {description: Policy does not exist in the selected scope.}
         '409': {description: Policy name or enabled-policy target conflicts.}
         '412': {description: If-Match is stale.}
@@ -330,7 +330,7 @@ paths:
           headers:
             Idempotency-Replayed: {$ref: '#/components/headers/StorageIdempotencyReplayed'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.manage are required (project.access.manage remains legacy-compatible).}
+        '403': {description: Exact project scope and storage.lifecycle.manage are required.}
         '404': {description: Policy does not exist in the selected scope.}
         '409': {description: Enabled policies must be paused before deletion.}
         '412': {description: If-Match is stale.}
@@ -353,7 +353,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/LifecyclePolicy'}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.manage are required (project.access.manage remains legacy-compatible).}
+        '403': {description: Exact project scope and storage.lifecycle.manage are required.}
         '404': {description: Policy does not exist in the selected scope.}
         '409': {description: Another enabled policy has the same target and priority.}
         '412': {description: If-Match is stale.}
@@ -503,7 +503,7 @@ paths:
               schema: {$ref: '#/components/schemas/LifecycleAuditPage'}
         '400': {description: Cursor is malformed or belongs to another scope.}
         '401': {description: A verified identity is required.}
-        '403': {description: Exact project scope and storage.lifecycle.read are required (storage.lifecycle.manage and project.access.manage remain legacy-compatible grants).}
+        '403': {description: Exact project scope and storage.lifecycle.read are required.}
   /api/v1/projects/{project_id}/storage/lifecycle-executions:
     get:
       operationId: listLifecycleExecutions

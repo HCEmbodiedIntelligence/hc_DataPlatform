@@ -189,7 +189,10 @@ def _publisher_auth(project_id: str = "project-a") -> AuthContext:
         subject_id="publisher-a",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset({"publisher"}),
+        capabilities=frozenset(
+            {"dataset_version.publish", "data_schema.publish", "export.read"}
+        ),
+        scope_pairs=frozenset({(project_id, None)}),
     )
 
 

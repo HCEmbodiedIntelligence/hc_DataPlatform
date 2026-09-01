@@ -48,7 +48,6 @@ def _auth(capability: str) -> AuthContext:
         subject_id=f"obs503-{capability.replace('.', '-')}",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({capability}),
     )
 

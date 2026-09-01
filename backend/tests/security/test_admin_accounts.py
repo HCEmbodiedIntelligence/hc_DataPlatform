@@ -15,7 +15,7 @@ from hc_data_platform.security.admin_accounts import (
     ManagedAccountPasswordReset,
     PlatformAccountRole,
 )
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.passwords import PasswordHasher, PasswordPolicy, ScryptParameters
 
 _ADMIN_PASSWORD = "admin-safe-password"
@@ -156,7 +156,7 @@ def test_project_administrator_cannot_read_or_manage_platform_accounts() -> None
         subject_id="project-admin",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
-        roles=frozenset({Role.ADMIN.value}),
+        capabilities=frozenset({"access.manage"}),
         scope_pairs=frozenset({("project-a", None)}),
     )
 
@@ -302,7 +302,6 @@ def test_admin_guards_self_management_last_admin_and_password_confirmation() -> 
         subject_id="external-root",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=auth.capabilities,
     )
     with pytest.raises(ProblemException) as last_admin:

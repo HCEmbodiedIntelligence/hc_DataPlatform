@@ -5,13 +5,11 @@ import type { DashboardScope } from "../types";
 import {
   adaptDashboardActivity,
   adaptDashboardPendingPage,
-  adaptDashboardSnapshot,
   adaptDashboardTaskStatus,
 } from "./adapter";
 import {
   dashboardActivityWireSchema,
   dashboardPendingPageWireSchema,
-  dashboardSnapshotWireSchema,
   dashboardTaskStatusWireSchema,
 } from "./schemas";
 
@@ -63,28 +61,6 @@ export async function getDashboardActivity(
   const wire = parseWire(dashboardActivityWireSchema, raw, { endpoint });
   assertDashboardScope(wire, scope, "dashboard-activity");
   return adaptDashboardActivity(wire);
-}
-
-export async function getDashboardSnapshot(
-  scope: DashboardScope,
-  window: DashboardWindow,
-  signal?: AbortSignal,
-) {
-  const endpoint = `${dashboardRoot(scope)}/snapshot`;
-  const raw = await request<unknown>({
-    method: "GET",
-    path: endpoint,
-    query: {
-      region_code: scope.regionCode,
-      from: window.from,
-      to: window.to,
-      timezone: scope.timezone,
-    },
-    ...(signal ? { signal } : {}),
-  });
-  const wire = parseWire(dashboardSnapshotWireSchema, raw, { endpoint });
-  assertDashboardScope(wire, scope, "dashboard-snapshot");
-  return adaptDashboardSnapshot(wire);
 }
 
 export async function getDashboardTaskStatus(

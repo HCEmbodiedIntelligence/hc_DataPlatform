@@ -29,7 +29,7 @@ import { dataSchemasQueryCodec } from "../../features/data-schemas/routing";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import {
-  DataCursorPager,
+  CursorPager,
   DataTable,
   DetailTabs,
   FilterToolbar,
@@ -809,7 +809,7 @@ export function Component() {
             </div>
             {list.data ? (
               <footer className={workspace.tableFooter}>
-                <DataCursorPager
+                <CursorPager
                   pageInfo={{
                     startCursor: list.data.pageInfo.start_cursor,
                     endCursor: list.data.pageInfo.end_cursor,
@@ -1060,7 +1060,7 @@ export function Component() {
                           disabled={
                             authoringTarget?.status !== "PUBLISHED" ||
                             !capabilities.has("data_schema.publish") ||
-                            !capabilities.has("datasets.read")
+                            !capabilities.has("dataset_version.read")
                           }
                           onClick={openDatasetReference}
                         >

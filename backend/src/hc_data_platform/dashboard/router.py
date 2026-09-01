@@ -14,7 +14,6 @@ from .models import (
     DashboardCoverageResponse,
     DashboardIdentifier,
     DashboardPendingItemsResponse,
-    DashboardSnapshotResponse,
     DashboardTaskStatusResponse,
 )
 from .repository import DASHBOARD_CAPABILITY
@@ -67,38 +66,6 @@ def _authorize(auth: VerifiedAuth, project_id: str, region_code: str) -> None:
 
 def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
-
-
-@router.get(
-    "/snapshot",
-    response_model=DashboardSnapshotResponse,
-    operation_id="getDashboardSnapshot",
-    deprecated=True,
-)
-def get_dashboard_snapshot(
-    project_id: DashboardIdentifier,
-    region_code: RegionCode,
-    range_start: RangeStart,
-    range_end: RangeEnd,
-    timezone_name: TimezoneName,
-    response: Response,
-    auth: VerifiedAuth,
-    service: Service,
-) -> DashboardSnapshotResponse:
-    _authorize(auth, project_id, region_code)
-    _no_store(response)
-    response.headers["Deprecation"] = "true"
-    response.headers["Link"] = (
-        f'</api/v1/projects/{project_id}/dashboard/task-status>; rel="successor-version"'
-    )
-    return service.snapshot(
-        auth=auth,
-        project_id=project_id,
-        region_code=region_code,
-        range_start=range_start,
-        range_end=range_end,
-        timezone_name=timezone_name,
-    )
 
 
 @router.get(

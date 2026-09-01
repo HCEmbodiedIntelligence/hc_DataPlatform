@@ -45,7 +45,6 @@ def _auth(capability: str | None) -> AuthContext:
         subject_id="catalog-viewer",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset() if capability is None else frozenset({capability}),
     )
 

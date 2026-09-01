@@ -103,7 +103,6 @@ def _auth(*, audit: bool = True, access: bool = False, revision: int = 3) -> Aut
         subject_id="actor-p19-reader",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         capability_revision=revision,
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset((PROJECT_ID, capability) for capability in capabilities),
@@ -230,7 +229,6 @@ def test_p19_actor_identity_capability_is_bound_to_the_exact_organization() -> N
         organization_ids=frozenset({ORGANIZATION_ID, OTHER_ORGANIZATION_ID}),
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset({(PROJECT_ID, "audit.read"), (PROJECT_ID, "access.read")}),
         organization_scope_triples=frozenset(

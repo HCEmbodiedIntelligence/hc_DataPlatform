@@ -4,7 +4,7 @@
 
 - 页面包含平台“用户管理”、项目“加入申请”和“权限申请”三个正式 API 标签。自助注册账户直接成为 ACTIVE 的空权限主体，相关说明只出现在用户管理上下文。
 - 用户管理消费 `/platform/accounts` 及其状态、角色、重置密码和删除动作；项目审批继续消费当前 Shell scope 下的 membership request 与 capability request 接口。
-- 平台用户管理只接受 `platform.account.read/manage`（或全局平台管理员能力）；项目 `project.access.manage` / `access.manage` 不会扩大为全平台账号权限。
+- 平台用户管理只接受 `platform.account.read/manage`（或全局平台管理员能力）；项目 `access.manage` 不会扩大为全平台账号权限。
 - 项目申请页要求当前项目作用域及 `access.read`。只有平台账号权限且没有项目作用域时，路由强制落在“用户管理”。
 - 当前项目由 Shell scope 提供；列表或决策响应若出现跨项目 identity，前端以 `CONTRACT_MISMATCH` fail closed。
 - 管理员可批准/拒绝 PENDING、撤销 APPROVED；申请人可撤回自己的 PENDING。服务端始终是最终授权边界。

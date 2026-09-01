@@ -8,7 +8,7 @@ from typing import Protocol
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.events import DomainEventEnvelope
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.workflow.service import TemporalWorkflowLauncher
 
 from .models import LifecycleExecutionCandidate, LifecycleExecutionRequest
@@ -161,7 +161,7 @@ class StorageLifecycleScheduleOutboxHandler:
             region_codes=(
                 frozenset({event.region_code}) if event.region_code is not None else frozenset()
             ),
-            roles=frozenset({Role.ADMIN.value}),
+            capabilities=frozenset({"storage.lifecycle.execute"}),
             service_identity=True,
             scope_pairs=frozenset({(event.project_id, event.region_code)}),
             organization_ids=(

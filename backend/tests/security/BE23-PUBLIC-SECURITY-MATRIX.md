@@ -163,7 +163,6 @@
 | `/api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}/enable` | POST | N1 | admin Z7 | scope Z7；same ID pair缺 | A2 | G-RATE | X1 | I5/ETag/key/concurrent conflict | E1 | PARTIAL；危险动作需批准策略 |
 | `/api/v1/projects/{project_id}/storage/lifecycle-policies/{policy_id}/pause` | POST | N1 | admin Z7 | scope Z7；same ID pair缺 | A2 | G-RATE | X1 | I5/ETag/key | E1 | PARTIAL |
 | `/api/v1/projects/{project_id}/storage/lifecycle-audit` | GET | N1 | admin/read source gate | project scope Z7 | A2 | limit≤100；G-RATE | X1 | N/A | safe details局部；对象路径未测 | PARTIAL |
-| `/api/v1/projects/{project_id}/dashboard/snapshot` | GET | N1 | `dashboard.read` Z8 | PostgreSQL exact project/region/time Z8 | source audit Z8 | injected 429 Z8；production no-op/G-RATE | X1 | N/A | E1/G-HTTP500 | PARTIAL：G-RATE/G-HTTP500 |
 | `/api/v1/projects/{project_id}/dashboard/activity` | GET | N1 | `dashboard.read` Z8 | signed cursor + PostgreSQL exact scope Z8 | source audit Z8 | limit≤100；injected 429 Z8；G-RATE | X1 | N/A | E1/G-HTTP500 | PARTIAL：G-RATE/G-HTTP500 |
 | `/api/v1/projects/{project_id}/dashboard/coverage` | GET | N1 | `dashboard.read` Z8 | PostgreSQL exact project/region/time Z8 | source audit Z8 | injected 429 Z8；production no-op/G-RATE | X1 | N/A | E1/G-HTTP500 | PARTIAL：G-RATE/G-HTTP500 |
 | `/api/v1/projects/{project_id}/dashboard/pending-items` | GET | N1 | `dashboard.read` Z8 | signed cursor + PostgreSQL exact scope Z8 | source audit Z8 | limit≤100；injected 429 Z8；G-RATE | X1 | N/A | E1/G-HTTP500 | PARTIAL：G-RATE/G-HTTP500 |

@@ -373,7 +373,7 @@ async function installVisualScope(page: Page) {
             projectId: activeProjectId,
             regionCodes: ["cn-east-01"],
             projectWide: false,
-            capabilities: ["collection.upload"],
+            capabilities: ["upload.manage"],
           },
         ],
         1,
@@ -381,7 +381,7 @@ async function installVisualScope(page: Page) {
       store.setAuthorization({
         scopeKey: useShellStore.getState().scopeKey,
         roleVersion: "e04-visual-v1",
-        capabilities: ["collection.upload"],
+        capabilities: ["upload.manage"],
         fetchedAt: "2026-08-18T05:30:00Z",
       });
     },

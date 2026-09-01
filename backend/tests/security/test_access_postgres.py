@@ -33,7 +33,7 @@ from hc_data_platform.security.access_models import (  # noqa: E402
 )
 from hc_data_platform.security.access_postgres import PostgresAccessRepository  # noqa: E402
 from hc_data_platform.security.access_service import AccessService  # noqa: E402
-from hc_data_platform.security.auth import AuthContext, Role  # noqa: E402
+from hc_data_platform.security.auth import AuthContext  # noqa: E402
 from hc_data_platform.security.passwords import (  # noqa: E402
     PasswordHasher,
     PasswordPolicy,
@@ -117,7 +117,7 @@ def _admin(subject_id: str, organization_id: str, project_id: str) -> AuthContex
         organization_ids=frozenset({organization_id}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset({Role.ADMIN.value}),
+        capabilities=frozenset({"access.manage"}),
         scope_pairs=frozenset({(project_id, None)}),
         organization_scope_triples=frozenset({(organization_id, project_id, None)}),
     )
@@ -166,7 +166,6 @@ def test_postgres_access_request_foreign_keys_map_to_their_actual_resource() -> 
             subject_id=unregistered_principal_id,
             project_ids=frozenset(),
             region_codes=frozenset(),
-            roles=frozenset(),
         )
 
         membership_key = f"foreign-key-membership-{suffix}"
@@ -219,7 +218,7 @@ def test_postgres_access_request_foreign_keys_map_to_their_actual_resource() -> 
 
         capability_key = f"foreign-key-capability-{suffix}"
         capability_command = CapabilityRequestCreate(
-            capability_keys=("datasets.read",),
+            capability_keys=("dataset.read",),
             reason="foreign key regression",
         )
         with pytest.raises(ProblemException) as missing_capability_project:
@@ -398,7 +397,7 @@ def test_postgres_access_scope_revocation_and_concurrent_approval() -> None:
             organization_id=organization_a,
             project_id=project_a,
             command=CapabilityRequestCreate(
-                capability_keys=("datasets.read",),
+                capability_keys=("dataset.read",),
                 reason="read project datasets",
             ),
             idempotency_key=f"capability-{suffix}",
@@ -415,7 +414,7 @@ def test_postgres_access_scope_revocation_and_concurrent_approval() -> None:
             request_id=f"approve-capability-{suffix}",
         )
         before_revoke = service.bootstrap(alice_token)
-        assert before_revoke.available_scopes[0].capabilities == ("datasets.read",)
+        assert before_revoke.available_scopes[0].capabilities == ("dataset.read",)
 
         service.decide_capability_request(
             auth=admin_a,

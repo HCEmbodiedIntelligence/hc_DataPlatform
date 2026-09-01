@@ -24,15 +24,28 @@ from hc_data_platform.security import AuthContext
 from hc_data_platform.workflow.router import router as workflow_router
 
 
-def _auth(*roles: str, projects: tuple[str, ...] = ("project-a",)) -> AuthContext:
+def _auth(*capabilities: str, projects: tuple[str, ...] = ("project-a",)) -> AuthContext:
     return AuthContext(
         subject_id="router-test",
         project_ids=frozenset(projects),
         region_codes=frozenset({"cn-test"}),
-        roles=frozenset(roles),
+        scope_pairs=frozenset(
+            {(project_id, None) for project_id in projects}
+            | {(project_id, "cn-test") for project_id in projects}
+        ),
+        scoped_capabilities=frozenset(
+            (project_id, capability)
+            for project_id in projects
+            for capability in capabilities
+        ),
         organization_ids=frozenset({"organization-a"}),
         organization_scope_triples=frozenset(
             ("organization-a", project_id, "cn-test") for project_id in projects
+        ),
+        organization_scoped_capabilities=frozenset(
+            ("organization-a", project_id, capability)
+            for project_id in projects
+            for capability in capabilities
         ),
     )
 
@@ -90,7 +103,7 @@ def test_aligned_media_rejects_anonymous_and_cross_project_requests(
     assert anonymous.status_code == 401
     assert anonymous.json()["code"] == "AUTHENTICATION_REQUIRED"
 
-    current["auth"] = _auth("annotator", projects=("project-b",))
+    current["auth"] = _auth("episode.read", projects=("project-b",))
     denied = client.post(
         "/api/v1/aligned-media/authorize",
         json=_aligned_media_request(),
@@ -107,17 +120,17 @@ def test_publication_requires_publish_permission_before_accessing_adapters(
     protected_api: tuple[TestClient, dict[str, AuthContext | None]],
 ) -> None:
     client, current = protected_api
-    current["auth"] = _auth("uploader")
+    current["auth"] = _auth("upload.manage")
     denied = client.post("/api/v1/datasets/publication-preflight", json=_publication_request())
     assert denied.status_code == 403
-    assert denied.json()["code"] == "PERMISSION_REQUIRED"
+    assert denied.json()["code"] == "CAPABILITY_REQUIRED"
 
 
 def test_job_listing_requires_an_unambiguous_project_scope(
     protected_api: tuple[TestClient, dict[str, AuthContext | None]],
 ) -> None:
     client, current = protected_api
-    current["auth"] = _auth("uploader", projects=("project-a", "project-b"))
+    current["auth"] = _auth("upload.read", projects=("project-a", "project-b"))
     response = client.get("/api/v1/jobs")
     assert response.status_code == 400
     assert response.json()["code"] == "PROJECT_SCOPE_REQUIRED"
@@ -138,7 +151,7 @@ def test_lance_reconciliation_selects_rls_scope_after_admin_authorization(
 
     client, current = protected_api
     configure_lance_catalog(ScopedCatalog())  # type: ignore[arg-type]
-    current["auth"] = _auth("admin")
+    current["auth"] = _auth("dataset_version.publish")
 
     response = client.post("/api/v1/projects/project-a/datasets/dataset-a/reconciliation")
 
@@ -191,7 +204,7 @@ def test_lance_step_window_is_scoped_audited_and_preserves_nanosecond_precision(
     client, current = protected_api
     configure_lance_catalog(ScopedCatalog())  # type: ignore[arg-type]
     configure_lance_catalog_audit_recorder(audit)
-    current["auth"] = _auth("annotator")
+    current["auth"] = _auth("dataset_version.read")
 
     response = client.get(
         "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-a/steps",

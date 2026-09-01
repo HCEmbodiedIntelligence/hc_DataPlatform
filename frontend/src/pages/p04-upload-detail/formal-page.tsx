@@ -30,8 +30,8 @@ import { createDatasetAlignedMediaSource } from "../p06-dataset-detail/aligned-m
 import {
   PageState,
   StatusTag,
-  UiMetricCard,
-  UiPageHeader,
+  MetricCard,
+  PageHeader,
   type PageStateKind,
 } from "../../shared/ui";
 import {
@@ -613,7 +613,7 @@ function PassedUploadDetail({
   const discovery = detail.manifest.discovery;
   return (
     <section className={styles.passedPage}>
-      <UiPageHeader
+      <PageHeader
         title="上传详情"
         description="数据清单与自动质检结果均来自当前项目和区域的正式运行时接口。"
         breadcrumbs={[
@@ -632,27 +632,27 @@ function PassedUploadDetail({
         }
       />
       <div className={styles.metrics}>
-        <UiMetricCard
+        <MetricCard
           label="数据包大小"
           icon={<FileJson2 />}
           value={formatStorageSize(detail.manifest.total_file_size)}
           description={detail.session.data_package_id}
         />
-        <UiMetricCard
+        <MetricCard
           label="相机"
           icon={<Camera />}
           value={discovery.cameras.length}
           unit="路"
           description="由数据清单自动发现"
         />
-        <UiMetricCard
+        <MetricCard
           label="Topic"
           icon={<RadioTower />}
           value={discovery.topics.length}
           unit="个"
           description="只读采集事实"
         />
-        <UiMetricCard
+        <MetricCard
           label="记录时长"
           icon={<Clock3 />}
           value={formatEffectiveDuration(detail.quality.duration_ns)}
@@ -706,7 +706,7 @@ function PendingQualityUploadDetail({
   const discovery = detail.manifest.discovery;
   return (
     <section className={styles.passedPage}>
-      <UiPageHeader
+      <PageHeader
         title="上传详情"
         description="上传内容已接收，后台摄取和自动质检仍在进行。"
         breadcrumbs={[
@@ -721,27 +721,27 @@ function PendingQualityUploadDetail({
         }
       />
       <div className={styles.metrics}>
-        <UiMetricCard
+        <MetricCard
           label="数据包大小"
           icon={<FileJson2 />}
           value={formatStorageSize(detail.manifest.total_file_size)}
           description={detail.session.data_package_id}
         />
-        <UiMetricCard
+        <MetricCard
           label="相机"
           icon={<Camera />}
           value={discovery.cameras.length}
           unit="路"
           description="由数据清单自动发现"
         />
-        <UiMetricCard
+        <MetricCard
           label="Topic"
           icon={<RadioTower />}
           value={discovery.topics.length}
           unit="个"
           description="只读采集事实"
         />
-        <UiMetricCard
+        <MetricCard
           label="记录开始"
           icon={<Clock3 />}
           value={formatDate(detail.manifest.time_range.start_time)}

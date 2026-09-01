@@ -1462,7 +1462,6 @@ def _request_context(
         project_id=project_id,
         subject_id=None if auth is None else auth.subject_id,
         region_code=region_code,
-        roles=frozenset() if auth is None else auth.roles,
         service_identity=False if auth is None else auth.service_identity,
         platform_admin=False if auth is None else auth.is_platform_admin,
     )

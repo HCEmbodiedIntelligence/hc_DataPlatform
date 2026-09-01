@@ -56,9 +56,7 @@ export function ManagedStorageObjectsPanel({
   enabled: boolean;
 }>) {
   const capabilities = useCapabilities();
-  const canManage =
-    capabilities.has("storage.objects.manage") ||
-    capabilities.has("storage.lifecycle.manage");
+  const canManage = capabilities.has("storage.object.manage");
   const [cursor, setCursor] = useState<string | undefined>();
   const [pendingAction, setPendingAction] = useState<{
     action: ObjectAction;

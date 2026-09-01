@@ -1,5 +1,5 @@
 import type { AuditBootstrap } from '../../../features/audit/types';
-import { UiMetricCard, type MetricState } from '../../../shared/ui';
+import { MetricCard, type MetricState } from '../../../shared/ui';
 import styles from '../styles.module.css';
 
 export function AuditSummaryStrip({
@@ -26,7 +26,7 @@ export function AuditSummaryStrip({
   return (
     <section className={styles.summaryGrid} aria-label="审计指标">
       {cards.map(([label, value]) => (
-        <UiMetricCard
+        <MetricCard
           key={label}
           label={label}
           value={value?.toLocaleString('zh-CN')}

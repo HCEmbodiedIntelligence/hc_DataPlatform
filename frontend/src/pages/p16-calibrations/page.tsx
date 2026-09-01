@@ -24,7 +24,7 @@ import { calibrationsQueryCodec } from "../../features/calibrations/routing";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import {
-  DataCursorPager,
+  CursorPager,
   DataTable,
   DetailTabs,
   PageState,
@@ -591,7 +591,7 @@ export function Component() {
             </div>
             {sets.data ? (
               <footer className={workspace.tableFooter}>
-                <DataCursorPager
+                <CursorPager
                   pageInfo={{
                     startCursor: sets.data.pageInfo.start_cursor,
                     endCursor: sets.data.pageInfo.end_cursor,

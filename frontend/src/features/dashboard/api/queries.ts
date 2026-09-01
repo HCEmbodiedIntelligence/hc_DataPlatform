@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { DashboardScope } from "../types";
 import {
   getDashboardActivity,
-  getDashboardSnapshot,
   getDashboardTaskStatus,
   listDashboardPendingItems,
   type DashboardWindow,
@@ -22,23 +21,6 @@ export function useDashboardActivity(
     queryFn: ({ signal }) => getDashboardActivity(scope!, window!, signal),
     enabled: enabled && scope !== null && window !== null,
     staleTime: 60_000,
-    retry: 2,
-  });
-}
-
-export function useDashboardSnapshot(
-  scope: DashboardScope | null,
-  window: DashboardWindow | null,
-  enabled: boolean,
-) {
-  return useQuery({
-    queryKey:
-      scope && window
-        ? dashboardQueryKeys.snapshot(scope, window)
-        : ["dashboard", "disabled", "snapshot"],
-    queryFn: ({ signal }) => getDashboardSnapshot(scope!, window!, signal),
-    enabled: enabled && scope !== null && window !== null,
-    staleTime: 300_000,
     retry: 2,
   });
 }

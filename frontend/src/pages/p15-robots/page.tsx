@@ -55,7 +55,7 @@ import { isDomainError } from "../../shared/api/domain-error";
 import { useOrganizationCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
-  DataCursorPager,
+  CursorPager,
   DataTable,
   FilterToolbar,
   PageState,
@@ -1009,7 +1009,7 @@ export function Component() {
             </div>
             {robots.data ? (
               <footer className={workspace.tableFooter}>
-                <DataCursorPager
+                <CursorPager
                   pageInfo={{
                     startCursor: robots.data.pageInfo.start_cursor,
                     endCursor: robots.data.pageInfo.end_cursor,

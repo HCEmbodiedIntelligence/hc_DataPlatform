@@ -75,7 +75,7 @@ def _auth(*, delete: bool = True) -> AuthContext:
         "storage.overview.read",
         "episode.read",
         "dataset_version.review",
-        "datasets.publish",
+        "dataset_version.publish",
     }
     if delete:
         capabilities.add("dataset.delete")
@@ -83,7 +83,6 @@ def _auth(*, delete: bool = True) -> AuthContext:
         subject_id="p07-reviewer",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset((PROJECT_ID, value) for value in capabilities),
     )

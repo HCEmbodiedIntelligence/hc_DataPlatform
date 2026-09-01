@@ -25,22 +25,23 @@ const statusPresentation: Readonly<
 };
 
 const capabilityLabels: Readonly<Record<string, string>> = {
-  "project.access.manage": "项目访问管理",
-  "datasets.read": "数据集只读",
-  "datasets.write": "数据集编辑",
-  "datasets.publish": "数据集发布",
-  "collection.upload": "采集上传",
-  "ingest.upload": "数据摄取",
-  "annotation.write": "数据标注",
+  "access.manage": "项目访问管理",
+  "dataset.read": "数据集只读",
+  "dataset.create": "创建数据集",
+  "dataset.update": "编辑数据集",
+  "dataset_version.publish": "数据集发布",
+  "upload.manage": "数据上传",
+  "ingest.import": "数据导入",
+  "annotation.edit": "数据标注",
   "annotation.review": "标注审核",
-  "tag_schema.write": "标签结构管理",
+  "data_schema.publish": "数据结构管理",
   "dashboard.read": "工作台只读",
 };
 
 const elevatedImpact: Readonly<Record<string, string>> = {
-  "project.access.manage": "批准后可管理并审批当前项目的访问申请。",
-  "datasets.publish": "批准后可冻结并发布当前项目的数据集版本。",
-  "tag_schema.write": "批准后可变更当前项目的标签结构。",
+  "access.manage": "批准后可管理并审批当前项目的访问申请。",
+  "dataset_version.publish": "批准后可冻结并发布当前项目的数据集版本。",
+  "data_schema.publish": "批准后可变更当前项目的数据结构。",
 };
 
 export function formatDateTime(value: string): string {

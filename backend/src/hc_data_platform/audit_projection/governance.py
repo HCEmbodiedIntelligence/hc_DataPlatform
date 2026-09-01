@@ -989,7 +989,6 @@ class AuditExportOutboxHandler:
             subject_id="audit-export-dispatcher",
             project_ids=frozenset({scope.project_id}),
             region_codes=frozenset({region_code}),
-            roles=frozenset(),
             service_identity=True,
             capabilities=frozenset({"audit.read", "audit.export"}),
             scope_pairs=frozenset({(scope.project_id, region_code)}),

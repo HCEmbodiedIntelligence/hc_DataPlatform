@@ -28,10 +28,26 @@ from hc_data_platform.ingest.models import ManifestDiscoveryV1
 from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.security import AuthContext
 
+ANNOTATOR_CAPABILITIES = (
+    "annotation_task.read",
+    "annotation_task.claim",
+    "annotation.edit",
+    "annotation.save",
+    "annotation.submit",
+    "data_schema.read",
+)
+REVIEWER_CAPABILITIES = ("annotation_task.read", "annotation.review")
+PUBLISHER_CAPABILITIES = (
+    "annotation_task.read",
+    "dataset_version.publish",
+    "data_schema.read",
+    "data_schema.publish",
+)
+
 
 def auth(
     subject: str,
-    *roles: str,
+    *capabilities: str,
     projects: tuple[str, ...] = ("project-a",),
     regions: tuple[str, ...] = ("cn-hz",),
 ):
@@ -39,7 +55,13 @@ def auth(
         subject_id=subject,
         project_ids=frozenset(projects),
         region_codes=frozenset(regions),
-        roles=frozenset(roles),
+        scope_pairs=frozenset(
+            {(project_id, None) for project_id in projects}
+            | {(project_id, region) for project_id in projects for region in regions}
+        ),
+        scoped_capabilities=frozenset(
+            (project_id, capability) for project_id in projects for capability in capabilities
+        ),
     )
 
 
@@ -66,7 +88,7 @@ def api() -> Iterator[tuple[TestClient, dict[str, AuthContext], InMemoryAnnotati
             media_type="application/problem+json",
         )
 
-    current = {"auth": auth("alice", "annotator")}
+    current = {"auth": auth("alice", *ANNOTATOR_CAPABILITIES)}
     app.dependency_overrides[get_annotation_service] = lambda: service
     app.dependency_overrides[get_annotation_auth] = lambda: current["auth"]
     with TestClient(app) as client:
@@ -177,7 +199,7 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
     assert mismatched_legacy_filter.status_code == 400
     assert mismatched_legacy_filter.json()["code"] == "INVALID_CURSOR"
 
-    current["auth"] = auth("bob", "annotator")
+    current["auth"] = auth("bob", *ANNOTATOR_CAPABILITIES)
     replayed_by_another_subject = client.get(
         "/api/v1/annotations/revisions",
         params={"after": first_body["page_info"]["end_cursor"]},
@@ -186,7 +208,7 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
     assert replayed_by_another_subject.status_code == 400
     assert replayed_by_another_subject.json()["code"] == "INVALID_CURSOR"
 
-    current["auth"] = auth("mallory", "annotator", projects=("project-b",))
+    current["auth"] = auth("mallory", *ANNOTATOR_CAPABILITIES, projects=("project-b",))
     denied = client.get("/api/v1/annotations/revisions", headers=headers)
     assert denied.status_code == 403
 
@@ -206,7 +228,16 @@ def test_revision_thread_exposes_only_the_task_scoped_legacy_draft_mapping(
     )
     importer = AnnotationActor(
         actor_id="legacy-cleaning-migration",
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         project_ids=frozenset({"project-a"}),
     )
     claimed = service.claim("task-api-legacy", importer)
@@ -354,7 +385,7 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
     assert submitted.json()["revision"] == 1
     assert submitted.json()["task_id"] == "task-api"
 
-    current["auth"] = auth("alice", "annotator", "reviewer")
+    current["auth"] = auth("alice", *ANNOTATOR_CAPABILITIES, *REVIEWER_CAPABILITIES)
     self_review = client.post(
         "/api/v1/annotation-tasks/task-api/reviews",
         headers={"If-Match": submitted.headers["etag"]},
@@ -362,7 +393,7 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
     )
     assert self_review.status_code == 403
 
-    current["auth"] = auth("bob", "reviewer")
+    current["auth"] = auth("bob", *REVIEWER_CAPABILITIES)
     reviewed = client.post(
         "/api/v1/annotation-tasks/task-api/reviews",
         headers={"If-Match": submitted.headers["etag"]},
@@ -376,7 +407,7 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
         "/api/v1/projects/project-a/rollouts/rollout-api/approved-annotation"
     )
     assert reviewer_read.status_code == 403
-    current["auth"] = auth("pat", "publisher")
+    current["auth"] = auth("pat", *PUBLISHER_CAPABILITIES)
     snapshot = client.get("/api/v1/projects/project-a/rollouts/rollout-api/approved-annotation")
     assert snapshot.status_code == 200
     assert snapshot.json()["annotation_revision"] == 1
@@ -384,7 +415,7 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
         {"start_step": 300, "end_step": 450, "modality_scope": "ALL_MODALITIES"}
     ]
 
-    current["auth"] = auth("alice", "annotator")
+    current["auth"] = auth("alice", *ANNOTATOR_CAPABILITIES)
     edited = client.post(
         "/api/v1/annotation-tasks/task-api/revisions",
         headers={"If-Match": approved_etag},
@@ -402,7 +433,7 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
         },
     )
     assert edited.status_code == 201
-    current["auth"] = auth("pat", "publisher")
+    current["auth"] = auth("pat", *PUBLISHER_CAPABILITIES)
     no_longer_approved = client.get(
         "/api/v1/projects/project-a/rollouts/rollout-api/approved-annotation"
     )
@@ -484,7 +515,7 @@ def test_restore_api_appends_a_scoped_immutable_data_revision(
     assert submitted.status_code == 201
     assert submitted.json()["revision"] == 2
 
-    current["auth"] = auth("bob", "annotator")
+    current["auth"] = auth("bob", *ANNOTATOR_CAPABILITIES)
     denied = client.post(
         "/api/v1/annotation-tasks/task-api/revisions:restore",
         headers={"If-Match": restored.headers["etag"]},
@@ -502,11 +533,11 @@ def test_api_denies_cross_project_and_reports_unconfigured_provider(
     api: tuple[TestClient, dict[str, AuthContext], InMemoryAnnotationService],
 ) -> None:
     client, current, _ = api
-    current["auth"] = auth("mallory", "reviewer", projects=("project-b",))
+    current["auth"] = auth("mallory", *REVIEWER_CAPABILITIES, projects=("project-b",))
     cross_project = client.get("/api/v1/annotation-tasks/task-api")
     assert cross_project.status_code == 403
 
-    current["auth"] = auth("uploader", "uploader")
+    current["auth"] = auth("uploader", "upload.read", "upload.manage")
     wrong_role = client.get("/api/v1/annotation-tasks/task-api")
     assert wrong_role.status_code == 403
 
@@ -521,7 +552,7 @@ def test_api_denies_cross_project_and_reports_unconfigured_provider(
         "daily_cost_limit_micros": 0,
     }
 
-    current["auth"] = auth("alice", "annotator")
+    current["auth"] = auth("alice", *ANNOTATOR_CAPABILITIES)
     disabled = client.post(
         "/api/v1/annotation-tasks/task-api/auto-annotation",
         json={"revision": 0},
@@ -633,7 +664,7 @@ def test_annotation_success_responses_are_not_cacheable(
     assert submission.status_code == 200
     assert_no_store(submission)
 
-    current["auth"] = auth("bob", "reviewer")
+    current["auth"] = auth("bob", *REVIEWER_CAPABILITIES)
     reviewed = client.post(
         "/api/v1/annotation-tasks/task-api/reviews",
         headers={"If-Match": submitted.headers["etag"]},
@@ -646,7 +677,7 @@ def test_annotation_success_responses_are_not_cacheable(
     assert reviewed.status_code == 200
     assert_no_store(reviewed)
 
-    current["auth"] = auth("publisher", "publisher")
+    current["auth"] = auth("publisher", *PUBLISHER_CAPABILITIES)
     approved = client.get("/api/v1/projects/project-a/rollouts/rollout-api/approved-annotation")
     assert approved.status_code == 200
     assert_no_store(approved)

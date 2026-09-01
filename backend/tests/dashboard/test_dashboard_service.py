@@ -7,18 +7,13 @@ from pydantic import ValidationError
 
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.dashboard.models import (
-    SIGNAL_STAGES,
     DashboardActivityEventType,
     DashboardPendingItemType,
     DashboardPendingSeverity,
-    DashboardPublishedRegionState,
     DashboardResourceType,
     DashboardSectionError,
     DashboardSectionState,
     DashboardSectionStatus,
-    DashboardSignalPipelineState,
-    DashboardSignalStageCount,
-    SignalStage,
 )
 from hc_data_platform.dashboard.repository import (
     CollectionObservationFact,
@@ -28,8 +23,6 @@ from hc_data_platform.dashboard.repository import (
     DashboardScope,
     DashboardWindow,
     InMemoryDashboardRepository,
-    PublicationLineageSummary,
-    SignalPipelineSummary,
 )
 from hc_data_platform.dashboard.service import (
     DashboardCursorCodec,
@@ -43,9 +36,10 @@ from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import (
     CAPABILITY_ANNOTATION_REVIEW,
     CAPABILITY_DASHBOARD_READ,
-    CAPABILITY_DATASETS_PUBLISH,
-    CAPABILITY_DATASETS_READ,
-    CAPABILITY_INGEST_UPLOAD,
+    CAPABILITY_DATASET_READ,
+    CAPABILITY_DATASET_VERSION_PUBLISH,
+    CAPABILITY_UPLOAD_MANAGE,
+    CAPABILITY_UPLOAD_READ,
 )
 
 NOW = datetime(2026, 8, 18, 8, tzinfo=timezone.utc)
@@ -64,7 +58,6 @@ def auth(
         subject_id=principal,
         project_ids=frozenset({project}),
         region_codes=frozenset({region}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project, region)}),
         scoped_capabilities=frozenset(
             (project, capability) for capability in (CAPABILITY_DASHBOARD_READ, *capabilities)
@@ -95,94 +88,6 @@ def common(actor: AuthContext) -> dict[str, object]:
         "range_end": END,
         "timezone_name": "Asia/Shanghai",
     }
-
-
-def test_snapshot_counts_project_region_signal_stages_without_fabricating_a_funnel() -> None:
-    summary = SignalPipelineSummary(8, 7, 6, 5, 4, 3, 2, 1)
-    repository = InMemoryDashboardRepository(
-        signal_pipeline_summary=summary,
-        publication_summary=PublicationLineageSummary(
-            True,
-            lineage_count=1,
-            publication_count=1,
-            latest_published_at=NOW - timedelta(minutes=1),
-        ),
-    )
-    service = DashboardService(repository, clock=lambda: NOW)
-    snapshot = service.snapshot(**common(auth()))
-
-    assert snapshot.as_of == NOW
-    assert snapshot.sections.signal_pipeline.stages == SIGNAL_STAGES
-    assert snapshot.sections.signal_pipeline.status is DashboardSectionStatus.READY
-    assert snapshot.sections.signal_pipeline.error is None
-    assert tuple(
-        (item.stage, item.count) for item in snapshot.sections.signal_pipeline.stage_counts
-    ) == tuple(zip(SIGNAL_STAGES, summary.counts, strict=True))
-    assert snapshot.sections.episodes.status is DashboardSectionStatus.BLOCKED
-    assert snapshot.sections.work.status is DashboardSectionStatus.BLOCKED
-    assert snapshot.sections.signal_pipeline.published_region.status is (
-        DashboardSectionStatus.READY
-    )
-    assert snapshot.sections.signal_pipeline.published_region.lineage_count == 1
-    assert "storage" not in snapshot.sections.model_dump()
-    assert [record.endpoint for record in repository.audits] == ["snapshot"]
-
-
-@pytest.mark.parametrize(
-    ("summary", "status", "lineage_count", "publication_count"),
-    (
-        (
-            PublicationLineageSummary(True),
-            DashboardSectionStatus.EMPTY,
-            0,
-            0,
-        ),
-        (
-            PublicationLineageSummary(
-                True,
-                lineage_count=3,
-                publication_count=2,
-                latest_published_at=NOW - timedelta(minutes=1),
-            ),
-            DashboardSectionStatus.READY,
-            3,
-            2,
-        ),
-        (
-            PublicationLineageSummary(
-                True,
-                lineage_count=2,
-                publication_count=1,
-                unresolved_history_count=4,
-                latest_published_at=NOW - timedelta(minutes=1),
-            ),
-            DashboardSectionStatus.PARTIAL,
-            2,
-            1,
-        ),
-        (
-            PublicationLineageSummary(True, unresolved_history_count=4),
-            DashboardSectionStatus.BLOCKED,
-            None,
-            None,
-        ),
-    ),
-)
-def test_published_region_projects_only_certain_lineage(
-    summary: PublicationLineageSummary,
-    status: DashboardSectionStatus,
-    lineage_count: int | None,
-    publication_count: int | None,
-) -> None:
-    service = DashboardService(
-        InMemoryDashboardRepository(publication_summary=summary),
-        clock=lambda: NOW,
-    )
-    published = service.snapshot(**common(auth())).sections.signal_pipeline.published_region
-    assert published.status is status
-    assert published.lineage_count == lineage_count
-    assert published.publication_count == publication_count
-    assert published.unresolved_history_count == summary.unresolved_history_count
 
 
 def event(
@@ -347,7 +252,7 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
     service = DashboardService(repository, cursor_secret="pending-test", clock=lambda: NOW)
 
     upload_only = service.pending_items(
-        **common(auth(capabilities=(CAPABILITY_INGEST_UPLOAD,))),
+        **common(auth(capabilities=(CAPABILITY_UPLOAD_MANAGE,))),
         cursor=None,
         limit=50,
     ).pending_items
@@ -357,11 +262,12 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
     all_sources = service.pending_items(
         **common(
             auth(
-                capabilities=(
-                    CAPABILITY_INGEST_UPLOAD,
-                    CAPABILITY_DATASETS_READ,
+                    capabilities=(
+                        CAPABILITY_UPLOAD_MANAGE,
+                        CAPABILITY_UPLOAD_READ,
+                        CAPABILITY_DATASET_READ,
                     CAPABILITY_ANNOTATION_REVIEW,
-                    CAPABILITY_DATASETS_PUBLISH,
+                    CAPABILITY_DATASET_VERSION_PUBLISH,
                 )
             )
         ),
@@ -508,7 +414,7 @@ def test_time_validation_supports_24h_7d_30d_dst_and_technical_cap() -> None:
     assert too_long.value.problem.code == "DASHBOARD_TIME_RANGE_TOO_LARGE"
 
 
-def test_section_invariants_and_stage_catalog_reject_ambiguous_states() -> None:
+def test_section_invariants_reject_ambiguous_states() -> None:
     with pytest.raises(ValidationError):
         DashboardSectionState(status=DashboardSectionStatus.BLOCKED)
     with pytest.raises(ValidationError):
@@ -516,19 +422,4 @@ def test_section_invariants_and_stage_catalog_reject_ambiguous_states() -> None:
             status=DashboardSectionStatus.EMPTY,
             as_of=NOW,
             error=DashboardSectionError(code="BAD", message="must not be attached"),
-        )
-    with pytest.raises(ValidationError):
-        DashboardSignalPipelineState(
-            status=DashboardSectionStatus.BLOCKED,
-            error=DashboardSectionError(code="BLOCKED", message="blocked"),
-            stages=(*SIGNAL_STAGES[:-1], SignalStage.ANNOTATION),
-            stage_counts=tuple(
-                DashboardSignalStageCount(stage=stage, count=0) for stage in SIGNAL_STAGES
-            ),
-            published_region=DashboardPublishedRegionState(
-                status=DashboardSectionStatus.EMPTY,
-                as_of=NOW,
-                lineage_count=0,
-                publication_count=0,
-            ),
         )

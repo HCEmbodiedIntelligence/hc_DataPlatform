@@ -2,15 +2,12 @@ import type {
   DashboardActivity,
   DashboardPendingPage,
   DashboardSection,
-  DashboardSnapshot,
   DashboardTaskListItem,
   DashboardTaskStatus,
-  DashboardSignalStage,
 } from "../types";
 import type {
   DashboardActivityWire,
   DashboardPendingPageWire,
-  DashboardSnapshotWire,
   DashboardTaskStatusWire,
 } from "./schemas";
 
@@ -95,35 +92,6 @@ export function adaptDashboardActivity(
       summary: item.summary,
       target: item.target,
     })),
-  };
-}
-
-export function adaptDashboardSnapshot(
-  wire: DashboardSnapshotWire,
-): DashboardSnapshot {
-  const pipeline = wire.sections.signal_pipeline;
-  const published = pipeline.published_region;
-  const stageCounts = Object.fromEntries(
-    pipeline.stage_counts.map((item) => [item.stage, item.count]),
-  ) as Record<DashboardSignalStage, number>;
-  return {
-    from: wire.from,
-    to: wire.to,
-    timezone: wire.timezone,
-    asOf: wire.as_of,
-    signalPipeline: {
-      ...section(pipeline),
-      stages: pipeline.stages,
-      stageCounts,
-      publishedRegion: {
-        ...section(published),
-        lineageCount: published.lineage_count ?? null,
-        publicationCount: published.publication_count ?? null,
-        unresolvedHistoryCount: published.unresolved_history_count,
-      },
-    },
-    episodes: section(wire.sections.episodes),
-    work: section(wire.sections.work),
   };
 }
 

@@ -122,7 +122,6 @@ def reader(*project_ids: str) -> AuthContext:
         subject_id="inventory-reader",
         project_ids=frozenset(project_ids),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset((project_id, None) for project_id in project_ids),
     )

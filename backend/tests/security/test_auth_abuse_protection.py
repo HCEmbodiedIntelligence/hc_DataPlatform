@@ -129,7 +129,7 @@ def test_global_security_capability_unlocks_temporary_lock_without_project_admin
         subject_id="project-admin",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
-        roles=frozenset({"admin"}),
+        capabilities=frozenset({"access.manage"}),
         scope_pairs=frozenset({("project-a", None)}),
     )
     with pytest.raises(ProblemException) as denied:
@@ -144,7 +144,6 @@ def test_global_security_capability_unlocks_temporary_lock_without_project_admin
         subject_id="platform-security-operator",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE}),
     )
     service.unlock_account(

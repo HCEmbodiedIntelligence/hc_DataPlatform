@@ -68,9 +68,7 @@ export function LifecycleExecutionPanel({
   const canExecute =
     capabilities.has("storage.lifecycle.execute") ||
     capabilities.has("storage.lifecycle.manage");
-  const canApprove =
-    capabilities.has("storage.lifecycle.approve") ||
-    capabilities.has("project.access.manage");
+  const canApprove = capabilities.has("storage.lifecycle.approve");
   const canManage = capabilities.has("storage.lifecycle.manage");
   const executablePolicies = policies.filter(
     (policy) =>

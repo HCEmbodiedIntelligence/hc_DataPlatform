@@ -37,7 +37,6 @@ def _platform_admin() -> AuthContext:
         subject_id="object-store-config-admin",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
     )
 
@@ -47,7 +46,6 @@ def _authenticated_user() -> AuthContext:
         subject_id="object-store-location-user",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset(),
     )
 

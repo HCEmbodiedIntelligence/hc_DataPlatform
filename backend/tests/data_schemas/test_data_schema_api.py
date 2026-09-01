@@ -38,7 +38,7 @@ def _auth(*, capabilities: frozenset[str] | None = None) -> AuthContext:
                 "data_schema.import",
                 "data_schema.validate",
                 "data_schema.publish",
-                "datasets.read",
+                "dataset_version.read",
             }
         )
     )
@@ -46,7 +46,6 @@ def _auth(*, capabilities: frozenset[str] | None = None) -> AuthContext:
         subject_id="schema-reader",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, None), (PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset(
             (PROJECT_ID, capability) for capability in resolved_capabilities

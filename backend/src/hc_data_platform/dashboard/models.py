@@ -31,17 +31,6 @@ class DashboardSectionStatus(str, Enum):
     BLOCKED = "BLOCKED"
 
 
-class SignalStage(str, Enum):
-    COLLECTED = "COLLECTED"
-    RECEIVED = "RECEIVED"
-    AUTO_QC = "AUTO_QC"
-    ALIGNED_30_HZ = "ALIGNED_30_HZ"
-    LANCE = "LANCE"
-    ANNOTATION = "ANNOTATION"
-    REVIEW = "REVIEW"
-    PUBLISHED = "PUBLISHED"
-
-
 class TaskLifecycle(str, Enum):
     ACTIVE = "ACTIVE"
     CLOSED = "CLOSED"
@@ -148,9 +137,6 @@ class TaskStandardizationCounts(BaseModel):
     lance_writing: int = Field(ge=0)
     lance_failed: int = Field(ge=0)
     ready: int = Field(ge=0)
-    # Kept at zero for response compatibility. Automatic-QC findings are
-    # isolated as problem data; they are not task or standardization blockers.
-    blocked_by_quality: int = Field(default=0, ge=0)
     isolated_by_quality: int = Field(default=0, ge=0)
     unavailable: int = Field(default=0, ge=0)
 
@@ -304,18 +290,6 @@ class DashboardTaskStatusResponse(BaseModel):
         return self
 
 
-SIGNAL_STAGES: tuple[SignalStage, ...] = (
-    SignalStage.COLLECTED,
-    SignalStage.RECEIVED,
-    SignalStage.AUTO_QC,
-    SignalStage.ALIGNED_30_HZ,
-    SignalStage.LANCE,
-    SignalStage.ANNOTATION,
-    SignalStage.REVIEW,
-    SignalStage.PUBLISHED,
-)
-
-
 class DashboardActivityEventType(str, Enum):
     UPLOAD_COMMITTED = "UPLOAD_COMMITTED"
     QC_COMPLETED = "QC_COMPLETED"
@@ -381,65 +355,6 @@ class DashboardSectionState(BaseModel):
         return self
 
 
-class DashboardPublishedRegionState(DashboardSectionState):
-    lineage_count: int | None = Field(default=None, ge=0)
-    publication_count: int | None = Field(default=None, ge=0)
-    unresolved_history_count: int = Field(default=0, ge=0)
-
-    @model_validator(mode="after")
-    def validate_counts(self) -> DashboardPublishedRegionState:
-        if self.status is DashboardSectionStatus.BLOCKED:
-            if self.lineage_count is not None or self.publication_count is not None:
-                raise ValueError("blocked publication lineage cannot claim counts")
-        else:
-            if self.lineage_count is None or self.publication_count is None:
-                raise ValueError("queryable publication lineage requires factual counts")
-        if (
-            self.status in {DashboardSectionStatus.READY, DashboardSectionStatus.EMPTY}
-            and self.unresolved_history_count
-        ):
-            raise ValueError("complete publication lineage cannot have unresolved history")
-        if self.status is DashboardSectionStatus.EMPTY and (
-            self.lineage_count != 0 or self.publication_count != 0
-        ):
-            raise ValueError("empty publication lineage requires zero counts")
-        return self
-
-
-class DashboardSignalStageCount(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    stage: SignalStage
-    count: int = Field(ge=0)
-
-
-class DashboardSignalPipelineState(DashboardSectionState):
-    stages: tuple[SignalStage, ...] = SIGNAL_STAGES
-    stage_counts: tuple[DashboardSignalStageCount, ...]
-    published_region: DashboardPublishedRegionState
-
-    @model_validator(mode="after")
-    def validate_stages(self) -> DashboardSignalPipelineState:
-        if self.stages != SIGNAL_STAGES:
-            raise ValueError("the signal-stage catalog is fixed and ordered")
-        if tuple(item.stage for item in self.stage_counts) != SIGNAL_STAGES:
-            raise ValueError("signal-stage counts must cover the fixed catalog in order")
-        counts = tuple(item.count for item in self.stage_counts)
-        if self.status is DashboardSectionStatus.EMPTY and any(counts):
-            raise ValueError("empty signal pipelines require zero stage counts")
-        if self.status is DashboardSectionStatus.READY and not any(counts):
-            raise ValueError("ready signal pipelines require at least one factual stage count")
-        return self
-
-
-class DashboardSnapshotSections(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    signal_pipeline: DashboardSignalPipelineState
-    episodes: DashboardSectionState
-    work: DashboardSectionState
-
-
 class DashboardResponseBase(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -450,10 +365,6 @@ class DashboardResponseBase(BaseModel):
     range_end: AwareDatetime = Field(alias="to")
     timezone: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     as_of: AwareDatetime
-
-
-class DashboardSnapshotResponse(DashboardResponseBase):
-    sections: DashboardSnapshotSections
 
 
 class DashboardPageSectionState(DashboardSectionState):

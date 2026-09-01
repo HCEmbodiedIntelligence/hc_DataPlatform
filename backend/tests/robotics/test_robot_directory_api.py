@@ -27,7 +27,6 @@ def _auth(*, manage: bool = False, model_manage: bool = False) -> AuthContext:
         project_ids=frozenset({PROJECT_ID}),
         organization_ids=frozenset({ORGANIZATION_ID}),
         region_codes=frozenset(),
-        roles=frozenset(),
         scope_pairs=frozenset(),
         organization_scope_triples=frozenset(),
         organization_scoped_capabilities=frozenset(capabilities),

@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
-from hc_data_platform.security.auth import AuthContext, Permission
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .models import (
@@ -52,11 +52,11 @@ OrganizationId = Annotated[
 
 
 def _authorize_read(auth: AuthContext, organization_id: str, project_id: str) -> None:
-    authorize_scope(auth, project_id, Permission.READ, organization_id=organization_id)
+    authorize_scope(auth, project_id, "upload.read", organization_id=organization_id)
 
 
 def _authorize_manage(auth: AuthContext, organization_id: str, project_id: str) -> None:
-    authorize_scope(auth, project_id, Permission.UPLOAD, organization_id=organization_id)
+    authorize_scope(auth, project_id, "upload.manage", organization_id=organization_id)
 
 
 def _command_headers(
@@ -280,7 +280,7 @@ def get_collection_task_progress(
     authorize_scope(
         auth,
         project_id,
-        Permission.READ,
+        "upload.read",
         region_code,
         organization_id=organization_id,
     )
@@ -305,7 +305,7 @@ def list_collection_task_packages(
     authorize_scope(
         auth,
         project_id,
-        Permission.READ,
+        "upload.read",
         region_code,
         organization_id=organization_id,
     )

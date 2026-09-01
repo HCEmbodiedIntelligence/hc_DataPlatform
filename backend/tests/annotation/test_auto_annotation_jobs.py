@@ -48,7 +48,16 @@ def _auth(project_id: str = "project-a") -> AuthContext:
         subject_id="annotator-a",
         project_ids=frozenset({project_id}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         scope_pairs=frozenset({(project_id, "cn-hz")}),
     )
 

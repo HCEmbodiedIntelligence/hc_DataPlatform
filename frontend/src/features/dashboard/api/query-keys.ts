@@ -19,14 +19,6 @@ export const dashboardQueryKeys = {
       from: window.from,
       to: window.to,
     }),
-  snapshot: (scope: DashboardScope, window: DashboardWindow) =>
-    makeQueryKey("dashboard", "snapshot", {
-      organizationId: scope.organizationId,
-      projectId: scope.projectId,
-      regionCode: scope.regionCode,
-      timezone: scope.timezone,
-      ...window,
-    }),
   pending: (
     scope: DashboardScope,
     window: DashboardWindow,

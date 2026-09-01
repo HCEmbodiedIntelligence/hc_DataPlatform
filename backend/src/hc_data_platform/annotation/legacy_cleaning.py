@@ -102,7 +102,9 @@ class LegacyCleaningAnnotationAdapter:
         )
         migration_actor = AnnotationActor(
             actor_id="legacy-cleaning-migration",
-            roles=frozenset({"admin"}),
+            capabilities=frozenset(
+                {"annotation_task.claim", "annotation_task.assign", "annotation.save"}
+            ),
             project_ids=frozenset({draft.project_id}),
         )
         task = self._service.claim(task_id, migration_actor)

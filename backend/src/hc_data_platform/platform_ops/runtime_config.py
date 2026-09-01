@@ -19,7 +19,6 @@ from pydantic import (
     Field,
     StringConstraints,
     ValidationError,
-    model_validator,
 )
 
 from hc_data_platform.core.dbapi import normalize_postgres_dsn
@@ -74,22 +73,6 @@ class RuntimeConfigValues(BaseModel):
         default=False,
         alias="ui.maintenance_banner_enabled",
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def read_legacy_preview_interval(cls, value: object) -> object:
-        """Read pre-convergence snapshots without accepting the old key on new writes."""
-
-        if not isinstance(value, Mapping):
-            return value
-        legacy_key = "scheduling.preview_gc_interval_seconds"
-        canonical_key = "scheduling.media_maintenance_interval_seconds"
-        if legacy_key not in value:
-            return value
-        normalized = dict(value)
-        normalized.setdefault(canonical_key, normalized[legacy_key])
-        del normalized[legacy_key]
-        return normalized
 
     def external(self) -> dict[str, bool | int]:
         return self.model_dump(by_alias=True)

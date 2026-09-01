@@ -72,7 +72,7 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
 }));
 
 vi.mock("../../shared/ui", () => ({
-  DataCursorPager: () => null,
+  CursorPager: () => null,
   EntityDrawer: () => null,
   FilterToolbar: () => null,
   PageState: () => null,

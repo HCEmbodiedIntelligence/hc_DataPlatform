@@ -86,7 +86,7 @@ class DataSchemaService:
     ) -> DataSchemaDatasetReferenceScope:
         ScopeGuard.require(auth, project_id, region_code)
         auth.require_capability("data_schema.read", project_id)
-        auth.require_capability("datasets.read", project_id)
+        auth.require_capability("dataset_version.read", project_id)
         if write:
             auth.require_capability("data_schema.publish", project_id)
         if not self._repository.has_organization_project(

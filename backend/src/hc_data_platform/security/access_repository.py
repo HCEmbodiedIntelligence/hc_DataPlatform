@@ -47,7 +47,7 @@ from .admin_accounts import (
     PlatformAccountRole,
     recovery_email_hint,
 )
-from .auth import AuthContext, Role
+from .auth import AuthContext
 from .capabilities import CAPABILITY_PLATFORM_ADMIN, PLATFORM_ADMIN_CAPABILITIES
 from .recovery import (
     AccountRecoveryRepository,
@@ -195,18 +195,14 @@ def can_manage_project(
         ScopeGuard.require(auth, project_id, organization_id=organization_id)
     except ProblemException:
         return False
-    return Role.ADMIN.value in auth.roles or auth.has_capability(
-        "project.access.manage", project_id, organization_id
-    )
+    return auth.has_capability("access.manage", project_id, organization_id)
 
 
 def require_project_manager(
     auth: AuthContext, project_id: str, organization_id: str | None = None
 ) -> None:
     ScopeGuard.require(auth, project_id, organization_id=organization_id)
-    if Role.ADMIN.value not in auth.roles and not auth.has_capability(
-        "project.access.manage", project_id, organization_id
-    ):
+    if not auth.has_capability("access.manage", project_id, organization_id):
         raise problem(
             status=403,
             code="ACCESS_MANAGEMENT_REQUIRED",

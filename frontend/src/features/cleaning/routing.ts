@@ -449,8 +449,7 @@ function buildCleaningDrafts(input: CleaningDraftsRouteParams = {}): string {
     params.set("limit", String(input.limit));
   if (input.after && !input.before) params.set("after", input.after);
   if (input.before && !input.after) params.set("before", input.before);
-  const query = params.toString();
-  return query ? `/manual/drafts?${query}` : "/manual/drafts";
+  return "/annotations/revisions";
 }
 
 function buildCleaningWorkbench(input: CleaningWorkbenchRouteParams): string {
@@ -480,9 +479,9 @@ function buildCleaningWorkbench(input: CleaningWorkbenchRouteParams): string {
     params.set("compare", input.compare);
   if (input.returnTo && isSafeAppRelativeUrl(input.returnTo))
     params.set("returnTo", input.returnTo);
+  params.set("legacyDraftId", input.draftId);
   const query = params.toString();
-  const path = `/manual/drafts/${encodeURIComponent(input.draftId)}`;
-  return query ? `${path}?${query}` : path;
+  return `/annotations/revisions?${query}`;
 }
 
 export const routes = {

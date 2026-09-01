@@ -37,7 +37,7 @@ import { isDomainError } from "../../shared/api/domain-error";
 import { formatStorageSize } from "../../shared/lib/metric-presentation";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
-  DataCursorPager,
+  CursorPager,
   DataTable,
   DetailTabs,
   FilterToolbar,
@@ -585,7 +585,7 @@ export function Component() {
             </div>
             {models.data ? (
               <footer className={workspace.tableFooter}>
-                <DataCursorPager
+                <CursorPager
                   pageInfo={{
                     startCursor: models.data.pageInfo.start_cursor,
                     endCursor: models.data.pageInfo.end_cursor,

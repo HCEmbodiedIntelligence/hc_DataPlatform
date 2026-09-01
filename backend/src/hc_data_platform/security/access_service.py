@@ -331,7 +331,6 @@ class AccessService:
             subject_id=resolved.principal.principal_id,
             project_ids=project_ids,
             region_codes=region_codes,
-            roles=frozenset(),
             capabilities=frozenset(resolved.platform_capabilities),
             capability_revision=resolved.capability_revision,
             scope_pairs=scope_pairs,

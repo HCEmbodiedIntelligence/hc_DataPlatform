@@ -69,15 +69,11 @@ class Wave2TestJwtIssuer:
                 "sub": subject,
                 "iat": now,
                 "exp": now + timedelta(minutes=30),
-                "roles": [],
-                "project_ids": [scope.project_id],
-                "region_codes": [scope.region_code],
-                "capabilities": [],
                 "organization_scopes": [
                     {
                         "organization_id": scope.organization_id,
                         "project_id": scope.project_id,
-                        "region_code": None,
+                        "region_code": scope.region_code,
                         "capabilities": list(capabilities),
                     }
                 ],
@@ -201,7 +197,7 @@ class HttpMainChainAdapter:
         self._bearers["access_admin"] = self._issuer.issue(
             subject=self._principals["admin"],
             scope=scope,
-            capabilities=("project.access.manage",),
+            capabilities=("access.manage",),
         )
         return StageResult(resource_ids=resources, request_ids=tuple(request_ids))
 
@@ -235,8 +231,8 @@ class HttpMainChainAdapter:
             request_ids.extend(item for item in (requested.request_id, approved.request_id) if item)
 
         requested_capabilities = {
-            "contractor": ["collection.upload", "annotation.write"],
-            "admin": ["project.access.manage", "tag_schema.write", "annotation.review"],
+            "contractor": ["upload.manage", "annotation.edit"],
+            "admin": ["access.manage", "data_schema.publish", "annotation.review"],
         }
         for identity, capability_keys in requested_capabilities.items():
             capability = self._request(

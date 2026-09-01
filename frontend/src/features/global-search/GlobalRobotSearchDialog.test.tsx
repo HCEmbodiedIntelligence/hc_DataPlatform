@@ -380,7 +380,7 @@ describe("global robot search", () => {
     useShellStore.getState().setAuthorization({
       scopeKey: makeScopeKey(scope),
       roleVersion: "role-search-both",
-      capabilities: ["robot.read", "ingest_source.read", "datasets.read"],
+      capabilities: ["robot.read", "ingest_source.read", "dataset.read"],
       fetchedAt: "2026-08-21T08:00:00Z",
     });
     const user = userEvent.setup();
@@ -478,7 +478,7 @@ describe("global robot search", () => {
     useShellStore.getState().setAuthorization({
       scopeKey: makeScopeKey(scope),
       roleVersion: "role-search-datasets-only",
-      capabilities: ["datasets.read"],
+      capabilities: ["dataset.read"],
       fetchedAt: "2026-08-21T08:00:00Z",
     });
     const user = userEvent.setup();

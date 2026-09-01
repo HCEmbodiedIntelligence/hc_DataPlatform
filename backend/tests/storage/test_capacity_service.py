@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from hc_data_platform.core.errors import ProblemException
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
     CapacityInventoryFact,
@@ -23,7 +23,8 @@ def reader(project_id: str = "project-a") -> AuthContext:
         subject_id="capacity-reader",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset({Role.UPLOADER.value}),
+        capabilities=frozenset({"storage.overview.read"}),
+        scope_pairs=frozenset({(project_id, None)}),
     )
 
 
@@ -35,7 +36,6 @@ def capability_reader(
         subject_id="capacity-capability-reader",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset(capabilities),
         scope_pairs=frozenset({(project_id, None)}),
     )

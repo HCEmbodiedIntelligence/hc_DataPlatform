@@ -117,43 +117,6 @@ export const dashboardActivityFixture = {
   },
 } satisfies components["schemas"]["DashboardActivityResponse"];
 
-export const dashboardSnapshotFixture = {
-  ...base,
-  sections: {
-    signal_pipeline: {
-      ...ready,
-      stages: [
-        "COLLECTED",
-        "RECEIVED",
-        "AUTO_QC",
-        "ALIGNED_30_HZ",
-        "LANCE",
-        "ANNOTATION",
-        "REVIEW",
-        "PUBLISHED",
-      ],
-      stage_counts: [
-        { stage: "COLLECTED" as const, count: 1248 },
-        { stage: "RECEIVED" as const, count: 1106 },
-        { stage: "AUTO_QC" as const, count: 1062 },
-        { stage: "ALIGNED_30_HZ" as const, count: 1030 },
-        { stage: "LANCE" as const, count: 908 },
-        { stage: "ANNOTATION" as const, count: 75 },
-        { stage: "REVIEW" as const, count: 24 },
-        { stage: "PUBLISHED" as const, count: 8 },
-      ],
-      published_region: {
-        ...ready,
-        lineage_count: 8,
-        publication_count: 3,
-        unresolved_history_count: 0,
-      },
-    },
-    episodes: ready,
-    work: ready,
-  },
-} satisfies components["schemas"]["DashboardSnapshotResponse"];
-
 export const dashboardTaskStatusFixture = {
   schema_version: "1" as const,
   project_id: base.project_id,
@@ -227,7 +190,6 @@ export const dashboardTaskStatusFixture = {
       lance_writing: 1,
       lance_failed: 1,
       ready: 3,
-      blocked_by_quality: 0,
       isolated_by_quality: 3,
       unavailable: 0,
     },
@@ -527,42 +489,6 @@ export const dashboardEmptyFixtures = {
     ...base,
     activity: { ...empty, page_info: pageInfo, items: [] },
   } satisfies components["schemas"]["DashboardActivityResponse"],
-  snapshot: {
-    ...base,
-    sections: {
-      signal_pipeline: {
-        ...empty,
-        stages: [
-          "COLLECTED",
-          "RECEIVED",
-          "AUTO_QC",
-          "ALIGNED_30_HZ",
-          "LANCE",
-          "ANNOTATION",
-          "REVIEW",
-          "PUBLISHED",
-        ],
-        stage_counts: [
-          { stage: "COLLECTED" as const, count: 0 },
-          { stage: "RECEIVED" as const, count: 0 },
-          { stage: "AUTO_QC" as const, count: 0 },
-          { stage: "ALIGNED_30_HZ" as const, count: 0 },
-          { stage: "LANCE" as const, count: 0 },
-          { stage: "ANNOTATION" as const, count: 0 },
-          { stage: "REVIEW" as const, count: 0 },
-          { stage: "PUBLISHED" as const, count: 0 },
-        ],
-        published_region: {
-          ...empty,
-          lineage_count: 0,
-          publication_count: 0,
-          unresolved_history_count: 0,
-        },
-      },
-      episodes: empty,
-      work: empty,
-    },
-  } satisfies components["schemas"]["DashboardSnapshotResponse"],
   pending: {
     ...base,
     pending_items: {
@@ -575,6 +501,5 @@ export const dashboardEmptyFixtures = {
 };
 
 export const dashboardUnknownFixtures = {
-  snapshot: dashboardSnapshotFixture,
   pending: dashboardPendingFixture,
 };

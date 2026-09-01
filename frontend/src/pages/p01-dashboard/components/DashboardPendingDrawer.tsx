@@ -1,6 +1,6 @@
 import type { DashboardPendingPage } from "../../../features/dashboard/types";
 import {
-  DataCursorPager,
+  CursorPager,
   EntityDrawer,
   PageState,
   type PageStateKind,
@@ -41,7 +41,7 @@ export function DashboardPendingDrawer({
       loading={state === "loading"}
       footer={
         page?.pageInfo && page.items.length > 0 ? (
-          <DataCursorPager
+          <CursorPager
             pageInfo={page.pageInfo}
             busy={state === "refreshing"}
             windowLabel={`当前窗口 ${page.items.length} 条`}

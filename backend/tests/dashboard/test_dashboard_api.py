@@ -27,7 +27,6 @@ def auth(
         subject_id="principal-a",
         project_ids=frozenset({project}),
         region_codes=frozenset({region}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project, region)}),
         scoped_capabilities=frozenset(
             (project, value)
@@ -77,10 +76,9 @@ def params(**changes: str) -> dict[str, str]:
     return values
 
 
-def test_five_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[Any, ...]) -> None:
+def test_current_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[Any, ...]) -> None:
     client, _, repository = api
     expected_sections = {
-        "snapshot": "sections",
         "activity": "activity",
         "coverage": "coverage",
         "pending-items": "pending_items",
@@ -106,27 +104,6 @@ def test_five_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[An
             assert body["pipeline"]["package_count"] == 0
             assert len(body["pipeline"]["stages"]) == 8
             assert body["selected"] is None
-        elif endpoint == "snapshot":
-            assert response.headers["Deprecation"] == "true"
-            assert 'rel="successor-version"' in response.headers["Link"]
-            assert "storage" not in body[section]
-            assert body[section]["signal_pipeline"]["status"] == "EMPTY"
-            assert body[section]["episodes"]["status"] == "BLOCKED"
-            assert body[section]["work"]["status"] == "BLOCKED"
-            assert body[section]["signal_pipeline"]["published_region"]["status"] == "EMPTY"
-            assert body[section]["signal_pipeline"]["stages"] == [
-                "COLLECTED",
-                "RECEIVED",
-                "AUTO_QC",
-                "ALIGNED_30_HZ",
-                "LANCE",
-                "ANNOTATION",
-                "REVIEW",
-                "PUBLISHED",
-            ]
-            assert body[section]["signal_pipeline"]["stage_counts"] == [
-                {"stage": stage, "count": 0} for stage in body[section]["signal_pipeline"]["stages"]
-            ]
         elif endpoint == "coverage":
             assert body[section]["status"] == "BLOCKED"
             assert body[section]["error"]["needs_product_confirmation"] is True
@@ -147,7 +124,7 @@ def test_cross_project_region_capability_and_anonymous_requests_are_denied(
     client, current, _ = api
     current["auth"] = auth(project="project-b")
     denied_project = client.get(
-        "/api/v1/projects/project-a/dashboard/snapshot",
+        "/api/v1/projects/project-a/dashboard/activity",
         params=params(),
     )
     assert denied_project.status_code == 403
@@ -155,7 +132,7 @@ def test_cross_project_region_capability_and_anonymous_requests_are_denied(
 
     current["auth"] = auth(region="cn-west")
     denied_region = client.get(
-        "/api/v1/projects/project-a/dashboard/snapshot",
+        "/api/v1/projects/project-a/dashboard/activity",
         params=params(),
     )
     assert denied_region.status_code == 403
@@ -163,7 +140,7 @@ def test_cross_project_region_capability_and_anonymous_requests_are_denied(
 
     current["auth"] = auth(capability=False)
     denied_capability = client.get(
-        "/api/v1/projects/project-a/dashboard/snapshot",
+        "/api/v1/projects/project-a/dashboard/activity",
         params=params(),
     )
     assert denied_capability.status_code == 403
@@ -171,7 +148,7 @@ def test_cross_project_region_capability_and_anonymous_requests_are_denied(
 
     current["auth"] = None
     anonymous = client.get(
-        "/api/v1/projects/project-a/dashboard/snapshot",
+        "/api/v1/projects/project-a/dashboard/activity",
         params=params(),
     )
     assert anonymous.status_code == 401

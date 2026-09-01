@@ -1,4 +1,4 @@
-import { Navigate, type RouteObject } from "react-router-dom";
+import type { RouteObject } from "react-router-dom";
 
 export const authRoutes: RouteObject[] = [
   {
@@ -38,14 +38,6 @@ export const authRoutes: RouteObject[] = [
       Component: (await import("./SessionExpiredRoute")).SessionExpiredRoute,
     }),
   },
-  {
-    path: "/account/empty",
-    lazy: async () => ({
-      Component: (await import("./EmptyAccountRoute")).EmptyAccountRoute,
-    }),
-  },
-  { path: "/login", element: <Navigate replace to="/auth/login" /> },
-  { path: "/register", element: <Navigate replace to="/auth/register" /> },
 ];
 
 if (

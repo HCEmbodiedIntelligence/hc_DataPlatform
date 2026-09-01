@@ -150,13 +150,12 @@ def _scoped_auth(
     *,
     project_id: str = "project-a",
     region_code: str = "cn-hz",
-    capabilities: frozenset[str] = frozenset({"annotation.write"}),
+    capabilities: frozenset[str] = frozenset({"annotation_task.read"}),
 ) -> AuthContext:
     return AuthContext(
         subject_id="annotator",
         project_ids=frozenset({project_id}),
         region_codes=frozenset({region_code}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, region_code)}),
         scoped_capabilities=frozenset((project_id, capability) for capability in capabilities),
     )

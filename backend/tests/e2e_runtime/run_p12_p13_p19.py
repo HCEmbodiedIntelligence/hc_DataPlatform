@@ -573,10 +573,6 @@ def _issue_token(
                 "sub": subject,
                 "iat": now,
                 "exp": now + timedelta(hours=1),
-                "roles": [],
-                "project_ids": [],
-                "region_codes": [],
-                "capabilities": [],
                 "organization_scopes": [
                     {
                         "organization_id": organization_id,

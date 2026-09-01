@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 670c0bd642927c4ccc78eb23b74496f9c8a0c82b5847d5d7299e54ca97909f9d
+// Runtime-OpenAPI-SHA256: 2eb9776806ad0d9d161c4d4e0305dfff80936686bf80035693f916fb848de144
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -167,7 +167,6 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/dashboard/activity" },
   { method: "GET", path: "/projects/{project_id}/dashboard/coverage" },
   { method: "GET", path: "/projects/{project_id}/dashboard/pending-items" },
-  { method: "GET", path: "/projects/{project_id}/dashboard/snapshot" },
   { method: "GET", path: "/projects/{project_id}/dashboard/task-status" },
   { method: "GET", path: "/projects/{project_id}/datasets" },
   { method: "POST", path: "/projects/{project_id}/datasets" },

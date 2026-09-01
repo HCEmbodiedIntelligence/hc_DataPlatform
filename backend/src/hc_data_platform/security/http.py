@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 
-from .auth import AuthContext, Permission
+from .auth import AuthContext
 from .scope import ScopeGuard
 
 _bearer_scheme = HTTPBearer(auto_error=False, scheme_name="bearerAuth")
@@ -68,21 +68,12 @@ VerifiedAuth = Annotated[AuthContext, Depends(require_auth_context)]
 def authorize_scope(
     auth: AuthContext,
     project_id: str,
-    permission: Permission,
+    capability: str,
     region_code: str | None = None,
     organization_id: str | None = None,
 ) -> None:
     """Authorize and select the exact tenant scope used by downstream RLS adapters."""
 
-    auth.require_permission(permission, project_id, organization_id)
     ScopeGuard.require(auth, project_id, region_code, organization_id)
+    auth.require_capability(capability, project_id, organization_id)
     select_request_scope(project_id, region_code, organization_id=organization_id)
-
-
-def authorize_read(
-    auth: AuthContext,
-    project_id: str,
-    region_code: str | None = None,
-    organization_id: str | None = None,
-) -> None:
-    authorize_scope(auth, project_id, Permission.READ, region_code, organization_id)

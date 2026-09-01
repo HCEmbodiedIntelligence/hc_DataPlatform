@@ -30,7 +30,7 @@ const membership: MembershipRequest = {
 const capability: CapabilityRequest = {
   ...membership,
   request_id: "capability-1",
-  capability_keys: ["datasets.read"],
+  capability_keys: ["dataset.read"],
 };
 
 beforeEach(() => {

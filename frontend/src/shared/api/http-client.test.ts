@@ -688,51 +688,6 @@ describe("HTTP response handling", () => {
     });
   });
 
-  it("preserves the legacy error envelope mapping", async () => {
-    stubResponse(
-      problemResponse(
-        {
-          error: {
-            code: "LEGACY_COMMAND_BLOCKED",
-            message: "旧式错误消息",
-            field_errors: [
-              { path: "/name", code: "REQUIRED", message: "名称必填" },
-            ],
-            operation_errors: [
-              {
-                code: "COMMAND_FAILED",
-                message: "命令失败",
-                operation_id: "operation-1",
-              },
-            ],
-            blocked_reasons: [{ code: "POLICY_BLOCKED", message: "策略阻断" }],
-            request_id: "req-legacy",
-            retryable: true,
-          },
-        },
-        409,
-      ),
-    );
-
-    await expect(scopedRequest()).rejects.toMatchObject({
-      code: "VERSION_CONFLICT",
-      problemCode: "LEGACY_COMMAND_BLOCKED",
-      message: "旧式错误消息",
-      fieldErrors: [{ path: "/name", code: "REQUIRED", message: "名称必填" }],
-      operationErrors: [
-        {
-          code: "COMMAND_FAILED",
-          message: "命令失败",
-          operationId: "operation-1",
-        },
-      ],
-      blockedReasons: [{ code: "POLICY_BLOCKED", message: "策略阻断" }],
-      requestId: "req-legacy",
-      retryable: true,
-      httpStatus: 409,
-    });
-  });
-
   it.each([
     ["an empty body", () => new Response(null, { status: 502 })],
     [

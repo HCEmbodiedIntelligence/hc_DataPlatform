@@ -7,8 +7,7 @@ from typing import Protocol
 from fastapi import APIRouter, Response
 
 from hc_data_platform.core.errors import problem
-from hc_data_platform.security.auth import Permission
-from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
+from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .models import AutoQualityProblemListV1, AutoQualityProblemV1, QcReportV1, QualityProfileV1
 
@@ -67,7 +66,7 @@ def create_quality_profile(
     auth: VerifiedAuth,
 ) -> QualityProfileV1:
     _no_store(response)
-    authorize_scope(auth, project_id, Permission.ADMINISTER)
+    authorize_scope(auth, project_id, "upload.manage")
     _required_repository().put_profile(project_id, profile)
     return profile
 
@@ -84,7 +83,7 @@ def get_quality_profile(
     auth: VerifiedAuth,
 ) -> QualityProfileV1:
     _no_store(response)
-    authorize_read(auth, project_id)
+    authorize_scope(auth, project_id, "upload.read")
     profile = _required_repository().get_profile(project_id, profile_id, profile_version)
     if profile is None:
         raise problem(
@@ -108,7 +107,7 @@ def get_rollout_quality(
     auth: VerifiedAuth,
 ) -> QcReportV1:
     _no_store(response)
-    authorize_read(auth, project_id, region_code)
+    authorize_scope(auth, project_id, "upload.read", region_code)
     report = _required_repository().get_report(
         project_id=project_id, region_code=region_code, rollout_id=rollout_id
     )
@@ -136,7 +135,7 @@ def list_auto_quality_problems(
     """Expose latest RISK/REJECT reports as read-only unified issue-center rows."""
 
     _no_store(response)
-    authorize_read(auth, project_id, region_code)
+    authorize_scope(auth, project_id, "upload.read", region_code)
     items = _required_repository().list_problem_reports(
         project_id=project_id,
         region_code=region_code,

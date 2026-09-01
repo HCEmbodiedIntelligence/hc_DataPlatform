@@ -286,7 +286,7 @@ def _interval_difference(
 class AnnotationService:
     """Application service backed by an atomic PostgreSQL-shaped repository port."""
 
-    _READ_ROLES = frozenset({"annotator", "reviewer", "publisher"})
+    _READ_CAPABILITY = "annotation_task.read"
 
     def __init__(
         self,
@@ -314,7 +314,7 @@ class AnnotationService:
         schema_id: str | None = None,
         version: int | None = None,
     ) -> TagSchemaVersion:
-        self._authorize_project(project_id, actor, roles={"publisher"})
+        self._authorize_project(project_id, actor, capability="data_schema.publish")
         identity = self._identity(actor, project_id)
         resolved_id = schema_id or self._id_factory()
         existing = self._repository.list_tag_schema_versions(
@@ -347,7 +347,7 @@ class AnnotationService:
         version: int,
         actor: ActorContext,
     ) -> TagSchemaVersion:
-        self._authorize_project(project_id, actor, roles={"publisher"})
+        self._authorize_project(project_id, actor, capability="data_schema.publish")
         draft = self._repository.get_tag_schema_version(schema_id=schema_id, version=version)
         if draft is None or draft.project_id != project_id:
             raise AnnotationNotFoundError("Tag Schema version does not exist")
@@ -375,7 +375,7 @@ class AnnotationService:
         version: int,
         actor: ActorContext,
     ) -> TagSchemaVersion:
-        self._authorize_project(project_id, actor, roles=set(self._READ_ROLES))
+        self._authorize_project(project_id, actor, capability="data_schema.read")
         schema = self._schema_for(project_id, schema_id, version)
         if schema.project_id != project_id:
             raise AnnotationNotFoundError("Tag Schema version does not exist")
@@ -384,7 +384,7 @@ class AnnotationService:
     def list_tag_schema_versions(
         self, *, project_id: str, schema_id: str, actor: ActorContext
     ) -> tuple[TagSchemaVersion, ...]:
-        self._authorize_project(project_id, actor, roles=set(self._READ_ROLES))
+        self._authorize_project(project_id, actor, capability="data_schema.read")
         if schema_id == "legacy-flat":
             return (legacy_flat_schema(project_id),)
         return self._repository.list_tag_schema_versions(project_id=project_id, schema_id=schema_id)
@@ -498,12 +498,15 @@ class AnnotationService:
     def claim(self, task_id: str, actor: ActorContext) -> AnnotationTask:
         while True:
             aggregate = self._required_aggregate(task_id)
-            self._authorize(aggregate.task, actor, roles={"annotator"})
+            self._authorize(aggregate.task, actor, capability="annotation_task.claim")
             identity = self._identity(actor, aggregate.task.project_id)
             task = aggregate.task
             if task.assignee_id == identity.actor_id:
                 return task
-            if task.assignee_id is not None and "admin" not in identity.roles:
+            if (
+                task.assignee_id is not None
+                and "annotation_task.assign" not in identity.capabilities
+            ):
                 raise AnnotationClaimConflictError("annotation task is already claimed")
             updated = self._next_task(task, assignee_id=identity.actor_id)
             replacement = AnnotationAggregate(
@@ -538,7 +541,7 @@ class AnnotationService:
         resolved_mutation_id = self._resolve_mutation_id(client_mutation_id, mutation_id)
         while True:
             aggregate = self._required_aggregate(task_id)
-            self._authorize(aggregate.task, actor, roles={"annotator"})
+            self._authorize(aggregate.task, actor, capability="annotation.save")
             identity = self._identity(actor, aggregate.task.project_id)
             self._require_assignee(aggregate.task, identity)
             inherited_tags = (
@@ -661,7 +664,7 @@ class AnnotationService:
         """
 
         aggregate = self._required_aggregate(task_id)
-        self._authorize(aggregate.task, actor, roles={"annotator"})
+        self._authorize(aggregate.task, actor, capability="annotation.save")
         identity = self._identity(actor, aggregate.task.project_id)
         self._require_assignee(aggregate.task, identity)
         replay = next(
@@ -770,7 +773,7 @@ class AnnotationService:
             raise AnnotationIdempotencyConflictError("Idempotency-Key is required")
         while True:
             aggregate = self._required_aggregate(task_id)
-            self._authorize(aggregate.task, actor, roles={"annotator"})
+            self._authorize(aggregate.task, actor, capability="annotation.submit")
             identity = self._identity(actor, aggregate.task.project_id)
             self._require_assignee(aggregate.task, identity)
             if expected_revision < 0 or expected_revision >= len(aggregate.revisions):
@@ -875,7 +878,7 @@ class AnnotationService:
     ) -> AnnotationApprovedV1 | None:
         while True:
             aggregate = self._required_aggregate(task_id)
-            self._authorize(aggregate.task, actor, roles={"reviewer"})
+            self._authorize(aggregate.task, actor, capability="annotation.review")
             identity = self._identity(actor, aggregate.task.project_id)
             task = aggregate.task
             if task.status is not AnnotationStatus.SUBMITTED:
@@ -966,7 +969,7 @@ class AnnotationService:
 
     def read_task(self, task_id: str, actor: ActorContext) -> AnnotationTask:
         aggregate = self._required_aggregate(task_id)
-        self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+        self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         return aggregate.task
 
     def get_task(self, task_id: str, actor: ActorContext | None = None) -> AnnotationTask:
@@ -974,7 +977,7 @@ class AnnotationService:
 
         aggregate = self._required_aggregate(task_id)
         if actor is not None:
-            self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+            self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         return aggregate.task
 
     def get_current(self, task_id: str, actor: ActorContext) -> AnnotationCurrent:
@@ -995,7 +998,7 @@ class AnnotationService:
 
     def get_draft(self, task_id: str, actor: ActorContext) -> AnnotationDraft:
         aggregate = self._required_aggregate(task_id)
-        self._authorize(aggregate.task, actor, roles={"annotator"})
+        self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         self._require_assignee(
             aggregate.task,
             self._identity(actor, aggregate.task.project_id),
@@ -1024,7 +1027,7 @@ class AnnotationService:
     ) -> AnnotationRevision:
         aggregate = self._required_aggregate(task_id)
         if actor is not None:
-            self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+            self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         if revision < 0 or revision >= len(aggregate.revisions):
             raise AnnotationNotFoundError("the requested annotation revision does not exist")
         return aggregate.revisions[revision]
@@ -1034,7 +1037,7 @@ class AnnotationService:
     ) -> tuple[AnnotationRevision, ...]:
         aggregate = self._required_aggregate(task_id)
         if actor is not None:
-            self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+            self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         return aggregate.revisions
 
     def list_reviews(
@@ -1042,12 +1045,12 @@ class AnnotationService:
     ) -> tuple[AnnotationReview, ...]:
         aggregate = self._required_aggregate(task_id)
         if actor is not None:
-            self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+            self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         return aggregate.reviews
 
     def get_history(self, task_id: str, actor: ActorContext) -> AnnotationHistory:
         aggregate = self._required_aggregate(task_id)
-        self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+        self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         return AnnotationHistory(
             task=aggregate.task,
             revisions=aggregate.revisions,
@@ -1059,7 +1062,7 @@ class AnnotationService:
         self, task_id: str, submission_id: str, actor: ActorContext
     ) -> AnnotationSubmission:
         aggregate = self._required_aggregate(task_id)
-        self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+        self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         submission = next(
             (item for item in aggregate.submissions if item.submission_id == submission_id),
             None,
@@ -1072,7 +1075,7 @@ class AnnotationService:
         self, task_id: str, actor: ActorContext
     ) -> tuple[AnnotationSubmission, ...]:
         aggregate = self._required_aggregate(task_id)
-        self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+        self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         return aggregate.submissions
 
     def list_tasks(
@@ -1082,7 +1085,7 @@ class AnnotationService:
         actor: ActorContext,
         status: AnnotationStatus | None = None,
     ) -> tuple[AnnotationTask, ...]:
-        self._authorize_project(project_id, actor, roles=set(self._READ_ROLES))
+        self._authorize_project(project_id, actor, capability=self._READ_CAPABILITY)
         return tuple(
             aggregate.task
             for aggregate in self._repository.list_for_project(project_id)
@@ -1112,7 +1115,7 @@ class AnnotationService:
         self._authorize_project(
             project_id,
             actor,
-            roles=set(self._READ_ROLES),
+            capability=self._READ_CAPABILITY,
             region_code=region_code,
         )
         identity = self._identity(actor, project_id)
@@ -1212,7 +1215,7 @@ class AnnotationService:
     ) -> tuple[ExclusionRange, ...]:
         aggregate = self._required_aggregate(task_id)
         if actor is not None:
-            self._authorize(aggregate.task, actor, roles=set(self._READ_ROLES))
+            self._authorize(aggregate.task, actor, capability=self._READ_CAPABILITY)
         selected = aggregate.task.current_revision if revision is None else revision
         return normalize_operations(aggregate.revisions, selected)
 
@@ -1240,11 +1243,10 @@ class AnnotationService:
     ) -> AnnotationApprovedV1:
         """Authorized publishing read; only Publisher/Admin can consume it."""
 
-        self._authorize_project(project_id, actor, roles={"publisher"})
         aggregate = self._repository.find_by_rollout(project_id=project_id, rollout_id=rollout_id)
         if aggregate is None:
             raise AnnotationNotFoundError("annotation task does not exist in this project")
-        self._authorize(aggregate.task, actor, roles={"publisher"})
+        self._authorize(aggregate.task, actor, capability="dataset_version.publish")
         return self._current_approval(aggregate)
 
     def get_approved_revision(
@@ -1378,11 +1380,13 @@ class AnnotationService:
             return AnnotationActor.from_auth(actor, project_id)
         return actor
 
-    def _authorize(self, task: AnnotationTask, actor: ActorContext, *, roles: set[str]) -> None:
+    def _authorize(
+        self, task: AnnotationTask, actor: ActorContext, *, capability: str
+    ) -> None:
         self._authorize_project(
             task.project_id,
             actor,
-            roles=roles,
+            capability=capability,
             region_code=task.region_code,
         )
 
@@ -1391,25 +1395,27 @@ class AnnotationService:
         project_id: str,
         actor: ActorContext,
         *,
-        roles: set[str],
+        capability: str,
         region_code: str | None = None,
     ) -> None:
         if isinstance(actor, AuthContext):
             try:
                 ScopeGuard.require(actor, project_id, region_code)
-                actor.require_role(*roles, "admin", project_id=project_id)
+                actor.require_capability(capability, project_id)
             except ProblemException as exc:
                 raise AnnotationPermissionError(exc.problem.detail) from exc
             return
-        if "admin" not in actor.roles and project_id not in actor.project_ids:
+        if project_id not in actor.project_ids:
             raise AnnotationPermissionError("actor is outside the task project scope")
-        if "admin" not in actor.roles and not actor.roles.intersection(roles):
-            required = ", ".join(sorted(roles))
-            raise AnnotationPermissionError(f"one of these roles is required: {required}")
+        if capability not in actor.capabilities:
+            raise AnnotationPermissionError(f"the {capability!r} capability is required")
 
     @staticmethod
     def _require_assignee(task: AnnotationTask, actor: AnnotationActor) -> None:
-        if task.assignee_id != actor.actor_id and "admin" not in actor.roles:
+        if (
+            task.assignee_id != actor.actor_id
+            and "annotation_task.assign" not in actor.capabilities
+        ):
             raise AnnotationPermissionError("only the assignee may edit or submit")
 
     @staticmethod

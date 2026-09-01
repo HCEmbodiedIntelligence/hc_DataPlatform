@@ -11,11 +11,6 @@ export const DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION = "Asia/Shanghai" as const;
 
 export type DashboardSectionStatus =
   components["schemas"]["DashboardSectionStatus"];
-export type DashboardSignalStage = components["schemas"]["SignalStage"];
-export type DashboardSignalStageCount = Readonly<{
-  stage: DashboardSignalStage;
-  count: number;
-}>;
 export type DashboardActivityEventType =
   components["schemas"]["DashboardActivityEventType"];
 export type DashboardPendingKind =
@@ -34,26 +29,6 @@ export type DashboardSection = Readonly<{
   status: DashboardSectionStatus;
   asOf: string | null;
   error: components["schemas"]["DashboardSectionError"] | null;
-}>;
-
-export type DashboardSnapshot = Readonly<{
-  from: string;
-  to: string;
-  timezone: string;
-  asOf: string;
-  signalPipeline: DashboardSection &
-    Readonly<{
-      stages: readonly DashboardSignalStage[];
-      stageCounts: Readonly<Record<DashboardSignalStage, number>>;
-      publishedRegion: DashboardSection &
-        Readonly<{
-          lineageCount: number | null;
-          publicationCount: number | null;
-          unresolvedHistoryCount: number;
-        }>;
-    }>;
-  episodes: DashboardSection;
-  work: DashboardSection;
 }>;
 
 export type DashboardActivityEvent = Readonly<{

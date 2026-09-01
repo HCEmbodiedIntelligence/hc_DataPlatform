@@ -14,8 +14,7 @@ from hc_data_platform.data_sources.models import DataSourceAsyncJob
 from hc_data_platform.data_sources.router import get_data_source_service
 from hc_data_platform.dataset_registry.models import DatasetPageAsyncJob
 from hc_data_platform.dataset_registry.router import get_dataset_page_service
-from hc_data_platform.security import Permission
-from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
+from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .models import JobListV1, JobRecord, JobStatus
 from .names import EXPORT_WORKFLOW
@@ -24,6 +23,23 @@ from .worker import DEFAULT_TASK_QUEUE
 
 router = APIRouter(prefix="/api/v1", tags=["jobs"])
 _T = TypeVar("_T")
+_JOB_READ_CAPABILITIES = (
+    "dashboard.read",
+    "upload.read",
+    "ingest_source.read",
+    "dataset.read",
+    "dataset_version.read",
+    "annotation_task.read",
+    "export.read",
+)
+
+
+def _authorize_job_read(auth: VerifiedAuth, project_id: str) -> None:
+    for capability in _JOB_READ_CAPABILITIES:
+        if auth.has_capability(capability, project_id):
+            authorize_scope(auth, project_id, capability)
+            return
+    auth.require_capability(_JOB_READ_CAPABILITIES[0], project_id)
 
 
 @lru_cache(maxsize=1)
@@ -70,8 +86,8 @@ async def list_jobs(
 ) -> JobListV1:
     selected_project = project_id
     if selected_project is not None:
-        authorize_read(auth, selected_project)
-    elif "admin" not in auth.legacy_roles():
+        _authorize_job_read(auth, selected_project)
+    elif not auth.is_platform_admin:
         if len(auth.project_ids) != 1:
             raise problem(
                 status=400,
@@ -80,9 +96,7 @@ async def list_jobs(
                 detail="Select project_id when the access token has zero or multiple projects.",
             )
         selected_project = next(iter(auth.project_ids))
-        authorize_read(auth, selected_project)
-    else:
-        auth.require_permission(Permission.READ)
+        _authorize_job_read(auth, selected_project)
     result = get_launcher().list(project_id=selected_project, status=status)
     return await _resolve(result)
 
@@ -114,12 +128,12 @@ async def get_job(
     if dataset_page_job is not None:
         return dataset_page_job
     job = await _resolve(get_launcher().get(job_id))
-    authorize_read(auth, job.project_id)
+    _authorize_job_read(auth, job.project_id)
     return _without_export_locators(job)
 
 
 @router.post("/jobs/{job_id}:cancel", response_model=JobRecord)
 async def cancel_job(job_id: str, auth: VerifiedAuth) -> JobRecord:
     job = await _resolve(get_launcher().get(job_id))
-    authorize_scope(auth, job.project_id, Permission.ADMINISTER)
+    authorize_scope(auth, job.project_id, "access.manage")
     return await _resolve(get_launcher().cancel(job_id))

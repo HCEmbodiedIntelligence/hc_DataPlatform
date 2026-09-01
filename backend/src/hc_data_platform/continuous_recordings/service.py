@@ -122,7 +122,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         repository = self._require_asset_repository()
         manifest_sha256 = canonical_hash(command.model_dump(mode="json"))
@@ -194,7 +194,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=False,
+            capabilities=("upload.read",),
         )
         repository = self._require_asset_repository()
         upload = repository.get_upload(scope, upload_id)
@@ -223,7 +223,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         asset = self._require_asset(scope, upload_id, asset_id)
         if asset.status is not RecordingAssetStatus.UPLOADING:
@@ -261,7 +261,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         repository = self._require_asset_repository()
         upload = repository.get_upload(scope, upload_id)
@@ -363,7 +363,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         asset_repository = self._require_asset_repository()
         upload = asset_repository.get_upload(scope, upload_id)
@@ -454,7 +454,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         existing = self._repository.get_by_upload_session(scope, upload_session_id)
         if existing is not None:
@@ -525,7 +525,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=False,
+            capabilities=("upload.read",),
         )
         items = self._repository.list(scope)
         return ContinuousRecordingPage(items=items, total=len(items))
@@ -544,7 +544,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=False,
+            capabilities=("upload.read",),
         )
         recording = self._require_recording(scope, recording_id)
         return self._envelope(recording)
@@ -567,7 +567,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.status is RecordingStatus.SLICED:
@@ -620,7 +620,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.status is RecordingStatus.SLICED:
@@ -675,7 +675,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=True,
+            capabilities=("upload.manage",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.status is RecordingStatus.SLICED:
@@ -756,7 +756,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=False,
+            capabilities=("upload.read",),
         )
         self._require_recording(scope, recording_id)
         items = self._repository.list_episode_processing(scope, recording_id)
@@ -777,7 +777,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=False,
+            capabilities=("upload.read",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.recording_upload_id is None or recording.finalized_revision is None:
@@ -850,7 +850,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            write=False,
+            capabilities=("upload.read",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.recording_upload_id is None:
@@ -1039,22 +1039,19 @@ class ContinuousRecordingService:
         organization_id: str,
         project_id: str,
         region_code: str,
-        write: bool,
+        capabilities: tuple[str, ...],
     ) -> RecordingScope:
         ScopeGuard.require(auth, project_id, region_code, organization_id)
         select_request_scope(project_id, region_code, organization_id=organization_id)
-        capabilities = auth.effective_capabilities(project_id, organization_id)
-        accepted = (
-            {"upload.manage", "ingest.upload", "annotation.write", "annotation.edit"}
-            if write
-            else {"upload.read", "episode.read", "datasets.read"}
-        )
-        if not auth.is_platform_admin and not capabilities.intersection(accepted):
+        granted = auth.effective_capabilities(project_id, organization_id)
+        if not auth.is_platform_admin and not granted.intersection(capabilities):
             raise problem(
                 status=403,
                 code="CAPABILITY_REQUIRED",
                 title="Insufficient capability",
-                detail="The current project scope cannot access continuous recordings.",
+                detail=(
+                    "The current project scope requires one of: " + ", ".join(capabilities) + "."
+                ),
             )
         return RecordingScope(
             organization_id=organization_id,

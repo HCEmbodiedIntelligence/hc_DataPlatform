@@ -38,7 +38,6 @@ def auth(
         subject_id=principal,
         project_ids=frozenset({project}),
         region_codes=frozenset({region}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project, region)}),
         scoped_capabilities=(
             frozenset({(project, CAPABILITY_DASHBOARD_READ)}) if capability else frozenset()

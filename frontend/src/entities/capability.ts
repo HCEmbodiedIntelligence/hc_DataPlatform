@@ -1,5 +1,5 @@
-import type { ProjectRoleId } from './actor';
-import type { ScopeKey } from './scope';
+import type { ProjectRoleId } from "./actor";
+import type { ScopeKey } from "./scope";
 
 export const CANONICAL_CAPABILITIES = [
   "access.manage",
@@ -68,47 +68,26 @@ export const CANONICAL_CAPABILITIES = [
   "storage.inventory.refresh",
   "storage.lifecycle.execute",
   "storage.lifecycle.manage",
+  "storage.lifecycle.approve",
   "storage.lifecycle.read",
   "storage.lifecycle.simulate",
   "storage.multipart.abort",
   "storage.multipart.read",
   "storage.object.read",
+  "storage.object.manage",
   "storage.overview.read",
   "storage.restore.read",
   "storage.restore.request",
   "upload.manage",
-  "upload.read"
+  "upload.read",
 ] as const;
 
 export type Capability = (typeof CANONICAL_CAPABILITIES)[number];
 
-export const RESERVED_CAPABILITIES = [
-  "access.download_approval.manage",
-  "access.role.customize",
-  "annotation.read",
-  "calibration.availability.manage",
-  "calibration.report.download",
-  "calibration.source.download",
-  "cleaning.archive",
-  "dashboard.read",
-  "data_schema.deprecate",
-  "dataset.delete",
-  "dataset.update",
-  "dataset_version.delete",
-  "manual_issue.assign",
-  "manual_issue.dismiss",
-  "manual_issue.export",
-  "manual_issue.reopen",
-  "robot_model.asset.download",
-  "robot_model.validation_report.download"
-] as const;
-
-export type ReservedCapability = (typeof RESERVED_CAPABILITIES)[number];
-
 const capabilitySet: ReadonlySet<string> = new Set(CANONICAL_CAPABILITIES);
 
 export function isCapability(value: unknown): value is Capability {
-  return typeof value === 'string' && capabilitySet.has(value);
+  return typeof value === "string" && capabilitySet.has(value);
 }
 
 export const DEVELOPER_CAPABILITIES = [
@@ -145,7 +124,7 @@ export const DEVELOPER_CAPABILITIES = [
   "manual_issue.resolve",
   "manual_issue.triage",
   "upload.manage",
-  "upload.read"
+  "upload.read",
 ] as const;
 
 export const DATA_PROCESSOR_CAPABILITIES = [
@@ -167,20 +146,21 @@ export const DATA_PROCESSOR_CAPABILITIES = [
   "manual_issue.create",
   "manual_issue.read",
   "manual_issue.resolve",
-  "manual_issue.triage"
+  "manual_issue.triage",
 ] as const;
 
-export const PROJECT_ROLE_CAPABILITIES: Readonly<Record<ProjectRoleId, readonly Capability[]>> =
-  Object.freeze({
-    PROJECT_ADMIN: CANONICAL_CAPABILITIES,
-    PROJECT_DEVELOPER: DEVELOPER_CAPABILITIES,
-    PROJECT_DATA_PROCESSOR: DATA_PROCESSOR_CAPABILITIES,
-  });
+export const PROJECT_ROLE_CAPABILITIES: Readonly<
+  Record<ProjectRoleId, readonly Capability[]>
+> = Object.freeze({
+  PROJECT_ADMIN: CANONICAL_CAPABILITIES,
+  PROJECT_DEVELOPER: DEVELOPER_CAPABILITIES,
+  PROJECT_DATA_PROCESSOR: DATA_PROCESSOR_CAPABILITIES,
+});
 
 export interface AuthorizationSnapshot {
   scopeKey: ScopeKey;
   roleVersion: string;
-  /** Runtime bootstrap capability keys. Older pages resolve explicit aliases at read time. */
+  /** Exact capability keys returned by the runtime bootstrap. */
   capabilities: readonly string[];
   fetchedAt: string;
   expiresAt?: string;

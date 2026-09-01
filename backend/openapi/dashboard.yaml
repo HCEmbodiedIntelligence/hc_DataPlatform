@@ -32,39 +32,6 @@ paths:
         '404': {$ref: '#/components/responses/DashboardTaskNotFound'}
         '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
         '429': {$ref: '#/components/responses/DashboardRateLimited'}
-  /api/v1/projects/{project_id}/dashboard/snapshot:
-    get:
-      operationId: getDashboardSnapshot
-      tags: [dashboard]
-      deprecated: true
-      description: >-
-        Returns one project and one exact region for the explicit half-open UTC range. The
-        legacy Signal subsection is an event-window observation and must not be interpreted as a
-        current-state funnel; P01 uses task-status for current task state. COLLECTED in this legacy
-        subsection means cloud package registration, never a device CAPTURED/SAVED fact. The
-        published-region subsection separately reports certain rollout-publication lineage.
-        Episode and work remain BLOCKED.
-        Region storage is not a P01 field.
-      parameters:
-        - {$ref: '#/components/parameters/DashboardProjectId'}
-        - {$ref: '#/components/parameters/DashboardRegionCode'}
-        - {$ref: '#/components/parameters/DashboardFrom'}
-        - {$ref: '#/components/parameters/DashboardTo'}
-        - {$ref: '#/components/parameters/DashboardTimezone'}
-      responses:
-        '200':
-          description: Factual and explicitly blocked snapshot sections at one response read time.
-          headers:
-            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
-            Deprecation: {schema: {type: string, const: 'true'}}
-            Link: {schema: {type: string}, description: Successor task-status endpoint.}
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/DashboardSnapshotResponse'}
-        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
-        '403': {$ref: '#/components/responses/DashboardForbidden'}
-        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
-        '429': {$ref: '#/components/responses/DashboardRateLimited'}
   /api/v1/projects/{project_id}/dashboard/activity:
     get:
       operationId: getDashboardActivity
@@ -313,7 +280,7 @@ components:
     TaskStandardizationCounts:
       type: object
       additionalProperties: false
-      required: [waiting, aligning, alignment_failed, lance_writing, lance_failed, ready, blocked_by_quality, unavailable]
+      required: [waiting, aligning, alignment_failed, lance_writing, lance_failed, ready, unavailable]
       properties:
         waiting: {type: integer, minimum: 0}
         aligning: {type: integer, minimum: 0}
@@ -321,7 +288,6 @@ components:
         lance_writing: {type: integer, minimum: 0}
         lance_failed: {type: integer, minimum: 0}
         ready: {type: integer, minimum: 0}
-        blocked_by_quality: {type: integer, minimum: 0, default: 0, deprecated: true, description: Compatibility field; always zero because QC findings are not blockers.}
         isolated_by_quality: {type: integer, minimum: 0, default: 0, description: Packages isolated into problem data after automatic QC.}
         unavailable: {type: integer, minimum: 0, default: 0}
     TaskStatusTarget:
@@ -449,85 +415,6 @@ components:
           oneOf:
             - {$ref: '#/components/schemas/SelectedTaskStatus'}
             - {type: 'null'}
-    SignalStage:
-      type: string
-      enum: [COLLECTED, RECEIVED, AUTO_QC, ALIGNED_30_HZ, LANCE, ANNOTATION, REVIEW, PUBLISHED]
-      description: >-
-        Legacy event catalog: 云端已登记、Raw已接收、自动质检、30 Hz 对齐、Lance、数据标注、
-        审核、已发布。COLLECTED is not device采集完成. Cleaning is not a separate signal stage.
-    DashboardPublishedRegionState:
-      type: object
-      additionalProperties: false
-      required: [status, as_of, error, lineage_count, publication_count, unresolved_history_count]
-      properties:
-        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
-        as_of: {type: [string, 'null'], format: date-time}
-        error:
-          oneOf:
-            - {$ref: '#/components/schemas/DashboardSectionError'}
-            - {type: 'null'}
-        lineage_count:
-          type: [integer, 'null']
-          minimum: 0
-          description: Count of certain unique publication+rollout lineage facts.
-        publication_count:
-          type: [integer, 'null']
-          minimum: 0
-          description: Count of distinct certain publication identities in the exact scope.
-        unresolved_history_count:
-          type: integer
-          minimum: 0
-          description: Project/range historical rollout references not assigned to any region.
-    DashboardSignalPipelineState:
-      type: object
-      additionalProperties: false
-      required: [status, as_of, error, stages, stage_counts, published_region]
-      properties:
-        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
-        as_of: {type: [string, 'null'], format: date-time}
-        error:
-          oneOf:
-            - {$ref: '#/components/schemas/DashboardSectionError'}
-            - {type: 'null'}
-        stages:
-          type: array
-          minItems: 8
-          maxItems: 8
-          prefixItems:
-            - {const: COLLECTED}
-            - {const: RECEIVED}
-            - {const: AUTO_QC}
-            - {const: ALIGNED_30_HZ}
-            - {const: LANCE}
-            - {const: ANNOTATION}
-            - {const: REVIEW}
-            - {const: PUBLISHED}
-          items: false
-        stage_counts:
-          type: array
-          minItems: 8
-          maxItems: 8
-          description: >-
-            Per-stage unique cloud data-package counts for the exact project, region, and [from,to)
-            window. Counts are independent stage events, not percentages or a forced funnel.
-          items: {$ref: '#/components/schemas/DashboardSignalStageCount'}
-        published_region: {$ref: '#/components/schemas/DashboardPublishedRegionState'}
-    DashboardSignalStageCount:
-      type: object
-      additionalProperties: false
-      required: [stage, count]
-      properties:
-        stage: {$ref: '#/components/schemas/SignalStage'}
-        count: {type: integer, minimum: 0}
-    DashboardSnapshotSections:
-      type: object
-      additionalProperties: false
-      required: [signal_pipeline, episodes, work]
-      properties:
-        signal_pipeline: {$ref: '#/components/schemas/DashboardSignalPipelineState'}
-        episodes: {$ref: '#/components/schemas/DashboardSectionState'}
-        work: {$ref: '#/components/schemas/DashboardSectionState'}
-      description: Region storage is intentionally absent; capacity belongs to P12.
     DashboardResourceType:
       type: string
       enum: [UPLOAD_SESSION, ROLLOUT, ANNOTATION_TASK, DATASET_VERSION]
@@ -622,19 +509,6 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/DashboardPendingItem'}
-    DashboardSnapshotResponse:
-      type: object
-      additionalProperties: false
-      required: [schema_version, project_id, region_code, from, to, timezone, as_of, sections]
-      properties:
-        schema_version: {type: string, const: '1'}
-        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
-        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
-        from: {type: string, format: date-time}
-        to: {type: string, format: date-time}
-        timezone: {type: string, minLength: 1, maxLength: 64}
-        as_of: {type: string, format: date-time}
-        sections: {$ref: '#/components/schemas/DashboardSnapshotSections'}
     DashboardActivityResponse:
       type: object
       additionalProperties: false

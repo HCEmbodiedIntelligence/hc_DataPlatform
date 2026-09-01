@@ -25,7 +25,7 @@ import {
   FilterToolbar,
   PageState,
   StatusTag,
-  UiMetricCard,
+  MetricCard,
   type PageStateKind,
 } from '../../shared/ui';
 import { DatasetCursorPager, EpisodeTable, SourceTable, VersionTable } from './components/DatasetDetailTables';
@@ -501,27 +501,27 @@ export function DatasetDetailPage() {
               />
             </div>
             <div className={`${styles.metricGrid} ${styles.overviewMetricGrid}`}>
-              <UiMetricCard label="Episodes" value={data.summary.episodeCount} basis="授权聚合" />
-              <UiMetricCard
+              <MetricCard label="Episodes" value={data.summary.episodeCount} basis="授权聚合" />
+              <MetricCard
                 label="有效时长"
                 value={formatEffectiveDuration(data.summary.effectiveDurationNs)}
                 basis="授权聚合"
               />
-              <UiMetricCard label="源数据量" value={formatStorageSize(data.summary.sourceBytes)} basis="授权聚合" />
-              <UiMetricCard
+              <MetricCard label="源数据量" value={formatStorageSize(data.summary.sourceBytes)} basis="授权聚合" />
+              <MetricCard
                 label="必需物理容量"
                 value={formatStorageSize(data.summary.requiredPhysicalBytes)}
                 basis="授权聚合"
               />
-              <UiMetricCard
+              <MetricCard
                 label="实际 OSS"
                 value={formatStorageSize(data.summary.actualOssBytes)}
                 state={data.summary.actualOssBytes === null ? 'unknown' : 'ready'}
                 basis="容量事实"
               />
-              <UiMetricCard label="待复核" value={data.summary.pendingReviewVersionCount} />
-              <UiMetricCard label="已退回" value={data.summary.returnedVersionCount} />
-              <UiMetricCard
+              <MetricCard label="待复核" value={data.summary.pendingReviewVersionCount} />
+              <MetricCard label="已退回" value={data.summary.returnedVersionCount} />
+              <MetricCard
                 label="可处理草稿"
                 value={data.summary.actionableDraftCount}
                 asOf={new Date(data.summary.calculatedAt).toLocaleString()}
@@ -689,8 +689,8 @@ export function DatasetDetailPage() {
         <section className={styles.section}>
           <Typography.Title level={2}>数据结构快照</Typography.Title>
           <div className={styles.metricGrid}>
-            <UiMetricCard label="Version" value={schema.data.snapshot.version} />
-            <UiMetricCard
+            <MetricCard label="Version" value={schema.data.snapshot.version} />
+            <MetricCard
               label="Channels"
               value={schema.data.channelCount}
               state={schema.data.channelCount === null ? 'unknown' : 'ready'}
@@ -757,17 +757,17 @@ export function DatasetDetailPage() {
           />
         ) : null}
         <div className={styles.metricGrid}>
-          <UiMetricCard
+          <MetricCard
             label="源数据量"
             value={formatStorageSize(capacity.data.sourceBytes)}
             state={capacity.data.sourceBytes === null ? 'unknown' : 'ready'}
           />
-          <UiMetricCard
+          <MetricCard
             label="必需物理容量"
             value={formatStorageSize(capacity.data.requiredPhysicalBytes)}
             state={capacity.data.requiredPhysicalBytes === null ? 'unknown' : 'ready'}
           />
-          <UiMetricCard
+          <MetricCard
             label="实际 OSS 容量"
             value={formatStorageSize(capacity.data.actualOssBytes)}
             state={capacity.data.actualOssBytes === null ? 'unknown' : 'ready'}

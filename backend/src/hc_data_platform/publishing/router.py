@@ -11,8 +11,7 @@ from fastapi import APIRouter, Header, Response
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException, problem
-from hc_data_platform.security import Permission
-from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
+from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 from hc_data_platform.workflow.models import (
     ExportWorkflowInput,
     JobRecord,
@@ -304,7 +303,7 @@ def publication_preflight(
     request: PublishDatasetRequestV1,
     auth: VerifiedAuth,
 ) -> PublishPreflightReportV1:
-    authorize_scope(auth, request.project_id, Permission.PUBLISH)
+    authorize_scope(auth, request.project_id, "dataset_version.publish")
     return _publisher.preflight(request)
 
 
@@ -313,7 +312,7 @@ def publish_dataset(
     request: PublishDatasetRequestV1,
     auth: VerifiedAuth,
 ) -> PublishedDatasetManifestV1:
-    authorize_scope(auth, request.project_id, Permission.PUBLISH)
+    authorize_scope(auth, request.project_id, "dataset_version.publish")
     return _publisher.publish(request)
 
 
@@ -327,7 +326,7 @@ def get_dataset_version(
     project_id: str,
     auth: VerifiedAuth,
 ) -> PublishedDatasetManifestV1:
-    authorize_read(auth, project_id)
+    authorize_scope(auth, project_id, "export.read")
     return _publisher.get(
         project_id=project_id,
         dataset_id=dataset_id,
@@ -359,7 +358,7 @@ async def export_dataset_version(
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
 ) -> ExportJobV1:
-    authorize_scope(auth, request.project_id, Permission.PUBLISH)
+    authorize_scope(auth, request.project_id, "dataset_version.publish")
     manifest = _resolve_export_manifest(
         project_id=request.project_id,
         dataset_id=dataset_id,
@@ -387,7 +386,7 @@ async def get_export_job(
     auth: VerifiedAuth,
     response: Response,
 ) -> ExportJobV1:
-    authorize_scope(auth, project_id, Permission.PUBLISH)
+    authorize_scope(auth, project_id, "dataset_version.publish")
     job = await _resolve(get_launcher().get(job_id))
     if job.project_id != project_id:
         raise _export_job_not_found()
@@ -408,7 +407,7 @@ async def cancel_export_job(
     auth: VerifiedAuth,
     response: Response,
 ) -> ExportJobV1:
-    authorize_scope(auth, project_id, Permission.PUBLISH)
+    authorize_scope(auth, project_id, "dataset_version.publish")
     existing = await _resolve(get_launcher().get(job_id))
     if existing.project_id != project_id:
         raise _export_job_not_found()
@@ -433,7 +432,7 @@ async def retry_export_job(
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
 ) -> ExportJobV1:
-    authorize_scope(auth, project_id, Permission.PUBLISH)
+    authorize_scope(auth, project_id, "dataset_version.publish")
     existing = await _resolve(get_launcher().get(job_id))
     if existing.project_id != project_id:
         raise _export_job_not_found()
@@ -478,7 +477,7 @@ async def authorize_export_download(
     auth: VerifiedAuth,
     response: Response,
 ) -> ExportDownloadAuthorizationV1:
-    authorize_scope(auth, project_id, Permission.PUBLISH)
+    authorize_scope(auth, project_id, "dataset_version.publish")
     job = await _resolve(get_launcher().get(job_id))
     if job.project_id != project_id:
         raise _export_job_not_found()

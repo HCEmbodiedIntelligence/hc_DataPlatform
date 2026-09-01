@@ -397,10 +397,10 @@ def test_be08_catalog_snapshot_and_step_reader_adapters_freeze_real_contracts() 
     assert exported[0].source_timestamps_ns == steps[1].source_timestamps_ns
 
 
-def _annotation_actor(actor_id: str, *roles: str) -> AnnotationActor:
+def _annotation_actor(actor_id: str, *capabilities: str) -> AnnotationActor:
     return AnnotationActor(
         actor_id=actor_id,
-        roles=frozenset(roles),
+        capabilities=frozenset(capabilities),
         project_ids=frozenset({"project-a"}),
     )
 
@@ -415,7 +415,13 @@ def test_be09_adapter_reads_only_current_approved_revision_and_effective_restore
         rollout_id="rollout-a",
         base_step_count=10,
     )
-    annotator = _annotation_actor("alice", "annotator")
+    annotator = _annotation_actor(
+        "alice",
+        "annotation_task.read",
+        "annotation_task.claim",
+        "annotation.save",
+        "annotation.submit",
+    )
     annotations.claim("task-a", annotator)
     annotations.save_draft(
         "task-a",
@@ -446,7 +452,7 @@ def test_be09_adapter_reads_only_current_approved_revision_and_effective_restore
     )
     annotations.review(
         "task-a",
-        _annotation_actor("bob", "reviewer"),
+        _annotation_actor("bob", "annotation_task.read", "annotation.review"),
         ReviewDecision.APPROVE,
         revision=1,
         if_match=submitted.etag,

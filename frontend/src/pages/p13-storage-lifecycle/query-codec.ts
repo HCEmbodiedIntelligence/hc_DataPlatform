@@ -61,14 +61,8 @@ export const storageLifecycleQueryCodec =
       const state = isPolicyState(rawState) ? rawState : "ALL";
       const role = isObjectRole(rawRole) ? rawRole : "ALL";
       const query = params.get("q")?.trim().slice(0, 256) ?? "";
-      const legacyCursor = cursor(params, "cursor");
-      const legacyTab = params.get("tab");
-      const policyCursor =
-        cursor(params, "policy_cursor") ??
-        (legacyTab !== "audit" ? legacyCursor : undefined);
-      const auditCursor =
-        cursor(params, "audit_cursor") ??
-        (legacyTab === "audit" ? legacyCursor : undefined);
+      const policyCursor = cursor(params, "policy_cursor");
+      const auditCursor = cursor(params, "audit_cursor");
       return {
         query,
         state,

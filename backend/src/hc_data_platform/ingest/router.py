@@ -630,7 +630,7 @@ def _validate_request_model(
 
 
 def _authorize(auth: AuthContext, project_id: str, region_code: str) -> None:
-    auth.require_role("uploader", "admin", project_id=project_id)
+    auth.require_capability("upload.manage", project_id)
     ScopeGuard.require(auth, project_id, region_code)
     select_request_scope(project_id, region_code)
 

@@ -41,17 +41,26 @@ from hc_data_platform.annotation.router import router
 from hc_data_platform.annotation.validation import rehash_legacy_revisions
 
 
-def actor(actor_id: str, *roles: str) -> AnnotationActor:
+def actor(actor_id: str, *capabilities: str) -> AnnotationActor:
     return AnnotationActor(
         actor_id=actor_id,
-        roles=frozenset(roles),
+        capabilities=frozenset(capabilities),
         project_ids=frozenset({"project-a"}),
     )
 
 
-PUBLISHER = actor("publisher", "publisher")
-ANNOTATOR = actor("alice", "annotator")
-REVIEWER = actor("bob", "reviewer")
+PUBLISHER = actor(
+    "publisher", "data_schema.read", "data_schema.publish", "dataset_version.publish"
+)
+ANNOTATOR = actor(
+    "alice",
+    "data_schema.read",
+    "annotation_task.claim",
+    "annotation_task.read",
+    "annotation.save",
+    "annotation.submit",
+)
+REVIEWER = actor("bob", "annotation_task.read", "annotation.review")
 
 
 def schema_document() -> TagSchemaDocument:
@@ -372,7 +381,14 @@ def test_review_checks_exact_submission_and_open_08_policy_is_configurable() -> 
         (SelfReviewPolicy.DENY, AnnotationPermissionError),
     ):
         service = InMemoryAnnotationService(self_review_policy=policy)
-        dual_role = actor("dual", "annotator", "reviewer")
+        dual_role = actor(
+            "dual",
+            "annotation_task.read",
+            "annotation_task.claim",
+            "annotation.save",
+            "annotation.submit",
+            "annotation.review",
+        )
         service.create_task(
             task_id="self-review",
             project_id="project-a",
@@ -399,7 +415,14 @@ def test_review_checks_exact_submission_and_open_08_policy_is_configurable() -> 
             )
 
     allowed = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.ALLOW)
-    dual_role = actor("dual", "annotator", "reviewer")
+    dual_role = actor(
+        "dual",
+        "annotation_task.read",
+        "annotation_task.claim",
+        "annotation.save",
+        "annotation.submit",
+        "annotation.review",
+    )
     allowed.create_task(
         task_id="self-review",
         project_id="project-a",
@@ -482,7 +505,13 @@ def test_pre_0002_zero_hashes_are_reconstructed_without_mutating_revision_histor
         base_step_count=100,
         rollout_id="legacy-hash-rollout",
     )
-    annotator = actor("legacy-user", "annotator")
+    annotator = actor(
+        "legacy-user",
+        "annotation_task.read",
+        "annotation_task.claim",
+        "annotation.save",
+        "annotation.submit",
+    )
     service.claim("legacy-hash", annotator)
     service.save_draft(
         "legacy-hash",

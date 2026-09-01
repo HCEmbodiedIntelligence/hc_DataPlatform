@@ -23,7 +23,7 @@ from hc_data_platform.core.errors import ProblemException  # noqa: E402
 from hc_data_platform.core.events import DomainEventEnvelope  # noqa: E402
 from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
 from hc_data_platform.security.audit import AuditRecord  # noqa: E402
-from hc_data_platform.security.auth import AuthContext, Role  # noqa: E402
+from hc_data_platform.security.auth import AuthContext  # noqa: E402
 from hc_data_platform.security.postgres import PostgresScopedUnitOfWork  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -575,7 +575,7 @@ async def _set_scope(connection: AsyncConnection, project_id: str, region_code: 
 def _auth(organization_id: str, project_id: str) -> AuthContext:
     return AuthContext(
         subject_id="integration-worker",
-        roles=frozenset({Role.ADMIN.value}),
+        capabilities=frozenset({"access.manage"}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset({"cn"}),
         service_identity=True,

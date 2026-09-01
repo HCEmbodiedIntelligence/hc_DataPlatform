@@ -371,7 +371,6 @@ def _auth(
         project_ids=frozenset({project_id}),
         organization_ids=frozenset({organization_id}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, REGION_CODE)}),
         organization_scope_triples=frozenset({(organization_id, project_id, REGION_CODE)}),
         scoped_capabilities=(

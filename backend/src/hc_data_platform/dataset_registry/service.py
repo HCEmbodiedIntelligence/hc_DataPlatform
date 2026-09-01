@@ -3068,53 +3068,35 @@ class DatasetPageService:
 
 
 def _can_read(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("dataset.read", project_id) or auth.has_capability(
-        "datasets.read", project_id
-    )
+    return auth.has_capability("dataset.read", project_id)
 
 
 def _can_create(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("dataset.create", project_id) or auth.has_capability(
-        "datasets.write", project_id
-    )
+    return auth.has_capability("dataset.create", project_id)
 
 
 def _can_dataset_version_read(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("dataset_version.read", project_id) or auth.has_capability(
-        "datasets.read", project_id
-    )
+    return auth.has_capability("dataset_version.read", project_id)
 
 
 def _can_schema_read(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("data_schema.read", project_id) or auth.has_capability(
-        "datasets.read", project_id
-    )
+    return auth.has_capability("data_schema.read", project_id)
 
 
 def _can_storage_overview_read(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("storage.overview.read", project_id) or auth.has_capability(
-        "datasets.read", project_id
-    )
+    return auth.has_capability("storage.overview.read", project_id)
 
 
 def _can_episode_read(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("episode.read", project_id) or auth.has_capability(
-        "datasets.read", project_id
-    )
+    return auth.has_capability("episode.read", project_id)
 
 
 def _can_review(auth: AuthContext, project_id: str) -> bool:
-    return auth.has_capability("dataset_version.review", project_id) or auth.has_capability(
-        "datasets.write", project_id
-    )
+    return auth.has_capability("dataset_version.review", project_id)
 
 
 def _can_publish(auth: AuthContext, project_id: str) -> bool:
-    return (
-        auth.has_capability("datasets.publish", project_id)
-        or auth.has_capability("dataset_version.publish", project_id)
-        or auth.has_capability("datasets.write", project_id)
-    )
+    return auth.has_capability("dataset_version.publish", project_id)
 
 
 def _review_catalog() -> DatasetPageReviewFindingCatalog:

@@ -8,8 +8,7 @@ from fastapi import APIRouter, Query
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
-from hc_data_platform.security.auth import Permission
-from hc_data_platform.security.http import VerifiedAuth, authorize_read, authorize_scope
+from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .audit import (
     InMemoryLanceCatalogAuditRecorder,
@@ -65,7 +64,7 @@ def _not_found() -> Exception:
 def list_dataset_versions(
     project_id: str, dataset_id: str, auth: VerifiedAuth
 ) -> tuple[DatasetVersionRef, ...]:
-    authorize_read(auth, project_id)
+    authorize_scope(auth, project_id, "dataset_version.read")
     try:
         return _required_catalog().list_versions(dataset_id, project_id=project_id)
     except KeyError as exc:
@@ -80,7 +79,7 @@ def list_dataset_versions(
 def get_dataset_version(
     project_id: str, dataset_id: str, version: int, auth: VerifiedAuth
 ) -> DatasetVersionRef:
-    authorize_read(auth, project_id)
+    authorize_scope(auth, project_id, "dataset_version.read")
     try:
         return _required_catalog().version_snapshot(
             dataset_id, version=version, project_id=project_id
@@ -103,7 +102,7 @@ def read_step_window(
     version: int | None = Query(default=None, ge=1),
     columns: ColumnsQuery = None,
 ) -> StepWindow:
-    authorize_read(auth, project_id)
+    authorize_scope(auth, project_id, "dataset_version.read")
     if end_step < start_step:
         raise problem(
             status=422,
@@ -156,7 +155,7 @@ def get_rollout_lineage(
     auth: VerifiedAuth,
     version: int | None = Query(default=None, ge=1),
 ) -> RolloutLineage:
-    authorize_read(auth, project_id)
+    authorize_scope(auth, project_id, "dataset_version.read")
     try:
         return _required_catalog().lineage(
             dataset_id, rollout_id, version=version, project_id=project_id
@@ -172,7 +171,7 @@ def get_rollout_lineage(
 def reconcile_lance_catalog(
     project_id: str, dataset_id: str, auth: VerifiedAuth
 ) -> tuple[DatasetVersionRef, ...]:
-    authorize_scope(auth, project_id, Permission.ADMINISTER)
+    authorize_scope(auth, project_id, "dataset_version.publish")
     try:
         return _required_catalog().reconcile(dataset_id, project_id=project_id)
     except KeyError as exc:

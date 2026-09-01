@@ -96,7 +96,6 @@ def app_with_auth(auth: AuthContext | None) -> FastAPI:
                     ),
                     subject_id=auth.subject_id,
                     request_id="test-request-id",
-                    roles=auth.roles,
                     service_identity=auth.service_identity,
                 )
             )
@@ -138,7 +137,8 @@ def test_device_capture_facts_require_service_identity_and_are_immutable() -> No
     scope = {
         "project_ids": frozenset({"p1"}),
         "region_codes": frozenset({"cn-hz"}),
-        "roles": frozenset({"uploader"}),
+        "capabilities": frozenset({"upload.read", "upload.manage"}),
+        "scope_pairs": frozenset({("p1", "cn-hz")}),
         "organization_ids": frozenset({"org-a"}),
         "organization_scope_triples": frozenset({("org-a", "p1", "cn-hz")}),
     }
@@ -193,7 +193,8 @@ def test_router_requires_be02_auth_context_role_and_scope() -> None:
         subject_id="u1",
         project_ids=frozenset({"p2"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
+        scope_pairs=frozenset({("p2", "cn-hz")}),
     )
     denied = TestClient(app_with_auth(wrong_scope)).post(
         path,
@@ -207,7 +208,8 @@ def test_router_requires_be02_auth_context_role_and_scope() -> None:
         subject_id="u1",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
+        scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     created = TestClient(app_with_auth(allowed)).post(
         path,
@@ -220,7 +222,7 @@ def test_router_requires_be02_auth_context_role_and_scope() -> None:
     assert created.json()["parts"][0]["url"].startswith("memory://")
 
 
-def test_router_uses_exact_project_capability_without_legacy_role_expansion() -> None:
+def test_router_uses_exact_current_project_capability() -> None:
     get_service.cache_clear()
     path = "/api/v1/projects/p1/regions/cn-hz/upload-sessions"
     payload = {"manifest": manifest_payload(), "part_numbers": [1]}
@@ -228,9 +230,8 @@ def test_router_uses_exact_project_capability_without_legacy_role_expansion() ->
         subject_id="platform-session",
         project_ids=frozenset({"p1", "p2"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset(),
         scope_pairs=frozenset({("p1", "cn-hz"), ("p2", "cn-hz")}),
-        scoped_capabilities=frozenset({("p1", "collection.upload")}),
+        scoped_capabilities=frozenset({("p1", "upload.manage")}),
     )
     allowed = TestClient(app_with_auth(scoped)).post(
         path,
@@ -248,7 +249,7 @@ def test_router_uses_exact_project_capability_without_legacy_role_expansion() ->
         headers={"Idempotency-Key": "capability-denied"},
     )
     assert denied.status_code == 403
-    assert denied.json()["code"] == "ROLE_REQUIRED"
+    assert denied.json()["code"] == "CAPABILITY_REQUIRED"
 
 
 def test_platform_admin_uploads_any_existing_project_without_membership() -> None:
@@ -257,7 +258,6 @@ def test_platform_admin_uploads_any_existing_project_without_membership() -> Non
         subject_id="platform-admin",
         project_ids=frozenset({"p1", "p2"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
         organization_ids=frozenset({"org-a", "org-b"}),
         organization_scope_triples=frozenset({("org-a", "p1", None), ("org-b", "p2", None)}),
@@ -297,7 +297,6 @@ def test_current_upload_manage_is_project_scoped_and_upload_read_is_not_write() 
         subject_id="writer",
         project_ids=frozenset({"p1", "p2"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset(),
         scope_pairs=frozenset({("p1", "cn-hz"), ("p2", "cn-hz")}),
         scoped_capabilities=frozenset({("p1", "upload.manage")}),
     )
@@ -318,7 +317,6 @@ def test_current_upload_manage_is_project_scoped_and_upload_read_is_not_write() 
         subject_id="reader",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset(),
         scope_pairs=frozenset({("p1", "cn-hz")}),
         scoped_capabilities=frozenset({("p1", "upload.read")}),
     )
@@ -330,9 +328,9 @@ def test_current_upload_manage_is_project_scoped_and_upload_read_is_not_write() 
 
     assert allowed.status_code == 201
     assert denied_project.status_code == 403
-    assert denied_project.json()["code"] == "ROLE_REQUIRED"
+    assert denied_project.json()["code"] == "CAPABILITY_REQUIRED"
     assert denied_reader.status_code == 403
-    assert denied_reader.json()["code"] == "ROLE_REQUIRED"
+    assert denied_reader.json()["code"] == "CAPABILITY_REQUIRED"
 
 
 def test_router_issues_an_audited_non_cacheable_raw_mcap_source_only_after_commit() -> None:
@@ -341,7 +339,8 @@ def test_router_issues_an_audited_non_cacheable_raw_mcap_source_only_after_commi
         subject_id="u1",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
+        scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     client = TestClient(app_with_auth(auth))
     payload = manifest_payload()
@@ -396,7 +395,8 @@ def test_router_projects_only_the_processing_result_linked_to_the_upload_scope()
         subject_id="uploader-without-workflow-read",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
+        scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     client = TestClient(app_with_auth(auth))
     payload = manifest_payload()
@@ -501,7 +501,8 @@ def test_router_preflight_and_authorized_object_reference_are_real_json_controls
         subject_id="u1",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
+        scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     client = TestClient(app_with_auth(auth))
     manifest = manifest_payload()
@@ -563,7 +564,8 @@ def test_router_rejects_numeric_crc64_wire_values_before_precision_can_be_lost()
         subject_id="u1",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset({"uploader"}),
+        capabilities=frozenset({"upload.read", "upload.manage"}),
+        scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     client = TestClient(app_with_auth(auth))
     manifest = manifest_payload()

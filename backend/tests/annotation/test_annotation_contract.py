@@ -20,21 +20,40 @@ from hc_data_platform.annotation import (
 )
 from hc_data_platform.security import AuthContext
 
+ANNOTATOR_CAPABILITIES = frozenset(
+    {
+        "annotation_task.read",
+        "annotation_task.claim",
+        "annotation.edit",
+        "annotation.save",
+        "annotation.submit",
+    }
+)
+REVIEWER_CAPABILITIES = frozenset({"annotation_task.read", "annotation.review"})
+PUBLISHER_CAPABILITIES = frozenset(
+    {"annotation_task.read", "dataset_version.publish", "data_schema.publish"}
+)
 
-def actor(actor_id: str, *roles: str, projects: tuple[str, ...] = ("project-a",)):
+
+def actor(actor_id: str, *capabilities: str, projects: tuple[str, ...] = ("project-a",)):
     return AnnotationActor(
         actor_id=actor_id,
-        roles=frozenset(roles),
+        capabilities=frozenset(capabilities),
         project_ids=frozenset(projects),
     )
 
 
-def auth(subject: str, *roles: str, projects: tuple[str, ...] = ("project-a",)):
+def auth(subject: str, *capabilities: str, projects: tuple[str, ...] = ("project-a",)):
     return AuthContext(
         subject_id=subject,
         project_ids=frozenset(projects),
         region_codes=frozenset(),
-        roles=frozenset(roles),
+        scope_pairs=frozenset((project_id, None) for project_id in projects),
+        scoped_capabilities=frozenset(
+            (project_id, capability)
+            for project_id in projects
+            for capability in capabilities
+        ),
     )
 
 
@@ -57,7 +76,7 @@ def prepared() -> tuple[InMemoryAnnotationService, AnnotationActor]:
         rollout_id="rollout-a",
         base_step_count=2_000,
     )
-    annotator = actor("alice", "annotator")
+    annotator = actor("alice", *ANNOTATOR_CAPABILITIES)
     service.claim("task-1", annotator)
     return service, annotator
 
@@ -115,7 +134,12 @@ def test_half_open_models_reject_empty_or_reversed_ranges() -> None:
 
 def test_concurrent_authorized_saves_have_one_winner_and_one_409() -> None:
     service, annotator = prepared()
-    administrator = actor("root-reviewer", "admin", projects=())
+    administrator = actor(
+        "root-reviewer",
+        *ANNOTATOR_CAPABILITIES,
+        *REVIEWER_CAPABILITIES,
+        "annotation_task.assign",
+    )
     stale = service.get_task("task-1")
 
     def save(identity: AnnotationActor, suffix: str) -> int | str:
@@ -190,15 +214,17 @@ def test_same_mutation_id_with_changed_precondition_or_payload_is_409() -> None:
 
 def test_be02_scope_roles_self_review_and_publisher_contract() -> None:
     service, _ = prepared()
-    alice = auth("alice", "annotator")
-    reviewer = auth("bob", "reviewer")
-    publisher = auth("pat", "publisher")
+    alice = auth("alice", *ANNOTATOR_CAPABILITIES)
+    reviewer = auth("bob", *REVIEWER_CAPABILITIES)
+    publisher = auth("pat", *PUBLISHER_CAPABILITIES)
 
     assert service.read_task("task-1", alice).project_id == "project-a"
     with pytest.raises(AnnotationPermissionError):
-        service.read_task("task-1", auth("outsider", "reviewer", projects=("project-b",)))
+        service.read_task(
+            "task-1", auth("outsider", *REVIEWER_CAPABILITIES, projects=("project-b",))
+        )
     with pytest.raises(AnnotationPermissionError):
-        service.read_task("task-1", auth("uploader", "uploader"))
+        service.read_task("task-1", auth("uploader", "upload.read", "upload.manage"))
 
     submitted = service.submit(
         "task-1",
@@ -209,7 +235,7 @@ def test_be02_scope_roles_self_review_and_publisher_contract() -> None:
     with pytest.raises(AnnotationPermissionError):
         service.review(
             "task-1",
-            auth("alice", "annotator", "reviewer"),
+            auth("alice", *ANNOTATOR_CAPABILITIES, *REVIEWER_CAPABILITIES),
             ReviewDecision.APPROVE,
             revision=0,
             if_match=submitted.etag,
@@ -240,7 +266,12 @@ def test_admin_is_not_allowed_to_self_review() -> None:
         rollout_id="rollout-admin",
         base_step_count=2_000,
     )
-    administrator = actor("admin", "admin", projects=())
+    administrator = actor(
+        "admin",
+        *ANNOTATOR_CAPABILITIES,
+        *REVIEWER_CAPABILITIES,
+        "annotation_task.assign",
+    )
     service.claim("task-admin", administrator)
     submitted = service.submit(
         "task-admin",
@@ -260,7 +291,7 @@ def test_admin_is_not_allowed_to_self_review() -> None:
 
 def test_needs_revision_reject_and_history_queries() -> None:
     service, annotator = prepared()
-    reviewer = actor("bob", "reviewer")
+    reviewer = actor("bob", *REVIEWER_CAPABILITIES)
     submitted = service.submit(
         "task-1",
         annotator,
@@ -328,7 +359,7 @@ def test_edit_after_approval_removes_publishing_eligibility_but_not_snapshot_his
     )
     approval = service.review(
         "task-1",
-        actor("bob", "reviewer"),
+        actor("bob", *REVIEWER_CAPABILITIES),
         ReviewDecision.APPROVE,
         revision=1,
         if_match=submitted.etag,
@@ -351,5 +382,5 @@ def test_edit_after_approval_removes_publishing_eligibility_but_not_snapshot_his
         service.approved_snapshot(
             project_id="project-a",
             rollout_id="rollout-a",
-            actor=auth("pat", "publisher"),
+            actor=auth("pat", *PUBLISHER_CAPABILITIES),
         )

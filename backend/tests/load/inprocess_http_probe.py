@@ -80,9 +80,16 @@ def _app() -> tuple[FastAPI, str]:
             "aud": JWT_AUDIENCE,
             "iat": now,
             "exp": now + 300,
-            "project_ids": ["be12-load"],
-            "region_codes": ["cn-hz"],
-            "roles": ["uploader"],
+            "organization_scopes": [
+                {
+                    "organization_id": "be12-load-org",
+                    "project_id": "be12-load",
+                    "region_code": "cn-hz",
+                    "capabilities": ["upload.manage"],
+                }
+            ],
+            "capability_revision": 0,
+            "service_identity": False,
         },
         JWT_KEY,
         algorithm="HS256",
@@ -123,8 +130,6 @@ def run_probe(*, concurrency: int = 50, rollout_size: int = 20 * 1024**3) -> dic
             headers={
                 "Authorization": f"Bearer {token}",
                 "Idempotency-Key": f"be12-http-{index:04d}",
-                "X-Project-ID": "be12-load",
-                "X-Region-Code": "cn-hz",
             },
         )
         return {

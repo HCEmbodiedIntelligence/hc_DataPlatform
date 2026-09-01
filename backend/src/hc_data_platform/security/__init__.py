@@ -16,8 +16,6 @@ from .auth import (
     AuthContext,
     JwtVerifier,
     OidcJwksKeyResolver,
-    Permission,
-    Role,
     SigningKeyResolver,
 )
 from .idempotency import IdempotencyResult, IdempotencyStore, InMemoryIdempotencyStore
@@ -40,14 +38,12 @@ __all__ = [
     "JwtVerifier",
     "OidcJwksKeyResolver",
     "OutboxPublisher",
-    "Permission",
     "PostgresAuditSink",
     "PostgresIdempotencyStore",
     "PostgresOutboxPublisher",
     "PostgresScopedUnitOfWork",
     "ResourceVersion",
     "RlsSessionContext",
-    "Role",
     "ScopeGuard",
     "ScopeSelection",
     "ScopedResource",

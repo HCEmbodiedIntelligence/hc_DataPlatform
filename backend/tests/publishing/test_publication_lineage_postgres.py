@@ -259,7 +259,6 @@ def dashboard_actor(project_id: str, region_code: str) -> AuthContext:
         subject_id="br01-principal",
         project_ids=frozenset({project_id}),
         region_codes=frozenset({region_code}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, region_code)}),
         scoped_capabilities=frozenset({(project_id, CAPABILITY_DASHBOARD_READ)}),
     )

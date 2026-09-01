@@ -8,7 +8,7 @@ import type {
   EpisodeListItemVm,
   SourceProvenanceVm,
 } from "../../../features/datasets/api";
-import { DataCursorPager, DataTable, StatusTag } from "../../../shared/ui";
+import { CursorPager, DataTable, StatusTag } from "../../../shared/ui";
 import {
   episodeInclusionLabel,
   episodeReviewPresentation,
@@ -287,7 +287,7 @@ export function DatasetCursorPager({
   onChange: (cursor: { before?: string; after?: string }) => void;
 }>) {
   return (
-    <DataCursorPager
+    <CursorPager
       pageInfo={{
         startCursor: page.pageInfo.before,
         endCursor: page.pageInfo.after,

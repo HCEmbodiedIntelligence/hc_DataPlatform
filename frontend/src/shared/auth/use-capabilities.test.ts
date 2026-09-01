@@ -12,16 +12,12 @@ describe("expandGrantedCapabilities", () => {
     ).toBe(true);
   });
 
-  it("keeps upload.read read-only while supporting legacy upload write names", () => {
+  it("keeps exact capabilities isolated", () => {
     expect(
       expandGrantedCapabilities(["upload.read"]).has("upload.manage"),
     ).toBe(false);
     expect(
-      expandGrantedCapabilities(["ingest.upload"]).has("upload.manage"),
-    ).toBe(true);
-    expect(
-      expandGrantedCapabilities(["collection.upload"]).has("upload.read"),
-    ).toBe(true);
+      expandGrantedCapabilities(["upload.manage"]).has("access.manage"),
+    ).toBe(false);
   });
-
 });

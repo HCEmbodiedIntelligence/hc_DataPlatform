@@ -309,12 +309,21 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
     )
     annotator = AnnotationActor(
         actor_id="alice",
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         project_ids=frozenset({PROJECT_ID}),
     )
     reviewer = AnnotationActor(
         actor_id="bob",
-        roles=frozenset({"reviewer"}),
+        capabilities=frozenset({"annotation_task.read", "annotation.review"}),
         project_ids=frozenset({PROJECT_ID}),
     )
     task = annotations.claim(task.task_id, annotator)

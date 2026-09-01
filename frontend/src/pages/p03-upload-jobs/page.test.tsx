@@ -625,10 +625,11 @@ describe("P03 serial data upload page", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
-  it("allows a project admin to confirm in line with the backend role gate", async () => {
+  it("allows a project admin with the current upload capability to confirm", async () => {
     grantedCapabilities.delete("upload.read");
     grantedCapabilities.delete("upload.manage");
-    grantedCapabilities.add("project.access.manage");
+    grantedCapabilities.add("upload.read");
+    grantedCapabilities.add("upload.manage");
     const user = userEvent.setup();
     const { container } = renderPage();
     const dialog = await chooseValidFolder(user, container);

@@ -33,7 +33,7 @@ from hc_data_platform.security.access_models import (
 )
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import (
     CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE,
     CAPABILITY_PLATFORM_ADMIN,
@@ -48,7 +48,6 @@ class AdminVerifier:
                 subject_id="security-admin",
                 project_ids=frozenset(),
                 region_codes=frozenset(),
-                roles=frozenset(),
                 capabilities=frozenset({CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE}),
             )
         scope = {
@@ -63,7 +62,7 @@ class AdminVerifier:
             organization_ids=frozenset({organization_id}),
             project_ids=frozenset({project_id}),
             region_codes=frozenset(),
-            roles=frozenset({Role.ADMIN.value}),
+            capabilities=frozenset({"access.manage"}),
             scope_pairs=frozenset({(project_id, None)}),
             organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         )
@@ -214,7 +213,6 @@ def test_zero_scope_account_can_join_organization_without_reauthentication() -> 
             subject_id="platform-admin",
             project_ids=frozenset(),
             region_codes=frozenset(),
-            roles=frozenset(),
             capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
         )
         service.decide_organization_membership_request(
@@ -1020,7 +1018,7 @@ def test_two_users_are_repository_scoped_and_revocation_is_immediate() -> None:
         sensitive_reason = "private-business-justification-must-not-enter-audit"
         capability = client.post(
             "/api/v1/organizations/org-a/projects/project-a/capability-requests",
-            json={"capability_keys": ["datasets.read"], "reason": sensitive_reason},
+            json={"capability_keys": ["dataset.read"], "reason": sensitive_reason},
             headers=_headers(alice_token, "alice-capability"),
         )
         assert capability.status_code == 201
@@ -1046,7 +1044,7 @@ def test_two_users_are_repository_scoped_and_revocation_is_immediate() -> None:
                 "project_name": "project-a",
                 "region_codes": [],
                 "project_wide": True,
-                "capabilities": ["datasets.read"],
+                "capabilities": ["dataset.read"],
             }
         ]
 
@@ -1182,14 +1180,13 @@ def test_concurrent_duplicate_approval_has_one_effect_and_conflicting_decision_i
         subject_id=principal.principal_id,
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
     )
     administrator = AuthContext(
         subject_id="admin-a",
         organization_ids=frozenset({"org-a"}),
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
-        roles=frozenset({Role.ADMIN.value}),
+        capabilities=frozenset({"access.manage"}),
         scope_pairs=frozenset({("project-a", None)}),
         organization_scope_triples=frozenset({("org-a", "project-a", None)}),
     )
@@ -1268,7 +1265,7 @@ def test_membership_and_capability_requests_support_reject_and_withdraw() -> Non
 
         withdrawn_capability = client.post(
             "/api/v1/organizations/org-a/projects/project-a/capability-requests",
-            json={"capability_keys": ["datasets.read"]},
+            json={"capability_keys": ["dataset.read"]},
             headers=_headers(token, "capability-to-withdraw"),
         ).json()
         response = client.post(
@@ -1283,7 +1280,7 @@ def test_membership_and_capability_requests_support_reject_and_withdraw() -> Non
 
         rejected_capability = client.post(
             "/api/v1/organizations/org-a/projects/project-a/capability-requests",
-            json={"capability_keys": ["datasets.write"]},
+            json={"capability_keys": ["dataset.update"]},
             headers=_headers(token, "capability-to-reject"),
         ).json()
         response = client.post(

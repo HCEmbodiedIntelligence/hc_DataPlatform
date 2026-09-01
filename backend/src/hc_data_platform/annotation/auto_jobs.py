@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 
 from .models import (
     AnnotationOperation,
@@ -267,7 +267,7 @@ class AutoAnnotationOutboxHandler:
             raise ValueError("automatic annotation outbox aggregate does not match job")
         worker = AuthContext.service(
             subject_id="auto-annotation-dispatcher",
-            roles={Role.ANNOTATOR},
+            capabilities={"annotation_task.read", "annotation.edit", "annotation.save"},
             project_ids={event.project_id},
             region_codes={event.region_code},
         )
@@ -863,7 +863,7 @@ class AutoAnnotationJobService:
 
     @staticmethod
     def _authorize_write(auth: AuthContext, task: AnnotationTask) -> None:
-        auth.require_capability("annotation.write", task.project_id)
+        auth.require_capability("annotation.edit", task.project_id)
         select_request_scope(task.project_id, task.region_code)
 
     def _audit(

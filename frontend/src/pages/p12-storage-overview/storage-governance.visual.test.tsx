@@ -324,12 +324,12 @@ describe("E10 capacity and lifecycle component contracts", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps filters shareable, migrates legacy tabs, and resets only invalidated cursors", () => {
-    const legacy = storageLifecycleQueryCodec.parse(
-      new URLSearchParams("tab=audit&cursor=audit-next"),
+  it("keeps current filters shareable and resets only invalidated cursors", () => {
+    const audit = storageLifecycleQueryCodec.parse(
+      new URLSearchParams("audit_cursor=audit-next"),
     );
-    expect(legacy.auditCursor).toBe("audit-next");
-    expect(legacy.policyCursor).toBeUndefined();
+    expect(audit.auditCursor).toBe("audit-next");
+    expect(audit.policyCursor).toBeUndefined();
 
     const filtered = updateLifecycleSearch(
       {

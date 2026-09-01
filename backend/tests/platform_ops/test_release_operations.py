@@ -190,7 +190,6 @@ def _auth(actor_id: str) -> AuthContext:
         subject_id=actor_id,
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset(
             {CAPABILITY_PLATFORM_RELEASE_OPERATE, CAPABILITY_PLATFORM_OPERATIONS_READ}
         ),

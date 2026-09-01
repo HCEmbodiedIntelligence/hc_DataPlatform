@@ -34,7 +34,6 @@ def _auth(*capabilities: str) -> AuthContext:
         subject_id="auditor-a",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset({"cn-hz"}),
-        roles=frozenset(),
         scope_pairs=frozenset({("project-a", "cn-hz")}),
         scoped_capabilities=frozenset(("project-a", capability) for capability in capabilities),
     )

@@ -72,7 +72,6 @@ export const navigationManifest: NavigationManifest = [
         requiredCapability: "upload.read",
         administratorOnly: false,
         activePatterns: [
-          dataUploadRoutes.legacyIndex,
           dataUploadRoutes.newUpload,
           dataUploadRoutes.records,
           "/ingest/uploads/:uploadId",
@@ -112,7 +111,6 @@ export const navigationManifest: NavigationManifest = [
         requiredCapability: "annotation_task.read",
         administratorOnly: false,
         activePatterns: [
-          dataAnnotationRoutes.legacyIndex,
           dataAnnotationRoutes.annotate,
           dataAnnotationRoutes.revisions,
           dataAnnotationRoutes.tagReview,

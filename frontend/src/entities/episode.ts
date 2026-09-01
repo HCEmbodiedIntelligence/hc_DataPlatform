@@ -13,8 +13,6 @@ export type EpisodeId = string & { readonly [episodeIdBrand]: 'EpisodeId' };
 export type EpisodeRevisionId = string & {
   readonly [episodeRevisionIdBrand]: 'EpisodeRevisionId';
 };
-/** Compatibility name used by Review and Version contracts. */
-export type RevisionId = EpisodeRevisionId;
 export type EpisodeStreamId = string & {
   readonly [episodeStreamIdBrand]: 'EpisodeStreamId';
 };

@@ -85,7 +85,8 @@ def _client() -> TestClient:
             subject_id="quality-router-reader",
             project_ids=frozenset({"p1"}),
             region_codes=frozenset({"cn-hz"}),
-            roles=frozenset({"uploader"}),
+            capabilities=frozenset({"upload.read", "upload.manage"}),
+            scope_pairs=frozenset({("p1", "cn-hz")}),
         )
         return await call_next(request)
 

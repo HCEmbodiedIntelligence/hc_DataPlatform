@@ -27,7 +27,7 @@ import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
-  DataCursorPager,
+  CursorPager,
   PageState,
   StandardPageScaffold,
   type MetricState,
@@ -483,7 +483,7 @@ export function AuditPage() {
           }
           pagination={
             events.data && events.data.items.length > 0 ? (
-              <DataCursorPager
+              <CursorPager
                 pageInfo={events.data.pageInfo}
                 busy={events.isFetching}
                 windowLabel={`当前窗口 ${events.data.items.length} 条`}

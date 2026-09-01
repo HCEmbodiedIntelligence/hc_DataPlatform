@@ -11,8 +11,8 @@ describe('dataset context routing', () => {
     expect(datasetContextKind('/datasets')).toBe('browse');
     expect(datasetContextKind('/datasets/ds-01/versions/v1')).toBe('browse');
     expect(datasetContextKind('/manual/issues')).toBe('cleaning-filter');
-    expect(datasetContextKind('/manual/drafts')).toBe('cleaning-filter');
-    expect(datasetContextKind('/manual/drafts/draft-01')).toBeNull();
+    expect(datasetContextKind('/annotations/revisions')).toBe('cleaning-filter');
+    expect(datasetContextKind('/annotations/tasks/task-01')).toBeNull();
   });
 
   it('reads the current dataset from either the path or cleaning filter', () => {
@@ -30,11 +30,11 @@ describe('dataset context routing', () => {
   it('filters cleaning lists and clears resource-dependent parameters', () => {
     expect(
       datasetSelectionLocation(
-        '/manual/drafts',
+        '/annotations/revisions',
         '?scope=mine&datasetId=ds-01&baseVersionId=v1&draftId=d1&after=cursor',
         'ds-02',
       ),
-    ).toEqual({ pathname: '/manual/drafts', search: '?scope=mine&datasetId=ds-02' });
+    ).toEqual({ pathname: '/annotations/revisions', search: '?scope=mine&datasetId=ds-02' });
   });
 
   it('clears the dataset filter without leaving the cleaning page', () => {

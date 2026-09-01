@@ -515,7 +515,6 @@ def test_operation_kind_requires_its_exact_separated_capability(
         subject_id=f"{operation_kind.lower()}-operator",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({current_capability["value"]}),
     )
     body = {
@@ -559,7 +558,6 @@ def test_authenticated_maintenance_http_controls_remain_available_after_read_onl
         subject_id="platform-maintenance-operator",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({auth["capability"]}),
     )
     body = {

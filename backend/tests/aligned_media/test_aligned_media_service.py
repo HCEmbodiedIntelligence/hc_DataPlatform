@@ -294,7 +294,8 @@ def test_authorize_endpoint_serves_exact_opaque_key_with_http_range(
         subject_id="annotator-1",
         project_ids=frozenset({"project-1"}),
         region_codes=frozenset({"cn-test"}),
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset({"episode.read"}),
+        scope_pairs=frozenset({("project-1", "cn-test")}),
         organization_ids=frozenset({"organization-1"}),
         organization_scope_triples=frozenset({("organization-1", "project-1", "cn-test")}),
     )

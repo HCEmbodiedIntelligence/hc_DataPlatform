@@ -50,17 +50,6 @@ const lazyIngestPages: readonly {
     pageId: "P03",
     routes: [
       {
-        path: dataUploadRoutes.legacyIndex,
-        navigationOwnerGroupId: "ingest",
-        navigationOwnerPageId: "P03",
-        requiredCapabilities: ["upload.read"],
-        hiddenFromNavigation: true,
-        lazy: async () => ({
-          Component: (await import("../shell/RouteCompatibility"))
-            .LegacyUploadIndexRedirect,
-        }),
-      },
-      {
         path: dataUploadRoutes.newUpload,
         navigationOwnerGroupId: "ingest",
         navigationOwnerPageId: "P03",

@@ -16,7 +16,7 @@ from hc_data_platform.core.context import (
 )
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.health import ReadinessProbe
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.storage.inventory import StorageInventorySnapshotProducer
 from hc_data_platform.storage.repository import InMemoryStorageRepository
 from hc_data_platform.storage.router import get_storage_governance_service, router
@@ -68,7 +68,7 @@ def test_storage_router_requires_auth_and_exact_service_scope() -> None:
 
     wrong_scope = AuthContext.service(
         subject_id="worker",
-        roles={Role.ADMIN},
+        capabilities={"storage.lifecycle.read"},
         project_ids={"project-b"},
     )
     denied = TestClient(app_with_auth(wrong_scope)).get(path)
@@ -81,7 +81,6 @@ def test_storage_router_enforces_page_capabilities_and_private_read_cache_header
         subject_id="storage-reader",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({"storage.lifecycle.read"}),
         scope_pairs=frozenset({("project-a", None)}),
     )
@@ -95,7 +94,6 @@ def test_storage_router_enforces_page_capabilities_and_private_read_cache_header
         subject_id="storage-overview-only",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({("project-a", None)}),
     )
@@ -117,7 +115,6 @@ def test_generated_inventory_serves_capacity_and_history_without_cross_project_l
         subject_id="storage-inventory-reader",
         project_ids=frozenset({"project-inventory", "project-other"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({("project-inventory", None), ("project-other", None)}),
     )
@@ -152,7 +149,6 @@ def test_storage_router_preserves_the_verified_organization_and_region_scope() -
         subject_id="organization-storage-reader",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset({"region-a"}),
-        roles=frozenset(),
         organization_ids=frozenset({"organization-a"}),
         scope_pairs=frozenset({("project-a", "region-a")}),
         scoped_capabilities=frozenset({("project-a", "storage.lifecycle.read")}),

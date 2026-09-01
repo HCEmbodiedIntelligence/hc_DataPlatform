@@ -19,11 +19,22 @@ from hc_data_platform.annotation import (
     SelfReviewPolicy,
 )
 
+ANNOTATOR_CAPABILITIES = frozenset(
+    {
+        "annotation_task.read",
+        "annotation_task.claim",
+        "annotation.edit",
+        "annotation.save",
+        "annotation.submit",
+    }
+)
+REVIEWER_CAPABILITIES = frozenset({"annotation_task.read", "annotation.review"})
 
-def actor(actor_id: str, *roles: str, projects: tuple[str, ...] = ("project-a",)):
+
+def actor(actor_id: str, *capabilities: str, projects: tuple[str, ...] = ("project-a",)):
     return AnnotationActor(
         actor_id=actor_id,
-        roles=frozenset(roles),
+        capabilities=frozenset(capabilities),
         project_ids=frozenset(projects),
     )
 
@@ -38,7 +49,7 @@ def service_with_claimed_task():
         rollout_id="rollout-a",
         base_step_count=2_000,
     )
-    annotator = actor("alice", "annotator")
+    annotator = actor("alice", *ANNOTATOR_CAPABILITIES)
     service.claim("task-1", annotator)
     return service, annotator
 
@@ -269,7 +280,7 @@ def test_submit_and_approval_bind_the_exact_revision() -> None:
     )
     task = service.get_task("task-1")
     submitted = service.submit("task-1", annotator, expected_revision=1, if_match=task.etag)
-    reviewer = actor("bob", "reviewer")
+    reviewer = actor("bob", *REVIEWER_CAPABILITIES)
     event = service.review(
         "task-1",
         reviewer,
@@ -303,7 +314,7 @@ def test_edit_after_approval_creates_new_draft_and_keeps_review_history() -> Non
     )
     service.review(
         "task-1",
-        actor("bob", "reviewer"),
+        actor("bob", *REVIEWER_CAPABILITIES),
         ReviewDecision.APPROVE,
         revision=1,
         if_match=task.etag,
@@ -337,7 +348,7 @@ def test_reviewer_scope_and_role_are_enforced() -> None:
     with pytest.raises(AnnotationPermissionError):
         service.review(
             "task-1",
-            actor("mallory", "reviewer", projects=("project-b",)),
+            actor("mallory", *REVIEWER_CAPABILITIES, projects=("project-b",)),
             ReviewDecision.APPROVE,
             revision=0,
             if_match=submitted.etag,
@@ -345,7 +356,7 @@ def test_reviewer_scope_and_role_are_enforced() -> None:
     with pytest.raises(AnnotationPermissionError):
         service.review(
             "task-1",
-            actor("charlie", "annotator"),
+            actor("charlie", *ANNOTATOR_CAPABILITIES),
             ReviewDecision.APPROVE,
             revision=0,
             if_match=submitted.etag,
@@ -362,7 +373,7 @@ def test_submitter_cannot_review_own_revision() -> None:
         rollout_id="rollout-a",
         base_step_count=2_000,
     )
-    dual_role = actor("alice", "annotator", "reviewer")
+    dual_role = actor("alice", *ANNOTATOR_CAPABILITIES, *REVIEWER_CAPABILITIES)
     service.claim("task-1", dual_role)
     submitted = service.submit(
         "task-1",

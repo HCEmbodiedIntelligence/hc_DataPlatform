@@ -100,12 +100,21 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
     )
     annotator = AnnotationActor(
         actor_id="alice",
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         project_ids=frozenset({project_id}),
     )
     reviewer = AnnotationActor(
         actor_id="bob",
-        roles=frozenset({"reviewer"}),
+        capabilities=frozenset({"annotation_task.read", "annotation.review"}),
         project_ids=frozenset({project_id}),
     )
     service.create_task(
@@ -275,8 +284,8 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
     stale = service.claim(concurrent_task_id, annotator)
     administrator = AnnotationActor(
         actor_id="database-admin",
-        roles=frozenset({"admin"}),
-        project_ids=frozenset(),
+        capabilities=frozenset({"annotation.save", "annotation_task.assign"}),
+        project_ids=frozenset({project_id}),
     )
 
     def concurrent_save(identity: AnnotationActor, suffix: str) -> int:
@@ -405,7 +414,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         ),
         actor=AnnotationActor(
             actor_id="publisher",
-            roles=frozenset({"publisher"}),
+            capabilities=frozenset({"dataset_version.publish", "data_schema.publish"}),
             project_ids=frozenset({project_id}),
         ),
     )
@@ -415,7 +424,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         version=schema.version,
         actor=AnnotationActor(
             actor_id="publisher",
-            roles=frozenset({"publisher"}),
+            capabilities=frozenset({"dataset_version.publish", "data_schema.publish"}),
             project_ids=frozenset({project_id}),
         ),
     )
@@ -498,7 +507,16 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
     )
     reader = AnnotationActor(
         actor_id="reader",
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         project_ids=frozenset({project_id}),
     )
     for task_id in (f"thread-a-{suffix}", f"thread-b-{suffix}"):
@@ -665,7 +683,16 @@ def test_postgres_auto_annotation_quota_reservation_is_atomic() -> None:
         subject_id="annotation-auto-quota",
         project_ids=frozenset({project_id}),
         region_codes=frozenset({region_code}),
-        roles=frozenset({"annotator"}),
+        capabilities=frozenset(
+            {
+                "annotation_task.read",
+                "annotation_task.claim",
+                "annotation_task.assign",
+                "annotation.edit",
+                "annotation.save",
+                "annotation.submit",
+            }
+        ),
         scope_pairs=frozenset({(project_id, region_code)}),
     )
     annotation = AnnotationService(PostgresAnnotationRepository(connect), clock=lambda: now)

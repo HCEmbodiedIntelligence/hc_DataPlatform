@@ -77,43 +77,13 @@ from .repository import InMemoryStorageRepository
 
 Clock = Callable[[], datetime]
 
-# Public storage page capabilities.  The compatibility entries preserve
-# already-issued legacy grants while the server enforces the same precise
-# authority that the P12/P13 routes advertise to the browser.
-_CAPACITY_READ_CAPABILITIES = (
-    "storage.overview.read",
-    "datasets.read",
-    "project.access.manage",
-)
-_LIFECYCLE_READ_CAPABILITIES = (
-    "storage.lifecycle.read",
-    "storage.lifecycle.manage",
-    "storage.lifecycle.execute",
-    "project.access.manage",
-)
-_LIFECYCLE_MANAGE_CAPABILITIES = (
-    "storage.lifecycle.manage",
-    "project.access.manage",
-)
-_OBJECT_READ_CAPABILITIES = (
-    "storage.objects.read",
-    "storage.overview.read",
-    "project.access.manage",
-)
-_OBJECT_MANAGE_CAPABILITIES = (
-    "storage.objects.manage",
-    "storage.lifecycle.manage",
-    "project.access.manage",
-)
-_LIFECYCLE_EXECUTE_CAPABILITIES = (
-    "storage.lifecycle.execute",
-    "storage.lifecycle.manage",
-    "project.access.manage",
-)
-_LIFECYCLE_APPROVE_CAPABILITIES = (
-    "storage.lifecycle.approve",
-    "project.access.manage",
-)
+_CAPACITY_READ_CAPABILITY = "storage.overview.read"
+_LIFECYCLE_READ_CAPABILITY = "storage.lifecycle.read"
+_LIFECYCLE_MANAGE_CAPABILITY = "storage.lifecycle.manage"
+_OBJECT_READ_CAPABILITY = "storage.object.read"
+_OBJECT_MANAGE_CAPABILITY = "storage.object.manage"
+_LIFECYCLE_EXECUTE_CAPABILITY = "storage.lifecycle.execute"
+_LIFECYCLE_APPROVE_CAPABILITY = "storage.lifecycle.approve"
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,7 +166,7 @@ class StorageGovernanceService:
         actor: AuthContext,
         snapshot_id: str | None = None,
     ) -> CapacitySnapshot:
-        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITY)
         resolved = snapshot_id or self._repository.latest_snapshot_id(project_id=project_id)
         if resolved is None:
             raise _not_found("capacity_snapshot")
@@ -227,7 +197,7 @@ class StorageGovernanceService:
         bounded; longer reporting belongs to a later export/aggregation workflow.
         """
 
-        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITY)
         now = self._clock().astimezone(timezone.utc)
         end = (window_end or now).astimezone(timezone.utc)
         start = (window_start or end - timedelta(days=30)).astimezone(timezone.utc)
@@ -263,7 +233,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> CapacityInventoryPage:
-        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITY)
         self._validate_limit(limit)
         resolved = snapshot_id or self._repository.latest_snapshot_id(project_id=project_id)
         if resolved is None:
@@ -319,7 +289,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> PolicyMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITY)
 
         def create() -> LifecyclePolicy:
             now = self._clock()
@@ -364,7 +334,7 @@ class StorageGovernanceService:
         policy_id: str,
         actor: AuthContext,
     ) -> LifecyclePolicy:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         policy = self._repository.get_policy(project_id=project_id, policy_id=policy_id)
         if policy is None:
             raise _not_found("lifecycle_policy")
@@ -378,7 +348,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> LifecyclePolicyPage:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         self._validate_limit(limit)
         anchor, direction = self._decode_cursor(cursor, kind="policies", project_id=project_id)
         items = self._repository.list_policies(
@@ -526,7 +496,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> PolicyMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITY)
 
         def delete() -> None:
             current = self.get_policy(project_id=project_id, policy_id=policy_id, actor=actor)
@@ -579,7 +549,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> LifecycleAuditPage:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         self._validate_limit(limit)
         anchor, direction = self._decode_cursor(cursor, kind="audit", project_id=project_id)
         items = self._repository.list_audit(
@@ -633,7 +603,7 @@ class StorageGovernanceService:
                 detail="Select between one and one hundred distinct projects.",
             )
         for project_id in normalized:
-            self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITIES)
+            self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITY)
 
         try:
             original_context = current_request_context()
@@ -721,7 +691,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> ManagedStorageObjectPage:
-        self._authorize(actor, project_id, _OBJECT_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_READ_CAPABILITY)
         self._validate_limit(limit)
         anchor, direction = self._decode_cursor(cursor, kind="objects", project_id=project_id)
         records = self._repository.list_managed_objects(
@@ -764,7 +734,7 @@ class StorageGovernanceService:
         object_id: str,
         actor: AuthContext,
     ) -> ManagedStorageObject:
-        self._authorize(actor, project_id, _OBJECT_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_READ_CAPABILITY)
         return self._object_record(project_id=project_id, object_id=object_id).public(
             now=self._clock()
         )
@@ -778,7 +748,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> StorageObjectDownloadGrant:
-        self._authorize(actor, project_id, _OBJECT_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_READ_CAPABILITY)
         record = self._object_record(project_id=project_id, object_id=object_id)
         if record.status is not StorageObjectStatus.ACTIVE:
             raise problem(
@@ -829,7 +799,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ManagedStorageObject:
-        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITY)
         record = self._object_record(project_id=project_id, object_id=object_id)
         operation, replayed = self._begin_object_operation(
             project_id=project_id,
@@ -892,7 +862,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ManagedStorageObject:
-        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITY)
         record = self._object_record(project_id=project_id, object_id=object_id)
         operation, replayed = self._begin_object_operation(
             project_id=project_id,
@@ -960,7 +930,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ManagedStorageObject:
-        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITY)
         record = self._object_record(project_id=project_id, object_id=object_id)
         action = (
             StorageObjectAction.ARCHIVE
@@ -1034,7 +1004,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ManagedMultipartUpload:
-        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _OBJECT_MANAGE_CAPABILITY)
         record = self._repository.get_managed_multipart(
             project_id=project_id, multipart_id=multipart_id
         )
@@ -1102,7 +1072,7 @@ class StorageGovernanceService:
         actor: AuthContext,
         request_id: str,
     ) -> LifecycleExecution:
-        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITY)
         policy = self.get_policy(project_id=project_id, policy_id=command.policy_id, actor=actor)
         ResourceVersion(policy.version).require(command.policy_etag)
         if policy.state is not LifecyclePolicyState.ENABLED:
@@ -1222,7 +1192,7 @@ class StorageGovernanceService:
         actor: AuthContext,
         request_id: str,
     ) -> LifecycleExecution:
-        self._authorize(actor, project_id, _LIFECYCLE_APPROVE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_APPROVE_CAPABILITY)
         current = self._execution_record(project_id=project_id, execution_id=execution_id)
         if current.status is not LifecycleExecutionStatus.AWAITING_APPROVAL:
             raise problem(
@@ -1284,7 +1254,7 @@ class StorageGovernanceService:
         actor: AuthContext,
         request_id: str,
     ) -> LifecycleExecution:
-        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITY)
         current = self._execution_record(project_id=project_id, execution_id=execution_id)
         if current.status is not LifecycleExecutionStatus.APPROVED:
             raise problem(
@@ -1333,7 +1303,7 @@ class StorageGovernanceService:
         execution_id: str,
         actor: AuthContext,
     ) -> LifecycleExecution:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         return self._execution_record(project_id=project_id, execution_id=execution_id)
 
     def list_lifecycle_executions(
@@ -1344,7 +1314,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> LifecycleExecutionPage:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         self._validate_limit(limit)
         anchor, direction = self._decode_cursor(cursor, kind="executions", project_id=project_id)
         items = self._repository.list_executions(
@@ -1388,7 +1358,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> LifecycleExecutionLogPage:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         self._validate_limit(limit)
         self._execution_record(project_id=project_id, execution_id=execution_id)
         anchor, direction = self._decode_cursor(
@@ -1449,7 +1419,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ExecutionMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITY)
 
         def cancel() -> LifecycleExecution:
             current = self._execution_record(
@@ -1497,7 +1467,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ExecutionMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_EXECUTE_CAPABILITY)
 
         def retry() -> LifecycleExecution:
             current = self._execution_record(
@@ -1543,7 +1513,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ScheduleMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITY)
 
         def create() -> LifecycleSchedule:
             policy = self.get_policy(
@@ -1602,7 +1572,7 @@ class StorageGovernanceService:
         schedule_id: str,
         actor: AuthContext,
     ) -> LifecycleSchedule:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         return self._schedule_record(project_id=project_id, schedule_id=schedule_id)
 
     def list_lifecycle_schedules(
@@ -1613,7 +1583,7 @@ class StorageGovernanceService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> LifecycleSchedulePage:
-        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_READ_CAPABILITY)
         self._validate_limit(limit)
         anchor, direction = self._decode_cursor(cursor, kind="schedules", project_id=project_id)
         items = self._repository.list_schedules(
@@ -1764,7 +1734,7 @@ class StorageGovernanceService:
         idempotency_key: str,
         request_id: str,
     ) -> ScheduleMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITY)
 
         def delete() -> LifecycleSchedule:
             current = self._schedule_record(project_id=project_id, schedule_id=schedule_id)
@@ -1854,7 +1824,7 @@ class StorageGovernanceService:
             LifecycleSchedule,
         ],
     ) -> ScheduleMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITY)
 
         def change() -> LifecycleSchedule:
             current = self._schedule_record(project_id=project_id, schedule_id=schedule_id)
@@ -2082,7 +2052,7 @@ class StorageGovernanceService:
         if_match: str,
         transform: Callable[[LifecyclePolicy, ResourceVersion], LifecyclePolicy],
     ) -> PolicyMutationResult:
-        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITIES)
+        self._authorize(actor, project_id, _LIFECYCLE_MANAGE_CAPABILITY)
 
         def change() -> LifecyclePolicy:
             current = self.get_policy(project_id=project_id, policy_id=policy_id, actor=actor)
@@ -2183,7 +2153,7 @@ class StorageGovernanceService:
     def _authorize(
         actor: AuthContext,
         project_id: str,
-        capabilities: tuple[str, ...],
+        capability: str,
     ) -> None:
         organization_id: str | None = None
         region_code: str | None = None
@@ -2204,14 +2174,7 @@ class StorageGovernanceService:
             region_code = request_scope.region_code
 
         ScopeGuard.require(actor, project_id, region_code, organization_id)
-        if any(
-            actor.has_capability(capability, project_id, organization_id)
-            for capability in capabilities
-        ):
-            return
-        # The first entry is the current page contract; later entries are
-        # explicit compatibility grants, not a blanket permission bypass.
-        actor.require_capability(capabilities[0], project_id, organization_id)
+        actor.require_capability(capability, project_id, organization_id)
 
     @staticmethod
     def _validate_limit(limit: int) -> None:

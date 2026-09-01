@@ -58,17 +58,8 @@ ServiceDependency = Annotated[RegistryService, Depends(get_registry_service)]
 def resolve_registry_project(
     organization_id: str,
     auth: VerifiedAuth,
-    requested_project: Annotated[
-        str | None, Header(alias="X-Project-ID", min_length=1, max_length=128)
-    ] = None,
 ) -> str:
-    """Choose an authorization/audit project without making it resource identity.
-
-    Robot models are organization master data.  The optional legacy header is
-    accepted during client rollout, while unscoped callers deterministically use
-    one of their authorized projects in the organization.  Repository identity
-    remains organization based.
-    """
+    """Choose an authorization/audit project without making it resource identity."""
 
     candidates = sorted(
         {
@@ -77,17 +68,6 @@ def resolve_registry_project(
             if scoped_organization == organization_id
         }
     )
-    if requested_project is not None:
-        if requested_project not in candidates and not auth.is_platform_admin:
-            from hc_data_platform.core.errors import problem
-
-            raise problem(
-                status=403,
-                code="ORGANIZATION_SCOPE_DENIED",
-                title="Organization access denied",
-                detail="The requested project does not belong to the authorized organization.",
-            )
-        return requested_project
     if candidates:
         return candidates[0]
 

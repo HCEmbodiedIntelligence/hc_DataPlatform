@@ -19,7 +19,7 @@ from hc_data_platform.core.dbapi import psycopg_connection_factory  # noqa: E402
 from hc_data_platform.core.errors import ProblemException  # noqa: E402
 from hc_data_platform.core.events import DomainEventEnvelope  # noqa: E402
 from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
-from hc_data_platform.security.auth import AuthContext, Role  # noqa: E402
+from hc_data_platform.security.auth import AuthContext  # noqa: E402
 from hc_data_platform.security.outbox import (  # noqa: E402
     PostgresOutboxDeliveryRepository,
 )
@@ -135,7 +135,17 @@ def _operator(
         subject_id=subject_id,
         project_ids=frozenset({project_id}),
         region_codes=frozenset({"cn-test"}),
-        roles=frozenset({Role.ADMIN.value}),
+        capabilities=frozenset(
+            {
+                "storage.overview.read",
+                "storage.object.read",
+                "storage.object.manage",
+                "storage.lifecycle.read",
+                "storage.lifecycle.manage",
+                "storage.lifecycle.execute",
+                "storage.lifecycle.approve",
+            }
+        ),
         service_identity=True,
         scope_pairs=frozenset({(project_id, "cn-test")}),
         organization_ids=frozenset({ORGANIZATION_ID}),

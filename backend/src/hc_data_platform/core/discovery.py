@@ -63,9 +63,3 @@ def discover_module_routers(package: ModuleType) -> tuple[ModuleRouter, ...]:
             raise TypeError(f"{router_module_name}:router must be a fastapi.APIRouter")
         discovered.append(ModuleRouter(module_name=module_info.name, router=router))
     return tuple(discovered)
-
-
-def discover_router_modules(package: ModuleType) -> tuple[APIRouter, ...]:
-    """Compatibility wrapper returning only the discovered FastAPI routers."""
-
-    return tuple(module.router for module in discover_module_routers(package))

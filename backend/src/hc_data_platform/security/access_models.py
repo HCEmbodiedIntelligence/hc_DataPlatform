@@ -15,6 +15,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+from .capabilities import KNOWN_BUSINESS_CAPABILITIES
+
 # Technical resource ceilings for endpoints exposed to the public internet. Password strength
 # is enforced by the centrally configured PasswordPolicy after request-shape validation.
 MAX_USERNAME_CHARS = 128
@@ -338,6 +340,9 @@ class CapabilityRequestCreate(BaseModel):
             raise ValueError(
                 "platform capabilities can only be granted through the global identity plane"
             )
+        unknown = set(normalized) - KNOWN_BUSINESS_CAPABILITIES
+        if unknown:
+            raise ValueError("unknown capability keys: " + ", ".join(sorted(unknown)))
         return normalized
 
 

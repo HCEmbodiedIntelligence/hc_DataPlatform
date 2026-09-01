@@ -6,7 +6,7 @@ import { dataUploadRoutes } from "../../app/shell/navigation-routes";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { PageState, UiPageHeader } from "../../shared/ui";
+import { PageState, PageHeader } from "../../shared/ui";
 import { UploadConfirmationDialog } from "./components/UploadConfirmationDialog";
 import { LeRobotUploadPanel } from "./components/LeRobotUploadPanel";
 import {
@@ -128,9 +128,8 @@ export default function UploadJobsPage() {
   );
   const cancelUpload = useUploadQueueStore((state) => state.cancel);
   const clearSettled = useUploadQueueStore((state) => state.clearSettled);
-  const isProjectAdmin = capabilities.has("project.access.manage");
-  const canRead = capabilities.has("upload.read") || isProjectAdmin;
-  const canManage = capabilities.has("upload.manage") || isProjectAdmin;
+  const canRead = capabilities.has("upload.read");
+  const canManage = capabilities.has("upload.manage");
 
   useEffect(() => {
     if (scope && canRead) void recoverQueue(scope);
@@ -476,7 +475,7 @@ export default function UploadJobsPage() {
 
   return (
     <main className={styles.page} data-upload-flow={flow.phase}>
-      <UiPageHeader
+      <PageHeader
         title="数据上传"
         breadcrumbs={[
           { key: "ingest", label: "采集与接收" },

@@ -15,14 +15,14 @@ from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import (
     CAPABILITY_ANNOTATION_REVIEW,
-    CAPABILITY_DATASETS_PUBLISH,
-    CAPABILITY_DATASETS_READ,
-    CAPABILITY_INGEST_UPLOAD,
+    CAPABILITY_DATASET_READ,
+    CAPABILITY_DATASET_VERSION_PUBLISH,
+    CAPABILITY_UPLOAD_MANAGE,
+    CAPABILITY_UPLOAD_READ,
 )
 
 from .models import (
     PENDING_ITEM_TYPES,
-    SIGNAL_STAGES,
     TASK_PROCESSING_STAGES,
     DashboardActivityEvent,
     DashboardActivityEventType,
@@ -33,15 +33,10 @@ from .models import (
     DashboardPendingItemsPage,
     DashboardPendingItemsResponse,
     DashboardPendingItemType,
-    DashboardPublishedRegionState,
     DashboardResourceType,
     DashboardSectionError,
     DashboardSectionState,
     DashboardSectionStatus,
-    DashboardSignalPipelineState,
-    DashboardSignalStageCount,
-    DashboardSnapshotResponse,
-    DashboardSnapshotSections,
     DashboardTargetResource,
     DashboardTaskStatusResponse,
     SelectedTaskStatus,
@@ -67,7 +62,6 @@ from .repository import (
     DashboardScope,
     DashboardWindow,
     InMemoryDashboardRepository,
-    PublicationLineageSummary,
     TaskStatusPackageFact,
     TaskStatusProjectionFacts,
     TaskStatusTaskFact,
@@ -77,9 +71,6 @@ MAX_QUERY_WINDOW = timedelta(days=31)
 
 
 class DashboardSectionKey(str, Enum):
-    SIGNAL_PIPELINE = "signal_pipeline"
-    EPISODES = "episodes"
-    WORK = "work"
     ACTIVITY = "activity"
     COVERAGE = "coverage"
     PENDING_ITEMS = "pending_items"
@@ -124,18 +115,6 @@ class AllowDashboardQueries:
 
 
 _BLOCKERS: dict[DashboardSectionKey, tuple[str, str]] = {
-    DashboardSectionKey.SIGNAL_PIPELINE: (
-        "P01_SIGNAL_FORMULA_UNCONFIRMED",
-        "信号轨道的统计规则还没配置完成，因此暂时不能显示各阶段数量。",
-    ),
-    DashboardSectionKey.EPISODES: (
-        "P01_EPISODE_DEFINITION_UNCONFIRMED",
-        "Uploaded, validated, and viewable episode identities need product confirmation.",
-    ),
-    DashboardSectionKey.WORK: (
-        "P01_WORK_CATALOG_UNCONFIRMED",
-        "The dashboard work catalog and counted states remain unconfirmed.",
-    ),
     DashboardSectionKey.COVERAGE: (
         "P01_COVERAGE_DENOMINATOR_MISSING",
         "缺少采集计划、机器人分组、任务目录或目标总量，因此暂时无法计算覆盖率。",
@@ -151,13 +130,13 @@ _BLOCKERS: dict[DashboardSectionKey, tuple[str, str]] = {
 }
 
 _PENDING_CAPABILITIES: dict[DashboardPendingItemType, tuple[str, ...]] = {
-    DashboardPendingItemType.UPLOAD_FAILED: (CAPABILITY_INGEST_UPLOAD,),
+    DashboardPendingItemType.UPLOAD_FAILED: (CAPABILITY_UPLOAD_MANAGE,),
     DashboardPendingItemType.QC_ANOMALY: (
-        CAPABILITY_DATASETS_READ,
-        CAPABILITY_INGEST_UPLOAD,
+        CAPABILITY_DATASET_READ,
+        CAPABILITY_UPLOAD_READ,
     ),
     DashboardPendingItemType.TAG_REVIEW_PENDING: (CAPABILITY_ANNOTATION_REVIEW,),
-    DashboardPendingItemType.PUBLICATION_PENDING: (CAPABILITY_DATASETS_PUBLISH,),
+    DashboardPendingItemType.PUBLICATION_PENDING: (CAPABILITY_DATASET_VERSION_PUBLISH,),
 }
 
 _ACTIVITY_DISPLAY: dict[DashboardActivityEventType, tuple[str, str]] = {
@@ -187,13 +166,7 @@ def blocked_state(section: DashboardSectionKey) -> DashboardSectionState:
         error=DashboardSectionError(
             code=code,
             message=message,
-            needs_product_confirmation=section
-            in {
-                DashboardSectionKey.SIGNAL_PIPELINE,
-                DashboardSectionKey.EPISODES,
-                DashboardSectionKey.WORK,
-                DashboardSectionKey.COVERAGE,
-            },
+            needs_product_confirmation=section is DashboardSectionKey.COVERAGE,
         ),
     )
 
@@ -334,71 +307,6 @@ class DashboardService:
         self._admission = admission or AllowDashboardQueries()
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._max_query_window = max_query_window
-
-    def snapshot(
-        self,
-        *,
-        auth: AuthContext,
-        project_id: str,
-        region_code: str,
-        range_start: datetime,
-        range_end: datetime,
-        timezone_name: str,
-    ) -> DashboardSnapshotResponse:
-        query = self._query(auth, project_id, region_code, range_start, range_end, timezone_name)
-        now = self._begin(auth, "snapshot", query)
-        published = self._published_region_state(
-            self._repository.publication_lineage_summary(
-                auth=auth,
-                scope=query.scope,
-                window=query.window,
-            ),
-            now,
-        )
-        signal_summary = self._repository.signal_pipeline_summary(
-            auth=auth,
-            scope=query.scope,
-            window=query.window,
-        )
-        signal = DashboardSectionState(
-            status=(
-                DashboardSectionStatus.READY
-                if any(signal_summary.counts)
-                else DashboardSectionStatus.EMPTY
-            ),
-            as_of=now,
-        )
-        episodes = blocked_state(DashboardSectionKey.EPISODES)
-        work = blocked_state(DashboardSectionKey.WORK)
-        response = DashboardSnapshotResponse.model_validate(
-            {
-                **self._base(query, now),
-                "sections": DashboardSnapshotSections(
-                    signal_pipeline=DashboardSignalPipelineState(
-                        **signal.model_dump(),
-                        stage_counts=tuple(
-                            DashboardSignalStageCount(stage=stage, count=count)
-                            for stage, count in zip(
-                                SIGNAL_STAGES,
-                                signal_summary.counts,
-                                strict=True,
-                            )
-                        ),
-                        published_region=published,
-                    ),
-                    episodes=episodes,
-                    work=work,
-                ),
-            }
-        )
-        self._audit(
-            auth,
-            query,
-            "snapshot",
-            self._combined_status((signal, episodes, work, published)),
-            now,
-        )
-        return response
 
     def task_status(
         self,
@@ -854,52 +762,6 @@ class DashboardService:
             resource_id=fact.target_resource_id,
             resource_version=fact.target_resource_version,
             deep_link=deep_link,
-        )
-
-    @staticmethod
-    def _published_region_state(
-        summary: PublicationLineageSummary,
-        now: datetime,
-    ) -> DashboardPublishedRegionState:
-        if not summary.available:
-            return DashboardPublishedRegionState(
-                status=DashboardSectionStatus.BLOCKED,
-                error=DashboardSectionError(
-                    code="P01_PUBLICATION_REGION_LINEAGE_MISSING",
-                    message="Rollout-to-publication region lineage is not queryable.",
-                    retryable=True,
-                ),
-            )
-        if summary.unresolved_history_count and not summary.lineage_count:
-            return DashboardPublishedRegionState(
-                status=DashboardSectionStatus.BLOCKED,
-                as_of=summary.latest_published_at,
-                error=DashboardSectionError(
-                    code="P01_PUBLICATION_REGION_HISTORY_UNRESOLVED",
-                    message="Historical publications cannot be assigned to a certain region.",
-                ),
-                unresolved_history_count=summary.unresolved_history_count,
-            )
-        if summary.unresolved_history_count:
-            return DashboardPublishedRegionState(
-                status=DashboardSectionStatus.PARTIAL,
-                as_of=summary.latest_published_at or now,
-                error=DashboardSectionError(
-                    code="P01_PUBLICATION_REGION_HISTORY_PARTIAL",
-                    message="Counts include only certain lineage; some history is unassignable.",
-                ),
-                lineage_count=summary.lineage_count,
-                publication_count=summary.publication_count,
-                unresolved_history_count=summary.unresolved_history_count,
-            )
-        status = (
-            DashboardSectionStatus.READY if summary.lineage_count else DashboardSectionStatus.EMPTY
-        )
-        return DashboardPublishedRegionState(
-            status=status,
-            as_of=summary.latest_published_at or now,
-            lineage_count=summary.lineage_count,
-            publication_count=summary.publication_count,
         )
 
     @staticmethod
@@ -1375,7 +1237,6 @@ def _selected_task_status(
             for item in canonical_packages
         ),
         ready=sum(item.lance_ready for item in canonical_packages),
-        blocked_by_quality=0,
         isolated_by_quality=sum(
             item.duplicate_of_rollout_id is not None or item.qc_status in {"RISK", "REJECT"}
             for item in packages

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.versioning import ResourceVersion
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
@@ -67,7 +67,14 @@ def test_minio_download_recoverable_moves_and_multipart_abort() -> None:
     now = datetime(2026, 8, 21, 8, tzinfo=timezone.utc)
     actor = AuthContext.service(
         subject_id="storage-minio-manager",
-        roles={Role.ADMIN},
+        capabilities={
+            "storage.object.read",
+            "storage.object.manage",
+            "storage.lifecycle.read",
+            "storage.lifecycle.manage",
+            "storage.lifecycle.execute",
+            "storage.lifecycle.approve",
+        },
         project_ids={project_id},
     )
     repository = InMemoryStorageRepository()

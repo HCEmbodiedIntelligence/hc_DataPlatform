@@ -27,10 +27,7 @@ export function Component() {
   const capabilityKeys = authorization?.capabilities as
     | readonly string[]
     | undefined;
-  const canManage =
-    capabilityKeys?.some(
-      (key) => key === "project.access.manage" || key === "access.manage",
-    ) ?? false;
+  const canManage = capabilityKeys?.includes("access.manage") ?? false;
   const projectCapabilities = expandGrantedCapabilities(capabilityKeys ?? []);
   const platformCapabilities = useShellStore(
     (state) => state.platformCapabilities,

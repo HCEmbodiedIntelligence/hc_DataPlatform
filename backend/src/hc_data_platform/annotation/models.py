@@ -365,24 +365,23 @@ class AnnotationSubmission(BaseModel):
 
 
 class AnnotationActor(BaseModel):
-    """Compatibility identity accepted by the domain service and unit-test fake.
+    """Small capability-bearing identity used by the domain-service fake.
 
-    HTTP adapters use BE-02's :class:`AuthContext` and convert it at the module
-    boundary. Keeping this small value object makes the persistence fake useful
-    without requiring a JWT in domain tests.
+    HTTP adapters use :class:`AuthContext`. Keeping this value object makes the
+    persistence fake useful without requiring a JWT in domain tests.
     """
 
     model_config = ConfigDict(frozen=True)
 
     actor_id: str = Field(min_length=1)
-    roles: frozenset[str]
+    capabilities: frozenset[str]
     project_ids: frozenset[str]
 
     @classmethod
     def from_auth(cls, auth: AuthContext, project_id: str | None = None) -> AnnotationActor:
         return cls(
             actor_id=auth.subject_id,
-            roles=auth.legacy_roles(project_id),
+            capabilities=auth.effective_capabilities(project_id),
             project_ids=auth.project_ids,
         )
 

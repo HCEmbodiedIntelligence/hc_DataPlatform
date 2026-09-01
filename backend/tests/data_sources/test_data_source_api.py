@@ -31,7 +31,6 @@ def _auth(*, read: bool = True, manage: bool = True) -> AuthContext:
         organization_ids=frozenset({ORGANIZATION_ID}),
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset(capabilities),
         organization_scope_triples=frozenset({(ORGANIZATION_ID, PROJECT_ID, REGION_CODE)}),

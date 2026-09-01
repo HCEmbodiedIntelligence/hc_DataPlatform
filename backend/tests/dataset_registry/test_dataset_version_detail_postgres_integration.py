@@ -109,7 +109,6 @@ def _auth() -> AuthContext:
         subject_id="p07-dataset-detail-reader",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset((PROJECT_ID, capability) for capability in capabilities),
     )

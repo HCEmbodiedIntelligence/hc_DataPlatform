@@ -46,7 +46,7 @@ const initialCapabilityRequest: CapabilityRequest = {
   organization_id: "org_fx_01",
   project_id: "prj_fx_01",
   requester_id: "developer_fx_09",
-  capability_keys: ["datasets.publish", "project.access.manage"],
+  capability_keys: ["dataset_version.publish", "access.manage"],
   status: "PENDING",
   reason: "负责数据版本发布与项目权限审批",
   created_at: requestedAt,

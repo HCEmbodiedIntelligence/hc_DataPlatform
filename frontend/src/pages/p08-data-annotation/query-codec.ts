@@ -95,7 +95,6 @@ function safeReturnTo(value: string | null): string | undefined {
     if (parsed.origin !== "https://application.invalid" || parsed.hash)
       return undefined;
     const allowed =
-      parsed.pathname === "/annotations" ||
       parsed.pathname === "/annotations/annotate" ||
       parsed.pathname === "/annotations/tag-review" ||
       parsed.pathname === "/annotations/revisions" ||

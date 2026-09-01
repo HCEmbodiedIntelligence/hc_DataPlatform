@@ -65,7 +65,6 @@ def _auth() -> AuthContext:
         subject_id="p05-dataset-page-writer",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset(
             {(PROJECT_ID, "dataset.read"), (PROJECT_ID, "dataset.create")}

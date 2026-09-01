@@ -37,7 +37,6 @@ def test_dashboard_fragment_matches_router_and_aggregates_without_duplicate_cont
     runtime = app.openapi()
 
     expected = {
-        ("/api/v1/projects/{project_id}/dashboard/snapshot", "get"),
         ("/api/v1/projects/{project_id}/dashboard/activity", "get"),
         ("/api/v1/projects/{project_id}/dashboard/coverage", "get"),
         ("/api/v1/projects/{project_id}/dashboard/pending-items", "get"),
@@ -87,7 +86,7 @@ def test_contract_requires_explicit_exact_scope_time_and_bounded_cursor_pages() 
     assert "principal" in parameters["DashboardCursor"]["description"]
 
 
-def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage() -> None:
+def test_contract_has_factual_event_pending_and_task_pipeline_shapes() -> None:
     fragment = yaml.safe_load(FRAGMENT.read_text(encoding="utf-8"))
     schemas = fragment["components"]["schemas"]
     assert schemas["DashboardSectionStatus"]["enum"] == [
@@ -98,27 +97,6 @@ def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage()
         "ERROR",
         "BLOCKED",
     ]
-    assert schemas["SignalStage"]["enum"] == [
-        "COLLECTED",
-        "RECEIVED",
-        "AUTO_QC",
-        "ALIGNED_30_HZ",
-        "LANCE",
-        "ANNOTATION",
-        "REVIEW",
-        "PUBLISHED",
-    ]
-    signal_pipeline = schemas["DashboardSignalPipelineState"]
-    assert "stage_counts" in signal_pipeline["required"]
-    assert signal_pipeline["properties"]["stage_counts"]["items"] == {
-        "$ref": "#/components/schemas/DashboardSignalStageCount"
-    }
-    assert "CLEAN" not in FRAGMENT.read_text(encoding="utf-8").upper().replace(
-        "CLEANING IS NOT A SEPARATE SIGNAL STAGE", ""
-    )
-    snapshot_sections = schemas["DashboardSnapshotSections"]
-    assert set(snapshot_sections["properties"]) == {"signal_pipeline", "episodes", "work"}
-    assert "storage" not in snapshot_sections["properties"]
     task_status = schemas["DashboardTaskStatusResponse"]
     assert "pipeline" in task_status["required"]
     assert task_status["properties"]["pipeline"] == {
@@ -145,17 +123,13 @@ def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage()
     assert {"source_id", "source_state", "severity", "opened_at", "target"} <= set(
         pending_properties
     )
-    assert "published_region" in schemas["DashboardSignalPipelineState"]["properties"]
     for schema_name in (
-        "DashboardPublishedRegionState",
-        "DashboardSignalPipelineState",
         "DashboardActivityPage",
         "DashboardPendingItemsPage",
     ):
         assert schemas[schema_name]["additionalProperties"] is False
         assert "allOf" not in schemas[schema_name]
     for response_name in (
-        "DashboardSnapshotResponse",
         "DashboardActivityResponse",
         "DashboardCoverageResponse",
         "DashboardPendingItemsResponse",
@@ -167,7 +141,6 @@ def test_contract_has_factual_event_pending_and_lineage_shapes_without_storage()
     assert "not a device captured/saved fact" in source
     assert "not throughput buckets" in source
     assert "historical observations are not projected as a percentage" in source
-    assert "region storage is not a p01 field" in source
     assert "no sla duration is implied" in source
 
 

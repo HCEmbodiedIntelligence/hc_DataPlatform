@@ -630,8 +630,7 @@ export function CapacityPane() {
       .filter(
         (grant) =>
           grant.organizationId === scope?.organizationId &&
-          (grant.capabilities.includes("storage.overview.read") ||
-            grant.capabilities.includes("project.access.manage")),
+          grant.capabilities.includes("storage.overview.read"),
       )
       .map((grant) => grant.projectId);
     if (projectId && !projectIds.includes(projectId))

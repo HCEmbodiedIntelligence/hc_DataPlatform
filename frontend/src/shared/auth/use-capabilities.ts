@@ -5,41 +5,10 @@ import { useShellStore } from "../scope/shell-store";
 
 const PLATFORM_ADMIN_CAPABILITY = "platform.admin";
 
-const runtimeCapabilityImplications: Readonly<
-  Record<string, readonly string[]>
-> = {
-  "collection.upload": ["upload.read", "upload.manage"],
-  "ingest.upload": ["upload.read", "upload.manage"],
-  "annotation.write": [
-    "annotation_task.read",
-    "annotation_task.claim",
-    "episode.read",
-    "annotation.edit",
-    "annotation.save",
-    "annotation.submit",
-    "annotation_draft.edit",
-  ],
-  "annotation.review": ["annotation_task.read", "episode.read"],
-  "project.access.manage": ["access.read", "access.manage"],
-  "datasets.read": ["dataset.read", "dataset_version.read", "episode.read"],
-  "datasets.write": ["dataset.create"],
-  "datasets.publish": ["dataset_version.publish"],
-  "tag_schema.write": [
-    "data_schema.read",
-    "data_schema.create",
-    "data_schema.publish",
-  ],
-};
-
 export function expandGrantedCapabilities(
   capabilities: readonly string[],
 ): ReadonlySet<string> {
   const expanded = new Set(capabilities);
-  for (const capability of capabilities) {
-    for (const implied of runtimeCapabilityImplications[capability] ?? []) {
-      expanded.add(implied);
-    }
-  }
   if (expanded.has(PLATFORM_ADMIN_CAPABILITY)) {
     for (const capability of CANONICAL_CAPABILITIES) expanded.add(capability);
   }

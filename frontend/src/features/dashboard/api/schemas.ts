@@ -3,8 +3,6 @@ import type { components } from "../../../shared/api/generated/platform";
 
 export type DashboardActivityWire =
   components["schemas"]["DashboardActivityResponse"];
-export type DashboardSnapshotWire =
-  components["schemas"]["DashboardSnapshotResponse"];
 export type DashboardPendingPageWire =
   components["schemas"]["DashboardPendingItemsResponse"];
 export type DashboardTaskStatusWire =
@@ -22,8 +20,6 @@ function generatedObject<T>(): z.ZodType<T> {
 // below enforce cross-field invariants that JSON Schema cannot express.
 export const dashboardActivityWireSchema =
   generatedObject<DashboardActivityWire>();
-export const dashboardSnapshotWireSchema =
-  generatedObject<DashboardSnapshotWire>();
 export const dashboardPendingPageWireSchema =
   generatedObject<DashboardPendingPageWire>();
 export const dashboardTaskStatusWireSchema =

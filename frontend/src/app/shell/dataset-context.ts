@@ -5,7 +5,7 @@ export interface DatasetSelectionLocation {
   search: string;
 }
 
-const cleaningFilterPaths = new Set(['/manual/issues', '/manual/drafts']);
+const cleaningFilterPaths = new Set(['/manual/issues', '/annotations/revisions']);
 
 export function datasetContextKind(pathname: string): DatasetContextKind | null {
   if (pathname === '/datasets' || pathname.startsWith('/datasets/')) return 'browse';

@@ -442,7 +442,6 @@ def _auth(
                 "data_schema.import",
                 "data_schema.validate",
                 "data_schema.publish",
-                "datasets.read",
             }
         )
     )
@@ -451,7 +450,6 @@ def _auth(
         organization_ids=frozenset({ORGANIZATION_ID}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset({REGION_CODE}),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, None), (project_id, REGION_CODE)}),
         scoped_capabilities=frozenset(
             (project_id, capability) for capability in resolved_capabilities

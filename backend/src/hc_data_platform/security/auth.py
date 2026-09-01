@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Protocol
 
 import jwt
@@ -12,33 +11,11 @@ from hc_data_platform.core.errors import problem
 from .capabilities import (
     ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES,
     CAPABILITY_PLATFORM_ADMIN,
-    PERMISSION_CAPABILITIES,
-    capabilities_for_roles,
-    capabilities_from_legacy_roles,
-    expand_capability_aliases,
-    legacy_roles_from_capabilities,
+    KNOWN_BUSINESS_CAPABILITIES,
+    PLATFORM_ADMIN_CAPABILITIES,
+    PLATFORM_OPERATION_CAPABILITIES,
 )
 
-
-class Role(str, Enum):
-    UPLOADER = "uploader"
-    ANNOTATOR = "annotator"
-    REVIEWER = "reviewer"
-    PUBLISHER = "publisher"
-    ADMIN = "admin"
-
-
-class Permission(str, Enum):
-    READ = "read"
-    UPLOAD = "upload"
-    ANNOTATE = "annotate"
-    REVIEW = "review"
-    PUBLISH = "publish"
-    ADMINISTER = "administer"
-
-
-ALLOWED_ROLES = frozenset(role.value for role in Role)
-ALL_PERMISSIONS = frozenset(permission.value for permission in Permission)
 # PyJWT supports more algorithms than the platform should accept from configuration. This
 # list deliberately contains only algorithms that authenticate a signature.
 SIGNATURE_ALGORITHMS = frozenset(
@@ -60,6 +37,24 @@ SIGNATURE_ALGORITHMS = frozenset(
 )
 MAX_JWT_ORGANIZATION_SCOPES = 256
 MAX_JWT_SCOPE_CAPABILITIES = 256
+KNOWN_CAPABILITIES = (
+    KNOWN_BUSINESS_CAPABILITIES | PLATFORM_ADMIN_CAPABILITIES | PLATFORM_OPERATION_CAPABILITIES
+)
+ACCESS_TOKEN_CLAIMS = frozenset(
+    {
+        "aud",
+        "capabilities",
+        "capability_revision",
+        "exp",
+        "iat",
+        "iss",
+        "jti",
+        "nbf",
+        "organization_scopes",
+        "service_identity",
+        "sub",
+    }
+)
 
 
 def _claim_values(claims: Mapping[str, Any], name: str) -> frozenset[str]:
@@ -163,6 +158,13 @@ def _organization_scope_claims(
         scope_pairs.add((project_id, region_code))
         organization_scope_triples.add((organization_id, project_id, region_code))
         for capability in capabilities:
+            if capability not in KNOWN_BUSINESS_CAPABILITIES:
+                raise problem(
+                    status=401,
+                    code="INVALID_ACCESS_TOKEN",
+                    title="Invalid access token",
+                    detail="An organization scope contains an unknown capability.",
+                )
             scoped_capabilities.add((project_id, capability))
             organization_scoped_capabilities.add((organization_id, project_id, capability))
 
@@ -182,9 +184,8 @@ class AuthContext:
     subject_id: str
     project_ids: frozenset[str]
     region_codes: frozenset[str]
-    roles: frozenset[str]
-    service_identity: bool = False
     capabilities: frozenset[str] = frozenset()
+    service_identity: bool = False
     capability_revision: int = 0
     scope_pairs: frozenset[tuple[str, str | None]] = frozenset()
     scoped_capabilities: frozenset[tuple[str, str]] = frozenset()
@@ -201,9 +202,8 @@ class AuthContext:
             raise ValueError(
                 "organization, project, and region scopes must not contain empty values"
             )
-        unknown = self.roles - ALLOWED_ROLES
-        if unknown:
-            raise ValueError(f"unknown roles: {', '.join(sorted(unknown))}")
+        if any(not capability for capability in self.capabilities):
+            raise ValueError("capabilities must not contain empty values")
         if self.capability_revision < 0:
             raise ValueError("capability_revision must not be negative")
         if any(not project_id or region_code == "" for project_id, region_code in self.scope_pairs):
@@ -258,21 +258,10 @@ class AuthContext:
                 "organization_ids/project_ids"
             )
 
-    @property
-    def permissions(self) -> frozenset[str]:
-        if self.is_platform_admin:
-            return ALL_PERMISSIONS
-        effective = self.effective_capabilities()
-        return frozenset(
-            permission
-            for permission, accepted in PERMISSION_CAPABILITIES.items()
-            if effective.intersection(accepted)
-        )
-
     def effective_capabilities(
         self, project_id: str | None = None, organization_id: str | None = None
     ) -> frozenset[str]:
-        """Resolve global/project grants and their canonical/legacy compatibility aliases."""
+        """Resolve exact global and project-scoped capability grants."""
 
         scoped = (
             frozenset(
@@ -297,66 +286,13 @@ class AuthContext:
         # ``platform.admin`` is only meaningful as a global platform grant.  A malformed
         # JWT or an accidentally approved project capability must never activate it.
         project_capabilities = (scoped | organization_scoped) - {CAPABILITY_PLATFORM_ADMIN}
-        return expand_capability_aliases(
-            self.capabilities | project_capabilities | capabilities_from_legacy_roles(self.roles)
-        )
+        return self.capabilities | project_capabilities
 
     @property
     def is_platform_admin(self) -> bool:
         """Whether the principal holds the global, non-project super-admin marker."""
 
         return CAPABILITY_PLATFORM_ADMIN in self.capabilities
-
-    def legacy_roles(
-        self, project_id: str | None = None, organization_id: str | None = None
-    ) -> frozenset[str]:
-        return legacy_roles_from_capabilities(
-            self.effective_capabilities(project_id, organization_id)
-        )
-
-    def require_role(
-        self,
-        *allowed: str | Role,
-        project_id: str | None = None,
-        organization_id: str | None = None,
-    ) -> None:
-        normalized = frozenset(role.value if isinstance(role, Role) else role for role in allowed)
-        required_capabilities = capabilities_for_roles(normalized)
-        if normalized and self.is_platform_admin:
-            return
-        if (
-            not normalized
-            or not required_capabilities
-            or not self.effective_capabilities(project_id, organization_id).intersection(
-                required_capabilities
-            )
-        ):
-            raise problem(
-                status=403,
-                code="ROLE_REQUIRED",
-                title="Insufficient role",
-                detail=f"One of these roles is required: {', '.join(sorted(normalized))}.",
-            )
-
-    def require_permission(
-        self,
-        permission: str | Permission,
-        project_id: str | None = None,
-        organization_id: str | None = None,
-    ) -> None:
-        normalized = permission.value if isinstance(permission, Permission) else permission
-        accepted = PERMISSION_CAPABILITIES.get(normalized, frozenset())
-        if normalized in ALL_PERMISSIONS and self.is_platform_admin:
-            return
-        if normalized not in ALL_PERMISSIONS or not self.effective_capabilities(
-            project_id, organization_id
-        ).intersection(accepted):
-            raise problem(
-                status=403,
-                code="PERMISSION_REQUIRED",
-                title="Insufficient permission",
-                detail=f"The {normalized!r} permission is required.",
-            )
 
     def has_capability(
         self,
@@ -442,7 +378,7 @@ class AuthContext:
         cls,
         *,
         subject_id: str,
-        roles: Collection[str | Role],
+        capabilities: Collection[str],
         project_ids: Collection[str] = (),
         region_codes: Collection[str] = (),
     ) -> AuthContext:
@@ -452,7 +388,7 @@ class AuthContext:
             subject_id=subject_id,
             project_ids=frozenset(project_ids),
             region_codes=frozenset(region_codes),
-            roles=frozenset(role.value if isinstance(role, Role) else role for role in roles),
+            capabilities=frozenset(capabilities),
             service_identity=True,
             scope_pairs=frozenset(
                 (project_id, region_code)
@@ -579,15 +515,14 @@ class JwtVerifier:
                 title="Invalid access token",
                 detail="The subject claim must be a non-empty string.",
             )
-        roles = _claim_values(claims, "roles")
-        unknown = roles - ALLOWED_ROLES
-        if unknown:
+        unsupported_claims = claims.keys() - ACCESS_TOKEN_CLAIMS
+        if unsupported_claims:
             raise problem(
-                status=403,
-                code="UNKNOWN_ROLE",
-                title="Unknown role",
-                detail="The token contains roles not recognized by this service.",
-                details={"roles": sorted(unknown)},
+                status=401,
+                code="INVALID_ACCESS_TOKEN",
+                title="Invalid access token",
+                detail="The token contains unsupported claims.",
+                details={"claims": sorted(unsupported_claims)},
             )
         service_identity = claims.get("service_identity", False)
         if not isinstance(service_identity, bool):
@@ -606,13 +541,20 @@ class JwtVerifier:
             organization_scope_triples,
             organization_scoped_capabilities,
         ) = _organization_scope_claims(claims)
+        capabilities = _claim_values(claims, "capabilities")
+        if not capabilities.issubset(KNOWN_CAPABILITIES):
+            raise problem(
+                status=401,
+                code="INVALID_ACCESS_TOKEN",
+                title="Invalid access token",
+                detail="The token contains an unknown capability.",
+            )
         return AuthContext(
             subject_id=subject_id,
-            project_ids=_claim_values(claims, "project_ids") | organization_projects,
-            region_codes=_claim_values(claims, "region_codes") | organization_regions,
-            roles=roles,
+            project_ids=organization_projects,
+            region_codes=organization_regions,
             service_identity=service_identity,
-            capabilities=_claim_values(claims, "capabilities"),
+            capabilities=capabilities,
             capability_revision=_non_negative_int_claim(claims, "capability_revision"),
             scope_pairs=scope_pairs,
             scoped_capabilities=scoped_capabilities,

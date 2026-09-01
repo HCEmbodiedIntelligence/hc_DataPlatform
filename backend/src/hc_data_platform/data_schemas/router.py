@@ -90,7 +90,7 @@ def _select_dataset_reference_scope(
 ) -> None:
     ScopeGuard.require(auth, project_id, region_code)
     auth.require_capability("data_schema.read", project_id)
-    auth.require_capability("datasets.read", project_id)
+    auth.require_capability("dataset_version.read", project_id)
     if write:
         auth.require_capability("data_schema.publish", project_id)
     select_request_scope(project_id, region_code)

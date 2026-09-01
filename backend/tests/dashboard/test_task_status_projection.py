@@ -29,7 +29,6 @@ def auth() -> AuthContext:
         subject_id="operator-a",
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset({"cn-east"}),
-        roles=frozenset(),
         scope_pairs=frozenset({("project-a", "cn-east")}),
         scoped_capabilities=frozenset({("project-a", CAPABILITY_DASHBOARD_READ)}),
     )
@@ -214,7 +213,6 @@ def test_raw_structure_failure_is_not_qc_reject_and_has_diagnostic_action() -> N
 def test_quality_findings_are_isolated_without_blocking_the_task(outcome: str) -> None:
     selected = status(package(verification_status="RAW_VERIFIED", qc_status=outcome))
     assert selected is not None
-    assert selected.standardization.blocked_by_quality == 0
     assert selected.standardization.isolated_by_quality == 1
     assert selected.standardization.ready == 0
     assert selected.blocker_count == 0

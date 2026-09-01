@@ -489,7 +489,6 @@ def _worker_scope(
                     region_code=region_code,
                     subject_id="hc-data-worker",
                     request_id=request_id or "activity",
-                    roles=frozenset({"admin"}),
                     service_identity=True,
                 )
             )
@@ -1861,4 +1860,3 @@ def _write_alignment_camera_shard(
         rollout_id=rollout_id,
         expected_rows=expected_rows,
     )
-

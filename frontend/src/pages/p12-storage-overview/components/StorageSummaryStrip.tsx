@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { StorageMetric } from '../../../entities/storage-inventory';
 import type { StorageOverview } from '../../../features/storage-overview/types';
 import { displayByteMetric } from '../../../features/storage-overview/metrics-contract';
-import type { MetricState, UiMetricCardProps } from '../../../shared/ui';
+import type { MetricState, MetricCardProps } from '../../../shared/ui';
 import { freshnessLabel } from '../display-labels';
 import styles from '../styles.module.css';
 
@@ -32,7 +32,7 @@ function StorageMetricTile({
 }: Readonly<{
   eyebrow: string;
   label: string;
-  value: NonNullable<UiMetricCardProps['value']>;
+  value: NonNullable<MetricCardProps['value']>;
   detail: string;
   icon: ReactNode;
   tone?: 'default' | 'success' | 'warning';

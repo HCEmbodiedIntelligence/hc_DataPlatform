@@ -65,7 +65,7 @@ const capabilityRows: readonly AccessRequestRow[] = [
     requestId: "capability-01",
     requesterId: "internal-zhou.yu-008",
     reason: "负责正式版本审核与发布",
-    capabilityKeys: ["datasets.publish", "project.access.manage"],
+    capabilityKeys: ["dataset_version.publish", "access.manage"],
   },
   {
     ...membershipRows[1]!,
@@ -73,7 +73,7 @@ const capabilityRows: readonly AccessRequestRow[] = [
     requestId: "capability-02",
     requesterId: "contractor-wang.qi-021",
     reason: "只读核验采集结果",
-    capabilityKeys: ["datasets.read"],
+    capabilityKeys: ["dataset.read"],
   },
   {
     ...membershipRows[2]!,

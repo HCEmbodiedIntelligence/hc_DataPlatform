@@ -13,12 +13,10 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
   `BLOCKED`。`collection_observations` 只保留为 scope/query-shape 技术证据。
 - pending-items V1 只有上传失败、QC 异常、待 Tag 审核、待发布四类，并与 principal capability
   取交集。
-- P01 正式 snapshot 不含 storage；区域容量只属于 P12。
-- signal 按项目、区域和显式时间窗口计算云端数据包到达各阶段的去重数量；
-  episode/work 状态集合和 freshness SLO 仍未冻结，继续 `BLOCKED`。
+- 区域容量只属于 P12；P01 不返回 storage 数据。
 - P01 主状态区域使用无时间窗口的 `task-status` 只读投影。任务列表按 exact project+region
   的 `collection_jobs` 关联；不传 `task_id` 时主轨道汇总全部任务，`task_id` 只用于可选下钻。
-  为兼容单任务范围，只有一个任务时仍同时返回该任务详情；多任务汇总不会伪装成零值。
+  只有一个任务时同时返回该任务详情；多任务汇总不会伪装成零值。
 
 ## Task status 当前状态投影
 
@@ -48,30 +46,6 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
 自动关闭ACTIVE任务。持续时长目标只汇总每个数据包最新的设备 `SAVED` 事实；尚未收到事实时
 明确为 0 秒已确认进度，不会用上传、Manifest 或对象时间伪造。
 
-旧 `/dashboard/snapshot` 已在运行时 OpenAPI 标记 deprecated，并返回 `Deprecation: true` 与
-指向 `task-status` 的 successor `Link`；P01 不再调用它的 signal 区域。保留读兼容仅用于尚未
-迁移的调用方。
-
-## Signal 云端阶段计数
-
-每个阶段都在当前 `organization_id + project_id + region_code + [from,to)` 范围内，按
-`data_package_id` 去重。阶段时间分别取对应云端持久化事实的发生时间，因此这些数量是独立的
-窗口事件计数，不是百分比，也不强制伪装成单调递减漏斗。
-
-| 阶段 | 云端事实源 | 阶段时间 |
-| --- | --- | --- |
-| `COLLECTED` | `ingest.rollouts` | `created_at` |
-| `RECEIVED` | `ingest.rollout_objects` | `committed_at` |
-| `AUTO_QC` | immutable `qc_reports` | `created_at` |
-| `ALIGNED_30_HZ` | `aligned_fragment_attempts(status=READY)` | `updated_at` |
-| `LANCE` | `lance_rollout_lineage` | `created_at` |
-| `ANNOTATION` | `annotation.annotation_tasks` | `created_at` |
-| `REVIEW` | `annotation.annotation_reviews` | `created_at` |
-| `PUBLISHED` | `publishing.rollout_publication_lineage` | `published_at` |
-
-`COLLECTED` 表示数据包已在云端登记为 rollout，不是设备端未上传的本地 SAVED 回执。
-当窗口内八个阶段都为零时 signal 是 `EMPTY`；任一阶段有真实事实时是 `READY`。
-
 ## Activity 真实事件目录
 
 所有展示文本由 Service 的固定 allowlist 生成，不读取 QC report JSON、review comment、failure
@@ -96,10 +70,10 @@ range、timezone 和完整排序 tuple。
 
 | item type | 当前事实/source id | opened_at | severity | capability | 关闭规则 | allowlisted deep link |
 | --- | --- | --- | --- | --- | --- | --- |
-| `UPLOAD_FAILED` | `ingest.upload_sessions.status=FAILED` / `session_id` | `updated_at` | HIGH | canonical `ingest.upload` | session 离开 `FAILED` | `/ingest/uploads/{session_id}` |
-| `QC_ANOMALY` | current `quality_rollout_summaries.status in (RISK,REJECT)` / `report_sha256` | `updated_at` | REJECT=CRITICAL，RISK=HIGH | canonical `datasets.read` + `ingest.upload` | current summary 变为 `PASS` | 对应 `/ingest/uploads/{session_id}` |
+| `UPLOAD_FAILED` | `ingest.upload_sessions.status=FAILED` / `session_id` | `updated_at` | HIGH | `upload.manage` | session 离开 `FAILED` | `/ingest/uploads/{session_id}` |
+| `QC_ANOMALY` | current `quality_rollout_summaries.status in (RISK,REJECT)` / `report_sha256` | `updated_at` | REJECT=CRITICAL，RISK=HIGH | `dataset.read` + `upload.read` | current summary 变为 `PASS` | 对应 `/ingest/uploads/{session_id}` |
 | `TAG_REVIEW_PENDING` | `annotation_tasks.status=SUBMITTED` / `task_id` | `updated_at` | MEDIUM | `annotation.review` | task 离开 `SUBMITTED` | `/annotations/tasks/{task_id}` |
-| `PUBLICATION_PENDING` | `annotation_tasks.status=APPROVED` 且 rollout 无 publication lineage / `task_id` | `updated_at` | LOW | canonical `datasets.publish` | exact rollout lineage 建立 | `/datasets/{dataset_id}/versions/{version}` |
+| `PUBLICATION_PENDING` | `annotation_tasks.status=APPROVED` 且 rollout 无 publication lineage / `task_id` | `updated_at` | LOW | `dataset_version.publish` | exact rollout lineage 建立 | `/datasets/{dataset_id}/versions/{version}` |
 
 Repository 只接收 Service 已计算的 authorized source enum；SQL 再以 allowlist CTE 取交集。返回模型
 还校验每个 item type 位于 `authorized_source_types` 且 deep link 使用固定相对模板。四类当前事实使用

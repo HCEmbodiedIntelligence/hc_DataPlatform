@@ -7,7 +7,7 @@ from typing import Protocol
 from fastapi import APIRouter
 
 from hc_data_platform.core.errors import problem
-from hc_data_platform.security.http import VerifiedAuth, authorize_read
+from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .models import RawVerificationReportV1
 
@@ -37,7 +37,7 @@ def get_raw_verification(
     rollout_id: str,
     auth: VerifiedAuth,
 ) -> RawVerificationReportV1:
-    authorize_read(auth, project_id, region_code)
+    authorize_scope(auth, project_id, "upload.read", region_code)
     if _repository is None:
         raise problem(
             status=503,

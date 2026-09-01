@@ -3,7 +3,6 @@ import {
   dashboardActivityFixture,
   dashboardEmptyFixtures,
   dashboardPendingFixture,
-  dashboardSnapshotFixture,
   dashboardTaskStatusEmptyFixture,
   dashboardTaskStatusFixture,
   dashboardUnknownFixtures,
@@ -134,28 +133,6 @@ export const dashboardHandlers = [
       )
         return HttpResponse.json(dashboardEmptyFixtures.activity);
       return HttpResponse.json(dashboardActivityFixture);
-    },
-  ),
-  http.get(
-    "*/api/v1/projects/:projectId/dashboard/snapshot",
-    async ({ request, params }) => {
-      const invalid = invalidRequest(request, params);
-      if (invalid) return invalid;
-      const query = new URL(request.url).searchParams;
-      if (!query.get("from") || !query.get("to") || !query.get("timezone"))
-        return error(422, "INVALID_QUERY", "req_fx_dashboard_snapshot_query");
-      const gated = await scenarioGate("snapshot");
-      if (gated) return gated;
-      if (getDashboardScenario() === "empty")
-        return HttpResponse.json(dashboardEmptyFixtures.snapshot);
-      if (getDashboardScenario() === "unknown-enum")
-        return HttpResponse.json(dashboardUnknownFixtures.snapshot);
-      if (getDashboardScenario() === "contract-mismatch")
-        return HttpResponse.json({
-          ...dashboardSnapshotFixture,
-          project_id: "wrong-project",
-        });
-      return HttpResponse.json(dashboardSnapshotFixture);
     },
   ),
   http.get(

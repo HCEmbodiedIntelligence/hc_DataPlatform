@@ -24,7 +24,7 @@ import { useAsyncJob } from '../../shared/jobs/use-async-job';
 import { formatStorageSize } from '../../shared/lib/metric-presentation';
 import { useShellStore } from '../../shared/scope/shell-store';
 import {
-  DataCursorPager,
+  CursorPager,
   EntityDrawer,
   FilterToolbar,
   PageState,
@@ -467,7 +467,7 @@ export default function DataSourcesPage() {
     />
   );
   const pager = page.data ? (
-    <DataCursorPager
+    <CursorPager
       pageInfo={page.data.pageInfo}
       busy={page.isFetching}
       windowLabel={`当前窗口 ${page.data.items.length} 条`}

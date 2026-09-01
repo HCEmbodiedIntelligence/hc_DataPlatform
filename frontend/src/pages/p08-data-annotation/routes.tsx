@@ -21,12 +21,6 @@ function suffix(query: string): string {
 }
 
 export const annotationRoutes = {
-  queue: {
-    pattern: dataAnnotationRoutes.legacyIndex,
-    build(search?: AnnotationQueueSearch) {
-      return `${dataAnnotationRoutes.legacyIndex}${suffix(search ? annotationQueueQueryCodec.build(search) : "")}`;
-    },
-  },
   annotate: {
     pattern: dataAnnotationRoutes.annotate,
     build(search?: AnnotationQueueSearch) {
@@ -60,17 +54,6 @@ export const annotationRoutes = {
 } as const;
 
 export const p08RouteRecords: readonly PlatformRouteObject[] = [
-  {
-    path: annotationRoutes.queue.pattern,
-    navigationOwnerGroupId: "annotation",
-    navigationOwnerPageId: "P08",
-    requiredCapabilities: [],
-    hiddenFromNavigation: true,
-    lazy: async () => ({
-      Component: (await import("../../app/shell/RouteCompatibility"))
-        .LegacyAnnotationIndexRedirect,
-    }),
-  },
   {
     path: annotationRoutes.annotate.pattern,
     navigationOwnerGroupId: "annotation",

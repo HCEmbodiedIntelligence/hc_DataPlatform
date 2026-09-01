@@ -51,7 +51,7 @@ import {
   EntityDrawer,
   PageState,
   StatusTag,
-  UiMetricCard,
+  MetricCard,
 } from "../../shared/ui";
 import {
   EpisodeRevisionHistoryTable,
@@ -1178,19 +1178,19 @@ export function VersionDetailPage() {
               ) : (
                 <>
                   <div className={styles.metricGrid}>
-                    <UiMetricCard
+                    <MetricCard
                       label="结构引用"
                       value={`${schema.data.snapshot.type} / ${schema.data.snapshot.id}`}
                     />
-                    <UiMetricCard
+                    <MetricCard
                       label="结构版本"
                       value={schema.data.snapshot.version}
                     />
-                    <UiMetricCard
+                    <MetricCard
                       label="通道数"
                       value={schema.data.channelCount}
                     />
-                    <UiMetricCard
+                    <MetricCard
                       label="SHA-256"
                       value={`${schema.data.snapshot.sha256.slice(0, 16)}…`}
                     />

@@ -15,7 +15,7 @@ import {
   formatStorageSize,
   formatTimeRange,
 } from "../../../shared/lib/metric-presentation";
-import { DataCursorPager, DataTable, StatusTag } from "../../../shared/ui";
+import { CursorPager, DataTable, StatusTag } from "../../../shared/ui";
 import {
   episodeInclusionLabel,
   episodeReviewPresentation,
@@ -405,7 +405,7 @@ export function VersionCursorPager({
   onChange: (cursor: { before?: string; after?: string }) => void;
 }>) {
   return (
-    <DataCursorPager
+    <CursorPager
       pageInfo={{
         startCursor: page.pageInfo.before,
         endCursor: page.pageInfo.after,
@@ -431,7 +431,7 @@ export function ManifestCursorPager({
   onChange: (cursor: { before?: string; after?: string }) => void;
 }>) {
   return (
-    <DataCursorPager
+    <CursorPager
       pageInfo={{
         startCursor: pageInfo.before,
         endCursor: pageInfo.after,

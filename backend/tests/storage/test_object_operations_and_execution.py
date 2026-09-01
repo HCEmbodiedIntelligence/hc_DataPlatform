@@ -6,7 +6,7 @@ from hashlib import sha256
 import pytest
 
 from hc_data_platform.core.errors import ProblemException
-from hc_data_platform.security.auth import AuthContext, Role
+from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.versioning import ResourceVersion
 from hc_data_platform.storage.models import (
     ApproveLifecycleExecutionRequest,
@@ -37,7 +37,14 @@ NOW = datetime(2026, 8, 21, 6, tzinfo=timezone.utc)
 def actor(subject_id: str = "storage-requester") -> AuthContext:
     return AuthContext.service(
         subject_id=subject_id,
-        roles={Role.ADMIN},
+        capabilities={
+            "storage.object.read",
+            "storage.object.manage",
+            "storage.lifecycle.read",
+            "storage.lifecycle.manage",
+            "storage.lifecycle.execute",
+            "storage.lifecycle.approve",
+        },
         project_ids={"project-a"},
     )
 

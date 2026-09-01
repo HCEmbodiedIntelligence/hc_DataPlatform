@@ -123,44 +123,6 @@ class DashboardPendingFactPage:
 
 
 @dataclass(frozen=True, slots=True)
-class PublicationLineageSummary:
-    available: bool
-    lineage_count: int = 0
-    publication_count: int = 0
-    unresolved_history_count: int = 0
-    latest_published_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class SignalPipelineSummary:
-    collected: int = 0
-    received: int = 0
-    auto_qc: int = 0
-    aligned_30_hz: int = 0
-    lance: int = 0
-    annotation: int = 0
-    review: int = 0
-    published: int = 0
-
-    def __post_init__(self) -> None:
-        if any(count < 0 for count in self.counts):
-            raise ValueError("signal-pipeline counts cannot be negative")
-
-    @property
-    def counts(self) -> tuple[int, ...]:
-        return (
-            self.collected,
-            self.received,
-            self.auto_qc,
-            self.aligned_30_hz,
-            self.lance,
-            self.annotation,
-            self.review,
-            self.published,
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class TaskStatusTaskFact:
     task_id: str
     task_code: str
@@ -246,22 +208,6 @@ class DashboardRepository(Protocol):
         after: tuple[int, datetime, str, str] | None = None,
     ) -> DashboardPendingFactPage: ...
 
-    def publication_lineage_summary(
-        self,
-        *,
-        auth: AuthContext,
-        scope: DashboardScope,
-        window: DashboardWindow,
-    ) -> PublicationLineageSummary: ...
-
-    def signal_pipeline_summary(
-        self,
-        *,
-        auth: AuthContext,
-        scope: DashboardScope,
-        window: DashboardWindow,
-    ) -> SignalPipelineSummary: ...
-
     def task_status_projection(
         self,
         *,
@@ -313,8 +259,6 @@ class InMemoryDashboardRepository:
         collection_observations: tuple[CollectionObservationFact, ...] = (),
         business_events: tuple[DashboardBusinessEventFact, ...] = (),
         pending_facts: tuple[DashboardPendingFact, ...] = (),
-        publication_summary: PublicationLineageSummary | None = None,
-        signal_pipeline_summary: SignalPipelineSummary | None = None,
         task_status_projection: TaskStatusProjectionFacts | None = None,
         unavailable_activity_sources: tuple[str, ...] = (),
         unavailable_pending_sources: tuple[DashboardPendingItemType, ...] = (),
@@ -323,8 +267,6 @@ class InMemoryDashboardRepository:
         self._collection_observations = collection_observations
         self._business_events = business_events
         self._pending_facts = pending_facts
-        self._publication_summary = publication_summary or PublicationLineageSummary(True)
-        self._signal_pipeline_summary = signal_pipeline_summary or SignalPipelineSummary()
         self._task_status_projection = task_status_projection or TaskStatusProjectionFacts()
         self._unavailable_activity_sources = unavailable_activity_sources
         self._unavailable_pending_sources = unavailable_pending_sources
@@ -408,28 +350,6 @@ class InMemoryDashboardRepository:
             len(ordered) > limit,
             unavailable,
         )
-
-    def publication_lineage_summary(
-        self,
-        *,
-        auth: AuthContext,
-        scope: DashboardScope,
-        window: DashboardWindow,
-    ) -> PublicationLineageSummary:
-        self.enforce_scope(auth, scope)
-        del window
-        return self._publication_summary
-
-    def signal_pipeline_summary(
-        self,
-        *,
-        auth: AuthContext,
-        scope: DashboardScope,
-        window: DashboardWindow,
-    ) -> SignalPipelineSummary:
-        self.enforce_scope(auth, scope)
-        del window
-        return self._signal_pipeline_summary
 
     def task_status_projection(
         self,

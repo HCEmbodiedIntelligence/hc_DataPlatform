@@ -1445,7 +1445,7 @@ components:
           type: array
           uniqueItems: true
           items: {type: string, minLength: 1}
-          description: Authoritative approved capability keys for this exact project; legacy roles are compatibility projections only.
+          description: Authoritative approved capability keys for this exact project.
     AvailableOrganization:
       type: object
       additionalProperties: false

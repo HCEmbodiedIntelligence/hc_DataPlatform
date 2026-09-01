@@ -94,7 +94,7 @@ beforeEach(() => {
     authorization: {
       scopeKey: makeScopeKey(scope),
       roleVersion: "p18-role-v1",
-      capabilities: ["project.access.manage"],
+      capabilities: ["access.read", "access.manage"],
       fetchedAt: "2026-08-18T01:00:00Z",
     },
     authorizationLoading: false,

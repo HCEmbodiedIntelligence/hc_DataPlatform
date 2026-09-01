@@ -97,7 +97,6 @@ def test_minio_robot_model_asset_direct_multipart_manifest_and_fresh_download() 
         subject_id="p14-minio-manager",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, None)}),
         scoped_capabilities=frozenset(
             {(project_id, "robot_model.read"), (project_id, "robot_model.manage")}

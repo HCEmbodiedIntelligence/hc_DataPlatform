@@ -697,7 +697,7 @@ function RuntimeAnnotationTaskPage({
         mode === "annotation" ? (
           <RuntimeAutoAnnotationPanel
             key={bundle.task.task_id}
-            canUse={permissions.canSave && capabilities.has("annotation.write")}
+            canUse={permissions.canSave && capabilities.has("annotation.edit")}
             dirty={dirty}
             scope={scope}
             task={bundle.task}

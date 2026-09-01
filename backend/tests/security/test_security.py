@@ -11,12 +11,11 @@ import pytest
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import AuditRecord, canonical_hash
-from hc_data_platform.security.auth import AuthContext, JwtVerifier, Permission, Role
+from hc_data_platform.security.auth import AuthContext, JwtVerifier
 from hc_data_platform.security.capabilities import (
     CAPABILITY_PLATFORM_ADMIN,
     CAPABILITY_PLATFORM_BREAK_GLASS,
     CAPABILITY_PLATFORM_MAINTENANCE_OPERATE,
-    legacy_roles_from_capabilities,
 )
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
 from hc_data_platform.security.postgres import RlsSessionContext
@@ -41,9 +40,15 @@ def _claims(**overrides: object) -> dict[str, object]:
         "exp": now + timedelta(minutes=5),
         "iss": "issuer",
         "aud": "backend",
-        "project_ids": ["p1"],
-        "region_codes": ["cn-hz"],
-        "roles": ["uploader"],
+        "capabilities": [],
+        "organization_scopes": [
+            {
+                "organization_id": "org-1",
+                "project_id": "p1",
+                "region_code": "cn-hz",
+                "capabilities": ["upload.manage"],
+            }
+        ],
     }
     claims.update(overrides)
     return claims
@@ -76,27 +81,24 @@ def test_jwt_verifier_accepts_all_required_claims() -> None:
     assert context.subject_id == "user-1"
     assert context.project_ids == frozenset({"p1"})
     assert context.region_codes == frozenset({"cn-hz"})
-    assert context.roles == frozenset({"uploader"})
+    context.require_capability("upload.manage", "p1", "org-1")
 
 
 def test_jwt_verifier_accepts_exact_organization_scopes_without_cross_organization_bleed() -> None:
     context = _verifier().verify(
         _token(
-            project_ids=[],
-            region_codes=[],
-            roles=[],
             organization_scopes=[
                 {
                     "organization_id": "org-a",
                     "project_id": "project-a",
                     "region_code": None,
-                    "capabilities": ["project.access.manage"],
+                    "capabilities": ["access.manage"],
                 },
                 {
                     "organization_id": "org-b",
                     "project_id": "project-a",
                     "region_code": "cn-shanghai",
-                    "capabilities": ["datasets.read"],
+                    "capabilities": ["dataset.read"],
                 },
             ],
         )
@@ -109,17 +111,17 @@ def test_jwt_verifier_accepts_exact_organization_scopes_without_cross_organizati
         "cn-shanghai",
         organization_id="org-b",
     )
-    context.require_capability("project.access.manage", "project-a", organization_id="org-a")
-    context.require_capability("datasets.read", "project-a", organization_id="org-b")
+    context.require_capability("access.manage", "project-a", organization_id="org-a")
+    context.require_capability("dataset.read", "project-a", organization_id="org-b")
     _assert_problem(
         "CAPABILITY_REQUIRED",
         lambda: context.require_capability(
-            "project.access.manage", "project-a", organization_id="org-b"
+            "access.manage", "project-a", organization_id="org-b"
         ),
     )
     _assert_problem(
         "CAPABILITY_REQUIRED",
-        lambda: context.require_capability("datasets.read", "project-a", organization_id="org-a"),
+        lambda: context.require_capability("dataset.read", "project-a", organization_id="org-a"),
     )
 
 
@@ -164,12 +166,15 @@ def test_jwt_verifier_rejects_expired_bad_signature_or_invalid_required_claims(
     _assert_problem("INVALID_ACCESS_TOKEN", lambda: verifier.verify(token))
 
 
-def test_jwt_verifier_rejects_missing_claim_and_unknown_role() -> None:
+def test_jwt_verifier_rejects_missing_and_unsupported_claims() -> None:
     claims = _claims()
     del claims["iat"]
     missing = jwt.encode(claims, TEST_KEY, algorithm="HS256")
     _assert_problem("INVALID_ACCESS_TOKEN", lambda: _verifier().verify(missing))
-    _assert_problem("UNKNOWN_ROLE", lambda: _verifier().verify(_token(roles=["owner"])))
+    _assert_problem(
+        "INVALID_ACCESS_TOKEN",
+        lambda: _verifier().verify(_token(custom_authority=["admin"])),
+    )
 
 
 def test_jwt_verifier_forbids_none_and_algorithm_confusion() -> None:
@@ -179,81 +184,21 @@ def test_jwt_verifier_forbids_none_and_algorithm_confusion() -> None:
     _assert_problem("INVALID_ACCESS_TOKEN", lambda: _verifier().verify(unsigned))
 
 
-@pytest.mark.parametrize(
-    ("role", "granted", "denied"),
-    [
-        (Role.UPLOADER, Permission.UPLOAD, Permission.ANNOTATE),
-        (Role.ANNOTATOR, Permission.ANNOTATE, Permission.REVIEW),
-        (Role.REVIEWER, Permission.REVIEW, Permission.PUBLISH),
-        (Role.PUBLISHER, Permission.PUBLISH, Permission.ADMINISTER),
-    ],
-)
-def test_project_roles_have_explicit_permissions(
-    role: Role, granted: Permission, denied: Permission
-) -> None:
-    auth = AuthContext("u1", frozenset({"p1"}), frozenset({"cn"}), frozenset({role.value}))
-    auth.require_permission(granted)
-    _assert_problem("PERMISSION_REQUIRED", lambda: auth.require_permission(denied))
-    admin = AuthContext("a1", frozenset(), frozenset(), frozenset({Role.ADMIN.value}))
-    admin.require_permission(denied)
-
-
 def test_approved_capability_is_authoritative_and_never_bleeds_across_projects() -> None:
     auth = AuthContext(
         subject_id="platform-session",
         project_ids=frozenset({"p1", "p2"}),
         region_codes=frozenset({"cn"}),
-        roles=frozenset(),
         scope_pairs=frozenset({("p1", "cn"), ("p2", "cn")}),
-        scoped_capabilities=frozenset({("p1", "collection.upload")}),
+        scoped_capabilities=frozenset({("p1", "upload.manage")}),
         capability_revision=7,
     )
     ScopeGuard.require(auth, "p1", "cn")
-    auth.require_permission(Permission.UPLOAD, project_id="p1")
+    auth.require_capability("upload.manage", project_id="p1")
     _assert_problem(
-        "PERMISSION_REQUIRED",
-        lambda: auth.require_permission(Permission.UPLOAD, project_id="p2"),
+        "CAPABILITY_REQUIRED",
+        lambda: auth.require_capability("upload.manage", project_id="p2"),
     )
-    assert auth.legacy_roles("p1") == frozenset({Role.UPLOADER.value})
-    assert auth.legacy_roles("p2") == frozenset()
-
-
-def test_read_capability_does_not_activate_a_legacy_write_role() -> None:
-    assert legacy_roles_from_capabilities({"datasets.read"}) == frozenset()
-
-
-def test_current_and_legacy_upload_and_access_capability_names_are_compatible() -> None:
-    current_uploader = AuthContext(
-        "current-uploader",
-        frozenset({"p1"}),
-        frozenset({"cn"}),
-        frozenset(),
-        scoped_capabilities=frozenset({("p1", "upload.manage")}),
-    )
-    current_uploader.require_role(Role.UPLOADER, project_id="p1")
-    current_uploader.require_capability("ingest.upload", "p1")
-    current_uploader.require_capability("collection.upload", "p1")
-
-    legacy_uploader = AuthContext(
-        "legacy-uploader",
-        frozenset({"p1"}),
-        frozenset({"cn"}),
-        frozenset(),
-        scoped_capabilities=frozenset({("p1", "ingest.upload")}),
-    )
-    legacy_uploader.require_capability("upload.manage", "p1")
-    legacy_uploader.require_capability("upload.read", "p1")
-
-    current_project_admin = AuthContext(
-        "current-project-admin",
-        frozenset({"p1"}),
-        frozenset(),
-        frozenset(),
-        scoped_capabilities=frozenset({("p1", "access.manage")}),
-    )
-    current_project_admin.require_role(Role.ADMIN, project_id="p1")
-    current_project_admin.require_capability("project.access.manage", "p1")
-    assert not current_project_admin.has_capability("platform.account.manage", "p1")
 
 
 def test_upload_read_does_not_activate_upload_write_authority() -> None:
@@ -261,11 +206,10 @@ def test_upload_read_does_not_activate_upload_write_authority() -> None:
         "upload-reader",
         frozenset({"p1"}),
         frozenset({"cn"}),
-        frozenset(),
+        scope_pairs=frozenset({("p1", "cn")}),
         scoped_capabilities=frozenset({("p1", "upload.read")}),
     )
     reader.require_capability("upload.read", "p1")
-    _assert_problem("ROLE_REQUIRED", lambda: reader.require_role(Role.UPLOADER, project_id="p1"))
     _assert_problem("CAPABILITY_REQUIRED", lambda: reader.require_capability("upload.manage", "p1"))
 
 
@@ -275,7 +219,6 @@ def test_platform_admin_has_every_business_operation_across_real_projects() -> N
         organization_ids=frozenset({"org-a", "org-b"}),
         project_ids=frozenset({"project-a", "project-b"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
         organization_scope_triples=frozenset(
             {("org-a", "project-a", None), ("org-b", "project-b", None)}
@@ -287,14 +230,6 @@ def test_platform_admin_has_every_business_operation_across_real_projects() -> N
         ("org-b", "project-b", "eu-central"),
     ):
         ScopeGuard.require(platform_admin, project_id, region_code, organization_id)
-        for role in Role:
-            platform_admin.require_role(
-                role, project_id=project_id, organization_id=organization_id
-            )
-        for permission in Permission:
-            platform_admin.require_permission(
-                permission, project_id=project_id, organization_id=organization_id
-            )
         for capability in (
             "upload.manage",
             "annotation.edit",
@@ -322,7 +257,6 @@ def test_platform_admin_has_every_business_operation_across_real_projects() -> N
         subject_id="platform-admin",
         project_ids=frozenset({"invented-project"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
     )
     _assert_problem(
@@ -346,7 +280,6 @@ def test_project_rls_context_installs_verified_platform_admin_bypass() -> None:
         organization_ids=frozenset({"org-a"}),
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
         organization_scope_triples=frozenset({("org-a", "project-a", None)}),
     )
@@ -371,14 +304,12 @@ def test_platform_operation_capabilities_do_not_inherit_the_admin_wildcard() -> 
         subject_id="platform-admin",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_ADMIN}),
     )
     operator = AuthContext(
         subject_id="maintenance-operator",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=frozenset({CAPABILITY_PLATFORM_MAINTENANCE_OPERATE}),
     )
 
@@ -397,9 +328,15 @@ def test_platform_operation_capabilities_do_not_inherit_the_admin_wildcard() -> 
 
 def test_scope_repository_denies_cross_project_and_region_reads_and_writes() -> None:
     repository = InMemoryScopedRepository[ScopedResource]()
-    p1_cn = AuthContext("u1", frozenset({"p1"}), frozenset({"cn"}), frozenset({"uploader"}))
-    p2_cn = AuthContext("u2", frozenset({"p2"}), frozenset({"cn"}), frozenset({"uploader"}))
-    p1_us = AuthContext("u3", frozenset({"p1"}), frozenset({"us"}), frozenset({"uploader"}))
+    p1_cn = AuthContext(
+        "u1", frozenset({"p1"}), frozenset({"cn"}), scope_pairs=frozenset({("p1", "cn")})
+    )
+    p2_cn = AuthContext(
+        "u2", frozenset({"p2"}), frozenset({"cn"}), scope_pairs=frozenset({("p2", "cn")})
+    )
+    p1_us = AuthContext(
+        "u3", frozenset({"p1"}), frozenset({"us"}), scope_pairs=frozenset({("p1", "us")})
+    )
     repository.add(p1_cn, "resource", ScopedResource("p1", "cn"))
     _assert_problem("PROJECT_SCOPE_DENIED", lambda: repository.get(p2_cn, "resource"))
     _assert_problem("REGION_SCOPE_DENIED", lambda: repository.get(p1_us, "resource"))
@@ -411,18 +348,20 @@ def test_scope_repository_denies_cross_project_and_region_reads_and_writes() -> 
         "REGION_SCOPE_DENIED",
         lambda: repository.add(p1_cn, "cross-region", ScopedResource("p1", "us")),
     )
-    unscoped_admin = AuthContext("admin", frozenset(), frozenset(), frozenset({Role.ADMIN.value}))
-    _assert_problem("PROJECT_SCOPE_DENIED", lambda: repository.get(unscoped_admin, "resource"))
+    unscoped = AuthContext("unscoped", frozenset(), frozenset())
+    _assert_problem("PROJECT_SCOPE_DENIED", lambda: repository.get(unscoped, "resource"))
 
 
-def test_service_identity_requires_issued_explicit_scope_even_when_admin() -> None:
-    unscoped = AuthContext.service(subject_id="worker", roles=[Role.ADMIN])
+def test_service_identity_requires_issued_explicit_scope() -> None:
+    unscoped = AuthContext.service(subject_id="worker", capabilities=["upload.manage"])
     _assert_problem("SERVICE_SCOPE_REQUIRED", lambda: ScopeGuard.require(unscoped, "p1", "cn"))
-    project_only = AuthContext.service(subject_id="worker", roles=[Role.ADMIN], project_ids=["p1"])
+    project_only = AuthContext.service(
+        subject_id="worker", capabilities=["upload.manage"], project_ids=["p1"]
+    )
     _assert_problem("SERVICE_SCOPE_REQUIRED", lambda: ScopeGuard.require(project_only, "p1", "cn"))
     scoped = AuthContext.service(
         subject_id="worker",
-        roles=[Role.ADMIN],
+        capabilities=["upload.manage"],
         project_ids=["p1"],
         region_codes=["cn"],
     )
@@ -466,7 +405,12 @@ def test_resource_version_etag_precondition() -> None:
 def test_fake_unit_of_work_commits_or_rolls_back_business_audit_and_outbox_atomically() -> None:
     async def scenario() -> None:
         database = InMemoryAtomicDatabase()
-        auth = AuthContext("u1", frozenset({"p1"}), frozenset({"cn"}), frozenset({"uploader"}))
+        auth = AuthContext(
+            "u1",
+            frozenset({"p1"}),
+            frozenset({"cn"}),
+            scope_pairs=frozenset({("p1", "cn")}),
+        )
 
         async with InMemoryScopedUnitOfWork(
             database, auth=auth, project_id="p1", region_code="cn"

@@ -75,19 +75,6 @@ export function isSafeBearerToken(value: string): boolean {
   return /^[!-~]{1,4096}$/u.test(value);
 }
 
-interface ErrorEnvelopeWire {
-  error?: {
-    code?: unknown;
-    message?: unknown;
-    field_errors?: unknown;
-    operation_errors?: unknown;
-    blocked_reasons?: unknown;
-    request_id?: unknown;
-    retryable?: unknown;
-    retry_after_seconds?: unknown;
-  };
-}
-
 type ErrorPayloadWire = Record<string, unknown>;
 
 function joinUrl(base: string, requestPath: string): string {
@@ -167,25 +154,8 @@ export function domainErrorFromResponse(
   headers?: Headers,
 ): DomainError & Error {
   const payload = asRecord(raw);
-  const envelope = asRecord((payload as ErrorEnvelopeWire | null)?.error);
-  const hasProblemDetailsField =
-    payload !== null &&
-    [
-      "type",
-      "title",
-      "status",
-      "detail",
-      "code",
-      "request_id",
-      "retryable",
-      "retry_after_seconds",
-      "details",
-    ].some((key) => Object.hasOwn(payload, key));
-  const isLegacyEnvelope = envelope !== null && !hasProblemDetailsField;
-  const metadata = isLegacyEnvelope ? envelope : payload;
-  const structuredDetails = isLegacyEnvelope
-    ? envelope
-    : asRecord(payload?.details);
+  const metadata = payload;
+  const structuredDetails = asRecord(payload?.details);
   const fieldErrors = asIssueArray<DomainFieldError>(
     structuredDetails?.field_errors,
     (entry) => ({
@@ -212,9 +182,7 @@ export function domainErrorFromResponse(
       message: text(entry.message, "当前资源不可执行此操作"),
     }),
   );
-  const message = isLegacyEnvelope
-    ? nonEmptyText(metadata?.message)
-    : (nonEmptyText(payload?.detail) ?? nonEmptyText(payload?.title));
+  const message = nonEmptyText(payload?.detail) ?? nonEmptyText(payload?.title);
   return createDomainError({
     code: domainErrorCodeForStatus(status),
     problemCode: nonEmptyText(metadata?.code),
@@ -289,6 +257,20 @@ function scopeTransitionError(
     retryable: false,
     httpStatus: null,
   });
+}
+
+function hasOrganizationAccess(
+  shell: ReturnType<typeof getShellState>,
+  organizationId: string | undefined,
+): boolean {
+  if (!organizationId) return false;
+  return (
+    shell.scope?.organizationId === organizationId ||
+    shell.sessionOrganizations.some(
+      (organization) => organization.organizationId === organizationId,
+    ) ||
+    shell.sessionScopes.some((scope) => scope.organizationId === organizationId)
+  );
 }
 
 const runtimeParameterToken = /^\{[A-Za-z_][A-Za-z0-9_]*\}$/u;
@@ -413,7 +395,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     (activeScoped || organizationScoped) &&
     opts.scope !== undefined &&
     (organizationScoped
-      ? shell.scope?.organizationId !== requestScope?.organizationId
+      ? !hasOrganizationAccess(shell, requestScope?.organizationId)
       : shell.scopeKey !== requestScopeKey)
   ) {
     throw scopeTransitionError(
@@ -465,7 +447,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     }
     if (
       organizationScoped &&
-      getShellState().scope?.organizationId !== requestScope?.organizationId
+      !hasOrganizationAccess(getShellState(), requestScope?.organizationId)
     ) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属组织已失效");
     }

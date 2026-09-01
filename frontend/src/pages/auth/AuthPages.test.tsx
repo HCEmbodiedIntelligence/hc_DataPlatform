@@ -31,7 +31,6 @@ import {
   PasswordResetRoute,
 } from "./PasswordRecoveryRoutes";
 import { RegisterRoute } from "./RegisterRoute";
-import { EmptyAccountRoute } from "./EmptyAccountRoute";
 
 function LocationProbe() {
   const location = useLocation();
@@ -67,7 +66,6 @@ function renderLogin() {
         <Routes>
           <Route path="/auth/login" element={<LoginRoute />} />
           <Route path="/auth/session-expired" element={<LocationProbe />} />
-          <Route path="/account/empty" element={<LocationProbe />} />
           <Route path="/account" element={<LocationProbe />} />
           <Route path="/" element={<LocationProbe />} />
         </Routes>
@@ -107,21 +105,6 @@ function renderPasswordRecovery(initialEntry = "/auth/recover-password") {
               </>
             }
           />
-          <Route path="/auth/login" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>
-    </ProviderHarness>,
-  );
-}
-
-function renderEmptyAccount() {
-  render(
-    <ProviderHarness>
-      <MemoryRouter initialEntries={["/account/empty"]}>
-        <Routes>
-          <Route path="/account/empty" element={<EmptyAccountRoute />} />
-          <Route path="/account" element={<LocationProbe />} />
-          <Route path="/" element={<LocationProbe />} />
           <Route path="/auth/login" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
@@ -800,7 +783,6 @@ describe("E01 authentication pages", () => {
                 </>
               }
             />
-            <Route path="/account/empty" element={<LocationProbe />} />
             <Route path="/account" element={<LocationProbe />} />
             <Route path="/auth/session-expired" element={<LocationProbe />} />
             <Route path="/" element={<LocationProbe />} />
@@ -1287,26 +1269,4 @@ describe("E01 authentication pages", () => {
     expect(screen.queryByText(/20–10/u)).not.toBeInTheDocument();
   });
 
-  it("redirects the retired empty-account address to the shared landing when signed in", async () => {
-    useShellStore
-      .getState()
-      .setSession(
-        { actorId: "principal-empty", displayName: "Empty", roleIds: [] },
-        "empty-session-token",
-      );
-    renderEmptyAccount();
-
-    expect(await screen.findByTestId("location")).toHaveTextContent(
-      "/",
-    );
-    expect(useShellStore.getState().sessionToken).toBe("empty-session-token");
-  });
-
-  it("redirects the retired empty-account address to login when signed out", async () => {
-    renderEmptyAccount();
-
-    expect(await screen.findByTestId("location")).toHaveTextContent(
-      "/auth/login",
-    );
-  });
 });

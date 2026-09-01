@@ -42,7 +42,6 @@ def _auth(
         organization_ids=frozenset({organization_id}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        roles=frozenset(),
         scope_pairs=frozenset({(project_id, None)}),
         organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         scoped_capabilities=frozenset(
@@ -131,7 +130,6 @@ def test_robot_model_read_contract_scope_and_publish_is_not_a_product_501() -> N
     client = TestClient(_app(current))
     headers = {
         "Authorization": "Bearer test",
-        "X-Project-ID": "project-a",
     }
 
     listing = client.get("/api/v1/organizations/organization-a/robot-models", headers=headers)
@@ -194,13 +192,6 @@ def test_robot_model_read_contract_scope_and_publish_is_not_a_product_501() -> N
     assert foreign_organization.status_code == 403
     assert foreign_organization.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
-    current["value"] = _auth(project_id="project-b")
-    foreign_project = client.get(
-        "/api/v1/organizations/organization-a/robot-models",
-        headers={**headers, "X-Project-ID": "project-a"},
-    )
-    assert foreign_project.status_code == 403
-
 
 def test_robot_model_router_rejects_missing_auth_and_missing_capability() -> None:
     service, _repository = _service()
@@ -211,7 +202,7 @@ def test_robot_model_router_rejects_missing_auth_and_missing_capability() -> Non
     assert client.get(path).status_code == 401
 
     current["value"] = _auth(can_read=False)
-    denied = client.get(path, headers={"Authorization": "Bearer test", "X-Project-ID": "project-a"})
+    denied = client.get(path, headers={"Authorization": "Bearer test"})
     assert denied.status_code == 403
     assert denied.json()["code"] == "CAPABILITY_REQUIRED"
 
@@ -224,7 +215,6 @@ def test_robot_model_update_creates_idempotent_draft_without_mutating_published_
     path = "/api/v1/organizations/organization-a/robot-model-versions/version-a:create-draft"
     headers = {
         "Authorization": "Bearer test",
-        "X-Project-ID": "project-a",
         "Idempotency-Key": "draft-version-a-110",
     }
 
@@ -275,7 +265,6 @@ def test_robot_model_create_starts_with_an_idempotent_editable_version() -> None
     path = "/api/v1/organizations/organization-a/robot-models"
     headers = {
         "Authorization": "Bearer test",
-        "X-Project-ID": "project-a",
         "Idempotency-Key": "create-model-xr-02",
     }
     payload = {
@@ -360,7 +349,6 @@ def test_robot_model_asset_upload_direct_transfer_manifest_and_download_authoriz
     client = TestClient(_app(current))
     headers = {
         "Authorization": "Bearer test",
-        "X-Project-ID": "project-a",
         "Idempotency-Key": "asset-upload-a",
     }
     body = b'<robot name="xr-02"/>'

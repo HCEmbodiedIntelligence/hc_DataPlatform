@@ -126,40 +126,16 @@ class ScopeGuard:
                 detail="The subject was not issued this exact project and region scope.",
             )
 
-        # Legacy JWTs expose independent project_ids and region_codes arrays.  With more than
-        # one project there is no trustworthy way to know which region belongs to which project;
-        # treating the arrays as a Cartesian product is an IDOR risk.  Fail closed until the
-        # issuer provides explicit paired scopes (as platform sessions already do).
-        if region_code is not None and len(auth.project_ids) > 1:
-            raise problem(
-                status=403,
-                code="REGION_SCOPE_AMBIGUOUS",
-                title="Explicit project-region scope required",
-                detail="A region-scoped request requires an explicit project-region binding.",
-            )
-
-        if project_id not in auth.project_ids:
-            raise problem(
-                status=403,
-                code="SERVICE_SCOPE_REQUIRED" if auth.service_identity else "PROJECT_SCOPE_DENIED",
-                title=(
-                    "Explicit worker scope required"
-                    if auth.service_identity
-                    else "Project access denied"
-                ),
-                detail="The subject cannot access this project.",
-            )
-        if region_code is not None and region_code not in auth.region_codes:
-            raise problem(
-                status=403,
-                code="SERVICE_SCOPE_REQUIRED" if auth.service_identity else "REGION_SCOPE_DENIED",
-                title=(
-                    "Explicit worker scope required"
-                    if auth.service_identity
-                    else "Region access denied"
-                ),
-                detail="The subject cannot access this region.",
-            )
+        raise problem(
+            status=403,
+            code="SERVICE_SCOPE_REQUIRED" if auth.service_identity else "PROJECT_SCOPE_DENIED",
+            title=(
+                "Explicit worker scope required"
+                if auth.service_identity
+                else "Project access denied"
+            ),
+            detail="The subject was not issued an exact project and region scope.",
+        )
 
     @staticmethod
     def select(auth: AuthContext, selection: ScopeSelection) -> ScopeSelection:

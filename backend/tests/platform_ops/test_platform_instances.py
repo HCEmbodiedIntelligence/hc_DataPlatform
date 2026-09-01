@@ -67,7 +67,6 @@ def _auth(*, capability: str | None) -> AuthContext:
         subject_id="platform-operator",
         project_ids=frozenset(),
         region_codes=frozenset(),
-        roles=frozenset(),
         capabilities=(frozenset({capability}) if capability is not None else frozenset()),
     )
 

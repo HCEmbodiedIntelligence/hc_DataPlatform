@@ -31,18 +31,17 @@ pnpm typecheck
 生产 HTTP 默认关闭 `/docs`、`/redoc` 和 `/openapi.json`；这不禁用内部 schema。
 上面的 CLI 直接从 app 对象生成，不依赖公开 HTTP 文档端点。
 
-前端从 `components["schemas"]` 使用 `DashboardSnapshotResponse`、
-`DashboardActivityResponse`、`DashboardCoverageResponse`、
-`DashboardPendingItemsResponse`，从 `operations` 使用四个 `getDashboard*` operation。
+前端从 `components["schemas"]` 使用 `DashboardActivityResponse`、
+`DashboardCoverageResponse`、`DashboardPendingItemsResponse`，从 `operations` 使用三个
+`getDashboard*` operation。
 
 ## Dashboard 请求合同
 
-四项均为 `GET`，要求 Bearer 身份、精确 `project_id + region_code` scope 和
+三项均为 `GET`，要求 Bearer 身份、精确 `project_id + region_code` scope 和
 `dashboard.read` capability：
 
 | operation | 路径 | 分页参数 | 响应 section |
 | --- | --- | --- | --- |
-| `getDashboardSnapshot` | `/api/v1/projects/{project_id}/dashboard/snapshot` | 无 | `sections.signal_pipeline/episodes/work` |
 | `getDashboardActivity` | `/api/v1/projects/{project_id}/dashboard/activity` | `cursor?`, `limit?` | `activity` |
 | `getDashboardCoverage` | `/api/v1/projects/{project_id}/dashboard/coverage` | 无 | `coverage` |
 | `getDashboardPendingItems` | `/api/v1/projects/{project_id}/dashboard/pending-items` | `cursor?`, `limit?` | `pending_items` |
@@ -57,7 +56,7 @@ pnpm typecheck
 - `cursor`：仅 activity/pending-items，绑定 principal、project、region、range、timezone、
   endpoint 和完整稳定排序元组，不能跨查询复用。
 
-四类响应共有 `schema_version="1"`、`project_id`、`region_code`、`from`、`to`、
+三类响应共有 `schema_version="1"`、`project_id`、`region_code`、`from`、`to`、
 `timezone`、`as_of`。section 状态为 `READY | EMPTY | PARTIAL | STALE | ERROR | BLOCKED`，
 并带 `as_of` 与结构化 `error`；`BLOCKED` 不是数值 0。分页 section 另有 `page_info`，
 阻断态可为 `null`。
@@ -65,11 +64,6 @@ pnpm typecheck
 ## BR01 已冻结的 P01 语义
 
 - P01 没有 region storage、storage bytes 或 storage months；容量属于 P12。
-- `signal_pipeline.stages` 唯一顺序为
-  `COLLECTED → RECEIVED → AUTO_QC → ALIGNED_30_HZ → LANCE → ANNOTATION → REVIEW → PUBLISHED`；
-  Cleaning 不是独立阶段。
-- `signal_pipeline.published_region` 提供 `lineage_count`、`publication_count` 和
-  `unresolved_history_count`；只有具有确定 rollout-publication-region 血缘的事实进入前两项。
 - activity 是持久业务事件流，不是吞吐/字节 bucket。事件类型固定为
   `UPLOAD_COMMITTED | QC_COMPLETED | TAG_REVIEW_DECIDED | DATASET_PUBLISHED`，每项包含稳定
   event/source/dedup identity、事实时间、安全展示文本和受控 target。

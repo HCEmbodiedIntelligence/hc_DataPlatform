@@ -17,8 +17,7 @@ ORGANIZATION_ID = "org-a"
 
 
 def auth(
-    role: str,
-    *,
+    *capabilities: str,
     projects: tuple[str, ...] = ("project-a",),
     service_identity: bool = False,
 ) -> AuthContext:
@@ -26,13 +25,18 @@ def auth(
         subject_id="user-1",
         project_ids=frozenset(projects),
         region_codes=frozenset({"cn-test"}),
-        roles=frozenset({role}),
+        capabilities=frozenset(capabilities),
         service_identity=service_identity,
         organization_ids=frozenset({ORGANIZATION_ID}),
         organization_scope_triples=frozenset(
             (ORGANIZATION_ID, project_id, None) for project_id in projects
         )
         | frozenset((ORGANIZATION_ID, project_id, "cn-test") for project_id in projects),
+        organization_scoped_capabilities=frozenset(
+            (ORGANIZATION_ID, project_id, capability)
+            for project_id in projects
+            for capability in capabilities
+        ),
     )
 
 
@@ -51,7 +55,9 @@ def payload() -> dict[str, object]:
 def api() -> Iterator[tuple[TestClient, dict[str, AuthContext | None]]]:
     service = CollectionTaskService()
     configure_collection_tasks(service)
-    current: dict[str, AuthContext | None] = {"auth": auth("uploader")}
+    current: dict[str, AuthContext | None] = {
+        "auth": auth("upload.read", "upload.manage")
+    }
     app = FastAPI()
 
     @app.middleware("http")
@@ -197,7 +203,7 @@ def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, 
     created = create(client)
     task_id = created.json()["collection_task_id"]
 
-    current["auth"] = auth("uploader", projects=("project-b",))
+    current["auth"] = auth("upload.read", "upload.manage", projects=("project-b",))
     denied_scope = client.get(f"/api/v1/projects/project-a/collection-tasks/{task_id}")
     assert denied_scope.status_code == 403
     assert denied_scope.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
@@ -206,7 +212,7 @@ def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, 
     assert hidden_identity.status_code == 404
     assert hidden_identity.json()["code"] == "COLLECTION_TASK_NOT_FOUND"
 
-    current["auth"] = auth("uploader")
+    current["auth"] = auth("upload.read", "upload.manage")
     wrong_organization = client.get(
         f"/api/v1/projects/project-a/collection-tasks/{task_id}",
         headers={"X-Organization-Id": "org-b"},
@@ -214,7 +220,7 @@ def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, 
     assert wrong_organization.status_code == 403
     assert wrong_organization.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
-    current["auth"] = auth("uploader", service_identity=True)
+    current["auth"] = auth("upload.read", "upload.manage", service_identity=True)
     denied_region = client.get(
         f"/api/v1/projects/project-a/collection-tasks/{task_id}/progress",
         headers={"X-Region-Code": "cn-other"},
@@ -222,7 +228,7 @@ def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, 
     assert denied_region.status_code == 403
     assert denied_region.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
-    current["auth"] = auth("annotator")
+    current["auth"] = auth("upload.read")
     readable = client.get("/api/v1/projects/project-a/collection-tasks")
     assert readable.status_code == 200
     forbidden_write = client.post(
@@ -231,7 +237,7 @@ def test_scope_idor_and_read_write_permissions(api: tuple[TestClient, dict[str, 
         headers={"Idempotency-Key": "read-only"},
     )
     assert forbidden_write.status_code == 403
-    assert forbidden_write.json()["code"] == "PERMISSION_REQUIRED"
+    assert forbidden_write.json()["code"] == "CAPABILITY_REQUIRED"
 
 
 @pytest.mark.parametrize(

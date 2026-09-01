@@ -226,7 +226,16 @@ def test_real_lance_step_window_http_wire_is_precise_scoped_and_audited(tmp_path
             subject_id="p06-real-lance-reader",
             project_ids=frozenset({"project-a"}),
             region_codes=frozenset(),
-            roles=frozenset({"annotator"}),
+            capabilities=frozenset(
+                {
+                    "annotation_task.read",
+                    "annotation_task.claim",
+                    "annotation_task.assign",
+                    "annotation.edit",
+                    "annotation.save",
+                    "annotation.submit",
+                }
+            ),
         )
         return await call_next(request)
 
