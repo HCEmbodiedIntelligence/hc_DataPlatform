@@ -158,11 +158,9 @@ def parse_workflow_id(value: str) -> tuple[str, str, str, str]:
 class VerificationActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    # Optional only so historical Temporal payloads remain replay-decodable. New ingest
-    # plans always carry the verified tenant identity into persistence activities.
-    organization_id: str | None = Field(default=None, min_length=1)
-    project_id: str | None = Field(default=None, min_length=1)
-    region_code: str | None = Field(default=None, min_length=1)
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
     rollout_id: str = Field(min_length=1)
     object_key: str = Field(min_length=1)
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -276,8 +274,9 @@ class ProjectionCleanupActivityOutput(BaseModel):
 class QualityActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    project_id: str | None = Field(default=None, min_length=1)
-    region_code: str | None = Field(default=None, min_length=1)
+    organization_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
     data: QualityInputV1 | None = None
     source: IngestProjectionSourceV1 | None = None
     profile: QualityProfileV1
@@ -288,7 +287,9 @@ class QualityActivityInput(BaseModel):
         if (self.data is None) == (self.source is None):
             raise ValueError("quality input requires exactly one of data or source")
         if self.source is not None and (
-            self.project_id != self.source.project_id or self.region_code != self.source.region_code
+            self.organization_id != self.source.organization_id
+            or self.project_id != self.source.project_id
+            or self.region_code != self.source.region_code
         ):
             raise ValueError("quality source scope must match the activity scope")
         return self
@@ -303,8 +304,9 @@ class QualityActivityOutput(BaseModel):
 class AlignmentActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    organization_id: str = Field(min_length=1)
     project_id: str = Field(min_length=1)
-    region_code: str | None = Field(default=None, min_length=1)
+    region_code: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     schema_snapshot_id: str = Field(min_length=1)
     data: AlignmentInputV1 | None = None
@@ -407,9 +409,8 @@ class AlignedBundleCommitActivityInput(BaseModel):
     staged_manifest: StagedFragmentManifestV1
     alignment_staging: AlignmentStagingArtifactV1
     expected_dataset_version: int = Field(ge=1)
-    # Default preserves deterministic decoding of pre-field Temporal histories.
-    expected_camera_ids: tuple[str, ...] = ()
-    media_artifacts: tuple[AlignedMediaArtifactV1, ...] = ()
+    expected_camera_ids: tuple[str, ...]
+    media_artifacts: tuple[AlignedMediaArtifactV1, ...]
 
 
 class AlignedBundleCommitActivityOutput(BaseModel):
@@ -668,19 +669,7 @@ class ExportActivityInput(BaseModel):
 
     manifest: PublishedDatasetManifestV1
     format: ExportFormat
-    # A default keeps already-scheduled Temporal activity payloads decodable
-    # during the workflow-code rollout. New API launches always supply a
-    # server-derived idempotent attempt identity.
-    attempt_id: str = Field(default="legacy-export-attempt", min_length=1)
-
-
-class LegacyExportActivityInput(BaseModel):
-    """Frozen wire shape for pre-attempt-id Temporal activity histories."""
-
-    model_config = ConfigDict(frozen=True)
-
-    manifest: PublishedDatasetManifestV1
-    format: ExportFormat
+    attempt_id: str = Field(min_length=1)
 
 
 class ExportActivityOutput(BaseModel):
@@ -746,18 +735,13 @@ class PublishReconciliationActivityOutput(BaseModel):
 class IngestRolloutWorkflowInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    # Historical Temporal histories predate organization-scoped core ledgers.
-    # The default preserves replay decoding; every new persisted ingest plan is
-    # required to set this verified organization identity.
-    organization_id: str | None = Field(default=None, min_length=1)
+    organization_id: str = Field(min_length=1)
     project_id: str = Field(min_length=1)
     region_code: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     rollout_id: str = Field(min_length=1)
     automatic_qc_run_id: str = Field(default="initial", min_length=1, max_length=128)
-    # Historical histories used the workflow's own queue. New production plans
-    # persist the dedicated media queue explicitly so replay never reads env vars.
-    media_task_queue: str | None = Field(default=None, min_length=1, max_length=255)
+    media_task_queue: str = Field(min_length=1, max_length=255)
     manifest: ManifestActivityInput
     verification: VerificationActivityInput
     quality: QualityActivityInput
@@ -812,17 +796,12 @@ class IngestRolloutWorkflowInput(BaseModel):
         }
         if len(source_organizations) > 1:
             raise ValueError("all ingest projection sources must match one organization_id")
-        if (
-            self.organization_id is not None
-            and source_organizations
-            and source_organizations != {self.organization_id}
-        ):
+        if source_organizations and source_organizations != {self.organization_id}:
             raise ValueError("ingest organization_id must match every projection source")
-        if (
-            self.organization_id is not None
-            and self.verification.organization_id != self.organization_id
-        ):
+        if self.verification.organization_id != self.organization_id:
             raise ValueError("verification organization_id must match workflow organization_id")
+        if self.alignment.organization_id != self.organization_id:
+            raise ValueError("alignment organization_id must match workflow organization_id")
         return self
 
 
@@ -846,9 +825,7 @@ class ExportWorkflowInput(BaseModel):
 
     manifest: PublishedDatasetManifestV1
     format: ExportFormat
-    # See ExportActivityInput: preserve replay compatibility for historical
-    # workflow histories while all new public launches set this explicitly.
-    attempt_id: str = Field(default="legacy-export-attempt", min_length=1)
+    attempt_id: str = Field(min_length=1)
 
 
 class CatalogReconciliationWorkflowInput(BaseModel):
@@ -890,19 +867,3 @@ class AnnotationReviewPreparationWorkflowInput(BaseModel):
         ) != (self.tag_schema.schema_id, self.tag_schema.version):
             raise ValueError("revision must pin the supplied Tag Schema version")
         return self
-class LegacyAutomaticAnnotationActivityInput(BaseModel):
-    """Frozen wire shape for Temporal histories recorded before core/018."""
-
-    model_config = ConfigDict(frozen=True)
-
-    project_id: str = Field(min_length=1)
-    region_code: str = Field(min_length=1)
-    rollout_id: str = Field(min_length=1)
-    dataset_id: str = Field(min_length=1)
-    dataset_version: int = Field(ge=1)
-    lance_version: int = Field(ge=1)
-    dataset_schema_snapshot_id: str = Field(min_length=1)
-    base_step_count: int = Field(gt=0)
-    source_workflow_id: str = Field(min_length=1)
-    task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
-

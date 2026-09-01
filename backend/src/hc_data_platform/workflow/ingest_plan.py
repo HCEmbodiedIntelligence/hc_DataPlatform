@@ -219,12 +219,14 @@ class PostgresIngestWorkflowInputResolver:
                 ),
             ),
             quality=QualityActivityInput(
+                organization_id=organization_id,
                 project_id=project_id,
                 region_code=region_code,
                 source=source,
                 profile=profile,
             ),
             alignment=AlignmentActivityInput(
+                organization_id=organization_id,
                 project_id=project_id,
                 region_code=region_code,
                 dataset_id=dataset_id,
@@ -575,7 +577,7 @@ class PostgresIngestWorkflowInputResolver:
         preflight: ManifestPreflightResultV1,
         profile: QualityProfileV1,
     ) -> DatasetSchemaSnapshot:
-        frequency_hz = profile.target_frequency_hz
+        frequency_hz = profile.default_timing.target_frequency_hz
         if not 1 <= frequency_hz <= 1000:
             raise _blocked("the quality profile frequency cannot be used for alignment")
         # Camera rows carry compact aligned-media frame references. Raw JPEG bytes

@@ -115,9 +115,7 @@ def test_jwt_verifier_accepts_exact_organization_scopes_without_cross_organizati
     context.require_capability("dataset.read", "project-a", organization_id="org-b")
     _assert_problem(
         "CAPABILITY_REQUIRED",
-        lambda: context.require_capability(
-            "access.manage", "project-a", organization_id="org-b"
-        ),
+        lambda: context.require_capability("access.manage", "project-a", organization_id="org-b"),
     )
     _assert_problem(
         "CAPABILITY_REQUIRED",

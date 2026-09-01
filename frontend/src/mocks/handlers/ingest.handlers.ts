@@ -6,14 +6,13 @@ import {
   dataSourcePageFixture,
   formalManifestFixture,
   formalQualityFixture,
+  formalUploadSessionListFixture,
   formalUploadSessionFixture,
   ingestFixtureScope,
   internalUploadJobFixture,
-  quarantinedUploadListFixture,
   uploadBootstrapFixture,
   uploadCreationOptionsFixture,
   uploadEventPageFixture,
-  uploadListFixture,
   uploadObjectPageFixture,
   uploadSessionFixture,
   uploadingBootstrapFixture,
@@ -57,17 +56,17 @@ function validateWrite(request: Request, params: Record<string, string | readonl
 function filterUploadSessions(
   request: Request,
   sessions: readonly {
-    readonly lifecycle_status: string;
-    readonly verification_status: string;
+    readonly status: string;
+    readonly data_package_id: string;
   }[],
 ) {
   const query = new URL(request.url).searchParams;
-  const lifecycleStatuses = new Set(query.getAll('lifecycle_status'));
-  const verificationStatuses = new Set(query.getAll('verification_status'));
+  const status = query.get('status');
+  const dataPackageId = query.get('data_package_id');
 
   return sessions.filter((session) =>
-    (lifecycleStatuses.size === 0 || lifecycleStatuses.has(session.lifecycle_status))
-    && (verificationStatuses.size === 0 || verificationStatuses.has(session.verification_status)),
+    (status === null || status === session.status)
+    && (dataPackageId === null || dataPackageId === session.data_package_id),
   );
 }
 
@@ -150,23 +149,20 @@ export const ingestHandlers = [
   })),
   http.get(`${api}/upload-sessions`, async ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;
+    const queryFields = new Set(new URL(request.url).searchParams.keys());
+    const supportedQueryFields = new Set(['status', 'data_package_id', 'cursor', 'limit']);
+    const unsupportedQueryFields = [...queryFields].filter((field) => !supportedQueryFields.has(field));
+    if (unsupportedQueryFields.length > 0) return error(422, 'REQUEST_VALIDATION_FAILED', '查询包含不支持的字段');
     await scenarioDelay(); const failed = scenarioFailure('list'); if (failed) return failed;
     const scenario = getIngestScenario();
-    if (scenario === 'empty' || scenario === 'filtered-empty') return HttpResponse.json({ ...uploadListFixture, items: [], total: 0 });
-    if (scenario === 'contract-mismatch') return HttpResponse.json({ ...uploadListFixture, security_token: 'fixture-only-leak' });
-    if (scenario === 'unknown-enum') return HttpResponse.json({ ...uploadListFixture, items: [{ ...uploadingSessionFixture, lifecycle_status: 'FUTURE_TRANSFER' }] });
-    const fixture = scenario === 'job-failed' ? quarantinedUploadListFixture : uploadListFixture;
-    const legacyItems = filterUploadSessions(request, fixture.items);
-    const items = legacyItems.map((legacy, index) => ({
-      ...legacy,
-      ...formalUploadSessionFixture,
-      session_id: index === 0
-        ? formalUploadSessionFixture.session_id
-        : `${formalUploadSessionFixture.session_id}-${index + 1}`,
-      status: scenario === 'job-failed' ? 'FAILED' : formalUploadSessionFixture.status,
-      failure_code: scenario === 'job-failed' ? 'QC_REJECTED' : null,
-    }));
-    return HttpResponse.json({ ...fixture, items, total: items.length });
+    if (scenario === 'empty' || scenario === 'filtered-empty') return HttpResponse.json({ ...formalUploadSessionListFixture, items: [], total: 0 });
+    if (scenario === 'contract-mismatch') return HttpResponse.json({ ...formalUploadSessionListFixture, security_token: 'fixture-only-leak' });
+    if (scenario === 'unknown-enum') return HttpResponse.json({ ...formalUploadSessionListFixture, items: [{ ...formalUploadSessionFixture, status: 'FUTURE_TRANSFER' }] });
+    const current = scenario === 'job-failed'
+      ? { ...formalUploadSessionFixture, status: 'FAILED', failure_code: 'QC_REJECTED' }
+      : formalUploadSessionFixture;
+    const items = filterUploadSessions(request, [current]);
+    return HttpResponse.json({ ...formalUploadSessionListFixture, items, total: items.length });
   }),
   http.get(`${api}/upload-sessions:creation-options`, ({ request, params }) => {
     const invalid = validateRead(request, params); if (invalid) return invalid;

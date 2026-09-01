@@ -19,12 +19,12 @@ current_development_baseline:
     helm_chart: 0.1.0
     helm_app_version: 0.1.0
   database:
-    migration_count: 115
-    manifest_sha256: b55cf90a106712f21a11bab5d9630c29dda3cdd76afd53626e583ce2769bd030
+    migration_count: 121
+    manifest_sha256: a557c299285d53c9f619c03580d9c80f271dad6058c549f0d82abf1b0f8470c9
     forward_only: true
     checksum_drift_allowed: false
   api:
-    openapi_sha256: efba4ffedd1d1295796847aa9bc8ee8bd45d7f600a4f7a29a7e03bbcc21cb413
+    openapi_sha256: 98c8913d87dc83bdca45e6f0b7a4b37809a43a70d4019d247eb7f2e9e6264156
     generated_client_drift_gate: enabled
     previous_to_current_compatibility_gate: enabled
   temporal:
@@ -32,16 +32,8 @@ current_development_baseline:
     production_server_version: UNSPECIFIED_RELEASE_BLOCKER
     development_compose_server_version: 1.25.2
     worker_build_id_routing: ENABLED
-    patch_ids:
-      - annotation-organization-scope-v1
-      - cleanup-ingest-projection-v1
-      - cleanup-uncommitted-aligned-media-v1
-      - export-attempt-identity-v1
-      - export-phase-progress-v1
-      - object-store-free-ingest-processing-v1
-      - persist-ingest-workflow-job-v1
-      - single-pass-ingest-projection-v1
-    patch_set_sha256: 3ca173032ce6d891b028884558770bc1bf406df3f70465d745c0a449a8c40ca3
+    patch_ids: []
+    patch_set_sha256: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
   configuration:
     helm_values_sha256: fa4996c3cb2d00f916244f3b31d774d6d6c47284b333a60a839fa1b8f0b32730
     runtime_config_hot_reload_allowlist:
@@ -60,10 +52,10 @@ adjacent_release_edges:
     target_artifacts_built_and_signed: false
     database:
       change_mode: no_schema_change
-      source_migration_count: 115
-      source_manifest_sha256: b55cf90a106712f21a11bab5d9630c29dda3cdd76afd53626e583ce2769bd030
-      target_migration_count: 115
-      target_manifest_sha256: b55cf90a106712f21a11bab5d9630c29dda3cdd76afd53626e583ce2769bd030
+      source_migration_count: 121
+      source_manifest_sha256: a557c299285d53c9f619c03580d9c80f271dad6058c549f0d82abf1b0f8470c9
+      target_migration_count: 121
+      target_manifest_sha256: a557c299285d53c9f619c03580d9c80f271dad6058c549f0d82abf1b0f8470c9
       expand_migrations: []
       data_migration: none
       contract_migrations: []
@@ -71,24 +63,8 @@ adjacent_release_edges:
       new_app_on_source_schema: PASS
       database_downgrade_allowed: false
     temporal:
-      source_patch_ids:
-        - annotation-organization-scope-v1
-        - cleanup-ingest-projection-v1
-        - cleanup-uncommitted-aligned-media-v1
-        - export-attempt-identity-v1
-        - export-phase-progress-v1
-        - object-store-free-ingest-processing-v1
-        - persist-ingest-workflow-job-v1
-        - single-pass-ingest-projection-v1
-      target_patch_ids:
-        - annotation-organization-scope-v1
-        - cleanup-ingest-projection-v1
-        - cleanup-uncommitted-aligned-media-v1
-        - export-attempt-identity-v1
-        - export-phase-progress-v1
-        - object-store-free-ingest-processing-v1
-        - persist-ingest-workflow-job-v1
-        - single-pass-ingest-projection-v1
+      source_patch_ids: []
+      target_patch_ids: []
       added_patch_ids: []
       removed_patch_ids: []
       existing_history_replay: PASS
@@ -97,8 +73,8 @@ adjacent_release_edges:
       worker_build_id_routing: ENABLED
       production_server_version_range: UNSPECIFIED_RELEASE_BLOCKER
     api:
-      source_openapi_sha256: efba4ffedd1d1295796847aa9bc8ee8bd45d7f600a4f7a29a7e03bbcc21cb413
-      target_openapi_sha256: efba4ffedd1d1295796847aa9bc8ee8bd45d7f600a4f7a29a7e03bbcc21cb413
+      source_openapi_sha256: 98c8913d87dc83bdca45e6f0b7a4b37809a43a70d4019d247eb7f2e9e6264156
+      target_openapi_sha256: 98c8913d87dc83bdca45e6f0b7a4b37809a43a70d4019d247eb7f2e9e6264156
       old_client_on_target_server: PASS
       target_client_on_source_server: PASS
       removed_operations: []

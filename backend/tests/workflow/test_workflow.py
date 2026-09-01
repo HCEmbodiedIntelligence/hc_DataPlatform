@@ -170,6 +170,7 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "CatalogReconciliationWorkflow",
         "PublishReconciliationWorkflow",
         "AnnotationReviewPreparationWorkflow",
+        "ContinuousRecordingEpisodeWorkflow",
         "StorageLifecycleExecutionWorkflow",
     }
     assert {item.__name__ for item in activities} == {
@@ -193,6 +194,10 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "materialize_ingest_projection",
         "cleanup_ingest_projection",
         "persist_workflow_job",
+        "align_continuous_episode",
+        "commit_continuous_episode_bundle",
+        "qc_continuous_episode",
+        "update_continuous_episode_state",
     }
     media_workflows, media_activities = discover_temporal_registrations("media")
     assert media_workflows == []

@@ -103,6 +103,7 @@ const manifest = {
   ],
   expected_topics: ["/camera/front"],
   actual_topics: ["/camera/front"],
+  processing_mode: "DIRECT_EPISODE",
   files: [
     {
       path: "recording.mcap",

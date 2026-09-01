@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState, type JSX } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { AnnotationPageState } from "../../features/annotation";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
@@ -41,7 +41,7 @@ const revisionOriginOptions: readonly {
 }[] = [
   { value: "ALL", label: "全部来源" },
   { value: "ANNOTATION", label: "标注" },
-  { value: "LEGACY_CLEANING", label: "历史清洗" },
+  { value: "ANNOTATION_RESTORE", label: "恢复修订" },
 ];
 
 function revisionErrorKind(
@@ -72,7 +72,6 @@ function ThreadRow({
   readonly thread: RuntimeAnnotationRevisionThread;
   readonly canOpenTask: boolean;
 }): JSX.Element {
-  const legacy = thread.legacy_draft_id;
   return (
     <tr>
       <th scope="row">
@@ -91,7 +90,7 @@ function ThreadRow({
         <small>
           {thread.latest_revision.origin === "ANNOTATION"
             ? "标注修订"
-            : "历史清洗导入"}
+            : "恢复修订"}
         </small>
       </td>
       <td>
@@ -125,7 +124,6 @@ function ThreadRow({
         ) : (
           <span className="p08-muted-action">缺少任务详情权限</span>
         )}
-        {legacy ? <small>已关联旧草稿 {legacy}</small> : null}
       </td>
     </tr>
   );
@@ -143,8 +141,6 @@ export function AnnotationRevisionPage(): JSX.Element {
   const scope = runtimeAnnotationScopeFromShell(shellScope);
   const [status, setStatus] = useState<RevisionStatusFilter>("ALL");
   const [origin, setOrigin] = useState<RevisionOriginFilter>("ALL");
-  const [searchParams] = useSearchParams();
-  const legacyDraftId = searchParams.get("legacyDraftId")?.trim() || undefined;
   const canRead = capabilities.has("annotation_task.read");
   const canOpenTask = capabilities.has("episode.read");
   const revisions = useInfiniteQuery({
@@ -154,7 +150,6 @@ export function AnnotationRevisionPage(): JSX.Element {
       scope?.regionCode ?? "disabled",
       status,
       origin,
-      legacyDraftId ?? "all-legacy-drafts",
     ],
     queryFn: ({ pageParam, signal }) =>
       listRuntimeAnnotationRevisionThreads(
@@ -162,7 +157,6 @@ export function AnnotationRevisionPage(): JSX.Element {
         {
           status: status === "ALL" ? undefined : status,
           origin: origin === "ALL" ? undefined : origin,
-          legacyDraftId,
           ...(pageParam === null ? {} : { after: pageParam }),
         },
         signal,
@@ -243,16 +237,6 @@ export function AnnotationRevisionPage(): JSX.Element {
           </button>
         </div>
       </header>
-      {legacyDraftId ? (
-        <section className="p08-legacy-route-notice" role="status">
-          <strong>旧清洗草稿兼容入口</strong>
-          <span>
-            仅在当前项目和 Region 中查找已安全导入的草稿 {legacyDraftId}；不会跨
-            Scope 猜测映射。
-          </span>
-          <Link to={annotationRoutes.revisions.pattern}>查看全部修订记录</Link>
-        </section>
-      ) : null}
       <section className="p08-revision-toolbar" aria-label="修订筛选">
         <label>
           <span>工作流状态</span>
@@ -293,11 +277,7 @@ export function AnnotationRevisionPage(): JSX.Element {
       {threads.length === 0 ? (
         <AnnotationPageState
           kind="empty"
-          detail={
-            legacyDraftId
-              ? `旧草稿 ${legacyDraftId} 尚未在当前项目和 Region 中安全导入；请从修订记录继续，不会自动打开其他 Scope 的同名草稿。`
-              : "当前 Scope 中没有符合筛选条件的修订线索。"
-          }
+          detail="当前 Scope 中没有符合筛选条件的修订线索。"
         />
       ) : (
         <div

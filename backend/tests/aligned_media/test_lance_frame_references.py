@@ -22,10 +22,7 @@ from hc_data_platform.alignment.models import (
     AlignmentStrategy,
 )
 from hc_data_platform.runtime import _ArrowStepSequence
-from hc_data_platform.workflow.activities import (
-    _write_alignment_camera_shard,
-    _write_alignment_camera_shards,
-)
+from hc_data_platform.workflow.activities import _write_alignment_camera_shards
 from hc_data_platform.workflow.projection_store import LocalProjectionArtifactStore
 
 
@@ -216,11 +213,10 @@ def test_frame_reader_downloads_camera_shard_instead_of_full_alignment(
         schema_sha256="2" * 64,
     )
     shard_path = tmp_path / "front.arrow"
-    _write_alignment_camera_shard(
+    _write_alignment_camera_shards(
         source_path=Path(uri.removeprefix("file://")),
-        destination_path=shard_path,
+        destinations={"front": shard_path},
         rollout_id="rollout-a",
-        camera_id="front",
         expected_rows=1,
     )
     digest = hashlib.sha256(shard_path.read_bytes()).hexdigest()

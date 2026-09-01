@@ -274,11 +274,7 @@ def _auth(
         ),
         organization_scoped_capabilities=frozenset(
             {(organization_id, project_id, "robot_model.read")}
-            | (
-                {(organization_id, project_id, "robot_model.manage")}
-                if can_manage
-                else set()
-            )
+            | ({(organization_id, project_id, "robot_model.manage")} if can_manage else set())
         ),
     )
 

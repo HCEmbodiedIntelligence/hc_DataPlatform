@@ -446,3 +446,16 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources` | N1；读 capability 与精确 scope；仅为 finalized Episode 返回短期原视频读取 URL，不物化预览副本。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-proposals` | N1；写 capability 与精确 scope；模型切片提案受 If-Match/ETag 并发保护。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/video-sources` | N1；读 capability 与精确 scope；仅签发短期原视频读取 URL，不返回对象存储凭据或物理 key。 |
+
+## 9. 2026-09-01 机器人绑定与 LeRobot 导入增量
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `/api/v1/organizations/{organization_id}/robots` | N1；机器人目录按精确 organization scope 读取。 |
+| `/api/v1/organizations/{organization_id}/robots/model-bindings` | N1；模型绑定列表按精确 organization scope 读取。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/bootstrap` | N1；robot ID 必须归属当前 organization，返回当前模型绑定启动信息。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/model-bindings` | N1；模型绑定写入要求精确 organization scope 与机器人管理 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports` | N1；LeRobot 导入创建要求精确 organization/project/region scope。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts` | N1；只为当前导入和声明资产签发有界分片授权。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete` | N1；按精确导入 scope 校验并完成声明资产。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit` | N1；仅在当前导入资产全部校验通过后提交。 |

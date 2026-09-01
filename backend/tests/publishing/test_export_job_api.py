@@ -62,7 +62,7 @@ class PendingInMemoryWorkflowLauncher(InMemoryWorkflowLauncher):
                 project_id=project_id,
                 resource_id=resource_id,
                 status=JobStatus.RUNNING,
-                stage="export",
+                stage="materializing",
                 attempt=1,
                 created_at=now,
                 updated_at=now,
@@ -189,9 +189,7 @@ def _publisher_auth(project_id: str = "project-a") -> AuthContext:
         subject_id="publisher-a",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        capabilities=frozenset(
-            {"dataset_version.publish", "data_schema.publish", "export.read"}
-        ),
+        capabilities=frozenset({"dataset_version.publish", "data_schema.publish", "export.read"}),
         scope_pairs=frozenset({(project_id, None)}),
     )
 
@@ -383,7 +381,7 @@ def test_running_export_cancel_is_idempotent_and_cancelled_job_can_retry(
     assert created.json()["status"] == "RUNNING"
     assert created.json()["progress"] == {
         "phase": "materializing",
-        "completed_phases": 0,
+        "completed_phases": 1,
         "total_phases": 3,
     }
     job_id = created.json()["job_id"]

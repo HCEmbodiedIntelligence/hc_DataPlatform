@@ -91,8 +91,7 @@ def _prepare_app_role(dsn: str) -> None:
         )
         cursor.execute(
             "GRANT SELECT ON robotics.robot_assets, robotics.project_robot_assignments, "
-            "robotics.robot_asset_components TO "
-            + APP_ROLE
+            "robotics.robot_asset_components TO " + APP_ROLE
         )
         cursor.execute("GRANT SELECT ON dataset_registry.dataset_versions TO " + APP_ROLE)
         cursor.execute("GRANT INSERT ON core.audit_events TO " + APP_ROLE)

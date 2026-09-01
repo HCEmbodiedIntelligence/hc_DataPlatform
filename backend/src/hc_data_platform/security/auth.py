@@ -334,16 +334,13 @@ class AuthContext:
         if self.is_platform_admin:
             return True
         return any(
-            scoped_organization == organization_id
-            and scoped_capability == capability
+            scoped_organization == organization_id and scoped_capability == capability
             for scoped_organization, _project_id, scoped_capability in (
                 self.organization_scoped_capabilities
             )
         )
 
-    def require_organization_capability(
-        self, organization_id: str, capability: str
-    ) -> None:
+    def require_organization_capability(self, organization_id: str, capability: str) -> None:
         if not self.has_organization_capability(organization_id, capability):
             raise problem(
                 status=403,

@@ -174,7 +174,6 @@ from hc_data_platform.publishing.adapters import (
 from hc_data_platform.publishing.audit import PostgresExportAuditRecorder
 from hc_data_platform.publishing.exporters import LanceSnapshotExporter, LeRobotV3Exporter
 from hc_data_platform.publishing.postgres import (
-    PostgresAnnotationTaskLocator,
     PostgresCatalogRolloutState,
     PostgresPublishedManifestRepository,
 )
@@ -511,8 +510,6 @@ def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
         **client_options,
     )
     public_endpoint = settings.object_store_public_endpoint
-    if public_endpoint is None:  # Defensive: Settings resolves local/test and rejects prod absence.
-        raise RuntimeError("public object-store endpoint is not configured")
     presign_client = boto3.client(
         "s3",
         endpoint_url=public_endpoint,
@@ -531,8 +528,6 @@ def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
 
 def _oss(settings: Settings) -> tuple[Any, Any, OssObjectStorage]:
     public_endpoint = settings.object_store_public_endpoint
-    if public_endpoint is None:  # Defensive: Settings resolves local/test and rejects prod absence.
-        raise RuntimeError("public object-store endpoint is not configured")
     operation_bucket = build_oss_bucket(
         endpoint=settings.object_store_endpoint,
         bucket=settings.object_store_bucket,
@@ -873,8 +868,6 @@ def build_runtime(
         ),
         annotations=ApprovedAnnotationSnapshotAdapter(
             annotations=annotation,
-            exclusions=annotation,
-            task_locator=PostgresAnnotationTaskLocator(connection_factory),
         ),
         repository=PostgresPublishedManifestRepository(connection_factory),
         artifact_sink=artifact_sink,

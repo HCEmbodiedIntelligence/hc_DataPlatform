@@ -169,7 +169,7 @@ def aggregate_fragments(fragment_dir: Path) -> OpenAPIDocument:
 
     output_components.setdefault("schemas", {})
     # Apply the same public-auth contract normalization used by app.openapi().  This keeps
-    # fragments declarative while making omitted legacy fragment security explicit.
+    # fragments declarative while making omitted fragment security explicit.
     from .app import _normalize_operation_contracts
 
     _normalize_operation_contracts(document)

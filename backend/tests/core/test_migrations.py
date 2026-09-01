@@ -101,6 +101,7 @@ EXPECTED_MANIFEST = (
     "manual_cleaning/0001_manual_issue_registry.sql",
     "manual_cleaning/0002_cleaning_draft_read_projections.sql",
     "manual_cleaning/0003_cleaning_workbench.sql",
+    "manual_cleaning/0004_current_cleaning_draft_cutover.sql",
     "security/004_audit_read_projection.sql",
     "security/005_account_profile_and_credentials.sql",
     "security/006_session_lifecycle.sql",

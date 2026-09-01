@@ -291,7 +291,7 @@ class RecordingAssetPartGrant(BaseModel):
 
 
 class EpisodeProcessing(BaseModel):
-    """New Episode database row; deliberately separate from legacy rollout rows."""
+    """Canonical database row for a continuous-recording Episode."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

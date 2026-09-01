@@ -259,6 +259,9 @@ def test_release_gate_unconfigured_activity_port_is_non_retryable(
 
     monkeypatch.setattr(activities, "_with_heartbeats", invoke_without_temporal_context)
     request = VerificationActivityInput(
+        organization_id="organization-a",
+        project_id="project-a",
+        region_code="cn-test",
         rollout_id="be12-unconfigured-port",
         object_key="raw/test.mcap",
         source_sha256="a" * 64,

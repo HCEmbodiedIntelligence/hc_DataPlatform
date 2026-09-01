@@ -30,8 +30,8 @@ class AnnotationSnapshotPort(Protocol):
         *,
         project_id: str,
         rollout_id: str,
-        dataset_id: str | None = None,
-        lance_version: str | None = None,
+        dataset_id: str,
+        lance_version: str,
     ) -> ApprovedAnnotationSnapshotV1 | None: ...
 
 

@@ -32,10 +32,17 @@ SCOPE = AuditScope(
 def _auth(*capabilities: str) -> AuthContext:
     return AuthContext(
         subject_id="auditor-a",
+        organization_ids=frozenset({SCOPE.organization_id}),
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset({"cn-hz"}),
         scope_pairs=frozenset({("project-a", "cn-hz")}),
         scoped_capabilities=frozenset(("project-a", capability) for capability in capabilities),
+        organization_scope_triples=frozenset(
+            {(SCOPE.organization_id, SCOPE.project_id, SCOPE.region_code)}
+        ),
+        organization_scoped_capabilities=frozenset(
+            (SCOPE.organization_id, SCOPE.project_id, capability) for capability in capabilities
+        ),
     )
 
 

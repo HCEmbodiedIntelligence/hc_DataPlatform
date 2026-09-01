@@ -319,8 +319,8 @@ function StreamPanel({
             // next media-ready event retries without surfacing a false failure.
           });
         } catch {
-          // Some test/legacy media implementations throw synchronously. A
-          // later loadedmetadata/canplay event is the safe retry boundary.
+          // Media implementations may throw synchronously. A later
+          // loadedmetadata/canplay event is the safe retry boundary.
         }
       };
       const synchronizeVideo = (

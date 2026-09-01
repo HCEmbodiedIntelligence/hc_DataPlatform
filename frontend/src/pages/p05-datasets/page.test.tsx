@@ -117,7 +117,7 @@ describe('P05 datasets page filters', () => {
     expect(within(summary).getByRole('heading', { name: 'Assembly dataset' })).toBeVisible();
   });
 
-  it('canonicalizes legacy Channel parameters, keeps applied filters collapsed, and shows datasetCount', async () => {
+  it('keeps applied filters collapsed and shows datasetCount', async () => {
     const listQueries: URLSearchParams[] = [];
     server.use(
       http.get('*/projects/:projectId/datasets', ({ request }) => {
@@ -127,8 +127,7 @@ describe('P05 datasets page filters', () => {
     );
     const router = createRouter(
       '/datasets?q=assembly&task=assembly&workflowState=pendingReview' +
-        '&datasetCreatedFrom=2026-08-01&sort=nameAsc&limit=50' +
-        '&channels=%2Fcamera%2Ffront&channelMatch=any',
+        '&datasetCreatedFrom=2026-08-01&sort=nameAsc&limit=50',
     );
 
     render(
@@ -155,8 +154,6 @@ describe('P05 datasets page filters', () => {
       expect(listQueries.at(-1)?.get('q')).toBe('assembly');
       expect(listQueries.at(-1)?.get('task')).toBe('assembly');
       expect(listQueries.at(-1)?.get('workflow_state')).toBe('pendingReview');
-      expect(listQueries.at(-1)?.has('channels')).toBe(false);
-      expect(listQueries.at(-1)?.has('channel_match')).toBe(false);
     });
   });
 

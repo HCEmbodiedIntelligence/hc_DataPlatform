@@ -146,10 +146,6 @@ StatusQuery = Annotated[AnnotationStatus | None, Query()]
 RevisionQuery = Annotated[int | None, Query(ge=0)]
 RevisionThreadAfter = Annotated[str | None, Query(max_length=16_384)]
 RevisionThreadLimit = Annotated[int, Query(ge=1, le=100)]
-LegacyDraftQuery = Annotated[
-    str | None,
-    Query(min_length=8, max_length=102, pattern=r"^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"),
-]
 
 
 class SaveDraftRequest(BaseModel):
@@ -351,7 +347,6 @@ def list_annotation_revision_threads(
     auth: AuthDependency,
     status: StatusQuery = None,
     origin: Annotated[RevisionOrigin | None, Query()] = None,
-    legacy_draft_id: LegacyDraftQuery = None,
     after: RevisionThreadAfter = None,
     limit: RevisionThreadLimit = 25,
 ) -> AnnotationRevisionThreadPage:
@@ -377,7 +372,6 @@ def list_annotation_revision_threads(
         request_id=request_id,
         status=status,
         origin=origin,
-        legacy_draft_id=legacy_draft_id,
         after=after,
         limit=limit,
     )

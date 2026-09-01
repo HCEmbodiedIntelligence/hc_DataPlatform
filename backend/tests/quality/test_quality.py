@@ -11,7 +11,6 @@ from hc_data_platform.quality import (
     CompleteStepProfileV1,
     FakeMetadataSink,
     FakeQualityProfileStore,
-    FakeQualityReportSink,
     FakeReportSink,
     FindingSeverity,
     ImageObservation,
@@ -84,7 +83,6 @@ def test_nominal_30hz_is_pass_with_complete_timing_metrics() -> None:
     metrics = report.topic_metrics[0]
     assert metrics.message_count == 1800
     assert metrics.unique_frame_count == 1800
-    assert metrics.unique_timestamp_count == 1800
     assert metrics.expected_frame_count == 1800
     assert metrics.actual_frequency_hz == 30
     assert metrics.interval_p50_ns == 33_333_333
@@ -507,18 +505,6 @@ def test_metadata_failure_propagates_after_idempotent_report_write() -> None:
     assert len(reports.reports) == 1
 
 
-def test_combined_legacy_fake_stays_idempotent() -> None:
-    sink = FakeQualityReportSink()
-    engine = QualityEngine(sink)
-
-    first = engine.evaluate(_input(), _profile())
-    second = engine.evaluate(_input(), _profile())
-
-    assert first == second
-    assert len(sink.objects) == 1
-    assert sink.summaries["r1"].report_sha256 == first.content_sha256
-
-
 def test_quality_profile_versions_are_immutable_in_store() -> None:
     store = FakeQualityProfileStore()
     original = _profile()
@@ -542,45 +528,3 @@ def test_profile_rejects_inverted_thresholds_and_invalid_joint_limits() -> None:
         TopicTimingProfileV1(minimum_frequency_hz_risk=20, minimum_frequency_hz_reject=25)
     with pytest.raises(ValidationError, match="invalid limits"):
         _profile(joint_limits={"joint": (2.0, -2.0)})
-
-
-def test_initial_flat_profile_fields_are_upgraded_without_changing_behavior() -> None:
-    legacy_values: dict[str, object] = {
-        "profile_id": "legacy",
-        "required_topics": {"/camera/front"},
-        "target_frequency_hz": 30,
-        "frequency_risk_ratio": 0.95,
-        "frequency_reject_ratio": 0.75,
-        "gap_risk_periods": 3,
-        "gap_reject_periods": 30,
-        "max_action_jump": 2.0,
-    }
-    profile = QualityProfileV1(**legacy_values)
-
-    report = QualityEngine().evaluate(
-        _input(
-            _timestamps(28),
-            actions=(
-                ActionObservation(timestamp_ns=0, values=(0.0,)),
-                ActionObservation(timestamp_ns=1, values=(3.0,)),
-            ),
-        ),
-        profile,
-    )
-
-    assert profile.default_timing.minimum_frequency_hz_risk == 28.5
-    assert profile.default_timing.maximum_gap_ns_reject == 1_000_000_000
-    assert report.status == QualityStatus.RISK
-    assert {QualityCode.FREQUENCY_LOW, QualityCode.ACTION_JUMP} <= {
-        finding.code for finding in report.findings
-    }
-
-    sixty_hz_values: dict[str, object] = {
-        "profile_id": "legacy-60",
-        "required_topics": {"/camera/front"},
-        "target_frequency_hz": 60,
-    }
-    sixty_hz = QualityProfileV1(**sixty_hz_values)
-    assert sixty_hz.default_timing.minimum_frequency_hz_risk == 57
-    assert sixty_hz.default_timing.minimum_frequency_hz_reject == 45
-    assert sixty_hz.default_timing.maximum_gap_ns_risk == 50_000_000

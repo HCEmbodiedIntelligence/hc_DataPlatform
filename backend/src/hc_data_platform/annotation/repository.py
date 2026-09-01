@@ -145,7 +145,6 @@ class InMemoryAnnotationRepository:
         region_code: str,
         status: AnnotationStatus | None,
         origin: RevisionOrigin | None,
-        legacy_draft_id: str | None,
         snapshot_at: datetime,
         after_updated_at: datetime | None,
         after_task_id: str | None,
@@ -161,19 +160,7 @@ class InMemoryAnnotationRepository:
                 and (status is None or aggregate.task.status is status)
                 and (origin is None or aggregate.revisions[-1].origin is origin)
             ]
-            if legacy_draft_id is None:
-                threads = [_revision_thread(aggregate) for aggregate in records]
-            else:
-                threads = [
-                    _revision_thread(aggregate, legacy_draft_id=legacy_draft_id)
-                    for aggregate in records
-                    if any(
-                        revision.origin is RevisionOrigin.LEGACY_CLEANING
-                        and revision.legacy_audit is not None
-                        and revision.legacy_audit.draft_id == legacy_draft_id
-                        for revision in aggregate.revisions
-                    )
-                ]
+            threads = [_revision_thread(aggregate) for aggregate in records]
             threads.sort(
                 key=lambda thread: (thread.updated_at, thread.task_id),
                 reverse=True,
@@ -195,7 +182,6 @@ class InMemoryAnnotationRepository:
         request_id: str,
         status: AnnotationStatus | None,
         origin: RevisionOrigin | None,
-        legacy_draft_id: str | None,
         limit: int,
     ) -> None:
         with self._lock:
@@ -208,7 +194,6 @@ class InMemoryAnnotationRepository:
                     "action": "annotation.revision_thread.listed",
                     "status": None if status is None else status.value,
                     "origin": None if origin is None else origin.value,
-                    "legacy_draft_filter": legacy_draft_id is not None,
                     "limit": limit,
                 }
             )
@@ -408,21 +393,9 @@ class FakeAnnotationRepository(InMemoryAnnotationRepository):
 
 def _revision_thread(
     aggregate: AnnotationAggregate,
-    *,
-    legacy_draft_id: str | None = None,
 ) -> AnnotationRevisionThread:
     task = aggregate.task
     latest = aggregate.revisions[-1]
-    legacy_revision = next(
-        (
-            revision
-            for revision in reversed(aggregate.revisions)
-            if revision.origin is RevisionOrigin.LEGACY_CLEANING
-            and revision.legacy_audit is not None
-            and (legacy_draft_id is None or revision.legacy_audit.draft_id == legacy_draft_id)
-        ),
-        None,
-    )
     if task.region_code is None:
         raise AnnotationRepositoryInvariantError(
             "a scoped revision thread requires a non-null task region"
@@ -446,10 +419,5 @@ def _revision_thread(
         current_submission_id=task.current_submission_id,
         approved_revision=task.approved_revision,
         approved_review_id=task.approved_review_id,
-        legacy_draft_id=(
-            None
-            if legacy_revision is None or legacy_revision.legacy_audit is None
-            else legacy_revision.legacy_audit.draft_id
-        ),
         updated_at=task.updated_at,
     )

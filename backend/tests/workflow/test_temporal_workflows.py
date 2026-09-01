@@ -299,12 +299,14 @@ def _ingest_input(
             required_topics=frozenset(),
         ),
         quality=QualityActivityInput(
+            organization_id="organization-a",
             project_id="p1",
             region_code="cn",
             source=source,
             profile=_quality_profile(),
         ),
         alignment=AlignmentActivityInput(
+            organization_id="organization-a",
             project_id="p1",
             region_code="cn",
             dataset_id="d1",
@@ -322,7 +324,7 @@ def _ingest_input(
 def test_ingest_workflow_rejects_missing_or_mismatched_persistence_scope() -> None:
     payload = _ingest_input().model_dump(mode="json")
     payload["verification"]["project_id"] = None
-    with pytest.raises(ValidationError, match="project_ids"):
+    with pytest.raises(ValidationError, match="verification.project_id"):
         IngestRolloutWorkflowInput.model_validate(payload)
 
     payload = _ingest_input().model_dump(mode="json")
@@ -549,8 +551,7 @@ class CatalogAdapter(CatalogFragmentAdapterPort):
                 timestamp_ns=row.timestamp_ns,
                 modalities={name: value.value for name, value in row.modalities.items()},
                 source_timestamps_ns={
-                    name: value.source_timestamps_ns[0] if value.source_timestamps_ns else None
-                    for name, value in row.modalities.items()
+                    name: value.source_timestamps_ns for name, value in row.modalities.items()
                 },
                 time_error_ns={name: value.time_error_ns for name, value in row.modalities.items()},
                 valid={name: value.valid for name, value in row.modalities.items()},
@@ -1080,7 +1081,7 @@ async def test_temporal_commit_retries_without_duplicate_version_and_reconciles(
                 step_index=0,
                 timestamp_ns=0,
                 modalities={"x": 1.0},
-                source_timestamps_ns={"x": 0},
+                source_timestamps_ns={"x": (0,)},
                 time_error_ns={"x": 0},
                 valid={"x": True},
                 repeated={"x": False},

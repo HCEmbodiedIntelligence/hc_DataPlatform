@@ -139,9 +139,7 @@ function adaptStream(raw: Readonly<Record<string, unknown>>): StreamDescriptor |
   });
   if (axes?.some((axis) => axis === null)) return null;
   if (schemaRecord.shape !== undefined && (!Array.isArray(schemaRecord.shape) || !schemaRecord.shape.every((value) => Number.isInteger(value) && value >= 0))) return null;
-  const modalityAlias: Readonly<Record<string, ViewerStreamModality>> = { rgb_video: 'rgb', depth_preview: 'depth' };
-  const normalizedModality = raw.modality.toLowerCase();
-  const rawModality = modalityAlias[normalizedModality] ?? normalizedModality;
+  const rawModality = raw.modality.toLowerCase();
   const availabilityValue = safeWireLabel(raw.availability, '').toLowerCase().replaceAll('_', '-');
   const availability = availabilityValue === 'media-preparing' || availabilityValue === 'generating'
     ? 'media-preparing'

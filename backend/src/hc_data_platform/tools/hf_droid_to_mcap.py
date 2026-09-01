@@ -1219,7 +1219,7 @@ def convert(args: argparse.Namespace) -> tuple[Path, ...]:
     resolved = _resolved_revision(repository, requested_revision)
     cache_root = cast(Path, args.cache_dir).expanduser().resolve()
     output_root = cast(Path, args.output_dir).expanduser().resolve()
-    if cast(bool, args.include_compatible_robot_model) and not cast(bool, args.skip_robot_model):
+    if cast(bool, args.include_compatible_robot_model):
         robot_assets = acquire_robot_model_assets(
             cache_root=cache_root,
             output_root=output_root,
@@ -1281,11 +1281,6 @@ def build_parser() -> argparse.ArgumentParser:
             "pull a pinned third-party Franka + Robotiq compatibility preview; "
             "the DROID recording does not supply an official URDF"
         ),
-    )
-    parser.add_argument(
-        "--skip-robot-model",
-        action="store_true",
-        help="legacy override that disables the optional compatibility preview",
     )
     parser.add_argument(
         "--capture-start",

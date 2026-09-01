@@ -11,7 +11,6 @@ from typing import Any
 from .models import (
     AnnotationOperation,
     AnnotationReviewCheck,
-    AnnotationRevision,
     AnnotationTag,
     ReviewCheckKind,
     TagAttributeDefinition,
@@ -60,43 +59,14 @@ def revision_content_hash(
     )
 
 
-def rehash_legacy_revisions(
-    revisions: Sequence[AnnotationRevision],
-) -> tuple[AnnotationRevision, ...]:
-    """Reconstruct hashes absent from pre-0002 rows without rewriting audit history."""
-
-    cumulative_operations: list[AnnotationOperation] = []
-    restored: list[AnnotationRevision] = []
-    for revision in revisions:
-        cumulative_operations.extend(revision.operations)
-        if revision.content_hash == "0" * 64:
-            revision = revision.model_copy(
-                update={
-                    "content_hash": revision_content_hash(
-                        base_lance_version=revision.base_lance_version,
-                        tag_schema_id=revision.tag_schema_id,
-                        tag_schema_version=revision.tag_schema_version,
-                        tags=revision.tags,
-                        operations=cumulative_operations,
-                    )
-                }
-            )
-        restored.append(revision)
-    return tuple(restored)
-
-
-def legacy_flat_schema(project_id: str) -> TagSchemaVersion:
-    """Compatibility schema for pre-Tag annotation tasks.
-
-    It deliberately has no nodes and accepts only legacy interval operations. New
-    Tag-bearing tasks must pin an explicitly published project schema.
-    """
+def default_flat_schema(project_id: str) -> TagSchemaVersion:
+    """Built-in published schema for interval-only annotation tasks."""
 
     document = TagSchemaDocument(nodes=())
     return TagSchemaVersion(
-        schema_id="legacy-flat",
+        schema_id="default-flat",
         project_id=project_id,
-        name="Legacy annotation/cleaning compatibility",
+        name="Default interval annotation",
         version=1,
         status=TagSchemaStatus.PUBLISHED,
         document=document,

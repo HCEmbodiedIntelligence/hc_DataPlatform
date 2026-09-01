@@ -39,7 +39,7 @@ _JOB_COLUMNS = """
 
 
 class PostgresAlignedMediaRepository:
-    """Attempt-fenced canonical media state independent of legacy preview tables."""
+    """Attempt-fenced canonical media state for generated aligned-media artifacts."""
 
     def __init__(self, connection_factory: Callable[[], Any]) -> None:
         self._connection_factory = connection_factory

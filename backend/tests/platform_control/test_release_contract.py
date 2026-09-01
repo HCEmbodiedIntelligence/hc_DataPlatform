@@ -82,7 +82,7 @@ def test_current_release_baseline_fingerprints_are_exact_and_honestly_blocked() 
         for line in manifest_path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    assert baseline["database"]["migration_count"] == len(migrations) == 115
+    assert baseline["database"]["migration_count"] == len(migrations) == 121
     assert baseline["database"]["manifest_sha256"] == _sha256(manifest_path)
     assert baseline["api"]["openapi_sha256"] == _sha256(ROOT / "backend/openapi.generated.yaml")
     assert baseline["configuration"]["helm_values_sha256"] == _sha256(
@@ -181,7 +181,7 @@ def test_contract_phase_never_blindly_downgrades_the_database() -> None:
     database.update(
         {
             "change_mode": "expand_then_contract",
-            "target_migration_count": 116,
+            "target_migration_count": 122,
             "target_manifest_sha256": "a" * 64,
             "expand_migrations": ["platform/001_expand.sql"],
             "data_migration": "online_checkpointed",

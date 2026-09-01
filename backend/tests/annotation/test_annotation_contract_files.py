@@ -93,15 +93,7 @@ def test_openapi_fragment_matches_router_and_all_local_refs_resolve() -> None:
     thread_page = fragment["components"]["schemas"]["AnnotationRevisionThreadPage"]
     assert {"items", "page_info", "snapshot_at"} == set(thread_page["required"])
     revision_parameters = fragment["paths"]["/api/v1/annotations/revisions"]["get"]["parameters"]
-    legacy_parameter = next(
-        parameter for parameter in revision_parameters if parameter["name"] == "legacy_draft_id"
-    )
-    assert legacy_parameter["schema"]["anyOf"][0] == {
-        "type": "string",
-        "minLength": 8,
-        "maxLength": 102,
-        "pattern": r"^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$",
-    }
+    assert "legacy_draft_id" not in {parameter["name"] for parameter in revision_parameters}
     exclusion = fragment["components"]["schemas"]["ExclusionRange"]
     assert exclusion["properties"]["modality_scope"]["const"] == "ALL_MODALITIES"
 

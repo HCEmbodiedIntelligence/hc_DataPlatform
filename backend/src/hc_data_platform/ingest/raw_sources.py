@@ -215,14 +215,11 @@ def _job_identity(job: RawIngestJob) -> tuple[object, ...]:
 
 
 def _identity_conflict(resource: str) -> ProblemException:
-    return cast(
-        ProblemException,
-        problem(
-            status=409,
-            code="RAW_SOURCE_IDENTITY_CONFLICT",
-            title="Raw source identity conflict",
-            detail=f"The persisted {resource} has different immutable lineage.",
-        ),
+    return problem(
+        status=409,
+        code="RAW_SOURCE_IDENTITY_CONFLICT",
+        title="Raw source identity conflict",
+        detail=f"The persisted {resource} has different immutable lineage.",
     )
 
 
@@ -485,7 +482,13 @@ class PostgresRawSourceRepository:
                         job.updated_at,
                     ),
                 )
-                persisted_job = self._select_job(cursor, source)
+                persisted_job = self._select_job(
+                    cursor,
+                    organization_id=source.organization_id,
+                    project_id=source.project_id,
+                    region_code=source.region_code,
+                    raw_source_id=source.raw_source_id,
+                )
                 if persisted_job is None:
                     raise RuntimeError("PostgreSQL did not return the Raw ingest job")
                 if _job_identity(persisted_job) != _job_identity(job):
@@ -584,16 +587,17 @@ class PostgresRawSourceRepository:
         region_code: str,
         raw_source_id: str,
     ) -> RawIngestJob | None:
-        source = RawSource.model_construct(
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            raw_source_id=raw_source_id,
-        )
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
-                return self._select_job(cursor, source, required=False)
+                return self._select_job(
+                    cursor,
+                    organization_id=organization_id,
+                    project_id=project_id,
+                    region_code=region_code,
+                    raw_source_id=raw_source_id,
+                    required=False,
+                )
         finally:
             connection.close()
 
@@ -663,8 +667,11 @@ class PostgresRawSourceRepository:
     def _select_job(
         self,
         cursor: Any,
-        source: RawSource,
         *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        raw_source_id: str,
         required: bool = True,
     ) -> RawIngestJob | None:
         cursor.execute(
@@ -676,12 +683,7 @@ class PostgresRawSourceRepository:
             WHERE organization_id = %s AND project_id = %s AND region_code = %s
               AND raw_source_id = %s
             """,
-            (
-                source.organization_id,
-                source.project_id,
-                source.region_code,
-                source.raw_source_id,
-            ),
+            (organization_id, project_id, region_code, raw_source_id),
         )
         model = cast(RawIngestJob | None, self._model(cursor, cursor.fetchone(), RawIngestJob))
         if required and model is None:

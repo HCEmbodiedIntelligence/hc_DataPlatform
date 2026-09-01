@@ -58,17 +58,13 @@ def _authorize(
     scope: AuditScope,
     capability: str,
 ) -> None:
-    if auth.organization_scope_triples:
-        ScopeGuard.require(
-            auth,
-            scope.project_id,
-            scope.region_code,
-            scope.organization_id,
-        )
-        auth.require_capability(capability, scope.project_id, scope.organization_id)
-    else:
-        ScopeGuard.require(auth, scope.project_id, scope.region_code)
-        auth.require_capability(capability, scope.project_id)
+    ScopeGuard.require(
+        auth,
+        scope.project_id,
+        scope.region_code,
+        scope.organization_id,
+    )
+    auth.require_capability(capability, scope.project_id, scope.organization_id)
     select_request_scope(
         scope.project_id,
         scope.region_code,

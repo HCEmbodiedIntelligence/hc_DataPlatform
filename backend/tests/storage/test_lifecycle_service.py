@@ -24,25 +24,39 @@ NOW = datetime(2026, 8, 17, 3, tzinfo=timezone.utc)
 
 
 def operator(project_id: str = "project-a") -> AuthContext:
-    return AuthContext.service(
+    capabilities = {
+        "storage.lifecycle.read",
+        "storage.lifecycle.manage",
+        "storage.lifecycle.execute",
+        "storage.lifecycle.approve",
+    }
+    return AuthContext(
         subject_id="storage-worker-admin",
-        capabilities={
-            "storage.lifecycle.read",
-            "storage.lifecycle.manage",
-            "storage.lifecycle.execute",
-            "storage.lifecycle.approve",
-        },
-        project_ids={project_id},
+        capabilities=frozenset(capabilities),
+        project_ids=frozenset({project_id}),
+        region_codes=frozenset(),
+        service_identity=True,
+        scope_pairs=frozenset({(project_id, None)}),
+        organization_ids=frozenset({"organization-a"}),
+        organization_scope_triples=frozenset({("organization-a", project_id, None)}),
+        organization_scoped_capabilities=frozenset(
+            ("organization-a", project_id, capability) for capability in capabilities
+        ),
     )
 
 
 def capability_actor(*capabilities: str, project_id: str = "project-a") -> AuthContext:
     return AuthContext(
         subject_id="storage-capability-actor",
+        organization_ids=frozenset({"organization-a"}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
         capabilities=frozenset(capabilities),
         scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({("organization-a", project_id, None)}),
+        organization_scoped_capabilities=frozenset(
+            ("organization-a", project_id, capability) for capability in capabilities
+        ),
     )
 
 
@@ -231,7 +245,7 @@ def test_policy_conflict_etag_scope_and_protected_target_negative_cases() -> Non
 
     with pytest.raises(ProblemException) as scope_denied:
         target.list_policies(project_id="project-a", actor=operator("project-b"))
-    assert scope_denied.value.problem.code == "SERVICE_SCOPE_REQUIRED"
+    assert scope_denied.value.problem.code == "ORGANIZATION_SCOPE_REQUIRED"
 
     with pytest.raises(ValidationError):
         command(

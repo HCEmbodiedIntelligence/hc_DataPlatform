@@ -6,7 +6,7 @@ import type { EpisodeRevisionWire } from "../../features/datasets/api/wire-schem
 import { createDatasetLanceWindowSource } from "./lance-window-source";
 import { createDatasetAlignedMediaSource } from "./aligned-media-source";
 
-function modality(kind: string, channelPath: string): ViewerStreamModality {
+function modality(kind: string): ViewerStreamModality {
   const byContractKind: Readonly<Record<string, ViewerStreamModality>> = {
     VIDEO: "rgb",
     RGB: "rgb",
@@ -21,34 +21,7 @@ function modality(kind: string, channelPath: string): ViewerStreamModality {
     TACTILE: "tactile",
     EVENT: "event",
   };
-  const contracted = byContractKind[kind.trim().toUpperCase()] ?? "other";
-  if (contracted !== "event") return contracted;
-
-  // Revisions published before object-shaped Unitree vectors were recognized
-  // declared these numeric channels as EVENT. Keep those immutable revisions
-  // browsable by using the canonical channel identity as a compatibility hint.
-  const path = channelPath.toLocaleLowerCase("en-US");
-  if (
-    path.includes("base_pose") ||
-    (path.includes("end_effector") && path.includes("state"))
-  ) {
-    return "pose";
-  }
-  if (
-    path.includes("joint") ||
-    path.includes("observation/state") ||
-    path.includes("raw_state")
-  ) {
-    return "joint_state";
-  }
-  if (
-    path.includes("action") ||
-    path.includes("command") ||
-    path.includes("target")
-  ) {
-    return "action";
-  }
-  return contracted;
+  return byContractKind[kind.trim().toUpperCase()] ?? "other";
 }
 
 /**
@@ -62,15 +35,9 @@ export function adaptP06ViewerStreams(
   datasetId: string,
 ): readonly StreamDescriptor[] {
   return revision.streams.map((stream) => {
-    const streamModality = modality(stream.kind, stream.channel_path);
+    const streamModality = modality(stream.kind);
     const mediaBinding = stream.aligned_media_binding;
-    const declaredDataBinding = stream.data_binding;
-    const dataBinding =
-      declaredDataBinding?.value_kind === "EVENT" &&
-      streamModality !== "event" &&
-      streamModality !== "other"
-        ? { ...declaredDataBinding, value_kind: "VECTOR" as const }
-        : declaredDataBinding;
+    const dataBinding = stream.data_binding;
     const mediaModality =
       streamModality === "rgb" || streamModality === "depth"
         ? streamModality

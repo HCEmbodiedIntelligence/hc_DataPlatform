@@ -38,13 +38,6 @@ class QualityEngine:
         *,
         engine_version: str | None = None,
     ) -> None:
-        if (
-            report_sink is not None
-            and metadata_sink is None
-            and isinstance(report_sink, MetadataSink)
-        ):
-            # Compatibility for the original in-memory fake, while the public ports remain split.
-            metadata_sink = report_sink
         if (report_sink is None) != (metadata_sink is None):
             raise ValueError("report_sink and metadata_sink must be configured together")
         if engine_version is not None and not engine_version:

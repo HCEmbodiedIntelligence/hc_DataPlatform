@@ -77,7 +77,6 @@ class AnnotationRepositoryPort(Protocol):
         region_code: str,
         status: AnnotationStatus | None,
         origin: RevisionOrigin | None,
-        legacy_draft_id: str | None,
         snapshot_at: datetime,
         after_updated_at: datetime | None,
         after_task_id: str | None,
@@ -93,7 +92,6 @@ class AnnotationRepositoryPort(Protocol):
         request_id: str,
         status: AnnotationStatus | None,
         origin: RevisionOrigin | None,
-        legacy_draft_id: str | None,
         limit: int,
     ) -> None: ...
 
@@ -243,11 +241,11 @@ class AnnotationTaskProvisioningPort(Protocol):
         rollout_id: str,
         region_code: str | None = None,
         task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING,
-        creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.LEGACY,
+        creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.SYSTEM_LANCE,
         source_workflow_id: str | None = None,
         base_lance_version: int | None = None,
         base_step_count: int | None = None,
-        tag_schema_id: str = "legacy-flat",
+        tag_schema_id: str = "default-flat",
         tag_schema_version: int = 1,
     ) -> AnnotationTask: ...
 

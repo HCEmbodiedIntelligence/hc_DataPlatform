@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
@@ -53,7 +53,7 @@ class ExportJobStatus(str, Enum):
 class StepRangeV1(BaseModel):
     """A half-open logical step range ``[start_step, end_step)``."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     start_step: int = Field(ge=0)
     end_step: int = Field(gt=0)
@@ -90,20 +90,11 @@ class ApprovedAnnotationSnapshotV1(BaseModel):
     annotation_revision: int = Field(ge=0)
     annotation_task_id: str | None = None
     annotation_submission_id: str | None = None
-    excluded_step_ranges: tuple[StepRangeV1, ...] = Field(
-        default=(),
-        validation_alias=AliasChoices("excluded_step_ranges", "excluded_ranges"),
-    )
-
-    @property
-    def excluded_ranges(self) -> tuple[StepRangeV1, ...]:
-        """Compatibility name retained for the original in-memory contract."""
-
-        return self.excluded_step_ranges
+    excluded_step_ranges: tuple[StepRangeV1, ...] = ()
 
 
 class PublishDatasetRequestV1(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     project_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
@@ -131,25 +122,8 @@ class PublishedRolloutV1(BaseModel):
     alignment_frequency_hz: int = Field(gt=0)
     converter_version: str = Field(min_length=1)
     total_steps: int = Field(gt=0)
-    included_step_ranges: tuple[StepRangeV1, ...] = Field(
-        validation_alias=AliasChoices("included_step_ranges", "included_ranges")
-    )
-    excluded_step_ranges: tuple[StepRangeV1, ...] = Field(
-        default=(),
-        validation_alias=AliasChoices("excluded_step_ranges", "excluded_ranges"),
-    )
-
-    @property
-    def included_ranges(self) -> tuple[StepRangeV1, ...]:
-        """Compatibility name retained for existing BE-11 consumers."""
-
-        return self.included_step_ranges
-
-    @property
-    def excluded_ranges(self) -> tuple[StepRangeV1, ...]:
-        """Compatibility name retained for existing BE-11 consumers."""
-
-        return self.excluded_step_ranges
+    included_step_ranges: tuple[StepRangeV1, ...]
+    excluded_step_ranges: tuple[StepRangeV1, ...] = ()
 
 
 class ExcludedRolloutV1(BaseModel):
@@ -232,16 +206,6 @@ class ExportStepV1(BaseModel):
     valid: dict[str, bool] = Field(default_factory=dict)
     repeated: dict[str, bool] = Field(default_factory=dict)
     sample_valid: bool = True
-
-    @field_validator("source_timestamps_ns", mode="before")
-    @classmethod
-    def normalize_source_timestamp_provenance(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        return {
-            key: () if item is None else (item,) if isinstance(item, int) else item
-            for key, item in value.items()
-        }
 
 
 class ExportDatasetRequestV1(BaseModel):

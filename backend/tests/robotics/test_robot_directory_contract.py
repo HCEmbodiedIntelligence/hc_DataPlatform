@@ -42,8 +42,7 @@ def test_robot_assets_publish_only_the_organization_contract() -> None:
 
 def test_robot_asset_migration_removes_the_project_tables() -> None:
     migration = (
-        Path(__file__).parents[2]
-        / "migrations/robotics/0005_organization_robot_assets.sql"
+        Path(__file__).parents[2] / "migrations/robotics/0005_organization_robot_assets.sql"
     ).read_text(encoding="utf-8")
     for marker in (
         "CREATE TABLE IF NOT EXISTS robotics.robot_assets",

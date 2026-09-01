@@ -59,7 +59,6 @@ const annotationStatusWireSchema = z.enum([
 const revisionOriginWireSchema = z.enum([
   "ANNOTATION",
   "ANNOTATION_RESTORE",
-  "LEGACY_CLEANING",
 ]);
 const annotationRevisionThreadWireSchema = z
   .object({
@@ -84,7 +83,6 @@ const annotationRevisionThreadWireSchema = z
     current_episode_version: z.number().int().positive().nullable().optional(),
     approved_revision: z.number().int().nonnegative().nullable().optional(),
     approved_review_id: z.string().min(1).nullable().optional(),
-    legacy_draft_id: z.string().min(1).nullable().optional(),
     updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -331,7 +329,6 @@ export async function listRuntimeAnnotationRevisionThreads(
   input: {
     readonly status?: RuntimeAnnotationRevisionThread["status"];
     readonly origin?: RuntimeAnnotationRevisionThread["latest_revision"]["origin"];
-    readonly legacyDraftId?: string;
     readonly after?: string;
     readonly limit?: number;
   } = {},
@@ -344,7 +341,6 @@ export async function listRuntimeAnnotationRevisionThreads(
     query: {
       status: input.status,
       origin: input.origin,
-      legacy_draft_id: input.legacyDraftId,
       after: input.after,
       limit: input.limit ?? 25,
     },

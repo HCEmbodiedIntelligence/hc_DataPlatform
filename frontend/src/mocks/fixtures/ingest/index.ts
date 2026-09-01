@@ -194,11 +194,6 @@ export const uploadingSessionFixture = {
   resource_version: "3",
 } as const;
 
-/**
- * Runtime-generated upload contracts used by the current P03/P04 pages.
- * Keep these separate from the legacy ingest envelopes above: Browser Mock
- * supports both surfaces while the application finishes the route migration.
- */
 export const formalUploadSessionFixture = {
   session_id: "upload-session-fx-01",
   project_id: ingestFixtureScope.project_id,
@@ -219,6 +214,12 @@ export const formalUploadSessionFixture = {
   completed_at: "2026-08-18T08:20:00Z",
   multipart_upload_id: null,
   workflow: null,
+} as const;
+
+export const formalUploadSessionListFixture = {
+  items: [formalUploadSessionFixture],
+  total: 1,
+  next_cursor: null,
 } as const;
 
 export const formalManifestFixture = {
@@ -438,19 +439,6 @@ export const quarantineFixture = {
   superseded_by_quarantine_id: null,
 } as const;
 
-export const uploadListFixture = {
-  items: [uploadingSessionFixture],
-  page_info: fixturePageInfo,
-  snapshot_at: "2026-08-05T08:22:00Z",
-  scope: ingestFixtureScope,
-  request_id: "req_fx_p03_list",
-  contract_version: "ingest.v1alpha1",
-} as const;
-export const quarantinedUploadListFixture = {
-  ...uploadListFixture,
-  items: [uploadSessionFixture],
-  request_id: "req_fx_p03_list_failed",
-} as const;
 export const uploadCreationOptionsFixture = {
   data: {
     data_sources: [

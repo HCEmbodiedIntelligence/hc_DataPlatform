@@ -30,9 +30,7 @@ class OrganizationRobotAssetRepository(Protocol):
         connectivity_state: str | None,
     ) -> tuple[RobotRecord, ...]: ...
 
-    def get_robot(
-        self, *, organization_id: str, robot_id: str
-    ) -> RobotBootstrap | None: ...
+    def get_robot(self, *, organization_id: str, robot_id: str) -> RobotBootstrap | None: ...
 
     def create_robot(
         self,
@@ -237,9 +235,9 @@ class InMemoryOrganizationRobotAssetRepository:
                 ),
                 None,
             )
-            previous = previous_entry[1] if previous_entry is not None else None
-            if previous is not None:
-                self._bindings[previous_entry[0]] = previous.model_copy(
+            if previous_entry is not None:
+                previous_key, previous = previous_entry
+                self._bindings[previous_key] = previous.model_copy(
                     update={"status": "SUPERSEDED", "unbound_at": occurred_at}
                 )
             binding_id = str(uuid4())
@@ -278,9 +276,7 @@ class InMemoryOrganizationRobotAssetRepository:
                 for (organization, _), binding in self._bindings.items()
                 if organization == organization_id and binding.version_id == version_id
             ]
-        return tuple(
-            sorted(items, key=lambda item: (item.bound_at, item.binding_id), reverse=True)
-        )
+        return tuple(sorted(items, key=lambda item: (item.bound_at, item.binding_id), reverse=True))
 
 
 class PostgresOrganizationRobotAssetRepository:
@@ -351,9 +347,7 @@ class PostgresOrganizationRobotAssetRepository:
                     query,
                 ),
             )
-            return tuple(
-                _robot_from_mapping(self._row(cursor, raw)) for raw in cursor.fetchall()
-            )
+            return tuple(_robot_from_mapping(self._row(cursor, raw)) for raw in cursor.fetchall())
         finally:
             cursor.close()
             connection.close()

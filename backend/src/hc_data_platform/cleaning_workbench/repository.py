@@ -789,7 +789,6 @@ class PostgresCleaningWorkbenchRepository:
             )
             if cursor.fetchone() is None:
                 raise CleaningWorkbenchPreconditionError
-            self._update_legacy_issue_handoff(cursor, state=state, commit=commit)
             self._insert_audit(cursor, audit_event)
             connection.commit()
         except Exception:
@@ -1772,59 +1771,6 @@ class PostgresCleaningWorkbenchRepository:
                 _document(fact_document),
                 *_scope_key(state.scope),
                 state.base.dataset_id,
-            ),
-        )
-
-    def _update_legacy_issue_handoff(
-        self, cursor: DbApiCursor, *, state: CleaningWorkbenchState, commit: CommitSucceeded
-    ) -> None:
-        """Keep P09's resolution evidence authoritative for issue-derived drafts."""
-
-        cursor.execute(
-            """
-            SELECT draft_document
-              FROM manual_cleaning.cleaning_drafts
-             WHERE organization_id = %s AND project_id = %s AND region_code = %s
-               AND draft_id = %s
-             FOR UPDATE
-            """,
-            (*_scope_key(state.scope), state.draft.draft_id),
-        )
-        raw = cursor.fetchone()
-        if raw is None:
-            return
-        document = _json_object(_row(cursor, raw)["draft_document"])
-        document["status"] = "COMMITTED"
-        document["updated_at"] = commit.completed_at.isoformat()
-        cursor.execute(
-            """
-            UPDATE manual_cleaning.cleaning_drafts
-               SET status = 'COMMITTED', draft_document = %s::jsonb, updated_at = %s
-             WHERE organization_id = %s AND project_id = %s AND region_code = %s
-               AND draft_id = %s
-            """,
-            (
-                _document(document),
-                commit.completed_at,
-                *_scope_key(state.scope),
-                state.draft.draft_id,
-            ),
-        )
-        cursor.execute(
-            """
-            INSERT INTO manual_cleaning.cleaning_draft_commits (
-                organization_id, project_id, region_code, commit_id, draft_id, dataset_id,
-                output_version_id, status, committed_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'SUCCEEDED', %s)
-            ON CONFLICT (organization_id, project_id, region_code, commit_id) DO NOTHING
-            """,
-            (
-                *_scope_key(state.scope),
-                commit.commit_id,
-                state.draft.draft_id,
-                state.base.dataset_id,
-                commit.output_version.version_id,
-                commit.completed_at,
             ),
         )
 

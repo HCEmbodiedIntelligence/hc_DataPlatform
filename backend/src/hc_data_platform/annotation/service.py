@@ -33,7 +33,6 @@ from .models import (
     AnnotationTaskKind,
     AutoAnnotationCapability,
     ExclusionRange,
-    LegacyAuditReference,
     OperationKind,
     ReviewCheckKind,
     ReviewDecision,
@@ -49,7 +48,7 @@ from .ports import ActorContext, AnnotationAggregate, AnnotationRepositoryPort
 from .repository import InMemoryAnnotationRepository
 from .validation import (
     TagValidationIssue,
-    legacy_flat_schema,
+    default_flat_schema,
     revision_content_hash,
     schema_content_hash,
     stable_hash,
@@ -385,8 +384,8 @@ class AnnotationService:
         self, *, project_id: str, schema_id: str, actor: ActorContext
     ) -> tuple[TagSchemaVersion, ...]:
         self._authorize_project(project_id, actor, capability="data_schema.read")
-        if schema_id == "legacy-flat":
-            return (legacy_flat_schema(project_id),)
+        if schema_id == "default-flat":
+            return (default_flat_schema(project_id),)
         return self._repository.list_tag_schema_versions(project_id=project_id, schema_id=schema_id)
 
     def create_task(
@@ -399,11 +398,11 @@ class AnnotationService:
         rollout_id: str,
         region_code: str | None = None,
         task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING,
-        creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.LEGACY,
+        creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.SYSTEM_LANCE,
         source_workflow_id: str | None = None,
         base_lance_version: int | None = None,
         base_step_count: int | None = None,
-        tag_schema_id: str = "legacy-flat",
+        tag_schema_id: str = "default-flat",
         tag_schema_version: int = 1,
     ) -> AnnotationTask:
         now = self._clock()
@@ -531,14 +530,11 @@ class AnnotationService:
         tags: Sequence[AnnotationTag] | None = None,
         expected_revision: int,
         if_match: str,
-        client_mutation_id: str | None = None,
-        mutation_id: str | None = None,
+        client_mutation_id: str,
         origin: RevisionOrigin = RevisionOrigin.ANNOTATION,
-        legacy_audit: LegacyAuditReference | None = None,
-        imported_author_id: str | None = None,
-        imported_created_at: datetime | None = None,
     ) -> AnnotationRevision:
-        resolved_mutation_id = self._resolve_mutation_id(client_mutation_id, mutation_id)
+        if not client_mutation_id.strip():
+            raise AnnotationMutationConflictError("client_mutation_id is required")
         while True:
             aggregate = self._required_aggregate(task_id)
             self._authorize(aggregate.task, actor, capability="annotation.save")
@@ -562,7 +558,7 @@ class AnnotationService:
                 (
                     record
                     for record in aggregate.mutations
-                    if record.client_mutation_id == resolved_mutation_id
+                    if record.client_mutation_id == client_mutation_id
                 ),
                 None,
             )
@@ -581,7 +577,7 @@ class AnnotationService:
                 operations=operations,
             )
             revision_number = aggregate.task.current_revision + 1
-            now = imported_created_at or self._clock()
+            now = self._clock()
             cumulative_operations = tuple(
                 operation
                 for saved_revision in aggregate.revisions
@@ -591,15 +587,14 @@ class AnnotationService:
                 task_id=task_id,
                 revision=revision_number,
                 parent_revision=aggregate.task.current_revision,
-                author_id=imported_author_id or identity.actor_id,
-                client_mutation_id=resolved_mutation_id,
+                author_id=identity.actor_id,
+                client_mutation_id=client_mutation_id,
                 base_lance_version=aggregate.task.base_lance_version,
                 tag_schema_id=aggregate.task.tag_schema_id,
                 tag_schema_version=aggregate.task.tag_schema_version,
                 tags=resolved_tags,
                 operations=tuple(operations),
                 origin=origin,
-                legacy_audit=legacy_audit,
                 content_hash=revision_content_hash(
                     base_lance_version=aggregate.task.base_lance_version,
                     tag_schema_id=aggregate.task.tag_schema_id,
@@ -622,7 +617,7 @@ class AnnotationService:
             )
             mutation = AnnotationMutationRecord(
                 task_id=task_id,
-                client_mutation_id=resolved_mutation_id,
+                client_mutation_id=client_mutation_id,
                 actor_id=identity.actor_id,
                 request_fingerprint=fingerprint,
                 expected_revision=expected_revision,
@@ -804,11 +799,7 @@ class AnnotationService:
                     if submission.submission_id == replay.submission_id
                 )
             self._check_version(aggregate.task, expected_revision, if_match)
-            legacy_submission_upgrade = (
-                aggregate.task.status is AnnotationStatus.SUBMITTED
-                and aggregate.task.current_submission_id is None
-            )
-            if not legacy_submission_upgrade and aggregate.task.status not in {
+            if aggregate.task.status not in {
                 AnnotationStatus.DRAFT,
                 AnnotationStatus.NEEDS_REVISION,
                 AnnotationStatus.REJECTED,
@@ -1101,7 +1092,6 @@ class AnnotationService:
         request_id: str,
         status: AnnotationStatus | None = None,
         origin: RevisionOrigin | None = None,
-        legacy_draft_id: str | None = None,
         after: str | None = None,
         limit: int = 25,
     ) -> AnnotationRevisionThreadPage:
@@ -1133,7 +1123,6 @@ class AnnotationService:
                 "capability_revision": capability_revision,
                 "status": None if status is None else status.value,
                 "origin": None if origin is None else origin.value,
-                "legacy_draft_id": legacy_draft_id,
             }
             if any(payload.get(key) != value for key, value in expected.items()):
                 raise problem(
@@ -1158,7 +1147,6 @@ class AnnotationService:
             region_code=region_code,
             status=status,
             origin=origin,
-            legacy_draft_id=legacy_draft_id,
             snapshot_at=snapshot_at,
             after_updated_at=after_updated_at,
             after_task_id=after_task_id,
@@ -1173,7 +1161,6 @@ class AnnotationService:
             request_id=request_id,
             status=status,
             origin=origin,
-            legacy_draft_id=legacy_draft_id,
             limit=limit,
         )
         end_cursor = (
@@ -1186,7 +1173,6 @@ class AnnotationService:
                     "capability_revision": capability_revision,
                     "status": None if status is None else status.value,
                     "origin": None if origin is None else origin.value,
-                    "legacy_draft_id": legacy_draft_id,
                     "snapshot_at": snapshot_at.isoformat(),
                     "updated_at": visible[-1].updated_at.isoformat(),
                     "task_id": visible[-1].task_id,
@@ -1228,15 +1214,6 @@ class AnnotationService:
         if aggregate is None:
             raise AnnotationNotFoundError("annotation task does not exist in this project")
         return normalize_operations(aggregate.revisions, annotation_revision)
-
-    def approved_revision(self, task_id: str) -> AnnotationRevision:
-        """Legacy internal read returning only the exact currently approved revision."""
-
-        aggregate = self._required_aggregate(task_id)
-        revision = aggregate.task.approved_revision
-        if aggregate.task.status is not AnnotationStatus.APPROVED or revision is None:
-            raise InvalidAnnotationStateError("task has no currently approved revision")
-        return aggregate.revisions[revision]
 
     def approved_snapshot(
         self, *, project_id: str, rollout_id: str, actor: ActorContext
@@ -1300,8 +1277,8 @@ class AnnotationService:
         )
 
     def _schema_for(self, project_id: str, schema_id: str, version: int) -> TagSchemaVersion:
-        if schema_id == "legacy-flat" and version == 1:
-            return legacy_flat_schema(project_id)
+        if schema_id == "default-flat" and version == 1:
+            return default_flat_schema(project_id)
         schema = self._repository.get_tag_schema_version(schema_id=schema_id, version=version)
         if schema is None or schema.project_id != project_id:
             raise AnnotationNotFoundError("pinned Tag Schema version does not exist")
@@ -1380,9 +1357,7 @@ class AnnotationService:
             return AnnotationActor.from_auth(actor, project_id)
         return actor
 
-    def _authorize(
-        self, task: AnnotationTask, actor: ActorContext, *, capability: str
-    ) -> None:
+    def _authorize(self, task: AnnotationTask, actor: ActorContext, *, capability: str) -> None:
         self._authorize_project(
             task.project_id,
             actor,
@@ -1475,21 +1450,6 @@ class AnnotationService:
                 "operation_id was already used in this task",
                 details={"operation_ids": sorted(reused)},
             )
-
-    @staticmethod
-    def _resolve_mutation_id(client_mutation_id: str | None, mutation_id: str | None) -> str:
-        if (
-            client_mutation_id is not None
-            and mutation_id is not None
-            and client_mutation_id != mutation_id
-        ):
-            raise AnnotationMutationConflictError(
-                "client_mutation_id and legacy mutation_id disagree"
-            )
-        resolved = client_mutation_id or mutation_id
-        if resolved is None or not resolved.strip():
-            raise AnnotationMutationConflictError("client_mutation_id is required")
-        return resolved
 
 
 class InMemoryAnnotationService(AnnotationService):

@@ -479,9 +479,9 @@ function buildCleaningWorkbench(input: CleaningWorkbenchRouteParams): string {
     params.set("compare", input.compare);
   if (input.returnTo && isSafeAppRelativeUrl(input.returnTo))
     params.set("returnTo", input.returnTo);
-  params.set("legacyDraftId", input.draftId);
   const query = params.toString();
-  return `/annotations/revisions?${query}`;
+  const path = `/manual/drafts/${encodeURIComponent(input.draftId)}`;
+  return query ? `${path}?${query}` : path;
 }
 
 export const routes = {

@@ -51,12 +51,11 @@ components:
           title: Schema Version
           type: string
         submission_id:
-          default: legacy-submission
           minLength: 1
           title: Submission Id
           type: string
         tag_schema_id:
-          default: legacy-flat
+          default: default-flat
           minLength: 1
           title: Tag Schema Id
           type: string
@@ -75,6 +74,7 @@ components:
       - rollout_id
       - task_id
       - annotation_revision
+      - submission_id
       - review_id
       - reviewer_id
       - excluded_ranges
@@ -344,7 +344,6 @@ components:
           title: Schema Version
           type: string
         submission_id:
-          default: legacy-submission
           minLength: 1
           title: Submission Id
           type: string
@@ -354,6 +353,7 @@ components:
           type: string
       required:
       - review_id
+      - submission_id
       - task_id
       - revision
       - reviewer_id
@@ -378,6 +378,7 @@ components:
       title: AnnotationReviewCheck
       type: object
     AnnotationRevision:
+      additionalProperties: false
       description: An immutable revision containing the operations added by one draft save.
       properties:
         author_id:
@@ -402,10 +403,6 @@ components:
           format: date-time
           title: Created At
           type: string
-        legacy_audit:
-          anyOf:
-          - $ref: '#/components/schemas/LegacyAuditReference'
-          - type: 'null'
         operations:
           items:
             $ref: '#/components/schemas/AnnotationOperation'
@@ -429,7 +426,7 @@ components:
           title: Schema Version
           type: string
         tag_schema_id:
-          default: legacy-flat
+          default: default-flat
           minLength: 1
           title: Tag Schema Id
           type: string
@@ -494,12 +491,6 @@ components:
           type: integer
         latest_revision:
           $ref: '#/components/schemas/AnnotationRevisionThreadRevision'
-        legacy_draft_id:
-          anyOf:
-          - minLength: 1
-            type: string
-          - type: 'null'
-          title: Legacy Draft Id
         project_id:
           minLength: 1
           title: Project Id
@@ -798,7 +789,7 @@ components:
           type: string
         creation_source:
           $ref: '#/components/schemas/AnnotationTaskCreationSource'
-          default: LEGACY
+          default: SYSTEM_LANCE
         current_revision:
           minimum: 0.0
           title: Current Revision
@@ -864,7 +855,7 @@ components:
           - type: 'null'
           title: Submitted Revision
         tag_schema_id:
-          default: legacy-flat
+          default: default-flat
           minLength: 1
           title: Tag Schema Id
           type: string
@@ -897,7 +888,6 @@ components:
       type: object
     AnnotationTaskCreationSource:
       enum:
-      - LEGACY
       - SYSTEM_LANCE
       title: AnnotationTaskCreationSource
       type: string
@@ -1306,45 +1296,6 @@ components:
           type: array
       title: HTTPValidationError
       type: object
-    LegacyAuditReference:
-      properties:
-        draft_id:
-          minLength: 1
-          title: Draft Id
-          type: string
-        source_actor_id:
-          minLength: 1
-          title: Source Actor Id
-          type: string
-        source_audit_event_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Source Audit Event Id
-        source_created_at:
-          format: date-time
-          title: Source Created At
-          type: string
-        source_payload:
-          additionalProperties: true
-          title: Source Payload
-          type: object
-        source_revision:
-          minimum: 0.0
-          title: Source Revision
-          type: integer
-        source_system:
-          const: P11_CLEANING
-          default: P11_CLEANING
-          title: Source System
-          type: string
-      required:
-      - draft_id
-      - source_revision
-      - source_actor_id
-      - source_created_at
-      title: LegacyAuditReference
-      type: object
     MutualExclusionConstraint:
       properties:
         constraint_id:
@@ -1471,7 +1422,6 @@ components:
       enum:
       - ANNOTATION
       - ANNOTATION_RESTORE
-      - LEGACY_CLEANING
       title: RevisionOrigin
       type: string
     SaveDraftRequest:
@@ -2452,17 +2402,6 @@ paths:
           - $ref: '#/components/schemas/RevisionOrigin'
           - type: 'null'
           title: Origin
-      - in: query
-        name: legacy_draft_id
-        required: false
-        schema:
-          anyOf:
-          - maxLength: 102
-            minLength: 8
-            pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
-            type: string
-          - type: 'null'
-          title: Legacy Draft Id
       - in: query
         name: after
         required: false

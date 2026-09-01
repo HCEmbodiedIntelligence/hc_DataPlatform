@@ -275,14 +275,13 @@ def _prepare_app_role(dsn: str) -> None:
         )
         cursor.execute(
             "GRANT SELECT, INSERT, UPDATE ON manual_cleaning.manual_issues, "
-            "manual_cleaning.cleaning_drafts, manual_cleaning.manual_issue_draft_links, "
+            "manual_cleaning.manual_issue_draft_links, "
             "manual_cleaning.cleaning_draft_ancestry, "
             "manual_cleaning.cleaning_workbench_drafts, "
             "manual_cleaning.cleaning_draft_edl_revisions TO " + APP_ROLE
         )
         cursor.execute(
-            "GRANT SELECT ON manual_cleaning.cleaning_draft_commits, "
-            "manual_cleaning.cleaning_draft_previews, "
+            "GRANT SELECT ON manual_cleaning.cleaning_draft_previews, "
             "manual_cleaning.cleaning_workbench_commits TO " + APP_ROLE
         )
         cursor.execute("GRANT INSERT ON core.audit_events TO " + APP_ROLE)
@@ -313,10 +312,8 @@ def _cleanup(dsn: str) -> None:
             "manual_cleaning.cleaning_draft_previews",
             "manual_cleaning.cleaning_draft_edl_revisions",
             "manual_cleaning.cleaning_workbench_drafts",
-            "manual_cleaning.cleaning_draft_commits",
             "manual_cleaning.cleaning_draft_ancestry",
             "manual_cleaning.manual_issue_draft_links",
-            "manual_cleaning.cleaning_drafts",
             "manual_cleaning.manual_issues",
             "dataset_registry.dataset_version_schema_details",
             "dataset_registry.dataset_version_episode_revisions",
@@ -538,10 +535,14 @@ def _insert_successful_commit(superuser_dsn: str, *, draft_id: str) -> None:
     with psycopg.connect(superuser_dsn) as connection, connection.cursor() as cursor:
         cursor.execute(
             """
-            INSERT INTO manual_cleaning.cleaning_draft_commits (
-                organization_id, project_id, region_code, commit_id, draft_id, dataset_id,
-                output_version_id, status, committed_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'SUCCEEDED', %s)
+            INSERT INTO manual_cleaning.cleaning_workbench_commits (
+                organization_id, project_id, region_code, commit_id, draft_id,
+                preview_id, job_id, output_version_id, operation_hash, status,
+                materialization_status, commit_document, created_at, completed_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, 'preview_p09durable', 'job_p09durable', %s,
+                %s, 'SUCCEEDED', 'SUCCEEDED', %s::jsonb, %s, %s
+            )
             """,
             (
                 ORGANIZATION_ID,
@@ -549,8 +550,10 @@ def _insert_successful_commit(superuser_dsn: str, *, draft_id: str) -> None:
                 REGION_CODE,
                 "commit_p09durable",
                 draft_id,
-                DATASET_ID,
                 OUTPUT_VERSION_ID,
+                "sha256:" + "a" * 64,
+                '{"commit_id":"commit_p09durable","draft_id":"' + draft_id + '"}',
+                NOW,
                 NOW,
             ),
         )
@@ -740,10 +743,10 @@ def test_postgres_p09_issue_handoff_and_resolution_are_durable_and_rls_scoped() 
                 try:
                     for table in (
                         "manual_cleaning.manual_issues",
-                        "manual_cleaning.cleaning_drafts",
+                        "manual_cleaning.cleaning_workbench_drafts",
                         "manual_cleaning.manual_issue_draft_links",
                         "manual_cleaning.cleaning_draft_ancestry",
-                        "manual_cleaning.cleaning_draft_commits",
+                        "manual_cleaning.cleaning_workbench_commits",
                     ):
                         cursor.execute(f"SELECT count(*) FROM {table}")
                         row = cursor.fetchone()

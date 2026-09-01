@@ -219,12 +219,18 @@ def _inventory_fact(project_id: str, physical_id: str) -> CapacityInventoryFact:
 
 
 def _reader(project_id: str) -> AuthContext:
+    organization_id = "organization-a"
     return AuthContext(
         subject_id=f"reader-{project_id}",
+        organization_ids=frozenset({organization_id}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({(organization_id, project_id, None)}),
+        organization_scoped_capabilities=frozenset(
+            {(organization_id, project_id, "storage.overview.read")}
+        ),
     )
 
 

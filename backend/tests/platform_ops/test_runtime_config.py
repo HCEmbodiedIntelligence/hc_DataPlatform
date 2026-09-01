@@ -261,6 +261,8 @@ def test_runtime_config_api_enforces_exact_capabilities_and_audits_no_values() -
         event.action == "platform.runtime_config.published" and event.outcome == "SUCCEEDED"
         for event in gate.platform_audit_events
     )
+
+
 def test_retired_preview_interval_is_not_part_of_runtime_config() -> None:
     with pytest.raises(ValidationError):
         RuntimeConfigValues.model_validate({"scheduling.preview_gc_interval_seconds": 450})

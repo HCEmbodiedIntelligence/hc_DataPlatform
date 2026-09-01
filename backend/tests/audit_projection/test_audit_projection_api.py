@@ -101,11 +101,16 @@ def _auth(*, audit: bool = True, access: bool = False, revision: int = 3) -> Aut
         capabilities.add("access.read")
     return AuthContext(
         subject_id="actor-p19-reader",
+        organization_ids=frozenset({ORGANIZATION_ID}),
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
         capability_revision=revision,
         scope_pairs=frozenset({(PROJECT_ID, REGION_CODE)}),
         scoped_capabilities=frozenset((PROJECT_ID, capability) for capability in capabilities),
+        organization_scope_triples=frozenset({(ORGANIZATION_ID, PROJECT_ID, REGION_CODE)}),
+        organization_scoped_capabilities=frozenset(
+            (ORGANIZATION_ID, PROJECT_ID, capability) for capability in capabilities
+        ),
     )
 
 
@@ -301,7 +306,7 @@ def test_p19_cursor_pagination_authorization_and_scope_fail_closed() -> None:
         params=_params(),
     )
     assert foreign.status_code == 403
-    assert foreign.json()["code"] == "PROJECT_SCOPE_DENIED"
+    assert foreign.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
     mismatched_region = client.get(
         f"{root}/events",

@@ -1,4 +1,4 @@
-import type { components } from '../../shared/api/generated/storage';
+import type { components } from '../../shared/api/generated/platform';
 
 export const lifecyclePolicyStates = ['DRAFT', 'ENABLED', 'PAUSED'] as const;
 export type LifecyclePolicyState = components['schemas']['LifecyclePolicyState'];

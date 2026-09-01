@@ -338,8 +338,8 @@ def _prepare_app_role(dsn: str) -> None:
         )
         cursor.execute(
             "GRANT SELECT, INSERT, UPDATE ON manual_cleaning.manual_issues, "
-            "manual_cleaning.cleaning_drafts, manual_cleaning.manual_issue_draft_links, "
-            "manual_cleaning.cleaning_draft_ancestry, manual_cleaning.cleaning_draft_commits, "
+            "manual_cleaning.manual_issue_draft_links, "
+            "manual_cleaning.cleaning_draft_ancestry, "
             "manual_cleaning.cleaning_workbench_drafts, "
             "manual_cleaning.cleaning_draft_edl_revisions, "
             "manual_cleaning.cleaning_draft_previews, "
@@ -372,10 +372,8 @@ def _cleanup(dsn: str) -> None:
             "manual_cleaning.cleaning_draft_previews",
             "manual_cleaning.cleaning_draft_edl_revisions",
             "manual_cleaning.cleaning_workbench_drafts",
-            "manual_cleaning.cleaning_draft_commits",
             "manual_cleaning.cleaning_draft_ancestry",
             "manual_cleaning.manual_issue_draft_links",
-            "manual_cleaning.cleaning_drafts",
             "manual_cleaning.manual_issues",
             "dataset_registry.dataset_version_successor_drafts",
             "dataset_registry.dataset_version_review_findings",

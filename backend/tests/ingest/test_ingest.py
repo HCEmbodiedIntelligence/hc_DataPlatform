@@ -168,8 +168,12 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
 
     service.complete_upload(session.session_id, parts)
     assert storage.head(manifest_object_key(session.object_key)) is None
-    event = service.commit_manifest(session_id=session.session_id, manifest=manifest)
-    replay = service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    event = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
+    replay = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
 
     assert event == replay
     assert event.workflow is not None
@@ -190,7 +194,7 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     assert event.object_key == raw_object_key(manifest)
     raw_source_id = f"upload-{session.session_id.replace('-', '')}"
     raw_source = service.raw_sources.get_source(
-        organization_id="legacy",
+        organization_id="org-a",
         project_id="p1",
         region_code="cn-hz",
         raw_source_id=raw_source_id,
@@ -201,7 +205,7 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     assert raw_source.content_hash == manifest.sha256
     assert raw_source.processing_status.value == "PENDING"
     raw_episodes = service.raw_sources.list_episodes(
-        organization_id="legacy",
+        organization_id="org-a",
         project_id="p1",
         region_code="cn-hz",
         raw_source_id=raw_source_id,
@@ -210,7 +214,7 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
         (manifest.rollout_id, 0)
     ]
     raw_job = service.raw_sources.get_job(
-        organization_id="legacy",
+        organization_id="org-a",
         project_id="p1",
         region_code="cn-hz",
         raw_source_id=raw_source_id,
@@ -238,7 +242,9 @@ def test_raw_media_access_requires_a_committed_object_and_records_a_redacted_aud
     assert persistence.raw_media_audit_events == []
 
     service.complete_upload(session.session_id, parts)
-    service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
     source = service.authorize_raw_media(
         session_id=session.session_id,
         actor_id="operator-1",
@@ -320,11 +326,15 @@ def test_retry_reconciles_manifest_marker_after_persistence_crash() -> None:
     service.complete_upload(session.session_id, parts)
 
     with pytest.raises(RuntimeError, match="database outage"):
-        service.commit_manifest(session_id=session.session_id, manifest=manifest)
+        service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
     marker_key = manifest_object_key(session.object_key)
     assert storage.head(marker_key) is not None
 
-    recovered = service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    recovered = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
     assert recovered.manifest_key == marker_key
     assert service.get_session(session.session_id).status is UploadStatus.RAW_COMMITTED
 
@@ -350,12 +360,16 @@ def test_retry_reconciles_committed_event_after_status_update_crash() -> None:
     service.complete_upload(session.session_id, parts)
 
     with pytest.raises(RuntimeError, match="after committed event"):
-        service.commit_manifest(session_id=session.session_id, manifest=manifest)
+        service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
     assert persistence.get_committed(manifest.project_id, manifest.rollout_id) is None
     assert persistence.get_workflow_trigger(session.session_id) is None
     assert service.get_session(session.session_id).status is UploadStatus.MULTIPART_COMPLETED
 
-    recovered = service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    recovered = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
     assert recovered.data_package_id == manifest.data_package_id
     assert service.get_session(session.session_id).status is UploadStatus.RAW_COMMITTED
 
@@ -391,7 +405,9 @@ def test_persistence_fake_keeps_resume_state_across_service_instances() -> None:
             CompletedPart(part_number=2, etag=second.etag),
         ],
     )
-    assert restarted.commit_manifest(session_id=session.session_id, manifest=manifest).object_key
+    assert restarted.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    ).object_key
 
 
 def test_authorization_renewal_is_short_lived_and_does_not_accept_bytes() -> None:
@@ -447,7 +463,9 @@ def test_authorized_object_reference_uses_canonical_key_and_is_idempotent() -> N
     assert discovery.identifiers.data_package_id == manifest.data_package_id
     assert discovery.discovery.read_only is True
 
-    service.commit_manifest(session_id=grant.session.session_id, manifest=manifest)
+    service.commit_manifest(
+        organization_id="org-a", session_id=grant.session.session_id, manifest=manifest
+    )
     replay = service.create_upload(
         manifest=manifest,
         region_code="cn-hz",
@@ -544,7 +562,9 @@ def test_manifest_cannot_commit_before_object_completion() -> None:
         idempotency_key="key",
     )
     with pytest.raises(ProblemException) as captured:
-        service.commit_manifest(session_id=session.session_id, manifest=manifest)
+        service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
     assert_problem(captured, "RAW_OBJECT_INCOMPLETE")
     assert storage.head(manifest_object_key(session.object_key)) is None
 
@@ -568,7 +588,9 @@ def test_integrity_failure_never_writes_manifest(
     service.complete_upload(session.session_id, parts)
 
     with pytest.raises(ProblemException) as captured:
-        service.commit_manifest(session_id=session.session_id, manifest=manifest)
+        service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
     assert_problem(captured, expected_code)
     assert service.get_session(session.session_id).status is UploadStatus.FAILED
     assert storage.head(manifest_object_key(session.object_key)) is None
@@ -825,7 +847,9 @@ def test_sha_and_crc_validation_streams_without_whole_object_read() -> None:
         [CompletedPart(part_number=1, etag="etag-1")],
     )
 
-    service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
     assert storage.max_yielded == 1024 * 1024
     assert storage.max_yielded < manifest.file_size
 

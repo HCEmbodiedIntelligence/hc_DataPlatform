@@ -262,10 +262,10 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
     all_sources = service.pending_items(
         **common(
             auth(
-                    capabilities=(
-                        CAPABILITY_UPLOAD_MANAGE,
-                        CAPABILITY_UPLOAD_READ,
-                        CAPABILITY_DATASET_READ,
+                capabilities=(
+                    CAPABILITY_UPLOAD_MANAGE,
+                    CAPABILITY_UPLOAD_READ,
+                    CAPABILITY_DATASET_READ,
                     CAPABILITY_ANNOTATION_REVIEW,
                     CAPABILITY_DATASET_VERSION_PUBLISH,
                 )

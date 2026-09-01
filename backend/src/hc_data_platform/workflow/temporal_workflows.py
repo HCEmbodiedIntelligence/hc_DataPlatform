@@ -45,7 +45,6 @@ with workflow.unsafe.imports_passed_through():
         AlignedMediaActivityOutput,
         AlignedMediaCleanupActivityInput,
         AlignedMediaCleanupActivityOutput,
-        AlignmentActivityOutput,
         AlignmentStagingCleanupActivityInput,
         AlignmentStagingCleanupActivityOutput,
         AnnotationReviewPreparationWorkflowInput,
@@ -71,35 +70,24 @@ with workflow.unsafe.imports_passed_through():
         ExportWorkflowInput,
         FrameSelectionManifestRefV1,
         IngestRolloutWorkflowInput,
-        IngestProjectionSourceV1,
         IngestSourceProcessingActivityInput,
         IngestSourceProcessingActivityOutput,
         JobRecord,
         JobStatus,
         ManifestActivityOutput,
-        LegacyAutomaticAnnotationActivityInput,
-        LegacyExportActivityInput,
-        ProjectionCleanupActivityInput,
-        ProjectionCleanupActivityOutput,
-        ProjectionMaterializationActivityInput,
-        ProjectionMaterializationActivityOutput,
         PublishActivityInput,
         PublishActivityOutput,
         PublishDatasetWorkflowInput,
         PublishReconciliationActivityInput,
         PublishReconciliationActivityOutput,
         PublishReconciliationWorkflowInput,
-        QualityActivityOutput,
-        VerificationActivityOutput,
         WorkflowJobPersistenceActivityInput,
     )
     from .names import (
         ALIGN_CONTINUOUS_EPISODE_ACTIVITY,
-        ALIGN_FRAGMENT_ACTIVITY,
         ANNOTATION_REVIEW_PREPARATION_WORKFLOW,
         CATALOG_RECONCILIATION_WORKFLOW,
         CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
-        CLEANUP_INGEST_PROJECTION_ACTIVITY,
         CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY,
         COMMIT_ALIGNED_BUNDLE_ACTIVITY,
         COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
@@ -110,9 +98,7 @@ with workflow.unsafe.imports_passed_through():
         DATASET_WRITER_WORKFLOW,
         EXPORT_DATASET_ACTIVITY,
         EXPORT_WORKFLOW,
-        EVALUATE_QUALITY_ACTIVITY,
         INGEST_ROLLOUT_WORKFLOW,
-        MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
         PARSE_MANIFEST_ACTIVITY,
         PERSIST_WORKFLOW_JOB_ACTIVITY,
         PREFLIGHT_EXPORT_ACTIVITY,
@@ -125,7 +111,6 @@ with workflow.unsafe.imports_passed_through():
         RECONCILE_PUBLICATION_ACTIVITY,
         UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY,
         VERIFY_EXPORT_ARTIFACT_ACTIVITY,
-        VERIFY_RAW_ACTIVITY,
     )
 
 _ResultT = TypeVar("_ResultT")
@@ -331,8 +316,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
             project_id=request.project_id,
             resource_id=request.rollout_id,
         )
-        self._job_persistence_enabled = workflow.patched("persist-ingest-workflow-job-v1")
-        materialized_source: IngestProjectionSourceV1 | None = None
+        self._job_persistence_enabled = True
         alignment_staging: AlignmentStagingArtifactV1 | None = None
         frame_selection: FrameSelectionManifestRefV1 | None = None
         media_artifacts: list[AlignedMediaArtifactV1] = []
@@ -355,81 +339,23 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     ),
                 }
             )
-            aligned = None
             alignment_request = request.alignment
-            uses_local_ingest_processing = workflow.patched(
-                "object-store-free-ingest-processing-v1"
-            )  # noqa: E501
-            if uses_local_ingest_processing:
-                self._stage("ingest_processing")
-                await self._persist_job(request)
-                processed = await _execute_activity(
-                    PROCESS_INGEST_SOURCE_ACTIVITY,
-                    IngestSourceProcessingActivityInput(
-                        verification=verification_request,
-                        quality=request.quality,
-                        alignment=request.alignment,
-                    ),
-                    IngestSourceProcessingActivityOutput,
-                    LONG_ACTIVITY,
-                )
-                verified = processed.verification
-                quality = processed.quality
-                aligned = processed.alignment
-                frame_selection = processed.frame_selection
-            else:
-                # Replay-only compatibility for histories that already scheduled
-                # the former Projection Arrow activity sequence.
-                self._stage("verification")
-                await self._persist_job(request)
-                verified = await _execute_activity(
-                    VERIFY_RAW_ACTIVITY,
-                    verification_request,
-                    VerificationActivityOutput,
-                    STANDARD_ACTIVITY,
-                )
-                if verified.report.status is VerificationStatus.REJECTED:
-                    return await self._finish_and_persist(
-                        request,
-                        JobStatus.QUALITY_REJECTED,
-                        result={
-                            "manifest": parsed.preflight.model_dump(mode="json"),
-                            "verification": verified.report.model_dump(mode="json"),
-                            "raw_preserved": True,
-                            "training_eligible": False,
-                        },
-                        error_code="RAW_VERIFICATION_REJECTED",
-                    )
-                quality_request = request.quality
-                if (
-                    workflow.patched("single-pass-ingest-projection-v1")
-                    and request.quality.source is not None
-                ):
-                    self._stage("projection_materialization")
-                    await self._persist_job(request)
-                    projected = await _execute_activity(
-                        MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
-                        ProjectionMaterializationActivityInput(source=request.quality.source),
-                        ProjectionMaterializationActivityOutput,
-                        LONG_ACTIVITY,
-                    )
-                    materialized_source = projected.source
-                    quality_request = request.quality.model_copy(
-                        update={"source": projected.source}
-                    )
-                    alignment_request = request.alignment.model_copy(
-                        update={"source": projected.source}
-                    )
-                    if projected.source.materialization is not None:
-                        frame_selection = projected.source.materialization.frame_selection
-                self._stage("quality")
-                await self._persist_job(request)
-                quality = await _execute_activity(
-                    EVALUATE_QUALITY_ACTIVITY,
-                    quality_request,
-                    QualityActivityOutput,
-                    STANDARD_ACTIVITY,
-                )
+            self._stage("ingest_processing")
+            await self._persist_job(request)
+            processed = await _execute_activity(
+                PROCESS_INGEST_SOURCE_ACTIVITY,
+                IngestSourceProcessingActivityInput(
+                    verification=verification_request,
+                    quality=request.quality,
+                    alignment=request.alignment,
+                ),
+                IngestSourceProcessingActivityOutput,
+                LONG_ACTIVITY,
+            )
+            verified = processed.verification
+            quality = processed.quality
+            aligned = processed.alignment
+            frame_selection = processed.frame_selection
             if verified.report.status is VerificationStatus.REJECTED:
                 return await self._finish_and_persist(
                     request,
@@ -477,15 +403,6 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     },
                 )
 
-            if aligned is None and not uses_local_ingest_processing:
-                self._stage("alignment")
-                await self._persist_job(request)
-                aligned = await _execute_activity(
-                    ALIGN_FRAGMENT_ACTIVITY,
-                    alignment_request,
-                    result_type=AlignmentActivityOutput,
-                    policy=LONG_ACTIVITY,
-                )
             if aligned is None:
                 raise ApplicationError(
                     "passing ingest processing did not return alignment staging",
@@ -614,46 +531,25 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 )
             self._stage("annotation_task")
             await self._persist_job(request)
-            uses_organization_scope = workflow.patched("annotation-organization-scope-v1")
-            if uses_organization_scope and request.organization_id is None:
-                raise ApplicationError(
-                    "ingest workflow has no verified organization scope",
-                    type="ORGANIZATION_SCOPE_MISSING",
-                    non_retryable=True,
-                )
-            annotation_input = (
-                AutomaticAnnotationActivityInput(
-                    organization_id=request.organization_id,
-                    project_id=request.project_id,
-                    region_code=request.region_code,
-                    rollout_id=request.rollout_id,
-                    dataset_id=request.dataset_id,
-                    dataset_version=derived.dataset_version,
-                    lance_version=derived.lance_version,
-                    dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
-                    base_step_count=derived.step_count,
-                    source_workflow_id=workflow.info().workflow_id,
-                    frame_selection=(
-                        None
-                        if frame_selection is None
-                        else {
-                            **frame_selection.model_dump(mode="json"),
-                            "source_sha256": request.verification.source_sha256,
-                        }
-                    ),
-                )
-                if uses_organization_scope
-                else LegacyAutomaticAnnotationActivityInput(
-                    project_id=request.project_id,
-                    region_code=request.region_code,
-                    rollout_id=request.rollout_id,
-                    dataset_id=request.dataset_id,
-                    dataset_version=derived.dataset_version,
-                    lance_version=derived.lance_version,
-                    dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
-                    base_step_count=derived.step_count,
-                    source_workflow_id=workflow.info().workflow_id,
-                )
+            annotation_input = AutomaticAnnotationActivityInput(
+                organization_id=request.organization_id,
+                project_id=request.project_id,
+                region_code=request.region_code,
+                rollout_id=request.rollout_id,
+                dataset_id=request.dataset_id,
+                dataset_version=derived.dataset_version,
+                lance_version=derived.lance_version,
+                dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
+                base_step_count=derived.step_count,
+                source_workflow_id=workflow.info().workflow_id,
+                frame_selection=(
+                    None
+                    if frame_selection is None
+                    else {
+                        **frame_selection.model_dump(mode="json"),
+                        "source_sha256": request.verification.source_sha256,
+                    }
+                ),
             )
             annotation_task = await _execute_activity(
                 CREATE_ANNOTATION_TASK_ACTIVITY,
@@ -692,12 +588,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
             await self._persist_job(request)
             return failed_job
         finally:
-            if (
-                workflow.patched("cleanup-uncommitted-aligned-media-v1")
-                and media_artifacts
-                and not bundle_committed
-                and request.organization_id is not None
-            ):
+            if media_artifacts and not bundle_committed:
                 with suppress(ActivityError, asyncio.CancelledError, CancelledError):
                     await asyncio.shield(
                         _execute_activity(
@@ -713,7 +604,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                             cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                         )
                     )
-            if alignment_staging is not None and request.organization_id is not None:
+            if alignment_staging is not None:
                 with suppress(ActivityError, asyncio.CancelledError, CancelledError):
                     await asyncio.shield(
                         _execute_activity(
@@ -729,18 +620,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                             cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                         )
                     )
-            if materialized_source is not None:
-                cleanup_projection = workflow.patched("cleanup-ingest-projection-v1")
-                if cleanup_projection:
-                    with suppress(ActivityError, asyncio.CancelledError, CancelledError):
-                        await asyncio.shield(
-                            _execute_activity(
-                                CLEANUP_INGEST_PROJECTION_ACTIVITY,
-                                ProjectionCleanupActivityInput(source=materialized_source),
-                                ProjectionCleanupActivityOutput,
-                                STANDARD_ACTIVITY,
-                            )
-                        )
+
     @workflow.query(name="job")
     def job(self) -> JobRecord:
         return self._record()
@@ -1215,41 +1095,30 @@ class ExportWorkflow(_JobLifecycle):
     @workflow.run
     async def run(self, request: ExportWorkflowInput) -> JobRecord:
         manifest = request.manifest
-        uses_attempt_identity = workflow.patched("export-attempt-identity-v1")
-        uses_phase_progress = workflow.patched("export-phase-progress-v1")
         self._begin(
             job_type=EXPORT_WORKFLOW,
             project_id=manifest.project_id,
             resource_id=(
-                (
-                    f"{manifest.dataset_id}/{manifest.dataset_version}/"
-                    f"{request.format.value}/{request.attempt_id}"
-                )
-                if uses_attempt_identity
-                else f"{manifest.dataset_id}/{manifest.dataset_version}/{request.format.value}"
+                f"{manifest.dataset_id}/{manifest.dataset_version}/"
+                f"{request.format.value}/{request.attempt_id}"
             ),
         )
         try:
-            if uses_phase_progress:
-                self._stage("preflight")
-                await _execute_activity(
-                    PREFLIGHT_EXPORT_ACTIVITY,
-                    ExportPreflightActivityInput(
-                        manifest=manifest,
-                        format=request.format,
-                    ),
-                    ExportPreflightActivityOutput,
-                    STANDARD_ACTIVITY,
-                )
-            self._stage("materializing" if uses_phase_progress else "export")
-            activity_input = (
-                ExportActivityInput(
+            self._stage("preflight")
+            await _execute_activity(
+                PREFLIGHT_EXPORT_ACTIVITY,
+                ExportPreflightActivityInput(
                     manifest=manifest,
                     format=request.format,
-                    attempt_id=request.attempt_id,
-                )
-                if uses_attempt_identity
-                else LegacyExportActivityInput(manifest=manifest, format=request.format)
+                ),
+                ExportPreflightActivityOutput,
+                STANDARD_ACTIVITY,
+            )
+            self._stage("materializing")
+            activity_input = ExportActivityInput(
+                manifest=manifest,
+                format=request.format,
+                attempt_id=request.attempt_id,
             )
             result = await _execute_activity(
                 EXPORT_DATASET_ACTIVITY,
@@ -1257,14 +1126,13 @@ class ExportWorkflow(_JobLifecycle):
                 ExportActivityOutput,
                 LONG_ACTIVITY,
             )
-            if uses_phase_progress:
-                self._stage("verifying_artifact")
-                await _execute_activity(
-                    VERIFY_EXPORT_ARTIFACT_ACTIVITY,
-                    ExportArtifactVerificationActivityInput(result=result.result),
-                    ExportArtifactVerificationActivityOutput,
-                    STANDARD_ACTIVITY,
-                )
+            self._stage("verifying_artifact")
+            await _execute_activity(
+                VERIFY_EXPORT_ARTIFACT_ACTIVITY,
+                ExportArtifactVerificationActivityInput(result=result.result),
+                ExportArtifactVerificationActivityOutput,
+                STANDARD_ACTIVITY,
+            )
             return self._finish(
                 JobStatus.SUCCEEDED,
                 result={"export": result.result.model_dump(mode="json")},

@@ -71,12 +71,6 @@ class FakeReportSink:
     def __init__(self) -> None:
         self.reports: dict[str, QcReportV1] = {}
 
-    @property
-    def objects(self) -> dict[str, QcReportV1]:
-        """Compatibility name used by the initial BE-06 tests."""
-
-        return self.reports
-
     def put_immutable(self, report: QcReportV1) -> None:
         if not report.has_valid_digest():
             raise ValueError("report content hash does not match its canonical content")
@@ -109,20 +103,3 @@ class FakeQualityProfileStore:
         self, project_id: str, profile_id: str, profile_version: int
     ) -> QualityProfileV1 | None:
         return self.profiles.get((project_id, profile_id, profile_version))
-
-
-class FakeQualityReportSink(FakeReportSink, FakeMetadataSink):
-    """Compatibility fake implementing both new, separate sink ports."""
-
-    def __init__(self) -> None:
-        FakeReportSink.__init__(self)
-        FakeMetadataSink.__init__(self)
-
-    def update_summary(self, report: QcReportV1) -> None:
-        """Compatibility method for the initial combined sink draft."""
-
-        self.put_summary(QualitySummaryV1.from_report(report))
-
-
-# Import compatibility for consumers of the initial draft. New code should use ReportSink.
-QualityReportSink = ReportSink

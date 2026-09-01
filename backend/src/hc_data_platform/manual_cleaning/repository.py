@@ -1,9 +1,4 @@
-"""RLS-scoped persistence for P09 ManualIssue facts.
-
-The repository stores only the minimal Draft handoff that P09 is entitled to
-create.  Later P10/P11 projections may extend those rows, but P09 never
-substitutes a ReviewFinding or fabricates a READY output version.
-"""
+"""RLS-scoped persistence for P09 ManualIssue and CleaningDraft facts."""
 
 from __future__ import annotations
 
@@ -374,10 +369,6 @@ def _issue(value: object) -> ManualIssueRecord:
     return ManualIssueRecord.model_validate(_decode_json(value))
 
 
-def _draft(value: object) -> ManualCleaningDraftRecord:
-    return ManualCleaningDraftRecord.model_validate(_decode_json(value))
-
-
 class PostgresManualIssueRepository:
     """Production PostgreSQL persistence scoped by the active request context."""
 
@@ -684,14 +675,39 @@ class PostgresManualIssueRepository:
         try:
             cursor.execute(
                 """
-                SELECT draft_document
-                  FROM manual_cleaning.cleaning_drafts
+                SELECT organization_id, project_id, region_code, draft_id, source_issue_id,
+                       dataset_id, base_version_id, episode_id, base_revision_id,
+                       selected_stream_id, selected_channel_path, start_ns, end_ns, status,
+                       created_at, updated_at
+                  FROM manual_cleaning.cleaning_workbench_drafts
                  WHERE organization_id = %s AND project_id = %s AND region_code = %s
                    AND source_issue_id = %s
                 """,
                 (*_scope_key(scope), issue_id),
             )
-            return tuple(_draft(_row(cursor, raw)["draft_document"]) for raw in cursor.fetchall())
+            return tuple(
+                ManualCleaningDraftRecord(
+                    scope=scope,
+                    draft_id=str(row["draft_id"]),
+                    source_issue_id=str(row["source_issue_id"]),
+                    dataset_id=str(row["dataset_id"]),
+                    base_version_id=str(row["base_version_id"]),
+                    episode_id=str(row["episode_id"]),
+                    base_revision_id=str(row["base_revision_id"]),
+                    selected_stream_id=str(row["selected_stream_id"]),
+                    selected_channel_path=(
+                        None
+                        if row["selected_channel_path"] is None
+                        else str(row["selected_channel_path"])
+                    ),
+                    start_ns=str(row["start_ns"]),
+                    end_ns=str(row["end_ns"]),
+                    status=cast(Any, row["status"]),
+                    created_at=cast(Any, row["created_at"]),
+                    updated_at=cast(Any, row["updated_at"]),
+                )
+                for row in (_row(cursor, raw) for raw in cursor.fetchall())
+            )
         finally:
             cursor.close()
             connection.close()
@@ -710,14 +726,16 @@ class PostgresManualIssueRepository:
             self._update_issue(cursor, expected_etag=expected_etag, record=next_issue)
             cursor.execute(
                 """
-                INSERT INTO manual_cleaning.cleaning_drafts (
-                    organization_id, project_id, region_code, draft_id, source_issue_id,
+                INSERT INTO manual_cleaning.cleaning_workbench_drafts (
+                    organization_id, project_id, region_code, draft_id, origin_type,
+                    source_issue_id,
                     dataset_id, base_version_id, episode_id, base_revision_id,
                     selected_stream_id, selected_channel_path, start_ns, end_ns, status,
-                    draft_document, created_at, updated_at
+                    schema_snapshot_id, robot_model_version_id, calibration_set_id,
+                    workbench_version, created_at, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s::jsonb, %s, %s
+                    %s, %s, %s, %s, 'ISSUE_DERIVED', %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, 1, %s, %s
                 )
                 """,
                 (
@@ -735,9 +753,28 @@ class PostgresManualIssueRepository:
                     int(draft.start_ns),
                     int(draft.end_ns),
                     draft.status,
-                    _document(draft),
+                    next_issue.schema_snapshot_id,
+                    next_issue.robot_model_version_id,
+                    next_issue.calibration_set_id,
                     draft.created_at,
                     draft.updated_at,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO manual_cleaning.cleaning_draft_edl_revisions (
+                    organization_id, project_id, region_code, draft_id, edl_revision,
+                    client_mutation_id, operation_hash, operations_document, actor_id,
+                    created_at
+                ) VALUES (%s, %s, %s, %s, 0, %s, %s, '[]'::jsonb, %s, %s)
+                """,
+                (
+                    *_scope_key(draft.scope),
+                    draft.draft_id,
+                    f"system:manual-issue:{draft.source_issue_id}",
+                    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    audit_event.actor_id,
+                    draft.created_at,
                 ),
             )
             cursor.execute(
@@ -789,16 +826,21 @@ class PostgresManualIssueRepository:
                    AND ancestry.project_id = linked.project_id
                    AND ancestry.region_code = linked.region_code
                    AND ancestry.root_draft_id = linked.draft_id
-                  JOIN manual_cleaning.cleaning_draft_commits AS committed
+                  JOIN manual_cleaning.cleaning_workbench_commits AS committed
                     ON committed.organization_id = ancestry.organization_id
                    AND committed.project_id = ancestry.project_id
                    AND committed.region_code = ancestry.region_code
                    AND committed.draft_id = ancestry.descendant_draft_id
+                  JOIN manual_cleaning.cleaning_workbench_drafts AS draft
+                    ON draft.organization_id = committed.organization_id
+                   AND draft.project_id = committed.project_id
+                   AND draft.region_code = committed.region_code
+                   AND draft.draft_id = committed.draft_id
                   JOIN dataset_registry.dataset_versions AS output_version
                     ON output_version.organization_id = committed.organization_id
                    AND output_version.project_id = committed.project_id
                    AND output_version.region_code = committed.region_code
-                   AND output_version.dataset_id = committed.dataset_id
+                   AND output_version.dataset_id = draft.dataset_id
                    AND output_version.version_id = committed.output_version_id
                  WHERE linked.organization_id = %s
                    AND linked.project_id = %s

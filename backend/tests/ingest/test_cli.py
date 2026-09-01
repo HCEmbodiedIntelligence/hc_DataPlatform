@@ -126,7 +126,9 @@ class ServiceBackedHttp:
             manifest = RolloutManifestV1.model_validate(payload)
             return response_json(
                 200,
-                self.service.commit_manifest(session_id=session_id, manifest=manifest),
+                self.service.commit_manifest(
+                    organization_id="org-a", session_id=session_id, manifest=manifest
+                ),
             )
         raise AssertionError(f"unexpected protocol request: {method} {url}")
 
@@ -187,6 +189,7 @@ def test_offline_import_uses_robot_protocol_and_produces_identical_key_and_manif
         [CompletedPart(part_number=1, etag=uploaded.etag)],
     )
     robot_event = robot_service.commit_manifest(
+        organization_id="org-a",
         session_id=robot_session.session_id,
         manifest=manifest,
     )

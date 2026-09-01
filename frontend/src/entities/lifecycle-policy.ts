@@ -1,4 +1,4 @@
-import type { components } from '../shared/api/generated/storage';
+import type { components } from '../shared/api/generated/platform';
 
 export type LifecyclePolicy = components['schemas']['LifecyclePolicy'];
 export type LifecyclePolicyStatus = components['schemas']['LifecyclePolicyState'];

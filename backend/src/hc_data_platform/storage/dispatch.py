@@ -152,6 +152,8 @@ class StorageLifecycleScheduleOutboxHandler:
         schedule_id = _required(event.payload, "schedule_id")
         if event.aggregate_id != schedule_id:
             raise ValueError("storage schedule outbox identity does not match its lineage")
+        if event.organization_id is None:
+            raise ValueError("storage schedule outbox event has no organization scope")
         scheduled_for = datetime.fromisoformat(_required(event.payload, "scheduled_for"))
         if scheduled_for.tzinfo is None:
             raise ValueError("storage schedule occurrence must include a timezone")
@@ -164,15 +166,12 @@ class StorageLifecycleScheduleOutboxHandler:
             capabilities=frozenset({"storage.lifecycle.execute"}),
             service_identity=True,
             scope_pairs=frozenset({(event.project_id, event.region_code)}),
-            organization_ids=(
-                frozenset({event.organization_id})
-                if event.organization_id is not None
-                else frozenset()
+            organization_ids=frozenset({event.organization_id}),
+            organization_scope_triples=frozenset(
+                {(event.organization_id, event.project_id, event.region_code)}
             ),
-            organization_scope_triples=(
-                frozenset({(event.organization_id, event.project_id, event.region_code)})
-                if event.organization_id is not None
-                else frozenset()
+            organization_scoped_capabilities=frozenset(
+                {(event.organization_id, event.project_id, "storage.lifecycle.execute")}
             ),
         )
         return self._service.run_due_lifecycle_schedule(

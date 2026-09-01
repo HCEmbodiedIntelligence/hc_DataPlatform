@@ -643,29 +643,6 @@
   text-align: right;
 }
 
-.p08-legacy-route-notice {
-  display: flex;
-  flex-wrap: wrap;
-  min-height: 52px;
-  align-items: center;
-  gap: var(--hc-space-3);
-  padding: var(--hc-space-3) var(--hc-space-4);
-  border: 1px solid var(--hc-color-info-border);
-  border-radius: var(--hc-radius-sm);
-  color: var(--hc-color-info-text);
-  background: var(--hc-color-info-surface);
-}
-
-.p08-legacy-route-notice span {
-  min-width: 240px;
-  flex: 1;
-}
-
-.p08-legacy-route-notice a {
-  color: var(--hc-color-info-text);
-  font-weight: 700;
-}
-
 .p08-revision-more {
   display: flex;
   justify-content: center;

@@ -198,7 +198,7 @@ class AuditProjectionService:
         )
         return AuditFacetsEnvelope(
             data=AuditFacets(
-                event_names=tuple(_safe_event_name(value) for value in values.event_names),
+                event_names=tuple(_event_name(value) for value in values.event_names),
                 # Actor IDs are intentionally opaque values and are returned
                 # only to callers that also hold access.read.  The core record
                 # still remains redacted for all profiles.
@@ -489,14 +489,8 @@ class AuditProjectionService:
         project_id: str,
         region_code: str | None,
     ) -> None:
-        if auth.organization_scope_triples:
-            ScopeGuard.require(auth, project_id, region_code, organization_id)
-            auth.require_capability("audit.read", project_id, organization_id)
-        else:
-            # Compatibility for explicitly legacy tokens. New organization-aware
-            # sessions always take the stricter branch above.
-            ScopeGuard.require(auth, project_id, region_code)
-            auth.require_capability("audit.read", project_id)
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        auth.require_capability("audit.read", project_id, organization_id)
         select_request_scope(project_id, region_code, organization_id=organization_id)
 
     def _encode_cursor(
@@ -606,7 +600,7 @@ class AuditProjectionService:
         retention_days = policy.security_days if security_event else policy.standard_days
         return AuditReadProjection(
             event_id=record.audit_id,
-            event_name=_safe_event_name(record.action),
+            event_name=_event_name(record.action),
             occurred_at=record.occurred_at,
             recorded_at=record.occurred_at,
             actor=AuditActorSnapshot(
@@ -694,7 +688,7 @@ def _has_scope_capability(
     return auth.has_capability(
         capability,
         project_id,
-        organization_id if auth.organization_scope_triples else None,
+        organization_id,
     )
 
 
@@ -805,8 +799,10 @@ def _safe_identifier(value: str, *, fallback: str) -> str:
     return value if _ID.fullmatch(value) else fallback
 
 
-def _safe_event_name(value: str) -> str:
-    return value if _EVENT.fullmatch(value) else "audit.event.legacy"
+def _event_name(value: str) -> str:
+    if not _EVENT.fullmatch(value):
+        raise ValueError("audit event name does not match the current contract")
+    return value
 
 
 def _binding(query: AuditQuery, auth: AuthContext) -> str:

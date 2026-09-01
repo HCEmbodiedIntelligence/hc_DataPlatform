@@ -187,7 +187,7 @@ def _catalog_steps(rows: Sequence[Any]) -> tuple[StepRecord, ...]:
                 timestamp_ns=row.timestamp_ns,
                 modalities={name: value.value for name, value in row.modalities.items()},
                 source_timestamps_ns={
-                    name: value.source_timestamps_ns[0] if value.valid else None
+                    name: value.source_timestamps_ns if value.valid else ()
                     for name, value in row.modalities.items()
                 },
                 time_error_ns={name: value.time_error_ns for name, value in row.modalities.items()},
@@ -233,8 +233,15 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         session.session_id,
         [CompletedPart(part_number=1, etag=uploaded.etag)],
     )
-    committed = upload.commit_manifest(session_id=session.session_id, manifest=manifest)
-    assert upload.commit_manifest(session_id=session.session_id, manifest=manifest) == committed
+    committed = upload.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
+    assert (
+        upload.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
+        == committed
+    )
     assert len(storage.objects) == 2  # immutable Raw plus the manifest commit marker
 
     verification = McapVerifier(
@@ -340,7 +347,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         [operation],
         expected_revision=0,
         if_match=task.etag,
-        mutation_id="annotation-mutation-1",
+        client_mutation_id="annotation-mutation-1",
     )
     replay_revision = annotations.save_draft(
         task.task_id,
@@ -348,7 +355,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         [operation],
         expected_revision=0,
         if_match=task.etag,
-        mutation_id="annotation-mutation-1",
+        client_mutation_id="annotation-mutation-1",
     )
     assert replay_revision == revision
     assert [item.revision for item in annotations.list_revisions(task.task_id, annotator)] == [

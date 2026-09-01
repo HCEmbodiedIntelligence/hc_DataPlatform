@@ -22,15 +22,12 @@ describe('P05 datasets query codec', () => {
     },
   );
 
-  it('drops invalid workflow and deprecated Channel filters from canonical URLs', () => {
-    const input =
-      'q=assembly&workflowState=invalid&channels=%2Fcamera%2Ffront&channelMatch=any&sort=nameAsc';
+  it('drops an invalid workflow from canonical URLs', () => {
+    const input = 'q=assembly&workflowState=invalid&sort=nameAsc';
     const parsed = datasetsQueryCodec.parse(input);
     const canonical = datasetsQueryCodec.canonicalize(input);
 
     expect(parsed.workflowState).toBeUndefined();
-    expect(parsed).not.toHaveProperty('channels');
-    expect(parsed).not.toHaveProperty('channelMatch');
     expect(canonical).toBe('q=assembly&sort=nameAsc');
   });
 

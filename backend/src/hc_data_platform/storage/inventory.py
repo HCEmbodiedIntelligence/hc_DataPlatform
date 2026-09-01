@@ -257,9 +257,7 @@ class PostgresStorageInventoryCatalog:
         )
 
     @staticmethod
-    def _aligned_media_entries(
-        cursor: Any, project_id: str
-    ) -> tuple[InventoryCatalogEntry, ...]:
+    def _aligned_media_entries(cursor: Any, project_id: str) -> tuple[InventoryCatalogEntry, ...]:
         cursor.execute(
             """
             SELECT artifact_id, dataset_id, dataset_version, object_manifest,

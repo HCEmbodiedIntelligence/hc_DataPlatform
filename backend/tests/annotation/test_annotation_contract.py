@@ -50,9 +50,7 @@ def auth(subject: str, *capabilities: str, projects: tuple[str, ...] = ("project
         region_codes=frozenset(),
         scope_pairs=frozenset((project_id, None) for project_id in projects),
         scoped_capabilities=frozenset(
-            (project_id, capability)
-            for project_id in projects
-            for capability in capabilities
+            (project_id, capability) for project_id in projects for capability in capabilities
         ),
     )
 

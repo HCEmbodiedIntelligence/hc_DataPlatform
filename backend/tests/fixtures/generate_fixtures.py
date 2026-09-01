@@ -130,14 +130,21 @@ def _quality_profile() -> dict[str, Any]:
         "profile_id": "pilot-30hz-v1",
         "engine_version": "be06-qc/1",
         "required_topics": [item[1] for item in TOPICS],
-        "target_frequency_hz": 30,
-        "frequency_risk_ratio": 0.95,
-        "frequency_reject_ratio": 0.75,
-        "minimum_coverage_ratio": 0.90,
-        "black_luma_threshold": 5.0,
-        "black_frame_ratio_risk": 0.02,
-        "point_count_range": [10, 2_000_000],
-        "empty_point_cloud_ratio_reject": 0.20,
+        "default_timing": {
+            "target_frequency_hz": 30,
+            "minimum_frequency_hz_risk": 28.5,
+            "minimum_frequency_hz_reject": 22.5,
+            "minimum_coverage_ratio_risk": 0.90,
+        },
+        "default_image": {
+            "black_luma_threshold": 5.0,
+            "maximum_black_frame_ratio_risk": 0.02,
+        },
+        "default_point_cloud": {
+            "minimum_point_count": 10,
+            "maximum_point_count": 2_000_000,
+            "maximum_empty_ratio_reject": 0.20,
+        },
     }
 
 

@@ -248,9 +248,6 @@ def _export_progress(record: JobRecord) -> ExportJobProgressV1:
         "preflight": (0, "preflight"),
         "materializing": (1, "materializing"),
         "verifying_artifact": (2, "verifying_artifact"),
-        # Pre-progress historical histories consist of one materialization
-        # activity.  Keep their fact truthful rather than forcing a new scale.
-        "export": (0, "materializing"),
     }.get(record.stage, (0, record.stage))
     return ExportJobProgressV1(
         phase=phase,

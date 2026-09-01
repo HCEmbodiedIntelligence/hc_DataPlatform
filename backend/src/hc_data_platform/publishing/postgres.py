@@ -504,8 +504,8 @@ class PostgresPublishedManifestRepository:
         Publication can also be invoked by project-only automation against the lower-level
         publishing contract.  Without an exact organization and region there is no safe way
         to select one product dataset owner, so those invocations remain auditable but do not
-        manufacture an account notification.  Likewise, legacy non-UUID owner identifiers
-        are not guessed into account identities.
+        manufacture an account notification. Owner identifiers that are not exact account
+        UUIDs are rejected instead of being guessed into account identities.
         """
 
         context = current_request_context()
@@ -580,35 +580,6 @@ class PostgresPublishedManifestRepository:
                 "SELECT set_config('app.subject_id', %s, true)",
                 (context.subject_id or "",),
             )
-
-
-class PostgresAnnotationTaskLocator:
-    def __init__(self, connection_factory: Callable[[], Any]) -> None:
-        self._connection_factory = connection_factory
-
-    def find_task_id(
-        self,
-        *,
-        project_id: str,
-        dataset_id: str,
-        dataset_version: int,
-        rollout_id: str,
-    ) -> str | None:
-        connection = self._connection_factory()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT task_id FROM annotation.annotation_tasks
-                    WHERE project_id = %s AND dataset_id = %s
-                      AND dataset_version = %s AND rollout_id = %s
-                    """,
-                    (project_id, dataset_id, dataset_version, rollout_id),
-                )
-                row = cursor.fetchone()
-        finally:
-            connection.close()
-        return None if row is None else str(row[0])
 
 
 class PostgresCatalogRolloutState:

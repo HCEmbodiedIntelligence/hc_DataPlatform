@@ -432,6 +432,5 @@ def test_dataset_version_reservation_blocks_a_sibling_episode() -> None:
     assert not connection.committed
     assert connection.closed
     assert not any(
-        statement.startswith("INSERT")
-        for statement in connection.cursor_instance.statements
+        statement.startswith("INSERT") for statement in connection.cursor_instance.statements
     )

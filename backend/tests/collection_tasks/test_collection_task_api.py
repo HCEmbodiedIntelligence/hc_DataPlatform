@@ -55,9 +55,7 @@ def payload() -> dict[str, object]:
 def api() -> Iterator[tuple[TestClient, dict[str, AuthContext | None]]]:
     service = CollectionTaskService()
     configure_collection_tasks(service)
-    current: dict[str, AuthContext | None] = {
-        "auth": auth("upload.read", "upload.manage")
-    }
+    current: dict[str, AuthContext | None] = {"auth": auth("upload.read", "upload.manage")}
     app = FastAPI()
 
     @app.middleware("http")

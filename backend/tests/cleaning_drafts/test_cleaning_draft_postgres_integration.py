@@ -253,7 +253,7 @@ def _prepare_app_role(dsn: str) -> None:
         )
         cursor.execute(
             "GRANT SELECT, INSERT, UPDATE ON manual_cleaning.manual_issues, "
-            "manual_cleaning.cleaning_drafts, manual_cleaning.manual_issue_draft_links, "
+            "manual_cleaning.manual_issue_draft_links, "
             "manual_cleaning.cleaning_draft_ancestry, "
             "manual_cleaning.cleaning_workbench_drafts, "
             "manual_cleaning.cleaning_draft_edl_revisions, "
@@ -261,7 +261,6 @@ def _prepare_app_role(dsn: str) -> None:
             "manual_cleaning.cleaning_workbench_commits, "
             "manual_cleaning.cleaning_commit_output_revisions TO " + APP_ROLE
         )
-        cursor.execute("GRANT SELECT ON manual_cleaning.cleaning_draft_commits TO " + APP_ROLE)
         cursor.execute("GRANT SELECT, INSERT ON core.audit_events TO " + APP_ROLE)
         cursor.execute("GRANT SELECT, INSERT, UPDATE ON core.idempotency_records TO " + APP_ROLE)
 
@@ -287,10 +286,8 @@ def _cleanup(dsn: str) -> None:
             "manual_cleaning.cleaning_draft_previews",
             "manual_cleaning.cleaning_draft_edl_revisions",
             "manual_cleaning.cleaning_workbench_drafts",
-            "manual_cleaning.cleaning_draft_commits",
             "manual_cleaning.cleaning_draft_ancestry",
             "manual_cleaning.manual_issue_draft_links",
-            "manual_cleaning.cleaning_drafts",
             "manual_cleaning.manual_issues",
             "dataset_registry.dataset_version_successor_drafts",
             "dataset_registry.dataset_version_review_findings",

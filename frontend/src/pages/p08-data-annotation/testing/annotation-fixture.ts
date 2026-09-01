@@ -191,7 +191,6 @@ function historyForTask(task: RuntimeAnnotationTask): RuntimeAnnotationHistory {
       origin: "ANNOTATION",
       schema_version: "1",
       created_at: "2026-08-18T08:31:00Z",
-      legacy_audit: null,
     },
     {
       task_id: task.task_id,
@@ -208,7 +207,6 @@ function historyForTask(task: RuntimeAnnotationTask): RuntimeAnnotationHistory {
       origin: "ANNOTATION",
       schema_version: "1",
       created_at: "2026-08-18T08:41:00Z",
-      legacy_audit: null,
     },
   ];
   const submissions: components["schemas"]["AnnotationSubmission"][] = [

@@ -71,7 +71,6 @@ function page(
         current_submission_id: null,
         approved_revision: null,
         approved_review_id: null,
-        legacy_draft_id: null,
         updated_at: "2026-08-20T08:01:00Z",
       },
     ],
@@ -164,69 +163,4 @@ describe("AnnotationRevisionPage", () => {
     expect(listThreadsMock).not.toHaveBeenCalled();
   });
 
-  it("keeps an imported legacy revision inside the annotation task workflow", async () => {
-    const legacyPage = page("task-legacy", { next: null });
-    const [legacyThread] = legacyPage.items;
-    if (!legacyThread)
-      throw new Error("legacy test fixture must include one thread");
-    listThreadsMock.mockImplementation(async () => ({
-      ...legacyPage,
-      items: [
-        {
-          ...legacyThread,
-          legacy_draft_id: "draft_legacy-01",
-          latest_revision: {
-            ...legacyThread.latest_revision,
-            origin: "LEGACY_CLEANING",
-          },
-        },
-      ],
-    }));
-    renderPage();
-
-    expect(
-      await screen.findByText("已关联旧草稿 draft_legacy-01"),
-    ).toBeVisible();
-    expect(screen.getByRole("link", { name: "打开任务" })).toHaveAttribute(
-      "href",
-      "/annotations/tasks/task-legacy",
-    );
-    expect(screen.queryByText("打开历史清洗草稿")).not.toBeInTheDocument();
-  });
-
-  it("resolves a legacy route only through its exact scoped annotation mapping", async () => {
-    const legacyPage = page("task-legacy-route", { next: null });
-    const [legacyThread] = legacyPage.items;
-    if (!legacyThread)
-      throw new Error("legacy route fixture must include one thread");
-    listThreadsMock.mockResolvedValue({
-      ...legacyPage,
-      items: [
-        {
-          ...legacyThread,
-          legacy_draft_id: "draft_legacy-route",
-          latest_revision: {
-            ...legacyThread.latest_revision,
-            origin: "LEGACY_CLEANING",
-          },
-        },
-      ],
-    });
-
-    renderPage("/annotations/revisions?legacyDraftId=draft_legacy-route");
-
-    expect(await screen.findByText("旧清洗草稿兼容入口")).toBeVisible();
-    expect(listThreadsMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ legacyDraftId: "draft_legacy-route" }),
-      expect.any(AbortSignal),
-    );
-    expect(screen.getByRole("link", { name: "打开任务" })).toHaveAttribute(
-      "href",
-      "/annotations/tasks/task-legacy-route",
-    );
-    expect(
-      screen.getByRole("link", { name: "查看全部修订记录" }),
-    ).toHaveAttribute("href", "/annotations/revisions");
-  });
 });

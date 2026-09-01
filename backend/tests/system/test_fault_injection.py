@@ -41,7 +41,11 @@ from hc_data_platform.publishing.models import (
 )
 from hc_data_platform.publishing.service import DatasetPublisher, ExportCoordinator
 from hc_data_platform.quality import QualityEngine, QualityInputV1, QualityProfileV1
-from hc_data_platform.quality.ports import FakeQualityReportSink, QualityPersistenceError
+from hc_data_platform.quality.ports import (
+    FakeMetadataSink,
+    FakeReportSink,
+    QualityPersistenceError,
+)
 from hc_data_platform.workflow import DatasetWriterWorkflow
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -61,7 +65,7 @@ class _FailOnceReadStorage(InMemoryObjectStorage):
             yield chunk
 
 
-class _FailOnceSummarySink(FakeQualityReportSink):
+class _FailOnceSummarySink(FakeMetadataSink):
     def __init__(self) -> None:
         super().__init__()
         self.fail_next_summary = True
@@ -148,7 +152,7 @@ def _catalog_fixture() -> tuple[
             step_index=index,
             timestamp_ns=index * 33_333_333,
             modalities={"camera": f"frame-{index}"},
-            source_timestamps_ns={"camera": index * 33_333_333},
+            source_timestamps_ns={"camera": (index * 33_333_333,)},
             time_error_ns={"camera": 0},
             valid={"camera": True},
             repeated={"camera": False},
@@ -181,7 +185,10 @@ def _published_fixture() -> tuple[Any, tuple[ExportStepV1, ...]]:
             step_index=index,
             timestamp_ns=index * 33_333_333,
             modalities={"camera": f"frame-{index}", "action": [float(index)]},
-            source_timestamps_ns={"camera": index * 33_333_333, "action": index * 33_333_333},
+            source_timestamps_ns={
+                "camera": (index * 33_333_333,),
+                "action": (index * 33_333_333,),
+            },
             time_error_ns={"camera": 0, "action": 0},
             valid={"camera": True, "action": True},
             repeated={"camera": False, "action": False},
@@ -244,11 +251,20 @@ def test_sha_network_interruption_retries_without_duplicate_raw_or_manifest() ->
     )
 
     with pytest.raises(ConnectionError, match="network interruption"):
-        service.commit_manifest(session_id=session.session_id, manifest=manifest)
+        service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
     assert len(storage.objects) == 1
 
-    committed = service.commit_manifest(session_id=session.session_id, manifest=manifest)
-    assert service.commit_manifest(session_id=session.session_id, manifest=manifest) == committed
+    committed = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
+    assert (
+        service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
+        == committed
+    )
     assert set(storage.objects) == {committed.object_key, committed.manifest_key}
 
 
@@ -256,17 +272,18 @@ def test_qc_sink_interruption_reuses_one_immutable_report() -> None:
     case = json.loads((FIXTURES / "structured" / "legal_30hz.json").read_text())
     data = QualityInputV1.model_validate(case["input"])
     profile = QualityProfileV1.model_validate(case["profile"])
-    sink = _FailOnceSummarySink()
-    engine = QualityEngine(sink)
+    reports = FakeReportSink()
+    summaries = _FailOnceSummarySink()
+    engine = QualityEngine(reports, summaries)
 
     with pytest.raises(QualityPersistenceError) as captured:
         engine.evaluate(data, profile)
     assert captured.value.stage == "metadata"
-    assert len(sink.objects) == 1
+    assert len(reports.reports) == 1
     report = engine.evaluate(data, profile)
-    assert len(sink.objects) == 1
-    assert sink.summaries[data.rollout_id].status == report.status
-    assert sink.summaries[data.rollout_id].report_sha256 == report.content_sha256
+    assert len(reports.reports) == 1
+    assert summaries.summaries[data.rollout_id].status == report.status
+    assert summaries.summaries[data.rollout_id].report_sha256 == report.content_sha256
 
 
 def test_lance_commit_then_db_registration_failure_reconciles_once() -> None:

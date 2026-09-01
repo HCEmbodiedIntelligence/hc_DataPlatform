@@ -101,9 +101,7 @@ class OrganizationRobotAssetService:
         request_id: str,
     ) -> OrganizationRobotBootstrapEnvelope:
         self._authorize(auth, organization_id, "robot.read")
-        item = self._repository.get_robot(
-            organization_id=organization_id, robot_id=robot_id
-        )
+        item = self._repository.get_robot(organization_id=organization_id, robot_id=robot_id)
         if item is None:
             raise problem(
                 status=404,

@@ -32,7 +32,6 @@ from hc_data_platform.publishing.adapters import (
     ApprovedAnnotationSnapshotAdapter,
     CatalogRolloutStateV1,
     CatalogSnapshotAdapter,
-    InMemoryApprovedAnnotationTaskLocator,
     InMemoryCatalogRolloutState,
     StepReaderAdapter,
 )
@@ -333,8 +332,8 @@ def _catalog_with_rollout() -> tuple[InMemoryLanceCatalog, tuple[StepRecord, ...
                 "action": [float(index + 1)],
             },
             source_timestamps_ns={
-                "observation.state": index * 33_333_333,
-                "action": index * 33_333_333,
+                "observation.state": (index * 33_333_333,),
+                "action": (index * 33_333_333,),
             },
             time_error_ns={"observation.state": 0, "action": 0},
             valid={"observation.state": True, "action": True},
@@ -442,7 +441,7 @@ def test_be09_adapter_reads_only_current_approved_revision_and_effective_restore
         ],
         expected_revision=0,
         if_match=annotations.get_task("task-a").etag,
-        mutation_id="mutation-a",
+        client_mutation_id="mutation-a",
     )
     submitted = annotations.submit(
         "task-a",
@@ -457,13 +456,7 @@ def test_be09_adapter_reads_only_current_approved_revision_and_effective_restore
         revision=1,
         if_match=submitted.etag,
     )
-    adapter = ApprovedAnnotationSnapshotAdapter(
-        annotations=annotations,
-        exclusions=annotations,
-        task_locator=InMemoryApprovedAnnotationTaskLocator(
-            {("project-a", "dataset-a", 1, "rollout-a"): "task-a"}
-        ),
-    )
+    adapter = ApprovedAnnotationSnapshotAdapter(annotations=annotations)
 
     approved = adapter.get_approved_revision(
         project_id="project-a",
@@ -484,7 +477,7 @@ def test_be09_adapter_reads_only_current_approved_revision_and_effective_restore
         [],
         expected_revision=1,
         if_match=annotations.get_task("task-a").etag,
-        mutation_id="mutation-b",
+        client_mutation_id="mutation-b",
     )
     assert (
         adapter.get_approved_revision(
@@ -508,8 +501,8 @@ def export_steps() -> list[ExportStepV1]:
                 "action": [index, index + 1],
             },
             source_timestamps_ns={
-                "camera.front": index * 33_333_333,
-                "action": index * 33_333_333,
+                "camera.front": (index * 33_333_333,),
+                "action": (index * 33_333_333,),
             },
             time_error_ns={"camera.front": 0, "action": 0},
             valid={"camera.front": True, "action": True},

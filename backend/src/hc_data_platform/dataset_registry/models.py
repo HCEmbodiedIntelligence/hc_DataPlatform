@@ -8,7 +8,7 @@ the user-visible dataset identity and safe page projections.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -494,16 +494,6 @@ class DatasetPageEpisodeStream(_DatasetPageModel):
     t_end_ns: DecimalString
     aligned_media_binding: DatasetPageEpisodeAlignedMediaBinding | None = None
     data_binding: DatasetPageEpisodeDataBinding | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def ignore_historical_on_demand_binding(cls, value: Any) -> Any:
-        """Read old projection documents without reviving request-time generation."""
-
-        if isinstance(value, dict) and "preview_binding" in value:
-            value = dict(value)
-            value.pop("preview_binding", None)
-        return value
 
     @model_validator(mode="after")
     def validate_aligned_media_binding_kind(self) -> DatasetPageEpisodeStream:

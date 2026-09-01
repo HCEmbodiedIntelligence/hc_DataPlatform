@@ -57,7 +57,7 @@ Whichever commits first defines the ordering. A new rollout loses after close or
 while an already-associated rollout can be retried idempotently. Unknown historical
 ingest task IDs remain readable and are not retroactively rejected.
 
-Legacy ingest collection-job upload states are not P20 task states. Consumers must use
+Ingest collection-job upload states are not P20 task states. Consumers must use
 the P20 create/list/detail/update/close/cancel/reopen/progress routes and stop sending
 scheduling, assignment, source-configuration, or upload-lifecycle commands as task
 fields.

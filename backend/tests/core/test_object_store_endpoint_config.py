@@ -117,7 +117,7 @@ def test_production_requires_an_explicit_public_https_fqdn() -> None:
     assert settings.object_store_endpoint == "http://minio:9000"
     assert settings.object_store_public_endpoint == "https://uploads.example.com"
 
-    with pytest.raises(ValidationError, match="HC_OBJECT_STORE_PUBLIC_ENDPOINT"):
+    with pytest.raises(ValidationError, match="object_store_public_endpoint"):
         _production_settings(object_store_public_endpoint=None)
 
 
@@ -220,19 +220,3 @@ def test_object_store_secrets_do_not_appear_in_repr_or_validation_errors() -> No
             _env_file=None,
         )
     assert secret not in str(captured.value)
-def test_local_legacy_single_endpoint_falls_back_without_changing_server_operations() -> None:
-    settings = Settings(
-        environment="local",
-        object_store_endpoint="http://minio:9000",
-        _env_file=None,
-    )
-    assert settings.object_store_public_endpoint == settings.object_store_endpoint
-def test_local_legacy_single_endpoint_falls_back_without_changing_server_operations() -> None:
-    settings = Settings(
-        environment="local",
-        object_store_endpoint="http://minio:9000",
-        _env_file=None,
-    )
-    assert settings.object_store_public_endpoint == settings.object_store_endpoint
-
-

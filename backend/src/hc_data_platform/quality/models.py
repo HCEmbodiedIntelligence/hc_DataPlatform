@@ -240,12 +240,6 @@ class TopicTimingMetricsV1(BaseModel):
     maximum_consecutive_missing: int = Field(ge=0)
     coverage_ratio: float = Field(ge=0, le=1)
 
-    @property
-    def unique_timestamp_count(self) -> int:
-        """Compatibility name used by the initial BE-06 draft."""
-
-        return self.unique_frame_count
-
 
 class QcFinding(BaseModel):
     """Traceable rule result with an affected range; point events use equal bounds."""
@@ -413,96 +407,6 @@ class QualityProfileV1(BaseModel):
     modality_offset: ModalityOffsetProfileV1 = Field(default_factory=ModalityOffsetProfileV1)
     complete_step: CompleteStepProfileV1 = Field(default_factory=CompleteStepProfileV1)
 
-    @model_validator(mode="before")
-    @classmethod
-    def upgrade_initial_draft(cls, value: object) -> object:
-        """Map the initial flat draft fields into the versioned nested contract."""
-
-        if not isinstance(value, dict):
-            return value
-        data = dict(value)
-        timing_names = {
-            "target_frequency_hz",
-            "frequency_risk_ratio",
-            "frequency_reject_ratio",
-            "minimum_coverage_ratio",
-            "gap_risk_periods",
-            "gap_reject_periods",
-        }
-        if timing_names.intersection(data):
-            if "default_timing" in data:
-                raise ValueError("cannot mix draft timing fields with default_timing")
-            target = int(data.pop("target_frequency_hz", 30))
-            risk_ratio = float(data.pop("frequency_risk_ratio", 0.95))
-            reject_ratio = float(data.pop("frequency_reject_ratio", 0.75))
-            risk_periods = int(data.pop("gap_risk_periods", 3))
-            reject_periods = int(data.pop("gap_reject_periods", 30))
-            timing: dict[str, object] = {
-                "target_frequency_hz": target,
-                "minimum_frequency_hz_risk": target * risk_ratio,
-                "minimum_frequency_hz_reject": target * reject_ratio,
-                "maximum_gap_ns_risk": round(risk_periods * NANOSECONDS_PER_SECOND / target),
-                "maximum_gap_ns_reject": round(reject_periods * NANOSECONDS_PER_SECOND / target),
-            }
-            if "minimum_coverage_ratio" in data:
-                timing["minimum_coverage_ratio_risk"] = data.pop("minimum_coverage_ratio")
-            data["default_timing"] = timing
-
-        image_names = {
-            "black_luma_threshold": "black_luma_threshold",
-            "black_frame_ratio_risk": "maximum_black_frame_ratio_risk",
-            "repeated_frame_ratio_risk": "maximum_repeated_frame_ratio_risk",
-        }
-        image_values = {
-            new_name: data.pop(old_name)
-            for old_name, new_name in image_names.items()
-            if old_name in data
-        }
-        if image_values:
-            if "default_image" in data:
-                raise ValueError("cannot mix draft image fields with default_image")
-            data["default_image"] = image_values
-
-        if "max_action_jump" in data:
-            if "action" in data:
-                raise ValueError("cannot mix max_action_jump with action")
-            jump = data.pop("max_action_jump")
-            data["action"] = {"maximum_jump_risk": jump}
-
-        point_values: dict[str, object] = {}
-        if "point_count_range" in data:
-            point_range = data.pop("point_count_range")
-            if point_range is not None:
-                point_values["minimum_point_count"] = point_range[0]
-                point_values["maximum_point_count"] = point_range[1]
-        if "empty_point_cloud_ratio_reject" in data:
-            point_values["maximum_empty_ratio_reject"] = data.pop("empty_point_cloud_ratio_reject")
-        if point_values:
-            if "default_point_cloud" in data:
-                raise ValueError("cannot mix draft point-cloud fields with default_point_cloud")
-            data["default_point_cloud"] = point_values
-
-        offset_values: dict[str, object] = {}
-        if "modality_offset_risk_ns" in data:
-            offset_values["maximum_p95_offset_ns_risk"] = data.pop("modality_offset_risk_ns")
-        if "modality_offset_reject_ns" in data:
-            offset_values["maximum_p95_offset_ns_reject"] = data.pop("modality_offset_reject_ns")
-        if offset_values:
-            if "modality_offset" in data:
-                raise ValueError("cannot mix draft offset fields with modality_offset")
-            data["modality_offset"] = offset_values
-
-        complete_values: dict[str, object] = {}
-        if "complete_step_ratio_risk" in data:
-            complete_values["minimum_ratio_risk"] = data.pop("complete_step_ratio_risk")
-        if "complete_step_ratio_reject" in data:
-            complete_values["minimum_ratio_reject"] = data.pop("complete_step_ratio_reject")
-        if complete_values:
-            if "complete_step" in data:
-                raise ValueError("cannot mix draft complete-step fields with complete_step")
-            data["complete_step"] = complete_values
-        return data
-
     @model_validator(mode="after")
     def validate_profile(self) -> QualityProfileV1:
         names = (
@@ -535,12 +439,6 @@ class QualityProfileV1(BaseModel):
 
     def content_bytes(self) -> bytes:
         return canonical_json_bytes(self)
-
-    @property
-    def target_frequency_hz(self) -> int:
-        """Compatibility accessor for the initial flat profile draft."""
-
-        return self.default_timing.target_frequency_hz
 
 
 class QcReportV1(BaseModel):

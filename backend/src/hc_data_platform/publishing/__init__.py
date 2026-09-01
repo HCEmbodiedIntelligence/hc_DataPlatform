@@ -3,8 +3,6 @@
 from .adapters import (
     ApprovedAnnotationSnapshotAdapter,
     CatalogSnapshotAdapter,
-    LanceCatalogSnapshotAdapter,
-    LanceStepReaderAdapter,
     StepReaderAdapter,
 )
 from .exporters import LanceSnapshotExporter, LeRobotV3Exporter
@@ -29,9 +27,7 @@ __all__ = [
     "ExportFormat",
     "ExportResultV1",
     "ExporterPort",
-    "LanceCatalogSnapshotAdapter",
     "LanceSnapshotExporter",
-    "LanceStepReaderAdapter",
     "LeRobotV3Exporter",
     "PublishDatasetRequestV1",
     "PublishedDatasetManifestV1",

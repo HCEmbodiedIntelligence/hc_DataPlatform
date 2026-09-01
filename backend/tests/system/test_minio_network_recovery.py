@@ -163,8 +163,12 @@ def test_minio_network_pause_recovers_one_raw_object_and_manifest() -> None:
         ],
     )
     assert completed.status is UploadStatus.MULTIPART_COMPLETED
-    first_event = service.commit_manifest(session_id=session.session_id, manifest=manifest)
-    second_event = service.commit_manifest(session_id=session.session_id, manifest=manifest)
+    first_event = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
+    second_event = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
     assert first_event == second_event
 
     prefix = f"raw/v1/project={manifest.project_id}/"

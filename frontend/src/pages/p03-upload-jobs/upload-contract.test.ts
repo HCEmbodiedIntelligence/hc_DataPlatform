@@ -139,17 +139,17 @@ describe("P03 formal upload contract helpers", () => {
   });
 
   it("keeps every checked-in generated CRC64 field string-typed", async () => {
-    type LegacyManifest =
-      import("../../shared/api/generated/storage").components["schemas"]["RolloutManifestV1"];
-    type LegacyPart =
-      import("../../shared/api/generated/storage").components["schemas"]["UploadPart"];
-    type LegacySession =
-      import("../../shared/api/generated/storage").components["schemas"]["UploadSession"];
+    type CurrentManifest =
+      import("../../shared/api/generated/platform").components["schemas"]["RolloutManifestV1"];
+    type CurrentPart =
+      import("../../shared/api/generated/platform").components["schemas"]["UploadPart"];
+    type CurrentSession =
+      import("../../shared/api/generated/platform").components["schemas"]["UploadSession"];
 
-    const manifest: LegacyManifest["crc64"] = "18446744073709551615";
-    const part: Exclude<LegacyPart["crc64"], null | undefined> =
+    const manifest: CurrentManifest["crc64"] = "18446744073709551615";
+    const part: Exclude<CurrentPart["crc64"], null | undefined> =
       "18446744073709551615";
-    const session: LegacySession["expected_crc64"] = "18446744073709551615";
+    const session: CurrentSession["expected_crc64"] = "18446744073709551615";
 
     expect([manifest, part, session]).toEqual([
       "18446744073709551615",

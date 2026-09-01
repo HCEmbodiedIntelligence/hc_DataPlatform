@@ -530,7 +530,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             profile
             for row in cursor.fetchall()
             if (profile := QualityProfileV1.model_validate(row[0])).required_topics == topics
-            and profile.target_frequency_hz == 30
+            and profile.default_timing.target_frequency_hz == 30
         ]
         if len(candidates) != 1:
             raise _blocked(
@@ -785,6 +785,7 @@ class ContinuousEpisodeProcessingService:
             },
         )
         alignment_request = AlignmentActivityInput(
+            organization_id=request.projection.organization_id,
             project_id=request.projection.project_id,
             region_code=request.projection.region_code,
             dataset_id=request.dataset_id,

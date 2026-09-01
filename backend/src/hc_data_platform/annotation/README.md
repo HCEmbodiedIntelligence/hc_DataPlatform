@@ -35,15 +35,6 @@ Tag Schema 以 `schema_id + version` 标识。Schema 内容支持任意深度的
 它只接受已固定的 Lance 版本、已发布 Schema、精确 revision 和累计操作，生成完整六项
 检查及内容哈希绑定，并由 Temporal 历史 replay 测试保护确定性。
 
-外部旧 P11 step 记录仍可通过 `LegacyCleaningAnnotationAdapter` 单向导入：明确的排除/恢复
-操作成为普通 annotation revision，未知规则保存在 `LegacyAuditReference.source_payload`。
-数据库内已经存在的 P11 Workbench 行由
-`annotation/0008_scoped_legacy_cleaning_import.sql` 一次性迁移。该迁移只接受能从固定 Episode
-revision、selected stream 精确解析到同组织/项目/区域 Lance 血缘的草稿；缺失或多义会在任何
-写入前让整个迁移失败。P11 EDL 是纳秒区间，annotation 是 step 区间，因此迁移不会猜采样
-换算，而是把完整 EDL snapshot 以 `PRESERVED_NANOSECOND_EDL` 模式保存在不可变审计载荷中。
-映射键包含 organization/project/region，所以不同租户的同名 draft 不再碰撞。
-
 PostgreSQL 的 claim、revision/restore、submission 和 review CAS 会在同一事务追加脱敏
 `core.audit_events`；REJECT/NEEDS_REVISION 只记录决定、revision 和 submission ID，不记录审核
 意见正文。审计写失败会回滚业务指针。

@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     storage_inventory_interval_seconds: float = Field(default=3_600, ge=10, le=86_400)
     object_store_provider: Literal["s3", "oss"] = "s3"
     object_store_endpoint: str = Field(default="http://localhost:9000", repr=False)
-    object_store_public_endpoint: str | None = Field(default=None, repr=False)
+    object_store_public_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_bucket: str = Field(default="hc-data-local", max_length=63)
     object_store_access_key: str = Field(default="minio", max_length=512, repr=False)
     object_store_secret_key: str = Field(
@@ -335,9 +335,9 @@ class Settings(BaseSettings):
 
     @field_validator("object_store_public_endpoint", mode="before")
     @classmethod
-    def validate_object_store_public_endpoint(cls, value: object) -> str | None:
-        if value is None or (isinstance(value, str) and not value.strip()):
-            return None
+    def validate_object_store_public_endpoint(cls, value: object) -> str:
+        if isinstance(value, str) and not value.strip():
+            return _UNCONFIGURED_OBJECT_STORE_ENDPOINT
         return _validated_object_store_endpoint(value)
 
     @field_validator("auto_annotation_provider_endpoint", mode="before")
@@ -575,8 +575,6 @@ class Settings(BaseSettings):
                 )
             if self.environment in {"staging", "production"} and not self.auth_smtp_starttls:
                 raise ValueError("HC_AUTH_SMTP_STARTTLS must be enabled outside local/test")
-        if self.object_store_public_endpoint is None and self.environment in {"local", "test"}:
-            self.object_store_public_endpoint = self.object_store_endpoint
         if self.object_store_provider == "oss":
             # An OSS deployment may be configured after boot from the platform page.
             # Canonical non-secret sentinels keep dependency composition lazy while
@@ -589,8 +587,6 @@ class Settings(BaseSettings):
                 self.object_store_secret_key.strip() or "unconfigured-secret-key"
             )
             self.object_store_region = self.object_store_region.strip() or "cn-hangzhou"
-            if self.object_store_public_endpoint is None:
-                self.object_store_public_endpoint = self.object_store_endpoint
             endpoints = tuple(
                 endpoint
                 for endpoint in (self.object_store_endpoint, self.object_store_public_endpoint)
@@ -657,7 +653,7 @@ class Settings(BaseSettings):
                 }
                 for value in (
                     self.object_store_endpoint,
-                    self.object_store_public_endpoint or "",
+                    self.object_store_public_endpoint,
                     self.object_store_bucket,
                     self.object_store_access_key,
                     self.object_store_secret_key,
@@ -665,8 +661,7 @@ class Settings(BaseSettings):
             )
             public_endpoint = self.object_store_public_endpoint
             if not page_managed_object_store_pending and (
-                public_endpoint is None
-                or not _is_safe_public_object_store_endpoint(public_endpoint)
+                not _is_safe_public_object_store_endpoint(public_endpoint)
             ):
                 insecure.append("HC_OBJECT_STORE_PUBLIC_ENDPOINT")
             if self.cursor_secret == _LOCAL_CURSOR_SECRET:

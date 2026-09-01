@@ -64,8 +64,7 @@ def list_organization_robots(
     q: str | None = Query(default=None, min_length=1, max_length=256),
     lifecycle_status: Literal["DRAFT", "ACTIVE", "MAINTENANCE", "DISABLED", "RETIRED"]
     | None = Query(default=None),
-    connectivity_state: Literal["ONLINE", "OFFLINE", "DEGRADED"]
-    | None = Query(default=None),
+    connectivity_state: Literal["ONLINE", "OFFLINE", "DEGRADED"] | None = Query(default=None),
 ) -> OrganizationRobotPage:
     _prepare(organization_id, response)
     return service.list_robots(

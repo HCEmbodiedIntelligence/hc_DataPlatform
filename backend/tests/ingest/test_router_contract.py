@@ -368,6 +368,7 @@ def test_router_issues_an_audited_non_cacheable_raw_mcap_source_only_after_commi
         [CompletedPart(part_number=part.part_number, etag=part.etag)],
     )
     service.commit_manifest(
+        organization_id="org-a",
         session_id=session.session_id,
         manifest=RolloutManifestV1.model_validate(payload),
     )
@@ -421,6 +422,7 @@ def test_router_projects_only_the_processing_result_linked_to_the_upload_scope()
         [CompletedPart(part_number=part.part_number, etag=part.etag)],
     )
     committed = service.commit_manifest(
+        organization_id="org-a",
         session_id=session.session_id,
         manifest=RolloutManifestV1.model_validate(payload),
     )

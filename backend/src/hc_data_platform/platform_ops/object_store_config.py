@@ -417,7 +417,7 @@ def _configured_value(value: str) -> bool:
 
 
 def settings_object_store_configured(settings: Settings) -> bool:
-    endpoints = (settings.object_store_endpoint, settings.object_store_public_endpoint or "")
+    endpoints = (settings.object_store_endpoint, settings.object_store_public_endpoint)
     return (
         all(_configured_value(value) for value in endpoints)
         and _configured_value(settings.object_store_bucket)
@@ -478,8 +478,8 @@ class ObjectStoreConfigurationService:
                 else ""
             ),
             public_endpoint=(
-                self.settings.object_store_public_endpoint or ""
-                if _configured_value(self.settings.object_store_public_endpoint or "")
+                self.settings.object_store_public_endpoint
+                if _configured_value(self.settings.object_store_public_endpoint)
                 else ""
             ),
             bucket=(

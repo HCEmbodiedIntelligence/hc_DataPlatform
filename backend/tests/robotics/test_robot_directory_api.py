@@ -76,9 +76,7 @@ def test_robot_assets_are_organization_scoped_without_project_or_region_headers(
     assert [item["id"] for item in listing.json()["items"]] == [robot_id]
     assert listing.json()["scope"] == {"organization_id": ORGANIZATION_ID}
 
-    bootstrap = client.get(
-        f"{root}/{robot_id}/bootstrap", headers={"Authorization": "Bearer test"}
-    )
+    bootstrap = client.get(f"{root}/{robot_id}/bootstrap", headers={"Authorization": "Bearer test"})
     assert bootstrap.status_code == 200
     assert bootstrap.headers["etag"] == created.headers["etag"]
 
@@ -87,9 +85,7 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
     repository = InMemoryOrganizationRobotAssetRepository((ORGANIZATION_ID,))
     repository.add_published_version(ORGANIZATION_ID, "version-a")
     configure_organization_robot_assets(OrganizationRobotAssetService(repository))
-    current: dict[str, AuthContext | None] = {
-        "value": _auth(manage=True, model_manage=True)
-    }
+    current: dict[str, AuthContext | None] = {"value": _auth(manage=True, model_manage=True)}
     client = TestClient(_app(current))
     root = f"/api/v1/organizations/{ORGANIZATION_ID}/robots"
     created = client.post(
@@ -114,9 +110,7 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
         headers={"Authorization": "Bearer test"},
     )
     assert history.status_code == 200
-    assert [item["binding_id"] for item in history.json()["items"]] == [
-        bound.json()["binding_id"]
-    ]
+    assert [item["binding_id"] for item in history.json()["items"]] == [bound.json()["binding_id"]]
 
 
 def test_organization_robot_assets_enforce_membership_and_capability() -> None:

@@ -61,28 +61,28 @@
   "structured": [
     {
       "path": "structured/legal_30hz.json",
-      "sha256": "5dfce8544bb598222be88b084e791a727f63cd8a44af696581d5b0f888e61d7d",
-      "size": 4675
+      "sha256": "13f07d66d3f8736a688eaf2722ac162ce5d78109ae9523fdcbbf5e391d65891f",
+      "size": 4815
     },
     {
       "path": "structured/28hz.json",
-      "sha256": "9ebd5dfb905e64094a75baa4162ba8a0ad9de20b59d7e651314275a5373ba1e8",
-      "size": 4635
+      "sha256": "1591252b16553822be5afd7146a9ccbe357327c798521328169be2ec04f1ba1a",
+      "size": 4775
     },
     {
       "path": "structured/timestamp_backward.json",
-      "sha256": "dc7f1f134af3761ca626fa7bc9883c3916e00587ccb2e5d796f24b6befecb95a",
-      "size": 4728
+      "sha256": "d8598b82048e046e471917730a90f7112d65f28ffef7149288282c995cb5fb68",
+      "size": 4868
     },
     {
       "path": "structured/black_frames.json",
-      "sha256": "c6ae303fc4d0bb747fe3994e9efcfb924955726fe4f8c27f1ae285f6662c2585",
-      "size": 9577
+      "sha256": "017f1d3a97f8c9e392a656b82d8347b39247d9f00b581039b5d979315bdec7d2",
+      "size": 9717
     },
     {
       "path": "structured/empty_point_cloud.json",
-      "sha256": "4f87e1b2710d3d6833bc347972a9a0139b68d1df4e7170af640db3bb07b98da2",
-      "size": 7675
+      "sha256": "a2a3fd5b88148779cd3001ccf3b08ad4b82348ce4403755d6e6ae4a6a8752049",
+      "size": 7815
     }
   ]
 }

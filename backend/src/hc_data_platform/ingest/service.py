@@ -7,7 +7,6 @@ from threading import RLock
 from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
-from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.pagination import CursorCodec
 from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdempotencyStore
@@ -635,11 +634,14 @@ class UploadSessionService:
     def commit_manifest(
         self,
         *,
+        organization_id: str,
         session_id: str,
         manifest: RolloutManifestV1,
         actor_id: str = "system",
         request_id: str = "ingest-service",
     ) -> RawObjectCommittedV1:
+        if not organization_id:
+            raise ValueError("organization_id must not be empty")
         session = self.get_session(session_id)
         if (
             session.project_id != manifest.project_id
@@ -676,7 +678,12 @@ class UploadSessionService:
                     actor_id=actor_id,
                     request_id=request_id,
                 )
-                self._register_raw_source(session=session, manifest=manifest, event=event)
+                self._register_raw_source(
+                    organization_id=organization_id,
+                    session=session,
+                    manifest=manifest,
+                    event=event,
+                )
                 return event
             workflow = self._stage_workflow_trigger(
                 session=session,
@@ -685,7 +692,12 @@ class UploadSessionService:
                 request_id=request_id,
             )
             event = existing.model_copy(update={"workflow": workflow})
-            self._register_raw_source(session=session, manifest=manifest, event=event)
+            self._register_raw_source(
+                organization_id=organization_id,
+                session=session,
+                manifest=manifest,
+                event=event,
+            )
             return event
         if session.expected_sha256 != manifest.sha256:
             raise _rollout_content_conflict()
@@ -777,7 +789,12 @@ class UploadSessionService:
                 actor_id=actor_id,
                 request_id=request_id,
             )
-            self._register_raw_source(session=session, manifest=manifest, event=event)
+            self._register_raw_source(
+                organization_id=organization_id,
+                session=session,
+                manifest=manifest,
+                event=event,
+            )
             return event
         workflow = self._stage_workflow_trigger(
             session=session,
@@ -786,24 +803,24 @@ class UploadSessionService:
             request_id=request_id,
         )
         event = event.model_copy(update={"workflow": workflow})
-        self._register_raw_source(session=session, manifest=manifest, event=event)
+        self._register_raw_source(
+            organization_id=organization_id,
+            session=session,
+            manifest=manifest,
+            event=event,
+        )
         return event
 
     def _register_raw_source(
         self,
         *,
+        organization_id: str,
         session: UploadSession,
         manifest: RolloutManifestV1,
         event: RawObjectCommittedV1,
     ) -> None:
         """Register MCAP/capture Raw using the same graph as native LeRobot."""
 
-        try:
-            organization_id = current_request_context().organization_id
-        except RuntimeError:
-            # Unit-level callers use the in-memory repository without HTTP context.
-            organization_id = None
-        organization_id = organization_id or "legacy"
         raw_source_id = f"upload-{session.session_id.replace('-', '')}"
         is_continuous = manifest.processing_mode is IngestProcessingMode.CONTINUOUS_RECORDING
         source_format = RawSourceFormat.CAPTURE_BUNDLE if is_continuous else RawSourceFormat.MCAP

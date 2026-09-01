@@ -2155,13 +2155,26 @@ class StorageGovernanceService:
         project_id: str,
         capability: str,
     ) -> None:
-        organization_id: str | None = None
-        region_code: str | None = None
+        organization_id: str
+        region_code: str | None
         try:
             request_scope = current_request_context()
         except RuntimeError:
-            # Direct service callers retain the legacy project-level contract.
-            pass
+            matching_scopes = {
+                (organization_id, region_code)
+                for organization_id, scoped_project_id, region_code in (
+                    actor.organization_scope_triples
+                )
+                if scoped_project_id == project_id
+            }
+            if len(matching_scopes) != 1:
+                raise problem(
+                    status=403,
+                    code="ORGANIZATION_SCOPE_REQUIRED",
+                    title="Organization scope required",
+                    detail="Storage operations require one exact organization/project scope.",
+                ) from None
+            organization_id, region_code = next(iter(matching_scopes))
         else:
             if request_scope.project_id not in (None, project_id):
                 raise problem(
@@ -2170,8 +2183,16 @@ class StorageGovernanceService:
                     title="Project access denied",
                     detail="The selected request scope does not match this project.",
                 )
-            organization_id = request_scope.organization_id
+            scoped_organization_id = request_scope.organization_id
             region_code = request_scope.region_code
+            if scoped_organization_id is None:
+                raise problem(
+                    status=403,
+                    code="ORGANIZATION_SCOPE_REQUIRED",
+                    title="Organization scope required",
+                    detail="Storage operations require an organization scope.",
+                )
+            organization_id = scoped_organization_id
 
         ScopeGuard.require(actor, project_id, region_code, organization_id)
         actor.require_capability(capability, project_id, organization_id)

@@ -29,8 +29,7 @@ from hc_data_platform.lerobot_imports.models import (
     CreateLeRobotImportV1,
     LeRobotSourceFileV1,
 )
-
-from .lerobot_unitree_g1_import import find_local_source_root
+from hc_data_platform.lerobot_imports.source_profile import find_local_source_root
 
 PROJECT_ID = "be22-hf-g1-video-20260819-02-p1"
 COLLECTION_TASK_ID = "14d16ba1-d95a-5ee3-aaa7-7b7d78091b52"

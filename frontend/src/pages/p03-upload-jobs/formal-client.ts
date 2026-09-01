@@ -6,10 +6,7 @@ import type {
 } from "../../shared/api/generated/platform";
 
 type RuntimeUploadManifest = components["schemas"]["RolloutManifestV1"];
-export type UploadManifest = Omit<RuntimeUploadManifest, "processing_mode"> & {
-  /** Omitted by legacy direct-episode recorders; the API defaults it server-side. */
-  processing_mode?: RuntimeUploadManifest["processing_mode"];
-};
+export type UploadManifest = RuntimeUploadManifest;
 type RuntimeManifestPreflight =
   components["schemas"]["ManifestPreflightResultV1"];
 export type ManifestPreflight = Omit<RuntimeManifestPreflight, "manifest"> & {

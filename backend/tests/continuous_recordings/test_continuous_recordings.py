@@ -139,6 +139,7 @@ def _committed_services() -> tuple[
         [CompletedPart(part_number=part.part_number, etag=part.etag)],
     )
     committed = ingest.commit_manifest(
+        organization_id="org-a",
         session_id=session.session_id,
         manifest=manifest,
         actor_id="operator-a",

@@ -120,10 +120,17 @@ class CatalogConnection:
 def reader(*project_ids: str) -> AuthContext:
     return AuthContext(
         subject_id="inventory-reader",
+        organization_ids=frozenset({"organization-a"}),
         project_ids=frozenset(project_ids),
         region_codes=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset((project_id, None) for project_id in project_ids),
+        organization_scope_triples=frozenset(
+            ("organization-a", project_id, None) for project_id in project_ids
+        ),
+        organization_scoped_capabilities=frozenset(
+            ("organization-a", project_id, "storage.overview.read") for project_id in project_ids
+        ),
     )
 
 

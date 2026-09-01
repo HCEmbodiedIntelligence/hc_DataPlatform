@@ -752,8 +752,6 @@ async def verify_raw(request: VerificationActivityInput) -> VerificationActivity
         ):
             raise ValueError("Raw verification report lineage does not match activity input")
         if _dependencies.verification_reports is not None:
-            if request.project_id is None or request.region_code is None:
-                raise ValueError("verification persistence requires project_id and region_code")
             _dependencies.verification_reports.put_report(
                 project_id=request.project_id,
                 region_code=request.region_code,
@@ -816,11 +814,6 @@ async def process_ingest_source(
             ):
                 raise ValueError("Raw verification report lineage does not match activity input")
             if _dependencies.verification_reports is not None:
-                if (
-                    request.verification.project_id is None
-                    or request.verification.region_code is None
-                ):
-                    raise ValueError("verification persistence requires project_id and region_code")
                 _dependencies.verification_reports.put_report(
                     project_id=request.verification.project_id,
                     region_code=request.verification.region_code,
@@ -1037,8 +1030,6 @@ async def evaluate_quality(request: QualityActivityInput) -> QualityActivityOutp
         ):
             raise ValueError("Quality report lineage does not match activity input")
         if _dependencies.quality_reports is not None:
-            if request.project_id is None or request.region_code is None:
-                raise ValueError("quality persistence requires project_id and region_code")
             _dependencies.quality_reports.put_report(
                 project_id=request.project_id,
                 region_code=request.region_code,
@@ -1049,16 +1040,14 @@ async def evaluate_quality(request: QualityActivityInput) -> QualityActivityOutp
     lineage = request.data or request.source
     if lineage is None:
         raise ValueError("quality activity lineage is missing")
-    organization_id = request.source.organization_id if request.source is not None else None
     with _worker_scope(
         request.project_id,
         request.region_code,
         lineage.rollout_id,
-        organization_id=organization_id,
+        organization_id=request.organization_id,
     ):
         report = await _invoke("quality", evaluate_and_persist)
-    project_id = request.project_id or "unknown"
-    workflow_id = locator_workflow_id("ingest-rollout", project_id, lineage.rollout_id)
+    workflow_id = locator_workflow_id("ingest-rollout", request.project_id, lineage.rollout_id)
     QC_OUTCOMES.labels(
         outcome=report.status.value,
         profile_id=report.profile_id,
@@ -1118,8 +1107,6 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
         ):
             raise ValueError("Alignment manifest lineage does not match activity input")
         if _dependencies.alignment_manifests is not None:
-            if request.region_code is None:
-                raise ValueError("alignment persistence requires region_code")
             _dependencies.alignment_manifests.put_ready_manifest(
                 project_id=request.project_id,
                 region_code=request.region_code,
@@ -1172,11 +1159,10 @@ def _publish_alignment_staging(
         while chunk := stream.read(8 * 1024 * 1024):
             digest.update(chunk)
     file_sha256 = digest.hexdigest()
-    organization_id = request.source.organization_id if request.source is not None else "legacy"
     object_key = "/".join(
         (
             "staging/alignment",
-            quote(organization_id, safe="-._~"),
+            quote(request.organization_id, safe="-._~"),
             quote(request.project_id, safe="-._~"),
             quote(request.dataset_id, safe="-._~"),
             quote(manifest.rollout_id, safe="-._~"),
@@ -1844,19 +1830,3 @@ ALL_ACTIVITIES = (
     reconcile_catalog,
     reconcile_publication,
 )
-def _write_alignment_camera_shard(
-    *,
-    source_path: Path,
-    destination_path: Path,
-    rollout_id: str,
-    camera_id: str,
-    expected_rows: int,
-) -> None:
-    """Compatibility wrapper for tests and one-camera callers."""
-
-    _write_alignment_camera_shards(
-        source_path=source_path,
-        destinations={camera_id: destination_path},
-        rollout_id=rollout_id,
-        expected_rows=expected_rows,
-    )

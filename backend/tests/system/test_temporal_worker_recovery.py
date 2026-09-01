@@ -30,7 +30,7 @@ def _workflow_input() -> DatasetWriterWorkflowInput:
         step_index=0,
         timestamp_ns=0,
         modalities={"joint": [0.0]},
-        source_timestamps_ns={"joint": 0},
+        source_timestamps_ns={"joint": (0,)},
         time_error_ns={"joint": 0},
         valid={"joint": True},
         repeated={"joint": False},

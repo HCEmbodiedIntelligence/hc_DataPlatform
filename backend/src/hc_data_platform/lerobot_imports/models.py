@@ -6,10 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from hc_data_platform.ingest.models import CompletedPart, Identifier, PartAuthorization
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as converter
-from hc_data_platform.tools.lerobot_unitree_g1_import import (
-    is_canonical_lerobot_object,
-    validate_source_info,
-)
+
+from .source_profile import is_canonical_lerobot_object, validate_source_info
 
 
 def _safe_source_path(value: str) -> str:

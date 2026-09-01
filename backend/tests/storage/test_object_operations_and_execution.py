@@ -35,17 +35,26 @@ NOW = datetime(2026, 8, 21, 6, tzinfo=timezone.utc)
 
 
 def actor(subject_id: str = "storage-requester") -> AuthContext:
-    return AuthContext.service(
+    capabilities = {
+        "storage.object.read",
+        "storage.object.manage",
+        "storage.lifecycle.read",
+        "storage.lifecycle.manage",
+        "storage.lifecycle.execute",
+        "storage.lifecycle.approve",
+    }
+    return AuthContext(
         subject_id=subject_id,
-        capabilities={
-            "storage.object.read",
-            "storage.object.manage",
-            "storage.lifecycle.read",
-            "storage.lifecycle.manage",
-            "storage.lifecycle.execute",
-            "storage.lifecycle.approve",
-        },
-        project_ids={"project-a"},
+        capabilities=frozenset(capabilities),
+        project_ids=frozenset({"project-a"}),
+        region_codes=frozenset(),
+        service_identity=True,
+        scope_pairs=frozenset({("project-a", None)}),
+        organization_ids=frozenset({"organization-a"}),
+        organization_scope_triples=frozenset({("organization-a", "project-a", None)}),
+        organization_scoped_capabilities=frozenset(
+            ("organization-a", "project-a", capability) for capability in capabilities
+        ),
     )
 
 

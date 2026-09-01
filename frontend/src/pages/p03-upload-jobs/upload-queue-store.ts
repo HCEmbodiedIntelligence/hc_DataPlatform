@@ -199,8 +199,7 @@ export function partUploadConcurrency(
  * Bound an XHR timeout by the actual short-lived authorization, while allowing
  * large legal multipart parts enough time on a conservative 1 MiB/s link.  The
  * server supplies the deadline, so the browser never knowingly keeps a PUT alive
- * through a presigned URL expiry.  Invalid or already-expired legacy grants retain
- * the existing bounded timeout and are rejected by object storage as before.
+ * through a presigned URL expiry.
  */
 export function partTransferTimeoutMs(
   partBytes: number,
@@ -217,8 +216,9 @@ export function partTransferTimeoutMs(
   const expiresAtMs = Date.parse(authorization.expires_at);
   const authorizedWindowMs =
     expiresAtMs - nowMs - PRESIGNED_URL_SETTLE_MARGIN_MS;
-  if (!Number.isFinite(authorizedWindowMs) || authorizedWindowMs <= 0)
-    return PART_TRANSFER_TIMEOUT_MS;
+  if (!Number.isFinite(authorizedWindowMs) || authorizedWindowMs <= 0) {
+    throw new RangeError("part authorization is invalid or expired");
+  }
   return Math.max(
     MIN_PART_TRANSFER_TIMEOUT_MS,
     Math.min(desiredMs, authorizedWindowMs),
@@ -1086,8 +1086,7 @@ async function prepareUploadSession(
     {
       manifest: {
         ...preflight.manifest,
-        processing_mode:
-          preflight.manifest.processing_mode ?? "DIRECT_EPISODE",
+        processing_mode: preflight.manifest.processing_mode,
       },
       ...(sourceType === "BROWSER_MULTIPART"
         ? { part_numbers: initialPartNumbers }

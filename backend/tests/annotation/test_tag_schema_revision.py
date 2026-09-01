@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from random import Random
 
 import pytest
@@ -10,7 +9,6 @@ from hc_data_platform.annotation import (
     AnnotationActor,
     AnnotationIdempotencyConflictError,
     AnnotationObjectRelation,
-    AnnotationOperation,
     AnnotationPermissionError,
     AnnotationPolicyUnconfirmedError,
     AnnotationTag,
@@ -18,10 +16,8 @@ from hc_data_platform.annotation import (
     InMemoryAnnotationService,
     MutualExclusionConstraint,
     ObjectRelationConstraint,
-    OperationKind,
     ReviewCheckKind,
     ReviewDecision,
-    RevisionOrigin,
     SelfReviewPolicy,
     TagAttributeDefinition,
     TagAttributeType,
@@ -31,14 +27,6 @@ from hc_data_platform.annotation import (
     TagSchemaImmutableError,
     TagSchemaStatus,
 )
-from hc_data_platform.annotation.legacy_cleaning import (
-    LegacyCleaningAnnotationAdapter,
-    LegacyCleaningDraft,
-    LegacyCleaningOperation,
-    LegacyCleaningRevision,
-)
-from hc_data_platform.annotation.router import router
-from hc_data_platform.annotation.validation import rehash_legacy_revisions
 
 
 def actor(actor_id: str, *capabilities: str) -> AnnotationActor:
@@ -49,9 +37,7 @@ def actor(actor_id: str, *capabilities: str) -> AnnotationActor:
     )
 
 
-PUBLISHER = actor(
-    "publisher", "data_schema.read", "data_schema.publish", "dataset_version.publish"
-)
+PUBLISHER = actor("publisher", "data_schema.read", "data_schema.publish", "dataset_version.publish")
 ANNOTATOR = actor(
     "alice",
     "data_schema.read",
@@ -449,90 +435,3 @@ def test_review_checks_exact_submission_and_open_08_policy_is_configurable() -> 
         )
         is not None
     )
-
-
-def test_legacy_cleaning_migrates_to_annotation_history_and_preserves_audit() -> None:
-    service = InMemoryAnnotationService()
-    adapter = LegacyCleaningAnnotationAdapter(service)
-    created_at = datetime(2025, 7, 8, 9, 10, tzinfo=timezone.utc)
-    draft = LegacyCleaningDraft(
-        draft_id="p11-7",
-        project_id="project-a",
-        dataset_id="dataset-a",
-        dataset_version=5,
-        base_lance_version=44,
-        base_step_count=500,
-        rollout_id="rollout-legacy",
-        revisions=(
-            LegacyCleaningRevision(
-                revision=1,
-                actor_id="legacy-user",
-                created_at=created_at,
-                audit_event_id="audit-9",
-                operations=(
-                    LegacyCleaningOperation(
-                        operation_id="exclude", kind="INVALID_MASK", start_step=30, end_step=40
-                    ),
-                    LegacyCleaningOperation(
-                        operation_id="unknown", kind="SMOOTH", start_step=50, end_step=60
-                    ),
-                ),
-            ),
-        ),
-    )
-    first = adapter.migrate(draft)
-    replay = adapter.migrate(draft)
-    assert first.items[0].mode == "MIGRATED"
-    assert first.items[0].unsupported_operation_kinds == ("SMOOTH",)
-    assert replay.items[0].mode == "ALREADY_MIGRATED"
-    revision = service.get_revision(first.task_id, 1)
-    assert revision.origin is RevisionOrigin.LEGACY_CLEANING
-    assert revision.author_id == "legacy-user"
-    assert revision.created_at == created_at
-    assert revision.legacy_audit is not None
-    assert revision.legacy_audit.source_audit_event_id == "audit-9"
-    assert revision.legacy_audit.source_payload["operations"][1]["kind"] == "SMOOTH"
-    assert all("cleaning" not in route.path for route in router.routes)
-
-
-def test_pre_0002_zero_hashes_are_reconstructed_without_mutating_revision_history() -> None:
-    service = InMemoryAnnotationService()
-    service.create_task(
-        task_id="legacy-hash",
-        project_id="project-a",
-        dataset_id="dataset-a",
-        dataset_version=7,
-        base_step_count=100,
-        rollout_id="legacy-hash-rollout",
-    )
-    annotator = actor(
-        "legacy-user",
-        "annotation_task.read",
-        "annotation_task.claim",
-        "annotation.save",
-        "annotation.submit",
-    )
-    service.claim("legacy-hash", annotator)
-    service.save_draft(
-        "legacy-hash",
-        annotator,
-        (
-            AnnotationOperation(
-                operation_id="old-exclude",
-                kind=OperationKind.EXCLUDE,
-                start_step=1,
-                end_step=3,
-            ),
-        ),
-        expected_revision=0,
-        if_match=service.get_task("legacy-hash").etag,
-        client_mutation_id="old-save",
-    )
-    legacy_rows = tuple(
-        revision.model_copy(update={"content_hash": "0" * 64})
-        for revision in service.list_revisions("legacy-hash")
-    )
-    restored = rehash_legacy_revisions(legacy_rows)
-    assert [revision.revision for revision in restored] == [0, 1]
-    assert all(revision.content_hash != "0" * 64 for revision in restored)
-    assert restored[1].operations == legacy_rows[1].operations

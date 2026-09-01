@@ -66,39 +66,62 @@ def test_storage_router_requires_auth_and_exact_service_scope() -> None:
     path = "/api/v1/projects/project-a/storage/lifecycle-policies"
     assert TestClient(app_with_auth(None)).get(path).status_code == 401
 
-    wrong_scope = AuthContext.service(
+    wrong_scope = AuthContext(
         subject_id="worker",
-        capabilities={"storage.lifecycle.read"},
-        project_ids={"project-b"},
+        capabilities=frozenset({"storage.lifecycle.read"}),
+        project_ids=frozenset({"project-b"}),
+        region_codes=frozenset(),
+        service_identity=True,
+        scope_pairs=frozenset({("project-b", None)}),
+        organization_ids=frozenset({"organization-a"}),
+        organization_scope_triples=frozenset({("organization-a", "project-b", None)}),
+        organization_scoped_capabilities=frozenset(
+            {("organization-a", "project-b", "storage.lifecycle.read")}
+        ),
     )
-    denied = TestClient(app_with_auth(wrong_scope)).get(path)
+    denied = TestClient(app_with_auth(wrong_scope)).get(
+        path,
+        headers={"X-Organization-Id": "organization-a", "X-Project-Id": "project-a"},
+    )
     assert denied.status_code == 403
-    assert denied.json()["code"] == "SERVICE_SCOPE_REQUIRED"
+    assert denied.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
 
 
 def test_storage_router_enforces_page_capabilities_and_private_read_cache_headers() -> None:
     read_auth = AuthContext(
         subject_id="storage-reader",
+        organization_ids=frozenset({"organization-a"}),
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
         capabilities=frozenset({"storage.lifecycle.read"}),
         scope_pairs=frozenset({("project-a", None)}),
+        organization_scope_triples=frozenset({("organization-a", "project-a", None)}),
+        organization_scoped_capabilities=frozenset(
+            {("organization-a", "project-a", "storage.lifecycle.read")}
+        ),
     )
     response = TestClient(app_with_auth(read_auth)).get(
-        "/api/v1/projects/project-a/storage/lifecycle-policies"
+        "/api/v1/projects/project-a/storage/lifecycle-policies",
+        headers={"X-Organization-Id": "organization-a", "X-Project-Id": "project-a"},
     )
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, no-store"
 
     wrong_capability = AuthContext(
         subject_id="storage-overview-only",
+        organization_ids=frozenset({"organization-a"}),
         project_ids=frozenset({"project-a"}),
         region_codes=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({("project-a", None)}),
+        organization_scope_triples=frozenset({("organization-a", "project-a", None)}),
+        organization_scoped_capabilities=frozenset(
+            {("organization-a", "project-a", "storage.overview.read")}
+        ),
     )
     denied = TestClient(app_with_auth(wrong_capability)).get(
-        "/api/v1/projects/project-a/storage/lifecycle-policies"
+        "/api/v1/projects/project-a/storage/lifecycle-policies",
+        headers={"X-Organization-Id": "organization-a", "X-Project-Id": "project-a"},
     )
     assert denied.status_code == 403
     assert denied.json()["code"] == "CAPABILITY_REQUIRED"
@@ -113,10 +136,23 @@ def test_generated_inventory_serves_capacity_and_history_without_cross_project_l
     )
     auth = AuthContext(
         subject_id="storage-inventory-reader",
+        organization_ids=frozenset({"organization-a"}),
         project_ids=frozenset({"project-inventory", "project-other"}),
         region_codes=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({("project-inventory", None), ("project-other", None)}),
+        organization_scope_triples=frozenset(
+            {
+                ("organization-a", "project-inventory", None),
+                ("organization-a", "project-other", None),
+            }
+        ),
+        organization_scoped_capabilities=frozenset(
+            {
+                ("organization-a", "project-inventory", "storage.overview.read"),
+                ("organization-a", "project-other", "storage.overview.read"),
+            }
+        ),
     )
     app = app_with_auth(auth)
     app.dependency_overrides[get_storage_governance_service] = lambda: service
@@ -124,15 +160,21 @@ def test_generated_inventory_serves_capacity_and_history_without_cross_project_l
 
     capacity = client.get(
         "/api/v1/projects/project-inventory/storage/capacity",
-        headers={"X-Project-Id": "project-inventory"},
+        headers={
+            "X-Organization-Id": "organization-a",
+            "X-Project-Id": "project-inventory",
+        },
     )
     history = client.get(
         "/api/v1/projects/project-inventory/storage/capacity/history",
-        headers={"X-Project-Id": "project-inventory"},
+        headers={
+            "X-Organization-Id": "organization-a",
+            "X-Project-Id": "project-inventory",
+        },
     )
     other = client.get(
         "/api/v1/projects/project-other/storage/capacity",
-        headers={"X-Project-Id": "project-other"},
+        headers={"X-Organization-Id": "organization-a", "X-Project-Id": "project-other"},
     )
 
     assert capacity.status_code == 200

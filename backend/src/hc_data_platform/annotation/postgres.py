@@ -28,7 +28,6 @@ from .models import (
     AnnotationTask,
     AnnotationTaskCreationSource,
     AnnotationTaskKind,
-    LegacyAuditReference,
     OperationKind,
     ReviewCheckKind,
     ReviewDecision,
@@ -40,7 +39,6 @@ from .models import (
 )
 from .ports import AnnotationAggregate
 from .repository import validate_aggregate
-from .validation import rehash_legacy_revisions
 
 
 class DbApiCursor(Protocol):
@@ -112,8 +110,7 @@ def require_repository_scope(
 
     RLS remains the database backstop, but an owner/superuser connection can bypass
     RLS.  Repository writes therefore verify the selected scope explicitly too.
-    Project-wide legacy/schema rows intentionally omit ``region_code``; task rows do
-    not.
+    Project-wide Schema rows intentionally omit ``region_code``; task rows do not.
     """
 
     cursor.execute(
@@ -270,7 +267,6 @@ class PostgresAnnotationRepository:
         region_code: str,
         status: AnnotationStatus | None,
         origin: RevisionOrigin | None,
-        legacy_draft_id: str | None,
         snapshot_at: datetime,
         after_updated_at: datetime | None,
         after_task_id: str | None,
@@ -306,8 +302,7 @@ class PostgresAnnotationRepository:
                     revision.origin AS latest_origin,
                     revision.author_id AS latest_author_id,
                     revision.content_hash AS latest_content_hash,
-                    revision.created_at AS latest_created_at,
-                    legacy.legacy_draft_id
+                    revision.created_at AS latest_created_at
                 FROM annotation.annotation_tasks AS task
                 INNER JOIN annotation.annotation_revisions AS revision
                   ON revision.task_id = task.task_id
@@ -315,20 +310,6 @@ class PostgresAnnotationRepository:
                 LEFT JOIN annotation.annotation_submissions AS submission
                   ON submission.task_id = task.task_id
                  AND submission.submission_id = task.current_submission_id
-                LEFT JOIN LATERAL (
-                    SELECT NULLIF(legacy_revision.legacy_audit ->> 'draft_id', '')
-                        AS legacy_draft_id
-                    FROM annotation.annotation_revisions AS legacy_revision
-                    WHERE legacy_revision.task_id = task.task_id
-                      AND legacy_revision.origin = 'LEGACY_CLEANING'
-                      AND legacy_revision.legacy_audit IS NOT NULL
-                      AND (
-                          %s::text IS NULL
-                          OR legacy_revision.legacy_audit ->> 'draft_id' = %s
-                      )
-                    ORDER BY legacy_revision.revision DESC
-                    LIMIT 1
-                ) AS legacy ON TRUE
                 WHERE task.project_id = %s
                   AND task.region_code = %s
                   AND task.project_id = NULLIF(current_setting('app.project_id', true), '')
@@ -336,7 +317,6 @@ class PostgresAnnotationRepository:
                   AND task.updated_at <= %s
                   AND (%s::text IS NULL OR task.status = %s)
                   AND (%s::text IS NULL OR revision.origin = %s)
-                  AND (%s::text IS NULL OR legacy.legacy_draft_id = %s)
                   AND (
                       %s::timestamptz IS NULL
                       OR (task.updated_at, task.task_id) < (%s::timestamptz, %s::text)
@@ -345,8 +325,6 @@ class PostgresAnnotationRepository:
                 LIMIT %s
                 """,
                 (
-                    legacy_draft_id,
-                    legacy_draft_id,
                     project_id,
                     region_code,
                     snapshot_at,
@@ -354,8 +332,6 @@ class PostgresAnnotationRepository:
                     None if status is None else status.value,
                     None if origin is None else origin.value,
                     None if origin is None else origin.value,
-                    legacy_draft_id,
-                    legacy_draft_id,
                     after_updated_at,
                     after_updated_at,
                     after_task_id,
@@ -378,7 +354,6 @@ class PostgresAnnotationRepository:
         request_id: str,
         status: AnnotationStatus | None,
         origin: RevisionOrigin | None,
-        legacy_draft_id: str | None,
         limit: int,
     ) -> None:
         connection = self._connection_factory()
@@ -408,7 +383,6 @@ class PostgresAnnotationRepository:
                         {
                             "status": None if status is None else status.value,
                             "origin": None if origin is None else origin.value,
-                            "legacy_draft_filter": legacy_draft_id is not None,
                             "limit": limit,
                         },
                         sort_keys=True,
@@ -767,7 +741,7 @@ class PostgresAnnotationRepository:
                 """
                 SELECT task_id, revision, parent_revision, author_id,
                        client_mutation_id, base_lance_version, tag_schema_id,
-                       tag_schema_version, tags, origin, legacy_audit,
+                       tag_schema_version, tags, origin,
                        content_hash, created_at
                 FROM annotation.annotation_revisions
                 WHERE task_id = %s
@@ -849,43 +823,30 @@ class PostgresAnnotationRepository:
                     modality_scope="ALL_MODALITIES",
                 )
             )
-        revisions = rehash_legacy_revisions(
-            tuple(
-                AnnotationRevision(
-                    task_id=str(row["task_id"]),
-                    revision=_as_int(row["revision"]),
-                    parent_revision=(
-                        None if row["parent_revision"] is None else _as_int(row["parent_revision"])
-                    ),
-                    author_id=str(row["author_id"]),
-                    client_mutation_id=str(row["client_mutation_id"]),
-                    base_lance_version=_as_int(row["base_lance_version"]),
-                    tag_schema_id=str(row["tag_schema_id"]),
-                    tag_schema_version=_as_int(row["tag_schema_version"]),
-                    tags=tuple(
-                        AnnotationTag.model_validate(item) for item in _as_json(row["tags"])
-                    ),
-                    operations=tuple(operations.get(_as_int(row["revision"]), ())),
-                    origin=RevisionOrigin(str(row["origin"])),
-                    legacy_audit=(
-                        None
-                        if row["legacy_audit"] is None
-                        else LegacyAuditReference.model_validate(_as_json(row["legacy_audit"]))
-                    ),
-                    content_hash=str(row["content_hash"]),
-                    created_at=cast(datetime, row["created_at"]),
-                )
-                for row in revision_rows
+        revisions = tuple(
+            AnnotationRevision(
+                task_id=str(row["task_id"]),
+                revision=_as_int(row["revision"]),
+                parent_revision=(
+                    None if row["parent_revision"] is None else _as_int(row["parent_revision"])
+                ),
+                author_id=str(row["author_id"]),
+                client_mutation_id=str(row["client_mutation_id"]),
+                base_lance_version=_as_int(row["base_lance_version"]),
+                tag_schema_id=str(row["tag_schema_id"]),
+                tag_schema_version=_as_int(row["tag_schema_version"]),
+                tags=tuple(AnnotationTag.model_validate(item) for item in _as_json(row["tags"])),
+                operations=tuple(operations.get(_as_int(row["revision"]), ())),
+                origin=RevisionOrigin(str(row["origin"])),
+                content_hash=str(row["content_hash"]),
+                created_at=cast(datetime, row["created_at"]),
             )
+            for row in revision_rows
         )
         reviews = tuple(
             AnnotationReview(
                 review_id=str(row["review_id"]),
-                submission_id=(
-                    "legacy-submission"
-                    if row["submission_id"] is None
-                    else str(row["submission_id"])
-                ),
+                submission_id=row["submission_id"],
                 task_id=str(row["task_id"]),
                 revision=_as_int(row["revision"]),
                 reviewer_id=str(row["reviewer_id"]),
@@ -1030,9 +991,6 @@ class PostgresAnnotationRepository:
             approved_review_id=(
                 None if row["approved_review_id"] is None else str(row["approved_review_id"])
             ),
-            legacy_draft_id=(
-                None if row["legacy_draft_id"] is None else str(row["legacy_draft_id"])
-            ),
             updated_at=cast(datetime, row["updated_at"]),
         )
 
@@ -1043,10 +1001,10 @@ class PostgresAnnotationRepository:
             INSERT INTO annotation.annotation_revisions (
                 task_id, revision, parent_revision, author_id,
                 client_mutation_id, base_lance_version, tag_schema_id,
-                tag_schema_version, tags, origin, legacy_audit, content_hash, created_at
+                tag_schema_version, tags, origin, content_hash, created_at
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
-                %s, %s::jsonb, %s, %s
+                %s, %s, %s
             )
             """,
             (
@@ -1060,11 +1018,6 @@ class PostgresAnnotationRepository:
                 revision.tag_schema_version,
                 json.dumps([tag.model_dump(mode="json") for tag in revision.tags]),
                 revision.origin.value,
-                (
-                    None
-                    if revision.legacy_audit is None
-                    else json.dumps(revision.legacy_audit.model_dump(mode="json"))
-                ),
                 revision.content_hash,
                 revision.created_at,
             ),
@@ -1086,38 +1039,6 @@ class PostgresAnnotationRepository:
                     operation.start_step,
                     operation.end_step,
                     operation.reason,
-                ),
-            )
-        if revision.legacy_audit is not None:
-            audit = revision.legacy_audit
-            cursor.execute(
-                """
-                INSERT INTO annotation.legacy_cleaning_migrations (
-                    organization_id, project_id, region_code,
-                    source_draft_id, source_revision, source_audit_event_id,
-                    source_actor_id, source_created_at, target_task_id,
-                    target_revision, source_payload
-                )
-                SELECT
-                    task.organization_id, task.project_id, task.region_code,
-                    %s, %s, %s, %s, %s, %s, %s, %s::jsonb
-                FROM annotation.annotation_tasks AS task
-                WHERE task.task_id = %s
-                ON CONFLICT (
-                    organization_id, project_id, region_code,
-                    source_draft_id, source_revision
-                ) DO NOTHING
-                """,
-                (
-                    audit.draft_id,
-                    audit.source_revision,
-                    audit.source_audit_event_id,
-                    audit.source_actor_id,
-                    audit.source_created_at,
-                    revision.task_id,
-                    revision.revision,
-                    json.dumps(audit.source_payload),
-                    revision.task_id,
                 ),
             )
 
@@ -1152,7 +1073,6 @@ class PostgresAnnotationRepository:
             action = {
                 RevisionOrigin.ANNOTATION: "annotation.revision.created",
                 RevisionOrigin.ANNOTATION_RESTORE: "annotation.revision.restored",
-                RevisionOrigin.LEGACY_CLEANING: "annotation.legacy_cleaning.imported",
             }[revision.origin]
             actor_id = mutation.actor_id
             resource_type = "annotation_revision"

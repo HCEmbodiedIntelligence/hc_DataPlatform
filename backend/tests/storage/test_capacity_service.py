@@ -16,15 +16,21 @@ from hc_data_platform.storage.repository import InMemoryStorageRepository
 from hc_data_platform.storage.service import StorageGovernanceService
 
 OBSERVED_AT = datetime(2026, 8, 17, 2, 30, tzinfo=timezone.utc)
+ORGANIZATION_ID = "organization-a"
 
 
 def reader(project_id: str = "project-a") -> AuthContext:
     return AuthContext(
         subject_id="capacity-reader",
+        organization_ids=frozenset({ORGANIZATION_ID}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
         capabilities=frozenset({"storage.overview.read"}),
         scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({(ORGANIZATION_ID, project_id, None)}),
+        organization_scoped_capabilities=frozenset(
+            {(ORGANIZATION_ID, project_id, "storage.overview.read")}
+        ),
     )
 
 
@@ -34,10 +40,15 @@ def capability_reader(
 ) -> AuthContext:
     return AuthContext(
         subject_id="capacity-capability-reader",
+        organization_ids=frozenset({ORGANIZATION_ID}),
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
         capabilities=frozenset(capabilities),
         scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({(ORGANIZATION_ID, project_id, None)}),
+        organization_scoped_capabilities=frozenset(
+            (ORGANIZATION_ID, project_id, capability) for capability in capabilities
+        ),
     )
 
 
@@ -274,7 +285,7 @@ def test_capacity_scope_and_cursor_pagination_are_enforced() -> None:
 
     with pytest.raises(ProblemException) as denied:
         service.capacity_snapshot(project_id="project-a", actor=reader("project-b"))
-    assert denied.value.problem.code == "PROJECT_SCOPE_DENIED"
+    assert denied.value.problem.code == "ORGANIZATION_SCOPE_REQUIRED"
 
     with pytest.raises(ProblemException) as cursor_denied:
         service.inventory_page(
@@ -385,4 +396,4 @@ def test_capacity_history_keeps_current_snapshot_chronological_and_rejects_bad_r
     assert invalid.value.problem.code == "CAPACITY_HISTORY_RANGE_INVALID"
     with pytest.raises(ProblemException) as denied:
         service.capacity_history(project_id="project-a", actor=reader("project-b"))
-    assert denied.value.problem.code == "PROJECT_SCOPE_DENIED"
+    assert denied.value.problem.code == "ORGANIZATION_SCOPE_REQUIRED"

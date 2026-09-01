@@ -76,6 +76,7 @@ export function mountUploadVisualFixture(
     topics: [],
     expected_topics: [],
     actual_topics: [],
+    processing_mode: "DIRECT_EPISODE",
     files: [
       {
         path: "recording-timeout.mcap",

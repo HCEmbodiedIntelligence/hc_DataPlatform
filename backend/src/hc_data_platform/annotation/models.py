@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hc_data_platform.core.pagination import PageInfo
 
@@ -34,7 +34,6 @@ class OperationKind(str, Enum):
 class RevisionOrigin(str, Enum):
     ANNOTATION = "ANNOTATION"
     ANNOTATION_RESTORE = "ANNOTATION_RESTORE"
-    LEGACY_CLEANING = "LEGACY_CLEANING"
 
 
 class TagSchemaStatus(str, Enum):
@@ -47,7 +46,6 @@ class AnnotationTaskKind(str, Enum):
 
 
 class AnnotationTaskCreationSource(str, Enum):
-    LEGACY = "LEGACY"
     SYSTEM_LANCE = "SYSTEM_LANCE"
 
 
@@ -311,18 +309,6 @@ class AnnotationTag(BaseModel):
         return self
 
 
-class LegacyAuditReference(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    source_system: Literal["P11_CLEANING"] = "P11_CLEANING"
-    draft_id: str = Field(min_length=1)
-    source_revision: int = Field(ge=0)
-    source_actor_id: str = Field(min_length=1)
-    source_created_at: datetime
-    source_audit_event_id: str | None = None
-    source_payload: dict[str, object] = Field(default_factory=dict)
-
-
 class AnnotationReviewCheck(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -425,40 +411,30 @@ class AnnotationOperation(BaseModel):
 class AnnotationRevision(BaseModel):
     """An immutable revision containing the operations added by one draft save."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["1"] = "1"
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=0)
     parent_revision: int | None
     author_id: str = Field(min_length=1)
-    client_mutation_id: str = Field(
-        min_length=1,
-        validation_alias=AliasChoices("client_mutation_id", "mutation_id"),
-    )
+    client_mutation_id: str = Field(min_length=1)
     base_lance_version: int = Field(default=1, ge=1)
-    tag_schema_id: str = Field(default="legacy-flat", min_length=1)
+    tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
     tags: tuple[AnnotationTag, ...] = ()
     operations: tuple[AnnotationOperation, ...]
     origin: RevisionOrigin = RevisionOrigin.ANNOTATION
-    legacy_audit: LegacyAuditReference | None = None
     content_hash: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     created_at: datetime = Field(default_factory=utc_now)
-
-    @property
-    def mutation_id(self) -> str:
-        """Backward-compatible spelling; serialized contracts use client_mutation_id."""
-
-        return self.client_mutation_id
 
     @model_validator(mode="after")
     def validate_parent(self) -> AnnotationRevision:
         expected_parent = None if self.revision == 0 else self.revision - 1
         if self.parent_revision != expected_parent:
             raise ValueError("parent_revision must identify the immediately preceding revision")
-        if (self.origin is RevisionOrigin.LEGACY_CLEANING) != (self.legacy_audit is not None):
-            raise ValueError("legacy cleaning revisions require their source audit reference")
+        if self.content_hash == "0" * 64:
+            raise ValueError("content_hash must contain the current revision digest")
         return self
 
 
@@ -469,7 +445,7 @@ class AnnotationReview(BaseModel):
 
     schema_version: Literal["1"] = "1"
     review_id: str = Field(min_length=1)
-    submission_id: str = Field(default="legacy-submission", min_length=1)
+    submission_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
     revision: int = Field(ge=0)
     reviewer_id: str = Field(min_length=1)
@@ -525,11 +501,11 @@ class AnnotationTask(BaseModel):
     dataset_version: int = Field(ge=1)
     base_lance_version: int = Field(default=1, ge=1)
     base_step_count: int | None = Field(default=None, gt=0)
-    tag_schema_id: str = Field(default="legacy-flat", min_length=1)
+    tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
     rollout_id: str = Field(min_length=1)
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
-    creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.LEGACY
+    creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.SYSTEM_LANCE
     source_workflow_id: str | None = Field(default=None, min_length=1)
     assignee_id: str | None = None
     current_revision: int = Field(ge=0)
@@ -556,11 +532,8 @@ class AnnotationTask(BaseModel):
             raise ValueError("APPROVED state must identify an exact approved revision")
         if self.status is not AnnotationStatus.APPROVED and self.approved_revision is not None:
             raise ValueError("only APPROVED state may expose an approved revision")
-        # Pre-0002 tasks can retain a submitted_revision without a generated
-        # reviewable submission. New transitions always set both pointers, while
-        # this one-way compatibility permits their append-only history to load.
-        if self.submitted_revision is None and self.current_submission_id is not None:
-            raise ValueError("a submission pointer requires a submitted revision")
+        if (self.submitted_revision is None) != (self.current_submission_id is None):
+            raise ValueError("submission revision and submission id must be set together")
         return self
 
 
@@ -599,11 +572,6 @@ class AnnotationRevisionThread(BaseModel):
     current_episode_version: int | None = Field(default=None, ge=1)
     approved_revision: int | None = Field(default=None, ge=0)
     approved_review_id: str | None = Field(default=None, min_length=1)
-    # A public legacy-draft mapping is nullable for native tasks.  When present,
-    # it is read from a LEGACY_CLEANING revision already owned by this exact
-    # task/project/region, never inferred from the globally ambiguous legacy
-    # migration table's source key.
-    legacy_draft_id: str | None = Field(default=None, min_length=1)
     updated_at: datetime
 
 
@@ -669,9 +637,9 @@ class AnnotationApprovedV1(BaseModel):
     rollout_id: str
     task_id: str
     annotation_revision: int = Field(ge=0)
-    submission_id: str = Field(default="legacy-submission", min_length=1)
+    submission_id: str = Field(min_length=1)
     base_lance_version: int = Field(default=1, ge=1)
-    tag_schema_id: str = Field(default="legacy-flat", min_length=1)
+    tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
     revision_content_hash: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     review_id: str

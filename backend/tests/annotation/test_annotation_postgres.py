@@ -16,7 +16,6 @@ from hc_data_platform.annotation import (
     AnnotationConflictError,
     AnnotationOperation,
     AnnotationService,
-    LegacyAuditReference,
     OperationKind,
     PostgresAnnotationRepository,
     ReviewDecision,
@@ -543,34 +542,6 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
         base_step_count=100,
     )
 
-    legacy_task_id = f"thread-a-{suffix}"
-    legacy_claimed = service.claim(legacy_task_id, reader)
-    service.save_draft(
-        legacy_task_id,
-        reader,
-        (
-            AnnotationOperation(
-                operation_id=f"legacy-exclude-{suffix}",
-                kind=OperationKind.EXCLUDE,
-                start_step=10,
-                end_step=20,
-            ),
-        ),
-        expected_revision=0,
-        if_match=legacy_claimed.etag,
-        client_mutation_id=f"legacy-cleaning:draft_{suffix}:1",
-        origin=RevisionOrigin.LEGACY_CLEANING,
-        legacy_audit=LegacyAuditReference(
-            draft_id=f"draft_{suffix}",
-            source_revision=1,
-            source_actor_id="legacy-author",
-            source_created_at=legacy_claimed.created_at,
-            source_payload={"draft_id": f"draft_{suffix}", "revision": 1},
-        ),
-        imported_author_id="legacy-author",
-        imported_created_at=legacy_claimed.created_at,
-    )
-
     first = service.list_revision_threads(
         project_id=project_id,
         region_code=region_code,
@@ -580,7 +551,6 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
     )
     assert len(first.items) == 1
     assert first.items[0].region_code == region_code
-    assert first.items[0].legacy_draft_id is None
     assert first.page_info.has_next_page is True
     assert first.page_info.end_cursor is not None
     second = service.list_revision_threads(
@@ -594,19 +564,6 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
     assert len(second.items) == 1
     assert second.items[0].task_id != first.items[0].task_id
     assert second.page_info.has_next_page is False
-
-    legacy_only = service.list_revision_threads(
-        project_id=project_id,
-        region_code=region_code,
-        actor=reader,
-        request_id=f"thread-list-legacy-{suffix}",
-        origin=RevisionOrigin.LEGACY_CLEANING,
-        legacy_draft_id=f"draft_{suffix}",
-        limit=10,
-    )
-    assert [item.task_id for item in legacy_only.items] == [legacy_task_id]
-    assert legacy_only.items[0].legacy_draft_id == f"draft_{suffix}"
-    assert legacy_only.items[0].latest_revision.origin is RevisionOrigin.LEGACY_CLEANING
 
     with connect_for(region_code) as connection:
         events = connection.execute(
@@ -632,7 +589,6 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
     assert all(
         event[4]
         == {
-            "legacy_draft_filter": False,
             "limit": 1,
             "origin": None,
             "status": None,

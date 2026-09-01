@@ -5,9 +5,8 @@ import { resetIngestScenario, setIngestScenario } from "../scenarios/ingest";
 
 interface UploadListResponse {
   readonly items: readonly {
-    readonly upload_id: string;
-    readonly lifecycle_status: string;
-    readonly verification_status: string;
+    readonly session_id?: string;
+    readonly status: string;
   }[];
 }
 
@@ -32,29 +31,32 @@ afterEach(() => {
 afterAll(() => server.close());
 
 describe("upload session list filters", () => {
-  it("applies the lifecycle statuses used by the uploading tab", async () => {
-    const uploading = await listUploads(
-      "lifecycle_status=CREATED&lifecycle_status=AUTHORIZING&lifecycle_status=UPLOADING&lifecycle_status=PAUSED&lifecycle_status=FINALIZING",
-    );
-    expect(uploading.items.map((item) => item.upload_id)).toEqual([
-      "upload_fx_uploading",
+  it("filters by the current upload status", async () => {
+    const committed = await listUploads("status=RAW_COMMITTED");
+    expect(committed.items.map((item) => item.session_id)).toEqual([
+      "upload-session-fx-01",
     ]);
 
-    const completed = await listUploads("lifecycle_status=AVAILABLE");
-    expect(completed.items).toEqual([]);
+    const uploading = await listUploads("status=UPLOADING");
+    expect(uploading.items).toEqual([]);
   });
 
-  it("applies lifecycle statuses to the job-failed scenario", async () => {
+  it("applies the current status to the job-failed scenario", async () => {
     setIngestScenario("job-failed");
 
-    const failed = await listUploads(
-      "lifecycle_status=FAILED&lifecycle_status=QUARANTINED&lifecycle_status=EXPIRED",
-    );
-    expect(failed.items.map((item) => item.upload_id)).toEqual([
-      "upload_fx_quarantined",
+    const failed = await listUploads("status=FAILED");
+    expect(failed.items.map((item) => item.session_id)).toEqual([
+      "upload-session-fx-01",
     ]);
 
-    const uploading = await listUploads("lifecycle_status=UPLOADING");
-    expect(uploading.items).toEqual([]);
+    const committed = await listUploads("status=RAW_COMMITTED");
+    expect(committed.items).toEqual([]);
+  });
+
+  it("rejects removed query fields", async () => {
+    const response = await fetch(`${endpoint}?lifecycle_status=UPLOADING`, {
+      headers: { "X-Client-Version": "test" },
+    });
+    expect(response.status).toBe(422);
   });
 });

@@ -271,6 +271,7 @@ async def create_upload_session(
 def list_upload_sessions(
     project_id: str,
     region_code: str,
+    request: Request,
     response: Response,
     auth: Auth,
     status: UploadStatus | None = None,
@@ -278,6 +279,20 @@ def list_upload_sessions(
     cursor: str | None = Query(default=None, min_length=16, max_length=16_384),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> UploadSessionListV1:
+    unknown_query_fields = set(request.query_params) - {
+        "status",
+        "data_package_id",
+        "cursor",
+        "limit",
+    }
+    if unknown_query_fields:
+        raise problem(
+            status=422,
+            code="REQUEST_VALIDATION_FAILED",
+            title="Request validation failed",
+            detail="The upload-session query contains unsupported fields.",
+            details={"fields": sorted(unknown_query_fields)},
+        )
     _no_store(response)
     _authorize(auth, project_id, region_code)
     return get_service().list_sessions(
@@ -556,7 +571,9 @@ async def commit_manifest(
     _no_store(response)
     _authorize_and_get(auth, project_id, region_code, session_id)
     manifest = parse_manifest_bytes(await _read_limited_body(request, MAX_MANIFEST_BYTES)).manifest
+    organization_id = _organization_id_for_project(auth, project_id)
     return get_service().commit_manifest(
+        organization_id=organization_id,
         session_id=session_id,
         manifest=manifest,
         actor_id=auth.subject_id,
@@ -633,6 +650,22 @@ def _authorize(auth: AuthContext, project_id: str, region_code: str) -> None:
     auth.require_capability("upload.manage", project_id)
     ScopeGuard.require(auth, project_id, region_code)
     select_request_scope(project_id, region_code)
+
+
+def _organization_id_for_project(auth: AuthContext, project_id: str) -> str:
+    organization_ids = {
+        organization_id
+        for organization_id, scoped_project_id, _region_code in auth.organization_scope_triples
+        if scoped_project_id == project_id
+    }
+    if len(organization_ids) != 1:
+        raise problem(
+            status=403,
+            code="ORGANIZATION_SCOPE_REQUIRED",
+            title="Organization scope required",
+            detail="The upload project must resolve to exactly one organization scope.",
+        )
+    return next(iter(organization_ids))
 
 
 def _authorize_and_get(

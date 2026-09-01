@@ -306,6 +306,7 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
                 )
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 restarted.commit_manifest(
+                    organization_id=_organization_for(project_id),
                     session_id=external_grant.session.session_id,
                     manifest=external,
                 )
@@ -322,6 +323,7 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
                     sql.SQL("GRANT INSERT ON core.outbox_events TO {}").format(sql.Identifier(role))
                 )
             committed = restarted.commit_manifest(
+                organization_id=_organization_for(project_id),
                 session_id=external_grant.session.session_id,
                 manifest=external,
                 actor_id="integration-user",
@@ -340,6 +342,7 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
             assert raw_source.sha256 == external.sha256
             assert (
                 restarted.commit_manifest(
+                    organization_id=_organization_for(project_id),
                     session_id=external_grant.session.session_id,
                     manifest=external,
                 ).workflow

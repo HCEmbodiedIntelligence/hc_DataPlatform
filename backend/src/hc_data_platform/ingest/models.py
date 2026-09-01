@@ -108,7 +108,7 @@ class RolloutStatus(str, Enum):
 
 
 class UploadStatus(str, Enum):
-    """Upload-session states kept as the public name used by the first implementation."""
+    """Current upload-session lifecycle states."""
 
     REGISTERED = "REGISTERED"
     UPLOADING = "UPLOADING"

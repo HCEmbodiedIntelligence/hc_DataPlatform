@@ -9,12 +9,7 @@ from fastapi.testclient import TestClient
 from httpx import Response as HttpxResponse
 
 from hc_data_platform.annotation import (
-    AnnotationActor,
-    AnnotationOperation,
     InMemoryAnnotationService,
-    LegacyAuditReference,
-    OperationKind,
-    RevisionOrigin,
     SelfReviewPolicy,
 )
 from hc_data_platform.annotation.repository import InMemoryAnnotationRepository
@@ -145,7 +140,6 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
     first_body = first.json()
     assert len(first_body["items"]) == 1
     assert first_body["items"][0]["region_code"] == "cn-hz"
-    assert first_body["items"][0]["legacy_draft_id"] is None
     assert first_body["items"][0]["latest_revision"]["origin"] == "ANNOTATION"
     assert first_body["page_info"]["has_next_page"] is True
     assert first_body["page_info"]["end_cursor"]
@@ -172,7 +166,6 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
             "action": "annotation.revision_thread.listed",
             "status": None,
             "origin": None,
-            "legacy_draft_filter": False,
             "limit": 1,
         },
         {
@@ -183,21 +176,9 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
             "action": "annotation.revision_thread.listed",
             "status": None,
             "origin": None,
-            "legacy_draft_filter": False,
             "limit": 1,
         },
     ]
-
-    mismatched_legacy_filter = client.get(
-        "/api/v1/annotations/revisions",
-        params={
-            "after": first_body["page_info"]["end_cursor"],
-            "legacy_draft_id": "draft_cursor_mismatch",
-        },
-        headers=headers,
-    )
-    assert mismatched_legacy_filter.status_code == 400
-    assert mismatched_legacy_filter.json()["code"] == "INVALID_CURSOR"
 
     current["auth"] = auth("bob", *ANNOTATOR_CAPABILITIES)
     replayed_by_another_subject = client.get(
@@ -211,119 +192,6 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
     current["auth"] = auth("mallory", *ANNOTATOR_CAPABILITIES, projects=("project-b",))
     denied = client.get("/api/v1/annotations/revisions", headers=headers)
     assert denied.status_code == 403
-
-
-def test_revision_thread_exposes_only_the_task_scoped_legacy_draft_mapping(
-    api: tuple[TestClient, dict[str, AuthContext], InMemoryAnnotationService],
-) -> None:
-    client, _current, service = api
-    service.create_task(
-        task_id="task-api-legacy",
-        project_id="project-a",
-        region_code="cn-hz",
-        dataset_id="dataset-legacy",
-        dataset_version=9,
-        rollout_id="rollout-legacy",
-        base_step_count=2_000,
-    )
-    importer = AnnotationActor(
-        actor_id="legacy-cleaning-migration",
-        capabilities=frozenset(
-            {
-                "annotation_task.read",
-                "annotation_task.claim",
-                "annotation_task.assign",
-                "annotation.edit",
-                "annotation.save",
-                "annotation.submit",
-            }
-        ),
-        project_ids=frozenset({"project-a"}),
-    )
-    claimed = service.claim("task-api-legacy", importer)
-    first_import = service.save_draft(
-        "task-api-legacy",
-        importer,
-        (
-            AnnotationOperation(
-                operation_id="legacy-exclude",
-                kind=OperationKind.EXCLUDE,
-                start_step=10,
-                end_step=20,
-                reason="imported legacy operation",
-            ),
-        ),
-        expected_revision=0,
-        if_match=claimed.etag,
-        client_mutation_id="legacy-cleaning:draft_api_legacy:1",
-        origin=RevisionOrigin.LEGACY_CLEANING,
-        legacy_audit=LegacyAuditReference(
-            draft_id="draft_api_legacy",
-            source_revision=1,
-            source_actor_id="legacy-author",
-            source_created_at=claimed.created_at,
-            source_payload={"draft_id": "draft_api_legacy", "revision": 1},
-        ),
-        imported_author_id="legacy-author",
-        imported_created_at=claimed.created_at,
-    )
-    service.save_draft(
-        "task-api-legacy",
-        importer,
-        (),
-        expected_revision=first_import.revision,
-        if_match=service.get_task("task-api-legacy").etag,
-        client_mutation_id="legacy-cleaning:draft_api_legacy_newer:0",
-        origin=RevisionOrigin.LEGACY_CLEANING,
-        legacy_audit=LegacyAuditReference(
-            draft_id="draft_api_legacy_newer",
-            source_revision=0,
-            source_actor_id="legacy-author",
-            source_created_at=claimed.created_at,
-            source_payload={"draft_id": "draft_api_legacy_newer", "revision": 0},
-        ),
-        imported_author_id="legacy-author",
-        imported_created_at=claimed.created_at,
-    )
-
-    response = client.get(
-        "/api/v1/annotations/revisions",
-        params={
-            "origin": "LEGACY_CLEANING",
-            "legacy_draft_id": "draft_api_legacy",
-        },
-        headers={"X-Project-ID": "project-a", "X-Region-Code": "cn-hz"},
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["task_id"] == "task-api-legacy"
-    assert items[0]["legacy_draft_id"] == "draft_api_legacy"
-    assert items[0]["latest_revision"]["origin"] == "LEGACY_CLEANING"
-
-    newer = client.get(
-        "/api/v1/annotations/revisions",
-        params={"legacy_draft_id": "draft_api_legacy_newer"},
-        headers={"X-Project-ID": "project-a", "X-Region-Code": "cn-hz"},
-    )
-    assert newer.status_code == 200
-    assert newer.json()["items"][0]["legacy_draft_id"] == "draft_api_legacy_newer"
-
-    unmapped = client.get(
-        "/api/v1/annotations/revisions",
-        params={"legacy_draft_id": "draft_not_in_scope"},
-        headers={"X-Project-ID": "project-a", "X-Region-Code": "cn-hz"},
-    )
-    assert unmapped.status_code == 200
-    assert unmapped.json()["items"] == []
-
-    invalid = client.get(
-        "/api/v1/annotations/revisions",
-        params={"legacy_draft_id": "not-a-draft"},
-        headers={"X-Project-ID": "project-a", "X-Region-Code": "cn-hz"},
-    )
-    assert invalid.status_code == 422
 
 
 def test_claim_save_replay_submit_review_publish_and_invalidate_api(
@@ -619,8 +487,8 @@ def test_annotation_success_responses_are_not_cacheable(
 
     for path in (
         "/api/v1/capabilities/auto-annotation",
-        "/api/v1/projects/project-a/tag-schemas/legacy-flat/versions",
-        "/api/v1/projects/project-a/tag-schemas/legacy-flat/versions/1",
+        "/api/v1/projects/project-a/tag-schemas/default-flat/versions",
+        "/api/v1/projects/project-a/tag-schemas/default-flat/versions/1",
         "/api/v1/projects/project-a/annotation-tasks",
         "/api/v1/annotation-tasks/task-api",
         "/api/v1/annotation-tasks/task-api/draft",

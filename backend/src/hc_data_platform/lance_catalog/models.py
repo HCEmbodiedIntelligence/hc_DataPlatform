@@ -6,12 +6,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import (
-    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
     field_serializer,
-    field_validator,
 )
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
@@ -107,45 +105,25 @@ class StepRecord(BaseModel):
 
         return {name: public_value(item) for name, item in value.items()}
 
-    @field_validator("source_timestamps_ns", mode="before")
-    @classmethod
-    def normalize_source_timestamp_provenance(cls, value: object) -> object:
-        """Accept scalar v1 inputs while retaining interpolation source pairs."""
-
-        if not isinstance(value, dict):
-            return value
-        return {
-            key: () if item is None else (item,) if isinstance(item, int) else item
-            for key, item in value.items()
-        }
-
 
 class AlignedFragmentManifestV1(BaseModel):
     """Immutable hand-off contract for one alignment attempt."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: str = "1"
     project_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     schema_snapshot_id: str = Field(min_length=1)
-    schema_fingerprint: str = Field(
-        validation_alias=AliasChoices("schema_fingerprint", "schema_sha256"),
-        pattern=SHA256_PATTERN,
-    )
+    schema_fingerprint: str = Field(pattern=SHA256_PATTERN)
     frequency_hz: float = Field(gt=0)
     rollout_id: str = Field(min_length=1)
     source_sha256: str = Field(pattern=SHA256_PATTERN)
     converter_version: str = Field(min_length=1)
     attempt_id: str = Field(min_length=1)
-    fragment_uri: str = Field(
-        validation_alias=AliasChoices("fragment_uri", "staging_uri"), min_length=1
-    )
-    step_count: int = Field(validation_alias=AliasChoices("step_count", "row_count"), ge=0)
-    content_hash: str = Field(
-        validation_alias=AliasChoices("content_hash", "content_sha256"),
-        pattern=SHA256_PATTERN,
-    )
+    fragment_uri: str = Field(min_length=1)
+    step_count: int = Field(ge=0)
+    content_hash: str = Field(pattern=SHA256_PATTERN)
 
     @property
     def idempotency_key(self) -> tuple[str, str, str]:

@@ -56,8 +56,8 @@ def _fragment(
                 "joint.position": [float(index)],
             },
             source_timestamps_ns={
-                "camera.front": index * 33_333_333,
-                "joint.position": index * 33_333_333,
+                "camera.front": (index * 33_333_333,),
+                "joint.position": (index * 33_333_333,),
             },
             time_error_ns={"camera.front": 0, "joint.position": 0},
             valid={"camera.front": True, "joint.position": True},

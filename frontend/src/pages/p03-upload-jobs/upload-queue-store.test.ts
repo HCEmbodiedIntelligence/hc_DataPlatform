@@ -84,6 +84,7 @@ const manifest = {
   topics: [],
   expected_topics: [],
   actual_topics: [],
+  processing_mode: "DIRECT_EPISODE" as const,
   files: [
     {
       path: "recording.mcap",
@@ -143,7 +144,7 @@ const session: FormalUploadSession = {
 const authorization: PartAuthorization = {
   part_number: 1,
   url: "https://object-store.invalid/signed/part-1",
-  expires_at: "2026-08-18T05:10:00Z",
+  expires_at: "2036-08-18T05:10:00Z",
 };
 const uploadedPart: UploadPart = {
   session_id: session.session_id!,
@@ -607,6 +608,24 @@ describe("P03 resumable upload queue", () => {
         nowMs,
       ),
     ).toBe(90_000 - PRESIGNED_URL_SETTLE_MARGIN_MS);
+  });
+
+  it("rejects invalid or expired part authorizations", () => {
+    const nowMs = Date.parse("2030-01-01T00:00:00Z");
+    expect(() =>
+      partTransferTimeoutMs(
+        1024,
+        { ...authorization, expires_at: "not-a-timestamp" },
+        nowMs,
+      ),
+    ).toThrow("part authorization is invalid or expired");
+    expect(() =>
+      partTransferTimeoutMs(
+        1024,
+        { ...authorization, expires_at: new Date(nowMs).toISOString() },
+        nowMs,
+      ),
+    ).toThrow("part authorization is invalid or expired");
   });
 
   it("stops an in-flight transfer offline and reconciles confirmed parts when the network returns", async () => {

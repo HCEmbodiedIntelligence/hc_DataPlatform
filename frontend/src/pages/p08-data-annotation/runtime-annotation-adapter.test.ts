@@ -235,7 +235,6 @@ describe("P08 formal runtime annotation adapter", () => {
           current_submission_id: "submission-revision-1",
           approved_revision: null,
           approved_review_id: null,
-          legacy_draft_id: null,
           updated_at: "2026-08-20T08:01:00Z",
         },
       ],
@@ -253,7 +252,6 @@ describe("P08 formal runtime annotation adapter", () => {
       {
         status: "SUBMITTED",
         origin: "ANNOTATION",
-        legacyDraftId: "draft_legacy-01",
         limit: 20,
       },
     );
@@ -267,7 +265,6 @@ describe("P08 formal runtime annotation adapter", () => {
         query: {
           status: "SUBMITTED",
           origin: "ANNOTATION",
-          legacy_draft_id: "draft_legacy-01",
           after: undefined,
           limit: 20,
         },
@@ -406,7 +403,7 @@ describe("P08 formal runtime annotation adapter", () => {
     });
   });
 
-  it("sends generated SaveDraftRequest fields with If-Match and no legacy wire envelope", async () => {
+  it("sends the generated SaveDraftRequest fields with If-Match", async () => {
     const fixture = createVisualAnnotationBundle({ mode: "annotation" });
     requestMock.mockResolvedValue(fixture.history.revisions.at(-1) as never);
     await saveRuntimeAnnotationDraft(

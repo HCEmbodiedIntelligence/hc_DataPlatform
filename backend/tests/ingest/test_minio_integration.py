@@ -124,7 +124,9 @@ def test_minio_interruption_renewal_part_validation_completion_and_cancel() -> N
             ],
         )
         assert completed.status is UploadStatus.MULTIPART_COMPLETED
-        event = service.commit_manifest(session_id=session.session_id, manifest=manifest)
+        event = service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
         assert client.head_object(Bucket=bucket, Key=event.manifest_key)["ContentLength"] > 0
         raw_source = service.authorize_raw_media(
             session_id=session.session_id,
@@ -193,6 +195,7 @@ def test_minio_interruption_renewal_part_validation_completion_and_cancel() -> N
         assert referenced.session.source_type is UploadSourceType.OBJECT_STORAGE_REFERENCE
         assert referenced.session.multipart_upload_id is None
         service.commit_manifest(
+            organization_id="org-a",
             session_id=referenced.session.session_id,
             manifest=referenced_manifest,
         )

@@ -76,7 +76,7 @@ describe("AssetCapacityBoard", () => {
     );
   });
 
-  it("keeps the current task contract inside the legacy eight-stage signal rail", () => {
+  it("keeps the current task contract inside the eight-stage signal rail", () => {
     render(
       <MemoryRouter>
         <AssetCapacityBoard
@@ -125,7 +125,7 @@ describe("AssetCapacityBoard", () => {
     expect(screen.queryByText("建议操作")).not.toBeInTheDocument();
   });
 
-  it("keeps the legacy rail visible for an empty task range", () => {
+  it("keeps the rail visible for an empty task range", () => {
     render(
       <MemoryRouter>
         <AssetCapacityBoard
