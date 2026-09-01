@@ -182,6 +182,19 @@ export async function createRobot(
   );
 }
 
+export async function deleteProvisionalRobot(
+  organizationId: string,
+  robotId: string,
+): Promise<void> {
+  await request<void>({
+    method: "DELETE",
+    path: `/organizations/${encodeURIComponent(organizationId)}/robots/${encodeURIComponent(robotId)}`,
+    scopeMode: "organization",
+    scope: { organizationId },
+    cache: "no-store",
+  });
+}
+
 export function useCreateRobot() {
   const organizationId = useRobotOrganizationId();
   const client = useQueryClient();

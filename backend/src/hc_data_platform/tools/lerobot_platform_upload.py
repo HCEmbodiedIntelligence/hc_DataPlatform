@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from getpass import getpass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -29,7 +29,12 @@ from hc_data_platform.lerobot_imports.models import (
     CreateLeRobotImportV1,
     LeRobotSourceFileV1,
 )
-from hc_data_platform.lerobot_imports.source_profile import find_local_source_root
+from hc_data_platform.lerobot_imports.source_profile import (
+    LEROBOT_TRANSIENT_SUFFIXES,
+    find_local_source_root,
+    is_lerobot_local_cache_path,
+    is_lerobot_transient_path,
+)
 
 from .robot_ingest_upload import (
     DEFAULT_STATE_NAME,
@@ -53,6 +58,47 @@ class NativeLeRobotSource:
     root: Path
     manifest: CreateLeRobotImportV1
     files: Mapping[str, Path]
+
+
+def _validate_hugging_face_tree(root: Path) -> None:
+    trees_root = root / ".cache" / "huggingface" / "trees"
+    exact_tree = trees_root / f"{root.name}.json"
+    tree_paths = sorted(trees_root.glob("*.json"))
+    tree_path = (
+        exact_tree if exact_tree.is_file() else tree_paths[0] if len(tree_paths) == 1 else None
+    )
+    if tree_path is None:
+        return
+    try:
+        decoded = json.loads(tree_path.read_text(encoding="utf-8"))
+        expected_files = decoded["files"]
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f"Hugging Face tree manifest is invalid: {tree_path}") from exc
+    if not isinstance(expected_files, dict) or not expected_files:
+        raise ValueError(f"Hugging Face tree manifest has no file inventory: {tree_path}")
+
+    incomplete: list[str] = []
+    for relative, descriptor in expected_files.items():
+        pure_path = PurePosixPath(relative) if isinstance(relative, str) else None
+        size = descriptor.get("size") if isinstance(descriptor, dict) else None
+        if (
+            pure_path is None
+            or pure_path.is_absolute()
+            or any(part in {"", ".", ".."} for part in pure_path.parts)
+            or not isinstance(size, int)
+            or isinstance(size, bool)
+            or size <= 0
+        ):
+            raise ValueError(f"Hugging Face tree manifest has an invalid file entry: {relative}")
+        candidate = root.joinpath(*pure_path.parts)
+        if not candidate.is_file() or candidate.stat().st_size != size:
+            incomplete.append(relative)
+    if incomplete:
+        raise ValueError(
+            f"Hugging Face revision expects {len(expected_files)} files; "
+            f"{len(incomplete)} are missing or have the wrong size "
+            f"(for example {incomplete[0]})"
+        )
 
 
 def _normalize_api_base_url(value: str) -> str:
@@ -107,6 +153,7 @@ def build_native_source(
 
     root = find_local_source_root(source_dir)
     files: dict[str, Path] = {}
+    incomplete_paths: list[str] = []
     for path in sorted(root.rglob("*")):
         if path.is_symlink():
             raise ValueError(f"LeRobot source cannot contain symbolic links: {path}")
@@ -115,10 +162,27 @@ def build_native_source(
         relative = path.relative_to(root).as_posix()
         if relative == DEFAULT_STATE_NAME:
             continue
+        if is_lerobot_local_cache_path(relative):
+            continue
+        if is_lerobot_transient_path(relative):
+            completed_relative = next(
+                relative[: -len(suffix)]
+                for suffix in LEROBOT_TRANSIENT_SUFFIXES
+                if relative.endswith(suffix)
+            )
+            if not (root / completed_relative).is_file():
+                incomplete_paths.append(relative)
+            continue
         size = path.stat().st_size
         if size < 1:
             raise ValueError(f"LeRobot source object is empty: {relative}")
         files[relative] = path
+    _validate_hugging_face_tree(root)
+    if incomplete_paths:
+        raise ValueError(
+            "LeRobot source download is incomplete; resume it before uploading "
+            f"({len(incomplete_paths)} transient files, for example {incomplete_paths[0]})"
+        )
     try:
         info = json.loads(files["meta/info.json"].read_text(encoding="utf-8"))
     except (KeyError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

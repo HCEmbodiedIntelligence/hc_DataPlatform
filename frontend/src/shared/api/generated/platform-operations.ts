@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: b2e5e01b03ca99b1a2817e78b988b61cc56554e116112cc5c8b61e3101e1d8db
+// Runtime-OpenAPI-SHA256: 5c721d59832c0b19dded2a5669202065f8a9a55359620f66fadd2546866a3d62
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -77,6 +77,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/organizations/{organization_id}/projects/{project_id}/regions/{region_code}/stream-schemas/{schema_id}/versions/{schema_version}/dataset-references" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:authorize-parts" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:complete-file" },
+  { method: "GET", path: "/organizations/{organization_id}/robot-model-assets/content" },
+  { method: "PUT", path: "/organizations/{organization_id}/robot-model-assets/upload-part" },
   { method: "GET", path: "/organizations/{organization_id}/robot-model-versions/{version_id}" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}:create-draft" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}:preflight-publish" },
@@ -275,6 +277,20 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/processing" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/attempts" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/identities" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/identities" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}" },
+  { method: "PATCH", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:enable" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:rotate-credential" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:revoke" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/uploads" },
+  { method: "GET", path: "/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes" },
   { method: "GET", path: "/projects/{project_id}/rollouts/{rollout_id}/approved-annotation" },
   { method: "GET", path: "/projects/{project_id}/storage/capacity" },
   { method: "GET", path: "/projects/{project_id}/storage/capacity/history" },
@@ -314,6 +330,14 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions" },
   { method: "GET", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}" },
   { method: "POST", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}/publish" },
+  { method: "POST", path: "/robot-ingest/uploads" },
+  { method: "GET", path: "/robot-ingest/uploads/{upload_id}" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}:cancel" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}:commit" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}:pause" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}:resume" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete" },
 ] as const;
 
 export type RuntimeOperation = (typeof runtimeOperations)[number];

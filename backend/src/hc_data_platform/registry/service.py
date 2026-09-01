@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import replace as dataclass_replace
 from datetime import datetime, timedelta, timezone
+from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from uuid import uuid4
 from xml.etree import ElementTree
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.ingest.models import CompletedPart
-from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.ingest.ports import MultipartPart, ObjectStoragePort
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.idempotency import idempotency_conflict, request_fingerprint
 from hc_data_platform.security.scope import ScopeGuard
@@ -193,6 +194,52 @@ class RegistryService:
             outcome="SUCCEEDED",
         )
         return RobotModelVersionEnvelope(data=item, scope=scope, request_id=request_id)
+
+    def discard_robot_model_import(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        version_id: str,
+        fallback_version_id: str | None,
+        request_id: str,
+    ) -> None:
+        """Rollback an unbound import and remove every upload-owned server file."""
+
+        scope = self._authorize_manage(
+            auth=auth, organization_id=organization_id, project_id=project_id
+        )
+        try:
+            cleanup = self._repository.discard_robot_model_import(
+                organization_id=organization_id,
+                project_id=project_id,
+                version_id=version_id,
+                fallback_version_id=fallback_version_id,
+            )
+        except ValueError as exc:
+            raise problem(
+                status=409,
+                code="ROBOT_MODEL_IMPORT_IN_USE",
+                title="Robot model import cannot be discarded",
+                detail=("Only an unbound draft or an unbound import publication can be discarded."),
+            ) from exc
+
+        if cleanup is not None and cleanup.files:
+            storage = self._storage_or_problem()
+            delete_object = getattr(storage, "delete_object", None)
+            for item in cleanup.files:
+                storage.abort_multipart(item.object_key, item.multipart_upload_id)
+                if callable(delete_object):
+                    delete_object(item.object_key)
+        self._audit(
+            auth=auth,
+            scope=scope,
+            action="registry.robot_model_import.discarded",
+            resource_id=version_id,
+            request_id=request_id,
+            outcome="SUCCEEDED",
+        )
 
     def create_robot_model_draft(
         self,
@@ -649,6 +696,47 @@ class RegistryService:
             sha256=asset.sha256,
             media_type=asset.media_type,
         )
+
+    def receive_authorized_asset_part(
+        self,
+        *,
+        organization_id: str,
+        token: str,
+        body: bytes,
+    ) -> MultipartPart:
+        """Accept one short-lived, token-authorized part into server storage."""
+
+        storage = self._storage_or_problem()
+        receiver = getattr(storage, "put_authorized_part", None)
+        if not callable(receiver):
+            raise problem(
+                status=503,
+                code="ROBOT_MODEL_SERVER_STORAGE_UNAVAILABLE",
+                title="Robot model server storage is unavailable",
+                detail="The server-local robot model storage adapter is not active.",
+            )
+        return receiver(organization_id=organization_id, token=token, data=body)
+
+    def open_authorized_asset_download(
+        self,
+        *,
+        organization_id: str,
+        token: str,
+    ) -> tuple[str, Iterable[bytes]]:
+        """Resolve a short-lived download token without exposing a server path."""
+
+        storage = self._storage_or_problem()
+        resolver = getattr(storage, "resolve_authorized_read", None)
+        if not callable(resolver):
+            raise problem(
+                status=503,
+                code="ROBOT_MODEL_SERVER_STORAGE_UNAVAILABLE",
+                title="Robot model server storage is unavailable",
+                detail="The server-local robot model storage adapter is not active.",
+            )
+        key = resolver(organization_id=organization_id, token=token)
+        filename = unquote(PurePosixPath(key).name) or "robot-model-asset"
+        return filename, storage.read_chunks(key)
 
     def list_robot_model_joint_mappings(
         self,

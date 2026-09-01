@@ -192,7 +192,7 @@ components:
         schema_version: {type: string, const: lerobot-web-import-accepted/v1, default: lerobot-web-import-accepted/v1}
         import_id: {type: string}
         status: {type: string, const: EPISODES_QUEUED, default: EPISODES_QUEUED}
-        episode_count: {type: integer, minimum: 1, maximum: 100}
+        episode_count: {type: integer, minimum: 1, maximum: 10000}
         source_file_count: {type: integer, minimum: 1, maximum: 10000}
-        episode_task_count: {type: integer, minimum: 1, maximum: 100}
+        episode_task_count: {type: integer, minimum: 1, maximum: 10000}
         episode_plan_key: {type: string, minLength: 1, maxLength: 2048}

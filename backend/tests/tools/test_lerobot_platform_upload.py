@@ -15,7 +15,7 @@ from hc_data_platform.tools.lerobot_platform_upload import (
 )
 
 
-def _write_native_lerobot(root: Path) -> set[str]:
+def _write_native_lerobot(root: Path, *, episode_count: int = 1) -> set[str]:
     features = {
         "observation.state.ee_state": {},
         "observation.state.hand_state": {},
@@ -30,7 +30,7 @@ def _write_native_lerobot(root: Path) -> set[str]:
             {
                 "codebase_version": "v3.0",
                 "robot_type": "unitree_g1",
-                "total_episodes": 1,
+                "total_episodes": episode_count,
                 "fps": 30,
                 "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
                 "video_path": (
@@ -63,6 +63,58 @@ def test_native_uploader_preserves_source_paths_for_platform_upload(tmp_path: Pa
     assert set(source.files) == expected_paths
     assert {item.path for item in source.manifest.files} == expected_paths
     assert source.manifest.episode_count == 1
+
+
+def test_native_uploader_ignores_hugging_face_cache_for_154_episode_source(
+    tmp_path: Path,
+) -> None:
+    expected_paths = _write_native_lerobot(tmp_path, episode_count=154)
+    cache_lock = tmp_path / ".cache/huggingface/download/data/file-000.parquet.lock"
+    cache_lock.parent.mkdir(parents=True)
+    cache_lock.write_bytes(b"")
+    cache_lock.with_suffix(".metadata").write_text("cache metadata", encoding="utf-8")
+
+    source = build_native_source(
+        tmp_path,
+        dataset_id="dataset-a",
+        collection_task_id="task-a",
+        robot_id="robot-a",
+    )
+
+    assert set(source.files) == expected_paths
+    assert source.manifest.episode_count == 154
+
+
+def test_native_uploader_rejects_unfinished_resumable_download(tmp_path: Path) -> None:
+    _write_native_lerobot(tmp_path)
+    partial = tmp_path / "videos/observation.images.wrist_left/chunk-000/file-001.mp4.part"
+    partial.parent.mkdir(parents=True, exist_ok=True)
+    partial.write_bytes(b"partial")
+
+    with pytest.raises(ValueError, match=r"download is incomplete.*file-001\.mp4\.part"):
+        build_native_source(
+            tmp_path,
+            dataset_id="dataset-a",
+            collection_task_id="task-a",
+            robot_id="robot-a",
+        )
+
+
+def test_native_uploader_rejects_incomplete_hugging_face_revision(tmp_path: Path) -> None:
+    expected_paths = _write_native_lerobot(tmp_path)
+    tree_path = tmp_path / ".cache/huggingface/trees" / f"{tmp_path.name}.json"
+    tree_path.parent.mkdir(parents=True)
+    inventory = {path: {"size": (tmp_path / path).stat().st_size} for path in expected_paths}
+    inventory["README.md"] = {"size": 12}
+    tree_path.write_text(json.dumps({"format_version": 1, "files": inventory}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"expects 8 files.*README\.md"):
+        build_native_source(
+            tmp_path,
+            dataset_id="dataset-a",
+            collection_task_id="task-a",
+            robot_id="robot-a",
+        )
 
 
 def test_native_uploader_exposes_platform_input_only() -> None:

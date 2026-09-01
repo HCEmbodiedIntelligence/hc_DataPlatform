@@ -65,6 +65,10 @@ def list_organization_robots(
     lifecycle_status: Literal["DRAFT", "ACTIVE", "MAINTENANCE", "DISABLED", "RETIRED"]
     | None = Query(default=None),
     connectivity_state: Literal["ONLINE", "OFFLINE", "DEGRADED"] | None = Query(default=None),
+    configured_only: bool = Query(
+        default=False,
+        description="Only return robots with an active published-model binding.",
+    ),
 ) -> OrganizationRobotPage:
     _prepare(organization_id, response)
     return service.list_robots(
@@ -73,6 +77,7 @@ def list_organization_robots(
         query=q,
         lifecycle_status=lifecycle_status,
         connectivity_state=connectivity_state,
+        configured_only=configured_only,
         request_id=_request_id(request),
     )
 
@@ -106,6 +111,29 @@ def create_organization_robot(
         f"/api/v1/organizations/{organization_id}/robots/{result.data.robot.id}/bootstrap"
     )
     return result
+
+
+@router.delete(
+    "/{robot_id}",
+    operation_id="deleteProvisionalOrganizationRobot",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=PROBLEM_RESPONSES,
+)
+def delete_provisional_organization_robot(
+    organization_id: str,
+    robot_id: str,
+    request: Request,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+) -> None:
+    _prepare(organization_id, response)
+    service.delete_provisional_robot(
+        auth=auth,
+        organization_id=organization_id,
+        robot_id=robot_id,
+        request_id=_request_id(request),
+    )
 
 
 @router.get(

@@ -309,6 +309,21 @@ export async function getRobotModelVersion(
   );
 }
 
+export async function discardRobotModelImport(
+  organizationId: string,
+  versionId: string,
+  fallbackVersionId?: string,
+): Promise<void> {
+  await request<void>({
+    method: "DELETE",
+    path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(versionId)}:discard-import`,
+    query: fallbackVersionId
+      ? { fallback_version_id: fallbackVersionId }
+      : undefined,
+    cache: "no-store",
+  });
+}
+
 export interface CreateRobotModelIntent {
   readonly manufacturer: string;
   readonly modelCode: string;
@@ -885,6 +900,7 @@ export function useBindRobotModelVersion() {
       void client.invalidateQueries({
         queryKey: makeQueryKey("robot-models", "bindings", intent.versionId),
       });
+      void client.invalidateQueries({ queryKey: ["robots"] });
     },
     gcTime: 0,
   });

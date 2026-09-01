@@ -12,6 +12,7 @@ from hc_data_platform.lerobot_imports.models import (
     CreateLeRobotImportV1,
     LeRobotSourceFileV1,
 )
+from hc_data_platform.lerobot_imports.orchestration import build_import_plan
 from hc_data_platform.lerobot_imports.service import LeRobotWebUploadService
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.tools.hf_unitree_g1_to_mcap import CAMERAS
@@ -29,7 +30,7 @@ def _auth() -> AuthContext:
     )
 
 
-def _info() -> dict[str, object]:
+def _info(*, episode_count: int = 1) -> dict[str, object]:
     features = {
         "observation.state.ee_state": {},
         "observation.state.hand_state": {},
@@ -42,12 +43,77 @@ def _info() -> dict[str, object]:
     return {
         "codebase_version": "v3.0",
         "robot_type": "unitree_g1",
-        "total_episodes": 1,
+        "total_episodes": episode_count,
         "fps": 30,
         "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
         "video_path": ("videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"),
         "features": features,
     }
+
+
+def _source_files() -> tuple[LeRobotSourceFileV1, ...]:
+    paths = (
+        "meta/info.json",
+        "meta/episodes/chunk-000/file-000.parquet",
+        "data/chunk-000/file-000.parquet",
+        *(f"videos/{camera.feature_key}/chunk-000/file-000.mp4" for camera in CAMERAS),
+    )
+    return tuple(LeRobotSourceFileV1(path=path, size=1, part_count=1) for path in paths)
+
+
+@pytest.mark.parametrize("episode_count", [154, 10_000])
+def test_import_contract_accepts_supported_unitree_episode_counts(episode_count: int) -> None:
+    manifest = CreateLeRobotImportV1(
+        dataset_id="dataset-a",
+        collection_task_id="task-a",
+        robot_id="robot-a",
+        info=_info(episode_count=episode_count),
+        files=_source_files(),
+    )
+
+    plan = build_import_plan(
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        dataset_id=manifest.dataset_id,
+        collection_task_id=manifest.collection_task_id,
+        robot_id=manifest.robot_id,
+        raw_upload_id="a" * 32,
+        raw_manifest_key="raw/org-a/dataset-a/import-a/manifest.json",
+        episode_count=manifest.episode_count,
+    )
+
+    assert len(plan.episode_tasks) == episode_count
+    assert plan.episode_tasks[-1].source.episode_index == episode_count - 1
+
+
+def test_import_contract_rejects_more_than_10000_episodes() -> None:
+    with pytest.raises(ValueError, match="10000 episodes"):
+        CreateLeRobotImportV1(
+            dataset_id="dataset-a",
+            collection_task_id="task-a",
+            robot_id="robot-a",
+            info=_info(episode_count=10_001),
+            files=_source_files(),
+        )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".cache/huggingface/download/data/file-000.parquet.lock",
+        "videos/observation.images.wrist_left/chunk-000/file-001.mp4.part",
+    ],
+)
+def test_import_contract_rejects_local_cache_and_partial_downloads(path: str) -> None:
+    with pytest.raises(ValueError, match="local cache or incomplete download"):
+        CreateLeRobotImportV1(
+            dataset_id="dataset-a",
+            collection_task_id="task-a",
+            robot_id="robot-a",
+            info=_info(),
+            files=(*_source_files(), LeRobotSourceFileV1(path=path, size=1, part_count=1)),
+        )
 
 
 def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.ports import InMemoryObjectStorage
+from hc_data_platform.registry.filesystem_storage import FilesystemRobotModelStorage
 from hc_data_platform.registry.models import (
     CompleteRobotModelAssetFileRequest,
     CreateRobotModelAssetUploadRequest,
@@ -458,6 +460,127 @@ def test_robot_model_asset_upload_direct_transfer_manifest_and_download_authoriz
         },
     )
     assert invalid.status_code == 422
+
+
+def test_robot_model_assets_upload_and_download_through_server_storage(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 19, 11, tzinfo=timezone.utc)
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"),),
+        versions=(
+            (
+                "organization-a",
+                RobotModelVersion(
+                    id="version-server-draft",
+                    robot_model_id="model-server",
+                    version_label="draft",
+                    lifecycle="DRAFT",
+                    asset_availability="MISSING",
+                    publish_readiness="BLOCKED",
+                    asset_manifest_hash=None,
+                    validation_input_hash=None,
+                    etag='"registry:version-server-draft:1"',
+                    allowed_actions=("UPLOAD_ASSETS",),
+                    blocked_reasons=(),
+                ),
+            ),
+        ),
+    )
+    storage = FilesystemRobotModelStorage(
+        tmp_path / "robot-model-assets",
+        signing_secret="server-storage-test-secret",
+        clock=lambda: now,
+    )
+    configure_registry(RegistryService(repository, storage=storage, clock=lambda: now))
+    client = TestClient(_app({"value": _auth(can_manage=True)}))
+    body = b'<robot name="server-local"><link name="base"/></robot>'
+    headers = {
+        "Authorization": "Bearer test",
+        "Idempotency-Key": "server-asset-upload",
+    }
+
+    created = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        "version-server-draft/upload-sessions",
+        headers=headers,
+        json={
+            "files": [
+                {
+                    "relative_path": "models/server-local.urdf",
+                    "role": "URDF",
+                    "media_type": "application/xml",
+                    "size_bytes": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert created.status_code == 201
+    upload = created.json()["data"]
+    authorization = upload["files"][0]["part_authorizations"][0]["url"]
+    assert authorization.startswith(
+        "/api/v1/organizations/organization-a/robot-model-assets/upload-part?token="
+    )
+
+    transferred = client.put(
+        authorization,
+        content=body,
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert transferred.status_code == 200
+    assert transferred.headers["etag"]
+
+    completed = client.post(
+        "/api/v1/organizations/organization-a/robot-model-asset-uploads/"
+        f"{upload['upload_id']}:complete-file",
+        headers={"Authorization": "Bearer test"},
+        json={
+            "relative_path": "models/server-local.urdf",
+            "parts": [
+                {
+                    "part_number": 1,
+                    "etag": transferred.headers["etag"].strip('"'),
+                }
+            ],
+        },
+    )
+    assert completed.status_code == 200
+    assert completed.json()["data"]["status"] == "COMPLETED"
+
+    assets = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-server-draft/assets",
+        headers={"Authorization": "Bearer test"},
+    )
+    asset_id = assets.json()["items"][0]["asset_id"]
+    authorized = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        f"version-server-draft/assets/{asset_id}/download",
+        headers={"Authorization": "Bearer test"},
+    )
+    download_url = authorized.json()["download_url"]
+    assert download_url.startswith(
+        "/api/v1/organizations/organization-a/robot-model-assets/content?token="
+    )
+    downloaded = client.get(download_url)
+    assert downloaded.status_code == 200
+    assert downloaded.content == body
+    assert downloaded.headers["cache-control"] == "private, no-store"
+
+    discarded = client.delete(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        "version-server-draft:discard-import",
+        headers={"Authorization": "Bearer test"},
+    )
+    assert discarded.status_code == 204
+    assert client.get(download_url).status_code == 404
+    assert not any(path.is_file() for path in (tmp_path / "robot-model-assets").rglob("*"))
+    assert (
+        client.delete(
+            "/api/v1/organizations/organization-a/robot-model-versions/"
+            "version-server-draft:discard-import",
+            headers={"Authorization": "Bearer test"},
+        ).status_code
+        == 204
+    )
 
 
 def test_robot_model_joint_mapping_replaces_a_draft_under_etag_control() -> None:

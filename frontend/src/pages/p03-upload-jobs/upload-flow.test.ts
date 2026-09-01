@@ -134,6 +134,103 @@ describe("P03 local upload selection", () => {
     );
   });
 
+  it("ignores Hugging Face cache files and accepts the 154-episode Unitree revision", async () => {
+    const selection = await inspectLocalUploadSelection({
+      ...baseInput,
+      files: [
+        ...lerobotFiles(lerobotInfo({ total_episodes: 154 })),
+        folderFile(
+          [],
+          "file-000.parquet.lock",
+          "lerobot-source/.cache/huggingface/download/data/chunk-000/file-000.parquet.lock",
+        ),
+        folderFile(
+          ["cache metadata"],
+          "file-000.parquet.metadata",
+          "lerobot-source/.cache/huggingface/download/data/chunk-000/file-000.parquet.metadata",
+        ),
+      ],
+    });
+
+    expect(selection.problems).toEqual([]);
+    expect(selection.lerobot?.episodeCount).toBe(154);
+    expect(
+      selection.lerobot?.sourceFiles.some((item) =>
+        item.path.startsWith(".cache/"),
+      ),
+    ).toBe(false);
+  });
+
+  it("supports up to 10000 LeRobot episodes and rejects 10001", async () => {
+    const maximum = await inspectLocalUploadSelection({
+      ...baseInput,
+      files: lerobotFiles(lerobotInfo({ total_episodes: 10_000 })),
+    });
+    const overflow = await inspectLocalUploadSelection({
+      ...baseInput,
+      files: lerobotFiles(lerobotInfo({ total_episodes: 10_001 })),
+    });
+
+    expect(maximum.problems).toEqual([]);
+    expect(maximum.lerobot?.episodeCount).toBe(10_000);
+    expect(overflow.lerobot).toBeNull();
+    expect(overflow.problems).toContainEqual(
+      expect.objectContaining({ code: "LEROBOT_PROFILE_UNSUPPORTED" }),
+    );
+  });
+
+  it("reports an unfinished resumable download separately from an invalid Raw source", async () => {
+    const selection = await inspectLocalUploadSelection({
+      ...baseInput,
+      files: [
+        ...lerobotFiles(),
+        folderFile(
+          ["partial"],
+          "file-001.mp4.part",
+          "lerobot-source/videos/observation.images.head_stereo_right/chunk-000/file-001.mp4.part",
+        ),
+      ],
+    });
+
+    expect(selection.lerobot).toBeNull();
+    expect(selection.problems).toContainEqual(
+      expect.objectContaining({
+        code: "LEROBOT_SOURCE_INCOMPLETE",
+        detail: expect.stringContaining("file-001.mp4.part"),
+      }),
+    );
+  });
+
+  it("uses the Hugging Face tree inventory to reject a partially downloaded revision", async () => {
+    const files = lerobotFiles();
+    const inventory = Object.fromEntries(
+      files.map((file) => [
+        file.webkitRelativePath.replace(/^lerobot-source\//u, ""),
+        { size: file.size },
+      ]),
+    );
+    inventory["README.md"] = { size: 12 };
+    const selection = await inspectLocalUploadSelection({
+      ...baseInput,
+      files: [
+        ...files,
+        folderFile(
+          [JSON.stringify({ format_version: 1, files: inventory })],
+          "lerobot-source.json",
+          "lerobot-source/.cache/huggingface/trees/lerobot-source.json",
+        ),
+      ],
+    });
+
+    expect(selection.lerobot).toBeNull();
+    expect(selection.problems).toContainEqual(
+      expect.objectContaining({
+        code: "LEROBOT_SOURCE_INCOMPLETE",
+        detail: expect.stringContaining("README.md"),
+      }),
+    );
+  });
+
   it("rejects an unsupported LeRobot profile instead of asking for a platform Manifest", async () => {
     const selection = await inspectLocalUploadSelection({
       ...baseInput,

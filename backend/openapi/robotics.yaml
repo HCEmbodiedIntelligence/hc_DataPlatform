@@ -383,6 +383,15 @@ paths:
             type: string
           - type: 'null'
           title: Connectivity State
+      - description: Only return robots with an active published-model binding.
+        in: query
+        name: configured_only
+        required: false
+        schema:
+          default: false
+          description: Only return robots with an active published-model binding.
+          title: Configured Only
+          type: boolean
       responses:
         '200':
           content:
@@ -486,6 +495,42 @@ paths:
       security:
       - bearerAuth: []
       summary: List Organization Robot Model Bindings
+      tags:
+      - organization-robot-assets
+  /api/v1/organizations/{organization_id}/robots/{robot_id}:
+    delete:
+      operationId: deleteProvisionalOrganizationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Delete Provisional Organization Robot
       tags:
       - organization-robot-assets
   /api/v1/organizations/{organization_id}/robots/{robot_id}/bootstrap:

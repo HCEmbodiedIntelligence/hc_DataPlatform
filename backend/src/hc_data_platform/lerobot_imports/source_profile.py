@@ -10,6 +10,16 @@ from hc_data_platform.tools import hf_unitree_g1_to_mcap as converter
 _CANONICAL_DATA = re.compile(r"^data/chunk-\d{3}/file-\d{3}\.parquet$")
 _CANONICAL_EPISODES = re.compile(r"^meta/episodes/chunk-\d{3}/file-\d{3}\.parquet$")
 _CANONICAL_VIDEO = re.compile(r"^videos/([^/]+)/chunk-\d{3}/file-\d{3}\.mp4$")
+MAX_LEROBOT_IMPORT_EPISODES = 10_000
+LEROBOT_TRANSIENT_SUFFIXES = (".part", ".lock", ".incomplete", ".oss-download")
+
+
+def is_lerobot_local_cache_path(relative_path: str) -> bool:
+    return ".cache" in PurePosixPath(relative_path).parts
+
+
+def is_lerobot_transient_path(relative_path: str) -> bool:
+    return PurePosixPath(relative_path).name.endswith(LEROBOT_TRANSIENT_SUFFIXES)
 
 
 def is_canonical_lerobot_object(relative_path: str) -> bool:

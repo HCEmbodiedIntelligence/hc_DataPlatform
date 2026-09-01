@@ -70,6 +70,7 @@ class OrganizationRobotAssetService:
         query: str | None,
         lifecycle_status: str | None,
         connectivity_state: str | None,
+        configured_only: bool,
         request_id: str,
     ) -> OrganizationRobotPage:
         self._authorize(auth, organization_id, "robot.read")
@@ -78,6 +79,7 @@ class OrganizationRobotAssetService:
             query=query,
             lifecycle_status=lifecycle_status,
             connectivity_state=connectivity_state,
+            configured_only=configured_only,
         )
         return OrganizationRobotPage(
             items=items,
@@ -170,6 +172,31 @@ class OrganizationRobotAssetService:
             scope=OrganizationRobotScope(organization_id=organization_id),
             request_id=request_id,
         )
+
+    def delete_provisional_robot(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        robot_id: str,
+        request_id: str,
+    ) -> None:
+        self._authorize(auth, organization_id, "robot.manage")
+        try:
+            self._repository.delete_provisional_robot(
+                organization_id=organization_id,
+                robot_id=robot_id,
+                actor_id=auth.subject_id,
+                request_id=request_id,
+                occurred_at=self._clock(),
+            )
+        except ValueError as exc:
+            raise problem(
+                status=409,
+                code="ROBOT_NOT_PROVISIONAL",
+                title="Robot cannot be deleted as a failed import",
+                detail="Only an unbound draft robot with no dependent assets can be deleted.",
+            ) from exc
 
     def bind_model(
         self,

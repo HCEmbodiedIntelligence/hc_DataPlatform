@@ -6,6 +6,7 @@ export const MAX_PACKAGE_BYTES = 5 * 1024 ** 4;
 export const MIN_MULTIPART_BYTES = 5 * 1024 ** 2;
 export const MAX_MULTIPART_PARTS = 10_000;
 export const AUTHORIZATION_BATCH_SIZE = 256;
+export const MAX_LEROBOT_EPISODES = 10_000;
 
 const CRC64_DECIMAL = /^(?:0|[1-9][0-9]{0,19})$/u;
 const CRC64_MAX = 18_446_744_073_709_551_615n;
@@ -67,6 +68,7 @@ export class LocalLeRobotError extends Error {
       | "LEROBOT_INFO_INVALID"
       | "LEROBOT_PROFILE_UNSUPPORTED"
       | "LEROBOT_LAYOUT_INCOMPLETE"
+      | "LEROBOT_SOURCE_INCOMPLETE"
       | "LEROBOT_SOURCE_INVALID",
     message: string,
   ) {
@@ -257,6 +259,89 @@ const LEROBOT_DATA_PATH = /^data\/chunk-\d{3}\/file-\d{3}\.parquet$/u;
 const LEROBOT_EPISODE_PATH =
   /^meta\/episodes\/chunk-\d{3}\/file-\d{3}\.parquet$/u;
 const LEROBOT_VIDEO_PATH = /^videos\/([^/]+)\/chunk-\d{3}\/file-\d{3}\.mp4$/u;
+const LEROBOT_HUGGING_FACE_TREE_PATH =
+  /^\.cache\/huggingface\/trees\/([^/]+)\.json$/u;
+const LEROBOT_TRANSIENT_SUFFIXES = [
+  ".part",
+  ".lock",
+  ".incomplete",
+  ".oss-download",
+] as const;
+
+function isLeRobotLocalCachePath(path: string): boolean {
+  return path === ".cache" || path.startsWith(".cache/");
+}
+
+function isLeRobotTransientPath(path: string): boolean {
+  return LEROBOT_TRANSIENT_SUFFIXES.some((suffix) => path.endsWith(suffix));
+}
+
+function completedPathForTransient(path: string): string | null {
+  const suffix = LEROBOT_TRANSIENT_SUFFIXES.find((item) => path.endsWith(item));
+  return suffix ? path.slice(0, -suffix.length) : null;
+}
+
+async function inspectHuggingFaceTree(
+  entries: readonly { file: File; path: string }[],
+  rootDirectory: string,
+): Promise<{
+  expectedCount: number;
+  incompletePaths: readonly string[];
+} | null> {
+  const treeEntries = entries.filter(({ path }) =>
+    LEROBOT_HUGGING_FACE_TREE_PATH.test(path),
+  );
+  const revision = rootDirectory.split("/").at(-1);
+  const exactPath = revision
+    ? `.cache/huggingface/trees/${revision}.json`
+    : null;
+  const treeEntry =
+    treeEntries.find(({ path }) => path === exactPath) ??
+    (treeEntries.length === 1 ? treeEntries[0] : undefined);
+  if (!treeEntry || treeEntry.file.size > MAX_MANIFEST_BYTES) return null;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(await readBrowserText(treeEntry.file)) as unknown;
+  } catch {
+    return null;
+  }
+  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded))
+    return null;
+  const expectedFiles = (decoded as Record<string, unknown>).files;
+  if (
+    typeof expectedFiles !== "object" ||
+    expectedFiles === null ||
+    Array.isArray(expectedFiles)
+  )
+    return null;
+
+  const actualSizes = new Map(
+    entries
+      .filter(
+        ({ path }) =>
+          !isLeRobotLocalCachePath(path) && !isLeRobotTransientPath(path),
+      )
+      .map(({ file, path }) => [path, file.size] as const),
+  );
+  const expected = Object.entries(expectedFiles as Record<string, unknown>);
+  const incompletePaths: string[] = [];
+  for (const [path, descriptor] of expected) {
+    const normalized = normalizeRelativePath(path);
+    if (
+      normalized !== path ||
+      typeof descriptor !== "object" ||
+      descriptor === null ||
+      Array.isArray(descriptor)
+    )
+      return null;
+    const size = (descriptor as Record<string, unknown>).size;
+    if (typeof size !== "number" || !Number.isSafeInteger(size) || size <= 0)
+      return null;
+    if (actualSizes.get(path) !== size) incompletePaths.push(path);
+  }
+  return { expectedCount: expected.length, incompletePaths };
+}
 
 async function readBrowserText(file: File): Promise<string> {
   if (typeof file.text === "function") return file.text();
@@ -297,7 +382,7 @@ export async function detectLeRobotFolder(
     .slice(0, -marker.length)
     .replace(/\/$/u, "");
   const sourcePrefix = rootDirectory ? `${rootDirectory}/` : "";
-  const sourceFiles = entries
+  const sourceEntries = entries
     .filter(({ selectedPath }) =>
       sourcePrefix ? selectedPath.startsWith(sourcePrefix) : true,
     )
@@ -306,7 +391,37 @@ export async function detectLeRobotFolder(
       path: sourcePrefix
         ? selectedPath.slice(sourcePrefix.length)
         : selectedPath,
-    }))
+    }));
+  const sourcePathSet = new Set(sourceEntries.map(({ path }) => path));
+  const incompletePaths = sourceEntries
+    .filter(
+      ({ path }) =>
+        !isLeRobotLocalCachePath(path) &&
+        isLeRobotTransientPath(path) &&
+        !sourcePathSet.has(completedPathForTransient(path) ?? ""),
+    )
+    .map(({ path }) => path);
+  if (incompletePaths.length > 0) {
+    throw new LocalLeRobotError(
+      "LEROBOT_SOURCE_INCOMPLETE",
+      `检测到 ${incompletePaths.length} 个未完成的 LeRobot 下载文件（例如 ${incompletePaths[0]}）；请先完成或恢复下载，再重新选择目录。`,
+    );
+  }
+  const huggingFaceTree = await inspectHuggingFaceTree(
+    sourceEntries,
+    rootDirectory,
+  );
+  if (huggingFaceTree && huggingFaceTree.incompletePaths.length > 0) {
+    throw new LocalLeRobotError(
+      "LEROBOT_SOURCE_INCOMPLETE",
+      `Hugging Face revision 应有 ${huggingFaceTree.expectedCount} 个文件，当前缺少或大小不符 ${huggingFaceTree.incompletePaths.length} 个（例如 ${huggingFaceTree.incompletePaths[0]}）；请先完成或恢复下载。`,
+    );
+  }
+  const sourceFiles = sourceEntries
+    .filter(
+      ({ path }) =>
+        !isLeRobotLocalCachePath(path) && !isLeRobotTransientPath(path),
+    )
     .sort((left, right) => left.path.localeCompare(right.path));
   if (
     sourceFiles.length === 0 ||
@@ -363,14 +478,14 @@ export async function detectLeRobotFolder(
     !Number.isInteger(episodeCount) ||
     typeof episodeCount !== "number" ||
     episodeCount < 1 ||
-    episodeCount > 100 ||
+    episodeCount > MAX_LEROBOT_EPISODES ||
     LEROBOT_REQUIRED_FEATURES.some(
       (feature) => !(feature in (features as Record<string, unknown>)),
     )
   ) {
     throw new LocalLeRobotError(
       "LEROBOT_PROFILE_UNSUPPORTED",
-      "当前页面支持 Unitree G1 的 LeRobot v3.0 原始目录（1–100 个 episode，并包含完整状态、动作和四路相机特征）。",
+      `当前页面支持 Unitree G1 的 LeRobot v3.0 原始目录（1–${MAX_LEROBOT_EPISODES} 个 episode，并包含完整状态、动作和四路相机特征）。`,
     );
   }
   const paths = new Set(sourceFiles.map(({ path }) => path));

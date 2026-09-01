@@ -28,6 +28,7 @@ class OrganizationRobotAssetRepository(Protocol):
         query: str | None,
         lifecycle_status: str | None,
         connectivity_state: str | None,
+        configured_only: bool,
     ) -> tuple[RobotRecord, ...]: ...
 
     def get_robot(self, *, organization_id: str, robot_id: str) -> RobotBootstrap | None: ...
@@ -44,6 +45,16 @@ class OrganizationRobotAssetRepository(Protocol):
         request_id: str,
         occurred_at: datetime,
     ) -> RobotBootstrap: ...
+
+    def delete_provisional_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> bool: ...
 
     def bind_model(
         self,
@@ -125,6 +136,7 @@ class InMemoryOrganizationRobotAssetRepository:
         query: str | None,
         lifecycle_status: str | None,
         connectivity_state: str | None,
+        configured_only: bool,
     ) -> tuple[RobotRecord, ...]:
         needle = query.casefold().strip() if query else ""
         with self._lock:
@@ -132,6 +144,7 @@ class InMemoryOrganizationRobotAssetRepository:
                 bootstrap.robot
                 for (organization, _), bootstrap in self._robots.items()
                 if organization == organization_id
+                and (not configured_only or bootstrap.effective_model_binding is not None)
                 and (not lifecycle_status or bootstrap.robot.lifecycle_status == lifecycle_status)
                 and (
                     not connectivity_state
@@ -169,6 +182,20 @@ class InMemoryOrganizationRobotAssetRepository:
                 if receipt[0] != request_fingerprint:
                     raise ValueError("idempotency key was reused")
                 return cast(RobotBootstrap, receipt[1])
+            provisional = next(
+                (
+                    item
+                    for (organization, _), item in self._robots.items()
+                    if organization == organization_id
+                    and item.robot.serial_no == command.serial_no
+                    and item.robot.lifecycle_status == "DRAFT"
+                    and item.effective_model_binding is None
+                ),
+                None,
+            )
+            if provisional is not None:
+                self._receipts[receipt_key] = (request_fingerprint, provisional)
+                return provisional
             if any(
                 item.robot.serial_no == command.serial_no
                 for (organization, _), item in self._robots.items()
@@ -196,6 +223,41 @@ class InMemoryOrganizationRobotAssetRepository:
             self._robots[(organization_id, robot_id)] = result
             self._receipts[receipt_key] = (request_fingerprint, result)
             return result
+
+    def delete_provisional_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> bool:
+        del actor_id, request_id, occurred_at
+        with self._lock:
+            robot = self._robots.get((organization_id, robot_id))
+            if robot is None:
+                return False
+            if (
+                robot.robot.lifecycle_status != "DRAFT"
+                or robot.effective_model_binding is not None
+                or any(
+                    binding.robot_id == robot_id
+                    for (candidate_organization, _), binding in self._bindings.items()
+                    if candidate_organization == organization_id
+                )
+            ):
+                raise ValueError("robot is not provisional")
+            del self._robots[(organization_id, robot_id)]
+            for key, (_fingerprint, response) in tuple(self._receipts.items()):
+                response_robot_id = (
+                    response.robot.id if isinstance(response, RobotBootstrap) else None
+                )
+                if key[0] == organization_id and (
+                    key[1] == robot_id or response_robot_id == robot_id
+                ):
+                    del self._receipts[key]
+            return True
 
     def bind_model(
         self,
@@ -316,6 +378,7 @@ class PostgresOrganizationRobotAssetRepository:
         query: str | None,
         lifecycle_status: str | None,
         connectivity_state: str | None,
+        configured_only: bool,
     ) -> tuple[RobotRecord, ...]:
         connection = self._connection_factory()
         cursor = connection.cursor()
@@ -327,6 +390,16 @@ class PostgresOrganizationRobotAssetRepository:
                        connectivity_source, connectivity_reason_code
                   FROM robotics.robot_assets
                  WHERE organization_id = %s
+                   AND (
+                       NOT %s
+                       OR EXISTS (
+                           SELECT 1
+                             FROM registry.organization_robot_model_bindings AS binding
+                            WHERE binding.organization_id = robotics.robot_assets.organization_id
+                              AND binding.robot_id = robotics.robot_assets.robot_id
+                              AND binding.status = 'ACTIVE'
+                       )
+                   )
                    AND (%s::text IS NULL OR lifecycle_status = %s)
                    AND (%s::text IS NULL OR connectivity_state = %s)
                    AND (
@@ -338,6 +411,7 @@ class PostgresOrganizationRobotAssetRepository:
                 """,
                 (
                     organization_id,
+                    configured_only,
                     lifecycle_status,
                     lifecycle_status,
                     connectivity_state,
@@ -513,6 +587,43 @@ class PostgresOrganizationRobotAssetRepository:
                 return RobotBootstrap.model_validate(replay)
             cursor.execute(
                 """
+                SELECT robot_id
+                  FROM robotics.robot_assets
+                 WHERE organization_id = %s
+                   AND serial_no = %s
+                   AND lifecycle_status = 'DRAFT'
+                   AND binding_id IS NULL
+                 FOR UPDATE
+                """,
+                (organization_id, command.serial_no),
+            )
+            provisional_row = cursor.fetchone()
+            if provisional_row is not None:
+                provisional_id = str(self._row(cursor, provisional_row)["robot_id"])
+                result = self._get_locked(cursor, organization_id, provisional_id)
+                self._store_receipt(
+                    cursor,
+                    organization_id=organization_id,
+                    resource_id=robot_id,
+                    operation="CREATE",
+                    idempotency_key=idempotency_key,
+                    request_fingerprint=request_fingerprint,
+                    response=result.model_dump(mode="json"),
+                    occurred_at=occurred_at,
+                )
+                self._append_audit(
+                    cursor,
+                    organization_id=organization_id,
+                    actor_id=actor_id,
+                    action="robot.asset.provisional_resumed",
+                    resource_id=provisional_id,
+                    request_id=request_id,
+                    occurred_at=occurred_at,
+                )
+                connection.commit()
+                return result
+            cursor.execute(
+                """
                 INSERT INTO robotics.robot_assets (
                     organization_id, robot_id, display_name, serial_no,
                     lifecycle_status, connectivity_state,
@@ -591,6 +702,99 @@ class PostgresOrganizationRobotAssetRepository:
         if raw is None:
             raise KeyError(robot_id)
         return _bootstrap_from_mapping(self._row(cursor, raw))
+
+    def delete_provisional_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> bool:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT lifecycle_status, binding_id, robot_model_version_id
+                  FROM robotics.robot_assets
+                 WHERE organization_id = %s AND robot_id = %s
+                 FOR UPDATE
+                """,
+                (organization_id, robot_id),
+            )
+            raw = cursor.fetchone()
+            if raw is None:
+                connection.commit()
+                return False
+            row = self._row(cursor, raw)
+            if (
+                str(row["lifecycle_status"]) != "DRAFT"
+                or row["binding_id"] is not None
+                or row["robot_model_version_id"] is not None
+            ):
+                raise ValueError("robot is not provisional")
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM registry.organization_robot_model_bindings
+                     WHERE organization_id = %s AND robot_id = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM robotics.robot_asset_components
+                     WHERE organization_id = %s AND robot_id = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM robotics.project_robot_assignments
+                     WHERE organization_id = %s AND robot_id = %s
+                ) AS in_use
+                """,
+                (
+                    organization_id,
+                    robot_id,
+                    organization_id,
+                    robot_id,
+                    organization_id,
+                    robot_id,
+                ),
+            )
+            usage = cursor.fetchone()
+            if usage is None or bool(self._row(cursor, usage)["in_use"]):
+                raise ValueError("robot is not provisional")
+            cursor.execute(
+                """
+                DELETE FROM robotics.robot_asset_command_receipts
+                 WHERE organization_id = %s
+                   AND (resource_id = %s OR response #>> '{robot,id}' = %s)
+                """,
+                (organization_id, robot_id, robot_id),
+            )
+            self._append_audit(
+                cursor,
+                organization_id=organization_id,
+                actor_id=actor_id,
+                action="robot.asset.provisional_deleted",
+                resource_id=robot_id,
+                request_id=request_id,
+                occurred_at=occurred_at,
+            )
+            cursor.execute(
+                """
+                DELETE FROM robotics.robot_assets
+                 WHERE organization_id = %s AND robot_id = %s
+                """,
+                (organization_id, robot_id),
+            )
+            connection.commit()
+            return True
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
 
     def bind_model(
         self,

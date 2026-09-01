@@ -63,13 +63,26 @@ def test_robot_assets_are_organization_scoped_without_project_or_region_headers(
         json={
             "display_name": "星舟 017",
             "serial_no": "SN-017",
-            "lifecycle_status": "ACTIVE",
+            "lifecycle_status": "DRAFT",
             "connectivity_state": "ONLINE",
         },
     )
     assert created.status_code == 201
     robot_id = created.json()["data"]["robot"]["id"]
     assert created.json()["scope"] == {"organization_id": ORGANIZATION_ID}
+
+    resumed = client.post(
+        root,
+        headers={"Authorization": "Bearer test", "Idempotency-Key": "resume-robot-a"},
+        json={
+            "display_name": "星舟 017（重新导入）",
+            "serial_no": "SN-017",
+            "lifecycle_status": "DRAFT",
+            "connectivity_state": "OFFLINE",
+        },
+    )
+    assert resumed.status_code == 201
+    assert resumed.json()["data"]["robot"]["id"] == robot_id
 
     listing = client.get(root, headers={"Authorization": "Bearer test"})
     assert listing.status_code == 200
@@ -95,6 +108,14 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
     )
     robot_id = created.json()["data"]["robot"]["id"]
 
+    provisional_listing = client.get(
+        root,
+        params={"configured_only": "true"},
+        headers={"Authorization": "Bearer test"},
+    )
+    assert provisional_listing.status_code == 200
+    assert provisional_listing.json()["items"] == []
+
     bound = client.post(
         f"{root}/{robot_id}/model-bindings",
         headers={"Authorization": "Bearer test", "Idempotency-Key": "bind"},
@@ -104,6 +125,13 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
     assert bound.json()["robot_id"] == robot_id
     assert "region_code" not in bound.json()
 
+    configured_listing = client.get(
+        root,
+        params={"configured_only": "true"},
+        headers={"Authorization": "Bearer test"},
+    )
+    assert [item["id"] for item in configured_listing.json()["items"]] == [robot_id]
+
     history = client.get(
         f"{root}/model-bindings",
         params={"version_id": "version-a"},
@@ -111,6 +139,37 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
     )
     assert history.status_code == 200
     assert [item["binding_id"] for item in history.json()["items"]] == [bound.json()["binding_id"]]
+
+    protected = client.delete(f"{root}/{robot_id}", headers={"Authorization": "Bearer test"})
+    assert protected.status_code == 409
+    assert protected.json()["code"] == "ROBOT_NOT_PROVISIONAL"
+
+
+def test_failed_import_can_delete_only_its_provisional_robot() -> None:
+    repository = InMemoryOrganizationRobotAssetRepository((ORGANIZATION_ID,))
+    configure_organization_robot_assets(OrganizationRobotAssetService(repository))
+    current: dict[str, AuthContext | None] = {"value": _auth(manage=True)}
+    client = TestClient(_app(current))
+    root = f"/api/v1/organizations/{ORGANIZATION_ID}/robots"
+    created = client.post(
+        root,
+        headers={"Authorization": "Bearer test", "Idempotency-Key": "failed-import"},
+        json={"display_name": "临时机器人", "serial_no": "FAILED-001"},
+    )
+    robot_id = created.json()["data"]["robot"]["id"]
+
+    deleted = client.delete(f"{root}/{robot_id}", headers={"Authorization": "Bearer test"})
+    assert deleted.status_code == 204
+    assert (
+        client.get(f"{root}/{robot_id}/bootstrap", headers={"Authorization": "Bearer test"}).json()[
+            "code"
+        ]
+        == "ROBOT_NOT_FOUND"
+    )
+    assert (
+        client.delete(f"{root}/{robot_id}", headers={"Authorization": "Bearer test"}).status_code
+        == 204
+    )
 
 
 def test_organization_robot_assets_enforce_membership_and_capability() -> None:

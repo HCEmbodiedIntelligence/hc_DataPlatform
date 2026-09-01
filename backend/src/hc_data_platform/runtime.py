@@ -187,6 +187,7 @@ from hc_data_platform.publishing.service import DatasetPublisher, ExportCoordina
 from hc_data_platform.quality.engine import QualityEngine
 from hc_data_platform.quality.postgres import PostgresQualityRepository
 from hc_data_platform.quality.router import configure_quality_repository
+from hc_data_platform.registry.filesystem_storage import FilesystemRobotModelStorage
 from hc_data_platform.registry.repository import PostgresRegistryRepository
 from hc_data_platform.registry.router import configure_registry
 from hc_data_platform.registry.service import RegistryService
@@ -723,7 +724,10 @@ def build_runtime(
     )
     registry = RegistryService(
         PostgresRegistryRepository(connection_factory),
-        storage=object_storage,
+        storage=FilesystemRobotModelStorage(
+            resolved.robot_model_asset_root,
+            signing_secret=resolved.cursor_secret,
+        ),
         cursor_secret=resolved.cursor_secret,
     )
     robot_assets = OrganizationRobotAssetService(

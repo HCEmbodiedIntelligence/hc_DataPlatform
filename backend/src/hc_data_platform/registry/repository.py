@@ -93,6 +93,13 @@ class RobotModelAssetUploadRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class RobotModelImportCleanup:
+    """Storage objects owned exclusively by a discarded import attempt."""
+
+    files: tuple[RobotModelAssetUploadFileRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RobotModelPublishPreflightRecord:
     organization_id: str
     project_id: str
@@ -239,6 +246,15 @@ class RegistryRepository(Protocol):
         expected_etag: str,
         occurred_at: datetime,
     ) -> RobotModelVersion: ...
+
+    def discard_robot_model_import(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        version_id: str,
+        fallback_version_id: str | None,
+    ) -> RobotModelImportCleanup | None: ...
 
     def append_audit(self, event: RegistryAuditEvent) -> None: ...
 
@@ -722,6 +738,105 @@ class InMemoryRegistryRepository:
                 preflight, status="CONSUMED", consumed_at=occurred_at
             )
             return updated
+
+    def discard_robot_model_import(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        version_id: str,
+        fallback_version_id: str | None,
+    ) -> RobotModelImportCleanup | None:
+        with self._lock:
+            version = self._versions.get((organization_id, version_id))
+            if version is None:
+                return None
+            if version.lifecycle not in {"DRAFT", "PUBLISHED"}:
+                raise ValueError("robot model import is in use")
+
+            fallback = (
+                None
+                if fallback_version_id is None
+                else self._versions.get((organization_id, fallback_version_id))
+            )
+            if fallback_version_id is not None and (
+                fallback_version_id == version_id
+                or fallback is None
+                or fallback.robot_model_id != version.robot_model_id
+                or fallback.lifecycle != "PUBLISHED"
+            ):
+                raise ValueError("robot model fallback version is invalid")
+
+            uploads = tuple(
+                upload
+                for (
+                    candidate_organization,
+                    _candidate_project,
+                    _,
+                ), upload in self._asset_uploads.items()
+                if candidate_organization == organization_id and upload.version_id == version_id
+            )
+            cleanup = RobotModelImportCleanup(
+                files=tuple(item for upload in uploads for item in upload.files)
+            )
+            upload_keys = {
+                key
+                for key, upload in self._asset_uploads.items()
+                if key[0] == organization_id and upload.version_id == version_id
+            }
+            for key in upload_keys:
+                del self._asset_uploads[key]
+            for key, (_object_key, candidate_version_id, _asset) in tuple(self._assets.items()):
+                if key[0] == organization_id and candidate_version_id == version_id:
+                    del self._assets[key]
+            for key in tuple(self._joint_mappings):
+                if key[0] == organization_id and key[2] == version_id:
+                    del self._joint_mappings[key]
+            for key, item in tuple(self._publish_preflights.items()):
+                if key[0] == organization_id and item.version_id == version_id:
+                    del self._publish_preflights[key]
+            for key, (_fingerprint, response) in tuple(self._command_receipts.items()):
+                if key[0] == organization_id and (
+                    key[2] == version_id or response.id == version_id
+                ):
+                    del self._command_receipts[key]
+
+            del self._versions[(organization_id, version_id)]
+            remaining_versions = tuple(
+                candidate
+                for (candidate_organization, _), candidate in self._versions.items()
+                if candidate_organization == organization_id
+                and candidate.robot_model_id == version.robot_model_id
+            )
+            if not remaining_versions:
+                self._models = [
+                    (candidate_organization, model)
+                    for candidate_organization, model in self._models
+                    if not (
+                        candidate_organization == organization_id
+                        and model.id == version.robot_model_id
+                    )
+                ]
+            else:
+                self._models = [
+                    (
+                        candidate_organization,
+                        model.model_copy(
+                            update={
+                                "current_published_version_id": (
+                                    fallback_version_id
+                                    if model.current_published_version_id == version_id
+                                    else model.current_published_version_id
+                                )
+                            }
+                        ),
+                    )
+                    if candidate_organization == organization_id
+                    and model.id == version.robot_model_id
+                    else (candidate_organization, model)
+                    for candidate_organization, model in self._models
+                ]
+            return cleanup
 
     def finalize_asset_upload(
         self,
@@ -1992,6 +2107,174 @@ class PostgresRegistryRepository:
                 raise KeyError(upload_id)
             connection.commit()
             return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def discard_robot_model_import(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        version_id: str,
+        fallback_version_id: str | None,
+    ) -> RobotModelImportCleanup | None:
+        """Delete an unbound import version and return its owned storage objects."""
+
+        del project_id
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT version.robot_model_id, version.lifecycle,
+                       model.current_published_version_id
+                  FROM registry.robot_model_versions AS version
+                  JOIN registry.robot_models AS model
+                    ON model.organization_id = version.organization_id
+                   AND model.model_id = version.robot_model_id
+                 WHERE version.organization_id = %s AND version.version_id = %s
+                 FOR UPDATE OF version, model
+                """,
+                (organization_id, version_id),
+            )
+            raw_version = cursor.fetchone()
+            if raw_version is None:
+                connection.commit()
+                return None
+            version_row = _row(cursor, raw_version)
+            model_id = str(version_row["robot_model_id"])
+            lifecycle = str(version_row["lifecycle"])
+            current_published_version_id = (
+                None
+                if version_row["current_published_version_id"] is None
+                else str(version_row["current_published_version_id"])
+            )
+            if lifecycle not in {"DRAFT", "PUBLISHED"}:
+                raise ValueError("robot model import is in use")
+
+            if fallback_version_id is not None:
+                if fallback_version_id == version_id:
+                    raise ValueError("robot model fallback version is invalid")
+                cursor.execute(
+                    """
+                    SELECT 1
+                      FROM registry.robot_model_versions
+                     WHERE organization_id = %s AND version_id = %s
+                       AND robot_model_id = %s AND lifecycle = 'PUBLISHED'
+                    """,
+                    (organization_id, fallback_version_id, model_id),
+                )
+                if cursor.fetchone() is None:
+                    raise ValueError("robot model fallback version is invalid")
+
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM registry.organization_robot_model_bindings
+                     WHERE organization_id = %s AND version_id = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM robotics.robot_assets
+                     WHERE organization_id = %s AND robot_model_version_id = %s
+                ) AS in_use
+                """,
+                (organization_id, version_id, organization_id, version_id),
+            )
+            raw_usage = cursor.fetchone()
+            if raw_usage is None or bool(_row(cursor, raw_usage)["in_use"]):
+                raise ValueError("robot model import is in use")
+
+            cursor.execute(
+                """
+                SELECT file.relative_path, file.role, file.media_type,
+                       file.expected_size, file.expected_sha256, file.object_key,
+                       file.multipart_upload_id, file.status,
+                       file.completed_etag, file.completed_at
+                  FROM registry.robot_model_asset_upload_files AS file
+                  JOIN registry.robot_model_asset_uploads AS upload
+                    ON upload.organization_id = file.organization_id
+                   AND upload.upload_id = file.upload_id
+                 WHERE upload.organization_id = %s AND upload.version_id = %s
+                 ORDER BY file.upload_id, file.relative_path
+                """,
+                (organization_id, version_id),
+            )
+            cleanup = RobotModelImportCleanup(
+                files=tuple(_asset_upload_file(_row(cursor, raw)) for raw in cursor.fetchall())
+            )
+
+            if current_published_version_id == version_id:
+                cursor.execute(
+                    """
+                    UPDATE registry.robot_models
+                       SET current_published_version_id = %s, updated_at = now()
+                     WHERE organization_id = %s AND model_id = %s
+                    """,
+                    (fallback_version_id, organization_id, model_id),
+                )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_model_publish_preflights
+                 WHERE organization_id = %s AND version_id = %s
+                """,
+                (organization_id, version_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_model_command_receipts
+                 WHERE organization_id = %s
+                   AND (version_id = %s OR response ->> 'id' = %s)
+                """,
+                (organization_id, version_id, version_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_model_joint_mappings
+                 WHERE organization_id = %s AND version_id = %s
+                """,
+                (organization_id, version_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_model_assets
+                 WHERE organization_id = %s AND version_id = %s
+                """,
+                (organization_id, version_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_model_asset_uploads
+                 WHERE organization_id = %s AND version_id = %s
+                """,
+                (organization_id, version_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_model_versions
+                 WHERE organization_id = %s AND version_id = %s
+                """,
+                (organization_id, version_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM registry.robot_models AS model
+                 WHERE model.organization_id = %s AND model.model_id = %s
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM registry.robot_model_versions AS version
+                        WHERE version.organization_id = model.organization_id
+                          AND version.robot_model_id = model.model_id
+                   )
+                """,
+                (organization_id, model_id),
+            )
+            connection.commit()
+            return cleanup
         except Exception:
             connection.rollback()
             raise

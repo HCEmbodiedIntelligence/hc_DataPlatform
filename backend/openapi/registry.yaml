@@ -970,6 +970,171 @@ paths:
       summary: Complete Robot Model Asset Upload File
       tags:
       - registry
+  /api/v1/organizations/{organization_id}/robot-model-assets/content:
+    get:
+      operationId: downloadRobotModelAssetFromServer
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: query
+        name: token
+        required: true
+        schema:
+          maxLength: 16384
+          minLength: 1
+          title: Token
+          type: string
+      responses:
+        '200':
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security: []
+      summary: Download Robot Model Asset From Server
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-assets/upload-part:
+    put:
+      operationId: uploadRobotModelAssetPartToServer
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: query
+        name: token
+        required: true
+        schema:
+          maxLength: 16384
+          minLength: 1
+          title: Token
+          type: string
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              format: binary
+              type: string
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security: []
+      summary: Upload Robot Model Asset Part To Server
+      tags:
+      - registry
   /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:
     get:
       operationId: getRobotModelVersion
@@ -1597,6 +1762,92 @@ paths:
       security:
       - bearerAuth: []
       summary: Create Robot Model Draft
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:discard-import:
+    delete:
+      operationId: discardRobotModelImport
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: query
+        name: fallback_version_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Fallback Version Id
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Discard Robot Model Import
       tags:
       - registry
   /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:preflight-publish:

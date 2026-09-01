@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import mimetypes
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi.responses import StreamingResponse
 
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.security.http import VerifiedAuth
@@ -31,6 +34,7 @@ from .service import RegistryService
 
 router = APIRouter(prefix="/api/v1/organizations/{organization_id}", tags=["registry"])
 _service = RegistryService.in_memory()
+_MAX_ASSET_PART_BYTES = 16 * 1024**2
 
 PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
     status: {
@@ -103,6 +107,126 @@ def _select_project_scope(
     ScopeGuard.require(auth, project_id)
     auth.require_capability(capability, project_id)
     select_request_scope(project_id)
+
+
+async def _read_asset_part(request: Request) -> bytes:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"", "application/octet-stream"}:
+        from hc_data_platform.core.errors import problem
+
+        raise problem(
+            status=415,
+            code="ROBOT_MODEL_ASSET_PART_CONTENT_TYPE_INVALID",
+            title="Unsupported robot model asset part content type",
+            detail="Robot model asset parts require application/octet-stream.",
+        )
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared = int(content_length)
+        except ValueError as exc:
+            from hc_data_platform.core.errors import problem
+
+            raise problem(
+                status=422,
+                code="ROBOT_MODEL_ASSET_PART_LENGTH_INVALID",
+                title="Robot model asset part length is invalid",
+                detail="Content-Length must be a positive integer.",
+            ) from exc
+        if declared < 1 or declared > _MAX_ASSET_PART_BYTES:
+            from hc_data_platform.core.errors import problem
+
+            raise problem(
+                status=413,
+                code="ROBOT_MODEL_ASSET_PART_TOO_LARGE",
+                title="Robot model asset part is too large",
+                detail=f"A robot model asset part must be at most {_MAX_ASSET_PART_BYTES} bytes.",
+            )
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > _MAX_ASSET_PART_BYTES:
+            from hc_data_platform.core.errors import problem
+
+            raise problem(
+                status=413,
+                code="ROBOT_MODEL_ASSET_PART_TOO_LARGE",
+                title="Robot model asset part is too large",
+                detail=f"A robot model asset part must be at most {_MAX_ASSET_PART_BYTES} bytes.",
+            )
+    if not body:
+        from hc_data_platform.core.errors import problem
+
+        raise problem(
+            status=422,
+            code="ROBOT_MODEL_ASSET_PART_EMPTY",
+            title="Robot model asset part is empty",
+            detail="Robot model asset parts must contain at least one byte.",
+        )
+    return bytes(body)
+
+
+@router.put(
+    "/robot-model-assets/upload-part",
+    operation_id="uploadRobotModelAssetPartToServer",
+    status_code=200,
+    response_class=Response,
+    responses=PROBLEM_RESPONSES,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+            },
+        }
+    },
+)
+async def upload_robot_model_asset_part_to_server(
+    organization_id: str,
+    token: Annotated[str, Query(min_length=1, max_length=16_384)],
+    request: Request,
+    service: ServiceDependency,
+) -> Response:
+    part = service.receive_authorized_asset_part(
+        organization_id=organization_id,
+        token=token,
+        body=await _read_asset_part(request),
+    )
+    return Response(
+        status_code=200,
+        headers={
+            "Cache-Control": "private, no-store",
+            "ETag": f'"{part.etag}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/robot-model-assets/content",
+    operation_id="downloadRobotModelAssetFromServer",
+    response_class=StreamingResponse,
+    responses=PROBLEM_RESPONSES,
+)
+def download_robot_model_asset_from_server(
+    organization_id: str,
+    token: Annotated[str, Query(min_length=1, max_length=16_384)],
+    service: ServiceDependency,
+) -> StreamingResponse:
+    filename, chunks = service.open_authorized_asset_download(
+        organization_id=organization_id,
+        token=token,
+    )
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return StreamingResponse(
+        chunks,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get(
@@ -191,6 +315,34 @@ def get_robot_model_version(
     )
     response.headers["ETag"] = result.data.etag
     return result
+
+
+@router.delete(
+    "/robot-model-versions/{version_id}:discard-import",
+    operation_id="discardRobotModelImport",
+    status_code=204,
+    responses=PROBLEM_RESPONSES,
+)
+def discard_robot_model_import(
+    organization_id: str,
+    version_id: str,
+    response: Response,
+    request: Request,
+    auth: VerifiedAuth,
+    project_id: ProjectScope,
+    service: ServiceDependency,
+    fallback_version_id: str | None = Query(default=None),
+) -> None:
+    _select_project_scope(auth, project_id, capability="robot_model.manage")
+    _no_store(response)
+    service.discard_robot_model_import(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        version_id=version_id,
+        fallback_version_id=fallback_version_id,
+        request_id=_request_id(request),
+    )
 
 
 @router.post(

@@ -7,7 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from hc_data_platform.ingest.models import CompletedPart, Identifier, PartAuthorization
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as converter
 
-from .source_profile import is_canonical_lerobot_object, validate_source_info
+from .source_profile import (
+    MAX_LEROBOT_IMPORT_EPISODES,
+    is_canonical_lerobot_object,
+    is_lerobot_local_cache_path,
+    is_lerobot_transient_path,
+    validate_source_info,
+)
 
 
 def _safe_source_path(value: str) -> str:
@@ -50,6 +56,16 @@ class CreateLeRobotImportV1(BaseModel):
         paths = [item.path for item in self.files]
         if len(paths) != len(set(paths)):
             raise ValueError("LeRobot source file paths must be unique")
+        local_artifacts = [
+            path
+            for path in paths
+            if is_lerobot_local_cache_path(path) or is_lerobot_transient_path(path)
+        ]
+        if local_artifacts:
+            raise ValueError(
+                "LeRobot source cannot contain local cache or incomplete download files: "
+                f"{local_artifacts[0]}"
+            )
         path_set = set(paths)
         if "meta/info.json" not in path_set:
             raise ValueError("LeRobot source must contain meta/info.json")
@@ -69,8 +85,11 @@ class CreateLeRobotImportV1(BaseModel):
         total_episodes = info.get("total_episodes")
         if not isinstance(total_episodes, int) or isinstance(total_episodes, bool):
             raise ValueError("LeRobot metadata must declare total_episodes")
-        if not 1 <= total_episodes <= 100:
-            raise ValueError("browser LeRobot import supports between 1 and 100 episodes")
+        if not 1 <= total_episodes <= MAX_LEROBOT_IMPORT_EPISODES:
+            raise ValueError(
+                "browser LeRobot import supports between 1 and "
+                f"{MAX_LEROBOT_IMPORT_EPISODES} episodes"
+            )
         return self
 
     @property
@@ -158,7 +177,7 @@ class LeRobotImportAcceptedV1(BaseModel):
     schema_version: Literal["lerobot-web-import-accepted/v1"] = "lerobot-web-import-accepted/v1"
     import_id: str
     status: Literal["EPISODES_QUEUED"] = "EPISODES_QUEUED"
-    episode_count: int = Field(ge=1, le=100)
+    episode_count: int = Field(ge=1, le=MAX_LEROBOT_IMPORT_EPISODES)
     source_file_count: int = Field(ge=1, le=10_000)
-    episode_task_count: int = Field(ge=1, le=100)
+    episode_task_count: int = Field(ge=1, le=MAX_LEROBOT_IMPORT_EPISODES)
     episode_plan_key: str = Field(min_length=1, max_length=2048)

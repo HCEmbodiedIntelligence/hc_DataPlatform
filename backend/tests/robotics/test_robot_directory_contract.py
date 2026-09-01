@@ -23,6 +23,10 @@ def test_robot_assets_publish_only_the_organization_contract() -> None:
     assert paths[root]["get"]["operationId"] == "listOrganizationRobots"
     assert paths[root]["post"]["operationId"] == "createOrganizationRobot"
     assert (
+        paths[f"{root}/{{robot_id}}"]["delete"]["operationId"]
+        == "deleteProvisionalOrganizationRobot"
+    )
+    assert (
         paths[f"{root}/{{robot_id}}/bootstrap"]["get"]["operationId"]
         == "getOrganizationRobotBootstrap"
     )

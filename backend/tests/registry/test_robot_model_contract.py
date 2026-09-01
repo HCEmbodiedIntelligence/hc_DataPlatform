@@ -24,6 +24,7 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     assert robot_model_paths == {
         f"{root}/robot-models",
         f"{root}/robot-model-versions/{{version_id}}",
+        f"{root}/robot-model-versions/{{version_id}}:discard-import",
         f"{root}/robot-model-versions/{{version_id}}:create-draft",
         f"{root}/robot-model-versions/{{version_id}}:preflight-publish",
         f"{root}/robot-model-versions/{{version_id}}:publish",
@@ -31,6 +32,8 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
         f"{root}/robot-model-versions/{{version_id}}/upload-sessions",
         f"{root}/robot-model-asset-uploads/{{upload_id}}:authorize-parts",
         f"{root}/robot-model-asset-uploads/{{upload_id}}:complete-file",
+        f"{root}/robot-model-assets/upload-part",
+        f"{root}/robot-model-assets/content",
         f"{root}/robot-model-versions/{{version_id}}/assets",
         f"{root}/robot-model-versions/{{version_id}}/assets/{{asset_id}}/download",
     }
@@ -39,6 +42,10 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     assert (
         paths[f"{root}/robot-model-versions/{{version_id}}"]["get"]["operationId"]
         == "getRobotModelVersion"
+    )
+    assert (
+        paths[f"{root}/robot-model-versions/{{version_id}}:discard-import"]["delete"]["operationId"]
+        == "discardRobotModelImport"
     )
     assert (
         paths[f"{root}/robot-model-versions/{{version_id}}/upload-sessions"]["post"]["operationId"]
@@ -56,6 +63,16 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
         ]
         == "authorizeRobotModelAssetDownload"
     )
+    assert (
+        paths[f"{root}/robot-model-assets/upload-part"]["put"]["operationId"]
+        == "uploadRobotModelAssetPartToServer"
+    )
+    assert paths[f"{root}/robot-model-assets/upload-part"]["put"]["security"] == []
+    assert (
+        paths[f"{root}/robot-model-assets/content"]["get"]["operationId"]
+        == "downloadRobotModelAssetFromServer"
+    )
+    assert paths[f"{root}/robot-model-assets/content"]["get"]["security"] == []
     assert (
         paths[f"{root}/robot-model-versions/{{version_id}}/joint-mappings"]["put"]["operationId"]
         == "replaceRobotModelJointMappings"

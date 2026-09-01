@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -13,22 +13,28 @@ const {
   createModel,
   createModelDraft,
   createRobot,
+  deleteRobot,
+  discardImport,
   getVersion,
   preflight,
   publishVersion,
   replaceMappings,
   useRobotBootstrap,
+  useRobots,
   uploadAssets,
 } = vi.hoisted(() => ({
   bindVersion: vi.fn(),
   createModel: vi.fn(),
   createModelDraft: vi.fn(),
   createRobot: vi.fn(),
+  deleteRobot: vi.fn(),
+  discardImport: vi.fn(),
   getVersion: vi.fn(),
   preflight: vi.fn(),
   publishVersion: vi.fn(),
   replaceMappings: vi.fn(),
   useRobotBootstrap: vi.fn(),
+  useRobots: vi.fn(),
   uploadAssets: vi.fn(),
 }));
 
@@ -64,29 +70,8 @@ vi.mock("../../features/viewer", () => ({
 }));
 
 vi.mock("../../features/robots/api", () => ({
-  useRobots: () => ({
-    isPending: false,
-    error: null,
-    refetch: vi.fn(),
-    data: {
-      items: [
-        {
-          id: robot.id,
-          displayName: robot.displayName,
-          serialNo: robot.serialNo,
-          lifecycle: robot.lifecycle,
-          connectivity: robot.connectivity.state,
-        },
-      ],
-      pageInfo: {
-        start_cursor: null,
-        end_cursor: null,
-        has_previous_page: false,
-        has_next_page: false,
-      },
-      snapshotAt: "2026-08-21T08:00:00Z",
-    },
-  }),
+  deleteProvisionalRobot: deleteRobot,
+  useRobots,
   useRobotBootstrap,
   useCreateRobot: () => ({
     isPending: false,
@@ -97,6 +82,7 @@ vi.mock("../../features/robots/api", () => ({
 
 vi.mock("../../features/robot-models/api", () => ({
   authorizeRobotModelAssetDownload: vi.fn(),
+  discardRobotModelImport: discardImport,
   getRobotModelVersion: getVersion,
   useRobotModelVersion: () => ({
     data: undefined,
@@ -284,6 +270,29 @@ beforeEach(() => {
     isError: false,
     refetch: vi.fn(async () => ({ data: robot })),
   });
+  useRobots.mockReturnValue({
+    isPending: false,
+    error: null,
+    refetch: vi.fn(async () => undefined),
+    data: {
+      items: [
+        {
+          id: robot.id,
+          displayName: robot.displayName,
+          serialNo: robot.serialNo,
+          lifecycle: robot.lifecycle,
+          connectivity: robot.connectivity.state,
+        },
+      ],
+      pageInfo: {
+        start_cursor: null,
+        end_cursor: null,
+        has_previous_page: false,
+        has_next_page: false,
+      },
+      snapshotAt: "2026-08-21T08:00:00Z",
+    },
+  });
   createRobot.mockResolvedValue(robot);
   createModel.mockResolvedValue({
     id: "version-draft",
@@ -321,6 +330,8 @@ beforeEach(() => {
     etag: '"published:1"',
   });
   bindVersion.mockResolvedValue({ binding_id: "binding-1" });
+  deleteRobot.mockResolvedValue(undefined);
+  discardImport.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -363,12 +374,15 @@ describe("P15 robot asset page", () => {
     await waitFor(() =>
       expect(useRobotBootstrap).toHaveBeenCalledWith("robot-1"),
     );
+    expect(useRobots).toHaveBeenCalledWith(
+      expect.objectContaining({ configured_only: "true" }),
+    );
     expect(
       screen.getAllByRole("button", { name: "导入 URDF / 配置" })[0],
     ).toBeEnabled();
     expect(screen.queryByText("父组件")).not.toBeInTheDocument();
     expect(screen.queryByText("组件拓扑")).not.toBeInTheDocument();
-    expect(screen.getByText("解析 → 预览 → 保存")).toBeInTheDocument();
+    expect(screen.getByText("服务器本地")).toBeInTheDocument();
   });
 
   it("parses imported URDF and configuration before showing the preview", async () => {
@@ -431,5 +445,38 @@ describe("P15 robot asset page", () => {
         robotId: "robot-1",
       }),
     );
+  });
+
+  it("removes the provisional robot, draft and files after an import failure", async () => {
+    uploadAssets.mockRejectedValueOnce(new Error("upload failed"));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "添加机器人" }));
+    const dialog = screen.getByRole("dialog", { name: "添加机器人" });
+    await user.type(within(dialog).getByLabelText("机器人名称"), "临时机器人");
+    await user.type(within(dialog).getByLabelText("序列号"), "TEMP-001");
+    await user.click(
+      within(dialog).getByRole("button", { name: "创建并导入模型" }),
+    );
+    await user.upload(screen.getByLabelText("选择机器人模型文件"), [
+      browserFile(urdf, "robot.urdf", "application/xml"),
+      browserFile(config, "robot.config.json", "application/json"),
+    ]);
+    await user.click(screen.getByRole("button", { name: "解析文件并预览" }));
+    await screen.findByText("URDF 结构解析通过");
+    await user.click(screen.getByRole("button", { name: "保存机器人模型" }));
+
+    await waitFor(() =>
+      expect(discardImport).toHaveBeenCalledWith(
+        "org-p15",
+        "version-draft",
+        undefined,
+      ),
+    );
+    expect(deleteRobot).toHaveBeenCalledWith("org-p15", "robot-1");
+    expect(
+      await screen.findByText(/服务器临时文件已自动清理/u),
+    ).toBeInTheDocument();
   });
 });

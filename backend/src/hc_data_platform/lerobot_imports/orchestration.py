@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hc_data_platform.ingest.models import Identifier
 
+from .source_profile import MAX_LEROBOT_IMPORT_EPISODES
+
 
 class LeRobotEpisodeSourceRefV1(BaseModel):
     """Small immutable locator carried by one Episode processing task."""
@@ -15,7 +17,7 @@ class LeRobotEpisodeSourceRefV1(BaseModel):
     source_format: Literal["lerobot_v3"] = "lerobot_v3"
     raw_upload_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     raw_manifest_key: str = Field(min_length=1, max_length=2048)
-    episode_index: int = Field(ge=0, le=99)
+    episode_index: int = Field(ge=0, lt=MAX_LEROBOT_IMPORT_EPISODES)
 
 
 class LeRobotEpisodeTaskV1(BaseModel):
@@ -40,7 +42,9 @@ class LeRobotImportPlanV1(BaseModel):
     raw_upload_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     raw_manifest_key: str = Field(min_length=1, max_length=2048)
     source_format: Literal["lerobot_v3"] = "lerobot_v3"
-    episode_tasks: tuple[LeRobotEpisodeTaskV1, ...] = Field(min_length=1, max_length=100)
+    episode_tasks: tuple[LeRobotEpisodeTaskV1, ...] = Field(
+        min_length=1, max_length=MAX_LEROBOT_IMPORT_EPISODES
+    )
 
     @model_validator(mode="after")
     def validate_episode_set(self) -> LeRobotImportPlanV1:
