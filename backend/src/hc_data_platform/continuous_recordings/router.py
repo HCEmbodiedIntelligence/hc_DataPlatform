@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.security.http import VerifiedAuth
@@ -15,6 +15,7 @@ from .asset_models import (
     EpisodeProcessingPage,
     EpisodeVideoSourceEnvelope,
     RecordingAssetPartGrant,
+    RecordingSensorWindow,
     RecordingUploadEnvelope,
     RecordingUploadGrant,
     RecordingVideoSourceEnvelope,
@@ -422,6 +423,39 @@ def list_continuous_recording_episodes(
         project_id=project_id,
         region_code=region_code,
         recording_id=recording_id,
+    )
+
+
+@router.get(
+    "/{recording_id}/sensor-window",
+    operation_id="readContinuousRecordingSensorWindow",
+    response_model=RecordingSensorWindow,
+    responses=PROBLEM_RESPONSES,
+)
+def read_continuous_recording_sensor_window(
+    project_id: str,
+    region_code: str,
+    recording_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+    topic: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+    start_offset_ns: Annotated[str, Query(pattern=r"^(?:0|[1-9][0-9]*)$")] = "0",
+    end_offset_ns: Annotated[str, Query(pattern=r"^(?:0|[1-9][0-9]*)$")] = "4000000000",
+    maximum_samples: Annotated[int, Query(ge=1, le=10_000)] = 5_000,
+) -> RecordingSensorWindow:
+    response.headers["Cache-Control"] = "no-store"
+    return service.read_recording_sensor_window(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        recording_id=recording_id,
+        topic=topic,
+        start_offset_ns=int(start_offset_ns),
+        end_offset_ns=int(end_offset_ns),
+        maximum_samples=maximum_samples,
     )
 
 

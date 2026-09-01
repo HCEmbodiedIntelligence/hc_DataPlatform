@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import unquote, urlparse
 
 from hc_data_platform.core.context import retain_current_writer_permit
@@ -60,6 +60,28 @@ class S3ObjectStorage:
                 ExpiresIn=expires_seconds,
                 HttpMethod="PUT",
             )
+        )
+
+    def upload_part_stream(
+        self,
+        key: str,
+        upload_id: str,
+        part_number: int,
+        body: BinaryIO,
+        size: int,
+    ) -> MultipartPart:
+        response = self._client.upload_part(
+            Bucket=self._bucket,
+            Key=key,
+            UploadId=upload_id,
+            PartNumber=part_number,
+            Body=body,
+            ContentLength=size,
+        )
+        return MultipartPart(
+            part_number=part_number,
+            etag=normalize_etag(str(response["ETag"])),
+            size=size,
         )
 
     def list_parts(self, key: str, upload_id: str) -> list[MultipartPart]:
@@ -150,6 +172,22 @@ class S3ObjectStorage:
         finally:
             body.close()
 
+    def read_range(self, key: str, start: int, end: int) -> bytes:
+        if start < 0 or end < start:
+            raise ValueError("invalid object byte range")
+        if start == end:
+            return b""
+        response = self._client.get_object(
+            Bucket=self._bucket,
+            Key=key,
+            Range=f"bytes={start}-{end - 1}",
+        )
+        body = response["Body"]
+        try:
+            return bytes(body.read())
+        finally:
+            body.close()
+
     def presign_read(self, key: str, expires_seconds: int) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
@@ -230,6 +268,30 @@ class OssObjectStorage:
                 params={"uploadId": upload_id, "partNumber": str(part_number)},
                 slash_safe=True,
             )
+        )
+
+    def upload_part_stream(
+        self,
+        key: str,
+        upload_id: str,
+        part_number: int,
+        body: BinaryIO,
+        size: int,
+    ) -> MultipartPart:
+        result = self._bucket.upload_part(
+            key,
+            upload_id,
+            part_number,
+            body,
+            headers={"Content-Length": str(size)},
+        )
+        headers = getattr(result, "headers", {})
+        raw_crc64 = _case_insensitive_header(headers, "x-oss-hash-crc64ecma")
+        return MultipartPart(
+            part_number=part_number,
+            etag=normalize_etag(str(result.etag)),
+            size=size,
+            crc64=None if raw_crc64 is None else int(raw_crc64),
         )
 
     def list_parts(self, key: str, upload_id: str) -> list[MultipartPart]:
@@ -328,6 +390,19 @@ class OssObjectStorage:
         try:
             while chunk := result.read(chunk_size):
                 yield bytes(chunk)
+        finally:
+            close = getattr(result, "close", None)
+            if close is not None:
+                close()
+
+    def read_range(self, key: str, start: int, end: int) -> bytes:
+        if start < 0 or end < start:
+            raise ValueError("invalid object byte range")
+        if start == end:
+            return b""
+        result = self._bucket.get_object(key, byte_range=(start, end - 1))
+        try:
+            return bytes(result.read())
         finally:
             close = getattr(result, "close", None)
             if close is not None:

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from hc_data_platform.core.context import select_request_scope
+from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth
 from hc_data_platform.security.scope import ScopeGuard
 
@@ -33,7 +34,7 @@ from .models import (
 from .service import RegistryService
 
 router = APIRouter(prefix="/api/v1/organizations/{organization_id}", tags=["registry"])
-_service = RegistryService.in_memory()
+_service: RegistryService | None = None
 _MAX_ASSET_PART_BYTES = 16 * 1024**2
 
 PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -53,6 +54,13 @@ def configure_registry(service: RegistryService) -> None:
 
 
 def get_registry_service() -> RegistryService:
+    if _service is None:
+        raise problem(
+            status=503,
+            code="ROBOT_MODEL_REGISTRY_NOT_CONFIGURED",
+            title="Robot model registry is not configured",
+            detail="The PostgreSQL-backed robot model registry must be configured at startup.",
+        )
     return _service
 
 

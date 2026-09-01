@@ -1017,9 +1017,7 @@ export function usePublishRobotModelVersion() {
         makeQueryKey("robot-models", "version", intent.versionId),
         version,
       );
-      void client.invalidateQueries({
-        queryKey: makeQueryKey("robot-models", "list", {}),
-      });
+      void client.invalidateQueries({ queryKey: ["robot-models"] });
     },
   });
 }

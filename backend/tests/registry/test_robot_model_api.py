@@ -441,8 +441,70 @@ def test_robot_model_asset_upload_direct_transfer_manifest_and_download_authoriz
     )
     assert download.status_code == 200
     assert download.json()["asset_id"] == asset_id
-    assert download.json()["download_url"].startswith("memory://object/")
+    assert download.json()["download_url"].startswith(
+        "/api/v1/organizations/organization-a/robot-model-assets/content?token="
+    )
+    downloaded = client.get(download.json()["download_url"])
+    assert downloaded.status_code == 200
+    assert downloaded.content == body
+    assert storage.objects == {}
     assert all("object_key" not in str(event) for event in repository.audit_events)
+
+    replacement_body = b'<robot name="xr-02-updated"/>'
+    replacement = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-draft/upload-sessions",
+        headers={**headers, "Idempotency-Key": "asset-upload-replacement"},
+        json={
+            "files": [
+                {
+                    "relative_path": "models/xr-02.urdf",
+                    "role": "URDF",
+                    "media_type": "application/xml",
+                    "size_bytes": len(replacement_body),
+                    "sha256": hashlib.sha256(replacement_body).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert replacement.status_code == 201
+    replacement_record = repository.get_asset_upload(
+        organization_id="organization-a",
+        project_id="project-a",
+        upload_id=replacement.json()["data"]["upload_id"],
+    )
+    assert replacement_record is not None
+    replacement_part = storage.upload_part(
+        replacement_record.files[0].multipart_upload_id,
+        1,
+        replacement_body,
+        key=replacement_record.files[0].object_key,
+    )
+    replaced = client.post(
+        "/api/v1/organizations/organization-a/robot-model-asset-uploads/"
+        f"{replacement_record.upload_id}:complete-file",
+        headers={"Authorization": "Bearer test"},
+        json={
+            "relative_path": "models/xr-02.urdf",
+            "parts": [{"part_number": 1, "etag": replacement_part.etag}],
+        },
+    )
+    assert replaced.status_code == 200
+    replaced_assets = repository.list_robot_model_assets(
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+    )
+    assert len(replaced_assets) == 1
+    assert replaced_assets[0].asset_id != asset_id
+    assert replaced_assets[0].sha256 == hashlib.sha256(replacement_body).hexdigest()
+    stored_replacement = repository.get_robot_model_asset(
+        organization_id="organization-a",
+        project_id="project-a",
+        asset_id=replaced_assets[0].asset_id,
+    )
+    assert stored_replacement is not None
+    assert stored_replacement[2] == replacement_body
+    assert storage.objects == {}
 
     invalid = client.post(
         "/api/v1/organizations/organization-a/robot-model-versions/version-draft/upload-sessions",
@@ -681,6 +743,18 @@ def test_robot_model_joint_mapping_replaces_a_draft_under_etag_control() -> None
 def test_robot_model_publish_uses_a_durable_preflight_and_one_time_proof() -> None:
     repository = InMemoryRegistryRepository(
         organization_projects=(("organization-a", "project-a"),),
+        models=(
+            (
+                "organization-a",
+                RobotModelSummary(
+                    id="model-a",
+                    manufacturer="HC Robotics",
+                    model_code="XR-02",
+                    display_name="XR-02 协作机器人",
+                    current_published_version_id=None,
+                ),
+            ),
+        ),
         versions=(
             (
                 "organization-a",
@@ -811,6 +885,14 @@ def test_robot_model_publish_uses_a_durable_preflight_and_one_time_proof() -> No
     )
     assert published.data.lifecycle == "PUBLISHED"
     assert published.data.publish_readiness == "READY"
+    page = service.list_robot_models(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        query=None,
+        request_id="list-after-publish",
+    )
+    assert page.items[0].current_published_version_id == "version-draft"
     replay = service.publish_robot_model_version(
         auth=auth,
         organization_id="organization-a",

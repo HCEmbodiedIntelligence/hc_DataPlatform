@@ -5,7 +5,11 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from hc_data_platform.core.context import select_organization_scope
-from hc_data_platform.robotics.models import CreateRobotRequest
+from hc_data_platform.robotics.models import (
+    CreateRobotRequest,
+    RobotLifecycleTransitionRequest,
+    UpdateRobotRequest,
+)
 from hc_data_platform.security.http import VerifiedAuth
 
 from .models import (
@@ -42,6 +46,7 @@ ServiceDependency = Annotated[
     OrganizationRobotAssetService, Depends(get_organization_robot_asset_service)
 ]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=256)]
+IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
 def _request_id(request: Request) -> str:
@@ -178,6 +183,64 @@ def get_organization_robot_bootstrap(
         auth=auth,
         organization_id=organization_id,
         robot_id=robot_id,
+        request_id=_request_id(request),
+    )
+    response.headers["ETag"] = result.data.etag
+    return result
+
+
+@router.patch(
+    "/{robot_id}",
+    operation_id="updateOrganizationRobot",
+    response_model=OrganizationRobotBootstrapEnvelope,
+    responses=PROBLEM_RESPONSES,
+)
+def update_organization_robot(
+    organization_id: str,
+    robot_id: str,
+    command: UpdateRobotRequest,
+    request: Request,
+    response: Response,
+    auth: VerifiedAuth,
+    expected_etag: IfMatch,
+    service: ServiceDependency,
+) -> OrganizationRobotBootstrapEnvelope:
+    _prepare(organization_id, response)
+    result = service.update_robot(
+        auth=auth,
+        organization_id=organization_id,
+        robot_id=robot_id,
+        command=command,
+        expected_etag=expected_etag,
+        request_id=_request_id(request),
+    )
+    response.headers["ETag"] = result.data.etag
+    return result
+
+
+@router.post(
+    "/{robot_id}/lifecycle",
+    operation_id="transitionOrganizationRobotLifecycle",
+    response_model=OrganizationRobotBootstrapEnvelope,
+    responses=PROBLEM_RESPONSES,
+)
+def transition_organization_robot_lifecycle(
+    organization_id: str,
+    robot_id: str,
+    command: RobotLifecycleTransitionRequest,
+    request: Request,
+    response: Response,
+    auth: VerifiedAuth,
+    expected_etag: IfMatch,
+    service: ServiceDependency,
+) -> OrganizationRobotBootstrapEnvelope:
+    _prepare(organization_id, response)
+    result = service.transition_robot(
+        auth=auth,
+        organization_id=organization_id,
+        robot_id=robot_id,
+        command=command,
+        expected_etag=expected_etag,
         request_id=_request_id(request),
     )
     response.headers["ETag"] = result.data.etag

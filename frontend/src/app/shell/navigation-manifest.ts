@@ -168,11 +168,19 @@ export const navigationManifest: NavigationManifest = [
       },
       {
         pageId: "P14",
-        label: "机器人资产",
+        label: "机器人模型",
         path: "/settings/robot-models",
         requiredCapability: "robot_model.read",
         administratorOnly: true,
         activePatterns: ["/settings/robot-models", "/settings/robots"],
+      },
+      {
+        pageId: "P15",
+        label: "机器人实例",
+        path: "/settings/robot-instances",
+        requiredCapability: "robot.read",
+        administratorOnly: true,
+        activePatterns: ["/settings/robot-instances"],
       },
       {
         pageId: "P16",

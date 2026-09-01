@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type {
-  RobotJointFrameSource,
   StreamDescriptor,
   ViewerSeriesDescriptor,
   ViewerWindow,
@@ -15,6 +14,8 @@ import type {
   RuntimeAnnotationScope,
   RuntimeAnnotationTask,
 } from "./runtime-annotation-adapter";
+
+export { buildJointFrameSource as buildRuntimeJointFrameSource } from "../../features/viewer";
 import {
   normalizeStepRateHz,
   stepToTimelineNs,
@@ -351,155 +352,5 @@ export function buildRuntimeJointAngleStream(input: {
           }),
         }
       : {}),
-  };
-}
-
-export function buildRuntimeJointFrameSource(
-  stream: StreamDescriptor | null,
-): RobotJointFrameSource | undefined {
-  if (!stream?.windowSource) return;
-  const windowSource = stream.windowSource;
-  const frequencyHz = normalizeStepRateHz(stream.rateHz);
-  const stepCount = Math.max(
-    1,
-    timelineNsToStep(
-      (BigInt(stream.endNs) > 0n ? BigInt(stream.endNs) - 1n : 0n).toString(),
-      frequencyHz,
-    ) + 1,
-  );
-  // The 3D renderer samples on every shared-clock update. Reading a single
-  // Lance row for every animation frame overloads the object store and can
-  // make the curve window fail as collateral damage. Four-second chunks keep
-  // playback responsive while reducing a normal episode to a handful of
-  // immutable, version-pinned reads.
-  const chunkStepCount = Math.max(1, Math.round(frequencyHz * 4));
-  const payloadCache = new Map<string, ViewerWindowPayload>();
-  const inFlight = new Map<string, Promise<ViewerWindowPayload>>();
-  const failures = new Map<
-    string,
-    { readonly cause: unknown; readonly retryAfter: number }
-  >();
-
-  const loadChunk = (
-    key: string,
-    startStep: number,
-    endStep: number,
-  ): Promise<ViewerWindowPayload> => {
-    const cached = payloadCache.get(key);
-    if (cached) {
-      payloadCache.delete(key);
-      payloadCache.set(key, cached);
-      return Promise.resolve(cached);
-    }
-    const failure = failures.get(key);
-    if (failure && Date.now() < failure.retryAfter)
-      return Promise.reject(failure.cause);
-    failures.delete(key);
-    const pending = inFlight.get(key);
-    if (pending) return pending;
-
-    // Keep the shared request independent from one render frame's signal. The
-    // renderer aborts its previous consumer on every tick; aborting this fetch
-    // as well would prevent it from ever completing during playback.
-    const requestController = new AbortController();
-    const request = windowSource
-      .loadWindow(
-        {
-          startNs: stepToTimelineNs(startStep, frequencyHz),
-          endNs: stepToTimelineNs(endStep, frequencyHz),
-          lod: 0,
-        },
-        requestController.signal,
-      )
-      .then((payload) => {
-        failures.delete(key);
-        payloadCache.set(key, payload);
-        while (payloadCache.size > 3) {
-          const oldestKey = payloadCache.keys().next().value as
-            | string
-            | undefined;
-          if (!oldestKey) break;
-          const oldest = payloadCache.get(oldestKey);
-          payloadCache.delete(oldestKey);
-          oldest?.dispose?.();
-        }
-        return payload;
-      })
-      .catch((cause: unknown) => {
-        failures.set(key, { cause, retryAfter: Date.now() + 1_000 });
-        throw cause;
-      })
-      .finally(() => inFlight.delete(key));
-    inFlight.set(key, request);
-    return request;
-  };
-
-  const waitForConsumer = <T>(
-    promise: Promise<T>,
-    signal: AbortSignal,
-  ): Promise<T> => {
-    if (signal.aborted)
-      return Promise.reject(
-        new DOMException("The operation was aborted.", "AbortError"),
-      );
-    return new Promise<T>((resolve, reject) => {
-      const abort = () =>
-        reject(new DOMException("The operation was aborted.", "AbortError"));
-      signal.addEventListener("abort", abort, { once: true });
-      promise.then(
-        (value) => {
-          signal.removeEventListener("abort", abort);
-          resolve(value);
-        },
-        (cause: unknown) => {
-          signal.removeEventListener("abort", abort);
-          reject(cause);
-        },
-      );
-    });
-  };
-
-  return {
-    async sampleAt(ns, signal) {
-      const targetNs = BigInt(ns);
-      const targetStep = Math.max(
-        0,
-        Math.min(stepCount - 1, timelineNsToStep(ns, frequencyHz)),
-      );
-      const startStep =
-        Math.floor(targetStep / chunkStepCount) * chunkStepCount;
-      const endStep = Math.min(stepCount, startStep + chunkStepCount);
-      const payload = await waitForConsumer(
-        loadChunk(`${startStep}:${endStep}`, startStep, endStep),
-        signal,
-      );
-      if (!payload.values?.length || !payload.timestampsNs.length)
-        throw jointDataError(
-          "P08_JOINT_FRAME_EMPTY",
-          "当前时间点没有可用的关节角样本。",
-          true,
-        );
-      let nearestIndex = 0;
-      let nearestDistance =
-        BigInt(payload.timestampsNs[0] ?? "0") > targetNs
-          ? BigInt(payload.timestampsNs[0] ?? "0") - targetNs
-          : targetNs - BigInt(payload.timestampsNs[0] ?? "0");
-      payload.timestampsNs.forEach((timestamp, index) => {
-        const candidate = BigInt(timestamp);
-        const distance =
-          candidate > targetNs ? candidate - targetNs : targetNs - candidate;
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestIndex = index;
-        }
-      });
-      const values = payload.values[nearestIndex] ?? [];
-      return Object.fromEntries(
-        values.map((value, index) => [
-          payload.series?.[index]?.displayName ?? `J${index + 1}`,
-          value,
-        ]),
-      );
-    },
   };
 }

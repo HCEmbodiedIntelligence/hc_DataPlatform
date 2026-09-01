@@ -18,6 +18,7 @@ const allPages: PageAvailability = Object.freeze({
   P12: true,
   P13: true,
   P14: true,
+  P15: true,
   P16: true,
   P17: true,
   P18: true,

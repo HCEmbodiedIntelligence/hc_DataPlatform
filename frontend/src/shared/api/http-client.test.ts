@@ -128,6 +128,51 @@ describe("scoped HTTP requests", () => {
     expect(headers.get("X-Region-Code")).toBe(activeScope.regionCode);
   });
 
+  it("sends a scoped binary upload body without JSON encoding", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = new Blob(["raw-part"]);
+
+    await request({
+      method: "PUT",
+      path: "/projects/project-a/regions/region-a/lerobot-imports/import-a/assets:upload-part",
+      scope: activeScope,
+      query: {
+        datasetId: "dataset-a",
+        path: "data/file.parquet",
+        multipartUploadId: "upload-a",
+        partNumber: 1,
+      },
+      binaryBody: body,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(url).toContain("dataset_id=dataset-a");
+    expect(url).toContain("path=data%2Ffile.parquet");
+    expect(headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
+    expect(init.body).toBe(body);
+  });
+
+  it("rejects mixed JSON and binary request bodies before fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      request({
+        method: "PUT",
+        path: "/projects/project-a/regions/region-a/lerobot-imports/import-a/assets:upload-part",
+        scope: activeScope,
+        body: { invalid: true },
+        binaryBody: new Blob(["raw-part"]),
+      }),
+    ).rejects.toThrow("mutually exclusive");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale bound scope before issuing a request", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

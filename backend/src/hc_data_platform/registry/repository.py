@@ -185,6 +185,7 @@ class RegistryRepository(Protocol):
         completed_etag: str,
         completed_at: datetime,
         asset: RobotModelAsset,
+        content: bytes,
     ) -> RobotModelAssetUploadRecord: ...
 
     def list_robot_model_assets(
@@ -193,7 +194,16 @@ class RegistryRepository(Protocol):
 
     def get_robot_model_asset(
         self, *, organization_id: str, project_id: str, asset_id: str
-    ) -> tuple[str, RobotModelAsset] | None: ...
+    ) -> tuple[str, RobotModelAsset, bytes | None] | None: ...
+
+    def store_robot_model_asset_content(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        asset_id: str,
+        content: bytes,
+    ) -> None: ...
 
     def finalize_asset_upload(
         self,
@@ -274,6 +284,7 @@ class InMemoryRegistryRepository:
         self._organization_projects = frozenset(organization_projects)
         self._asset_uploads: dict[tuple[str, str, str], RobotModelAssetUploadRecord] = {}
         self._assets: dict[tuple[str, str, str], tuple[str, str, RobotModelAsset]] = {}
+        self._asset_contents: dict[tuple[str, str, str], bytes] = {}
         self._joint_mappings: dict[tuple[str, str, str], tuple[RobotModelJointMapping, ...]] = {}
         self._command_receipts: dict[
             tuple[str, str, str, str, str], tuple[str, RobotModelVersion]
@@ -419,14 +430,14 @@ class InMemoryRegistryRepository:
             ):
                 raise ValueError("robot model version label already exists")
             copied_assets = [
-                (object_key, asset)
-                for (candidate_organization, candidate_project, _), (
+                (object_key, asset, self._asset_contents.get(asset_key))
+                for asset_key, (
                     object_key,
                     candidate_version_id,
                     asset,
                 ) in self._assets.items()
-                if candidate_organization == organization_id
-                and candidate_project == project_id
+                if asset_key[0] == organization_id
+                and asset_key[1] == project_id
                 and candidate_version_id == source_version_id
                 and not (
                     update_scope is RobotModelDraftScope.ASSETS
@@ -459,7 +470,7 @@ class InMemoryRegistryRepository:
                 blocked_reasons=(),
             )
             self._versions[(organization_id, new_version_id)] = draft
-            for object_key, asset in copied_assets:
+            for object_key, asset, content in copied_assets:
                 cloned = asset.model_copy(
                     update={"asset_id": str(uuid4()), "created_at": created_at}
                 )
@@ -468,6 +479,8 @@ class InMemoryRegistryRepository:
                     new_version_id,
                     cloned,
                 )
+                if content is not None:
+                    self._asset_contents[(organization_id, project_id, cloned.asset_id)] = content
             self._joint_mappings[(organization_id, project_id, new_version_id)] = (
                 self._joint_mappings.get((organization_id, project_id, source_version_id), ())
             )
@@ -525,6 +538,7 @@ class InMemoryRegistryRepository:
         completed_etag: str,
         completed_at: datetime,
         asset: RobotModelAsset,
+        content: bytes,
     ) -> RobotModelAssetUploadRecord:
         key = (organization_id, project_id, upload_id)
         with self._lock:
@@ -563,14 +577,21 @@ class InMemoryRegistryRepository:
                 completed_at=record.completed_at,
             )
             self._asset_uploads[key] = updated
-            self._assets.setdefault(
-                (organization_id, project_id, asset.asset_id),
-                (
-                    files[[item.relative_path for item in files].index(relative_path)].object_key,
-                    record.version_id,
-                    asset,
-                ),
+            for asset_key, (_, asset_version_id, existing_asset) in tuple(self._assets.items()):
+                if (
+                    asset_key[0] == organization_id
+                    and asset_key[1] == project_id
+                    and asset_version_id == record.version_id
+                    and existing_asset.relative_path == relative_path
+                ):
+                    del self._assets[asset_key]
+                    self._asset_contents.pop(asset_key, None)
+            self._assets[(organization_id, project_id, asset.asset_id)] = (
+                files[[item.relative_path for item in files].index(relative_path)].object_key,
+                record.version_id,
+                asset,
             )
+            self._asset_contents[(organization_id, project_id, asset.asset_id)] = content
             return updated
 
     def list_robot_model_assets(
@@ -592,10 +613,25 @@ class InMemoryRegistryRepository:
 
     def get_robot_model_asset(
         self, *, organization_id: str, project_id: str, asset_id: str
-    ) -> tuple[str, RobotModelAsset] | None:
+    ) -> tuple[str, RobotModelAsset, bytes | None] | None:
         with self._lock:
-            found = self._assets.get((organization_id, project_id, asset_id))
-            return None if found is None else (found[0], found[2])
+            key = (organization_id, project_id, asset_id)
+            found = self._assets.get(key)
+            return None if found is None else (found[0], found[2], self._asset_contents.get(key))
+
+    def store_robot_model_asset_content(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        asset_id: str,
+        content: bytes,
+    ) -> None:
+        with self._lock:
+            key = (organization_id, project_id, asset_id)
+            if key not in self._assets:
+                raise KeyError(asset_id)
+            self._asset_contents[key] = content
 
     def list_robot_model_joint_mappings(
         self, *, organization_id: str, project_id: str, version_id: str
@@ -734,6 +770,15 @@ class InMemoryRegistryRepository:
                 }
             )
             self._versions[(organization_id, version_id)] = updated
+            self._models = [
+                (
+                    candidate_organization,
+                    model.model_copy(update={"current_published_version_id": version_id}),
+                )
+                if candidate_organization == organization_id and model.id == version.robot_model_id
+                else (candidate_organization, model)
+                for candidate_organization, model in self._models
+            ]
             self._publish_preflights[key] = dataclass_replace(
                 preflight, status="CONSUMED", consumed_at=occurred_at
             )
@@ -789,6 +834,7 @@ class InMemoryRegistryRepository:
             for key, (_object_key, candidate_version_id, _asset) in tuple(self._assets.items()):
                 if key[0] == organization_id and candidate_version_id == version_id:
                     del self._assets[key]
+                    self._asset_contents.pop(key, None)
             for key in tuple(self._joint_mappings):
                 if key[0] == organization_id and key[2] == version_id:
                     del self._joint_mappings[key]
@@ -1273,7 +1319,8 @@ class PostgresRegistryRepository:
             )
             cursor.execute(
                 """
-                SELECT relative_path, role, media_type, size_bytes, sha256, object_key
+                SELECT relative_path, role, media_type, size_bytes, sha256, object_key,
+                       content
                   FROM registry.robot_model_assets
                  WHERE organization_id = %s AND project_id = %s AND version_id = %s
                    AND (%s OR role NOT IN ('URDF', 'CONFIG'))
@@ -1287,8 +1334,8 @@ class PostgresRegistryRepository:
                     """
                     INSERT INTO registry.robot_model_assets (
                         organization_id, project_id, asset_id, version_id, relative_path,
-                        role, media_type, size_bytes, sha256, object_key, created_at
-                    ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)
+                        role, media_type, size_bytes, sha256, object_key, content, created_at
+                    ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         organization_id,
@@ -1301,6 +1348,7 @@ class PostgresRegistryRepository:
                         int(cast(int | str, asset["size_bytes"])),
                         str(asset["sha256"]),
                         str(asset["object_key"]),
+                        asset["content"],
                         created_at,
                     ),
                 )
@@ -1532,6 +1580,7 @@ class PostgresRegistryRepository:
         completed_etag: str,
         completed_at: datetime,
         asset: RobotModelAsset,
+        content: bytes,
     ) -> RobotModelAssetUploadRecord:
         connection = self._connection_factory()
         cursor = connection.cursor()
@@ -1568,10 +1617,19 @@ class PostgresRegistryRepository:
                     """
                     INSERT INTO registry.robot_model_assets (
                         organization_id, project_id, asset_id, version_id, relative_path, role,
-                        media_type, size_bytes, sha256, object_key, created_at
-                    ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)
+                        media_type, size_bytes, sha256, object_key, content, created_at
+                    ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (organization_id, version_id, relative_path)
-                    DO NOTHING
+                    DO UPDATE SET
+                        project_id = EXCLUDED.project_id,
+                        asset_id = EXCLUDED.asset_id,
+                        role = EXCLUDED.role,
+                        media_type = EXCLUDED.media_type,
+                        size_bytes = EXCLUDED.size_bytes,
+                        sha256 = EXCLUDED.sha256,
+                        object_key = EXCLUDED.object_key,
+                        content = EXCLUDED.content,
+                        created_at = EXCLUDED.created_at
                     """,
                     (
                         organization_id,
@@ -1584,6 +1642,7 @@ class PostgresRegistryRepository:
                         asset.size_bytes,
                         asset.sha256,
                         str(file_row["object_key"]),
+                        content,
                         asset.created_at,
                     ),
                 )
@@ -1645,14 +1704,14 @@ class PostgresRegistryRepository:
 
     def get_robot_model_asset(
         self, *, organization_id: str, project_id: str, asset_id: str
-    ) -> tuple[str, RobotModelAsset] | None:
+    ) -> tuple[str, RobotModelAsset, bytes | None] | None:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
             cursor.execute(
                 """
                 SELECT asset_id, relative_path, role, media_type, size_bytes, sha256, created_at,
-                       object_key
+                       object_key, content
                   FROM registry.robot_model_assets
                  WHERE organization_id = %s AND project_id = %s AND asset_id = %s::uuid
                 """,
@@ -1662,7 +1721,40 @@ class PostgresRegistryRepository:
             if raw is None:
                 return None
             row = _row(cursor, raw)
-            return str(row["object_key"]), _asset(row)
+            raw_content = row["content"]
+            content = None if raw_content is None else bytes(cast(bytes | memoryview, raw_content))
+            return str(row["object_key"]), _asset(row), content
+        finally:
+            cursor.close()
+            connection.close()
+
+    def store_robot_model_asset_content(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        asset_id: str,
+        content: bytes,
+    ) -> None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                UPDATE registry.robot_model_assets
+                   SET content = %s
+                 WHERE organization_id = %s AND project_id = %s AND asset_id = %s::uuid
+                   AND size_bytes = octet_length(%s)
+                 RETURNING asset_id
+                """,
+                (content, organization_id, project_id, asset_id, content),
+            )
+            if cursor.fetchone() is None:
+                raise KeyError(asset_id)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             cursor.close()
             connection.close()

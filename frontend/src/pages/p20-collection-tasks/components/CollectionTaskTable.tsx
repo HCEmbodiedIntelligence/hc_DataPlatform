@@ -24,7 +24,6 @@ import styles from "../styles.module.css";
 export interface TaskProgressState {
   readonly data?: CollectionTaskProgress;
   readonly pending: boolean;
-  readonly stale?: boolean;
   readonly error?: unknown;
   readonly retry?: () => void;
 }
@@ -261,7 +260,6 @@ function ReceivedProgress({
   const data = progress.data;
   const packageTarget = task.target?.package_count ?? null;
   const durationTarget = task.target?.duration_seconds ?? null;
-  const stale = progress.stale || progress.error !== undefined;
 
   return (
     <div className={styles.receivedProgress}>
@@ -292,9 +290,6 @@ function ReceivedProgress({
           <CircleAlert aria-hidden="true" size={13} />
           {numberFormat.format(data.duration_unknown_package_count)} 包时长未知
         </span>
-      ) : null}
-      {stale ? (
-        <small className={styles.staleValue}>当前显示可能已陈旧</small>
       ) : null}
     </div>
   );
@@ -408,7 +403,6 @@ function ProgressTime({
     return <span className={styles.progressError}>数据截至时间不可用</span>;
   }
   const sources = sourceSummary(progress.data);
-  const stale = progress.stale || progress.error !== undefined;
 
   return (
     <div className={styles.progressTime}>
@@ -419,7 +413,6 @@ function ProgressTime({
         {compactDateTimeFormat.format(date)}
       </time>
       <small title={sources.detail}>{sources.compact}</small>
-      {stale ? <small className={styles.staleValue}>数据可能陈旧</small> : null}
     </div>
   );
 }

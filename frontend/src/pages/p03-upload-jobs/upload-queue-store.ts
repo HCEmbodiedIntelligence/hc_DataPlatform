@@ -31,6 +31,14 @@ import {
   type UploadPartPlan,
   type UploadProblemCopy,
 } from "./upload-contract";
+import {
+  LeRobotUploadFailure,
+  uploadNativeLeRobot,
+  type LeRobotTargetBinding,
+  type LeRobotUploadProgress,
+  type LeRobotUploadResume,
+} from "./lerobot-client";
+import type { LeRobotFolderSelection } from "./upload-contract";
 
 export type QueueTransferStatus =
   | "waiting"
@@ -67,7 +75,10 @@ export interface UploadQueueItem {
   readonly id: string;
   readonly scopeKey: string;
   readonly sessionId: string | null;
-  readonly sourceType: "BROWSER_MULTIPART" | "OBJECT_STORAGE_REFERENCE";
+  readonly sourceType:
+    | "BROWSER_MULTIPART"
+    | "OBJECT_STORAGE_REFERENCE"
+    | "LEROBOT_NATIVE";
   readonly fileName: string;
   readonly dataPackageId: string;
   readonly totalBytes: number;
@@ -84,6 +95,8 @@ export interface UploadQueueItem {
   readonly failureMessage: string | null;
   readonly requestId: string | null;
   readonly createdAt: string;
+  readonly robotId?: string;
+  readonly collectionTaskId?: string;
 }
 
 interface UploadRuntime {
@@ -95,6 +108,15 @@ interface UploadRuntime {
   controller: AbortController | null;
   intent: "run" | "pause" | "cancel" | "offline";
   initialAuthorizations: readonly PartAuthorization[];
+}
+
+interface LeRobotUploadRuntime {
+  readonly scope: IngestScope;
+  readonly selection: LeRobotFolderSelection;
+  readonly binding: LeRobotTargetBinding;
+  controller: AbortController | null;
+  intent: "run" | "pause" | "offline";
+  resume: LeRobotUploadResume | null;
 }
 
 export interface StartUploadInput {
@@ -140,6 +162,11 @@ interface UploadQueueState {
   prepare: (input: StartUploadInput) => Promise<string>;
   beginPrepared: (itemId: string) => Promise<void>;
   start: (input: StartUploadInput) => Promise<void>;
+  startLeRobot: (input: {
+    readonly scope: IngestScope;
+    readonly selection: LeRobotFolderSelection;
+    readonly binding: LeRobotTargetBinding;
+  }) => Promise<void>;
   startFolderBatch: (input: {
     readonly scope: IngestScope;
     readonly bundles: readonly FolderUploadBundle[];
@@ -166,6 +193,7 @@ class PartTransferError extends Error {
 }
 
 const runtimeByItem = new Map<string, UploadRuntime>();
+const leRobotRuntimeByItem = new Map<string, LeRobotUploadRuntime>();
 const folderBatchRuntimeById = new Map<string, FolderBatchRuntime>();
 const activeServerStates = new Set<FormalUploadSession["status"]>([
   "REGISTERED",
@@ -1212,6 +1240,150 @@ function preparationFailureItem(
   };
 }
 
+function leRobotQueueItem(input: {
+  readonly id: string;
+  readonly scope: IngestScope;
+  readonly selection: LeRobotFolderSelection;
+  readonly binding: LeRobotTargetBinding;
+}): UploadQueueItem {
+  return {
+    id: input.id,
+    scopeKey: scopeKey(input.scope),
+    sessionId: null,
+    sourceType: "LEROBOT_NATIVE",
+    fileName: input.selection.rootDirectory,
+    dataPackageId: input.binding.datasetId,
+    totalBytes: input.selection.sourceBytes,
+    uploadedBytes: 0,
+    completedParts: 0,
+    totalParts: input.selection.sourceFiles.length,
+    speedBytesPerSecond: null,
+    remainingSeconds: null,
+    transferStatus: "waiting",
+    serverStatus: null,
+    failedParts: [],
+    failedPartTransfers: [],
+    failureCode: null,
+    failureMessage: null,
+    requestId: null,
+    createdAt: new Date().toISOString(),
+    robotId: input.binding.robotId,
+    collectionTaskId: input.binding.collectionTaskId,
+  };
+}
+
+async function runLeRobotUpload(
+  itemId: string,
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+  get: () => UploadQueueState,
+): Promise<void> {
+  const runtime = leRobotRuntimeByItem.get(itemId);
+  const item = get().items.find((candidate) => candidate.id === itemId);
+  if (!runtime || !item || item.sourceType !== "LEROBOT_NATIVE") return;
+
+  const controller = new AbortController();
+  runtime.controller = controller;
+  runtime.intent = "run";
+  updateItem(set, itemId, (current) => ({
+    ...current,
+    transferStatus: "uploading",
+    failureCode: null,
+    failureMessage: null,
+    requestId: null,
+  }));
+
+  try {
+    await uploadNativeLeRobot(
+      runtime.scope,
+      runtime.selection,
+      runtime.binding,
+      (progress: LeRobotUploadProgress) =>
+        updateItem(set, itemId, (current) => ({
+          ...current,
+          transferStatus:
+            progress.stage === "committing" ? "finalizing" : "uploading",
+          uploadedBytes: progress.uploadedBytes,
+          completedParts: progress.completedFiles,
+          totalParts: progress.totalFiles,
+        })),
+      runtime.resume,
+      {
+        signal: controller.signal,
+        onSession: (resume) => {
+          runtime.resume = resume;
+          updateItem(set, itemId, (current) => ({
+            ...current,
+            sessionId: resume.importId,
+          }));
+        },
+      },
+    );
+    updateItem(set, itemId, (current) => ({
+      ...current,
+      transferStatus: "committed",
+      uploadedBytes: current.totalBytes,
+      completedParts: current.totalParts,
+      speedBytesPerSecond: null,
+      remainingSeconds: 0,
+    }));
+  } catch (error) {
+    const failure =
+      error instanceof LeRobotUploadFailure ? error : null;
+    if (failure) runtime.resume = failure.resume;
+    const interruptedStatus =
+      runtime.intent === "pause"
+        ? "paused"
+        : runtime.intent === "offline"
+          ? "offline"
+          : "failed";
+    const copy = uploadProblemCopy(failure?.originalError ?? error);
+    updateItem(set, itemId, (current) => ({
+      ...current,
+      sessionId: runtime.resume?.importId ?? current.sessionId,
+      transferStatus: interruptedStatus,
+      failureCode:
+        interruptedStatus === "failed"
+          ? (copy.problemCode ?? "LEROBOT_UPLOAD_INTERRUPTED")
+          : interruptedStatus === "offline"
+            ? "NETWORK_OFFLINE"
+            : null,
+      failureMessage:
+        interruptedStatus === "paused"
+          ? null
+          : interruptedStatus === "offline"
+            ? "网络已断开；已停止发送新分片。联网后会继续上传。"
+            : error instanceof Error
+              ? error.message
+              : copy.detail,
+      requestId: interruptedStatus === "failed" ? copy.requestId : null,
+      speedBytesPerSecond: null,
+      remainingSeconds: null,
+    }));
+  } finally {
+    if (runtime.controller === controller) runtime.controller = null;
+  }
+}
+
+function pauseLeRobotUpload(
+  itemId: string,
+  set: (
+    updater: (state: UploadQueueState) => Partial<UploadQueueState>,
+  ) => void,
+): void {
+  const runtime = leRobotRuntimeByItem.get(itemId);
+  if (!runtime?.controller || runtime.resume === null) return;
+  runtime.intent = "pause";
+  updateItem(set, itemId, (current) => ({
+    ...current,
+    transferStatus: "pausing",
+    speedBytesPerSecond: null,
+    remainingSeconds: null,
+  }));
+  runtime.controller.abort();
+}
+
 export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
   scopeKey: null,
   recovering: false,
@@ -1226,6 +1398,11 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
       runtime.controller?.abort();
     }
     runtimeByItem.clear();
+    for (const runtime of leRobotRuntimeByItem.values()) {
+      runtime.intent = "pause";
+      runtime.controller?.abort();
+    }
+    leRobotRuntimeByItem.clear();
     folderBatchRuntimeById.clear();
     set({
       scopeKey: nextKey,
@@ -1321,6 +1498,34 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
       }));
     }
   },
+  startLeRobot: async ({ scope, selection, binding }) => {
+    get().bindScope(scope);
+    const duplicate = get().items.find(
+      (item) =>
+        item.sourceType === "LEROBOT_NATIVE" &&
+        item.robotId === binding.robotId &&
+        item.collectionTaskId === binding.collectionTaskId &&
+        item.dataPackageId === binding.datasetId &&
+        !["committed", "cancelled"].includes(item.transferStatus),
+    );
+    if (duplicate) {
+      if (["paused", "offline", "failed"].includes(duplicate.transferStatus))
+        await get().resume(duplicate.id);
+      return;
+    }
+    const id = newId();
+    const item = leRobotQueueItem({ id, scope, selection, binding });
+    leRobotRuntimeByItem.set(id, {
+      scope,
+      selection,
+      binding,
+      controller: null,
+      intent: "run",
+      resume: null,
+    });
+    set((state) => ({ items: [item, ...state.items] }));
+    await runLeRobotUpload(id, set, get);
+  },
   startFolderBatch: async ({ scope, bundles }) => {
     get().bindScope(scope);
     if (bundles.length === 0) return;
@@ -1348,8 +1553,12 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
     await continueFolderBatch(batchId, set, get);
   },
   pause: async (itemId) => {
-    const runtime = runtimeByItem.get(itemId);
     const item = get().items.find((candidate) => candidate.id === itemId);
+    if (item?.sourceType === "LEROBOT_NATIVE") {
+      pauseLeRobotUpload(itemId, set);
+      return;
+    }
+    const runtime = runtimeByItem.get(itemId);
     if (!runtime || !item?.sessionId) return;
     runtime.intent = "pause";
     runtime.controller?.abort();
@@ -1378,8 +1587,12 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
     }
   },
   resume: async (itemId) => {
-    const runtime = runtimeByItem.get(itemId);
     const item = get().items.find((candidate) => candidate.id === itemId);
+    if (item?.sourceType === "LEROBOT_NATIVE") {
+      await runLeRobotUpload(itemId, set, get);
+      return;
+    }
+    const runtime = runtimeByItem.get(itemId);
     if (!runtime || !item?.sessionId) return;
     if (item.sourceType === "OBJECT_STORAGE_REFERENCE") {
       await commitObjectReference(itemId, set, get);
@@ -1423,6 +1636,10 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
   },
   retryFailedParts: async (itemId) => {
     const item = get().items.find((candidate) => candidate.id === itemId);
+    if (item?.sourceType === "LEROBOT_NATIVE") {
+      await runLeRobotUpload(itemId, set, get);
+      return;
+    }
     const runtime = runtimeByItem.get(itemId);
     if (!item || !runtime) return;
     if (!runtime.file) {
@@ -1479,8 +1696,9 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
     else await get().resume(itemId);
   },
   cancel: async (itemId) => {
-    const runtime = runtimeByItem.get(itemId);
     const item = get().items.find((candidate) => candidate.id === itemId);
+    if (item?.sourceType === "LEROBOT_NATIVE") return;
+    const runtime = runtimeByItem.get(itemId);
     if (!runtime || !item?.sessionId) return;
     runtime.intent = "cancel";
     runtime.controller?.abort();
@@ -1513,6 +1731,22 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
   handleOffline: () => {
     for (const item of get().items) {
       if (item.transferStatus !== "uploading") continue;
+      if (item.sourceType === "LEROBOT_NATIVE") {
+        const runtime = leRobotRuntimeByItem.get(item.id);
+        if (!runtime) continue;
+        runtime.intent = "offline";
+        runtime.controller?.abort();
+        updateItem(set, item.id, (current) => ({
+          ...current,
+          transferStatus: "offline",
+          speedBytesPerSecond: null,
+          remainingSeconds: null,
+          failureCode: "NETWORK_OFFLINE",
+          failureMessage:
+            "网络已断开；已停止发送新分片。联网后会继续上传。",
+        }));
+        continue;
+      }
       const runtime = runtimeByItem.get(item.id);
       if (!runtime) continue;
       runtime.intent = "offline";
@@ -1558,7 +1792,10 @@ if (typeof window !== "undefined") {
 
 export function resetUploadQueueStoreForTests() {
   for (const runtime of runtimeByItem.values()) runtime.controller?.abort();
+  for (const runtime of leRobotRuntimeByItem.values())
+    runtime.controller?.abort();
   runtimeByItem.clear();
+  leRobotRuntimeByItem.clear();
   folderBatchRuntimeById.clear();
   useUploadQueueStore.setState({
     scopeKey: null,

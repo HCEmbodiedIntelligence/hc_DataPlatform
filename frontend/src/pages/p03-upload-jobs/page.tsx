@@ -9,7 +9,6 @@ import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState, PageHeader } from "../../shared/ui";
 import { UploadConfirmationDialog } from "./components/UploadConfirmationDialog";
-import { LeRobotUploadPanel } from "./components/LeRobotUploadPanel";
 import {
   UploadMethodPanel,
   type BrowserSelectionMode,
@@ -31,10 +30,7 @@ import {
   type UploadFlowState,
 } from "./upload-flow";
 import { uploadProblemCopy } from "./upload-contract";
-import {
-  uploadNativeLeRobot,
-  type LeRobotTargetBinding,
-} from "./lerobot-client";
+import type { LeRobotTargetBinding } from "./lerobot-client";
 import { useUploadQueueStore } from "./upload-queue-store";
 
 function useNetworkStatus(): boolean {
@@ -123,6 +119,9 @@ export default function UploadJobsPage() {
   const beginPreparedUpload = useUploadQueueStore(
     (state) => state.beginPrepared,
   );
+  const startLeRobotUpload = useUploadQueueStore(
+    (state) => state.startLeRobot,
+  );
   const folderBatch = useUploadQueueStore((state) => state.folderBatch);
   const pauseUpload = useUploadQueueStore((state) => state.pause);
   const resumeUpload = useUploadQueueStore((state) => state.resume);
@@ -147,10 +146,7 @@ export default function UploadJobsPage() {
       flow.phase === "folder_selected" ||
       flow.phase === "confirming" ||
       flow.phase === "prechecking" ||
-      flow.phase === "precheck_failed" ||
-      flow.phase === "lerobot_uploading" ||
-      flow.phase === "lerobot_failed" ||
-      flow.phase === "lerobot_completed"
+      flow.phase === "precheck_failed"
     )
       return;
     const next = queueFlowPhase(queueItems);
@@ -293,49 +289,12 @@ export default function UploadJobsPage() {
           });
           return;
         }
-        const initialProgress = {
-          stage: "uploading" as const,
-          currentPath: null,
-          completedFiles: 0,
-          totalFiles: confirmedSelection.lerobot.sourceFiles.length,
-          uploadedBytes: 0,
-          totalBytes: confirmedSelection.lerobot.sourceBytes,
-        };
-        setFlow({
-          phase: "lerobot_uploading",
-          selection: confirmedSelection,
+        setFlow({ phase: "queue_ready" });
+        void startLeRobotUpload({
+          scope,
+          selection: confirmedSelection.lerobot,
           binding: lerobotBinding,
-          progress: initialProgress,
         });
-        try {
-          const result = await uploadNativeLeRobot(
-            scope,
-            confirmedSelection.lerobot,
-            lerobotBinding,
-            (progress) =>
-              setFlow({
-                phase: "lerobot_uploading",
-                selection: confirmedSelection,
-                binding: lerobotBinding,
-                progress,
-              }),
-          );
-          setFlow({ phase: "lerobot_completed", result });
-        } catch (error) {
-          const copied = uploadProblemCopy(error);
-          setFlow({
-            phase: "lerobot_failed",
-            selection: confirmedSelection,
-            binding: lerobotBinding,
-            problem: {
-              ...copied,
-              detail:
-                copied.problemCode === null && error instanceof Error
-                  ? error.message
-                  : copied.detail,
-            },
-          });
-        }
         return;
       }
       if (
@@ -427,6 +386,7 @@ export default function UploadJobsPage() {
       online,
       prepareUpload,
       scope,
+      startLeRobotUpload,
       unscopedAccount,
     ],
   );
@@ -477,10 +437,6 @@ export default function UploadJobsPage() {
       flow.phase === "confirming");
   const precheckVisible =
     flow.phase === "prechecking" || flow.phase === "precheck_failed";
-  const lerobotVisible =
-    flow.phase === "lerobot_uploading" ||
-    flow.phase === "lerobot_failed" ||
-    flow.phase === "lerobot_completed";
   const queueVisible =
     flow.phase === "queue_ready" ||
     flow.phase === "uploading" ||
@@ -601,29 +557,9 @@ export default function UploadJobsPage() {
             </div>
           ) : null}
 
-          {lerobotVisible ? (
-            <div className={styles.serialWorkspace}>
-              <LeRobotUploadPanel
-                state={flow}
-                onRetry={() => {
-                  if (flow.phase === "lerobot_failed")
-                    void performServerPrecheck(
-                      flow.selection,
-                      [],
-                      flow.binding,
-                    );
-                }}
-                onBack={resetSelection}
-                onContinue={resetSelection}
-                onViewRecords={() => void navigate(dataUploadRoutes.records)}
-              />
-            </div>
-          ) : null}
-
           {queueVisible &&
           !precheckVisible &&
-          !selectionVisible &&
-          !lerobotVisible ? (
+          !selectionVisible ? (
             <div className={styles.serialWorkspace}>
               <UploadQueuePanel
                 items={queueItems}
@@ -656,6 +592,32 @@ export default function UploadJobsPage() {
           role="tabpanel"
           aria-label="上传记录"
         >
+          {queueItems.length > 0 || recovering || recoveryProblem ? (
+            <div className={styles.recordsActiveQueue}>
+              <UploadQueuePanel
+                items={queueItems}
+                recovering={recovering}
+                recoveryProblem={recoveryProblem}
+                folderBatch={folderBatch}
+                canManage={canManage}
+                onPause={(id) => void pauseUpload(id)}
+                onResume={(id) => void resumeUpload(id)}
+                onRetry={(id) => void retryFailedParts(id)}
+                onCancel={(id) => void cancelUpload(id)}
+                onReattach={(id, file) => void reattachAndResume(id, file)}
+                onClearSettled={clearSettled}
+                onContinueUpload={() => {
+                  clearSettled();
+                  resetSelection();
+                  void navigate(dataUploadRoutes.newUpload);
+                }}
+                onViewRecords={() => void navigate(dataUploadRoutes.records)}
+                onRecover={() => {
+                  if (scope) void recoverQueue(scope);
+                }}
+              />
+            </div>
+          ) : null}
           {robotIdFilter ? (
             canReadRobotIngest ? (
               <RobotUploadRecordsPanel

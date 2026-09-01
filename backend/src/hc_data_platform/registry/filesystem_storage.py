@@ -1,9 +1,8 @@
-"""Server-local durable storage for robot-model registry assets.
+"""Server-local multipart staging for PostgreSQL-backed robot-model assets.
 
-Robot definitions are platform assets, not dataset objects.  They therefore use a
-dedicated filesystem root and short-lived platform URLs instead of the raw-data OSS
-bucket.  The signed URLs keep large binary bodies out of JSON and do not require a
-browser bearer token, matching the security properties of an object-store presign.
+Robot definitions are platform master data, not dataset objects. Browser uploads are
+assembled here temporarily, verified, copied into PostgreSQL, and then removed. The
+directory is not an authoritative store and is not required in a server backup.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ _DOWNLOAD_TOKEN_KIND = "robot-model-asset-download/v1"
 
 
 class FilesystemRobotModelStorage:
-    """Immutable multipart storage rooted in one server-owned directory."""
+    """Temporary multipart staging rooted in one server-owned directory."""
 
     def __init__(
         self,
@@ -196,7 +195,7 @@ class FilesystemRobotModelStorage:
         shutil.rmtree(self._multipart_dir(upload_id), ignore_errors=True)
 
     def delete_object(self, key: str) -> None:
-        """Remove an object owned by a failed import and prune empty directories."""
+        """Remove staged bytes after persistence or rollback and prune empty directories."""
 
         with self._lock:
             path = self._object_path(key)

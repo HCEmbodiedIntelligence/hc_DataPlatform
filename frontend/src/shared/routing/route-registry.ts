@@ -28,6 +28,7 @@ const canonicalPatterns = new Set<string>([
   "/storage/lifecycle",
   "/settings/robot-models",
   "/settings/robots",
+  "/settings/robot-instances",
   "/settings/calibrations",
   "/exports",
   "/settings/access",

@@ -67,18 +67,6 @@ services:
     volumes:
       - alignment-cache:/tmp/hc-data/alignment
 
-  robot-model-assets-init:
-    image: hc-data-platform-api:dev
-    user: "0:0"
-    entrypoint: [/bin/sh, -ec]
-    command:
-      - >-
-        chown 65532:65532 /var/lib/hc-data/robot-model-assets &&
-        chmod 0750 /var/lib/hc-data/robot-model-assets
-    restart: no
-    volumes:
-      - robot-model-assets:/var/lib/hc-data/robot-model-assets
-
   api:
     image: hc-data-platform-api:dev
     build:
@@ -122,7 +110,7 @@ services:
       HC_AUTO_ANNOTATION_DAILY_COST_LIMIT_MICROS: ${HC_AUTO_ANNOTATION_DAILY_COST_LIMIT_MICROS:-5000000}
       HC_INGEST_PART_AUTHORIZATION_TTL_SECONDS: ${HC_INGEST_PART_AUTHORIZATION_TTL_SECONDS:-900}
       HC_ALIGNED_MEDIA_STAGING_ROOT: ${HC_ALIGNED_MEDIA_STAGING_ROOT:-/tmp/hc-data/aligned-media}
-      HC_ROBOT_MODEL_ASSET_ROOT: ${HC_ROBOT_MODEL_ASSET_ROOT:-/var/lib/hc-data/robot-model-assets}
+      HC_ROBOT_MODEL_ASSET_ROOT: ${HC_ROBOT_MODEL_ASSET_ROOT:-/tmp/hc-data/robot-model-upload-staging}
       HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: ${HC_ALIGNED_MEDIA_STAGING_TTL_HOURS:-24}
       HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES: ${HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES:-30}
       HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS: ${HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS:-300}
@@ -173,12 +161,11 @@ services:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
-      robot-model-assets-init:
-        condition: service_completed_successfully
     ports: ["127.0.0.1:${HC_API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./backend:/app:ro
-      - robot-model-assets:/var/lib/hc-data/robot-model-assets
+    tmpfs:
+      - /tmp/hc-data/robot-model-upload-staging:rw,nosuid,size=512m,uid=65532,gid=65532,mode=0750
 
   worker:
     image: hc-data-platform-worker:dev
@@ -359,4 +346,3 @@ volumes:
   postgres-data:
   alignment-cache:
   media-staging:
-  robot-model-assets:

@@ -184,9 +184,12 @@ def test_minio_robot_model_asset_direct_multipart_manifest_and_fresh_download() 
             asset_id=assets.items[0].asset_id,
             request_id=f"p14-minio-download-{suffix}",
         )
-        with urlopen(authorization.download_url) as response:  # noqa: S310 - service-generated fresh grant
-            assert response.headers["Cache-Control"] == "no-store"
-            assert hashlib.sha256(response.read()).hexdigest() == hashlib.sha256(body).hexdigest()
+        token = authorization.download_url.partition("token=")[2]
+        _filename, chunks = service.open_authorized_asset_download(
+            organization_id=organization_id,
+            token=token,
+        )
+        assert hashlib.sha256(b"".join(chunks)).hexdigest() == hashlib.sha256(body).hexdigest()
     finally:
         if object_key is not None:
             client.delete_object(Bucket=bucket, Key=object_key)

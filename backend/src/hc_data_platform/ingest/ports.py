@@ -5,7 +5,7 @@ import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from threading import RLock
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
@@ -43,6 +43,15 @@ class ObjectStoragePort(Protocol):
         part_number: int,
         expires_seconds: int,
     ) -> str: ...
+
+    def upload_part_stream(
+        self,
+        key: str,
+        upload_id: str,
+        part_number: int,
+        body: BinaryIO,
+        size: int,
+    ) -> MultipartPart: ...
 
     def list_parts(self, key: str, upload_id: str) -> list[MultipartPart]: ...
 
@@ -152,6 +161,19 @@ class InMemoryObjectStorage:
             upload.parts[part_number] = data
         return _part_metadata(part_number, data)
 
+    def upload_part_stream(
+        self,
+        key: str,
+        upload_id: str,
+        part_number: int,
+        body: BinaryIO,
+        size: int,
+    ) -> MultipartPart:
+        data = body.read(size + 1)
+        if len(data) != size:
+            raise ValueError("multipart part stream size does not match its declaration")
+        return self.upload_part(upload_id, part_number, data, key=key)
+
     def list_parts(self, key: str, upload_id: str) -> list[MultipartPart]:
         upload = self._get_upload(key, upload_id)
         return [_part_metadata(number, body) for number, body in sorted(upload.parts.items())]
@@ -179,6 +201,12 @@ class InMemoryObjectStorage:
             if upload is not None and upload.key != key:
                 raise KeyError(upload_id)
             self._uploads.pop(upload_id, None)
+
+    def delete_object(self, key: str) -> None:
+        """Test-only cleanup hook used by failed robot-model imports."""
+
+        with self._lock:
+            self.objects.pop(key, None)
 
     def authorize_existing_object(self, uri: str, expected_key: str) -> ObjectMetadata:
         parsed = urlparse(uri)
@@ -217,6 +245,11 @@ class InMemoryObjectStorage:
         body = self.objects[key]
         for offset in range(0, len(body), chunk_size):
             yield body[offset : offset + chunk_size]
+
+    def read_range(self, key: str, start: int, end: int) -> bytes:
+        if start < 0 or end < start:
+            raise ValueError("invalid object byte range")
+        return self.objects[key][start:end]
 
     def presign_read(self, key: str, expires_seconds: int) -> str:
         if expires_seconds < 1:

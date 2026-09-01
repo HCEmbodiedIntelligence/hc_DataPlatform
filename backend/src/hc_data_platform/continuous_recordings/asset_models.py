@@ -6,7 +6,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from hc_data_platform.ingest.models import (
     CompletedPart,
@@ -426,3 +426,27 @@ class RecordingVideoSourceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     sources: tuple[RecordingVideoSource, ...]
+
+
+class RecordingSensorSample(BaseModel):
+    """One decoded sample on the original recording clock."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    offset_ns: Nanoseconds
+    source_timestamp_ns: Nanoseconds
+    value: JsonValue
+
+
+class RecordingSensorWindow(BaseModel):
+    """Bounded raw SENSOR_DATA window; independent from Episode processing."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["recording-sensor-window/v1"] = "recording-sensor-window/v1"
+    recording_id: Identifier
+    topic: str = Field(min_length=1, max_length=512)
+    start_offset_ns: Nanoseconds
+    end_offset_ns: Nanoseconds
+    samples: tuple[RecordingSensorSample, ...]
+    truncated: bool = False

@@ -207,6 +207,82 @@ export function useCreateRobot() {
   });
 }
 
+export interface UpdateRobotIntent {
+  readonly robotId: string;
+  readonly etag: string;
+  readonly displayName: string;
+}
+
+export function useUpdateRobot() {
+  const organizationId = useRobotOrganizationId();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (intent: UpdateRobotIntent) => {
+      if (!organizationId) throw new Error("当前会话没有可用的组织范围。");
+      const raw = await request<unknown>({
+        method: "PATCH",
+        path: `/organizations/${encodeURIComponent(organizationId)}/robots/${encodeURIComponent(intent.robotId)}`,
+        scopeMode: "organization",
+        scope: { organizationId },
+        body: { display_name: intent.displayName },
+        ifMatch: intent.etag,
+      });
+      return adaptRobotBootstrap(
+        parseWire(robotBootstrapWireSchema, raw, {
+          endpoint: "updateOrganizationRobot",
+        }),
+      );
+    },
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["robots"] }),
+  });
+}
+
+export interface TransitionRobotLifecycleIntent {
+  readonly robotId: string;
+  readonly etag: string;
+  readonly lifecycleStatus: Exclude<Robot["lifecycle"], "DRAFT" | "UNKNOWN">;
+  readonly reason: string;
+}
+
+export function useTransitionRobotLifecycle() {
+  const organizationId = useRobotOrganizationId();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (intent: TransitionRobotLifecycleIntent) => {
+      if (!organizationId) throw new Error("当前会话没有可用的组织范围。");
+      const raw = await request<unknown>({
+        method: "POST",
+        path: `/organizations/${encodeURIComponent(organizationId)}/robots/${encodeURIComponent(intent.robotId)}/lifecycle`,
+        scopeMode: "organization",
+        scope: { organizationId },
+        body: {
+          lifecycle_status: intent.lifecycleStatus,
+          reason: intent.reason,
+        },
+        ifMatch: intent.etag,
+      });
+      return adaptRobotBootstrap(
+        parseWire(robotBootstrapWireSchema, raw, {
+          endpoint: "transitionOrganizationRobotLifecycle",
+        }),
+      );
+    },
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["robots"] }),
+  });
+}
+
+export function useDeleteProvisionalRobot() {
+  const organizationId = useRobotOrganizationId();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (robotId: string) => {
+      if (!organizationId) throw new Error("当前会话没有可用的组织范围。");
+      return deleteProvisionalRobot(organizationId, robotId);
+    },
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["robots"] }),
+  });
+}
+
 export function useRobots(filters: Readonly<Record<string, string>> = {}) {
   const organizationId = useRobotOrganizationId();
   return useQuery({

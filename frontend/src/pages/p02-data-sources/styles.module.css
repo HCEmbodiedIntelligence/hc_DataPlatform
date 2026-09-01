@@ -328,6 +328,15 @@
   gap: 0 var(--hc-space-4, 16px);
 }
 
+.provisioningFlow {
+  display: grid;
+  gap: var(--hc-space-4, 16px);
+  padding: var(--hc-space-4, 16px);
+  border: 1px solid var(--hc-color-border, #d9dce7);
+  border-radius: var(--hc-radius-lg, 12px);
+  background: var(--hc-color-surface-subtle, #f8f9fc);
+}
+
 .fullWidthField {
   grid-column: 1 / -1;
 }

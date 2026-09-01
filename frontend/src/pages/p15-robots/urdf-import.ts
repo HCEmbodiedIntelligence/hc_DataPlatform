@@ -22,10 +22,11 @@ export interface ParsedRobotModel {
   readonly urdfXml: string;
 }
 
-export interface RobotConfigurationIdentity {
-  readonly robotId: string;
+export interface ModelConfigurationIdentity {
+  readonly modelId?: string;
   readonly displayName: string;
-  readonly serialNo: string;
+  readonly manufacturer: string;
+  readonly modelCode: string;
 }
 
 export interface LocalRobotPreview {
@@ -257,7 +258,7 @@ export function mappingsCoverUrdf(
 export function buildRobotConfigurationAsset(
   analysis: ParsedRobotModel,
   mappings: readonly RobotModelJointMapping[],
-  robot: RobotConfigurationIdentity,
+  model: ModelConfigurationIdentity,
 ): PendingRobotModelAsset {
   const relativePath =
     analysis.configurationPath ??
@@ -266,13 +267,19 @@ export function buildRobotConfigurationAsset(
         ? `${directoryName(analysis.urdfPath)}/robot.config.json`
         : "robot.config.json",
     );
-  const content = {
+  const baseConfiguration: Record<string, unknown> = {
     ...analysis.configuration,
+  };
+  delete baseConfiguration.robot;
+  delete baseConfiguration.model;
+  const content = {
+    ...baseConfiguration,
     format: "hc-robot-description/v1",
-    robot: {
-      id: robot.robotId,
-      display_name: robot.displayName,
-      serial_no: robot.serialNo,
+    model: {
+      ...(model.modelId ? { id: model.modelId } : {}),
+      display_name: model.displayName,
+      manufacturer: model.manufacturer,
+      model_code: model.modelCode,
     },
     urdf: {
       entry: analysis.urdfPath,

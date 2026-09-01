@@ -87,13 +87,15 @@ def _prepare_app_role(dsn: str) -> None:
         )
         cursor.execute("GRANT USAGE ON SCHEMA registry TO " + APP_ROLE)
         cursor.execute("GRANT USAGE ON SCHEMA robotics TO " + APP_ROLE)
-        cursor.execute("GRANT SELECT, UPDATE ON registry.robot_model_versions TO " + APP_ROLE)
         cursor.execute(
-            "GRANT SELECT, UPDATE ON registry.organization_projects, registry.robot_models TO "
-            + APP_ROLE
+            "GRANT SELECT, UPDATE, DELETE ON registry.robot_model_versions TO " + APP_ROLE
         )
         cursor.execute(
-            "GRANT SELECT, INSERT, UPDATE ON registry.robot_model_asset_uploads, "
+            "GRANT SELECT, UPDATE, DELETE ON registry.organization_projects, "
+            "registry.robot_models TO " + APP_ROLE
+        )
+        cursor.execute(
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON registry.robot_model_asset_uploads, "
             "registry.robot_model_asset_upload_files, registry.robot_model_assets TO " + APP_ROLE
         )
         cursor.execute(
@@ -102,6 +104,10 @@ def _prepare_app_role(dsn: str) -> None:
             + APP_ROLE
         )
         cursor.execute("GRANT INSERT ON registry.audit_events TO " + APP_ROLE)
+        cursor.execute(
+            "GRANT SELECT ON registry.organization_robot_model_bindings, "
+            "robotics.robot_assets TO " + APP_ROLE
+        )
         cursor.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA registry TO " + APP_ROLE)
 
 
@@ -471,7 +477,79 @@ def test_postgres_registry_asset_ledger_is_project_scoped_and_manifested(
             asset_id=assets.items[0].asset_id,
             request_id="p14-registry-assets-download",
         )
-        assert authorization.download_url.startswith("memory://object/")
+        assert authorization.download_url.startswith(
+            f"/api/v1/organizations/{ORGANIZATION_ID}/robot-model-assets/content?token="
+        )
+        token = authorization.download_url.partition("token=")[2]
+        _filename, chunks = service.open_authorized_asset_download(
+            organization_id=ORGANIZATION_ID,
+            token=token,
+        )
+        assert b"".join(chunks) == body
+        assert storage.objects == {}
+
+        replacement_body = (
+            b'<robot name="p14-updated"><joint name="joint_1" type="revolute"/></robot>'
+        )
+        replacement = service.create_asset_upload(
+            auth=_auth(can_manage=True),
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            version_id=DRAFT_VERSION_ID,
+            request_id="p14-registry-asset-replacement-create",
+            idempotency_key="p14-registry-asset-replacement-create",
+            command=CreateRobotModelAssetUploadRequest(
+                files=(
+                    RobotModelAssetUploadFileRequest(
+                        relative_path="models/p14.urdf",
+                        role=RobotAssetRole.URDF,
+                        media_type="application/xml",
+                        size_bytes=len(replacement_body),
+                        sha256=hashlib.sha256(replacement_body).hexdigest(),
+                    ),
+                )
+            ),
+        )
+        replacement_record = service._repository.get_asset_upload(  # noqa: SLF001
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            upload_id=replacement.data.upload_id,
+        )
+        assert replacement_record is not None
+        replacement_part = storage.upload_part(
+            replacement_record.files[0].multipart_upload_id,
+            1,
+            replacement_body,
+            key=replacement_record.files[0].object_key,
+        )
+        service.complete_asset_upload_file(
+            auth=_auth(can_manage=True),
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            upload_id=replacement.data.upload_id,
+            request_id="p14-registry-asset-replacement-complete",
+            command=CompleteRobotModelAssetFileRequest(
+                relative_path="models/p14.urdf",
+                parts=(RobotAssetCompletedPart(part_number=1, etag=replacement_part.etag),),
+            ),
+        )
+        replaced_assets = service.list_robot_model_assets(
+            auth=_auth(),
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            version_id=DRAFT_VERSION_ID,
+            request_id="p14-registry-assets-list-after-replacement",
+        )
+        assert len(replaced_assets.items) == 1
+        assert replaced_assets.items[0].sha256 == hashlib.sha256(replacement_body).hexdigest()
+        replaced_record = service._repository.get_robot_model_asset(  # noqa: SLF001
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            asset_id=replaced_assets.items[0].asset_id,
+        )
+        assert replaced_record is not None
+        assert replaced_record[2] == replacement_body
+        assert storage.objects == {}
 
         draft = service.get_robot_model_version(
             auth=_auth(),
@@ -692,3 +770,51 @@ def test_postgres_joint_mapping_compare_and_swap_is_real_under_row_lock(
         )
     assert len(mappings.items) == 1
     assert mappings.items[0].target_joint_name in {"actuator_left", "actuator_right"}
+
+
+def test_postgres_discard_rolls_back_an_unbound_import_publication(
+    postgres_dsn: str,
+) -> None:
+    service = RegistryService(
+        PostgresRegistryRepository(psycopg_connection_factory(_app_dsn(postgres_dsn))),
+        storage=InMemoryObjectStorage(),
+        clock=lambda: datetime(2026, 8, 19, 13, tzinfo=timezone.utc),
+    )
+    with _within_project_request():
+        service.discard_robot_model_import(
+            auth=_auth(can_manage=True),
+            organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID,
+            version_id=DRAFT_VERSION_ID,
+            fallback_version_id=VERSION_ID,
+            request_id="p14-registry-discard-import",
+        )
+        with pytest.raises(ProblemException) as missing:
+            service.get_robot_model_version(
+                auth=_auth(),
+                organization_id=ORGANIZATION_ID,
+                project_id=PROJECT_ID,
+                version_id=DRAFT_VERSION_ID,
+                request_id="p14-registry-discard-readback",
+            )
+        assert missing.value.problem.code == "ROBOT_MODEL_VERSION_NOT_FOUND"
+
+    with psycopg.connect(postgres_dsn) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT current_published_version_id
+              FROM registry.robot_models
+             WHERE organization_id = %s AND model_id = %s
+            """,
+            (ORGANIZATION_ID, MODEL_ID),
+        )
+        assert cursor.fetchone() == (VERSION_ID,)
+        cursor.execute(
+            """
+            SELECT count(*)
+              FROM registry.robot_model_asset_uploads
+             WHERE organization_id = %s AND version_id = %s
+            """,
+            (ORGANIZATION_ID, DRAFT_VERSION_ID),
+        )
+        assert cursor.fetchone() == (0,)

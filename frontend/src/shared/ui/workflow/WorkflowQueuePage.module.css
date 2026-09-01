@@ -77,7 +77,11 @@
 }
 
 .headerActions :where(button, a):hover {
-  border-color: color-mix(in srgb, var(--hc-color-primary) 56%, var(--hc-color-border));
+  border-color: color-mix(
+    in srgb,
+    var(--hc-color-primary) 56%,
+    var(--hc-color-border)
+  );
   color: var(--hc-color-primary-hover);
   background: var(--hc-color-surface-tint);
 }
@@ -108,7 +112,8 @@
   align-items: start;
   gap: 8px 12px;
   padding: var(--hc-space-4);
-  border: 1px solid color-mix(in srgb, var(--hc-color-border) 86%, var(--hc-color-primary));
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-border) 86%, var(--hc-color-primary));
   border-radius: var(--hc-radius-md);
   color: var(--hc-color-text);
   background: var(--hc-color-surface);
@@ -127,15 +132,31 @@
 }
 
 .stageCard:hover {
-  border-color: color-mix(in srgb, var(--hc-color-primary) 45%, var(--hc-color-border));
-  background: color-mix(in srgb, var(--hc-color-surface-tint) 46%, var(--hc-color-surface));
+  border-color: color-mix(
+    in srgb,
+    var(--hc-color-primary) 45%,
+    var(--hc-color-border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--hc-color-surface-tint) 46%,
+    var(--hc-color-surface)
+  );
   box-shadow: 0 6px 20px rgb(25 30 66 / 8%);
   transform: translateY(-1px);
 }
 
 .stageCard[aria-current="page"] {
-  border-color: color-mix(in srgb, var(--hc-color-primary) 68%, var(--hc-color-border));
-  background: color-mix(in srgb, var(--hc-color-surface-tint) 72%, var(--hc-color-surface));
+  border-color: color-mix(
+    in srgb,
+    var(--hc-color-primary) 68%,
+    var(--hc-color-border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--hc-color-surface-tint) 72%,
+    var(--hc-color-surface)
+  );
   box-shadow: 0 4px 16px rgb(63 72 173 / 10%);
 }
 
@@ -268,7 +289,11 @@
   gap: var(--hc-space-4);
   padding: 10px var(--hc-space-4) 12px;
   border-bottom: 1px solid var(--hc-color-border-subtle);
-  background: color-mix(in srgb, var(--hc-color-surface-muted) 70%, var(--hc-color-surface));
+  background: color-mix(
+    in srgb,
+    var(--hc-color-surface-muted) 70%,
+    var(--hc-color-surface)
+  );
 }
 
 .queueToolbar label {
@@ -307,7 +332,11 @@
 }
 
 .searchField input:hover {
-  border-color: color-mix(in srgb, var(--hc-color-primary) 42%, var(--hc-color-border));
+  border-color: color-mix(
+    in srgb,
+    var(--hc-color-primary) 42%,
+    var(--hc-color-border)
+  );
 }
 
 .searchField input:focus {
@@ -409,7 +438,31 @@
 }
 
 .tableWrap :global(tbody tr:hover) {
-  background: color-mix(in srgb, var(--hc-color-surface-tint) 40%, var(--hc-color-surface));
+  background: color-mix(
+    in srgb,
+    var(--hc-color-surface-tint) 40%,
+    var(--hc-color-surface)
+  );
+}
+
+.tableWrap :global(th small),
+.tableWrap :global(td small) {
+  display: block;
+  max-width: 200px;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--hc-color-text-muted);
+  font:
+    10px/1.35 "Cascadia Mono",
+    "SFMono-Regular",
+    Consolas,
+    monospace;
+  text-overflow: ellipsis;
+}
+
+.tableWrap :global(time) {
+  color: var(--hc-color-neutral-text);
+  font-variant-numeric: tabular-nums;
 }
 
 @media (min-width: 768px) {
@@ -420,7 +473,10 @@
 
 @media (min-width: 1280px) {
   .stageGrid {
-    grid-template-columns: repeat(var(--workflow-stage-count, 4), minmax(0, 1fr));
+    grid-template-columns: repeat(
+      var(--workflow-stage-count, 4),
+      minmax(0, 1fr)
+    );
   }
 }
 

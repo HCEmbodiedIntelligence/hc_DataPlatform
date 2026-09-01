@@ -25,7 +25,9 @@ recording
 6. 最终 Episode 写入全新的 `recording_episode_processing` 和
    `recording_episode_asset_windows`，初始状态为 `PENDING_QC`，后续进入质检与对齐。
 7. `GET .../video-sources` 为人工切片工作台签发整段原始视频 URL；切片前即可直接读取 OSS。
-8. `GET .../episodes/{episode_id}/video-sources` 签发原始视频 URL 和 Episode 时间窗；预览不再生成一份
+8. `GET .../sensor-window` 使用 MCAP 索引与对象存储 Range GET，按录制相对时间窗读取原始
+   `SENSOR_DATA` Topic；它不依赖 Episode、质检、对齐或 Lance，可直接驱动切片工作台的 URDF。
+9. `GET .../episodes/{episode_id}/video-sources` 签发原始视频 URL 和 Episode 时间窗；预览不再生成一份
    派生视频。
 
 Episode 的“切割”是不可变 EDL/软时间窗，不覆盖 Raw，也不立即复制大型视频。训练发布确实

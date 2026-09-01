@@ -15,6 +15,24 @@ from .source_profile import (
     validate_source_info,
 )
 
+LEROBOT_MULTIPART_BYTES = 32 * 1024**2
+MAX_LEROBOT_MULTIPART_PARTS = 10_000
+
+
+def lerobot_part_plan(size: int) -> tuple[int, int]:
+    part_size = max(
+        LEROBOT_MULTIPART_BYTES,
+        (size + MAX_LEROBOT_MULTIPART_PARTS - 1) // MAX_LEROBOT_MULTIPART_PARTS,
+    )
+    return part_size, (size + part_size - 1) // part_size
+
+
+def lerobot_part_size(size: int, part_number: int) -> int:
+    part_size, part_count = lerobot_part_plan(size)
+    if not 1 <= part_number <= part_count:
+        raise ValueError("part number is outside the declared LeRobot source object")
+    return min(part_size, size - (part_number - 1) * part_size)
+
 
 def _safe_source_path(value: str) -> str:
     normalized = value.replace("\\", "/").strip("/")
@@ -38,6 +56,13 @@ class LeRobotSourceFileV1(BaseModel):
     @classmethod
     def validate_path(cls, value: str) -> str:
         return _safe_source_path(value)
+
+    @model_validator(mode="after")
+    def validate_part_plan(self) -> LeRobotSourceFileV1:
+        _part_size, expected_count = lerobot_part_plan(self.size)
+        if self.part_count != expected_count:
+            raise ValueError("part_count must match the canonical LeRobot multipart plan")
+        return self
 
 
 class CreateLeRobotImportV1(BaseModel):
@@ -140,6 +165,7 @@ class LeRobotPartGrantV1(BaseModel):
 
     path: str
     parts: tuple[PartAuthorization, ...]
+    completed: bool = False
 
 
 class CompleteLeRobotAssetV1(BaseModel):

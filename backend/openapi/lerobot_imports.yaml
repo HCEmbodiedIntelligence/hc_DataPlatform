@@ -46,6 +46,36 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/LeRobotPartGrantV1"}
         "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part:
+    put:
+      operationId: uploadLerobotAssetPart
+      tags: [lerobot-imports]
+      parameters:
+        - *project_parameter
+        - *region_parameter
+        - *import_parameter
+        - *organization_parameter
+        - {name: dataset_id, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+        - {name: path, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 1024}}
+        - {name: multipart_upload_id, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 2048}}
+        - {name: part_number, in: query, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: Part accepted through the same-origin API fallback.
+          headers:
+            ETag:
+              schema: {type: string}
+        "413":
+          description: Multipart body exceeds the platform transfer limit.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422": *validation_response
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete:
     post:
       operationId: completeLerobotAsset
@@ -158,6 +188,7 @@ components:
         parts:
           type: array
           items: {$ref: "#/components/schemas/PartAuthorization"}
+        completed: {type: boolean, default: false}
     CompleteLeRobotAssetV1:
       type: object
       additionalProperties: false

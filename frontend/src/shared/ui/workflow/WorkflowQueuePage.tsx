@@ -1,4 +1,4 @@
-import type { JSX, ReactNode } from "react";
+import type { CSSProperties, JSX, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowRight, Check, Search } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -71,7 +71,15 @@ export function WorkflowQueuePage<Key extends string>({
         ) : null}
       </header>
 
-      <nav className={styles.stageGrid} aria-label={props.stageNavigationLabel}>
+      <nav
+        className={styles.stageGrid}
+        aria-label={props.stageNavigationLabel}
+        style={
+          {
+            "--workflow-stage-count": props.stages.length,
+          } as CSSProperties
+        }
+      >
         {props.stages.map((stage) => {
           const Icon = stage.icon;
           const selected = stage.key === currentStage.key;
@@ -106,7 +114,10 @@ export function WorkflowQueuePage<Key extends string>({
         })}
       </nav>
 
-      <section className={styles.queuePanel} aria-labelledby={`${props.search.id}-queue-title`}>
+      <section
+        className={styles.queuePanel}
+        aria-labelledby={`${props.search.id}-queue-title`}
+      >
         <header className={styles.queueHeader}>
           <div>
             <p>当前队列</p>
@@ -177,4 +188,3 @@ export function WorkflowQueuePage<Key extends string>({
     </main>
   );
 }
-

@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import timedelta
-from typing import cast
+from typing import BinaryIO, cast
 from uuid import uuid4
 
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.models import CompletedPart, PartAuthorization, utc_now
-from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.ingest.ports import MultipartPart, ObjectStoragePort
 from hc_data_platform.ingest.raw_sources import (
     CommittedRawSourceGraph,
     InMemoryRawSourceRepository,
@@ -33,6 +33,7 @@ from .models import (
     LeRobotImportAcceptedV1,
     LeRobotImportGrantV1,
     LeRobotPartGrantV1,
+    lerobot_part_size,
 )
 from .orchestration import build_import_plan
 
@@ -152,6 +153,16 @@ class LeRobotWebUploadService:
             import_id,
             command.path,
         )
+        completed = self._storage.head(key)
+        if completed is not None:
+            if completed.size != asset["size"]:
+                raise problem(
+                    status=409,
+                    code="LEROBOT_ASSET_SIZE_MISMATCH",
+                    title="LeRobot asset size mismatch",
+                    detail="The completed source object no longer matches its declaration.",
+                )
+            return LeRobotPartGrantV1(path=command.path, parts=(), completed=True)
         return LeRobotPartGrantV1(
             path=command.path,
             parts=self._parts(
@@ -159,6 +170,64 @@ class LeRobotWebUploadService:
                 command.multipart_upload_id,
                 command.part_numbers,
             ),
+        )
+
+    def upload_part(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        import_id: str,
+        dataset_id: str,
+        path: str,
+        multipart_upload_id: str,
+        part_number: int,
+        body: BinaryIO,
+        size: int,
+    ) -> MultipartPart:
+        self._authorize(
+            auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+        )
+        session = self._require_session(
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            dataset_id=dataset_id,
+            import_id=import_id,
+        )
+        asset = self._require_asset(
+            session,
+            path=path,
+            multipart_upload_id=multipart_upload_id,
+        )
+        try:
+            expected_size = lerobot_part_size(cast(int, asset["size"]), part_number)
+        except ValueError as exc:
+            raise problem(
+                status=422,
+                code="LEROBOT_PART_OUT_OF_RANGE",
+                title="LeRobot part number is out of range",
+                detail="The uploaded part must stay within the declared source object.",
+            ) from exc
+        if size != expected_size:
+            raise problem(
+                status=422,
+                code="LEROBOT_PART_SIZE_MISMATCH",
+                title="LeRobot part size does not match",
+                detail="The proxied part must match the canonical multipart plan.",
+            )
+        key = self._key(organization_id, dataset_id, import_id, path)
+        return self._storage.upload_part_stream(
+            key,
+            multipart_upload_id,
+            part_number,
+            body,
+            size,
         )
 
     def complete_asset(

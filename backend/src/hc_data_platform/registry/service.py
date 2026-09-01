@@ -13,6 +13,7 @@ from urllib.parse import quote, unquote
 from uuid import uuid4
 from xml.etree import ElementTree
 
+from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.ingest.models import CompletedPart
@@ -47,7 +48,6 @@ from .models import (
     RobotModelVersionEnvelope,
 )
 from .repository import (
-    InMemoryRegistryRepository,
     RegistryAuditEvent,
     RegistryRepository,
     RobotModelAssetUploadFileRecord,
@@ -61,6 +61,7 @@ _ASSET_AUTHORIZATION_TTL = timedelta(minutes=15)
 _PUBLISH_PREFLIGHT_TTL = timedelta(minutes=10)
 _MAX_URDF_BYTES = 32 * 1024 * 1024
 _IN_MEMORY_PREFLIGHT_SECRET = "registry-in-memory-preflight-secret"
+_DATABASE_DOWNLOAD_TOKEN_KIND = "robot-model-asset-database-download/v1"
 
 
 class RegistryService:
@@ -76,10 +77,6 @@ class RegistryService:
         self._storage = storage
         self._preflight_codec = CursorCodec(cursor_secret)
         self._clock = clock
-
-    @classmethod
-    def in_memory(cls) -> RegistryService:
-        return cls(InMemoryRegistryRepository())
 
     def _authorize_read(
         self, *, auth: AuthContext, organization_id: str, project_id: str
@@ -541,9 +538,12 @@ class RegistryService:
             version_id=record.version_id,
         )
         item = self._require_uploading_file(record, command.relative_path, allow_completed=True)
-        if item.status is RobotAssetUploadStatus.COMPLETED:
-            return self._upload_envelope(record, scope=scope, request_id=request_id)
         storage = self._storage_or_problem()
+        if item.status is RobotAssetUploadStatus.COMPLETED:
+            delete_object = getattr(storage, "delete_object", None)
+            if callable(delete_object):
+                delete_object(item.object_key)
+            return self._upload_envelope(record, scope=scope, request_id=request_id)
         metadata = storage.head(item.object_key)
         if metadata is None:
             metadata = storage.complete_multipart(
@@ -562,11 +562,11 @@ class RegistryService:
                 detail="The completed object size differs from the immutable upload request.",
             )
         digest = hashlib.sha256()
-        size = 0
+        content = bytearray()
         for chunk in storage.read_chunks(item.object_key):
             digest.update(chunk)
-            size += len(chunk)
-        if size != item.size_bytes or digest.hexdigest() != item.sha256:
+            content.extend(chunk)
+        if len(content) != item.size_bytes or digest.hexdigest() != item.sha256:
             raise problem(
                 status=409,
                 code="ROBOT_MODEL_ASSET_HASH_MISMATCH",
@@ -590,7 +590,11 @@ class RegistryService:
                 sha256=item.sha256,
                 created_at=now,
             ),
+            content=bytes(content),
         )
+        delete_object = getattr(storage, "delete_object", None)
+        if callable(delete_object):
+            delete_object(item.object_key)
         if updated.status is not RobotAssetUploadStatus.COMPLETED and all(
             file.status is RobotAssetUploadStatus.COMPLETED for file in updated.files
         ):
@@ -677,9 +681,27 @@ class RegistryService:
                 title="Robot model asset not found",
                 detail="The requested asset does not exist in this model version.",
             )
-        object_key, asset = found
-        url = self._storage_or_problem().presign_read(
-            object_key, int(_ASSET_AUTHORIZATION_TTL.total_seconds())
+        object_key, asset, content = found
+        self._persisted_asset_content(
+            organization_id=organization_id,
+            project_id=project_id,
+            object_key=object_key,
+            asset=asset,
+            content=content,
+        )
+        expires_at = self._clock() + _ASSET_AUTHORIZATION_TTL
+        token = self._preflight_codec.encode(
+            {
+                "kind": _DATABASE_DOWNLOAD_TOKEN_KIND,
+                "organization_id": organization_id,
+                "project_id": project_id,
+                "asset_id": asset.asset_id,
+                "expires_at": int(expires_at.timestamp()),
+            }
+        )
+        url = (
+            f"/api/v1/organizations/{quote(organization_id, safe='')}"
+            f"/robot-model-assets/content?token={quote(token, safe='')}"
         )
         self._audit(
             auth=auth,
@@ -692,7 +714,7 @@ class RegistryService:
         return RobotModelAssetDownloadAuthorization(
             asset_id=asset.asset_id,
             download_url=url,
-            expires_at=self._clock() + _ASSET_AUTHORIZATION_TTL,
+            expires_at=expires_at,
             sha256=asset.sha256,
             media_type=asset.media_type,
         )
@@ -723,20 +745,58 @@ class RegistryService:
         organization_id: str,
         token: str,
     ) -> tuple[str, Iterable[bytes]]:
-        """Resolve a short-lived download token without exposing a server path."""
+        """Resolve a signed PostgreSQL asset download without exposing storage internals."""
 
-        storage = self._storage_or_problem()
-        resolver = getattr(storage, "resolve_authorized_read", None)
-        if not callable(resolver):
+        try:
+            payload = self._preflight_codec.decode(token)
+        except Exception as exc:
+            raise self._invalid_asset_download() from exc
+        project_id = payload.get("project_id")
+        asset_id = payload.get("asset_id")
+        expires_at = payload.get("expires_at")
+        if (
+            payload.get("kind") != _DATABASE_DOWNLOAD_TOKEN_KIND
+            or payload.get("organization_id") != organization_id
+            or not isinstance(project_id, str)
+            or not project_id
+            or not isinstance(asset_id, str)
+            or not asset_id
+            or not isinstance(expires_at, int)
+        ):
+            raise self._invalid_asset_download()
+        if expires_at < int(self._clock().timestamp()):
             raise problem(
-                status=503,
-                code="ROBOT_MODEL_SERVER_STORAGE_UNAVAILABLE",
-                title="Robot model server storage is unavailable",
-                detail="The server-local robot model storage adapter is not active.",
+                status=403,
+                code="ROBOT_MODEL_ASSET_TRANSFER_EXPIRED",
+                title="Robot model asset transfer expired",
+                detail="Request a fresh robot-model asset transfer URL and retry.",
             )
-        key = resolver(organization_id=organization_id, token=token)
-        filename = unquote(PurePosixPath(key).name) or "robot-model-asset"
-        return filename, storage.read_chunks(key)
+        select_request_scope(project_id, organization_id=organization_id)
+        found = self._repository.get_robot_model_asset(
+            organization_id=organization_id,
+            project_id=project_id,
+            asset_id=asset_id,
+        )
+        if found is None:
+            raise problem(
+                status=404,
+                code="ROBOT_MODEL_ASSET_NOT_FOUND",
+                title="Robot model asset not found",
+                detail="The authorized model asset no longer exists.",
+            )
+        object_key, asset, content = found
+        body = self._persisted_asset_content(
+            organization_id=organization_id,
+            project_id=project_id,
+            object_key=object_key,
+            asset=asset,
+            content=content,
+        )
+        filename = unquote(PurePosixPath(asset.relative_path).name) or "robot-model-asset"
+        return filename, tuple(
+            body[offset : offset + 8 * 1024 * 1024]
+            for offset in range(0, len(body), 8 * 1024 * 1024)
+        )
 
     def list_robot_model_joint_mappings(
         self,
@@ -1100,18 +1160,21 @@ class RegistryService:
             return tuple(checks), manifest_hash, mapping_hash
 
         try:
-            object_key, stored_asset = self._repository.get_robot_model_asset(
+            object_key, stored_asset, content = self._repository.get_robot_model_asset(
                 organization_id=organization_id,
                 project_id=project_id,
                 asset_id=urdfs[0].asset_id,
-            ) or (None, None)
+            ) or (None, None, None)
             if object_key is None or stored_asset is None:
                 raise KeyError(urdfs[0].asset_id)
-            storage = self._storage_or_problem()
-            metadata = storage.head(object_key)
-            if metadata is None or metadata.size != stored_asset.size_bytes:
-                raise ValueError("the stored URDF is missing or its size changed")
-            joints = self._parse_urdf_joint_names(storage.read_chunks(object_key))
+            body = self._persisted_asset_content(
+                organization_id=organization_id,
+                project_id=project_id,
+                object_key=object_key,
+                asset=stored_asset,
+                content=content,
+            )
+            joints = self._parse_urdf_joint_names((body,))
         except (KeyError, ValueError, ElementTree.ParseError, UnicodeDecodeError):
             checks.extend(
                 (
@@ -1267,6 +1330,61 @@ class RegistryService:
                 detail="Start a new publish preflight for this robot model version.",
             )
         return str(payload["preflight_id"])
+
+    def _persisted_asset_content(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        object_key: str,
+        asset: RobotModelAsset,
+        content: bytes | None,
+    ) -> bytes:
+        body = content
+        if body is None:
+            storage = self._storage_or_problem()
+            try:
+                body = b"".join(storage.read_chunks(object_key))
+            except (FileNotFoundError, KeyError) as exc:
+                raise problem(
+                    status=409,
+                    code="ROBOT_MODEL_ASSET_CONTENT_MISSING",
+                    title="Robot model asset content is missing",
+                    detail=(
+                        "The legacy server file is unavailable and has not been migrated into "
+                        "PostgreSQL. Re-import this model version."
+                    ),
+                ) from exc
+            if len(body) != asset.size_bytes or hashlib.sha256(body).hexdigest() != asset.sha256:
+                raise problem(
+                    status=409,
+                    code="ROBOT_MODEL_ASSET_CONTENT_INVALID",
+                    title="Robot model asset content is invalid",
+                    detail="The legacy server file differs from its registered checksum.",
+                )
+            self._repository.store_robot_model_asset_content(
+                organization_id=organization_id,
+                project_id=project_id,
+                asset_id=asset.asset_id,
+                content=body,
+            )
+        if len(body) != asset.size_bytes or hashlib.sha256(body).hexdigest() != asset.sha256:
+            raise problem(
+                status=409,
+                code="ROBOT_MODEL_ASSET_CONTENT_INVALID",
+                title="Robot model asset content is invalid",
+                detail="The PostgreSQL asset content differs from its registered checksum.",
+            )
+        return body
+
+    @staticmethod
+    def _invalid_asset_download() -> Exception:
+        return problem(
+            status=403,
+            code="ROBOT_MODEL_ASSET_TRANSFER_INVALID",
+            title="Robot model asset transfer is invalid",
+            detail="Request a fresh robot-model asset transfer URL and retry.",
+        )
 
     def _require_version(self, *, organization_id: str, project_id: str, version_id: str) -> Any:
         item = self._repository.get_robot_model_version(

@@ -62,13 +62,22 @@ describe("robot URDF import", () => {
     );
   });
 
-  it("writes edited mappings into the canonical JSON description file", async () => {
+  it("preserves custom configuration while writing model identity and edited mappings", async () => {
     const parsed = await parseRobotModelAssets([
       asset(
         urdf.replace("meshes/tool.stl", ""),
         "arm.urdf",
         "URDF",
         "application/xml",
+      ),
+      asset(
+        JSON.stringify({
+          robot: { id: "legacy-robot" },
+          control_profile: { frequency_hz: 500 },
+        }),
+        "robot.config.json",
+        "CONFIG",
+        "application/json",
       ),
     ]);
     const configuration = buildRobotConfigurationAsset(
@@ -80,7 +89,12 @@ describe("robot URDF import", () => {
           direction: "INVERTED",
         },
       ],
-      { robotId: "robot-1", displayName: "Robot 1", serialNo: "SN-1" },
+      {
+        modelId: "model-1",
+        displayName: "Arm model",
+        manufacturer: "HC Robotics",
+        modelCode: "ARM-1",
+      },
     );
     const saved = replaceRobotConfigurationAsset(
       [
@@ -90,12 +104,19 @@ describe("robot URDF import", () => {
       configuration,
     );
     const document = JSON.parse(await configuration.file.text()) as {
-      robot: { id: string };
+      model: { id: string; model_code: string };
+      robot?: unknown;
+      control_profile: { frequency_hz: number };
       joint_mapping: unknown[];
     };
 
     expect(configuration.relativePath).toBe("robot.config.json");
-    expect(document.robot.id).toBe("robot-1");
+    expect(document.robot).toBeUndefined();
+    expect(document.model).toMatchObject({
+      id: "model-1",
+      model_code: "ARM-1",
+    });
+    expect(document.control_profile).toEqual({ frequency_hz: 500 });
     expect(document.joint_mapping).toEqual([
       {
         source_joint_name: "telemetry_axis",

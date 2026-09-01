@@ -261,8 +261,7 @@
 .metricHeading small,
 .metricValue,
 .qualityRequirement,
-.progressTime small,
-.staleValue {
+.progressTime small {
   font-size: 0.6875rem;
   line-height: 1.4;
 }
@@ -308,10 +307,6 @@
   color: var(--hc-color-warning-text);
   font-size: 0.6875rem;
   line-height: 1.4;
-}
-
-.staleValue {
-  color: var(--hc-color-warning-text);
 }
 
 .progressUnavailable {
@@ -772,7 +767,6 @@
   .mobileTaskSection .metricValue,
   .mobileTaskSection .qualityRequirement,
   .mobileTaskSection .progressTime small,
-  .mobileTaskSection .staleValue,
   .mobileTaskSection .durationWarning {
     font-size: 0.75rem;
   }

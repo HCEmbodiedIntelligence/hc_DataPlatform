@@ -9,6 +9,10 @@ export type ContinuousRecordingPage =
   components["schemas"]["ContinuousRecordingPage"];
 export type RecordingVideoSourceEnvelope =
   components["schemas"]["RecordingVideoSourceEnvelope"];
+export type RecordingVideoSource =
+  components["schemas"]["RecordingVideoSource"];
+export type RecordingSensorWindow =
+  components["schemas"]["RecordingSensorWindow"];
 export type SaveSliceDraftCommand =
   components["schemas"]["SaveSliceDraftCommand"];
 export type SliceRevisionEnvelope =
@@ -20,6 +24,13 @@ export type EpisodeProcessingPage =
 export interface RecordingScope extends Scope {
   readonly projectId: string;
   readonly regionCode: string;
+}
+
+export interface RecordingSensorWindowQuery {
+  readonly topic?: string;
+  readonly startOffsetNs: string;
+  readonly endOffsetNs: string;
+  readonly maximumSamples?: number;
 }
 
 export interface RecordingGateway {
@@ -37,6 +48,12 @@ export interface RecordingGateway {
     recordingId: string,
     signal?: AbortSignal,
   ): Promise<RecordingVideoSourceEnvelope>;
+  sensorWindow(
+    scope: RecordingScope,
+    recordingId: string,
+    query: RecordingSensorWindowQuery,
+    signal?: AbortSignal,
+  ): Promise<RecordingSensorWindow>;
   processing(
     scope: RecordingScope,
     recordingId: string,
@@ -84,6 +101,21 @@ export const recordingGateway: RecordingGateway = {
       path: `${root(scope)}/${encodeURIComponent(recordingId)}/video-sources`,
       scope,
       cache: "no-store",
+      ...(signal ? { signal } : {}),
+    }),
+
+  sensorWindow: (scope, recordingId, query, signal) =>
+    request<RecordingSensorWindow>({
+      method: "GET",
+      path: `${root(scope)}/${encodeURIComponent(recordingId)}/sensor-window`,
+      scope,
+      cache: "no-store",
+      query: {
+        ...(query.topic ? { topic: query.topic } : {}),
+        start_offset_ns: query.startOffsetNs,
+        end_offset_ns: query.endOffsetNs,
+        maximum_samples: query.maximumSamples ?? 5_000,
+      },
       ...(signal ? { signal } : {}),
     }),
 

@@ -6,7 +6,11 @@ from uuid import NAMESPACE_URL, uuid5
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import PageInfo
-from hc_data_platform.robotics.models import CreateRobotRequest
+from hc_data_platform.robotics.models import (
+    CreateRobotRequest,
+    RobotLifecycleTransitionRequest,
+    UpdateRobotRequest,
+)
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.idempotency import idempotency_conflict, request_fingerprint
 
@@ -197,6 +201,96 @@ class OrganizationRobotAssetService:
                 title="Robot cannot be deleted as a failed import",
                 detail="Only an unbound draft robot with no dependent assets can be deleted.",
             ) from exc
+
+    def update_robot(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        robot_id: str,
+        command: UpdateRobotRequest,
+        expected_etag: str,
+        request_id: str,
+    ) -> OrganizationRobotBootstrapEnvelope:
+        self._authorize(auth, organization_id, "robot.manage")
+        try:
+            item = self._repository.update_robot(
+                organization_id=organization_id,
+                robot_id=robot_id,
+                command=command,
+                expected_etag=expected_etag,
+                actor_id=auth.subject_id,
+                request_id=request_id,
+                occurred_at=self._clock(),
+            )
+        except KeyError as exc:
+            raise problem(
+                status=404,
+                code="ROBOT_NOT_FOUND",
+                title="Robot not found",
+                detail="The requested robot does not exist in this organization.",
+            ) from exc
+        except ValueError as exc:
+            raise problem(
+                status=412,
+                code="ROBOT_ETAG_CONFLICT",
+                title="Robot version changed",
+                detail="Reload the robot and retry the update.",
+            ) from exc
+        return OrganizationRobotBootstrapEnvelope(
+            data=item,
+            scope=OrganizationRobotScope(organization_id=organization_id),
+            request_id=request_id,
+        )
+
+    def transition_robot(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        robot_id: str,
+        command: RobotLifecycleTransitionRequest,
+        expected_etag: str,
+        request_id: str,
+    ) -> OrganizationRobotBootstrapEnvelope:
+        self._authorize(auth, organization_id, "robot.manage")
+        try:
+            item = self._repository.transition_robot(
+                organization_id=organization_id,
+                robot_id=robot_id,
+                command=command,
+                expected_etag=expected_etag,
+                actor_id=auth.subject_id,
+                request_id=request_id,
+                occurred_at=self._clock(),
+            )
+        except KeyError as exc:
+            raise problem(
+                status=404,
+                code="ROBOT_NOT_FOUND",
+                title="Robot not found",
+                detail="The requested robot does not exist in this organization.",
+            ) from exc
+        except ValueError as exc:
+            detail = str(exc)
+            if "etag" in detail:
+                raise problem(
+                    status=412,
+                    code="ROBOT_ETAG_CONFLICT",
+                    title="Robot version changed",
+                    detail="Reload the robot and retry the lifecycle change.",
+                ) from exc
+            raise problem(
+                status=409,
+                code="ROBOT_LIFECYCLE_CONFLICT",
+                title="Robot lifecycle transition is not allowed",
+                detail="The requested lifecycle state cannot follow the current state.",
+            ) from exc
+        return OrganizationRobotBootstrapEnvelope(
+            data=item,
+            scope=OrganizationRobotScope(organization_id=organization_id),
+            request_id=request_id,
+        )
 
     def bind_model(
         self,

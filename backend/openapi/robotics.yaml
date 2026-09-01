@@ -93,6 +93,56 @@ components:
       - serial_no
       title: CreateRobotRequest
       type: object
+    RobotLifecycleTransitionRequest:
+      additionalProperties: false
+      properties:
+        lifecycle_status:
+          pattern: ^(ACTIVE|MAINTENANCE|DISABLED|RETIRED)$
+          title: Lifecycle Status
+          type: string
+        reason:
+          maxLength: 512
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - lifecycle_status
+      - reason
+      title: RobotLifecycleTransitionRequest
+      type: object
+    UpdateRobotRequest:
+      additionalProperties: false
+      description: Mutable robot facts; lifecycle transitions use their dedicated command.
+      properties:
+        connectivity_reason_code:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Connectivity Reason Code
+        connectivity_source:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Connectivity Source
+        connectivity_state:
+          anyOf:
+          - pattern: ^(ONLINE|OFFLINE|DEGRADED)$
+            type: string
+          - type: 'null'
+          title: Connectivity State
+        display_name:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Display Name
+      title: UpdateRobotRequest
+      type: object
     EffectiveModelBinding:
       additionalProperties: false
       properties:
@@ -533,6 +583,59 @@ paths:
       summary: Delete Provisional Organization Robot
       tags:
       - organization-robot-assets
+    patch:
+      operationId: updateOrganizationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRobotRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationRobotBootstrapEnvelope'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Update Organization Robot
+      tags:
+      - organization-robot-assets
   /api/v1/organizations/{organization_id}/robots/{robot_id}/bootstrap:
     get:
       operationId: getOrganizationRobotBootstrap
@@ -571,6 +674,60 @@ paths:
       security:
       - bearerAuth: []
       summary: Get Organization Robot Bootstrap
+      tags:
+      - organization-robot-assets
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/lifecycle:
+    post:
+      operationId: transitionOrganizationRobotLifecycle
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotLifecycleTransitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationRobotBootstrapEnvelope'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Transition Organization Robot Lifecycle
       tags:
       - organization-robot-assets
   /api/v1/organizations/{organization_id}/robots/{robot_id}/model-bindings:

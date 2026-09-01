@@ -8,11 +8,14 @@ from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from hc_data_platform.robotics.models import (
+    COMPONENT_LIFECYCLE_TRANSITIONS,
     Connectivity,
     CreateRobotRequest,
     EffectiveModelBinding,
     RobotBootstrap,
+    RobotLifecycleTransitionRequest,
     RobotRecord,
+    UpdateRobotRequest,
 )
 
 from .models import OrganizationRobotModelBinding
@@ -41,6 +44,30 @@ class OrganizationRobotAssetRepository(Protocol):
         command: CreateRobotRequest,
         idempotency_key: str,
         request_fingerprint: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> RobotBootstrap: ...
+
+    def update_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        command: UpdateRobotRequest,
+        expected_etag: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> RobotBootstrap: ...
+
+    def transition_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        command: RobotLifecycleTransitionRequest,
+        expected_etag: str,
         actor_id: str,
         request_id: str,
         occurred_at: datetime,
@@ -223,6 +250,82 @@ class InMemoryOrganizationRobotAssetRepository:
             self._robots[(organization_id, robot_id)] = result
             self._receipts[receipt_key] = (request_fingerprint, result)
             return result
+
+    def update_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        command: UpdateRobotRequest,
+        expected_etag: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> RobotBootstrap:
+        del actor_id, request_id
+        with self._lock:
+            current = self._robots.get((organization_id, robot_id))
+            if current is None:
+                raise KeyError(robot_id)
+            if current.etag != expected_etag:
+                raise ValueError("robot etag does not match")
+            robot_updates: dict[str, Any] = {}
+            if command.display_name is not None:
+                robot_updates["display_name"] = command.display_name
+            if command.connectivity_state is not None:
+                robot_updates["connectivity"] = current.robot.connectivity.model_copy(
+                    update={
+                        "state": command.connectivity_state,
+                        "observed_at": occurred_at,
+                        "source": command.connectivity_source,
+                        "reason_code": command.connectivity_reason_code,
+                    }
+                )
+            revision = uuid4().hex
+            updated = current.model_copy(
+                update={
+                    "robot": current.robot.model_copy(update=robot_updates),
+                    "etag": f'"robot-asset:{robot_id}:{revision}"',
+                    "topology_revision": f"robot-asset:{robot_id}:{revision}",
+                }
+            )
+            self._robots[(organization_id, robot_id)] = updated
+            return updated
+
+    def transition_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        command: RobotLifecycleTransitionRequest,
+        expected_etag: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> RobotBootstrap:
+        del actor_id, request_id, occurred_at
+        with self._lock:
+            current = self._robots.get((organization_id, robot_id))
+            if current is None:
+                raise KeyError(robot_id)
+            if current.etag != expected_etag:
+                raise ValueError("robot etag does not match")
+            if command.lifecycle_status not in COMPONENT_LIFECYCLE_TRANSITIONS.get(
+                current.robot.lifecycle_status, frozenset()
+            ):
+                raise ValueError("invalid robot lifecycle transition")
+            revision = uuid4().hex
+            updated = current.model_copy(
+                update={
+                    "robot": current.robot.model_copy(
+                        update={"lifecycle_status": command.lifecycle_status}
+                    ),
+                    "etag": f'"robot-asset:{robot_id}:{revision}"',
+                    "topology_revision": f"robot-asset:{robot_id}:{revision}",
+                }
+            )
+            self._robots[(organization_id, robot_id)] = updated
+            return updated
 
     def delete_provisional_robot(
         self,
@@ -637,6 +740,8 @@ class PostgresOrganizationRobotAssetRepository:
                     '["VIEW", "EDIT", "TRANSITION", "BIND_MODEL"]'::jsonb,
                     1, %s, %s
                 )
+                ON CONFLICT (organization_id, serial_no) DO NOTHING
+                RETURNING robot_id
                 """,
                 (
                     organization_id,
@@ -654,6 +759,8 @@ class PostgresOrganizationRobotAssetRepository:
                     occurred_at,
                 ),
             )
+            if cursor.fetchone() is None:
+                raise ValueError("serial number already exists")
             result = self._get_locked(cursor, organization_id, robot_id)
             self._store_receipt(
                 cursor,
@@ -670,6 +777,130 @@ class PostgresOrganizationRobotAssetRepository:
                 organization_id=organization_id,
                 actor_id=actor_id,
                 action="robot.asset.created",
+                resource_id=robot_id,
+                request_id=request_id,
+                occurred_at=occurred_at,
+            )
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def update_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        command: UpdateRobotRequest,
+        expected_etag: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> RobotBootstrap:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            current = self._get_locked(cursor, organization_id, robot_id)
+            if current.etag != expected_etag:
+                raise ValueError("robot etag does not match")
+            cursor.execute(
+                """
+                UPDATE robotics.robot_assets
+                   SET display_name = COALESCE(%s, display_name),
+                       connectivity_state = COALESCE(%s, connectivity_state),
+                       connectivity_observed_at = CASE
+                           WHEN %s IS NULL THEN connectivity_observed_at ELSE %s
+                       END,
+                       connectivity_source = CASE
+                           WHEN %s IS NULL THEN connectivity_source ELSE %s
+                       END,
+                       connectivity_reason_code = CASE
+                           WHEN %s IS NULL THEN connectivity_reason_code ELSE %s
+                       END,
+                       revision = revision + 1,
+                       etag = '"robot-asset:' || robot_id || ':' || (revision + 1)::text || '"',
+                       topology_revision =
+                           'robot-asset:' || robot_id || ':' || (revision + 1)::text,
+                       updated_at = %s
+                 WHERE organization_id = %s AND robot_id = %s
+                """,
+                (
+                    command.display_name,
+                    command.connectivity_state,
+                    command.connectivity_state,
+                    occurred_at,
+                    command.connectivity_state,
+                    command.connectivity_source,
+                    command.connectivity_state,
+                    command.connectivity_reason_code,
+                    occurred_at,
+                    organization_id,
+                    robot_id,
+                ),
+            )
+            result = self._get_locked(cursor, organization_id, robot_id)
+            self._append_audit(
+                cursor,
+                organization_id=organization_id,
+                actor_id=actor_id,
+                action="robot.asset.updated",
+                resource_id=robot_id,
+                request_id=request_id,
+                occurred_at=occurred_at,
+            )
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def transition_robot(
+        self,
+        *,
+        organization_id: str,
+        robot_id: str,
+        command: RobotLifecycleTransitionRequest,
+        expected_etag: str,
+        actor_id: str,
+        request_id: str,
+        occurred_at: datetime,
+    ) -> RobotBootstrap:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            current = self._get_locked(cursor, organization_id, robot_id)
+            if current.etag != expected_etag:
+                raise ValueError("robot etag does not match")
+            if command.lifecycle_status not in COMPONENT_LIFECYCLE_TRANSITIONS.get(
+                current.robot.lifecycle_status, frozenset()
+            ):
+                raise ValueError("invalid robot lifecycle transition")
+            cursor.execute(
+                """
+                UPDATE robotics.robot_assets
+                   SET lifecycle_status = %s,
+                       revision = revision + 1,
+                       etag = '"robot-asset:' || robot_id || ':' || (revision + 1)::text || '"',
+                       topology_revision =
+                           'robot-asset:' || robot_id || ':' || (revision + 1)::text,
+                       updated_at = %s
+                 WHERE organization_id = %s AND robot_id = %s
+                """,
+                (command.lifecycle_status, occurred_at, organization_id, robot_id),
+            )
+            result = self._get_locked(cursor, organization_id, robot_id)
+            self._append_audit(
+                cursor,
+                organization_id=organization_id,
+                actor_id=actor_id,
+                action=f"robot.asset.lifecycle.{command.lifecycle_status.lower()}",
                 resource_id=robot_id,
                 request_id=request_id,
                 occurred_at=occurred_at,

@@ -157,6 +157,37 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/EpisodeProcessingPage"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window:
+    get:
+      operationId: readContinuousRecordingSensorWindow
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: topic
+          in: query
+          required: false
+          schema: {type: [string, "null"], minLength: 1, maxLength: 512}
+        - name: start_offset_ns
+          in: query
+          required: false
+          schema:
+            allOf: [{$ref: "#/components/schemas/NanosecondsDecimal"}]
+            default: "0"
+        - name: end_offset_ns
+          in: query
+          required: false
+          schema:
+            allOf: [{$ref: "#/components/schemas/NanosecondsDecimal"}]
+            default: "4000000000"
+        - name: maximum_samples
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 10000, default: 5000}
+      responses:
+        "200":
+          description: Decoded original SENSOR_DATA samples on the recording clock
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingSensorWindow"}
   /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/video-sources:
     get:
       operationId: authorizeContinuousRecordingVideos
@@ -699,3 +730,30 @@ components:
         sources:
           type: array
           items: {$ref: "#/components/schemas/RecordingVideoSource"}
+    RecordingSensorSample:
+      type: object
+      additionalProperties: false
+      required: [offset_ns, source_timestamp_ns, value]
+      properties:
+        offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        source_timestamp_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        value: {}
+    RecordingSensorWindow:
+      type: object
+      additionalProperties: false
+      required:
+        - recording_id
+        - topic
+        - start_offset_ns
+        - end_offset_ns
+        - samples
+      properties:
+        schema_version: {type: string, const: recording-sensor-window/v1}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        topic: {type: string, minLength: 1, maxLength: 512}
+        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        samples:
+          type: array
+          items: {$ref: "#/components/schemas/RecordingSensorSample"}
+        truncated: {type: boolean, default: false}

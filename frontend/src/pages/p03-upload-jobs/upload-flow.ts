@@ -4,6 +4,7 @@ import type { BrowserSelectionMode } from "./components/UploadMethodPanel";
 import type {
   LeRobotImportAccepted,
   LeRobotTargetBinding,
+  LeRobotUploadResume,
   LeRobotUploadProgress,
 } from "./lerobot-client";
 import {
@@ -108,6 +109,7 @@ export type UploadFlowState =
       readonly phase: "lerobot_failed";
       readonly selection: LocalUploadSelection;
       readonly binding: LeRobotTargetBinding;
+      readonly resume: LeRobotUploadResume | null;
       readonly problem: {
         readonly title: string;
         readonly detail: string;

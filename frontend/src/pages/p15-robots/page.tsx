@@ -1,36 +1,22 @@
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Steps,
-} from "antd";
+import { Alert, Button, Form, Input, Modal, Select, Spin, Steps } from "antd";
 import {
   Box,
   CheckCircle2,
   CircleDot,
   File as FileIcon,
   FolderOpen,
-  Radio,
   Search,
-  Upload,
   UploadCloud,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { RobotModelVersion } from "../../entities/robot-model";
-import type { Robot } from "../../entities/robot";
+import type { RobotModel, RobotModelVersion } from "../../entities/robot-model";
 import {
   authorizeRobotModelAssetDownload,
   authorizeRobotModelViewerAssets,
   discardRobotModelImport,
   getRobotModelVersion,
-  useBindRobotModelVersion,
   useCreateRobotModel,
   useCreateRobotModelDraft,
   usePreflightRobotModelPublish,
@@ -38,16 +24,11 @@ import {
   useReplaceRobotModelJointMappings,
   useRobotModelAssets,
   useRobotModelJointMappings,
+  useRobotModels,
   useRobotModelVersion,
   useUploadRobotModelAssets,
   type RobotModelJointMapping,
 } from "../../features/robot-models/api";
-import {
-  deleteProvisionalRobot,
-  useCreateRobot,
-  useRobotBootstrap,
-  useRobots,
-} from "../../features/robots/api";
 import {
   createLazyThreeRobotSceneLoader,
   RobotSceneCore,
@@ -71,7 +52,7 @@ import {
   type RobotModelFileCandidate,
 } from "./model-file-selection";
 import uploadStyles from "./model-upload.module.css";
-import { robotsQueryCodec, type RobotsSearch } from "./query-codec";
+import { robotsQueryCodec } from "./query-codec";
 import styles from "./robot-assets.module.css";
 import {
   buildRobotConfigurationAsset,
@@ -83,16 +64,7 @@ import {
   type ParsedRobotModel,
 } from "./urdf-import";
 
-type LifecycleFilter = "all" | NonNullable<RobotsSearch["lifecycleStatus"]>;
-type ConnectivityFilter =
-  | "all"
-  | NonNullable<RobotsSearch["connectivityState"]>;
 type ImportStage = "files" | "review" | "saving" | "saved";
-
-interface CreateRobotFormValues {
-  readonly displayName: string;
-  readonly serialNo: string;
-}
 
 interface ModelMetadataFormValues {
   readonly manufacturer?: string;
@@ -194,57 +166,40 @@ export function Component() {
   );
   const bootstrapLoaded = useShellStore((state) => state.bootstrapLoaded);
   const capabilities = useOrganizationCapabilities(organizationId);
-  const canManageRobots = capabilities.has("robot.manage");
   const canManageModels = capabilities.has("robot_model.manage");
 
   const [query, setQuery] = useState(search.q ?? "");
-  const [lifecycleStatus, setLifecycleStatus] = useState<LifecycleFilter>(
-    search.lifecycleStatus ?? "all",
-  );
-  const [connectivityState, setConnectivityState] =
-    useState<ConnectivityFilter>(search.connectivityState ?? "all");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createForm] = Form.useForm<CreateRobotFormValues>();
   const [modelForm] = Form.useForm<ModelMetadataFormValues>();
 
-  const robots = useRobots({
-    configured_only: "true",
+  const models = useRobotModels({
     ...(search.q ? { q: search.q } : {}),
-    ...(search.lifecycleStatus
-      ? { lifecycle_status: search.lifecycleStatus }
-      : {}),
-    ...(search.connectivityState
-      ? { connectivity_state: search.connectivityState }
-      : {}),
+    ...(search.after ? { after: search.after } : {}),
+    ...(search.before ? { before: search.before } : {}),
+    limit: search.limit,
   });
-  const robotItems = robots.data?.items ?? [];
-  const selectedRobot =
-    robotItems.find((robot) => robot.id === search.robotId) ?? robotItems[0];
-  const selectedRobotId = selectedRobot?.id ?? null;
-  const bootstrap = useRobotBootstrap(selectedRobotId);
-  const selectedBootstrap = bootstrap.data;
-  const boundVersionId =
-    selectedBootstrap?.effectiveModelBinding?.robotModelVersionId ?? null;
-  const boundVersion = useRobotModelVersion(boundVersionId);
-  const currentAssets = useRobotModelAssets(boundVersionId);
-  const currentMappings = useRobotModelJointMappings(boundVersionId);
+  const modelItems = (models.data?.items ?? []).filter(
+    (model) => model.currentPublishedVersionId,
+  );
+  const selectedModel =
+    modelItems.find((model) => model.id === search.modelId) ?? modelItems[0];
+  const selectedVersionId = selectedModel?.currentPublishedVersionId ?? null;
+  const currentVersion = useRobotModelVersion(selectedVersionId);
+  const currentAssets = useRobotModelAssets(selectedVersionId);
+  const currentMappings = useRobotModelJointMappings(selectedVersionId);
   const currentUrdf = currentAssets.data?.find(
     (asset) => asset.role === "URDF",
   );
 
-  const createRobot = useCreateRobot();
   const createRobotModel = useCreateRobotModel();
   const createModelDraft = useCreateRobotModelDraft();
   const uploadModelAssets = useUploadRobotModelAssets();
   const replaceModelMappings = useReplaceRobotModelJointMappings();
   const publishPreflight = usePreflightRobotModelPublish();
   const publishVersion = usePublishRobotModelVersion();
-  const bindVersion = useBindRobotModelVersion();
 
   const [importOpen, setImportOpen] = useState(false);
   const [importStage, setImportStage] = useState<ImportStage>("files");
-  const [importRobot, setImportRobot] = useState<Robot | null>(null);
-  const [importOwnsRobot, setImportOwnsRobot] = useState(false);
+  const [importModel, setImportModel] = useState<RobotModel | null>(null);
   const [importSourceVersion, setImportSourceVersion] =
     useState<RobotModelVersion | null>(null);
   const [modelMetadata, setModelMetadata] =
@@ -259,6 +214,8 @@ export function Component() {
   const [localPreview, setLocalPreview] = useState<LocalRobotPreview | null>(
     null,
   );
+  const localPreviewRef = useRef<LocalRobotPreview | null>(null);
+  const previewMountGenerationRef = useRef(0);
   const [configurationPreview, setConfigurationPreview] = useState("");
   const [modelCommandId, setModelCommandId] = useState("");
   const [modelDropActive, setModelDropActive] = useState(false);
@@ -268,10 +225,23 @@ export function Component() {
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const [savedVersionId, setSavedVersionId] = useState<string | null>(null);
-  const [discardingImport, setDiscardingImport] = useState(false);
   const [pageNotice, setPageNotice] = useState<string | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement>(null);
   const modelFolderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const generation = ++previewMountGenerationRef.current;
+    return () => {
+      // React StrictMode intentionally runs an immediate setup/cleanup/setup
+      // cycle. Defer revocation and keep URLs alive when that second setup
+      // takes ownership of the same local preview.
+      queueMicrotask(() => {
+        if (previewMountGenerationRef.current !== generation) return;
+        localPreviewRef.current?.dispose();
+        localPreviewRef.current = null;
+      });
+    };
+  }, []);
 
   const modelSelectionError = modelAssetSelectionError(modelAssets);
   const modelAssetCounts = useMemo(
@@ -301,42 +271,31 @@ export function Component() {
     uploadModelAssets.isPending ||
     replaceModelMappings.isPending ||
     publishPreflight.isPending ||
-    publishVersion.isPending ||
-    bindVersion.isPending ||
-    discardingImport;
+    publishVersion.isPending;
 
   useEffect(() => {
-    if (!selectedRobot || search.robotId === selectedRobot.id) return;
+    if (!selectedModel || search.modelId === selectedModel.id) return;
     setParams(
       robotsQueryCodec.build(
         {
           ...search,
-          robotId: selectedRobot.id,
-          componentId: undefined,
-          tab: "overview",
+          modelId: selectedModel.id,
         },
         search,
       ),
       { replace: true },
     );
-  }, [search, selectedRobot, setParams]);
-
-  useEffect(
-    () => () => {
-      localPreview?.dispose();
-    },
-    [localPreview],
-  );
+  }, [search, selectedModel, setParams]);
 
   const currentModelRef = useMemo(
     () =>
-      boundVersion.data
+      currentVersion.data
         ? {
-            modelId: boundVersion.data.robotModelId,
-            modelVersion: boundVersion.data.id,
+            modelId: currentVersion.data.robotModelId,
+            modelVersion: currentVersion.data.id,
           }
         : null,
-    [boundVersion.data],
+    [currentVersion.data],
   );
   const currentJointMapping = useMemo(
     () =>
@@ -349,9 +308,9 @@ export function Component() {
     [currentMappings.data],
   );
   const currentRuntimeLoader = useMemo(() => {
-    if (!boundVersion.data || !currentUrdf || !organizationId) return;
-    const versionId = boundVersion.data.id;
-    const modelId = boundVersion.data.robotModelId;
+    if (!currentVersion.data || !currentUrdf || !organizationId) return;
+    const versionId = currentVersion.data.id;
+    const modelId = currentVersion.data.robotModelId;
     const requiredJoints = (currentMappings.data ?? []).map(
       (mapping) => mapping.source_joint_name,
     );
@@ -369,7 +328,7 @@ export function Component() {
       };
     });
   }, [
-    boundVersion.data,
+    currentVersion.data,
     currentAssets.data,
     currentMappings.data,
     currentUrdf,
@@ -378,10 +337,10 @@ export function Component() {
 
   const localModelRef = useMemo(
     () => ({
-      modelId: importRobot?.id ?? "local-robot",
+      modelId: importModel?.id ?? modelMetadata?.modelCode ?? "local-model",
       modelVersion: modelCommandId || "local-preview",
     }),
-    [importRobot?.id, modelCommandId],
+    [importModel?.id, modelCommandId, modelMetadata?.modelCode],
   );
   const localRuntimeLoader = useMemo(() => {
     if (!localPreview) return;
@@ -397,14 +356,20 @@ export function Component() {
   }, [localModelRef, localPreview]);
 
   useEffect(() => {
-    if (!analysis || !importRobot) {
+    if (!analysis || !modelMetadata) {
       setConfigurationPreview("");
       return;
     }
     const asset = buildRobotConfigurationAsset(analysis, mappings, {
-      robotId: importRobot.id,
-      displayName: importRobot.displayName,
-      serialNo: importRobot.serialNo,
+      ...(importModel ? { modelId: importModel.id } : {}),
+      displayName:
+        modelMetadata.displayName ??
+        importModel?.displayName ??
+        analysis.robotName,
+      manufacturer:
+        modelMetadata.manufacturer ?? importModel?.manufacturer ?? "",
+      modelCode:
+        modelMetadata.modelCode ?? importModel?.modelCode ?? analysis.robotName,
     });
     let active = true;
     void asset.file.text().then((content) => {
@@ -413,26 +378,30 @@ export function Component() {
     return () => {
       active = false;
     };
-  }, [analysis, importRobot, mappings]);
+  }, [analysis, importModel, mappings, modelMetadata]);
 
-  const selectRobot = (robotId: string) => {
+  const selectModel = (modelId: string) => {
     setParams(
       robotsQueryCodec.build(
         {
           ...search,
-          robotId,
-          componentId: undefined,
-          tab: "overview",
+          modelId,
         },
         search,
       ),
     );
   };
 
+  const replaceLocalPreview = (preview: LocalRobotPreview | null) => {
+    if (localPreviewRef.current !== preview) localPreviewRef.current?.dispose();
+    localPreviewRef.current = preview;
+    setLocalPreview(preview);
+  };
+
   const clearAnalysis = () => {
     setAnalysis(null);
     setMappings([]);
-    setLocalPreview(null);
+    replaceLocalPreview(null);
     setConfigurationPreview("");
     setImportStage("files");
     setSavedVersionId(null);
@@ -440,8 +409,7 @@ export function Component() {
 
   const resetImport = () => {
     clearAnalysis();
-    setImportRobot(null);
-    setImportOwnsRobot(false);
+    setImportModel(null);
     setImportSourceVersion(null);
     setModelMetadata(null);
     setModelAssets([]);
@@ -456,28 +424,22 @@ export function Component() {
   };
 
   const defaultModelMetadata = (
-    robot: Robot,
+    model: RobotModel | null,
     sourceVersion: RobotModelVersion | null,
   ): ModelMetadataFormValues => ({
-    ...(sourceVersion
-      ? {}
-      : {
-          manufacturer: "HC Robotics",
-          modelCode: robot.serialNo,
-          displayName: `${robot.displayName} 模型`,
-        }),
+    manufacturer: model?.manufacturer ?? "",
+    modelCode: model?.modelCode ?? "",
+    displayName: model?.displayName ?? "",
     versionLabel: uniqueVersionLabel(sourceVersion ? "update" : "1.0.0"),
   });
 
   const beginImport = (
-    robot: Robot,
+    model: RobotModel | null,
     sourceVersion: RobotModelVersion | null,
-    ownsRobot = false,
   ) => {
     resetImport();
-    const metadata = defaultModelMetadata(robot, sourceVersion);
-    setImportRobot(robot);
-    setImportOwnsRobot(ownsRobot);
+    const metadata = defaultModelMetadata(model, sourceVersion);
+    setImportModel(model);
     setImportSourceVersion(sourceVersion);
     setModelMetadata(metadata);
     setModelCommandId(crypto.randomUUID());
@@ -501,53 +463,22 @@ export function Component() {
 
   const rollbackImport = async (
     versionId: string | null,
-    robot: Robot,
-    ownsRobot: boolean,
     sourceVersion: RobotModelVersion | null,
   ) => {
     const results: boolean[] = [];
     if (versionId && organizationId) {
       results.push(
         await retryCleanup(() =>
-          discardRobotModelImport(
-            organizationId,
-            versionId,
-            sourceVersion?.id,
-          ),
+          discardRobotModelImport(organizationId, versionId, sourceVersion?.id),
         ),
       );
     }
-    if (ownsRobot && organizationId) {
-      results.push(
-        await retryCleanup(() =>
-          deleteProvisionalRobot(organizationId, robot.id),
-        ),
-      );
-    }
-    await robots.refetch();
+    await models.refetch();
     return results.every(Boolean);
   };
 
   const cancelImport = async () => {
     if (modelSavePending) return;
-    if (!importRobot || !importOwnsRobot) {
-      setImportOpen(false);
-      resetImport();
-      return;
-    }
-    setDiscardingImport(true);
-    setModelError(null);
-    const cleaned = await rollbackImport(
-      null,
-      importRobot,
-      true,
-      importSourceVersion,
-    );
-    setDiscardingImport(false);
-    if (!cleaned) {
-      setModelError("取消导入时未能确认临时数据已清理，请再次点击取消重试。");
-      return;
-    }
     setImportOpen(false);
     resetImport();
   };
@@ -569,7 +500,7 @@ export function Component() {
       const preview = createLocalRobotPreview(parsed, assets);
       setAnalysis(parsed);
       setMappings(nextMappings);
-      setLocalPreview(preview);
+      replaceLocalPreview(preview);
       setImportStage("review");
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
@@ -596,21 +527,21 @@ export function Component() {
 
   const editCurrentModel = async () => {
     if (
-      !selectedBootstrap ||
-      !boundVersion.data ||
+      !selectedModel ||
+      !currentVersion.data ||
       !currentAssets.data ||
       !organizationId
     ) {
       return;
     }
-    beginImport(selectedBootstrap, boundVersion.data);
+    beginImport(selectedModel, currentVersion.data);
     setLoadingExistingModel(true);
     try {
       const downloaded = await Promise.all(
         currentAssets.data.map(async (asset) => {
           const authorization = await authorizeRobotModelAssetDownload(
             organizationId,
-            boundVersion.data!.id,
+            currentVersion.data!.id,
             asset.asset_id,
           );
           const response = await fetch(authorization.download_url, {
@@ -713,7 +644,6 @@ export function Component() {
   const saveRobotModel = async () => {
     if (
       !analysis ||
-      !importRobot ||
       !organizationId ||
       !modelCommandId ||
       !modelMetadata ||
@@ -722,9 +652,7 @@ export function Component() {
       return;
     }
     const values = modelMetadata;
-    const robotToRollback = importRobot;
     const sourceVersionToRestore = importSourceVersion;
-    const ownsRobot = importOwnsRobot;
     let draftVersionId: string | null = null;
     setImportStage("saving");
     setModelError(null);
@@ -733,9 +661,14 @@ export function Component() {
         analysis,
         mappings,
         {
-          robotId: importRobot.id,
-          displayName: importRobot.displayName,
-          serialNo: importRobot.serialNo,
+          ...(importModel ? { modelId: importModel.id } : {}),
+          displayName:
+            values.displayName ??
+            importModel?.displayName ??
+            analysis.robotName,
+          manufacturer: values.manufacturer ?? importModel?.manufacturer ?? "",
+          modelCode:
+            values.modelCode ?? importModel?.modelCode ?? analysis.robotName,
         },
       );
       const assetsToSave = replaceRobotConfigurationAsset(
@@ -799,79 +732,61 @@ export function Component() {
         preflightToken: preflight.preflight_token,
         idempotencyKey: `${modelCommandId}:publish`,
       });
-      await bindVersion.mutateAsync({
-        versionId: published.id,
-        robotId: importRobot.id,
-        robotEtag: importRobot.etag,
-        idempotencyKey: `${modelCommandId}:bind`,
-      });
       setSavedVersionId(published.id);
       setImportStage("saved");
-      await robots.refetch();
-      selectRobot(importRobot.id);
+      await models.refetch();
+      selectModel(published.robotModelId);
     } catch (error) {
-      const failureMessage =
-        isDomainError(error)
-          ? error.message
-          : error instanceof Error && error.message
-            ? `保存失败：${error.message}`
-            : "模型保存失败，请检查文件后重试。";
+      const failureMessage = isDomainError(error)
+        ? error.message
+        : error instanceof Error && error.message
+          ? `保存失败：${error.message}`
+          : "模型保存失败，请检查文件后重试。";
       const cleaned = await rollbackImport(
         draftVersionId,
-        robotToRollback,
-        ownsRobot,
         sourceVersionToRestore,
       );
       setImportOpen(false);
       resetImport();
       setPageNotice(
         cleaned
-          ? `${failureMessage} 未完成的机器人、模型版本和服务器临时文件已自动清理，请重新添加。`
+          ? `${failureMessage} 未完成的模型版本和服务器临时文件已自动清理，请重新添加。`
           : `${failureMessage} 自动清理未能完全确认；系统已阻止失败项显示，请联系管理员检查服务器存储。`,
       );
     }
   };
 
-  const submitCreateRobot = async (values: CreateRobotFormValues) => {
-    try {
-      const robot = await createRobot.mutateAsync({
-        displayName: values.displayName.trim(),
-        serialNo: values.serialNo.trim(),
-        lifecycleStatus: "DRAFT",
-        connectivityState: "OFFLINE",
-        idempotencyKey: crypto.randomUUID(),
-      });
-      setCreateOpen(false);
-      createForm.resetFields();
-      beginImport(robot, null, true);
-    } catch {
-      return;
-    }
-  };
-
   const pageState = !bootstrapLoaded ? (
-    <PageState state="loading" label="机器人资产" />
+    <PageState state="loading" label="机器人模型资产" />
   ) : !organizationId ? (
     <PageState
       state="empty"
       title="尚未加入组织"
-      description="机器人是组织级通用资产；加入组织后即可查看，无需先选择项目。"
+      description="机器人模型是组织级通用资产；加入组织后即可查看，无需先选择项目。"
     />
-  ) : robots.isPending ? (
-    <PageState state="loading" label="机器人资产" />
-  ) : robots.error && isDomainError(robots.error) ? (
+  ) : models.isPending ? (
+    <PageState state="loading" label="机器人模型资产" />
+  ) : models.error && isDomainError(models.error) ? (
     <PageState
-      state={robots.error.httpStatus === 403 ? "forbidden" : "error"}
-      onRetry={() => void robots.refetch()}
+      state={models.error.httpStatus === 403 ? "forbidden" : "error"}
+      onRetry={() => void models.refetch()}
     />
   ) : null;
 
   const configurationAsset =
-    analysis && importRobot
+    analysis && modelMetadata
       ? buildRobotConfigurationAsset(analysis, mappings, {
-          robotId: importRobot.id,
-          displayName: importRobot.displayName,
-          serialNo: importRobot.serialNo,
+          ...(importModel ? { modelId: importModel.id } : {}),
+          displayName:
+            modelMetadata.displayName ??
+            importModel?.displayName ??
+            analysis.robotName,
+          manufacturer:
+            modelMetadata.manufacturer ?? importModel?.manufacturer ?? "",
+          modelCode:
+            modelMetadata.modelCode ??
+            importModel?.modelCode ??
+            analysis.robotName,
         })
       : null;
 
@@ -879,25 +794,22 @@ export function Component() {
     <main className={workspace.page} data-page-id="P15">
       <StandardPageScaffold
         header={{
-          title: "机器人资产",
+          title: "机器人模型资产",
           breadcrumbs: [
             {
               key: "settings",
               label: "系统管理",
               to: "/settings/robot-models",
             },
-            { key: "robots", label: "机器人资产" },
+            { key: "models", label: "模型资产" },
           ],
           actions: (
             <Button
               type="primary"
-              disabled={!canManageRobots}
-              onClick={() => {
-                createForm.resetFields();
-                setCreateOpen(true);
-              }}
+              disabled={!canManageModels}
+              onClick={() => beginImport(null, null)}
             >
-              添加机器人
+              导入模型
             </Button>
           ),
         }}
@@ -905,26 +817,23 @@ export function Component() {
           <div className={workspace.summaryStrip}>
             <SummaryItem
               icon={<Box aria-hidden="true" size={20} />}
-              label="机器人"
-              value={String(robotItems.length)}
-            />
-            <SummaryItem
-              icon={<Radio aria-hidden="true" size={20} />}
-              label="在线"
-              value={String(
-                robotItems.filter((robot) => robot.connectivity === "ONLINE")
-                  .length,
-              )}
+              label="已发布模型"
+              value={String(modelItems.length)}
             />
             <SummaryItem
               icon={<FileIcon aria-hidden="true" size={20} />}
-              label="模型状态"
-              value={robotItems.length ? "全部已配置" : "—"}
+              label="当前版本"
+              value={currentVersion.data?.versionLabel ?? "—"}
+            />
+            <SummaryItem
+              icon={<CheckCircle2 aria-hidden="true" size={20} />}
+              label="发布状态"
+              value={modelItems.length ? "可用" : "—"}
             />
             <SummaryItem
               icon={<CircleDot aria-hidden="true" size={20} />}
               label="模型存储"
-              value="服务器本地"
+              value="PostgreSQL"
             />
           </div>
         }
@@ -936,12 +845,6 @@ export function Component() {
                   {
                     ...search,
                     q: query || undefined,
-                    lifecycleStatus:
-                      lifecycleStatus === "all" ? undefined : lifecycleStatus,
-                    connectivityState:
-                      connectivityState === "all"
-                        ? undefined
-                        : connectivityState,
                     after: undefined,
                     before: undefined,
                   },
@@ -951,15 +854,11 @@ export function Component() {
             }
             onReset={() => {
               setQuery("");
-              setLifecycleStatus("all");
-              setConnectivityState("all");
               setParams(
                 robotsQueryCodec.build(
                   {
                     ...search,
                     q: undefined,
-                    lifecycleStatus: undefined,
-                    connectivityState: undefined,
                     after: undefined,
                     before: undefined,
                   },
@@ -969,46 +868,18 @@ export function Component() {
             }}
           >
             <label className={workspace.toolbarField}>
-              <span>机器人名称</span>
+              <span>模型名称</span>
               <Input.Search
                 className={workspace.toolbarSearch}
                 value={query}
-                placeholder="搜索机器人"
+                placeholder="搜索模型名称、厂商或型号"
                 enterButton={
                   <Button
-                    aria-label="搜索机器人"
+                    aria-label="搜索模型"
                     icon={<Search aria-hidden="true" size={15} />}
                   />
                 }
                 onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <label className={workspace.toolbarField}>
-              <span>生命周期</span>
-              <Select
-                value={lifecycleStatus}
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "DRAFT", label: "草稿" },
-                  { value: "ACTIVE", label: "启用" },
-                  { value: "MAINTENANCE", label: "维护中" },
-                  { value: "DISABLED", label: "已停用" },
-                  { value: "RETIRED", label: "已退役" },
-                ]}
-                onChange={setLifecycleStatus}
-              />
-            </label>
-            <label className={workspace.toolbarField}>
-              <span>连接状态</span>
-              <Select
-                value={connectivityState}
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "ONLINE", label: "在线" },
-                  { value: "OFFLINE", label: "离线" },
-                  { value: "DEGRADED", label: "降级" },
-                ]}
-                onChange={setConnectivityState}
               />
             </label>
           </FilterToolbar>
@@ -1025,269 +896,207 @@ export function Component() {
               onClose={() => setPageNotice(null)}
             />
           ) : null}
-          {robotItems.length === 0 ? (
-          <section className={styles.emptyWorkspace} aria-label="机器人资产空状态">
-            <span className={styles.emptyWorkspaceIcon}>
-              <Box aria-hidden="true" size={30} />
-            </span>
-            <div>
-              <h2>{search.q ? "没有匹配的机器人" : "还没有可用的机器人资产"}</h2>
-              <p>
-                {search.q
-                  ? "请调整筛选条件后重试。"
-                  : "机器人只有在模型文件上传、校验、发布并绑定成功后才会显示在这里。"}
-              </p>
-            </div>
-            {!search.q ? (
-              <Button
-                type="primary"
-                disabled={!canManageRobots}
-                onClick={() => {
-                  createForm.resetFields();
-                  setCreateOpen(true);
-                }}
-              >
-                添加并导入机器人
-              </Button>
-            ) : null}
-          </section>
-        ) : (
-          <div className={styles.assetWorkspace}>
-            <aside className={styles.assetList} aria-label="机器人列表">
-              <header className={styles.listHeader}>
-                <div>
-                  <h2>机器人</h2>
-                  <p>仅显示模型已成功绑定的资产</p>
-                </div>
-                <span>{robotItems.length}</span>
-              </header>
-              <div className={styles.robotList} role="list">
-                {robotItems.map((robot) => (
-                  <button
-                    key={robot.id}
-                    type="button"
-                    className={`${styles.robotCard} ${
-                      robot.id === selectedRobotId ? styles.robotCardActive : ""
-                    }`}
-                    aria-pressed={robot.id === selectedRobotId}
-                    onClick={() => selectRobot(robot.id)}
-                  >
-                    <span className={styles.robotCardIcon}>
-                      <Box aria-hidden="true" size={18} />
-                    </span>
-                    <span className={styles.robotCardCopy}>
-                      <strong>{robot.displayName}</strong>
-                      <span>{robot.serialNo}</span>
-                    </span>
-                    <StatusTag
-                      status={robot.connectivity}
-                      label={robot.connectivity === "ONLINE" ? "在线" : "离线"}
-                      tone={robot.connectivity === "ONLINE" ? "success" : "neutral"}
-                    />
-                  </button>
-                ))}
+          {modelItems.length === 0 ? (
+            <section
+              className={styles.emptyWorkspace}
+              aria-label="模型资产空状态"
+            >
+              <span className={styles.emptyWorkspaceIcon}>
+                <Box aria-hidden="true" size={30} />
+              </span>
+              <div>
+                <h2>
+                  {search.q ? "没有匹配的模型" : "还没有已发布的模型资产"}
+                </h2>
+                <p>
+                  {search.q
+                    ? "请调整搜索条件后重试。"
+                    : "导入文件并通过解析、校验和发布后，模型才会显示在这里。失败或取消的草稿不会保留。"}
+                </p>
               </div>
-              {robots.data ? (
-                <footer className={styles.listFooter}>
-                  <CursorPager
-                    pageInfo={{
-                      startCursor: robots.data.pageInfo.start_cursor,
-                      endCursor: robots.data.pageInfo.end_cursor,
-                      hasPreviousPage: robots.data.pageInfo.has_previous_page,
-                      hasNextPage: robots.data.pageInfo.has_next_page,
-                    }}
-                    onChange={(cursor) =>
-                      setParams(
-                        robotsQueryCodec.build({ ...search, ...cursor }, search),
-                      )
-                    }
-                    windowLabel={`当前 ${robotItems.length} 台`}
-                  />
-                </footer>
+              {!search.q ? (
+                <Button
+                  type="primary"
+                  disabled={!canManageModels}
+                  onClick={() => beginImport(null, null)}
+                >
+                  导入第一个模型
+                </Button>
               ) : null}
-            </aside>
-
-            <section className={styles.assetDetail} aria-label="机器人模型详情">
-              <header className={styles.detailHeader}>
-                <div>
-                  <span className={styles.detailEyebrow}>机器人模型资产</span>
-                  <h2>{selectedRobot?.displayName}</h2>
-                  <p>{selectedRobot?.serialNo}</p>
-                </div>
-                {selectedBootstrap ? (
-                  <StatusTag
-                    status={selectedBootstrap.connectivity.state}
-                    label={
-                      selectedBootstrap.connectivity.state === "ONLINE" ? "在线" : "离线"
-                    }
-                    tone={
-                      selectedBootstrap.connectivity.state === "ONLINE" ? "success" : "neutral"
-                    }
-                  />
-                ) : null}
-              </header>
-
-              <div className={styles.detailGrid}>
-                <section className={styles.previewCard} aria-label="三维模型预览">
-                  <header className={styles.previewHeader}>
-                    <div>
-                      <h3>3D 模型预览</h3>
-                      <p>拖动旋转，滚轮缩放</p>
-                    </div>
-                    <span>{boundVersion.data?.versionLabel ?? "读取中"}</span>
-                  </header>
-                  <div className={styles.previewStage}>
-                    {bootstrap.isPending ||
-                    (Boolean(boundVersionId) &&
-                      (boundVersion.isPending || currentAssets.isPending)) ? (
-                      <div className={styles.emptyPreview} role="status">
-                        <Spin />
-                        <strong>正在读取机器人模型…</strong>
-                      </div>
-                    ) : currentModelRef && currentRuntimeLoader ? (
-                      <RobotSceneCore
-                        modelRef={currentModelRef}
-                        jointMapping={currentJointMapping}
-                        runtimeLoader={currentRuntimeLoader}
-                      />
-                    ) : (
-                      <div className={styles.emptyPreview}>
-                        <Box aria-hidden="true" size={42} />
-                        <strong>模型暂时无法预览</strong>
-                        <span>请检查当前模型文件，或重新进入可视化检查流程。</span>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                <aside className={styles.modelPanel} aria-label="模型信息">
-                  <div className={styles.modelPanelHeader}>
-                    <h3>模型信息</h3>
-                    <span>服务器本地存储</span>
-                  </div>
-                  <dl className={styles.modelFacts}>
-                    <div className={styles.modelFact}>
-                      <dt>机器人 ID</dt>
-                      <dd title={selectedRobot?.id}>{selectedRobot?.id ?? "—"}</dd>
-                    </div>
-                    <div className={styles.modelFact}>
-                      <dt>URDF</dt>
-                      <dd title={currentUrdf?.relative_path}>
-                        {currentUrdf?.relative_path ?? "读取中"}
-                      </dd>
-                    </div>
-                    <div className={styles.modelFact}>
-                      <dt>描述配置</dt>
-                      <dd>
-                        {currentAssets.data?.find((asset) => asset.role === "CONFIG")
-                          ?.relative_path ?? "读取中"}
-                      </dd>
-                    </div>
-                    <div className={styles.modelFact}>
-                      <dt>关节映射</dt>
-                      <dd>{currentMappings.data?.length ?? 0} 项</dd>
-                    </div>
-                  </dl>
-                  {selectedBootstrap ? (
-                    <div className={styles.modelActions}>
-                      {boundVersion.data ? (
-                        <Button
-                          block
-                          icon={<FileIcon aria-hidden="true" size={16} />}
-                          loading={loadingExistingModel}
-                          disabled={
-                            !canManageModels ||
-                            !currentAssets.data?.length ||
-                            currentMappings.isPending
-                          }
-                          onClick={() => void editCurrentModel()}
-                        >
-                          检查或更新模型
-                        </Button>
-                      ) : (
-                        <Button
-                          block
-                          icon={<Upload aria-hidden="true" size={16} />}
-                          disabled={!canManageModels}
-                          onClick={() => beginImport(selectedBootstrap, null)}
-                        >
-                          导入 URDF / 配置
-                        </Button>
-                      )}
-                      <p>更新模型会重新解析、预览和校验，不会直接覆盖当前发布版本。</p>
-                    </div>
-                  ) : null}
-                </aside>
-              </div>
             </section>
-          </div>
+          ) : (
+            <div className={styles.assetWorkspace}>
+              <aside className={styles.assetList} aria-label="模型列表">
+                <header className={styles.listHeader}>
+                  <div>
+                    <h2>模型</h2>
+                    <p>仅显示已成功发布的模型资产</p>
+                  </div>
+                  <span>{modelItems.length}</span>
+                </header>
+                <div className={styles.robotList} role="list">
+                  {modelItems.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      className={`${styles.robotCard} ${
+                        model.id === selectedModel?.id
+                          ? styles.robotCardActive
+                          : ""
+                      }`}
+                      aria-pressed={model.id === selectedModel?.id}
+                      onClick={() => selectModel(model.id)}
+                    >
+                      <span className={styles.robotCardIcon}>
+                        <Box aria-hidden="true" size={18} />
+                      </span>
+                      <span className={styles.robotCardCopy}>
+                        <strong>{model.displayName}</strong>
+                        <span>
+                          {model.manufacturer} / {model.modelCode}
+                        </span>
+                      </span>
+                      <StatusTag
+                        status="PUBLISHED"
+                        label="已发布"
+                        tone="success"
+                      />
+                    </button>
+                  ))}
+                </div>
+                {models.data ? (
+                  <footer className={styles.listFooter}>
+                    <CursorPager
+                      pageInfo={{
+                        startCursor: models.data.pageInfo.start_cursor,
+                        endCursor: models.data.pageInfo.end_cursor,
+                        hasPreviousPage: models.data.pageInfo.has_previous_page,
+                        hasNextPage: models.data.pageInfo.has_next_page,
+                      }}
+                      onChange={(cursor) =>
+                        setParams(
+                          robotsQueryCodec.build(
+                            { ...search, ...cursor },
+                            search,
+                          ),
+                        )
+                      }
+                      windowLabel={`当前 ${modelItems.length} 个`}
+                    />
+                  </footer>
+                ) : null}
+              </aside>
+
+              <section
+                className={styles.assetDetail}
+                aria-label="机器人模型详情"
+              >
+                <header className={styles.detailHeader}>
+                  <div>
+                    <span className={styles.detailEyebrow}>机器人模型资产</span>
+                    <h2>{selectedModel?.displayName}</h2>
+                    <p>
+                      {selectedModel?.manufacturer} / {selectedModel?.modelCode}
+                    </p>
+                  </div>
+                  <StatusTag status="PUBLISHED" label="已发布" tone="success" />
+                </header>
+
+                <div className={styles.detailGrid}>
+                  <section
+                    className={styles.previewCard}
+                    aria-label="三维模型预览"
+                  >
+                    <header className={styles.previewHeader}>
+                      <div>
+                        <h3>3D 模型预览</h3>
+                        <p>拖动旋转，滚轮缩放</p>
+                      </div>
+                      <span>
+                        {currentVersion.data?.versionLabel ?? "读取中"}
+                      </span>
+                    </header>
+                    <div className={styles.previewStage}>
+                      {Boolean(selectedVersionId) &&
+                      (currentVersion.isPending || currentAssets.isPending) ? (
+                        <div className={styles.emptyPreview} role="status">
+                          <Spin />
+                          <strong>正在读取机器人模型…</strong>
+                        </div>
+                      ) : currentModelRef && currentRuntimeLoader ? (
+                        <RobotSceneCore
+                          modelRef={currentModelRef}
+                          jointMapping={currentJointMapping}
+                          runtimeLoader={currentRuntimeLoader}
+                        />
+                      ) : (
+                        <div className={styles.emptyPreview}>
+                          <Box aria-hidden="true" size={42} />
+                          <strong>模型暂时无法预览</strong>
+                          <span>
+                            请检查当前模型文件，或重新进入可视化检查流程。
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <aside className={styles.modelPanel} aria-label="模型信息">
+                    <div className={styles.modelPanelHeader}>
+                      <h3>模型信息</h3>
+                      <span>PostgreSQL 持久化</span>
+                    </div>
+                    <dl className={styles.modelFacts}>
+                      <div className={styles.modelFact}>
+                        <dt>模型 ID</dt>
+                        <dd title={selectedModel?.id}>
+                          {selectedModel?.id ?? "—"}
+                        </dd>
+                      </div>
+                      <div className={styles.modelFact}>
+                        <dt>URDF</dt>
+                        <dd title={currentUrdf?.relative_path}>
+                          {currentUrdf?.relative_path ?? "读取中"}
+                        </dd>
+                      </div>
+                      <div className={styles.modelFact}>
+                        <dt>描述配置</dt>
+                        <dd>
+                          {currentAssets.data?.find(
+                            (asset) => asset.role === "CONFIG",
+                          )?.relative_path ?? "读取中"}
+                        </dd>
+                      </div>
+                      <div className={styles.modelFact}>
+                        <dt>关节映射</dt>
+                        <dd>{currentMappings.data?.length ?? 0} 项</dd>
+                      </div>
+                    </dl>
+                    <div className={styles.modelActions}>
+                      <Button
+                        block
+                        icon={<FileIcon aria-hidden="true" size={16} />}
+                        loading={loadingExistingModel}
+                        disabled={
+                          !canManageModels ||
+                          !currentAssets.data?.length ||
+                          currentMappings.isPending
+                        }
+                        onClick={() => void editCurrentModel()}
+                      >
+                        检查或更新模型
+                      </Button>
+                      <p>
+                        更新会生成新版本并重新解析、预览和校验，不会直接覆盖当前发布版本。
+                      </p>
+                    </div>
+                  </aside>
+                </div>
+              </section>
+            </div>
           )}
         </div>
       </StandardPageScaffold>
-
-      <Modal
-        open={createOpen}
-        title="添加机器人"
-        footer={null}
-        destroyOnHidden
-        onCancel={() => {
-          if (!createRobot.isPending) setCreateOpen(false);
-        }}
-      >
-        <Alert
-          type="info"
-          showIcon
-          title="机器人是模型文件与描述配置的唯一载体"
-          description="创建后会立即进入 URDF 导入流程；只有模型成功发布并绑定后才会出现在资产列表。导入失败或取消时，未完成记录和服务器临时文件会自动清理。"
-        />
-        <Form<CreateRobotFormValues>
-          form={createForm}
-          layout="vertical"
-          onFinish={(values) => void submitCreateRobot(values)}
-          requiredMark="optional"
-        >
-          <Form.Item
-            name="displayName"
-            label="机器人名称"
-            rules={[{ required: true, whitespace: true, max: 256 }]}
-          >
-            <Input autoFocus autoComplete="off" maxLength={256} />
-          </Form.Item>
-          <Form.Item
-            name="serialNo"
-            label="序列号"
-            rules={[{ required: true, whitespace: true, max: 128 }]}
-          >
-            <Input autoComplete="off" maxLength={128} />
-          </Form.Item>
-          {createRobot.error ? (
-            <Alert
-              type="error"
-              showIcon
-              title={
-                isDomainError(createRobot.error)
-                  ? createRobot.error.message
-                  : "机器人创建失败，请稍后重试。"
-              }
-            />
-          ) : null}
-          <Space>
-            <Button
-              disabled={createRobot.isPending}
-              onClick={() => setCreateOpen(false)}
-            >
-              取消
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={createRobot.isPending}
-            >
-              创建并导入模型
-            </Button>
-          </Space>
-        </Form>
-      </Modal>
 
       <Modal
         open={importOpen}
@@ -1304,7 +1113,7 @@ export function Component() {
           items={[
             { title: "导入文件", content: "URDF + 描述配置" },
             { title: "解析与预览", content: "检查结构和映射" },
-            { title: "保存", content: "校验、发布并绑定" },
+            { title: "保存", content: "校验并发布" },
           ]}
         />
 
@@ -1533,12 +1342,7 @@ export function Component() {
               <Alert type="error" showIcon title={modelError} />
             ) : null}
             <div className={styles.wizardFooter}>
-              <Button
-                loading={discardingImport}
-                onClick={() => void cancelImport()}
-              >
-                取消
-              </Button>
+              <Button onClick={() => void cancelImport()}>取消</Button>
               <Button
                 type="primary"
                 loading={parsingModel}
@@ -1549,7 +1353,7 @@ export function Component() {
               </Button>
             </div>
           </div>
-        ) : importStage === "review" && analysis && importRobot ? (
+        ) : importStage === "review" && analysis && modelMetadata ? (
           <div className={styles.wizardSection}>
             <div className={styles.wizardMeta}>
               <div>
@@ -1557,7 +1361,7 @@ export function Component() {
                 <strong title={analysis.urdfPath}>{analysis.urdfPath}</strong>
               </div>
               <div>
-                <span>机器人名称</span>
+                <span>URDF 模型名称</span>
                 <strong>{analysis.robotName}</strong>
               </div>
               <div>
@@ -1727,8 +1531,7 @@ export function Component() {
               <Spin size="large" />
               <h3>正在保存机器人模型…</h3>
               <p>
-                正在写入
-                URDF、描述配置和关节映射，并执行服务端校验、发布与机器人绑定。
+                正在写入 URDF、描述配置和关节映射，并执行服务端校验与版本发布。
               </p>
             </div>
           </div>
@@ -1738,7 +1541,7 @@ export function Component() {
               <CheckCircle2 aria-hidden="true" color="#389e0d" size={52} />
               <h3>机器人模型已保存</h3>
               <p>
-                URDF、描述配置和关节映射已通过校验并绑定到机器人。
+                URDF、描述配置和关节映射已通过校验，模型版本已经发布。
                 {savedVersionId ? `版本：${savedVersionId}` : ""}
               </p>
               <Button

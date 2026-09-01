@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from mcap.writer import Writer as McapWriter
 from pydantic import ValidationError
 
 from hc_data_platform.continuous_recordings.asset_models import (
@@ -17,6 +20,8 @@ from hc_data_platform.continuous_recordings.asset_models import (
     RecordingAssetRole,
     RecordingConfigurationV1,
     RecordingUploadStatus,
+    SensorRecordingConfigV1,
+    SensorTimestampMode,
 )
 from hc_data_platform.continuous_recordings.asset_repository import (
     InMemoryRecordingAssetRepository,
@@ -50,6 +55,7 @@ from hc_data_platform.ingest.ports import InMemoryObjectStorage, crc64_ecma
 from hc_data_platform.ingest.service import UploadSessionService
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.http import require_auth_context
+from hc_data_platform.verification.ports import RegisteredDecoderProbe
 
 
 def _manifest(body: bytes) -> RolloutManifestV1:
@@ -366,9 +372,39 @@ def _asset_manifest(
     )
 
 
+def _joint_sensor_mcap(capture_started_at: datetime) -> bytes:
+    stream = io.BytesIO()
+    writer = McapWriter(stream)
+    writer.start(profile="continuous-recording-test", library="pytest")
+    schema_id = writer.register_schema(
+        "sensor_msgs/msg/JointState",
+        "jsonschema",
+        b'{"type":"object"}',
+    )
+    channel_id = writer.register_channel("/robot/joint_states", "json", schema_id)
+    start_ns = int(capture_started_at.timestamp()) * 1_000_000_000
+    for index in range(3):
+        timestamp_ns = start_ns + index * 1_000_000_000
+        writer.add_message(
+            channel_id,
+            log_time=timestamp_ns,
+            publish_time=timestamp_ns,
+            sequence=index,
+            data=json.dumps(
+                {
+                    "name": ["shoulder", "elbow"],
+                    "position": [index * 0.1, index * -0.2],
+                }
+            ).encode(),
+        )
+    writer.finish()
+    return stream.getvalue()
+
+
 def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_preview() -> None:
+    capture_started_at = datetime(2026, 8, 31, 1, tzinfo=timezone.utc)
     video = b"original-three-hour-h264-video"
-    sensor = b"mcap-without-camera-jpeg-payloads"
+    sensor = _joint_sensor_mcap(capture_started_at)
     config = b'{"camera":"front","fps":30}'
     bodies = {
         "videos/front.mp4": video,
@@ -383,7 +419,7 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
         collection_job_id="job-a",
         robot_id="robot-a",
         device_id="device-a",
-        capture_started_at=datetime(2026, 8, 31, 1, tzinfo=timezone.utc),
+        capture_started_at=capture_started_at,
         capture_ended_at=datetime(2026, 8, 31, 4, tzinfo=timezone.utc),
         recording_config=RecordingConfigurationV1(
             recorder_version="2.3",
@@ -398,6 +434,13 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
                     codec="h264",
                     clock_domain="robot-monotonic",
                     time_base_denominator=90_000,
+                ),
+            ),
+            sensors=(
+                SensorRecordingConfigV1(
+                    topic="/robot/joint_states",
+                    clock_domain="robot-monotonic",
+                    timestamp_mode=SensorTimestampMode.ABSOLUTE_NS,
                 ),
             ),
         ),
@@ -432,6 +475,9 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
         ingest,
         asset_repository,
         storage,
+        RegisteredDecoderProbe(
+            {("json", "jsonschema"): lambda _schema, message: json.loads(message)}
+        ),
     )
 
     grant = service.begin_upload(
@@ -493,6 +539,49 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
     assert len(recording_preview.sources) == 1
     assert recording_preview.sources[0].duration_ns == 10_800_000_000_000
     assert recording_preview.sources[0].materialization == "ORIGINAL_RECORDING"
+
+    # Raw joint playback is available on the recording clock before any Episode,
+    # QC, alignment, or Lance Dataset exists.
+    sensor_window = service.read_recording_sensor_window(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        recording_id="recording-video-a",
+        topic=None,
+        start_offset_ns=0,
+        end_offset_ns=2_500_000_000,
+        maximum_samples=100,
+    )
+    assert sensor_window.topic == "/robot/joint_states"
+    assert [sample.offset_ns for sample in sensor_window.samples] == [
+        0,
+        1_000_000_000,
+        2_000_000_000,
+    ]
+    assert sensor_window.samples[1].value == {
+        "name": ["shoulder", "elbow"],
+        "position": [0.1, -0.2],
+    }
+    assert sensor_window.truncated is False
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[require_auth_context] = _auth
+    app.dependency_overrides[get_continuous_recording_service] = lambda: service
+    response = TestClient(app).get(
+        "/api/v1/projects/project-a/regions/cn-hz/continuous-recordings/"
+        "recording-video-a/sensor-window",
+        headers={"X-Organization-Id": "org-a"},
+        params={
+            "start_offset_ns": "0",
+            "end_offset_ns": "2500000000",
+            "maximum_samples": "100",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["samples"][2]["offset_ns"] == "2000000000"
 
     proposed = service.propose_model_slices(
         auth=_auth(),

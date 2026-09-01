@@ -68,7 +68,9 @@ function QueueItemCard(props: {
   );
   const mayCancel =
     !["committed", "cancelled"].includes(item.transferStatus) &&
-    item.sessionId !== null;
+    item.sessionId !== null &&
+    item.sourceType !== "LEROBOT_NATIVE";
+  const isLeRobot = item.sourceType === "LEROBOT_NATIVE";
 
   return (
     <article
@@ -81,8 +83,12 @@ function QueueItemCard(props: {
           <UploadCloud size={17} />
         </span>
         <div>
-          <strong title={item.fileName}>{item.fileName}</strong>
-          <span title={item.dataPackageId}>{item.dataPackageId}</span>
+          <strong title={item.fileName}>
+            {isLeRobot ? `LeRobot · ${item.fileName}` : item.fileName}
+          </strong>
+          <span title={item.dataPackageId}>
+            {isLeRobot ? `Dataset ${item.dataPackageId}` : item.dataPackageId}
+          </span>
         </div>
         <Tag
           variant="outlined"
@@ -109,7 +115,7 @@ function QueueItemCard(props: {
       />
       <dl className={styles.queueMetrics}>
         <div>
-          <dt>分片</dt>
+          <dt>{isLeRobot ? "文件" : "分片"}</dt>
           <dd>
             {item.completedParts} / {item.totalParts}
           </dd>
@@ -205,7 +211,7 @@ function QueueItemCard(props: {
           <Button
             size="small"
             icon={<Pause aria-hidden="true" size={13} />}
-            disabled={!props.canManage}
+            disabled={!props.canManage || (isLeRobot && !item.sessionId)}
             onClick={props.onPause}
           >
             暂停传输
@@ -218,6 +224,15 @@ function QueueItemCard(props: {
             onClick={props.onResume}
           >
             继续传输
+          </Button>
+        ) : item.transferStatus === "failed" && isLeRobot ? (
+          <Button
+            size="small"
+            icon={<RotateCcw aria-hidden="true" size={13} />}
+            disabled={!props.canManage}
+            onClick={props.onResume}
+          >
+            继续未完成上传
           </Button>
         ) : item.transferStatus === "failed" && item.failedParts.length > 0 ? (
           <Button
@@ -382,11 +397,11 @@ export function UploadQueuePanel(props: {
       ) : null}
       {props.items.some(
         (item) =>
-          item.sourceType === "BROWSER_MULTIPART" &&
+          ["BROWSER_MULTIPART", "LEROBOT_NATIVE"].includes(item.sourceType) &&
           !["committed", "cancelled"].includes(item.transferStatus),
       ) ? (
         <p className={styles.queueBrowserWarning} role="note">
-          浏览器刷新或关闭会中断正在进行的直传。服务端会保留已成功分片；重新进入后可恢复任务状态，并在重新选择同一原文件后断点续传。
+          切换平台页面不会停止上传，任务会继续显示在同一队列中。浏览器刷新或关闭会中断直传；服务端仍会保留已成功的文件和分片。
         </p>
       ) : null}
       {allSettled ? (

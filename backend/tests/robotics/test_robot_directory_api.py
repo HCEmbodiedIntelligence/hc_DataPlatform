@@ -125,6 +125,31 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
     assert bound.json()["robot_id"] == robot_id
     assert "region_code" not in bound.json()
 
+    duplicate = client.post(
+        root,
+        headers={"Authorization": "Bearer test", "Idempotency-Key": "duplicate-serial"},
+        json={"display_name": "Duplicate", "serial_no": "SN"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "ROBOT_SERIAL_CONFLICT"
+
+    refreshed = client.get(f"{root}/{robot_id}/bootstrap", headers={"Authorization": "Bearer test"})
+    renamed = client.patch(
+        f"{root}/{robot_id}",
+        headers={"Authorization": "Bearer test", "If-Match": refreshed.headers["etag"]},
+        json={"display_name": "Robot A"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["robot"]["display_name"] == "Robot A"
+
+    activated = client.post(
+        f"{root}/{robot_id}/lifecycle",
+        headers={"Authorization": "Bearer test", "If-Match": renamed.headers["etag"]},
+        json={"lifecycle_status": "ACTIVE", "reason": "ready for production"},
+    )
+    assert activated.status_code == 200
+    assert activated.json()["data"]["robot"]["lifecycle_status"] == "ACTIVE"
+
     configured_listing = client.get(
         root,
         params={"configured_only": "true"},

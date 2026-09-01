@@ -230,9 +230,6 @@ export function CollectionTaskPage({
             {
               data: progress?.data,
               pending: progress?.isPending ?? true,
-              stale:
-                progress?.isStale === true ||
-                (progress?.isError === true && progress.data !== undefined),
               error: progress?.error ?? undefined,
               retry: progress ? () => void progress.refetch() : undefined,
             },

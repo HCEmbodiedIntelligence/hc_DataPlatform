@@ -15263,6 +15263,9 @@ components:
     LeRobotPartGrantV1:
       additionalProperties: false
       properties:
+        completed:
+          default: false
+          type: boolean
         parts:
           items:
             $ref: '#/components/schemas/PartAuthorization'
@@ -20228,6 +20231,49 @@ components:
       - project_id
       - region_code
       type: object
+    RecordingSensorSample:
+      additionalProperties: false
+      properties:
+        offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        source_timestamp_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        value: {}
+      required:
+      - offset_ns
+      - source_timestamp_ns
+      - value
+      type: object
+    RecordingSensorWindow:
+      additionalProperties: false
+      properties:
+        end_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        recording_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        samples:
+          items:
+            $ref: '#/components/schemas/RecordingSensorSample'
+          type: array
+        schema_version:
+          const: recording-sensor-window/v1
+          type: string
+        start_offset_ns:
+          $ref: '#/components/schemas/NanosecondsDecimal'
+        topic:
+          maxLength: 512
+          minLength: 1
+          type: string
+        truncated:
+          default: false
+          type: boolean
+      required:
+      - recording_id
+      - topic
+      - start_offset_ns
+      - end_offset_ns
+      - samples
+      type: object
     RecordingSliceRevision:
       additionalProperties: false
       properties:
@@ -21279,6 +21325,23 @@ components:
       - INVERTED
       title: RobotJointDirection
       type: string
+    RobotLifecycleTransitionRequest:
+      additionalProperties: false
+      properties:
+        lifecycle_status:
+          pattern: ^(ACTIVE|MAINTENANCE|DISABLED|RETIRED)$
+          title: Lifecycle Status
+          type: string
+        reason:
+          maxLength: 512
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - lifecycle_status
+      - reason
+      title: RobotLifecycleTransitionRequest
+      type: object
     RobotModelAsset:
       additionalProperties: false
       properties:
@@ -23994,6 +24057,39 @@ components:
           type:
           - string
           - 'null'
+      type: object
+    UpdateRobotRequest:
+      additionalProperties: false
+      description: Mutable robot facts; lifecycle transitions use their dedicated command.
+      properties:
+        connectivity_reason_code:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Connectivity Reason Code
+        connectivity_source:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Connectivity Source
+        connectivity_state:
+          anyOf:
+          - pattern: ^(ONLINE|OFFLINE|DEGRADED)$
+            type: string
+          - type: 'null'
+          title: Connectivity State
+        display_name:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Display Name
+      title: UpdateRobotRequest
       type: object
     UpdateStreamSchemaDraftRequest:
       additionalProperties: false
@@ -28637,6 +28733,59 @@ paths:
       summary: Delete Provisional Organization Robot
       tags:
       - organization-robot-assets
+    patch:
+      operationId: updateOrganizationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRobotRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationRobotBootstrapEnvelope'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Update Organization Robot
+      tags:
+      - organization-robot-assets
   /api/v1/organizations/{organization_id}/robots/{robot_id}/bootstrap:
     get:
       operationId: getOrganizationRobotBootstrap
@@ -28675,6 +28824,60 @@ paths:
       security:
       - bearerAuth: []
       summary: Get Organization Robot Bootstrap
+      tags:
+      - organization-robot-assets
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/lifecycle:
+    post:
+      operationId: transitionOrganizationRobotLifecycle
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotLifecycleTransitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationRobotBootstrapEnvelope'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Transition Organization Robot Lifecycle
       tags:
       - organization-robot-assets
   /api/v1/organizations/{organization_id}/robots/{robot_id}/model-bindings:
@@ -39505,6 +39708,50 @@ paths:
           description: Signed original-video URLs plus Episode time windows
       security:
       - bearerAuth: []
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window:
+    get:
+      operationId: readContinuousRecordingSensorWindow
+      parameters:
+      - in: query
+        name: topic
+        required: false
+        schema:
+          maxLength: 512
+          minLength: 1
+          type:
+          - string
+          - 'null'
+      - in: query
+        name: start_offset_ns
+        required: false
+        schema:
+          allOf:
+          - $ref: '#/components/schemas/NanosecondsDecimal'
+          default: '0'
+      - in: query
+        name: end_offset_ns
+        required: false
+        schema:
+          allOf:
+          - $ref: '#/components/schemas/NanosecondsDecimal'
+          default: '4000000000'
+      - in: query
+        name: maximum_samples
+        required: false
+        schema:
+          default: 5000
+          maximum: 10000
+          minimum: 1
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingSensorWindow'
+          description: Decoded original SENSOR_DATA samples on the recording clock
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:
     put:
       operationId: saveContinuousRecordingSliceDraft
@@ -40751,6 +40998,90 @@ paths:
               schema:
                 $ref: '#/components/schemas/LeRobotAssetCompletedV1'
           description: Completed byte-identical Raw source object.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part:
+    put:
+      operationId: uploadLerobotAssetPart
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          type: string
+      - in: query
+        name: dataset_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          type: string
+      - in: query
+        name: path
+        required: true
+        schema:
+          maxLength: 1024
+          minLength: 1
+          type: string
+      - in: query
+        name: multipart_upload_id
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 1
+          type: string
+      - in: query
+        name: part_number
+        required: true
+        schema:
+          maximum: 10000
+          minimum: 1
+          type: integer
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              format: binary
+              type: string
+        required: true
+      responses:
+        '200':
+          description: Part accepted through the same-origin API fallback.
+          headers:
+            ETag:
+              schema:
+                type: string
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Multipart body exceeds the platform transfer limit.
         '422':
           content:
             application/problem+json:

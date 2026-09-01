@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
     aligned_media_staging_root: str = "/tmp/hc-data/aligned-media"
-    robot_model_asset_root: str = "/tmp/hc-data/robot-model-assets"
+    robot_model_asset_root: str = "/tmp/hc-data/robot-model-upload-staging"
     media_temporal_task_queue: str = Field(default="hc-media-pipeline", min_length=1)
     aligned_media_staging_ttl_hours: int = Field(default=24, ge=1, le=168)
     aligned_media_publication_orphan_ttl_minutes: int = Field(default=30, ge=10, le=10_080)

@@ -1657,6 +1657,38 @@
   overflow-wrap: anywhere;
 }
 
+.confirmTargetSelect {
+  width: 100%;
+  font-weight: 500;
+}
+
+.confirmTargetHint {
+  display: block;
+  margin-top: 5px;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.64rem;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.confirmTargetIssue {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--hc-color-danger, #c94949);
+  font-size: 0.64rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.confirmTargetIssue :global(.ant-btn) {
+  flex: none;
+  height: 28px;
+  padding-inline: 4px;
+}
+
 .confirmProblemList {
   display: grid;
   max-height: 180px;

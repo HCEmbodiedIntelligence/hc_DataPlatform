@@ -2,16 +2,13 @@ import { useDeferredValue, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight,
   BadgeCheck,
-  Check,
   CircleX,
   ClipboardCheck,
   History,
   PencilLine,
   RefreshCw,
   RotateCcw,
-  Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
@@ -19,6 +16,7 @@ import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { AnnotationPageState } from "../../features/annotation";
+import { WorkflowQueuePage } from "../../shared/ui/workflow/WorkflowQueuePage";
 import {
   annotationTaskStatusLabel,
   claimRuntimeAnnotationTask,
@@ -379,7 +377,6 @@ function RuntimeAnnotationQueuePage({
       );
   }, [deferredQueryText, queueSearch.stage, tasks.data]);
   const currentStage = stageDefinitions[queueSearch.stage];
-  const CurrentStageIcon = currentStage.icon;
   const returnTo = `${location.pathname}${location.search}`;
 
   const stageHref = (stage: AnnotationQueueStage) =>
@@ -433,12 +430,10 @@ function RuntimeAnnotationQueuePage({
   }
 
   return (
-    <main className="p08-page p08-queue-page">
-      <header className="p08-page-header p08-page-header--plain">
-        <div>
-          <h1>数据标注</h1>
-        </div>
-        <div className="p08-header-actions">
+    <WorkflowQueuePage
+      title="数据标注"
+      headerActions={
+        <>
           <Link
             className="p08-secondary-action"
             to={annotationRoutes.revisions.pattern}
@@ -457,152 +452,74 @@ function RuntimeAnnotationQueuePage({
             <RefreshCw aria-hidden="true" size={16} />
             {tasks.isFetching ? "刷新中…" : "刷新"}
           </button>
-        </div>
-      </header>
-
-      <nav className="p08-stage-grid" aria-label="标注任务状态">
-        {ANNOTATION_QUEUE_STAGES.map((stage) => {
-          const Icon = stage.icon;
-          const selected = queueSearch.stage === stage.status;
-          return (
-            <Link
-              aria-current={selected ? "page" : undefined}
-              aria-label={`${stage.label}，${stage.description}，${counts[stage.status]} 项${selected ? "，当前队列" : ""}`}
-              className="p08-stage-card"
-              key={stage.status}
-              to={stageHref(stage.status)}
-            >
-              <span className="p08-stage-card__icon">
-                <Icon aria-hidden="true" size={20} strokeWidth={1.8} />
-              </span>
-              <span className="p08-stage-card__copy">
-                <strong>{stage.label}</strong>
-                <span>{stage.description}</span>
-              </span>
-              <strong className="p08-stage-card__count">
-                {counts[stage.status]}
-              </strong>
-              <span className="p08-stage-card__state" aria-hidden="true">
-                {selected ? (
-                  <>
-                    <Check size={13} strokeWidth={2.2} />
-                    当前队列
-                  </>
-                ) : (
-                  <ArrowRight size={15} />
-                )}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      <section className="p08-queue-panel" aria-labelledby="p08-queue-title">
-        <header className="p08-queue-panel__header">
-          <div>
-            <p>当前队列</p>
-            <h2 id="p08-queue-title">{currentStage.label}</h2>
-            <span>{currentStage.queueDescription}</span>
-          </div>
-          <output aria-live="polite">
-            <strong>{visible.length}</strong>
-            <span>项结果</span>
-          </output>
-        </header>
-        <div className="p08-queue-toolbar" role="search">
-          <label htmlFor="p08-task-search">
-            <span>搜索任务、Rollout、Dataset 或数据结构</span>
-            <span className="p08-search-field">
-              <Search aria-hidden="true" size={17} />
-              <input
-                autoComplete="off"
-                id="p08-task-search"
-                name="annotation-task-search"
-                placeholder="输入关键词…"
-                type="search"
-                value={queryText}
-                onChange={(event) => updateQuery(event.target.value)}
+        </>
+      }
+      stages={ANNOTATION_QUEUE_STAGES.map((stage) => ({
+        key: stage.status,
+        label: stage.label,
+        description: stage.description,
+        queueDescription: stage.queueDescription,
+        emptyDescription: stage.emptyDescription,
+        icon: stage.icon,
+        count: counts[stage.status],
+        href: stageHref(stage.status),
+      }))}
+      selectedStage={queueSearch.stage}
+      stageNavigationLabel="标注任务状态"
+      visibleCount={visible.length}
+      search={{
+        id: "p08-task-search",
+        name: "annotation-task-search",
+        label: "搜索任务、Rollout、Dataset 或数据结构",
+        placeholder: "输入关键词…",
+        value: queryText,
+        meta: `按最近更新时间展示 · ${counts[queueSearch.stage]} 项处于此状态`,
+        onChange: updateQuery,
+      }}
+      tableLabel="任务表"
+      table={
+        <table>
+          <caption>{currentStage.label}任务列表</caption>
+          <thead>
+            <tr>
+              <th>采集条目 / 任务</th>
+              <th>当前状态</th>
+              <th>数据基线</th>
+              <th>标签结构</th>
+              <th>对齐范围</th>
+              <th>处理人</th>
+              <th>最近更新</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((task) => (
+              <QueueRow
+                actorId={actorId}
+                canClaim={capabilities.has("annotation_task.claim")}
+                canEdit={
+                  capabilities.has("annotation.edit") &&
+                  capabilities.has("annotation_draft.edit")
+                }
+                canOpen={capabilities.has("episode.read")}
+                canReview={capabilities.has("annotation.review")}
+                key={task.task_id}
+                returnTo={returnTo}
+                scope={scope!}
+                task={task}
+                onChanged={() => void tasks.refetch()}
               />
-            </span>
-          </label>
-          <span>
-            按最近更新时间展示 · {counts[queueSearch.stage]} 项处于此状态
-          </span>
-        </div>
-        {visible.length === 0 ? (
-          <div className="p08-queue-empty">
-            <span className="p08-queue-empty__icon">
-              <CurrentStageIcon aria-hidden="true" size={22} />
-            </span>
-            <h3>
-              {queryText ? "没有匹配的任务" : `${currentStage.label}队列为空`}
-            </h3>
-            <p>
-              {queryText
-                ? "请缩短关键词或清除搜索，任务状态筛选会继续保留。"
-                : currentStage.emptyDescription}
-            </p>
-            {queryText ? (
-              <button type="button" onClick={() => updateQuery("")}>
-                清除搜索
-              </button>
-            ) : (
-              <button
-                disabled={!scope}
-                type="button"
-                onClick={() => {
-                  if (scope) void tasks.refetch();
-                }}
-              >
-                重新检查队列
-              </button>
-            )}
-          </div>
-        ) : (
-          <div
-            aria-label={`${currentStage.label}任务表，可横向滚动`}
-            className="p08-table-wrap p08-queue-table"
-            role="region"
-            tabIndex={0}
-          >
-            <table>
-              <caption>{currentStage.label}任务列表</caption>
-              <thead>
-                <tr>
-                  <th>采集条目 / 任务</th>
-                  <th>当前状态</th>
-                  <th>数据基线</th>
-                  <th>标签结构</th>
-                  <th>对齐范围</th>
-                  <th>处理人</th>
-                  <th>最近更新</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((task) => (
-                  <QueueRow
-                    actorId={actorId}
-                    canClaim={capabilities.has("annotation_task.claim")}
-                    canEdit={
-                      capabilities.has("annotation.edit") &&
-                      capabilities.has("annotation_draft.edit")
-                    }
-                    canOpen={capabilities.has("episode.read")}
-                    canReview={capabilities.has("annotation.review")}
-                    key={task.task_id}
-                    returnTo={returnTo}
-                    scope={scope!}
-                    task={task}
-                    onChanged={() => void tasks.refetch()}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </main>
+            ))}
+          </tbody>
+        </table>
+      }
+      emptyActionLabel={queryText ? "清除搜索" : "重新检查队列"}
+      emptyActionDisabled={!queryText && !scope}
+      onEmptyAction={() => {
+        if (queryText) updateQuery("");
+        else if (scope) void tasks.refetch();
+      }}
+    />
   );
 }
 

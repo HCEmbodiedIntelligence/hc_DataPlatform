@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from typing import NoReturn
 from uuid import UUID, uuid4, uuid5
@@ -22,6 +22,7 @@ from hc_data_platform.ingest.service import UploadSessionService
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
+from hc_data_platform.verification.ports import DecoderProbe
 
 from .asset_models import (
     AuthorizeRecordingAssetPartsCommand,
@@ -36,12 +37,15 @@ from .asset_models import (
     RecordingAssetStatus,
     RecordingAssetSummary,
     RecordingAssetUploadGrant,
+    RecordingSensorSample,
+    RecordingSensorWindow,
     RecordingUpload,
     RecordingUploadEnvelope,
     RecordingUploadGrant,
     RecordingUploadStatus,
     RecordingVideoSource,
     RecordingVideoSourceEnvelope,
+    SensorTimestampMode,
 )
 from .asset_repository import (
     InMemoryRecordingAssetRepository,
@@ -64,6 +68,12 @@ from .models import (
     absolute_recording_time,
     recording_duration_ns,
 )
+from .raw_sensor import (
+    DecodedSensorSample,
+    RangeReadableObjectStorage,
+    RawSensorReadError,
+    read_sensor_asset_window,
+)
 from .repository import (
     ContinuousRecordingRepository,
     InMemoryContinuousRecordingRepository,
@@ -83,6 +93,7 @@ class ContinuousRecordingService:
         ingest: UploadSessionService,
         asset_repository: RecordingAssetRepository | None = None,
         storage: ObjectStoragePort | None = None,
+        decoder: DecoderProbe | None = None,
         *,
         upload_authorization_ttl_seconds: int = 900,
         preview_authorization_ttl_seconds: int = 900,
@@ -95,6 +106,7 @@ class ContinuousRecordingService:
         self._ingest = ingest
         self._assets = asset_repository
         self._storage = storage or ingest.storage
+        self._decoder = decoder
         self._upload_ttl = upload_authorization_ttl_seconds
         self._preview_ttl = preview_authorization_ttl_seconds
 
@@ -891,6 +903,195 @@ class ContinuousRecordingService:
             )
         return RecordingVideoSourceEnvelope(sources=sources)
 
+    def read_recording_sensor_window(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        recording_id: str,
+        topic: str | None,
+        start_offset_ns: int,
+        end_offset_ns: int,
+        maximum_samples: int,
+    ) -> RecordingSensorWindow:
+        """Read original SENSOR_DATA on the recording clock before Episodes exist."""
+
+        scope = self._authorize(
+            auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            capabilities=("upload.read",),
+        )
+        recording = self._require_recording(scope, recording_id)
+        if recording.recording_upload_id is None:
+            raise problem(
+                status=409,
+                code="RAW_SENSOR_WINDOW_UNAVAILABLE",
+                title="Raw sensor window is unavailable",
+                detail="Raw sensor playback requires a v2 multi-object recording.",
+            )
+        if (
+            start_offset_ns < 0
+            or end_offset_ns <= start_offset_ns
+            or end_offset_ns > recording.duration_ns
+        ):
+            raise problem(
+                status=422,
+                code="RAW_SENSOR_WINDOW_INVALID",
+                title="Raw sensor window is invalid",
+                detail="The requested half-open window must stay inside the recording.",
+            )
+        if end_offset_ns - start_offset_ns > 30_000_000_000:
+            raise problem(
+                status=422,
+                code="RAW_SENSOR_WINDOW_TOO_LARGE",
+                title="Raw sensor window is too large",
+                detail="One raw sensor request may cover at most 30 seconds.",
+            )
+        if not 1 <= maximum_samples <= 10_000:
+            raise problem(
+                status=422,
+                code="RAW_SENSOR_SAMPLE_LIMIT_INVALID",
+                title="Raw sensor sample limit is invalid",
+                detail="maximum_samples must be between 1 and 10000.",
+            )
+        asset_repository = self._require_asset_repository()
+        upload = asset_repository.get_upload(scope, recording.recording_upload_id)
+        if upload is None:
+            self._upload_not_found()
+        resolved_topic, timestamp_mode = self._resolve_sensor_topic(upload, topic)
+        if self._decoder is None or not isinstance(self._storage, RangeReadableObjectStorage):
+            raise problem(
+                status=503,
+                code="RAW_SENSOR_READER_NOT_CONFIGURED",
+                title="Raw sensor reader is not configured",
+                detail="The API runtime has no indexed MCAP reader or decoder.",
+            )
+        assets = tuple(
+            asset
+            for asset in asset_repository.list_assets(scope, recording.recording_upload_id)
+            if asset.manifest.role is RecordingAssetRole.SENSOR_DATA
+            and asset.status is RecordingAssetStatus.COMMITTED
+            and (
+                "mcap" in asset.manifest.media_type.casefold()
+                or asset.manifest.path.casefold().endswith(".mcap")
+            )
+        )
+        if not assets:
+            raise problem(
+                status=409,
+                code="RAW_SENSOR_ASSETS_MISSING",
+                title="Raw sensor assets are missing",
+                detail="No committed MCAP SENSOR_DATA asset is available for this recording.",
+            )
+
+        capture_start_ns = _datetime_ns(recording.capture_started_at)
+        timestamps_are_offsets = timestamp_mode.value == "RECORDING_OFFSET_NS"
+        source_start_ns = (
+            start_offset_ns if timestamps_are_offsets else capture_start_ns + start_offset_ns
+        )
+        source_end_ns = (
+            end_offset_ns if timestamps_are_offsets else capture_start_ns + end_offset_ns
+        )
+        decoded_samples: list[DecodedSensorSample] = []
+        topic_found = False
+        read_errors: list[str] = []
+        for asset in assets:
+            try:
+                window = read_sensor_asset_window(
+                    storage=self._storage,
+                    object_key=asset.object_key,
+                    object_size=asset.manifest.size,
+                    topic=resolved_topic,
+                    source_start_ns=source_start_ns,
+                    source_end_ns=source_end_ns,
+                    capture_start_ns=capture_start_ns,
+                    timestamps_are_offsets=timestamps_are_offsets,
+                    decoder=self._decoder,
+                    maximum_samples=maximum_samples,
+                )
+            except RawSensorReadError as exc:
+                read_errors.append(str(exc))
+                continue
+            topic_found = topic_found or window.topic_found
+            decoded_samples.extend(window.samples)
+        if not topic_found:
+            detail = (
+                read_errors[0]
+                if read_errors
+                else f"Configured topic {resolved_topic!r} was not found in committed MCAP assets."
+            )
+            raise problem(
+                status=409,
+                code="RAW_SENSOR_TOPIC_UNAVAILABLE",
+                title="Raw sensor topic is unavailable",
+                detail=detail,
+            )
+        decoded_samples.sort(key=lambda sample: sample.offset_ns)
+        truncated = len(decoded_samples) > maximum_samples
+        selected = decoded_samples[:maximum_samples]
+        return RecordingSensorWindow(
+            recording_id=recording_id,
+            topic=resolved_topic,
+            start_offset_ns=start_offset_ns,
+            end_offset_ns=end_offset_ns,
+            samples=tuple(
+                RecordingSensorSample(
+                    offset_ns=sample.offset_ns,
+                    source_timestamp_ns=sample.source_timestamp_ns,
+                    value=sample.value,
+                )
+                for sample in selected
+            ),
+            truncated=truncated,
+        )
+
+    @staticmethod
+    def _resolve_sensor_topic(
+        upload: RecordingUpload, requested: str | None
+    ) -> tuple[str, SensorTimestampMode]:
+        sensors = upload.command.recording_config.sensors
+        if requested is not None:
+            sensor = next((item for item in sensors if item.topic == requested), None)
+            if sensor is None:
+                raise problem(
+                    status=422,
+                    code="RAW_SENSOR_TOPIC_NOT_CONFIGURED",
+                    title="Raw sensor topic is not configured",
+                    detail="The requested topic is not declared by this recording.",
+                )
+            return sensor.topic, sensor.timestamp_mode
+        joint_sensors = tuple(sensor for sensor in sensors if "joint" in sensor.topic.casefold())
+        if not joint_sensors:
+            raise problem(
+                status=409,
+                code="RAW_JOINT_TOPIC_MISSING",
+                title="Raw joint topic is missing",
+                detail="The recording config declares no joint-state sensor topic.",
+            )
+        preferred = next(
+            (
+                sensor
+                for name in ("/robot/joint_states", "/joint_states", "joint_state")
+                for sensor in joint_sensors
+                if sensor.topic == name
+            ),
+            None,
+        )
+        if preferred is not None:
+            return preferred.topic, preferred.timestamp_mode
+        if len(joint_sensors) > 1:
+            raise problem(
+                status=422,
+                code="RAW_JOINT_TOPIC_AMBIGUOUS",
+                title="Raw joint topic is ambiguous",
+                detail="Pass an explicit topic because multiple joint-state topics are configured.",
+            )
+        return joint_sensors[0].topic, joint_sensors[0].timestamp_mode
+
     def _build_revision(
         self,
         recording: ContinuousRecording,
@@ -1103,3 +1304,9 @@ def _recording_asset_key(
         f"region={scope.region_code}/recording={recording_id}/"
         f"asset={asset_id}{suffix}"
     )
+
+
+def _datetime_ns(value: datetime) -> int:
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    delta = value.astimezone(timezone.utc) - epoch
+    return (delta.days * 86_400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1000

@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -9,56 +16,67 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import RobotsPage from "./page";
 
 const {
-  bindVersion,
   createModel,
   createModelDraft,
-  createRobot,
-  deleteRobot,
   discardImport,
   getVersion,
   preflight,
   publishVersion,
   replaceMappings,
-  useRobotBootstrap,
-  useRobots,
+  useRobotModels,
   uploadAssets,
 } = vi.hoisted(() => ({
-  bindVersion: vi.fn(),
   createModel: vi.fn(),
   createModelDraft: vi.fn(),
-  createRobot: vi.fn(),
-  deleteRobot: vi.fn(),
   discardImport: vi.fn(),
   getVersion: vi.fn(),
   preflight: vi.fn(),
   publishVersion: vi.fn(),
   replaceMappings: vi.fn(),
-  useRobotBootstrap: vi.fn(),
-  useRobots: vi.fn(),
+  useRobotModels: vi.fn(),
   uploadAssets: vi.fn(),
 }));
 
-const robot = {
-  id: "robot-1",
-  displayName: "XR-01",
-  serialNo: "XR-01-SN",
-  lifecycle: "ACTIVE",
-  connectivity: {
-    state: "ONLINE",
-    observedAt: "2026-08-21T08:00:00Z",
-    source: "edge-agent",
-    reasonCode: null,
-  },
-  effectiveModelBinding: null,
-  etag: '"robot-1:2"',
-  topologyRevision: "topology-1",
-  allowedActions: ["VIEW", "EDIT", "TRANSITION"],
+const model = {
+  id: "model-1",
+  manufacturer: "Unitree",
+  modelCode: "G1-DEX1",
+  displayName: "Unitree G1 Dex1",
+  currentPublishedVersionId: "version-published",
 } as const;
+
+const publishedVersion = {
+  id: "version-published",
+  robotModelId: "model-1",
+  versionLabel: "1.0.0",
+  lifecycle: "PUBLISHED",
+  assetAvailability: "AVAILABLE",
+  publishReadiness: "READY",
+  assetManifestHash: "manifest",
+  validationInputHash: "validation",
+  etag: '"published:1"',
+  allowedActions: ["VIEW"],
+  blockedReasons: [],
+} as const;
+
+const currentAssets = [
+  {
+    asset_id: "asset-urdf",
+    relative_path: "robot.urdf",
+    role: "URDF",
+    media_type: "application/xml",
+  },
+  {
+    asset_id: "asset-config",
+    relative_path: "robot.config.json",
+    role: "CONFIG",
+    media_type: "application/json",
+  },
+] as const;
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
   useOrganizationCapabilities: () => ({
-    has: (capability: string) =>
-      capability === "robot.manage" || capability === "robot_model.manage",
+    has: (capability: string) => capability === "robot_model.manage",
     loading: false,
     failed: false,
   }),
@@ -69,35 +87,36 @@ vi.mock("../../features/viewer", () => ({
   RobotSceneCore: () => <div data-testid="robot-model-preview">3D preview</div>,
 }));
 
-vi.mock("../../features/robots/api", () => ({
-  deleteProvisionalRobot: deleteRobot,
-  useRobots,
-  useRobotBootstrap,
-  useCreateRobot: () => ({
-    isPending: false,
-    error: null,
-    mutateAsync: createRobot,
-  }),
-}));
-
 vi.mock("../../features/robot-models/api", () => ({
   authorizeRobotModelAssetDownload: vi.fn(),
+  authorizeRobotModelViewerAssets: vi.fn(async () => ({
+    urdfUrl: "http://localhost/robot.urdf",
+  })),
   discardRobotModelImport: discardImport,
   getRobotModelVersion: getVersion,
-  useRobotModelVersion: () => ({
-    data: undefined,
+  useRobotModels,
+  useRobotModelVersion: (versionId: string | null) => ({
+    data: versionId ? publishedVersion : undefined,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
   }),
-  useRobotModelAssets: () => ({
-    data: undefined,
+  useRobotModelAssets: (versionId: string | null) => ({
+    data: versionId ? currentAssets : undefined,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
   }),
-  useRobotModelJointMappings: () => ({
-    data: undefined,
+  useRobotModelJointMappings: (versionId: string | null) => ({
+    data: versionId
+      ? [
+          {
+            source_joint_name: "joint_1",
+            target_joint_name: "joint_1",
+            direction: "SAME",
+          },
+        ]
+      : undefined,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
@@ -132,32 +151,15 @@ vi.mock("../../features/robot-models/api", () => ({
     error: null,
     mutateAsync: publishVersion,
   }),
-  useBindRobotModelVersion: () => ({
-    isPending: false,
-    error: null,
-    mutateAsync: bindVersion,
-  }),
 }));
 
-function browserFile(
-  content: string,
-  name: string,
-  type: string,
-  relativePath = "",
-): File {
+function browserFile(content: string, name: string, type: string): File {
   const file = new File([content], name, { type });
   Object.defineProperties(file, {
-    text: {
-      configurable: true,
-      value: async () => content,
-    },
+    text: { configurable: true, value: async () => content },
     arrayBuffer: {
       configurable: true,
       value: async () => new TextEncoder().encode(content).buffer,
-    },
-    webkitRelativePath: {
-      configurable: true,
-      value: relativePath,
     },
   });
   return file;
@@ -174,6 +176,7 @@ const urdf = `<?xml version="1.0"?>
 </robot>`;
 
 const config = JSON.stringify({
+  control_profile: { frequency_hz: 500, source: "user-edited" },
   joint_mapping: [
     {
       source_joint_name: "telemetry_joint_1",
@@ -183,23 +186,26 @@ const config = JSON.stringify({
   ],
 });
 
-function renderPage(path = "/settings/robots") {
-  return render(
+function renderPage(path = "/settings/robots", strict = false) {
+  const page = (
     <MemoryRouter initialEntries={[path]}>
       <RobotsPage />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  return render(strict ? <StrictMode>{page}</StrictMode> : page);
 }
 
 async function openAndParseModel(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(
-    screen.getAllByRole("button", { name: "导入 URDF / 配置" })[0]!,
-  );
-  await user.upload(screen.getByLabelText("选择机器人模型文件"), [
+  await user.click(screen.getByRole("button", { name: "导入模型" }));
+  const dialog = within(screen.getByRole("dialog", { name: "导入机器人模型" }));
+  await user.type(dialog.getByLabelText("制造商"), "Unitree");
+  await user.type(dialog.getByLabelText("型号代码"), "G1-DEX1-V2");
+  await user.type(dialog.getByLabelText("模型名称"), "Unitree G1 Dex1 V2");
+  await user.upload(dialog.getByLabelText("选择机器人模型文件"), [
     browserFile(urdf, "robot.urdf", "application/xml"),
     browserFile(config, "robot.config.json", "application/json"),
   ]);
-  await user.click(screen.getByRole("button", { name: "解析文件并预览" }));
+  await user.click(dialog.getByRole("button", { name: "解析文件并预览" }));
   await screen.findByText("URDF 结构解析通过");
 }
 
@@ -211,7 +217,7 @@ beforeEach(() => {
         projectId: "project-p15",
         regionCodes: ["region-p15"],
         projectWide: false,
-        capabilities: ["robot.manage", "robot_model.manage"],
+        capabilities: ["robot_model.manage"],
       },
     ],
     1,
@@ -264,26 +270,12 @@ beforeEach(() => {
     computedStyle(element),
   );
 
-  useRobotBootstrap.mockReturnValue({
-    data: robot,
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(async () => ({ data: robot })),
-  });
-  useRobots.mockReturnValue({
+  useRobotModels.mockReturnValue({
     isPending: false,
     error: null,
     refetch: vi.fn(async () => undefined),
     data: {
-      items: [
-        {
-          id: robot.id,
-          displayName: robot.displayName,
-          serialNo: robot.serialNo,
-          lifecycle: robot.lifecycle,
-          connectivity: robot.connectivity.state,
-        },
-      ],
+      items: [model],
       pageInfo: {
         start_cursor: null,
         end_cursor: null,
@@ -293,10 +285,9 @@ beforeEach(() => {
       snapshotAt: "2026-08-21T08:00:00Z",
     },
   });
-  createRobot.mockResolvedValue(robot);
   createModel.mockResolvedValue({
     id: "version-draft",
-    robotModelId: "model-1",
+    robotModelId: "model-2",
     versionLabel: "1.0.0",
   });
   createModelDraft.mockResolvedValue({
@@ -307,13 +298,13 @@ beforeEach(() => {
   uploadAssets.mockResolvedValue("upload-1");
   getVersion.mockResolvedValue({
     id: "version-draft",
-    robotModelId: "model-1",
+    robotModelId: "model-2",
     versionLabel: "1.0.0",
     etag: '"draft:2"',
   });
   replaceMappings.mockResolvedValue({
     id: "version-draft",
-    robotModelId: "model-1",
+    robotModelId: "model-2",
     versionLabel: "1.0.0",
     etag: '"draft:3"',
   });
@@ -324,13 +315,11 @@ beforeEach(() => {
     checks: [],
   });
   publishVersion.mockResolvedValue({
-    id: "version-published",
-    robotModelId: "model-1",
+    id: "version-published-2",
+    robotModelId: "model-2",
     versionLabel: "1.0.0",
-    etag: '"published:1"',
+    etag: '"published:2"',
   });
-  bindVersion.mockResolvedValue({ binding_id: "binding-1" });
-  deleteRobot.mockResolvedValue(undefined);
   discardImport.mockResolvedValue(undefined);
 });
 
@@ -340,131 +329,71 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("P15 robot asset page", () => {
-  it("loads organization robots when no project is selected", async () => {
-    useShellStore.getState().setSession(null, null);
-    useShellStore
-      .getState()
-      .setSession(
-        { actorId: "robot-manager", displayName: "机器人管理员", roleIds: [] },
-        "session-without-project",
-      );
-    useShellStore.getState().setSessionScopes(
-      [],
-      2,
-      [],
-      [
-        {
-          organizationId: "org-p15",
-          organizationName: "P15 组织",
-          memberStatus: "ACTIVE",
-        },
-      ],
-    );
-
+describe("P15 robot model asset page", () => {
+  it("lists published model resources without robot connectivity semantics", async () => {
     renderPage();
 
-    expect((await screen.findAllByText("XR-01")).length).toBeGreaterThan(0);
-    expect(screen.queryByText("尚未加入组织")).not.toBeInTheDocument();
-  });
-
-  it("selects the first robot for real and removes component topology concepts", async () => {
-    renderPage();
-
-    await waitFor(() =>
-      expect(useRobotBootstrap).toHaveBeenCalledWith("robot-1"),
-    );
-    expect(useRobots).toHaveBeenCalledWith(
-      expect.objectContaining({ configured_only: "true" }),
-    );
     expect(
-      screen.getAllByRole("button", { name: "导入 URDF / 配置" })[0],
-    ).toBeEnabled();
-    expect(screen.queryByText("父组件")).not.toBeInTheDocument();
-    expect(screen.queryByText("组件拓扑")).not.toBeInTheDocument();
-    expect(screen.getByText("服务器本地")).toBeInTheDocument();
+      (await screen.findAllByText("Unitree G1 Dex1")).length,
+    ).toBeGreaterThan(0);
+    expect(useRobotModels).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 20 }),
+    );
+    expect(screen.queryByText("在线")).not.toBeInTheDocument();
+    expect(screen.queryByText("离线")).not.toBeInTheDocument();
+    expect(screen.queryByText("连接状态")).not.toBeInTheDocument();
+    expect(screen.getByText("PostgreSQL")).toBeInTheDocument();
   });
 
-  it("parses imported URDF and configuration before showing the preview", async () => {
+  it("keeps local preview object URLs alive through the StrictMode lifecycle probe", async () => {
     const user = userEvent.setup();
-    renderPage("/settings/robots?robotId=robot-1");
+    renderPage("/settings/robots", true);
 
     await openAndParseModel(user);
 
-    expect(screen.getByTestId("robot-model-preview")).toBeInTheDocument();
-    expect(screen.getByText("robot.urdf")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("telemetry_joint_1")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "保存机器人模型" }),
-    ).toBeEnabled();
+    expect(screen.getAllByTestId("robot-model-preview").length).toBeGreaterThan(
+      1,
+    );
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
 
-  it("writes mappings into configuration and completes save, publish and bind", async () => {
+  it("publishes the edited configuration as a model version without binding a robot", async () => {
     const user = userEvent.setup();
-    renderPage("/settings/robots?robotId=robot-1");
+    renderPage();
     await openAndParseModel(user);
 
     await user.clear(screen.getByDisplayValue("telemetry_joint_1"));
     await user.type(screen.getByLabelText("joint_1 的数据关节名"), "arm_joint");
     await user.click(screen.getByRole("button", { name: "保存机器人模型" }));
 
-    await waitFor(() => expect(createModel).toHaveBeenCalled());
-    await waitFor(() => expect(uploadAssets).toHaveBeenCalled());
-    await waitFor(() => expect(replaceMappings).toHaveBeenCalled());
-    await waitFor(() => expect(preflight).toHaveBeenCalled());
     await waitFor(() => expect(publishVersion).toHaveBeenCalled());
-    await waitFor(() => expect(bindVersion).toHaveBeenCalled());
     await screen.findByText("机器人模型已保存");
-    expect(uploadAssets).toHaveBeenCalledWith(
+    expect(createModel).toHaveBeenCalledWith(
       expect.objectContaining({
-        versionId: "version-draft",
-        files: expect.arrayContaining([
-          expect.objectContaining({
-            role: "CONFIG",
-            relativePath: "robot.config.json",
-          }),
-        ]),
+        manufacturer: "Unitree",
+        modelCode: "G1-DEX1-V2",
+        displayName: "Unitree G1 Dex1 V2",
       }),
     );
-    expect(replaceMappings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mappings: [
-          {
-            source_joint_name: "arm_joint",
-            target_joint_name: "joint_1",
-            direction: "SAME",
-          },
-        ],
-      }),
-    );
-    expect(preflight).toHaveBeenCalled();
-    expect(publishVersion).toHaveBeenCalled();
-    expect(bindVersion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        versionId: "version-published",
-        robotId: "robot-1",
-      }),
-    );
+    const upload = uploadAssets.mock.calls[0]?.[0] as {
+      files: Array<{ role: string; file: File }>;
+    };
+    const savedConfig = upload.files.find((file) => file.role === "CONFIG");
+    expect(savedConfig).toBeDefined();
+    const savedDocument = JSON.parse(await savedConfig!.file.text()) as {
+      control_profile: { source: string };
+      joint_mapping: Array<{ source_joint_name: string }>;
+    };
+    expect(savedDocument.control_profile.source).toBe("user-edited");
+    expect(savedDocument.joint_mapping[0]?.source_joint_name).toBe("arm_joint");
   });
 
-  it("removes the provisional robot, draft and files after an import failure", async () => {
+  it("discards the draft and server files after a failed import", async () => {
     uploadAssets.mockRejectedValueOnce(new Error("upload failed"));
     const user = userEvent.setup();
     renderPage();
-
-    await user.click(screen.getByRole("button", { name: "添加机器人" }));
-    const dialog = screen.getByRole("dialog", { name: "添加机器人" });
-    await user.type(within(dialog).getByLabelText("机器人名称"), "临时机器人");
-    await user.type(within(dialog).getByLabelText("序列号"), "TEMP-001");
-    await user.click(
-      within(dialog).getByRole("button", { name: "创建并导入模型" }),
-    );
-    await user.upload(screen.getByLabelText("选择机器人模型文件"), [
-      browserFile(urdf, "robot.urdf", "application/xml"),
-      browserFile(config, "robot.config.json", "application/json"),
-    ]);
-    await user.click(screen.getByRole("button", { name: "解析文件并预览" }));
-    await screen.findByText("URDF 结构解析通过");
+    await openAndParseModel(user);
     await user.click(screen.getByRole("button", { name: "保存机器人模型" }));
 
     await waitFor(() =>
@@ -474,7 +403,6 @@ describe("P15 robot asset page", () => {
         undefined,
       ),
     );
-    expect(deleteRobot).toHaveBeenCalledWith("org-p15", "robot-1");
     expect(
       await screen.findByText(/服务器临时文件已自动清理/u),
     ).toBeInTheDocument();

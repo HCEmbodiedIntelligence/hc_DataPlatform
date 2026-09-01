@@ -182,6 +182,7 @@ EXPECTED_MANIFEST = (
     "ingest/010_raw_sources.sql",
     "collection_tasks/0005_robot_upload_target.sql",
     "ingest/012_robot_ingest.sql",
+    "registry/0009_robot_model_asset_content.sql",
 )
 
 

@@ -56,6 +56,8 @@ export type RequestOptions = {
    */
   query?: Readonly<Record<string, unknown>>;
   body?: unknown;
+  /** Raw request body for same-origin streamed uploads. Mutually exclusive with body. */
+  binaryBody?: Blob;
   idempotencyKey?: string;
   ifMatch?: string;
   /**
@@ -341,6 +343,11 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   const publicScoped = opts.scopeMode === "public";
   const organizationScoped = opts.scopeMode === "organization";
   const activeScoped = !sessionScoped && !publicScoped && !organizationScoped;
+  if (opts.body !== undefined && opts.binaryBody !== undefined) {
+    throw new TypeError(
+      "JSON and binary request bodies are mutually exclusive",
+    );
+  }
   if (opts.bearerToken !== undefined) {
     if (!sessionScoped) {
       throw new TypeError("Explicit bearer tokens require session scope mode");
@@ -424,6 +431,8 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     headers.set("X-Auth-Challenge-Response", opts.authChallengeResponse);
   }
   if (opts.body !== undefined) headers.set("Content-Type", "application/json");
+  if (opts.binaryBody !== undefined)
+    headers.set("Content-Type", "application/octet-stream");
 
   const { controller, release } = createManagedAbortController(opts.signal, {
     cancelOnScopeChange: activeScoped || organizationScoped,
@@ -437,6 +446,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         signal: controller.signal,
         ...(opts.cache === undefined ? {} : { cache: opts.cache }),
         ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+        ...(opts.binaryBody === undefined ? {} : { body: opts.binaryBody }),
       },
     );
     if (

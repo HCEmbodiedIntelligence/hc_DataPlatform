@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
@@ -85,6 +86,24 @@ function makeGateway(): RecordingGateway {
         ],
       }),
     ),
+    sensorWindow: vi.fn(async (_scope, recordingId, query) => ({
+      schema_version: "recording-sensor-window/v1" as const,
+      recording_id: recordingId,
+      topic: "/robot/joint_states",
+      start_offset_ns: query.startOffsetNs,
+      end_offset_ns: query.endOffsetNs,
+      samples: [
+        {
+          offset_ns: query.startOffsetNs,
+          source_timestamp_ns: query.startOffsetNs,
+          value: {
+            name: ["shoulder", "elbow"],
+            position: [0, 0],
+          },
+        },
+      ],
+      truncated: false,
+    })),
     processing: vi.fn(async () => ({ items: [], total: 0 })),
     saveDraft: vi.fn(
       async (
@@ -193,6 +212,11 @@ beforeEach(() => {
       disconnect() {}
     },
   );
+  Object.defineProperties(HTMLMediaElement.prototype, {
+    load: { configurable: true, value: vi.fn() },
+    pause: { configurable: true, value: vi.fn() },
+    play: { configurable: true, value: vi.fn(async () => undefined) },
+  });
 });
 
 afterEach(() => {
@@ -202,6 +226,44 @@ afterEach(() => {
 });
 
 describe("P23 recording segmentation", () => {
+  it("uses the shared workflow queue for pending, review, and sliced recordings", async () => {
+    const gateway = makeGateway();
+    vi.mocked(gateway.list).mockResolvedValue({
+      items: [
+        recording,
+        {
+          ...recording,
+          recording_id: "recording_with_draft",
+          current_revision: 2,
+          etag: '"v2"',
+        },
+        {
+          ...recording,
+          recording_id: "recording_sliced",
+          status: "SLICED",
+          current_revision: 3,
+          finalized_revision: 3,
+          etag: '"v3"',
+        },
+      ],
+      total: 3,
+    });
+    renderPage(gateway, "/recordings");
+
+    const stages = await screen.findByRole("navigation", {
+      name: "录制切片状态",
+    });
+    expect(
+      within(stages).getByRole("link", { name: /^待分割，.*1 项/u }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(stages).getByRole("link", { name: /^待检查，.*1 项/u }),
+    ).toHaveAttribute("href", "/recordings?stage=REVIEW");
+    expect(
+      within(stages).getByRole("link", { name: /^已分割，.*1 项/u }),
+    ).toHaveAttribute("href", "/recordings?stage=SLICED");
+  });
+
   it("opens the manual cutter from the continuous-recording list", async () => {
     const gateway = makeGateway();
     const user = userEvent.setup();
@@ -226,9 +288,12 @@ describe("P23 recording segmentation", () => {
       await screen.findByText("直接读取 OSS，不生成预览副本"),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: /开始标记/ }));
-    fireEvent.change(screen.getByRole("slider", { name: "视频播放位置" }), {
-      target: { value: "1000000000" },
+    const sharedPlayhead = screen.getByRole("slider", {
+      name: "共享播放位置",
     });
+    for (let step = 0; step < 10; step += 1) {
+      fireEvent.keyDown(sharedPlayhead, { key: "ArrowRight" });
+    }
     await user.click(screen.getByRole("button", { name: /设为出点并添加/ }));
     expect(screen.getAllByText("Episode 0001").length).toBeGreaterThan(0);
 

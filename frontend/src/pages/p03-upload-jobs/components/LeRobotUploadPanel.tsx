@@ -48,6 +48,14 @@ export function LeRobotUploadPanel(props: {
             </p>
           </div>
         </header>
+        {progress.transferMode === "proxy" ? (
+          <Alert
+            type="warning"
+            showIcon
+            title="对象存储直传不可用，已自动切换平台中转"
+            description="无需重新选择文件；平台会继续上传当前分片，原始 LeRobot 文件不会转码。"
+          />
+        ) : null}
         <Progress percent={percent} status="active" />
         <p>
           {formatBytes(progress.uploadedBytes)} /{" "}
@@ -70,7 +78,7 @@ export function LeRobotUploadPanel(props: {
         />
         <div className={styles.panelActions}>
           <Button icon={<RotateCcw size={15} />} onClick={props.onRetry}>
-            重新上传
+            {props.state.resume ? "继续上传" : "重新上传"}
           </Button>
           <Button onClick={props.onBack}>重新选择</Button>
         </div>

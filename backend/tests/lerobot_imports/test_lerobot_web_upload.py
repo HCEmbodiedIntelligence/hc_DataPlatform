@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from typing import Any
 
 import pytest
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
 
+from hc_data_platform.core.context import (
+    RequestContext,
+    bind_request_context,
+    reset_request_context,
+)
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.ports import InMemoryObjectStorage
 from hc_data_platform.lerobot_imports.models import (
+    AuthorizeLeRobotPartsV1,
     CommitLeRobotImportV1,
     CompleteLeRobotAssetV1,
     CreateLeRobotImportV1,
     LeRobotSourceFileV1,
 )
 from hc_data_platform.lerobot_imports.orchestration import build_import_plan
+from hc_data_platform.lerobot_imports.router import get_service as get_lerobot_service
+from hc_data_platform.lerobot_imports.router import router as lerobot_router
 from hc_data_platform.lerobot_imports.service import LeRobotWebUploadService
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.tools.hf_unitree_g1_to_mcap import CAMERAS
@@ -59,6 +72,33 @@ def _source_files() -> tuple[LeRobotSourceFileV1, ...]:
         *(f"videos/{camera.feature_key}/chunk-000/file-000.mp4" for camera in CAMERAS),
     )
     return tuple(LeRobotSourceFileV1(path=path, size=1, part_count=1) for path in paths)
+
+
+def _app(service: LeRobotWebUploadService) -> FastAPI:
+    app = FastAPI()
+
+    @app.exception_handler(ProblemException)
+    async def handle_problem(_request: Request, exc: ProblemException) -> JSONResponse:
+        return JSONResponse(exc.problem.model_dump(mode="json"), status_code=exc.problem.status)
+
+    @app.middleware("http")
+    async def install_auth(request: Request, call_next: Any) -> Any:
+        request.state.auth_context = _auth()
+        token = bind_request_context(
+            RequestContext(
+                organization_id="org-a",
+                subject_id="uploader-a",
+                request_id="test-request-id",
+            )
+        )
+        try:
+            return await call_next(request)
+        finally:
+            reset_request_context(token)
+
+    app.dependency_overrides[get_lerobot_service] = lambda: service
+    app.include_router(lerobot_router)
+    return app
 
 
 @pytest.mark.parametrize("episode_count", [154, 10_000])
@@ -152,7 +192,21 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
     )
     for asset in grant.assets:
         assert asset.multipart_upload_id is not None
-        storage.upload_part(asset.multipart_upload_id, 1, bodies[asset.path])
+        body = bodies[asset.path]
+        uploaded = service.upload_part(
+            auth=_auth(),
+            organization_id="org-a",
+            project_id="project-a",
+            region_code="cn-hz",
+            import_id=grant.import_id,
+            dataset_id="dataset-a",
+            path=asset.path,
+            multipart_upload_id=asset.multipart_upload_id,
+            part_number=1,
+            body=BytesIO(body),
+            size=len(body),
+        )
+        assert uploaded.size == len(body)
         service.complete_asset(
             auth=_auth(),
             organization_id="org-a",
@@ -167,6 +221,21 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
                 part_count=1,
             ),
         )
+        resumed = service.authorize_parts(
+            auth=_auth(),
+            organization_id="org-a",
+            project_id="project-a",
+            region_code="cn-hz",
+            import_id=grant.import_id,
+            command=AuthorizeLeRobotPartsV1(
+                dataset_id="dataset-a",
+                path=asset.path,
+                multipart_upload_id=asset.multipart_upload_id,
+                part_numbers=(1,),
+            ),
+        )
+        assert resumed.completed is True
+        assert resumed.parts == ()
 
     accepted = service.commit(
         auth=_auth(),
@@ -252,3 +321,38 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
             command=CommitLeRobotImportV1(manifest=changed_manifest),
         )
     assert captured.value.problem.code == "LEROBOT_IMPORT_MANIFEST_CHANGED"
+
+
+def test_same_origin_part_fallback_accepts_binary_body() -> None:
+    manifest = CreateLeRobotImportV1(
+        dataset_id="dataset-a",
+        collection_task_id="task-a",
+        robot_id="robot-a",
+        info=_info(),
+        files=_source_files(),
+    )
+    storage = InMemoryObjectStorage()
+    client = TestClient(_app(LeRobotWebUploadService(storage)))
+    headers = {"X-Organization-Id": "org-a", "Authorization": "Bearer test-token"}
+    root = "/api/v1/projects/project-a/regions/cn-hz/lerobot-imports"
+    created = client.post(root, headers=headers, json=manifest.model_dump(mode="json"))
+    assert created.status_code == 201
+    grant = created.json()
+    asset = grant["assets"][0]
+
+    uploaded = client.put(
+        f"{root}/{grant['import_id']}/assets:upload-part",
+        headers={**headers, "Content-Type": "application/octet-stream"},
+        params={
+            "dataset_id": "dataset-a",
+            "path": asset["path"],
+            "multipart_upload_id": asset["multipart_upload_id"],
+            "part_number": 1,
+        },
+        content=b"x",
+    )
+
+    assert uploaded.status_code == 200
+    assert uploaded.headers["cache-control"] == "no-store"
+    key = f"raw/org-a/dataset-a/{grant['import_id']}/source/{asset['path']}"
+    assert storage.list_parts(key, asset["multipart_upload_id"])[0].size == 1

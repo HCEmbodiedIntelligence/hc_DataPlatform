@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 5c721d59832c0b19dded2a5669202065f8a9a55359620f66fadd2546866a3d62
+// Runtime-OpenAPI-SHA256: 4ab43e146c0ff06ff6eb2019a0bcd03fe685709cc9cf17c6bb27f8e1a10bf4a2
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -81,6 +81,7 @@ export const runtimeOperations = [
   { method: "PUT", path: "/organizations/{organization_id}/robot-model-assets/upload-part" },
   { method: "GET", path: "/organizations/{organization_id}/robot-model-versions/{version_id}" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}:create-draft" },
+  { method: "DELETE", path: "/organizations/{organization_id}/robot-model-versions/{version_id}:discard-import" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}:preflight-publish" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}:publish" },
   { method: "GET", path: "/organizations/{organization_id}/robot-model-versions/{version_id}/assets" },
@@ -92,7 +93,10 @@ export const runtimeOperations = [
   { method: "POST", path: "/organizations/{organization_id}/robot-models" },
   { method: "GET", path: "/organizations/{organization_id}/robots" },
   { method: "POST", path: "/organizations/{organization_id}/robots" },
+  { method: "DELETE", path: "/organizations/{organization_id}/robots/{robot_id}" },
+  { method: "PATCH", path: "/organizations/{organization_id}/robots/{robot_id}" },
   { method: "GET", path: "/organizations/{organization_id}/robots/{robot_id}/bootstrap" },
+  { method: "POST", path: "/organizations/{organization_id}/robots/{robot_id}/lifecycle" },
   { method: "POST", path: "/organizations/{organization_id}/robots/{robot_id}/model-bindings" },
   { method: "GET", path: "/organizations/{organization_id}/robots/model-bindings" },
   { method: "GET", path: "/organizations/{organization_id}/stream-schemas" },
@@ -228,6 +232,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window" },
   { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:finalize" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-proposals" },
@@ -250,6 +255,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete" },
+  { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/manual-issues" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/manual-issues" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/manual-issues:page" },

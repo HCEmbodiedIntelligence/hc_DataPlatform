@@ -673,6 +673,7 @@ def build_runtime(
         cursor_secret=resolved.cursor_secret,
     )
     s3_client, s3_presign_client, object_storage = _object_store_clients(resolved)
+    decoder = _decoder(resolved)
     audit_governance = AuditGovernanceService(
         audit_governance_repository,
         audit_projection,
@@ -698,6 +699,7 @@ def build_runtime(
         ingest,
         PostgresRecordingAssetRepository(connection_factory),
         object_storage,
+        decoder,
     )
     collection_tasks = CollectionTaskService(
         PostgresCollectionTaskRepository(connection_factory),
@@ -894,7 +896,6 @@ def build_runtime(
         exporters=(LanceSnapshotExporter(), LeRobotV3Exporter()),
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
-    decoder = _decoder(resolved)
     dataset_ingest_projection = PostgresDatasetIngestProjector(connection_factory)
     continuous_episode_processing = ContinuousEpisodeProcessingService(
         connection_factory=connection_factory,

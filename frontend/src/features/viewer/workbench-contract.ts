@@ -14,6 +14,7 @@ export type DataVisualizationWorkbenchMode =
   | "annotation"
   | "revision"
   | "tag-review"
+  | "episode-slicing"
   | "published-readonly";
 
 export interface WorkbenchFact {
