@@ -180,6 +180,8 @@ EXPECTED_MANIFEST = (
     "preview/0006_dataset_version_media_retirement.sql",
     "robotics/0005_organization_robot_assets.sql",
     "ingest/010_raw_sources.sql",
+    "collection_tasks/0005_robot_upload_target.sql",
+    "ingest/012_robot_ingest.sql",
 )
 
 

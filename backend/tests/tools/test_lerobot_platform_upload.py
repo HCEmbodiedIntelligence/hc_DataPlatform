@@ -10,6 +10,7 @@ from hc_data_platform.tools.hf_unitree_g1_to_mcap import CAMERAS
 from hc_data_platform.tools.lerobot_platform_upload import (
     build_native_source,
     build_parser,
+    run_interactive,
     upload_native_lerobot,
 )
 
@@ -148,3 +149,83 @@ def test_native_uploader_calls_lerobot_api_and_puts_original_bytes(
     assert set(item["path"] for item in begin_manifest["files"]) == paths
     assert uploaded == expected
     assert all(not path.endswith(".mcap") for path in uploaded)
+
+
+def test_native_lerobot_can_use_robot_identity_without_user_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _write_native_lerobot(tmp_path)
+    captured: dict[str, Any] = {}
+
+    def fake_robot_upload(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"data": {"raw_source_id": "raw-lerobot"}}
+
+    monkeypatch.setattr(
+        "hc_data_platform.tools.lerobot_platform_upload.upload_robot_ingest",
+        fake_robot_upload,
+    )
+
+    result = upload_native_lerobot(
+        tmp_path,
+        organization_id=None,
+        project_id=None,
+        region_code=None,
+        dataset_id=None,
+        collection_task_id="task-a",
+        robot_id="robot-a",
+        api_base_url="https://platform.test",
+        access_token=None,
+        robot_credential="robot-secret",
+        capture_started_at="2026-09-01T00:00:00Z",
+        capture_ended_at="2026-09-01T00:10:00Z",
+    )
+
+    assert result == {"data": {"raw_source_id": "raw-lerobot"}}
+    assert captured["source_format"] == "LEROBOT_V3"
+    assert captured["declared_episode_count"] == 1
+    assert captured["organization_id"] is None
+    assert captured["project_id"] is None
+    assert {asset.path for asset in captured["assets"]} == paths
+
+
+def test_robot_cli_does_not_prompt_for_or_send_authoritative_task_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_native_lerobot(tmp_path)
+    captured: dict[str, Any] = {}
+
+    def fake_upload(_source_dir: Path, **kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"data": {"upload_id": "riu-cli"}}
+
+    monkeypatch.setenv("HC_ROBOT_INGEST_TOKEN", "robot-secret")
+    monkeypatch.setattr(
+        "hc_data_platform.tools.lerobot_platform_upload.upload_native_lerobot",
+        fake_upload,
+    )
+    args = build_parser().parse_args(
+        [
+            "--source-dir",
+            str(tmp_path),
+            "--api-base-url",
+            "https://platform.test",
+            "--collection-task-id",
+            "task-a",
+            "--robot-id",
+            "robot-a",
+            "--capture-started-at",
+            "2026-09-01T00:00:00Z",
+            "--capture-ended-at",
+            "2026-09-01T00:10:00Z",
+        ]
+    )
+
+    result = run_interactive(args)
+
+    assert result == {"data": {"upload_id": "riu-cli"}}
+    assert captured["organization_id"] is None
+    assert captured["project_id"] is None
+    assert captured["region_code"] is None
+    assert captured["dataset_id"] is None

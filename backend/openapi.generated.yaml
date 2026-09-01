@@ -24649,6 +24649,10 @@ components:
       bearerFormat: JWT
       scheme: bearer
       type: http
+    robotBearerAuth:
+      bearerFormat: one-time issued robot token
+      scheme: bearer
+      type: http
 info:
   title: HC Data Platform Backend
   version: 0.1.0
@@ -42189,6 +42193,107 @@ paths:
       - bearerAuth: []
       tags:
       - ingest
+  /api/v1/projects/{project_id}/robot-ingest/attempts:
+    get:
+      operationId: listRobotIngestAttempts
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities:
+    get:
+      operationId: listRobotIngestIdentities
+      responses: {}
+      security:
+      - bearerAuth: []
+    post:
+      operationId: createRobotIngestIdentity
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRobotIngestIdentity'
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:
+    get:
+      operationId: getRobotIngestIdentity
+      responses: {}
+      security:
+      - bearerAuth: []
+    patch:
+      operationId: updateRobotIngestIdentity
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRobotIngestIdentity'
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials:
+    get:
+      operationId: listRobotIngestCredentials
+      responses: {}
+      security:
+      - bearerAuth: []
+    post:
+      operationId: issueRobotIngestCredential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueCredentialCommand'
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:revoke:
+    post:
+      operationId: revokeRobotIngestCredential
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable:
+    post:
+      operationId: disableRobotIngestIdentity
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:enable:
+    post:
+      operationId: enableRobotIngestIdentity
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:rotate-credential:
+    post:
+      operationId: rotateRobotIngestCredential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueCredentialCommand'
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics:
+    get:
+      operationId: getRobotIngestStatistics
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/uploads:
+    get:
+      operationId: listRobotIngestUploadHistory
+      responses: {}
+      security:
+      - bearerAuth: []
+  /api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes:
+    get:
+      operationId: listRobotIngestUploadEpisodes
+      responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:
     get:
       operationId: getApprovedAnnotation
@@ -43276,6 +43381,69 @@ paths:
       summary: Publish Tag Schema Version
       tags:
       - annotation
+  /api/v1/robot-ingest/uploads:
+    post:
+      operationId: createRobotIngestUpload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotIngestUploadManifest'
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:
+    get:
+      operationId: getRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts:
+    post:
+      operationId: authorizeRobotIngestParts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizePartsCommand'
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete:
+    post:
+      operationId: completeRobotIngestAsset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteAssetCommand'
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:cancel:
+    post:
+      operationId: cancelRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:commit:
+    post:
+      operationId: commitRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:pause:
+    post:
+      operationId: pauseRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:resume:
+    post:
+      operationId: resumeRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
   /health/live:
     get:
       operationId: getLiveness

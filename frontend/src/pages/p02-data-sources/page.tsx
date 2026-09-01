@@ -40,6 +40,7 @@ import {
   ConnectorDeleteConfirmDialog,
   CredentialRotationDialog,
 } from './components/SourceActionDialogs';
+import { RobotIdentityConsole } from './components/RobotIdentityConsole';
 import { SourceEditorDialog, type SourceDraft } from './components/SourceEditorDialog';
 import {
   dataSourcesQueryCodec,
@@ -692,6 +693,11 @@ export default function DataSourcesPage() {
         }
         state={
           <div className={styles.contentStack}>
+            <RobotIdentityConsole
+              scope={scope}
+              canRead={canRead}
+              canManage={canManage}
+            />
             {page.data?.componentErrors.map((error) => (
               <Alert
                 type="error"

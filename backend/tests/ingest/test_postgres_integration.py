@@ -219,9 +219,9 @@ def test_postgres_resume_idempotency_manifest_discovery_and_rls() -> None:
     region = "cn-test"
     with psycopg.connect(dsn) as connection:
         connection.execute(
-            "INSERT INTO registry.organization_projects (organization_id, project_id) "
-            "VALUES (%s, %s)",
-            (_organization_for(project_id), project_id),
+            "INSERT INTO registry.organization_projects "
+            "(organization_id, project_id, display_name) VALUES (%s, %s, %s)",
+            (_organization_for(project_id), project_id, project_id),
         )
     _create_role(dsn, role)
     storage = InMemoryObjectStorage()

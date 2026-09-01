@@ -884,7 +884,7 @@ class DataSourceService:
                     status=422,
                     code="ROBOT_BINDING_NOT_FOUND",
                     title="Robot binding not found",
-                    detail="The selected robot does not exist in this project and region.",
+                    detail="The selected robot is not an active robot in this organization.",
                 )
             return (
                 DataSourceRobotBinding(

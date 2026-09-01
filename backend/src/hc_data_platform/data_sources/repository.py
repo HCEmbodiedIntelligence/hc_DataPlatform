@@ -176,7 +176,20 @@ class InMemoryDataSourceRepository:
         robot_id: str,
     ) -> str | None:
         with self._lock:
-            return self._robots.get((organization_id, project_id, region_code, robot_id))
+            direct = self._robots.get((organization_id, project_id, region_code, robot_id))
+            if direct is not None:
+                return direct
+            # ROBOT upload identities are organization-owned. Project/Region values in
+            # this legacy fixture shape describe where the source is being managed, not
+            # a permanent authorization assignment.
+            return next(
+                (
+                    display_name
+                    for (saved_org, _, _, saved_robot), display_name in self._robots.items()
+                    if saved_org == organization_id and saved_robot == robot_id
+                ),
+                None,
+            )
 
     def list_sources(
         self,
@@ -456,23 +469,19 @@ class PostgresDataSourceRepository:
         region_code: str,
         robot_id: str,
     ) -> str | None:
+        del project_id, region_code
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
             cursor.execute(
                 """
                 SELECT robot.display_name
-                  FROM robotics.project_robot_assignments assignment
-                  JOIN robotics.robot_assets robot
-                    ON robot.organization_id = assignment.organization_id
-                   AND robot.robot_id = assignment.robot_id
-                 WHERE assignment.organization_id = %s
-                   AND assignment.project_id = %s
-                   AND assignment.region_code = %s
-                   AND assignment.robot_id = %s
-                   AND assignment.active
+                  FROM robotics.robot_assets robot
+                 WHERE robot.organization_id = %s
+                   AND robot.robot_id = %s
+                   AND robot.lifecycle_status NOT IN ('DISABLED', 'RETIRED')
                 """,
-                (organization_id, project_id, region_code, robot_id),
+                (organization_id, robot_id),
             )
             raw = cursor.fetchone()
             return None if raw is None else str(_row(cursor, raw)["display_name"])

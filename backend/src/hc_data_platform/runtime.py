@@ -193,6 +193,9 @@ from hc_data_platform.registry.service import RegistryService
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
 from hc_data_platform.robot_assets.router import configure_organization_robot_assets
 from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
+from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
+from hc_data_platform.robot_ingest.router import configure_robot_ingest
+from hc_data_platform.robot_ingest.service import RobotIngestService
 from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -462,6 +465,7 @@ class RuntimeComponents:
     calibrations: CalibrationService
     data_schemas: DataSchemaService
     data_sources: DataSourceService
+    robot_ingest: RobotIngestService
     dataset_page: DatasetPageService
     manual_issues: ManualIssueService
     cleaning_drafts: CleaningDraftService
@@ -742,6 +746,14 @@ def build_runtime(
             response_decoder=DataSourceMutationRecord.model_validate,
         ),
     )
+    robot_ingest = RobotIngestService(
+        PostgresRobotIngestRepository.from_dsn(
+            resolved.postgres_dsn,
+            connection_factory,
+        ),
+        object_storage,
+        credential_hmac_key=resolved.data_source_credential_key.get_secret_value(),
+    )
     dataset_page = DatasetPageService(
         PostgresDatasetPageRepository(connection_factory),
         cursor_secret=resolved.cursor_secret,
@@ -955,6 +967,7 @@ def build_runtime(
         calibrations=calibrations,
         data_schemas=data_schemas,
         data_sources=data_sources,
+        robot_ingest=robot_ingest,
         dataset_page=dataset_page,
         manual_issues=manual_issues,
         cleaning_drafts=cleaning_drafts,
@@ -989,6 +1002,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_calibrations(runtime.calibrations)
     configure_data_schemas(runtime.data_schemas)
     configure_data_sources(runtime.data_sources)
+    configure_robot_ingest(runtime.robot_ingest)
     configure_dataset_page(runtime.dataset_page)
     configure_manual_issues(runtime.manual_issues)
     configure_cleaning_drafts(runtime.cleaning_drafts)

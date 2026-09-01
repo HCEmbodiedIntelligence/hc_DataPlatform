@@ -242,14 +242,11 @@ def test_postgres_data_source_is_rls_scoped_encrypted_audited_and_replayable() -
                     "p02-topology:1",
                 ),
             )
-            cursor.execute(
-                """
-                INSERT INTO robotics.project_robot_assignments (
-                    organization_id, project_id, region_code, robot_id, assigned_by
-                ) VALUES (%s, %s, %s, %s, %s)
-                """,
-                (ORGANIZATION_ID, PROJECT_ID, REGION_CODE, ROBOT_ID, "p02-test"),
-            )
+            assert cursor.execute(
+                """SELECT count(*) FROM robotics.project_robot_assignments
+                     WHERE organization_id = %s AND robot_id = %s""",
+                (ORGANIZATION_ID, ROBOT_ID),
+            ).fetchone() == (0,)
             cursor.execute(
                 "INSERT INTO registry.organization_projects "
                 "(organization_id, project_id, display_name) VALUES (%s, %s, %s)",

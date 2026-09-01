@@ -31,11 +31,18 @@ from hc_data_platform.lerobot_imports.models import (
 )
 from hc_data_platform.lerobot_imports.source_profile import find_local_source_root
 
+from .robot_ingest_upload import (
+    DEFAULT_STATE_NAME,
+    RobotUploadAssetInput,
+    upload_robot_ingest,
+)
+
 PROJECT_ID = "be22-hf-g1-video-20260819-02-p1"
 COLLECTION_TASK_ID = "14d16ba1-d95a-5ee3-aaa7-7b7d78091b52"
 ROBOT_ID = "robot-d1a17126-b495-59b8-bf48-0ccce0a6ffe7"
 PLATFORM_REGION_CODE = "be22-hf-g1-video-20260819-02-cn"
 TOKEN_ENV = "HC_DATA_ACCESS_TOKEN"
+ROBOT_TOKEN_ENV = "HC_ROBOT_INGEST_TOKEN"
 ORGANIZATION_ENV = "HC_ORGANIZATION_ID"
 LEROBOT_MULTIPART_BYTES = 32 * 1024**2
 MAX_MULTIPART_PARTS = 10_000
@@ -106,6 +113,8 @@ def build_native_source(
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
+        if relative == DEFAULT_STATE_NAME:
+            continue
         size = path.stat().st_size
         if size < 1:
             raise ValueError(f"LeRobot source object is empty: {relative}")
@@ -135,25 +144,75 @@ def build_native_source(
 def upload_native_lerobot(
     source_dir: Path,
     *,
-    organization_id: str,
-    project_id: str,
-    region_code: str,
-    dataset_id: str,
+    organization_id: str | None,
+    project_id: str | None,
+    region_code: str | None,
+    dataset_id: str | None,
     collection_task_id: str,
     robot_id: str,
     api_base_url: str,
-    access_token: str,
+    access_token: str | None,
+    robot_credential: str | None = None,
+    capture_started_at: str | None = None,
+    capture_ended_at: str | None = None,
+    state_path: Path | None = None,
     max_part_retries: int = DEFAULT_MAX_PART_RETRIES,
     retry_base_seconds: float = DEFAULT_RETRY_BASE_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
     http: UploadHttpPort | None = None,
 ) -> dict[str, Any]:
+    if not robot_credential and (
+        not organization_id or not project_id or not region_code or not dataset_id
+    ):
+        raise ValueError(
+            "legacy LeRobot upload requires organization_id, project_id, region_code, "
+            "and dataset_id"
+        )
     source = build_native_source(
         source_dir,
-        dataset_id=dataset_id,
+        # Robot-authenticated uploads never send this placeholder. The task resolver
+        # establishes the authoritative Dataset before creating storage or Raw rows.
+        dataset_id=dataset_id or "robot-task-resolved",
         collection_task_id=collection_task_id,
         robot_id=robot_id,
     )
+    if robot_credential:
+        if not capture_started_at or not capture_ended_at:
+            raise ValueError(
+                "robot-authenticated LeRobot uploads require capture_started_at "
+                "and capture_ended_at"
+            )
+        return upload_robot_ingest(
+            assets=tuple(
+                RobotUploadAssetInput(path=relative, local_path=path)
+                for relative, path in source.files.items()
+            ),
+            collection_task_id=collection_task_id,
+            robot_id=robot_id,
+            source_format="LEROBOT_V3",
+            source_format_version=str(source.manifest.info.get("codebase_version", "v3.0")),
+            capture_mode="PRESEGMENTED",
+            capture_started_at=capture_started_at,
+            capture_ended_at=capture_ended_at,
+            declared_episode_count=source.manifest.episode_count,
+            format_metadata={
+                "codebase_version": source.manifest.info.get("codebase_version"),
+                "robot_type": source.manifest.info.get("robot_type"),
+                "fps": source.manifest.info.get("fps"),
+            },
+            organization_id=organization_id,
+            project_id=project_id,
+            api_base_url=api_base_url,
+            robot_credential=robot_credential,
+            state_path=state_path or source.root / DEFAULT_STATE_NAME,
+            max_part_retries=max_part_retries,
+            retry_base_seconds=retry_base_seconds,
+            sleep=sleep,
+            http=http,
+        )
+    if not access_token:
+        raise ValueError("legacy LeRobot upload requires a user access token")
+    assert organization_id and project_id and region_code and dataset_id
     client = http or UrllibUploadHttpClient()
     root = (
         f"{_normalize_api_base_url(api_base_url)}/api/v1/projects/"
@@ -328,12 +387,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-base-url")
     parser.add_argument("--username")
     parser.add_argument("--organization-id")
-    parser.add_argument("--project-id", default=PROJECT_ID)
-    parser.add_argument("--region-code", default=PLATFORM_REGION_CODE)
-    parser.add_argument("--dataset-id", default=PROJECT_ID)
+    parser.add_argument("--project-id")
+    parser.add_argument("--region-code")
+    parser.add_argument("--dataset-id")
     parser.add_argument("--collection-task-id", default=COLLECTION_TASK_ID)
     parser.add_argument("--robot-id", default=ROBOT_ID)
     parser.add_argument("--access-token-env", default=TOKEN_ENV)
+    parser.add_argument("--robot-credential-env", default=ROBOT_TOKEN_ENV)
+    parser.add_argument("--capture-started-at")
+    parser.add_argument("--capture-ended-at")
+    parser.add_argument("--state-path", type=Path)
     parser.add_argument("--max-part-retries", type=int, default=DEFAULT_MAX_PART_RETRIES)
     return parser
 
@@ -345,12 +408,21 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
     api_base_url = cast(str | None, args.api_base_url) or _prompt(
         "请输入平台地址", default="http://127.0.0.1:8000"
     )
-    organization_id = cast(str | None, args.organization_id)
-    organization_id = organization_id or os.environ.get(ORGANIZATION_ENV, "").strip()
-    organization_id = organization_id or _prompt("请输入 Organization ID")
+    robot_token_env = cast(str, args.robot_credential_env)
+    robot_token = os.environ.get(robot_token_env, "").strip()
     token_env = cast(str, args.access_token_env)
     token = os.environ.get(token_env, "").strip()
-    if not token:
+    organization_id = cast(str | None, args.organization_id)
+    organization_id = organization_id or os.environ.get(ORGANIZATION_ENV, "").strip() or None
+    project_id = cast(str | None, args.project_id)
+    region_code = cast(str | None, args.region_code)
+    dataset_id = cast(str | None, args.dataset_id)
+    if not robot_token:
+        organization_id = organization_id or _prompt("请输入 Organization ID")
+        project_id = project_id or _prompt("请输入 Project ID", default=PROJECT_ID)
+        region_code = region_code or _prompt("请输入 Region Code", default=PLATFORM_REGION_CODE)
+        dataset_id = dataset_id or _prompt("请输入 Dataset ID", default=PROJECT_ID)
+    if not robot_token and not token:
         username = cast(str | None, args.username) or _prompt("请输入平台用户名")
         password = getpass("请输入平台密码（输入不显示）: ")
         if not password:
@@ -363,28 +435,34 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
 
     source = build_native_source(
         source_dir,
-        dataset_id=cast(str, args.dataset_id),
+        dataset_id=dataset_id or "robot-task-resolved",
         collection_task_id=cast(str, args.collection_task_id),
         robot_id=cast(str, args.robot_id),
     )
     print("\n将通过平台原样上传 LeRobot Raw（不会生成 MCAP）：")
-    print(f"  Project : {args.project_id}")
-    print(f"  Region  : {args.region_code}")
-    print(f"  Dataset : {args.dataset_id}")
+    print(f"  Project : {project_id or '由 Task 解析'}")
+    print(f"  Region  : {region_code or '由 Task 解析'}")
+    print(f"  Dataset : {dataset_id or '由 Task 解析'}")
     print(f"  Task    : {args.collection_task_id}")
     print(f"  Robot   : {args.robot_id}")
     print(f"  Episodes: {source.manifest.episode_count}")
     print(f"  Files   : {len(source.files)}")
+    if robot_token:
+        print("  Auth    : ROBOT（任务 ID 决定项目/数据集/Region）")
     return upload_native_lerobot(
         source.root,
         organization_id=organization_id,
-        project_id=cast(str, args.project_id),
-        region_code=cast(str, args.region_code),
-        dataset_id=cast(str, args.dataset_id),
+        project_id=project_id,
+        region_code=region_code,
+        dataset_id=dataset_id,
         collection_task_id=cast(str, args.collection_task_id),
         robot_id=cast(str, args.robot_id),
         api_base_url=api_base_url,
-        access_token=token,
+        access_token=token or None,
+        robot_credential=robot_token or None,
+        capture_started_at=cast(str | None, args.capture_started_at),
+        capture_ended_at=cast(str | None, args.capture_ended_at),
+        state_path=cast(Path | None, args.state_path),
         max_part_retries=int(args.max_part_retries),
     )
 

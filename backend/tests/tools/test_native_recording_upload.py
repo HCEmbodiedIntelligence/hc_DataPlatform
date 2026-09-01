@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from hc_data_platform.ingest.cli import HttpResponse
 from hc_data_platform.tools.native_recording_upload import upload_native_recording
 from hc_data_platform.tools.native_unitree_g1_recording import (
@@ -127,3 +129,53 @@ def test_uploads_every_native_asset_through_platform_grants(tmp_path: Path) -> N
     assert http.command is not None
     assert len(http.put_bodies) == 3
     assert len(http.completed) == 3
+
+
+def test_native_recording_can_use_organization_robot_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = tmp_path / "source-robot.mp4"
+    video.write_bytes(b"native-mp4")
+    sensor = tmp_path / "sensor-robot.mcap"
+    sensor.write_bytes(b"native-mcap")
+    bundle = prepare_recording(
+        PrepareRequest(
+            output_dir=tmp_path / "bundle-robot",
+            project_id="project-a",
+            collection_task_id="task-a",
+            robot_id="robot-a",
+            device_id="device-a",
+            capture_started_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+            telemetry=sensor,
+            cameras=(CameraInput(camera_id="front", source=video),),
+        ),
+        video_probe=_probe,
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_robot_upload(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"data": {"raw_source_id": "raw-a"}}
+
+    monkeypatch.setattr(
+        "hc_data_platform.tools.native_recording_upload.upload_robot_ingest",
+        fake_robot_upload,
+    )
+
+    result = upload_native_recording(
+        bundle,
+        project_id=None,
+        organization_id=None,
+        region_code=None,
+        api_base_url="https://platform.test",
+        access_token=None,
+        robot_credential="robot-secret",
+    )
+
+    assert result == {"data": {"raw_source_id": "raw-a"}}
+    assert captured["collection_task_id"] == "task-a"
+    assert captured["source_format"] == "CAPTURE_BUNDLE"
+    assert captured["capture_mode"] == "CONTINUOUS"
+    assert captured["project_id"] is None
+    assert captured["organization_id"] is None
+    assert len(captured["cameras"]) == 1

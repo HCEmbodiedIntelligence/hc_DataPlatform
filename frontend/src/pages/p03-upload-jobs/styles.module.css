@@ -1816,3 +1816,77 @@
     text-align: center;
   }
 }
+
+.robotRecordsPanel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: var(--hc-radius-lg, 16px);
+  background:
+    radial-gradient(circle at 95% -30%, rgb(89 101 216 / 14%), transparent 38%),
+    #fff;
+  box-shadow: var(--hc-shadow-sm);
+}
+
+.robotRecordsPanel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.robotRecordsPanel > header > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.robotRecordsPanel > header > div:last-child {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.robotRecordsPanel > header span {
+  color: var(--hc-color-primary, #5965d8);
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.robotRecordsPanel h2 {
+  margin: 0;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 1rem;
+}
+
+.robotRecordsPanel p {
+  margin: 0;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.72rem;
+}
+
+.robotRecordIdentity,
+.robotRecordStatus {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.robotRecordIdentity code,
+.robotRecordIdentity :global(.ant-typography) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.robotRecordStatus {
+  justify-items: start;
+}
+
+.robotRecordStatus small {
+  color: var(--hc-color-text-muted, #676b80);
+}

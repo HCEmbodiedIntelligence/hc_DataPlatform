@@ -167,6 +167,14 @@ _SAFE_DETAIL_TEXT_VALUES = frozenset({"Invalid value"})
 _REDACTION_MARKER = "[REDACTED]"
 _PUBLIC_API_OPERATIONS = frozenset(
     {
+        (
+            "/api/v1/organizations/{organization_id}/robot-model-assets/content",
+            "get",
+        ),
+        (
+            "/api/v1/organizations/{organization_id}/robot-model-assets/upload-part",
+            "put",
+        ),
         ("/api/v1/auth/registrations", "post"),
         ("/api/v1/auth/sessions", "post"),
         ("/api/v1/auth/config", "get"),
@@ -177,6 +185,7 @@ _PUBLIC_API_OPERATIONS = frozenset(
     }
 )
 _SESSION_LOGOUT_OPERATION = ("/api/v1/auth/session:logout", "POST")
+_ROBOT_INGEST_UPLOAD_PREFIX = "/api/v1/robot-ingest/uploads"
 _MAINTENANCE_CONTROL_PREFIX = "/api/v1/platform/maintenance-operations"
 _COMMAND_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _OPERATION_ID_OVERRIDES = {
@@ -453,7 +462,9 @@ def _is_maintenance_control(request: Request) -> bool:
 
 
 def _uses_opaque_access_token(request: Request) -> bool:
-    if (request.url.path, request.method.lower()) in _PUBLIC_API_OPERATIONS:
+    if (request.url.path, request.method.lower()) in _PUBLIC_API_OPERATIONS or (
+        request.url.path.startswith(_ROBOT_INGEST_UPLOAD_PREFIX)
+    ):
         return False
     authorization = request.headers.get("Authorization")
     if authorization is None:
@@ -631,6 +642,10 @@ def _normalize_operation_contracts(document: dict[str, Any]) -> None:
         "bearerAuth",
         {"type": "http", "scheme": "bearer", "bearerFormat": "JWT or opaque platform session"},
     )
+    security_schemes.setdefault(
+        "robotBearerAuth",
+        {"type": "http", "scheme": "bearer", "bearerFormat": "one-time issued robot token"},
+    )
 
     paths = document.get("paths", {})
     if not isinstance(paths, dict):
@@ -654,9 +669,12 @@ def _normalize_operation_contracts(document: dict[str, Any]) -> None:
             operation_key = (path, normalized_method)
             _normalize_error_response_contracts(operation)
             if path.startswith("/api/v1/"):
-                operation["security"] = (
-                    [] if operation_key in _PUBLIC_API_OPERATIONS else [{"bearerAuth": []}]
-                )
+                if path.startswith(_ROBOT_INGEST_UPLOAD_PREFIX):
+                    operation["security"] = [{"robotBearerAuth": []}]
+                else:
+                    operation["security"] = (
+                        [] if operation_key in _PUBLIC_API_OPERATIONS else [{"bearerAuth": []}]
+                    )
             override = _OPERATION_ID_OVERRIDES.get(operation_key)
             if override is not None:
                 operation["operationId"] = override
@@ -1388,6 +1406,11 @@ def _authenticate_request(
     access_service: AccessService,
 ) -> AuthContext | None:
     if (request.url.path, request.method.lower()) in _PUBLIC_API_OPERATIONS:
+        return None
+    # Robot tokens are non-JWT device credentials. Their route dependency performs
+    # indexed HMAC verification and constructs RobotIngestAuthContext; user JWTs can
+    # never manufacture that principal type.
+    if request.url.path.startswith(_ROBOT_INGEST_UPLOAD_PREFIX):
         return None
     authorization = request.headers.get("Authorization")
     if authorization is None:

@@ -3,6 +3,7 @@ import { Alert, Modal } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { dataUploadRoutes } from "../../app/shell/navigation-routes";
+import { useRobotUploadHistory } from "../../features/robot-ingest/api";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -16,6 +17,7 @@ import {
 import { UploadPrecheckPanel } from "./components/UploadPrecheckPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
 import { UploadRecordsPanel } from "./components/UploadRecordsPanel";
+import { RobotUploadRecordsPanel } from "./components/RobotUploadRecordsPanel";
 import {
   listFormalUploadSessions,
   preflightUploadManifest,
@@ -102,6 +104,10 @@ export default function UploadJobsPage() {
   const localInspectionNonce = useRef(0);
   const activeTab =
     location.pathname === dataUploadRoutes.records ? "records" : "new";
+  const robotIdFilter = useMemo(
+    () => new URLSearchParams(location.search).get("robotId"),
+    [location.search],
+  );
   const online = useNetworkStatus();
 
   const [flow, setFlow] = useState<UploadFlowState>({ phase: "idle" });
@@ -130,6 +136,7 @@ export default function UploadJobsPage() {
   const clearSettled = useUploadQueueStore((state) => state.clearSettled);
   const canRead = capabilities.has("upload.read");
   const canManage = capabilities.has("upload.manage");
+  const canReadRobotIngest = capabilities.has("ingest_source.read");
 
   useEffect(() => {
     if (scope && canRead) void recoverQueue(scope);
@@ -175,7 +182,11 @@ export default function UploadJobsPage() {
       packageFilter.trim(),
       statusFilter,
     ],
-    enabled: activeTab === "records" && Boolean(scope) && canRead,
+    enabled:
+      activeTab === "records" &&
+      Boolean(scope) &&
+      canRead &&
+      !robotIdFilter,
     staleTime: 10_000,
     queryFn: ({ signal }) => {
       if (!scope) throw new Error("INGEST_SCOPE_UNAVAILABLE");
@@ -190,6 +201,11 @@ export default function UploadJobsPage() {
       );
     },
   });
+  const robotRecords = useRobotUploadHistory(
+    scope,
+    robotIdFilter,
+    activeTab === "records" && canRead && canReadRobotIngest,
+  );
 
   const resetSelection = useCallback(() => {
     localInspectionNonce.current += 1;
@@ -640,21 +656,47 @@ export default function UploadJobsPage() {
           role="tabpanel"
           aria-label="上传记录"
         >
-          <UploadRecordsPanel
-            items={records.data?.items ?? []}
-            total={records.data?.total ?? 0}
-            loading={
-              Boolean(scope) && (records.isPending || records.isFetching)
-            }
-            problem={records.isError ? uploadProblemCopy(records.error) : null}
-            packageFilter={packageFilter}
-            statusFilter={statusFilter}
-            onPackageFilterChange={setPackageFilter}
-            onStatusFilterChange={setStatusFilter}
-            onRefresh={() => {
-              if (scope) void records.refetch();
-            }}
-          />
+          {robotIdFilter ? (
+            canReadRobotIngest ? (
+              <RobotUploadRecordsPanel
+                scope={scope}
+                robotId={robotIdFilter}
+                items={robotRecords.data?.items ?? []}
+                loading={robotRecords.isPending || robotRecords.isFetching}
+                errorMessage={
+                  robotRecords.isError
+                    ? uploadProblemCopy(robotRecords.error).detail
+                    : null
+                }
+                onClear={() => void navigate(dataUploadRoutes.records)}
+                onRefresh={() => void robotRecords.refetch()}
+              />
+            ) : (
+              <Alert
+                type="warning"
+                showIcon
+                title="当前账号无权查看机器人上传记录"
+              />
+            )
+          ) : (
+            <UploadRecordsPanel
+              items={records.data?.items ?? []}
+              total={records.data?.total ?? 0}
+              loading={
+                Boolean(scope) && (records.isPending || records.isFetching)
+              }
+              problem={
+                records.isError ? uploadProblemCopy(records.error) : null
+              }
+              packageFilter={packageFilter}
+              statusFilter={statusFilter}
+              onPackageFilterChange={setPackageFilter}
+              onStatusFilterChange={setStatusFilter}
+              onRefresh={() => {
+                if (scope) void records.refetch();
+              }}
+            />
+          )}
         </section>
       )}
 
