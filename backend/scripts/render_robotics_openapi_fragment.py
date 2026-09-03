@@ -30,9 +30,7 @@ def document() -> dict[str, Any]:
         "openapi": "3.1.0",
         "info": {"title": "HC robotics contract", "version": "2026-08-19"},
         "paths": {
-            path: item
-            for path, item in runtime["paths"].items()
-            if path.startswith(_PATH_PREFIX)
+            path: item for path, item in runtime["paths"].items() if path.startswith(_PATH_PREFIX)
         },
         "components": {
             "schemas": {name: runtime["components"]["schemas"][name] for name in _SCHEMAS}

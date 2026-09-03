@@ -34,6 +34,7 @@ ANONYMOUS_OPERATIONS = frozenset(
         ("GET", "/api/v1/platform/version"),
     }
 )
+ROBOT_CREDENTIAL_PATH_PREFIX = "/api/v1/robot-ingest/uploads"
 PATH_VALUES = {
     "access_request_id": "00000000-0000-0000-0000-000000000001",
     "collection_task_id": "collection-task-a",
@@ -103,10 +104,13 @@ def test_every_runtime_public_resource_operation_rejects_anonymous_before_valida
                 continue
             assert response.status_code == 401, (key, response.status_code, response.text)
             assert response.headers["content-type"].startswith("application/problem+json"), key
-            assert response.json()["code"] in {
-                "AUTHENTICATION_REQUIRED",
-                "AUTH_CONTEXT_REQUIRED",
-            }, key
+            if path.startswith(ROBOT_CREDENTIAL_PATH_PREFIX):
+                assert response.json()["code"] == "ROBOT_CREDENTIAL_INVALID", key
+            else:
+                assert response.json()["code"] in {
+                    "AUTHENTICATION_REQUIRED",
+                    "AUTH_CONTEXT_REQUIRED",
+                }, key
             assert all(sentinel not in response.text for sentinel in SENSITIVE_SENTINELS), key
 
 

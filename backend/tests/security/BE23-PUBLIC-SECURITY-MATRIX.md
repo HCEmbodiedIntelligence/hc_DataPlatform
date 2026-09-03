@@ -461,3 +461,32 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts` | N1；只为当前导入和声明资产签发有界分片授权。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete` | N1；按精确导入 scope 校验并完成声明资产。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit` | N1；仅在当前导入资产全部校验通过后提交。 |
+
+## 10. 2026-09-03 本地服务器验证增量
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:discard-import` | N1；放弃未完成的模型导入要求精确 organization scope 与模型管理 capability。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}` | N1；机器人单资源读取与删除要求精确 organization scope 与机器人管理 capability。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/lifecycle` | N1；机器人生命周期变更要求精确 organization scope、状态机约束与机器人管理 capability。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window` | N1；传感器窗口读取要求精确 project/region/recording scope。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part` | N1；本地分片写入要求精确导入 scope 与短期、绑定分片的上传 token。 |
+| `/api/v1/projects/{project_id}/robot-ingest/attempts` | N1；采集尝试列表要求精确 project scope 与机器人采集读取 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities` | N1；采集身份列表与创建要求精确 project scope 与身份管理 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}` | N1；采集身份单资源访问要求归属当前 project 与身份管理 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials` | N1；凭证签发要求身份归属当前 project，Secret 仅在创建时最小披露。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:revoke` | N1；凭证撤销要求身份和凭证均归属当前 project，并记录安全审计。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable` | N1；禁用采集身份要求精确 project scope 与身份管理 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:enable` | N1；启用采集身份要求精确 project scope 与身份管理 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:rotate-credential` | N1；凭证轮换要求精确 project scope，旧凭证失效且新 Secret 仅一次披露。 |
+| `/api/v1/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics` | N1；机器人采集统计要求精确 project/robot scope 与采集读取 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/uploads` | N1；用户侧上传列表要求精确 project scope 与采集读取 capability。 |
+| `/api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes` | N1；Episode 列表要求 upload 归属当前 project 与采集读取 capability。 |
+| `/api/v1/robot-ingest/uploads` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，匿名或无效凭证失败关闭，不接受用户 cookie。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，并校验 upload 归属当前采集身份。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，仅为当前 upload 的声明分片授权。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，并校验分片集合与资产摘要。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}:cancel` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，且只能取消当前身份所属 upload。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}:commit` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，仅在全部本地资产校验通过后提交。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}:pause` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，状态转换受 upload 归属与状态机约束。 |
+| `/api/v1/robot-ingest/uploads/{upload_id}:resume` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，状态转换受 upload 归属与状态机约束。 |
