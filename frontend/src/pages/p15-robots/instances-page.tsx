@@ -15,6 +15,8 @@ import {
   Bot,
   Boxes,
   Cable,
+  Eye,
+  Link2,
   Pencil,
   Plus,
   RefreshCw,
@@ -29,7 +31,7 @@ import {
 import {
   getRobotBootstrap,
   useCreateRobot,
-  useDeleteProvisionalRobot,
+  useDeleteRobot,
   useRobotBootstrap,
   useRobots,
   useTransitionRobotLifecycle,
@@ -75,7 +77,9 @@ function operationError(error: unknown): string | null {
     const message =
       error.problemCode === "ROBOT_SERIAL_CONFLICT"
         ? "该序列号已对应另一台机器人，请查看并关联已有实例。"
-        : error.message;
+        : error.problemCode === "ROBOT_IN_USE"
+          ? "该实例仍关联数据源、上传身份、项目、拓扑或历史数据，请先解除这些关联后再删除。"
+          : error.message;
     return error.requestId ? `${message} 请求 ID：${error.requestId}` : message;
   }
   return error instanceof Error ? error.message : "操作未完成，请稍后重试。";
@@ -141,7 +145,7 @@ export function Component() {
   const bindModel = useBindRobotModelVersion();
   const updateRobot = useUpdateRobot();
   const transitionRobot = useTransitionRobotLifecycle();
-  const deleteRobot = useDeleteProvisionalRobot();
+  const deleteRobot = useDeleteRobot();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -210,6 +214,7 @@ export function Component() {
   };
 
   const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [lifecycleTarget, setLifecycleTarget] = useState<
@@ -217,8 +222,37 @@ export function Component() {
   >("");
   const [lifecycleReason, setLifecycleReason] = useState("");
   const [bindOpen, setBindOpen] = useState(false);
+  const [bindTargetId, setBindTargetId] = useState<string | null>(null);
   const [bindVersion, setBindVersion] = useState("");
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const deleteTarget = items.find((item) => item.id === deleteTargetId) ?? null;
+  const renameTarget =
+    (selected?.id === renameTargetId ? selected : null) ??
+    (renameTargetId ? bootstrapById.get(renameTargetId) : null) ??
+    null;
+  const bindTarget =
+    (selected?.id === bindTargetId ? selected : null) ??
+    (bindTargetId ? bootstrapById.get(bindTargetId) : null) ??
+    null;
+
+  const openRename = (robot: (typeof items)[number]) => {
+    setRenameTargetId(robot.id);
+    setRenameValue(robot.displayName);
+    updateRobot.reset();
+    setRenameOpen(true);
+  };
+
+  const openBinding = (robotId: string) => {
+    setBindTargetId(robotId);
+    setBindVersion("");
+    bindModel.reset();
+    setBindOpen(true);
+  };
+
+  const openDelete = (robotId: string) => {
+    deleteRobot.reset();
+    setDeleteTargetId(robotId);
+  };
 
   const publishedModelOptions = (models.data?.items ?? []).flatMap((model) =>
     model.currentPublishedVersionId
@@ -233,34 +267,77 @@ export function Component() {
 
   const table = (
     <Table
+      className={styles.table}
       rowKey="id"
       pagination={false}
       dataSource={items}
-      scroll={{ x: 900 }}
+      scroll={{ x: 1040 }}
+      rowClassName={styles.tableRow}
+      title={() => (
+        <div className={styles.tableTitle}>
+          <div>
+            <strong>实例目录</strong>
+            <span>管理真实机器人身份、模型绑定和生命周期</span>
+          </div>
+          <span className={styles.tableCount}>{items.length} 个实例</span>
+        </div>
+      )}
       columns={[
         {
           title: "机器人实例",
           key: "robot",
+          width: 250,
           render: (_value, robot) => (
-            <Button type="link" onClick={() => setSelectedId(robot.id)}>
-              {robot.displayName}
-            </Button>
+            <div className={styles.instanceCell}>
+              <span className={styles.instanceAvatar} aria-hidden="true">
+                <Bot size={18} />
+              </span>
+              <div>
+                <Button
+                  type="link"
+                  className={styles.instanceName}
+                  onClick={() => setSelectedId(robot.id)}
+                >
+                  {robot.displayName}
+                </Button>
+                <span className={styles.instanceId}>{robot.id}</span>
+              </div>
+            </div>
           ),
         },
-        { title: "真实机器人序列号", dataIndex: "serialNo", key: "serialNo" },
+        {
+          title: "真实机器人序列号",
+          dataIndex: "serialNo",
+          key: "serialNo",
+          width: 170,
+          render: (value: string) => (
+            <code className={styles.serial}>{value}</code>
+          ),
+        },
         {
           title: "绑定模型",
           key: "model",
-          render: (_value, robot) =>
-            modelLabel(
+          width: 260,
+          render: (_value, robot) => {
+            const label = modelLabel(
               bootstrapById.get(robot.id)?.effectiveModelBinding
                 ?.robotModelVersionId ?? null,
               versionLabels,
-            ),
+            );
+            return (
+              <div className={styles.modelCell}>
+                <Boxes size={16} aria-hidden="true" />
+                <span className={label === "未绑定" ? styles.muted : undefined}>
+                  {label}
+                </span>
+              </div>
+            );
+          },
         },
         {
           title: "生命周期",
           key: "lifecycle",
+          width: 120,
           render: (_value, robot) => (
             <StatusTag
               status={robot.lifecycle}
@@ -273,6 +350,7 @@ export function Component() {
         {
           title: "连接状态",
           key: "connectivity",
+          width: 120,
           render: (_value, robot) => (
             <StatusTag
               status={robot.connectivity}
@@ -281,7 +359,55 @@ export function Component() {
             />
           ),
         },
-        { title: "实例 ID", dataIndex: "id", key: "id" },
+        {
+          title: "操作",
+          key: "actions",
+          width: 250,
+          fixed: "right",
+          render: (_value, robot) => (
+            <Flex className={styles.rowActions} gap={2} wrap={false}>
+              <Button
+                type="text"
+                size="small"
+                icon={<Eye size={15} aria-hidden="true" />}
+                onClick={() => setSelectedId(robot.id)}
+              >
+                查看
+              </Button>
+              {canManage ? (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<Pencil size={15} aria-hidden="true" />}
+                  onClick={() => openRename(robot)}
+                >
+                  编辑
+                </Button>
+              ) : null}
+              {canManage && canBindModel ? (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<Link2 size={15} aria-hidden="true" />}
+                  onClick={() => openBinding(robot.id)}
+                >
+                  模型
+                </Button>
+              ) : null}
+              {canManage ? (
+                <Button
+                  danger
+                  type="text"
+                  size="small"
+                  icon={<Trash2 size={15} aria-hidden="true" />}
+                  onClick={() => openDelete(robot.id)}
+                >
+                  删除
+                </Button>
+              ) : null}
+            </Flex>
+          ),
+        },
       ]}
     />
   );
@@ -319,34 +445,55 @@ export function Component() {
           ),
         }}
         summary={
-          <div className={styles.summary}>
-            <div>
-              <Bot aria-hidden="true" />
-              <span>实例总数</span>
-              <strong>{items.length}</strong>
+          <div className={styles.overview}>
+            <div className={styles.overviewIntro}>
+              <span className={styles.overviewIcon} aria-hidden="true">
+                <Bot size={22} />
+              </span>
+              <div>
+                <strong>一台真实机器人，对应一个实例</strong>
+                <p>
+                  实例负责机器人身份和模型绑定；LeRobot、MCAP
+                  等格式在上传时识别。
+                </p>
+              </div>
             </div>
-            <div>
-              <Cable aria-hidden="true" />
-              <span>在线</span>
-              <strong>
-                {items.filter((item) => item.connectivity === "ONLINE").length}
-              </strong>
-            </div>
-            <div>
-              <Boxes aria-hidden="true" />
-              <span>已绑定模型</span>
-              <strong>
-                {
-                  [...bootstrapById.values()].filter(
-                    (item) => item.effectiveModelBinding,
-                  ).length
-                }
-              </strong>
+            <div className={styles.metrics} aria-label="实例统计">
+              <div>
+                <Bot aria-hidden="true" size={17} />
+                <span>全部实例</span>
+                <strong>{items.length}</strong>
+              </div>
+              <div>
+                <Cable aria-hidden="true" size={17} />
+                <span>在线</span>
+                <strong>
+                  {
+                    items.filter((item) => item.connectivity === "ONLINE")
+                      .length
+                  }
+                </strong>
+              </div>
+              <div>
+                <Boxes aria-hidden="true" size={17} />
+                <span>已绑定模型</span>
+                <strong>
+                  {bootstraps.some((item) => item.isPending)
+                    ? "—"
+                    : [...bootstrapById.values()].filter(
+                        (item) => item.effectiveModelBinding,
+                      ).length}
+                </strong>
+              </div>
             </div>
           </div>
         }
         filters={
           <div className={styles.filters}>
+            <div className={styles.filterLabel}>
+              <strong>查找实例</strong>
+              <span>按名称、序列号或状态筛选</span>
+            </div>
             <Input.Search
               allowClear
               aria-label="搜索机器人实例"
@@ -414,15 +561,28 @@ export function Component() {
           />
         ) : selected ? (
           <Space orientation="vertical" size="middle" className={styles.detail}>
-            <Descriptions bordered size="small" column={1}>
+            <div className={styles.detailHero}>
+              <span className={styles.detailAvatar} aria-hidden="true">
+                <Bot size={24} />
+              </span>
+              <div>
+                <strong>{selected.displayName}</strong>
+                <span>序列号 {selected.serialNo}</span>
+              </div>
+              <StatusTag
+                status={selected.lifecycle}
+                label={lifecycleLabels[selected.lifecycle]}
+                known={selected.lifecycle !== "UNKNOWN"}
+                tone={selected.lifecycle === "ACTIVE" ? "success" : "warning"}
+              />
+            </div>
+            <Descriptions
+              size="small"
+              column={1}
+              className={styles.descriptions}
+            >
               <Descriptions.Item label="实例 ID">
                 {selected.id}
-              </Descriptions.Item>
-              <Descriptions.Item label="序列号">
-                {selected.serialNo}
-              </Descriptions.Item>
-              <Descriptions.Item label="生命周期">
-                {lifecycleLabels[selected.lifecycle]}
               </Descriptions.Item>
               <Descriptions.Item label="连接状态">
                 {selected.connectivity.state}
@@ -437,53 +597,61 @@ export function Component() {
                 <Tag>按每次上传识别</Tag>
               </Descriptions.Item>
             </Descriptions>
-            <Flex gap={8} wrap>
-              <Button href="/ingest/sources?sourceType=ROBOT">
-                查看数据源与上传身份
-              </Button>
-              {canManage ? (
-                <Button
-                  icon={<Pencil size={15} />}
-                  onClick={() => {
-                    setRenameValue(selected.displayName);
-                    setRenameOpen(true);
-                  }}
-                >
-                  编辑名称
+            <div className={styles.detailSection}>
+              <span className={styles.sectionLabel}>实例操作</span>
+              <Flex gap={8} wrap>
+                <Button href="/ingest/sources?sourceType=ROBOT">
+                  数据源与上传身份
                 </Button>
-              ) : null}
-              {canManage &&
-              lifecycleTransitions[selected.lifecycle].length > 0 ? (
-                <Button onClick={() => setLifecycleOpen(true)}>
-                  变更生命周期
-                </Button>
-              ) : null}
-              {canManage && canBindModel ? (
-                <Button onClick={() => setBindOpen(true)}>重新绑定模型</Button>
-              ) : null}
-              {canManage ? (
+                {canManage ? (
+                  <Button
+                    icon={<Pencil size={15} aria-hidden="true" />}
+                    onClick={() => {
+                      setRenameTargetId(selected.id);
+                      setRenameValue(selected.displayName);
+                      updateRobot.reset();
+                      setRenameOpen(true);
+                    }}
+                  >
+                    编辑名称
+                  </Button>
+                ) : null}
+                {canManage &&
+                lifecycleTransitions[selected.lifecycle].length > 0 ? (
+                  <Button onClick={() => setLifecycleOpen(true)}>
+                    变更生命周期
+                  </Button>
+                ) : null}
+                {canManage && canBindModel ? (
+                  <Button
+                    onClick={() => {
+                      setBindTargetId(selected.id);
+                      setBindVersion("");
+                      bindModel.reset();
+                      setBindOpen(true);
+                    }}
+                  >
+                    重新绑定模型
+                  </Button>
+                ) : null}
+              </Flex>
+            </div>
+            {canManage ? (
+              <div className={styles.dangerZone}>
+                <div>
+                  <strong>删除机器人实例</strong>
+                  <span>
+                    模型绑定会一并移除；存在业务数据时系统会阻止删除。
+                  </span>
+                </div>
                 <Button
                   danger
-                  icon={<Trash2 size={15} />}
-                  disabled={
-                    selected.lifecycle !== "DRAFT" ||
-                    Boolean(selected.effectiveModelBinding)
-                  }
-                  onClick={() => setDeleteOpen(true)}
+                  icon={<Trash2 size={15} aria-hidden="true" />}
+                  onClick={() => openDelete(selected.id)}
                 >
                   删除实例
                 </Button>
-              ) : null}
-            </Flex>
-            {canManage &&
-            (selected.lifecycle !== "DRAFT" ||
-              selected.effectiveModelBinding) ? (
-              <Alert
-                type="info"
-                showIcon
-                title="该实例已进入业务链路，不能直接删除"
-                description="只有未绑定模型、未关联数据源或上传身份的草稿实例可以永久删除；已使用的实例请通过“变更生命周期”停用或退役，以保留上传和审计记录。"
-              />
+              </div>
             ) : null}
           </Space>
         ) : null}
@@ -564,19 +732,27 @@ export function Component() {
         title="编辑实例名称"
         okText="保存"
         confirmLoading={updateRobot.isPending}
-        onCancel={() => setRenameOpen(false)}
+        onCancel={() => {
+          setRenameOpen(false);
+          setRenameTargetId(null);
+        }}
         onOk={() =>
-          selected &&
+          renameTarget &&
           updateRobot.mutate(
             {
-              robotId: selected.id,
-              etag: selected.etag,
+              robotId: renameTarget.id,
+              etag: renameTarget.etag,
               displayName: renameValue.trim(),
             },
-            { onSuccess: () => setRenameOpen(false) },
+            {
+              onSuccess: () => {
+                setRenameOpen(false);
+                setRenameTargetId(null);
+              },
+            },
           )
         }
-        okButtonProps={{ disabled: !renameValue.trim() }}
+        okButtonProps={{ disabled: !renameTarget || !renameValue.trim() }}
       >
         {updateRobot.error ? (
           <Alert
@@ -656,27 +832,31 @@ export function Component() {
         title="重新绑定机器人模型"
         okText="绑定"
         confirmLoading={bindModel.isPending}
-        onCancel={() => setBindOpen(false)}
+        onCancel={() => {
+          setBindOpen(false);
+          setBindTargetId(null);
+        }}
         onOk={() =>
-          selected &&
+          bindTarget &&
           bindVersion &&
           bindModel.mutate(
             {
               versionId: bindVersion,
-              robotId: selected.id,
-              robotEtag: selected.etag,
+              robotId: bindTarget.id,
+              robotEtag: bindTarget.etag,
               idempotencyKey: createMutationIntentKey(),
             },
             {
               onSuccess: () => {
                 setBindOpen(false);
+                setBindTargetId(null);
                 setBindVersion("");
                 void detail.refetch();
               },
             },
           )
         }
-        okButtonProps={{ disabled: !bindVersion }}
+        okButtonProps={{ disabled: !bindTarget || !bindVersion }}
       >
         <div className={styles.form}>
           {bindModel.error ? (
@@ -700,30 +880,50 @@ export function Component() {
       </Modal>
 
       <Modal
-        open={deleteOpen}
-        title="删除草稿机器人实例"
-        okText="删除"
+        open={deleteTargetId !== null}
+        title="删除机器人实例"
+        okText="确认删除"
         okButtonProps={{ danger: true }}
         confirmLoading={deleteRobot.isPending}
-        onCancel={() => setDeleteOpen(false)}
+        onCancel={() => {
+          if (!deleteRobot.isPending) setDeleteTargetId(null);
+        }}
         onOk={() =>
-          selected &&
-          deleteRobot.mutate(selected.id, {
+          deleteTargetId &&
+          deleteRobot.mutate(deleteTargetId, {
             onSuccess: () => {
-              setDeleteOpen(false);
-              setSelectedId(null);
+              if (selectedId === deleteTargetId) setSelectedId(null);
+              setDeleteTargetId(null);
             },
           })
         }
       >
-        {deleteRobot.error ? (
+        <div className={styles.deleteConfirm}>
+          {deleteRobot.error ? (
+            <Alert
+              type="error"
+              showIcon
+              title={operationError(deleteRobot.error)}
+            />
+          ) : null}
           <Alert
             type="error"
             showIcon
-            title={operationError(deleteRobot.error)}
+            title="此操作不可撤销"
+            description="机器人实例及其模型绑定将被永久删除。若实例已经关联数据源、上传身份、项目、拓扑或历史数据，系统会拒绝删除并告诉你需要先解除的关联。"
           />
-        ) : null}
-        <p>仅未绑定模型、未被数据源或上传身份使用的草稿实例可以删除。</p>
+          {deleteTarget ? (
+            <div className={styles.deleteTarget}>
+              <span className={styles.instanceAvatar} aria-hidden="true">
+                <Bot size={18} />
+              </span>
+              <div>
+                <strong>{deleteTarget.displayName}</strong>
+                <span>真实机器人序列号：{deleteTarget.serialNo}</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </Modal>
     </main>
   );

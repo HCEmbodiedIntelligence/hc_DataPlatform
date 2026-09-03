@@ -182,7 +182,7 @@ export async function createRobot(
   );
 }
 
-export async function deleteProvisionalRobot(
+export async function deleteRobot(
   organizationId: string,
   robotId: string,
 ): Promise<void> {
@@ -271,13 +271,13 @@ export function useTransitionRobotLifecycle() {
   });
 }
 
-export function useDeleteProvisionalRobot() {
+export function useDeleteRobot() {
   const organizationId = useRobotOrganizationId();
   const client = useQueryClient();
   return useMutation({
     mutationFn: (robotId: string) => {
       if (!organizationId) throw new Error("当前会话没有可用的组织范围。");
-      return deleteProvisionalRobot(organizationId, robotId);
+      return deleteRobot(organizationId, robotId);
     },
     onSuccess: () => void client.invalidateQueries({ queryKey: ["robots"] }),
   });

@@ -17,6 +17,14 @@ from hc_data_platform.core.errors import problem
 HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete"})
 ANONYMOUS_OPERATIONS = frozenset(
     {
+        (
+            "GET",
+            "/api/v1/organizations/{organization_id}/robot-model-assets/content",
+        ),
+        (
+            "PUT",
+            "/api/v1/organizations/{organization_id}/robot-model-assets/upload-part",
+        ),
         ("GET", "/api/v1/auth/config"),
         ("POST", "/api/v1/auth/registrations"),
         ("POST", "/api/v1/auth/sessions"),

@@ -422,6 +422,89 @@
   line-height: 1.55;
 }
 
+.mappingPanel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #e1e4ef;
+  border-radius: 10px;
+  background: #f9f9fd;
+}
+
+.mappingPanelHeader {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.mappingPanelHeader > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mappingPanelHeader strong {
+  color: #34384f;
+  font-size: 12px;
+}
+
+.mappingPanelHeader p {
+  margin: 0;
+  color: #696e82;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mappingEditor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mappingEditRow {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #e1e4ef;
+  border-radius: 8px;
+  background: #fff;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mappingEditRow :global(.ant-select) {
+  width: 100%;
+}
+
+.mappingTableWrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #e1e4ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mappingTableWrap .definitionTable {
+  min-width: 420px;
+}
+
+.mappingTableWrap .definitionTable th,
+.mappingTableWrap .definitionTable td {
+  border-width: 0 0 1px;
+}
+
+.mappingTableWrap .definitionTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.mappingTableWrap code {
+  color: #34384f;
+  overflow-wrap: anywhere;
+}
+
 .tree {
   display: grid;
   gap: 2px;

@@ -1,5 +1,6 @@
 import type { IngestScope } from "../../entities/data-source";
 import { request } from "../../shared/api/http-client";
+import { isDomainError } from "../../shared/api/domain-error";
 import {
   AUTHORIZATION_BATCH_SIZE,
   MAX_MULTIPART_PARTS,
@@ -8,7 +9,11 @@ import {
 
 export const LEROBOT_MULTIPART_BYTES = 32 * 1024 ** 2;
 const MAX_PARALLEL_PARTS = 4;
+export const MAX_SAME_ORIGIN_PROXY_PARTS = 2;
 const PART_TIMEOUT_MS = 12 * 60 * 1_000;
+export const LEROBOT_PROXY_PART_MAX_ATTEMPTS = 4;
+export const LEROBOT_PROXY_RETRY_BASE_DELAY_MS = 500;
+const LEROBOT_PROXY_RETRY_MAX_DELAY_MS = 30_000;
 
 export interface LeRobotTargetBinding {
   readonly datasetId: string;
@@ -20,6 +25,7 @@ interface LeRobotSourceDeclaration {
   readonly path: string;
   readonly size: number;
   readonly part_count: number;
+  readonly last_modified_ms: number;
 }
 
 export interface LeRobotImportManifest {
@@ -118,6 +124,7 @@ export function buildLeRobotImportManifest(
       path,
       size: file.size,
       part_count: partPlan(file.size).partCount,
+      last_modified_ms: file.lastModified,
     })),
   };
 }
@@ -191,21 +198,143 @@ async function putPartThroughPlatform(
   });
 }
 
+function retryableProxyPartError(error: unknown): boolean {
+  return (
+    isDomainError(error) && (error.retryable || error.code === "NETWORK_ERROR")
+  );
+}
+
+function retryDelayMs(error: unknown, failedAttempt: number): number {
+  const exponentialDelay = Math.min(
+    LEROBOT_PROXY_RETRY_MAX_DELAY_MS,
+    LEROBOT_PROXY_RETRY_BASE_DELAY_MS * 2 ** (failedAttempt - 1),
+  );
+  if (!isDomainError(error) || error.retryAfterSeconds === null) {
+    return exponentialDelay;
+  }
+  return Math.min(
+    LEROBOT_PROXY_RETRY_MAX_DELAY_MS,
+    Math.max(exponentialDelay, error.retryAfterSeconds * 1_000),
+  );
+}
+
+function abortableDelay(
+  milliseconds: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("LeRobot 分片传输已暂停。"));
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      window.clearTimeout(timeout);
+      reject(new Error("LeRobot 分片传输已暂停。"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function putPartThroughPlatformWithRetry(
+  scope: IngestScope,
+  root: string,
+  importId: string,
+  binding: LeRobotTargetBinding,
+  sourcePath: string,
+  multipartUploadId: string,
+  partNumber: number,
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<void> {
+  for (
+    let attempt = 1;
+    attempt <= LEROBOT_PROXY_PART_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      await putPartThroughPlatform(
+        scope,
+        root,
+        importId,
+        binding,
+        sourcePath,
+        multipartUploadId,
+        partNumber,
+        blob,
+        signal,
+      );
+      return;
+    } catch (error) {
+      if (
+        signal?.aborted ||
+        attempt === LEROBOT_PROXY_PART_MAX_ATTEMPTS ||
+        !retryableProxyPartError(error)
+      ) {
+        throw error;
+      }
+      await abortableDelay(retryDelayMs(error, attempt), signal);
+    }
+  }
+}
+
 async function inParallel<T>(
   values: readonly T[],
   limit: number,
   worker: (value: T) => Promise<void>,
+  onFailure?: () => void,
 ): Promise<void> {
   let cursor = 0;
+  let firstFailure: unknown;
   await Promise.all(
     Array.from({ length: Math.min(limit, values.length) }, async () => {
-      while (cursor < values.length) {
+      while (cursor < values.length && firstFailure === undefined) {
         const index = cursor++;
         const value = values[index];
-        if (value !== undefined) await worker(value);
+        if (value === undefined) continue;
+        try {
+          await worker(value);
+        } catch (error) {
+          if (firstFailure === undefined) {
+            firstFailure = error;
+            onFailure?.();
+          }
+        }
       }
     }),
   );
+  if (firstFailure !== undefined) throw firstFailure;
+}
+
+function concurrencyGate(limit: number) {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+
+  const acquire = async () => {
+    if (active < limit) {
+      active += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      waiting.push(() => {
+        active += 1;
+        resolve();
+      });
+    });
+  };
+
+  return async <T>(operation: () => Promise<T>): Promise<T> => {
+    await acquire();
+    try {
+      return await operation();
+    } finally {
+      active -= 1;
+      waiting.shift()?.();
+    }
+  };
 }
 
 export async function uploadNativeLeRobot(
@@ -275,11 +404,18 @@ export async function uploadNativeLeRobot(
       if (!asset?.multipart_upload_id) {
         throw new Error(`服务端没有为原始文件 ${source.path} 创建上传授权。`);
       }
+      if (asset.completed) {
+        completedBytes += source.file.size;
+        completedFiles += 1;
+        progress("uploading", completedBytes);
+        continue;
+      }
       const multipartUploadId = asset.multipart_upload_id;
       const plan = partPlan(source.file.size);
       // Renew URLs just in time. On retry this call also tells us whether the
       // immutable object already completed before the previous response failed.
       const authorizations = new Map<number, PartAuthorization>();
+      const uploadedPartNumbers = new Set<number>();
       let alreadyCompleted = false;
       for (
         let start = 1;
@@ -298,6 +434,7 @@ export async function uploadNativeLeRobot(
         const renewed = await request<{
           readonly path: string;
           readonly parts: readonly PartAuthorization[];
+          readonly uploaded_part_numbers?: readonly number[];
           readonly completed: boolean;
         }>({
           method: "POST",
@@ -319,6 +456,9 @@ export async function uploadNativeLeRobot(
         renewed.parts.forEach((part) =>
           authorizations.set(part.part_number, part),
         );
+        renewed.uploaded_part_numbers?.forEach((partNumber) =>
+          uploadedPartNumbers.add(partNumber),
+        );
       }
       if (alreadyCompleted) {
         completedBytes += source.file.size;
@@ -327,50 +467,50 @@ export async function uploadNativeLeRobot(
         continue;
       }
 
-      const loadedByPart = new Map<number, number>();
-      progress("uploading", completedBytes);
-      await inParallel(
-        Array.from({ length: plan.partCount }, (_, index) => index + 1),
-        MAX_PARALLEL_PARTS,
-        async (partNumber) => {
-          const authorization = authorizations.get(partNumber);
-          if (!authorization)
-            throw new Error(
-              `原始文件 ${source.path} 缺少分片 ${partNumber} 授权。`,
-            );
+      const loadedByPart = new Map<number, number>(
+        [...uploadedPartNumbers].map((partNumber) => {
           const start = (partNumber - 1) * plan.partSize;
-          const blob = source.file.slice(
-            start,
-            Math.min(source.file.size, start + plan.partSize),
-          );
-          const reportPartProgress = (loaded: number) => {
-            loadedByPart.set(partNumber, loaded);
-            progress(
-              "uploading",
-              completedBytes +
-                [...loadedByPart.values()].reduce(
-                  (total, value) => total + value,
-                  0,
-                ),
-            );
-          };
-          if (transferMode === "direct") {
-            try {
-              await putPart(
-                authorization,
-                blob,
-                reportPartProgress,
-                options.signal,
+          return [
+            partNumber,
+            Math.min(source.file.size, start + plan.partSize) - start,
+          ];
+        }),
+      );
+      const pendingPartNumbers = Array.from(
+        { length: plan.partCount },
+        (_, index) => index + 1,
+      ).filter((partNumber) => !uploadedPartNumbers.has(partNumber));
+      const runProxyPart = concurrencyGate(MAX_SAME_ORIGIN_PROXY_PARTS);
+      const partController = new AbortController();
+      const abortPartBatch = () => partController.abort();
+      if (options.signal?.aborted) abortPartBatch();
+      else
+        options.signal?.addEventListener("abort", abortPartBatch, {
+          once: true,
+        });
+      progress(
+        "uploading",
+        completedBytes +
+          [...loadedByPart.values()].reduce((total, value) => total + value, 0),
+      );
+      try {
+        await inParallel(
+          pendingPartNumbers,
+          MAX_PARALLEL_PARTS,
+          async (partNumber) => {
+            const authorization = authorizations.get(partNumber);
+            if (!authorization)
+              throw new Error(
+                `原始文件 ${source.path} 缺少分片 ${partNumber} 授权。`,
               );
-              reportPartProgress(blob.size);
-              return;
-            } catch {
-              if (options.signal?.aborted) {
-                throw new Error("LeRobot 分片传输已暂停。");
-              }
-              transferMode = "proxy";
-              options.onSession?.(uploadResume());
-              loadedByPart.set(partNumber, 0);
+            const start = (partNumber - 1) * plan.partSize;
+            const blob = source.file.slice(
+              start,
+              Math.min(source.file.size, start + plan.partSize),
+            );
+            const reportPartProgress = (loaded: number) => {
+              if (partController.signal.aborted) return;
+              loadedByPart.set(partNumber, loaded);
               progress(
                 "uploading",
                 completedBytes +
@@ -379,22 +519,54 @@ export async function uploadNativeLeRobot(
                     0,
                   ),
               );
+            };
+            if (transferMode === "direct") {
+              try {
+                await putPart(
+                  authorization,
+                  blob,
+                  reportPartProgress,
+                  partController.signal,
+                );
+                reportPartProgress(blob.size);
+                return;
+              } catch {
+                if (partController.signal.aborted) {
+                  throw new Error("LeRobot 分片传输已暂停。");
+                }
+                transferMode = "proxy";
+                options.onSession?.(uploadResume());
+                loadedByPart.set(partNumber, 0);
+                progress(
+                  "uploading",
+                  completedBytes +
+                    [...loadedByPart.values()].reduce(
+                      (total, value) => total + value,
+                      0,
+                    ),
+                );
+              }
             }
-          }
-          await putPartThroughPlatform(
-            scope,
-            root,
-            grant.import_id,
-            binding,
-            source.path,
-            multipartUploadId,
-            partNumber,
-            blob,
-            options.signal,
-          );
-          reportPartProgress(blob.size);
-        },
-      );
+            await runProxyPart(() =>
+              putPartThroughPlatformWithRetry(
+                scope,
+                root,
+                grant.import_id,
+                binding,
+                source.path,
+                multipartUploadId,
+                partNumber,
+                blob,
+                partController.signal,
+              ),
+            );
+            reportPartProgress(blob.size);
+          },
+          abortPartBatch,
+        );
+      } finally {
+        options.signal?.removeEventListener("abort", abortPartBatch);
+      }
       await request({
         method: "POST",
         path: `${root}/${encodeURIComponent(grant.import_id)}/assets:complete`,

@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from threading import RLock
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import quote, unquote, urlparse
 from uuid import uuid4
 
@@ -124,6 +124,36 @@ class FilesystemRobotModelStorage:
             part_number=part_number,
             etag=hashlib.md5(data, usedforsecurity=False).hexdigest(),
             size=len(data),
+            crc64=crc64_ecma(data),
+        )
+
+    def upload_part_stream(
+        self,
+        key: str,
+        upload_id: str,
+        part_number: int,
+        body: BinaryIO,
+        size: int,
+    ) -> MultipartPart:
+        """Persist a proxied multipart body without contacting object storage."""
+
+        if not 1 <= part_number <= 10_000:
+            raise ValueError("part_number must be between 1 and 10000")
+        if size < 0:
+            raise ValueError("multipart part size must not be negative")
+        if self.head(key) is not None:
+            raise _immutable_object_exists()
+        data = body.read(size + 1)
+        if len(data) != size:
+            raise ValueError("multipart part stream size does not match its declaration")
+        directory = self._multipart_dir(upload_id)
+        directory.mkdir(parents=False, exist_ok=True)
+        destination = directory / f"part-{part_number:05d}"
+        self._write_atomic(destination, data)
+        return MultipartPart(
+            part_number=part_number,
+            etag=hashlib.md5(data, usedforsecurity=False).hexdigest(),
+            size=size,
             crc64=crc64_ecma(data),
         )
 

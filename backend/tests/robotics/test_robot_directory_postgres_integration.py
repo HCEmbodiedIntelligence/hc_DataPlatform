@@ -36,7 +36,7 @@ def test_migrated_database_has_no_project_robot_tables() -> None:
         assert cursor.fetchone() == ("robotics.robot_assets",)
 
 
-def test_postgres_deletes_only_a_provisional_robot() -> None:
+def test_postgres_deletes_an_unused_active_robot() -> None:
     dsn = os.getenv("HC_TEST_POSTGRES_DSN")
     if not dsn:
         pytest.skip("HC_TEST_POSTGRES_DSN is not set")
@@ -53,7 +53,7 @@ def test_postgres_deletes_only_a_provisional_robot() -> None:
                     lifecycle_status, connectivity_state, etag, topology_revision,
                     allowed_actions, revision, created_at, updated_at
                 ) VALUES (
-                    %s, %s, '临时机器人', 'TEMP-DELETE-001', 'DRAFT', 'OFFLINE',
+                    %s, %s, '未使用机器人', 'TEMP-DELETE-001', 'ACTIVE', 'OFFLINE',
                     '"robot-provisional-delete:1"', 'robot-provisional-delete:1',
                     '[]'::jsonb, 1, %s, %s
                 )
@@ -61,14 +61,14 @@ def test_postgres_deletes_only_a_provisional_robot() -> None:
                 (organization_id, robot_id, now, now),
             )
         repository = PostgresOrganizationRobotAssetRepository(lambda: psycopg.connect(dsn))
-        assert repository.delete_provisional_robot(
+        assert repository.delete_robot(
             organization_id=organization_id,
             robot_id=robot_id,
             actor_id="integration-test",
             request_id="provisional-delete",
             occurred_at=now,
         )
-        assert not repository.delete_provisional_robot(
+        assert not repository.delete_robot(
             organization_id=organization_id,
             robot_id=robot_id,
             actor_id="integration-test",

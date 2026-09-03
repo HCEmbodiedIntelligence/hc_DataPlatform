@@ -19,12 +19,12 @@ current_development_baseline:
     helm_chart: 0.1.0
     helm_app_version: 0.1.0
   database:
-    migration_count: 121
-    manifest_sha256: a557c299285d53c9f619c03580d9c80f271dad6058c549f0d82abf1b0f8470c9
+    migration_count: 124
+    manifest_sha256: 4b89c318e559b0e958e44241bbbdf84205470bd1607df44c787bd78e50c56ede
     forward_only: true
     checksum_drift_allowed: false
   api:
-    openapi_sha256: 98c8913d87dc83bdca45e6f0b7a4b37809a43a70d4019d247eb7f2e9e6264156
+    openapi_sha256: 5974ff0f42306724a30639451c92ba28aa087983ba441f9bb236d5a5423a0889
     generated_client_drift_gate: enabled
     previous_to_current_compatibility_gate: enabled
   temporal:

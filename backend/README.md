@@ -6,6 +6,11 @@
 
 ## 本地开发
 
+> “本地服务器验证”是 `codex/local-server-validation` 分支正在实现的目标，尚未完成。完成后，
+> 本地完整栈必须在不访问 OSS 的情况下启动，并在本机完成上传、持久化、处理和读取验收。
+> 当前差距与完成标准见
+> [`plan/LOCAL-SERVER-VALIDATION-MILESTONE.md`](../plan/LOCAL-SERVER-VALIDATION-MILESTONE.md)。
+
 支持 Python 3.10 和 3.12。依赖解析由 BE-01 负责并提交至 `uv.lock`；其他工作包通过
 `docs/dep-requests/BE-*.md` 申请新增依赖。API 和 Worker 镜像会安装 BE-10 所需的
 `ffmpeg`/`ffprobe` 运行时，包括 `libx264` 编码器和 HLS 复用器。API 还会安装
@@ -29,7 +34,8 @@ uv sync --frozen --extra dev --extra database --extra workflow --extra storage -
 uv run uvicorn hc_data_platform.core.app:create_app --factory --reload
 ```
 
-本地 Compose 不再启动 MinIO；API、Worker 和 Lance 会直接访问已创建的阿里云 OSS Bucket。
+当前基线的本地 Compose 不启动 MinIO；API、Worker 和 Lance 仍访问配置的阿里云 OSS Bucket。
+这正是本地服务器验证里程碑需要消除的本地验收依赖，不代表目标状态。
 先在 `backend` 目录执行以下命令，把仓库根目录配置样例复制为 Compose 会读取的 `.env`，
 填入该 Bucket 的真实值后再启动本地依赖：
 
@@ -53,7 +59,7 @@ API 启动前，Compose 会在 PostgreSQL 咨询锁保护下，按顺序且仅�
 Compose 使用一个明确仅限本地的 HS256 签名密钥，以便在没有外部身份提供方时测试受保护路由。
 在所有共享环境中，都必须改用 HTTPS JWKS 端点和 RS256；该签名密钥绝不能在本地开发以外复用。
 
-### 阿里云 OSS 与浏览器直传
+### 生产对象存储与当前浏览器直传基线
 
 `HC_OBJECT_STORE_ENDPOINT` 是 API、Worker、Lance、readiness 以及所有对象读写使用的服务端
 端点；阿里云内网部署可使用与 Bucket 地域一致的 internal endpoint。
@@ -66,6 +72,9 @@ Bucket 必须预先创建。还需在 OSS 控制台为实际前端来源配置�
 允许 `content-type` 请求头，暴露 `ETag`，`MaxAgeSeconds` 可设为 600；不要使用通配来源，也不要
 开启 credentials。开发时通常需要加入 `http://127.0.0.1:8088`、`http://localhost:8088`、
 `http://127.0.0.1:5174` 和 `http://localhost:5174`。
+
+这些 OSS/CORS 要求只描述当前基线和生产部署能力，不再作为“本地服务器验证”里程碑的验收
+条件。里程碑模式下，浏览器、API 和 Worker 都不得向 OSS 发送请求。
 
 staging/production 必须显式配置浏览器端点为 HTTPS 公网 FQDN，不能使用 localhost、loopback、
 容器服务名或裸主机名。生产对象存储的基础设施 owner 还必须在 bucket 上配置与平台实际域名

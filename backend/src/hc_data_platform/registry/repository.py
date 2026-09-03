@@ -835,17 +835,17 @@ class InMemoryRegistryRepository:
                 if key[0] == organization_id and candidate_version_id == version_id:
                     del self._assets[key]
                     self._asset_contents.pop(key, None)
-            for key in tuple(self._joint_mappings):
-                if key[0] == organization_id and key[2] == version_id:
-                    del self._joint_mappings[key]
-            for key, item in tuple(self._publish_preflights.items()):
-                if key[0] == organization_id and item.version_id == version_id:
-                    del self._publish_preflights[key]
-            for key, (_fingerprint, response) in tuple(self._command_receipts.items()):
-                if key[0] == organization_id and (
-                    key[2] == version_id or response.id == version_id
+            for mapping_key in tuple(self._joint_mappings):
+                if mapping_key[0] == organization_id and mapping_key[2] == version_id:
+                    del self._joint_mappings[mapping_key]
+            for preflight_key, item in tuple(self._publish_preflights.items()):
+                if preflight_key[0] == organization_id and item.version_id == version_id:
+                    del self._publish_preflights[preflight_key]
+            for receipt_key, (_fingerprint, response) in tuple(self._command_receipts.items()):
+                if receipt_key[0] == organization_id and (
+                    receipt_key[2] == version_id or response.id == version_id
                 ):
-                    del self._command_receipts[key]
+                    del self._command_receipts[receipt_key]
 
             del self._versions[(organization_id, version_id)]
             remaining_versions = tuple(

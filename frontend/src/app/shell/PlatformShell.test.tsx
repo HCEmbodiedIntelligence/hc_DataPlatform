@@ -23,6 +23,10 @@ import {
   resetRuntimeConfigForTests,
 } from "../../shared/config/runtime";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
+import {
+  resetUploadQueueStoreForTests,
+  useUploadQueueStore,
+} from "../../pages/p03-upload-jobs/upload-queue-store";
 
 const scope = {
   organizationId: "org-shell-test",
@@ -36,6 +40,7 @@ function LocationProbe() {
 }
 
 beforeEach(() => {
+  resetUploadQueueStoreForTests();
   const getComputedStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
     getComputedStyle(element),
@@ -101,6 +106,7 @@ afterEach(() => {
   window.localStorage.clear();
   resetReleaseIdentityForTests();
   resetRuntimeConfigForTests();
+  resetUploadQueueStoreForTests();
   useShellStore.setState({
     principal: null,
     sessionToken: null,
@@ -174,6 +180,44 @@ function renderShell(
 }
 
 describe("PlatformShell", () => {
+  it("keeps active upload status visible while the user is on another page", () => {
+    useUploadQueueStore.setState({
+      scopeKey: `${scope.organizationId}/${scope.projectId}/${scope.regionCode}`,
+      items: [
+        {
+          id: "lerobot-shell-1",
+          scopeKey: `${scope.organizationId}/${scope.projectId}/${scope.regionCode}`,
+          sessionId: "a".repeat(32),
+          sourceType: "LEROBOT_NATIVE",
+          fileName: "factory-run",
+          dataPackageId: "dataset-a",
+          totalBytes: 100,
+          uploadedBytes: 30,
+          completedParts: 3,
+          totalParts: 10,
+          speedBytesPerSecond: null,
+          remainingSeconds: null,
+          transferStatus: "uploading",
+          serverStatus: null,
+          failedParts: [],
+          failedPartTransfers: [],
+          failureCode: null,
+          failureMessage: null,
+          requestId: null,
+          createdAt: "2026-09-01T00:00:00Z",
+          robotId: "robot-a",
+          collectionTaskId: "task-a",
+        },
+      ],
+    });
+
+    renderShell(undefined, defaultScopeOptions, "/dashboard");
+
+    const uploadLink = screen.getByRole("link", { name: "数据上传" });
+    expect(uploadLink).toHaveAttribute("title", "1 个上传任务正在进行");
+    expect(within(uploadLink).getByText("1")).toBeVisible();
+  });
+
   it("does not report a failed project snapshot in platform-only account mode", () => {
     useShellStore.setState({
       scope: null,

@@ -120,11 +120,13 @@ def create_organization_robot(
 
 @router.delete(
     "/{robot_id}",
+    # Preserve the published operation id for generated-client compatibility.
+    # The endpoint now accepts every organization robot, not only draft records.
     operation_id="deleteProvisionalOrganizationRobot",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=PROBLEM_RESPONSES,
 )
-def delete_provisional_organization_robot(
+def delete_organization_robot(
     organization_id: str,
     robot_id: str,
     request: Request,
@@ -133,7 +135,7 @@ def delete_provisional_organization_robot(
     service: ServiceDependency,
 ) -> None:
     _prepare(organization_id, response)
-    service.delete_provisional_robot(
+    service.delete_robot(
         auth=auth,
         organization_id=organization_id,
         robot_id=robot_id,

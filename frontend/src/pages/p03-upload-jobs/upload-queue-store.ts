@@ -54,8 +54,9 @@ export type QueueTransferStatus =
   | "needs-file";
 
 export const PART_TRANSFER_TIMEOUT_MS = 120_000;
-export const MAX_CONCURRENT_PART_UPLOADS = 8;
+export const MAX_CONCURRENT_PART_UPLOADS = 4;
 export const MAX_IN_FLIGHT_PART_BYTES = 128 * 1024 ** 2;
+export const UPLOAD_PROGRESS_PAINT_INTERVAL_MS = 250;
 /**
  * A 5 TiB object necessarily has roughly 524 MiB parts at the S3/OSS 10,000-part
  * ceiling.  A fixed two-minute timeout rejects such a part on otherwise usable
@@ -588,7 +589,7 @@ function itemFromRecovered(
           ? "服务端已将该上传标记为失败，请根据错误码核对后重试。"
           : session.source_type === "OBJECT_STORAGE_REFERENCE"
             ? "对象引用任务已恢复；请重试提交，平台会继续使用服务端已登记对象。"
-          : "浏览器不能在刷新后保留本地文件句柄；重新选择同一原文件即可从服务端分片断点继续。",
+            : "浏览器不能在刷新后保留本地文件句柄；重新选择同一原文件即可从服务端分片断点继续。",
     requestId: null,
     createdAt: session.created_at ?? new Date().toISOString(),
   };
@@ -723,7 +724,7 @@ async function uploadAuthorizationBatch(
 
   const paint = () => {
     const now = performance.now();
-    if (now - lastPaint < 90) return;
+    if (now - lastPaint < UPLOAD_PROGRESS_PAINT_INTERVAL_MS) return;
     lastPaint = now;
     const inFlight = [...activeProgress.values()].reduce(
       (sum, value) => sum + value,
@@ -1073,9 +1074,7 @@ async function prepareUploadSession(
   const plan = rawFile ? planUploadParts(rawFile.size) : null;
 
   if (sourceType === "BROWSER_MULTIPART" && (!rawFile || !plan)) {
-    throw new Error(
-      "浏览器数据包中未找到数据清单声明的 RAW_MCAP 原文件。",
-    );
+    throw new Error("浏览器数据包中未找到数据清单声明的 RAW_MCAP 原文件。");
   }
   if (rawFile && rawFile.size !== preflight.manifest.file_size) {
     throw new Error(
@@ -1232,9 +1231,7 @@ function preparationFailureItem(
     failedPartTransfers: [],
     failureCode: copy.problemCode ?? "UPLOAD_SESSION_CREATE_FAILED",
     failureMessage:
-      error instanceof Error && error.message
-        ? error.message
-        : copy.detail,
+      error instanceof Error && error.message ? error.message : copy.detail,
     requestId: copy.requestId,
     createdAt: new Date().toISOString(),
   };
@@ -1286,6 +1283,8 @@ async function runLeRobotUpload(
   const controller = new AbortController();
   runtime.controller = controller;
   runtime.intent = "run";
+  let acceptingProgress = true;
+  let lastProgressPaint = Number.NEGATIVE_INFINITY;
   updateItem(set, itemId, (current) => ({
     ...current,
     transferStatus: "uploading",
@@ -1299,7 +1298,21 @@ async function runLeRobotUpload(
       runtime.scope,
       runtime.selection,
       runtime.binding,
-      (progress: LeRobotUploadProgress) =>
+      (progress: LeRobotUploadProgress) => {
+        if (
+          !acceptingProgress ||
+          runtime.controller !== controller ||
+          runtime.intent !== "run" ||
+          controller.signal.aborted
+        )
+          return;
+        const now = performance.now();
+        if (
+          progress.stage === "uploading" &&
+          now - lastProgressPaint < UPLOAD_PROGRESS_PAINT_INTERVAL_MS
+        )
+          return;
+        lastProgressPaint = now;
         updateItem(set, itemId, (current) => ({
           ...current,
           transferStatus:
@@ -1307,7 +1320,8 @@ async function runLeRobotUpload(
           uploadedBytes: progress.uploadedBytes,
           completedParts: progress.completedFiles,
           totalParts: progress.totalFiles,
-        })),
+        }));
+      },
       runtime.resume,
       {
         signal: controller.signal,
@@ -1320,6 +1334,7 @@ async function runLeRobotUpload(
         },
       },
     );
+    acceptingProgress = false;
     updateItem(set, itemId, (current) => ({
       ...current,
       transferStatus: "committed",
@@ -1329,13 +1344,16 @@ async function runLeRobotUpload(
       remainingSeconds: 0,
     }));
   } catch (error) {
-    const failure =
-      error instanceof LeRobotUploadFailure ? error : null;
+    acceptingProgress = false;
+    if (runtime.controller !== controller) return;
+    const failure = error instanceof LeRobotUploadFailure ? error : null;
     if (failure) runtime.resume = failure.resume;
+    const interruptedIntent = leRobotRuntimeByItem.get(itemId)?.intent ?? "run";
+    controller.abort();
     const interruptedStatus =
-      runtime.intent === "pause"
+      interruptedIntent === "pause"
         ? "paused"
-        : runtime.intent === "offline"
+        : interruptedIntent === "offline"
           ? "offline"
           : "failed";
     const copy = uploadProblemCopy(failure?.originalError ?? error);
@@ -1722,12 +1740,20 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
       }));
     }
   },
-  clearSettled: () =>
+  clearSettled: () => {
+    const settledIds = get()
+      .items.filter((item) =>
+        ["committed", "cancelled"].includes(item.transferStatus),
+      )
+      .map((item) => item.id);
+    settledIds.forEach((itemId) => {
+      runtimeByItem.delete(itemId);
+      leRobotRuntimeByItem.delete(itemId);
+    });
     set((state) => ({
-      items: state.items.filter(
-        (item) => !["committed", "cancelled"].includes(item.transferStatus),
-      ),
-    })),
+      items: state.items.filter((item) => !settledIds.includes(item.id)),
+    }));
+  },
   handleOffline: () => {
     for (const item of get().items) {
       if (item.transferStatus !== "uploading") continue;
@@ -1742,8 +1768,7 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
           speedBytesPerSecond: null,
           remainingSeconds: null,
           failureCode: "NETWORK_OFFLINE",
-          failureMessage:
-            "网络已断开；已停止发送新分片。联网后会继续上传。",
+          failureMessage: "网络已断开；已停止发送新分片。联网后会继续上传。",
         }));
         continue;
       }

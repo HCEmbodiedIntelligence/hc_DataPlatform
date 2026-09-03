@@ -1,12 +1,6 @@
 import type { IngestScope } from "../../entities/data-source";
 import type { ManifestPreflight, UploadManifest } from "./formal-client";
 import type { BrowserSelectionMode } from "./components/UploadMethodPanel";
-import type {
-  LeRobotImportAccepted,
-  LeRobotTargetBinding,
-  LeRobotUploadResume,
-  LeRobotUploadProgress,
-} from "./lerobot-client";
 import {
   discoverFolderUploadBundles,
   detectLeRobotFolder,
@@ -28,9 +22,6 @@ export type UploadFlowPhase =
   | "precheck_failed"
   | "queue_ready"
   | "uploading"
-  | "lerobot_uploading"
-  | "lerobot_failed"
-  | "lerobot_completed"
   | "completed";
 
 export type UploadSourceChoice =
@@ -99,29 +90,6 @@ export type UploadFlowState =
     }
   | { readonly phase: "queue_ready" }
   | { readonly phase: "uploading" }
-  | {
-      readonly phase: "lerobot_uploading";
-      readonly selection: LocalUploadSelection;
-      readonly binding: LeRobotTargetBinding;
-      readonly progress: LeRobotUploadProgress;
-    }
-  | {
-      readonly phase: "lerobot_failed";
-      readonly selection: LocalUploadSelection;
-      readonly binding: LeRobotTargetBinding;
-      readonly resume: LeRobotUploadResume | null;
-      readonly problem: {
-        readonly title: string;
-        readonly detail: string;
-        readonly problemCode: string | null;
-        readonly requestId: string | null;
-        readonly retryable: boolean;
-      };
-    }
-  | {
-      readonly phase: "lerobot_completed";
-      readonly result: LeRobotImportAccepted;
-    }
   | { readonly phase: "completed" };
 
 export interface InspectLocalSelectionInput {

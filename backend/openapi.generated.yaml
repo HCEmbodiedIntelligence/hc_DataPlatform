@@ -15272,6 +15272,13 @@ components:
           type: array
         path:
           type: string
+        uploaded_part_numbers:
+          default: []
+          items:
+            maximum: 10000
+            minimum: 1
+            type: integer
+          type: array
       required:
       - path
       - parts
@@ -15279,6 +15286,13 @@ components:
     LeRobotSourceFileV1:
       additionalProperties: false
       properties:
+        last_modified_ms:
+          anyOf:
+          - maximum: 9007199254740991
+            minimum: 0
+            type: integer
+          - type: 'null'
+          default: null
         part_count:
           maximum: 10000
           minimum: 1
@@ -28730,7 +28744,7 @@ paths:
           description: The organization robot asset request could not be completed.
       security:
       - bearerAuth: []
-      summary: Delete Provisional Organization Robot
+      summary: Delete Organization Robot
       tags:
       - organization-robot-assets
     patch:
@@ -40899,7 +40913,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LeRobotImportGrantV1'
-          description: Native LeRobot Raw multipart grants.
+          description: Native LeRobot Raw multipart grants. Repeating the same scoped upload identity
+            resumes the existing server-side session.
         '422':
           content:
             application/problem+json:

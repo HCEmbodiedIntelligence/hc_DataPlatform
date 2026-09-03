@@ -18,6 +18,7 @@ export function RuntimePlatformShell({
   readonly pageAvailability: PageAvailability;
 }) {
   const sessionToken = useShellStore((state) => state.sessionToken);
+  const sessionExpired = useShellStore((state) => state.sessionExpired);
   const sessionScopes = useShellStore((state) => state.sessionScopes);
   const sessionOrganizations = useShellStore(
     (state) => state.sessionOrganizations,
@@ -90,7 +91,12 @@ export function RuntimePlatformShell({
   ]);
 
   if (!sessionToken) {
-    return <Navigate replace to="/auth/login" />;
+    return (
+      <Navigate
+        replace
+        to={sessionExpired ? "/auth/session-expired" : "/auth/login"}
+      />
+    );
   }
 
   const organizationNames = new Map(

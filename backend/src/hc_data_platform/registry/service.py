@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace as dataclass_replace
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, unquote
 from uuid import uuid4
 from xml.etree import ElementTree
@@ -737,7 +737,8 @@ class RegistryService:
                 title="Robot model server storage is unavailable",
                 detail="The server-local robot model storage adapter is not active.",
             )
-        return receiver(organization_id=organization_id, token=token, data=body)
+        typed_receiver = cast(Callable[..., MultipartPart], receiver)
+        return typed_receiver(organization_id=organization_id, token=token, data=body)
 
     def open_authorized_asset_download(
         self,

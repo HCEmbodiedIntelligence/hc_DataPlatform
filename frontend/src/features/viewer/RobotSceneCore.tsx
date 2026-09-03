@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { PlaybackClock } from './PlaybackClock';
 import { ViewerResourceRegistry } from './runtime/ViewerResourceRegistry';
+import './RobotSceneCore.css';
 
 export interface RobotSceneCoreProps {
   modelRef: { modelId: string; modelVersion: string };

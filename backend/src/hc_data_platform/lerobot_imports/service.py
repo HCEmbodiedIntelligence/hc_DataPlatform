@@ -4,7 +4,6 @@ import hashlib
 import json
 from datetime import timedelta
 from typing import BinaryIO, cast
-from uuid import uuid4
 
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
@@ -67,8 +66,24 @@ class LeRobotWebUploadService:
             project_id=project_id,
             region_code=region_code,
         )
-        import_id = uuid4().hex
+        manifest_document = _canonical_manifest(manifest)
+        import_id = _stable_import_id(
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            manifest=manifest,
+        )
         root = self._root(organization_id, manifest.dataset_id, import_id)
+        resumed = self._existing_grant(
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            manifest=manifest,
+            manifest_document=manifest_document,
+            import_id=import_id,
+        )
+        if resumed is not None:
+            return resumed
         started: list[tuple[str, str]] = []
         grants: list[LeRobotAssetUploadGrantV1] = []
         try:
@@ -92,7 +107,8 @@ class LeRobotWebUploadService:
                     "organization_id": organization_id,
                     "project_id": project_id,
                     "region_code": region_code,
-                    "manifest": manifest.model_dump(mode="json"),
+                    "upload_identity_version": "lerobot-web-upload-identity/v1",
+                    "manifest": manifest_document,
                     "assets": [
                         {
                             "path": asset.path,
@@ -108,7 +124,84 @@ class LeRobotWebUploadService:
         except Exception:
             for key, upload_id in started:
                 self._storage.abort_multipart(key, upload_id)
+            resumed = self._existing_grant(
+                organization_id=organization_id,
+                project_id=project_id,
+                region_code=region_code,
+                manifest=manifest,
+                manifest_document=manifest_document,
+                import_id=import_id,
+            )
+            if resumed is not None:
+                return resumed
             raise
+        return LeRobotImportGrantV1(import_id=import_id, assets=tuple(grants))
+
+    def _existing_grant(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        manifest: CreateLeRobotImportV1,
+        manifest_document: dict[str, object],
+        import_id: str,
+    ) -> LeRobotImportGrantV1 | None:
+        session_key = (
+            f"{self._root(organization_id, manifest.dataset_id, import_id)}/upload-session.json"
+        )
+        if self._storage.head(session_key) is None:
+            return None
+        session = self._require_session(
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            dataset_id=manifest.dataset_id,
+            import_id=import_id,
+        )
+        if session.get("manifest") != manifest_document:
+            raise problem(
+                status=409,
+                code="LEROBOT_IMPORT_MANIFEST_CHANGED",
+                title="LeRobot import manifest changed",
+                detail=(
+                    "This dataset already has an upload session with a different "
+                    "collection binding or source directory manifest."
+                ),
+            )
+        values = session.get("assets")
+        if not isinstance(values, list):
+            raise RuntimeError("stored LeRobot upload session assets are unreadable")
+        grants: list[LeRobotAssetUploadGrantV1] = []
+        for value in values:
+            if not isinstance(value, dict):
+                raise RuntimeError("stored LeRobot upload session asset is unreadable")
+            path = value.get("path")
+            multipart_upload_id = value.get("multipart_upload_id")
+            size = value.get("size")
+            if (
+                not isinstance(path, str)
+                or not isinstance(multipart_upload_id, str)
+                or not isinstance(size, int)
+            ):
+                raise RuntimeError("stored LeRobot upload session asset is unreadable")
+            metadata = self._storage.head(
+                self._key(organization_id, manifest.dataset_id, import_id, path)
+            )
+            if metadata is not None and metadata.size != size:
+                raise problem(
+                    status=409,
+                    code="LEROBOT_ASSET_SIZE_MISMATCH",
+                    title="LeRobot asset size mismatch",
+                    detail="The completed source object no longer matches its declaration.",
+                )
+            grants.append(
+                LeRobotAssetUploadGrantV1(
+                    path=path,
+                    multipart_upload_id=multipart_upload_id,
+                    completed=metadata is not None,
+                )
+            )
         return LeRobotImportGrantV1(import_id=import_id, assets=tuple(grants))
 
     def authorize_parts(
@@ -163,13 +256,27 @@ class LeRobotWebUploadService:
                     detail="The completed source object no longer matches its declaration.",
                 )
             return LeRobotPartGrantV1(path=command.path, parts=(), completed=True)
+        uploaded_by_number = {
+            item.part_number: item
+            for item in self._storage.list_parts(key, command.multipart_upload_id)
+        }
+        uploaded_part_numbers = tuple(
+            number
+            for number in command.part_numbers
+            if (part := uploaded_by_number.get(number)) is not None
+            and part.size == lerobot_part_size(cast(int, asset["size"]), number)
+        )
+        missing_part_numbers = tuple(
+            number for number in command.part_numbers if number not in uploaded_part_numbers
+        )
         return LeRobotPartGrantV1(
             path=command.path,
             parts=self._parts(
                 key,
                 command.multipart_upload_id,
-                command.part_numbers,
+                missing_part_numbers,
             ),
+            uploaded_part_numbers=uploaded_part_numbers,
         )
 
     def upload_part(
@@ -328,7 +435,7 @@ class LeRobotWebUploadService:
             dataset_id=command.manifest.dataset_id,
             import_id=import_id,
         )
-        if session.get("manifest") != command.manifest.model_dump(mode="json"):
+        if session.get("manifest") != _canonical_manifest(command.manifest):
             raise problem(
                 status=409,
                 code="LEROBOT_IMPORT_MANIFEST_CHANGED",
@@ -632,3 +739,32 @@ def _raw_content_digest(files: list[dict[str, object]]) -> str:
     }
     body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(body).hexdigest()
+
+
+def _canonical_manifest(manifest: CreateLeRobotImportV1) -> dict[str, object]:
+    document = manifest.model_dump(mode="json")
+    files = document.get("files")
+    if not isinstance(files, list):
+        raise RuntimeError("validated LeRobot manifest files are unavailable")
+    document["files"] = sorted(files, key=lambda item: str(item["path"]))
+    return document
+
+
+def _stable_import_id(
+    *,
+    organization_id: str,
+    project_id: str,
+    region_code: str,
+    manifest: CreateLeRobotImportV1,
+) -> str:
+    """Bind one immutable browser import to one scoped Dataset on the server."""
+
+    identity = {
+        "schema_version": "lerobot-web-upload-identity/v1",
+        "organization_id": organization_id,
+        "project_id": project_id,
+        "region_code": region_code,
+        "dataset_id": manifest.dataset_id,
+    }
+    body = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(body).hexdigest()[:32]

@@ -1,6 +1,17 @@
 # HC Data Platform
 
-具身智能数据治理平台，包含 React 前端、FastAPI API、Temporal Worker、PostgreSQL、阿里云 OSS、迁移和部署资产，页面范围为 P01–P20。
+具身智能数据治理平台，包含 React 前端、FastAPI API、Temporal Worker、PostgreSQL、对象存储、迁移和部署资产，页面范围为 P01–P20。
+
+## 当前分支目标：本地服务器验证
+
+`codex/local-server-validation` 分支用于实现 GitHub 里程碑“本地服务器验证”。目标是让网页、
+脚本和自动化验收只连接本地平台入口；浏览器、API 和 Worker 都不访问 OSS，上传、持久化、
+处理和结果读取全部在本机完成。
+
+**该目标尚未完成。** 当前 Compose 仍配置为 OSS provider，LeRobot 网页客户端仍保留对象存储
+直传路径，因此现阶段不能把单元测试通过等同于里程碑完成。范围、问题清单和完成标准见
+[“本地服务器验证”里程碑](plan/LOCAL-SERVER-VALIDATION-MILESTONE.md)。生产对象存储、备份、发布
+和灾备能力不属于本次清理范围。
 
 ## 最快查看前端（Mock，推荐）
 
@@ -9,7 +20,7 @@ Mock 模式会加载演示账号、项目、权限和示例数据，适合直接
 ```bash
 cd /home/czy/hc_DataPlatform
 
-# 首次启动：填入已创建的 OSS Bucket、地域和 RAM AccessKey
+# 当前基线仍读取对象存储配置；本地无云凭据目标尚在实现中
 cp .env.example .env
 
 # 首次启动或依赖有变化
@@ -39,14 +50,14 @@ http://localhost:8088/settings/audit
 http://localhost:8088/collection-tasks
 ```
 
-## 查看真实后端模式
+## 查看真实后端模式（当前基线）
 
 完整重建并启动真实 API 环境：
 
 ```bash
 cd /home/czy/hc_DataPlatform
 
-# 确认 .env 中已配置真实 OSS；Bucket 还需允许前端来源的 PUT/HEAD CORS
+# 里程碑完成前，当前基线仍需要 .env 中的对象存储配置
 
 docker compose \
   -f compose.dev.yaml \
@@ -73,23 +84,21 @@ docker compose -f compose.dev.yaml up -d \
 
 真实模式不会自动注入管理员权限。新注册用户是空账户，需要申请加入项目并由另一名有权限的管理员批准 capability；未登录、空账户或权限不足时页面会显示无权访问。只想查看完整界面时请使用上面的 Mock 模式。
 
-## 通过平台上传 Unitree G1 LeRobot 数据
+## Unitree G1 LeRobot 上传
 
-推荐让机器端脚本使用平台上传协议，不要让机器持有 OSS AccessKey 后绕过平台直接写
-Bucket。上传流程为：
+里程碑目标要求机器端脚本和网页只连接本地平台 API：
 
 ```text
 本地 LeRobot（Parquet + MP4）
   -> 向平台创建原生 LeRobot Raw 上传会话
-  -> 使用平台签发的临时 URL 将文件正文直传 OSS
+  -> 将文件正文上传到本地平台 API
   -> 向平台提交完成
   -> 平台登记 Raw Source、Episode 和处理任务
   -> 自动质检、对齐、可视化和标注
 ```
 
-文件正文仍然直传 OSS，不经过 API 服务器；平台负责身份校验、项目归属、Object Key、
-临时上传授权和完成登记，因此不需要定时扫描 Bucket，也不需要在机器上填写 OSS
-AccessKey。
+上述流程是目标状态，不是当前已完成能力。当前客户端仍可能先尝试对象存储直传，再回退到
+平台 API 代理上传；在里程碑完成前，不应把这条链路作为“全本地验证已通过”的证据。
 
 先启动上面的真实后端模式，然后在仓库根目录运行交互式脚本：
 
@@ -162,7 +171,7 @@ docker compose -f compose.dev.yaml logs -f api
 
 - API 文档：<http://localhost:8000/docs>
 - Temporal UI：<http://localhost:8080>
-- 对象存储：`.env` 中配置的阿里云 OSS Bucket（本地不再启动 MinIO）
+- 存储：当前基线仍使用 `.env` 中的对象存储配置；里程碑目标是提供不依赖云凭据的本地存储
 
 ## 重启与重新构建
 

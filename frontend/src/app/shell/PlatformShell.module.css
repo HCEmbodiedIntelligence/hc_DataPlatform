@@ -406,6 +406,36 @@
   letter-spacing: 0.005em;
 }
 
+.navigationItemLabel {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.navigationItemLabel > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uploadActivityBadge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.uploadActivityBadge :global(.ant-badge-count) {
+  min-width: 18px;
+  height: 18px;
+  padding-inline: 5px;
+  box-shadow: 0 0 0 1px var(--hc-color-surface);
+  font-size: 10px;
+  line-height: 18px;
+}
+
 .navigation :global(.ant-menu-item-selected) {
   background: var(--hc-color-surface-tint) !important;
   color: var(--hc-color-primary-active) !important;

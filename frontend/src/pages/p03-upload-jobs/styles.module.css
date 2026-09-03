@@ -1428,6 +1428,15 @@
   min-height: 0;
 }
 
+.recordsActiveQueue {
+  width: 100%;
+  min-width: 0;
+}
+
+.recordsActiveQueue .uploadPanel {
+  min-height: 0;
+}
+
 .selectionPanel {
   overflow: visible;
   padding: clamp(20px, 4vw, 42px);

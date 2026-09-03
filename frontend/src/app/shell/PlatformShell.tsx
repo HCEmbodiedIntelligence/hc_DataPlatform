@@ -80,6 +80,7 @@ import {
   getPlatformObjectStoreLocation,
   type PlatformObjectStoreLocation,
 } from "../../features/platform-operations/api";
+import { useUploadQueueStore } from "../../pages/p03-upload-jobs/upload-queue-store";
 
 const { Content, Header, Sider } = Layout;
 const DatasetContextSelector = lazy(() => import("./DatasetContextSelector"));
@@ -271,6 +272,22 @@ function NavigationMenu({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const activeUploadCount = useUploadQueueStore((state) =>
+    state.items.reduce(
+      (count, item) =>
+        !["committed", "cancelled"].includes(item.transferStatus)
+          ? count + 1
+          : count,
+      0,
+    ),
+  );
+  const uploadNeedsAttention = useUploadQueueStore((state) =>
+    state.items.some((item) =>
+      ["paused", "offline", "failed", "needs-file"].includes(
+        item.transferStatus,
+      ),
+    ),
+  );
   const activeItem = manifest
     .flatMap((group) => group.items)
     .find((item) =>
@@ -293,8 +310,45 @@ function NavigationMenu({
       const items: NonNullable<MenuProps["items"]> = group.items.map(
         (item) => ({
           key: item.pageId,
-          icon: pageIcons[item.pageId],
-          label: <Link to={item.path}>{item.label}</Link>,
+          icon:
+            item.pageId === "P03" && activeUploadCount > 0 ? (
+              <Badge
+                dot
+                status={uploadNeedsAttention ? "warning" : "processing"}
+                aria-hidden="true"
+              >
+                {pageIcons[item.pageId]}
+              </Badge>
+            ) : (
+              pageIcons[item.pageId]
+            ),
+          label: (
+            <Link
+              to={item.path}
+              title={
+                item.pageId === "P03" && activeUploadCount > 0
+                  ? `${activeUploadCount} 个上传任务${uploadNeedsAttention ? "需要处理" : "正在进行"}`
+                  : undefined
+              }
+            >
+              <span className={styles.navigationItemLabel}>
+                <span>{item.label}</span>
+                {item.pageId === "P03" && activeUploadCount > 0 ? (
+                  <Badge
+                    aria-hidden="true"
+                    className={styles.uploadActivityBadge}
+                    count={activeUploadCount}
+                    overflowCount={99}
+                    color={
+                      uploadNeedsAttention
+                        ? "var(--hc-color-warning, #d97706)"
+                        : "var(--hc-color-primary, #5965d8)"
+                    }
+                  />
+                ) : null}
+              </span>
+            </Link>
+          ),
           title: item.label,
         }),
       );
@@ -309,7 +363,7 @@ function NavigationMenu({
       }
     }
     return groups;
-  }, [manifest]);
+  }, [activeUploadCount, manifest, uploadNeedsAttention]);
 
   return (
     <nav aria-label={label} className={styles.navigation} id={id}>

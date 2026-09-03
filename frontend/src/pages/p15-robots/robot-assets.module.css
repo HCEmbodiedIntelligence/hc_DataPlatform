@@ -293,39 +293,6 @@
   border-radius: 0;
 }
 
-.previewStage :global(.robot-scene-core),
-.wizardPreview :global(.robot-scene-core),
-.previewStage :global(.robot-scene-viewport),
-.wizardPreview :global(.robot-scene-viewport) {
-  width: 100%;
-  min-width: 0;
-  min-height: inherit;
-}
-
-.previewStage :global(.robot-scene-core),
-.wizardPreview :global(.robot-scene-core) {
-  position: relative;
-}
-
-.previewStage :global(.robot-scene-viewport canvas),
-.wizardPreview :global(.robot-scene-viewport canvas) {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.previewStage :global(.robot-scene-core > [role]),
-.wizardPreview :global(.robot-scene-core > [role]) {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  padding: 24px;
-  color: var(--ant-color-text-secondary, #656a7d);
-  background: rgb(248 249 253 / 88%);
-  text-align: center;
-  place-items: center;
-}
-
 .emptyPreview {
   display: grid;
   max-width: 420px;

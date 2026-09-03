@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -17,6 +17,7 @@ from .source_profile import (
 
 LEROBOT_MULTIPART_BYTES = 32 * 1024**2
 MAX_LEROBOT_MULTIPART_PARTS = 10_000
+LeRobotPartNumber = Annotated[int, Field(ge=1, le=MAX_LEROBOT_MULTIPART_PARTS)]
 
 
 def lerobot_part_plan(size: int) -> tuple[int, int]:
@@ -51,6 +52,7 @@ class LeRobotSourceFileV1(BaseModel):
     path: str = Field(min_length=1, max_length=1024)
     size: int = Field(gt=0, le=5 * 1024**4)
     part_count: int = Field(ge=1, le=10_000)
+    last_modified_ms: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991)
 
     @field_validator("path")
     @classmethod
@@ -165,6 +167,7 @@ class LeRobotPartGrantV1(BaseModel):
 
     path: str
     parts: tuple[PartAuthorization, ...]
+    uploaded_part_numbers: tuple[LeRobotPartNumber, ...] = ()
     completed: bool = False
 
 

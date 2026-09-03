@@ -580,7 +580,7 @@ paths:
           description: The organization robot asset request could not be completed.
       security:
       - bearerAuth: []
-      summary: Delete Provisional Organization Robot
+      summary: Delete Organization Robot
       tags:
       - organization-robot-assets
     patch:

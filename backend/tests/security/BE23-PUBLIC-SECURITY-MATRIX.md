@@ -396,6 +396,8 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/organizations/{organization_id}/projects/{project_id}/regions/{region_code}/stream-schemas/{schema_id}/versions/{schema_version}/dataset-references` | N1；P17 schema/dataset 关联范围。 |
 | `/api/v1/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:authorize-parts` | N1；P14 未批准 asset 上传授权。 |
 | `/api/v1/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:complete-file` | N1；P14 未批准 asset 上传完成。 |
+| `/api/v1/organizations/{organization_id}/robot-model-assets/upload-part` | N0；仅接受平台短期签发、绑定 organization/key/upload/part/expiry 的传输 token，不接受 cookie；无 token 或篡改 token 失败关闭。 |
+| `/api/v1/organizations/{organization_id}/robot-model-assets/content` | N0；仅接受平台短期签发、绑定 organization/key/expiry 的下载 token，不接受 cookie；无 token 或篡改 token 失败关闭。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/assets` | N1；P14 版本 asset 范围。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/assets/{asset_id}/download` | N1；P14 asset 下载范围。 |
 | `/api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/bindings` | N1；P14 关节绑定范围。 |

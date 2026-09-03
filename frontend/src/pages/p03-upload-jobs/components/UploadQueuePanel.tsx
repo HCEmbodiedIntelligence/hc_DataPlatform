@@ -323,6 +323,7 @@ export function UploadQueuePanel(props: {
   const hasFailed = props.items.some(
     (item) => item.transferStatus === "failed",
   );
+  const sessionExpired = props.recoveryProblem?.status === 401;
   const overallPercent =
     totalCount > 0
       ? Number(((uploadedCount / totalCount) * 100).toFixed(1))
@@ -373,9 +374,11 @@ export function UploadQueuePanel(props: {
                 <code translate="no">{props.recoveryProblem.requestId}</code>
               </small>
             ) : null}
-            <Button size="small" onClick={props.onRecover}>
-              重新恢复队列
-            </Button>
+            {!sessionExpired ? (
+              <Button size="small" onClick={props.onRecover}>
+                重新恢复队列
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -454,12 +457,20 @@ export function UploadQueuePanel(props: {
             <div className={styles.queueEmpty}>
               <UploadCloud size={30} aria-hidden="true" />
               <strong>
-                {props.recovering ? "正在恢复上传队列" : "队列为空"}
+                {props.recovering
+                  ? "正在恢复上传队列"
+                  : props.recoveryProblem
+                    ? "暂时无法读取上传队列"
+                    : "队列为空"}
               </strong>
               <span>
                 {props.recovering
                   ? "正在核对服务端已确认分片…"
-                  : "选择并确认采集文件夹后，平台预检通过的任务会出现在这里。"}
+                  : sessionExpired
+                    ? "当前登录已失效，系统正在引导你重新登录。"
+                    : props.recoveryProblem
+                      ? "请根据上方提示处理后，再重新读取服务端上传状态。"
+                      : "选择并确认采集文件夹后，平台预检通过的任务会出现在这里。"}
               </span>
             </div>
           ) : null}

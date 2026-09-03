@@ -449,10 +449,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         ...(opts.binaryBody === undefined ? {} : { body: opts.binaryBody }),
       },
     );
-    if (
-      activeScoped &&
-      getShellState().scopeKey !== requestScopeKey
-    ) {
+    if (activeScoped && getShellState().scopeKey !== requestScopeKey) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
     }
     if (
@@ -462,8 +459,22 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属组织已失效");
     }
     const raw = await readJson(response);
-    if (!response.ok)
-      throw domainErrorFromResponse(response.status, raw, response.headers);
+    if (!response.ok) {
+      const error = domainErrorFromResponse(
+        response.status,
+        raw,
+        response.headers,
+      );
+      if (
+        response.status === 401 &&
+        !publicScoped &&
+        opts.bearerToken === undefined &&
+        bearerToken
+      ) {
+        getShellState().expireSession(bearerToken);
+      }
+      throw error;
+    }
     return raw as T;
   } catch (error) {
     if (isDomainError(error)) throw error;

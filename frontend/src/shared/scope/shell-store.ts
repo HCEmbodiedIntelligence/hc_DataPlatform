@@ -7,6 +7,7 @@ import { readPersistedSession, writePersistedSession } from "./session-storage";
 interface ShellState {
   principal: ActorSummary | null;
   sessionToken: string | null;
+  sessionExpired: boolean;
   scope: Scope | null;
   scopeKey: ScopeKey;
   scopeChanging: boolean;
@@ -19,6 +20,7 @@ interface ShellState {
   platformCapabilities: readonly string[];
   capabilityRevision: number | null;
   setSession: (principal: ActorSummary | null, token: string | null) => void;
+  expireSession: (expectedToken: string) => void;
   updatePrincipal: (principal: ActorSummary) => void;
   beginScopeChange: () => void;
   setScope: (scope: Scope) => void;
@@ -58,6 +60,7 @@ const restoredScope = restoredSession?.scope ?? null;
 export const useShellStore = create<ShellState>((set) => ({
   principal: restoredSession?.principal ?? null,
   sessionToken: restoredSession?.sessionToken ?? null,
+  sessionExpired: false,
   scope: restoredScope,
   scopeKey: restoredScope === null ? UNSCOPED_KEY : makeScopeKey(restoredScope),
   scopeChanging: false,
@@ -80,8 +83,30 @@ export const useShellStore = create<ShellState>((set) => ({
       return {
         principal,
         sessionToken,
+        sessionExpired: false,
         scope,
         scopeKey: scope === null ? UNSCOPED_KEY : makeScopeKey(scope),
+        authorization: null,
+        authorizationLoading: false,
+        authorizationFailed: false,
+        sessionScopes: [],
+        sessionOrganizations: [],
+        bootstrapLoaded: false,
+        platformCapabilities: [],
+        capabilityRevision: null,
+      };
+    }),
+  expireSession: (expectedToken) =>
+    set((state) => {
+      if (!expectedToken || state.sessionToken !== expectedToken) return state;
+      writePersistedSession(null, null, null);
+      return {
+        principal: null,
+        sessionToken: null,
+        sessionExpired: true,
+        scope: null,
+        scopeKey: UNSCOPED_KEY,
+        scopeChanging: false,
         authorization: null,
         authorizationLoading: false,
         authorizationFailed: false,

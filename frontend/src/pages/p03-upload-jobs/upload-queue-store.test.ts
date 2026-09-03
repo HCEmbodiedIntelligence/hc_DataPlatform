@@ -24,6 +24,8 @@ const formal = vi.hoisted(() => ({
   retryParts: vi.fn(),
 }));
 
+const leRobot = vi.hoisted(() => ({ upload: vi.fn() }));
+
 vi.mock("./formal-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./formal-client")>();
   return {
@@ -44,6 +46,11 @@ vi.mock("./formal-client", async (importOriginal) => {
   };
 });
 
+vi.mock("./lerobot-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./lerobot-client")>();
+  return { ...actual, uploadNativeLeRobot: leRobot.upload };
+});
+
 import {
   MAX_CONCURRENT_PART_UPLOADS,
   MAX_IN_FLIGHT_PART_BYTES,
@@ -60,6 +67,10 @@ import {
   MIN_MULTIPART_BYTES,
   planUploadParts,
 } from "./upload-contract";
+import {
+  LeRobotUploadFailure,
+  type LeRobotUploadProgress,
+} from "./lerobot-client";
 
 const scope = {
   organizationId: "org-e05",
@@ -317,6 +328,7 @@ function abortablePending(signal?: AbortSignal): Promise<UploadPart[]> {
 }
 
 beforeEach(() => {
+  leRobot.upload.mockReset();
   resetUploadQueueStoreForTests();
   vi.clearAllMocks();
   Object.defineProperty(globalThis.navigator, "onLine", {
@@ -564,7 +576,7 @@ describe("P03 resumable upload queue", () => {
     });
   });
 
-  it("uses eight bounded workers for small multipart parts and protects the in-flight byte budget", () => {
+  it("uses four bounded workers for small multipart parts and protects the in-flight byte budget", () => {
     expect(
       partUploadConcurrency(
         { partSize: 16 * 1024 ** 2, partCount: 20, partNumbers: [] },
@@ -955,6 +967,337 @@ describe("P03 resumable upload queue", () => {
     expect(useUploadQueueStore.getState()).toMatchObject({
       recovering: false,
       recoveryProblem: null,
+    });
+  });
+
+  it("keeps native LeRobot progress in the same queue after route subscribers leave", async () => {
+    let reportProgress!: (value: {
+      stage: "uploading";
+      transferMode: "direct";
+      currentPath: string;
+      completedFiles: number;
+      totalFiles: number;
+      uploadedBytes: number;
+      totalBytes: number;
+    }) => void;
+    let resolveUpload!: (value: {
+      schema_version: "lerobot-web-import-accepted/v1";
+      import_id: string;
+      status: "EPISODES_QUEUED";
+      episode_count: number;
+      source_file_count: number;
+      episode_task_count: number;
+      episode_plan_key: string;
+    }) => void;
+    const importId = "a".repeat(32);
+    leRobot.upload.mockImplementation(
+      (_scope, selection, _binding, onProgress, _resume, options) => {
+        reportProgress = onProgress;
+        options.onSession({
+          importId,
+          assets: [],
+          transferMode: "direct",
+        });
+        return new Promise((resolve) => {
+          resolveUpload = resolve;
+        });
+      },
+    );
+    const source = new File(["lerobot-source"], "info.json");
+    const selection = {
+      format: "lerobot" as const,
+      version: "v3.0" as const,
+      robotType: "unitree_g1" as const,
+      rootDirectory: "factory-run",
+      info: { total_episodes: 1 },
+      episodeCount: 1,
+      sourceFiles: [{ file: source, path: "meta/info.json" }],
+      sourceBytes: source.size,
+    };
+
+    const start = useUploadQueueStore.getState().startLeRobot({
+      scope,
+      selection,
+      binding: {
+        datasetId: "dataset-a",
+        collectionTaskId: "task-a",
+        robotId: "robot-a",
+      },
+    });
+    const unsubscribe = useUploadQueueStore.subscribe(() => {});
+    unsubscribe();
+    reportProgress({
+      stage: "uploading",
+      transferMode: "direct",
+      currentPath: "meta/info.json",
+      completedFiles: 0,
+      totalFiles: 1,
+      uploadedBytes: 5,
+      totalBytes: source.size,
+    });
+
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      sourceType: "LEROBOT_NATIVE",
+      sessionId: importId,
+      transferStatus: "uploading",
+      uploadedBytes: 5,
+      dataPackageId: "dataset-a",
+      robotId: "robot-a",
+    });
+
+    resolveUpload({
+      schema_version: "lerobot-web-import-accepted/v1",
+      import_id: importId,
+      status: "EPISODES_QUEUED",
+      episode_count: 1,
+      source_file_count: 1,
+      episode_task_count: 1,
+      episode_plan_key: "derived/plan.json",
+    });
+    await start;
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      transferStatus: "committed",
+      completedParts: 1,
+      totalParts: 1,
+    });
+  });
+
+  it("throttles rapid LeRobot progress paints without hiding finalization", async () => {
+    let reportProgress!: (value: LeRobotUploadProgress) => void;
+    let resolveUpload!: (value: {
+      schema_version: "lerobot-web-import-accepted/v1";
+      import_id: string;
+      status: "EPISODES_QUEUED";
+      episode_count: number;
+      source_file_count: number;
+      episode_task_count: number;
+      episode_plan_key: string;
+    }) => void;
+    const importId = "c".repeat(32);
+    leRobot.upload.mockImplementation(
+      (_scope, _selection, _binding, onProgress, _resume, options) => {
+        reportProgress = onProgress;
+        options.onSession({
+          importId,
+          assets: [],
+          transferMode: "direct",
+        });
+        return new Promise((resolve) => {
+          resolveUpload = resolve;
+        });
+      },
+    );
+    const source = new File(["lerobot-source"], "info.json");
+    const selection = {
+      format: "lerobot" as const,
+      version: "v3.0" as const,
+      robotType: "unitree_g1" as const,
+      rootDirectory: "factory-run",
+      info: { total_episodes: 1 },
+      episodeCount: 1,
+      sourceFiles: [{ file: source, path: "meta/info.json" }],
+      sourceBytes: source.size,
+    };
+    let notifications = 0;
+    const unsubscribe = useUploadQueueStore.subscribe(() => {
+      notifications += 1;
+    });
+    const start = useUploadQueueStore.getState().startLeRobot({
+      scope,
+      selection,
+      binding: {
+        datasetId: "dataset-a",
+        collectionTaskId: "task-a",
+        robotId: "robot-a",
+      },
+    });
+    const beforeProgress = notifications;
+
+    for (let uploadedBytes = 0; uploadedBytes < 100; uploadedBytes += 1) {
+      reportProgress({
+        stage: "uploading",
+        transferMode: "direct",
+        currentPath: "meta/info.json",
+        completedFiles: 0,
+        totalFiles: 1,
+        uploadedBytes,
+        totalBytes: 100,
+      });
+    }
+    expect(notifications - beforeProgress).toBe(1);
+
+    reportProgress({
+      stage: "committing",
+      transferMode: "direct",
+      currentPath: null,
+      completedFiles: 1,
+      totalFiles: 1,
+      uploadedBytes: 100,
+      totalBytes: 100,
+    });
+    expect(notifications - beforeProgress).toBe(2);
+
+    resolveUpload({
+      schema_version: "lerobot-web-import-accepted/v1",
+      import_id: importId,
+      status: "EPISODES_QUEUED",
+      episode_count: 1,
+      source_file_count: 1,
+      episode_task_count: 1,
+      episode_plan_key: "derived/plan.json",
+    });
+    await start;
+    unsubscribe();
+    expect(useUploadQueueStore.getState().items[0]?.transferStatus).toBe(
+      "committed",
+    );
+  });
+
+  it("shows paused LeRobot state and resumes the same import session", async () => {
+    const importId = "b".repeat(32);
+    const resume = {
+      importId,
+      assets: [],
+      transferMode: "direct" as const,
+    };
+    leRobot.upload
+      .mockImplementationOnce(
+        (_scope, _selection, _binding, _onProgress, _resume, options) => {
+          options.onSession(resume);
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  new LeRobotUploadFailure(
+                    "上传已暂停",
+                    resume,
+                    new Error("paused"),
+                  ),
+                ),
+              { once: true },
+            );
+          });
+        },
+      )
+      .mockResolvedValueOnce({
+        schema_version: "lerobot-web-import-accepted/v1",
+        import_id: importId,
+        status: "EPISODES_QUEUED",
+        episode_count: 1,
+        source_file_count: 1,
+        episode_task_count: 1,
+        episode_plan_key: "derived/plan.json",
+      });
+    const source = new File(["raw"], "info.json");
+    const start = useUploadQueueStore.getState().startLeRobot({
+      scope,
+      selection: {
+        format: "lerobot",
+        version: "v3.0",
+        robotType: "unitree_g1",
+        rootDirectory: "source",
+        info: { total_episodes: 1 },
+        episodeCount: 1,
+        sourceFiles: [{ file: source, path: "meta/info.json" }],
+        sourceBytes: source.size,
+      },
+      binding: {
+        datasetId: "dataset-a",
+        collectionTaskId: "task-a",
+        robotId: "robot-a",
+      },
+    });
+    const itemId = useUploadQueueStore.getState().items[0]!.id;
+    await useUploadQueueStore.getState().pause(itemId);
+    await start;
+    expect(useUploadQueueStore.getState().items[0]!.transferStatus).toBe(
+      "paused",
+    );
+
+    await useUploadQueueStore.getState().resume(itemId);
+    expect(leRobot.upload).toHaveBeenNthCalledWith(
+      2,
+      scope,
+      expect.anything(),
+      expect.anything(),
+      expect.any(Function),
+      resume,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(useUploadQueueStore.getState().items[0]!.transferStatus).toBe(
+      "committed",
+    );
+  });
+
+  it("ignores late LeRobot progress after a terminal upload failure", async () => {
+    const importId = "c".repeat(32);
+    const resume = {
+      importId,
+      assets: [],
+      transferMode: "proxy" as const,
+    };
+    let reportProgress!: (value: {
+      stage: "uploading";
+      transferMode: "proxy";
+      currentPath: string;
+      completedFiles: number;
+      totalFiles: number;
+      uploadedBytes: number;
+      totalBytes: number;
+    }) => void;
+    leRobot.upload.mockImplementation(
+      (_scope, _selection, _binding, onProgress, _resume, options) => {
+        reportProgress = onProgress;
+        options.onSession(resume);
+        return Promise.reject(
+          new LeRobotUploadFailure(
+            "文件 videos/camera/file-002.mp4 上传中断",
+            resume,
+            new Error("The server could not complete the request."),
+          ),
+        );
+      },
+    );
+    const source = new File(["raw"], "file-002.mp4");
+
+    await useUploadQueueStore.getState().startLeRobot({
+      scope,
+      selection: {
+        format: "lerobot",
+        version: "v3.0",
+        robotType: "unitree_g1",
+        rootDirectory: "source",
+        info: { total_episodes: 1 },
+        episodeCount: 1,
+        sourceFiles: [{ file: source, path: "videos/camera/file-002.mp4" }],
+        sourceBytes: source.size,
+      },
+      binding: {
+        datasetId: "dataset-a",
+        collectionTaskId: "task-a",
+        robotId: "robot-a",
+      },
+    });
+
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      transferStatus: "failed",
+      sessionId: importId,
+    });
+    reportProgress({
+      stage: "uploading",
+      transferMode: "proxy",
+      currentPath: "videos/camera/file-002.mp4",
+      completedFiles: 0,
+      totalFiles: 1,
+      uploadedBytes: source.size,
+      totalBytes: source.size,
+    });
+
+    expect(useUploadQueueStore.getState().items[0]).toMatchObject({
+      transferStatus: "failed",
+      uploadedBytes: 0,
+      failureMessage: "文件 videos/camera/file-002.mp4 上传中断",
     });
   });
 });

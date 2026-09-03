@@ -555,6 +555,33 @@ describe("HTTP response handling", () => {
       message: "Unauthorized",
       httpStatus: 401,
     });
+    expect(useShellStore.getState().sessionToken).toBeNull();
+    expect(useShellStore.getState().sessionExpired).toBe(true);
+  });
+
+  it("does not invalidate the active shell session for a rejected explicit bearer", async () => {
+    stubResponse(
+      problemResponse(
+        {
+          title: "Unauthorized",
+          status: 401,
+          code: "AUTHENTICATION_REQUIRED",
+        },
+        401,
+      ),
+    );
+
+    await expect(
+      request({
+        method: "GET",
+        path: "/auth/session/bootstrap",
+        scopeMode: "session",
+        bearerToken: "newly-issued-token",
+      }),
+    ).rejects.toMatchObject({ httpStatus: 401 });
+
+    expect(useShellStore.getState().sessionToken).toBe("test-token");
+    expect(useShellStore.getState().sessionExpired).toBe(false);
   });
 
   it("parses and clamps only decimal Retry-After delay-seconds", async () => {

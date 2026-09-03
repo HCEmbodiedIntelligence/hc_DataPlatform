@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from tempfile import SpooledTemporaryFile
-from typing import Annotated
+from typing import Annotated, BinaryIO, cast
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
@@ -132,7 +133,8 @@ async def upload_lerobot_asset_part(
                 detail="The received multipart body differs from Content-Length.",
             )
         body.seek(0)
-        uploaded = service.upload_part(
+        uploaded = await asyncio.to_thread(
+            service.upload_part,
             auth=auth,
             organization_id=organization_id,
             project_id=project_id,
@@ -142,7 +144,7 @@ async def upload_lerobot_asset_part(
             path=path,
             multipart_upload_id=multipart_upload_id,
             part_number=part_number,
-            body=body,
+            body=cast(BinaryIO, body),
             size=received,
         )
     return Response(

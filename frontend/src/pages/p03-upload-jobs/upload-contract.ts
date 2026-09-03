@@ -781,6 +781,10 @@ export function uploadProblemCopy(error: unknown): UploadProblemCopy {
   const statusCopy: Readonly<
     Record<number, { title: string; detail: string }>
   > = {
+    401: {
+      title: "登录状态已失效",
+      detail: "请重新登录后继续，重复恢复上传队列不会使旧登录会话重新生效。",
+    },
     403: {
       title: "当前授权不能上传",
       detail: "请确认项目、区域和上传权限后重试。",

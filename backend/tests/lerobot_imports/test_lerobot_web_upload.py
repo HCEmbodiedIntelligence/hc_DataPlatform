@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from threading import get_ident
 from typing import Any
 
 import pytest
@@ -83,6 +84,7 @@ def _app(service: LeRobotWebUploadService) -> FastAPI:
 
     @app.middleware("http")
     async def install_auth(request: Request, call_next: Any) -> Any:
+        request.app.state.event_loop_thread_id = get_ident()
         request.state.auth_context = _auth()
         token = bind_request_context(
             RequestContext(
@@ -154,6 +156,96 @@ def test_import_contract_rejects_local_cache_and_partial_downloads(path: str) ->
             info=_info(),
             files=(*_source_files(), LeRobotSourceFileV1(path=path, size=1, part_count=1)),
         )
+
+
+def test_begin_resumes_the_server_session_and_reports_uploaded_parts() -> None:
+    manifest = CreateLeRobotImportV1(
+        dataset_id="dataset-a",
+        collection_task_id="task-a",
+        robot_id="robot-a",
+        info=_info(),
+        files=_source_files(),
+    )
+    storage = InMemoryObjectStorage()
+    service = LeRobotWebUploadService(storage)
+
+    first = service.begin(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        manifest=manifest,
+    )
+    first_asset = first.assets[0]
+    assert first_asset.multipart_upload_id is not None
+    service.upload_part(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        import_id=first.import_id,
+        dataset_id=manifest.dataset_id,
+        path=first_asset.path,
+        multipart_upload_id=first_asset.multipart_upload_id,
+        part_number=1,
+        body=BytesIO(b"x"),
+        size=1,
+    )
+
+    resumed_service = LeRobotWebUploadService(storage)
+    resumed = resumed_service.begin(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        manifest=manifest.model_copy(update={"files": tuple(reversed(manifest.files))}),
+    )
+
+    assert resumed.import_id == first.import_id
+    assert {item.path: item.multipart_upload_id for item in resumed.assets} == {
+        item.path: item.multipart_upload_id for item in first.assets
+    }
+    renewed = resumed_service.authorize_parts(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        import_id=resumed.import_id,
+        command=AuthorizeLeRobotPartsV1(
+            dataset_id=manifest.dataset_id,
+            path=first_asset.path,
+            multipart_upload_id=first_asset.multipart_upload_id,
+            part_numbers=(1,),
+        ),
+    )
+    assert renewed.uploaded_part_numbers == (1,)
+    assert renewed.parts == ()
+
+    changed_file = LeRobotSourceFileV1(
+        path=manifest.files[0].path,
+        size=2,
+        part_count=1,
+    )
+    changed_manifest = manifest.model_copy(update={"files": (changed_file, *manifest.files[1:])})
+    with pytest.raises(ProblemException) as captured:
+        service.begin(
+            auth=_auth(),
+            organization_id="org-a",
+            project_id="project-a",
+            region_code="cn-hz",
+            manifest=changed_manifest,
+        )
+    assert captured.value.problem.code == "LEROBOT_IMPORT_MANIFEST_CHANGED"
+
+    with pytest.raises(ProblemException) as changed_binding:
+        service.begin(
+            auth=_auth(),
+            organization_id="org-a",
+            project_id="project-a",
+            region_code="cn-hz",
+            manifest=manifest.model_copy(update={"robot_id": "robot-b"}),
+        )
+    assert changed_binding.value.problem.code == "LEROBOT_IMPORT_MANIFEST_CHANGED"
 
 
 def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
@@ -245,8 +337,26 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
         import_id=grant.import_id,
         command=CommitLeRobotImportV1(manifest=manifest),
     )
+    accepted_again = service.commit(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        import_id=grant.import_id,
+        command=CommitLeRobotImportV1(manifest=manifest),
+    )
+    resumed_after_commit = service.begin(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        manifest=manifest,
+    )
 
     assert accepted.status == "EPISODES_QUEUED"
+    assert accepted_again == accepted
+    assert resumed_after_commit.import_id == grant.import_id
+    assert all(asset.completed for asset in resumed_after_commit.assets)
     assert accepted.source_file_count == len(bodies)
     assert accepted.episode_task_count == 1
     for relative_path, body in bodies.items():
@@ -332,7 +442,16 @@ def test_same_origin_part_fallback_accepts_binary_body() -> None:
         files=_source_files(),
     )
     storage = InMemoryObjectStorage()
-    client = TestClient(_app(LeRobotWebUploadService(storage)))
+    storage_thread_ids: list[int] = []
+    upload_part_stream = storage.upload_part_stream
+
+    def record_upload_thread(*args: Any, **kwargs: Any) -> Any:
+        storage_thread_ids.append(get_ident())
+        return upload_part_stream(*args, **kwargs)
+
+    storage.upload_part_stream = record_upload_thread  # type: ignore[method-assign]
+    app = _app(LeRobotWebUploadService(storage))
+    client = TestClient(app)
     headers = {"X-Organization-Id": "org-a", "Authorization": "Bearer test-token"}
     root = "/api/v1/projects/project-a/regions/cn-hz/lerobot-imports"
     created = client.post(root, headers=headers, json=manifest.model_dump(mode="json"))
@@ -354,5 +473,7 @@ def test_same_origin_part_fallback_accepts_binary_body() -> None:
 
     assert uploaded.status_code == 200
     assert uploaded.headers["cache-control"] == "no-store"
+    assert len(storage_thread_ids) == 1
+    assert storage_thread_ids[0] != app.state.event_loop_thread_id
     key = f"raw/org-a/dataset-a/{grant['import_id']}/source/{asset['path']}"
     assert storage.list_parts(key, asset["multipart_upload_id"])[0].size == 1

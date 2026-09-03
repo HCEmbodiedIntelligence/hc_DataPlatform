@@ -842,107 +842,169 @@ export function Component() {
                         state="error"
                         onRetry={() => void jointMappings.refetch()}
                       />
-                    ) : selectedVersion.lifecycle !== "DRAFT" ? (
-                      <p className={workspace.safeNote}>
-                        已发布版本的关节映射不可变。请创建新的草稿版本后进行修改。
-                      </p>
                     ) : (
                       <section
-                        className={workspace.featureNote}
-                        aria-label="关节映射编辑器"
+                        className={workspace.mappingPanel}
+                        aria-label={
+                          selectedVersion.lifecycle === "DRAFT"
+                            ? "关节映射编辑器"
+                            : "关节映射详情"
+                        }
                       >
-                        <strong>关节映射</strong>
-                        <p>
-                          源关节必须与 URDF
-                          的活动关节精确一致；发布预检会验证完整性。
-                        </p>
-                        {mappingState.rows.map((mapping, index) => (
-                          <div
-                            className={workspace.actionRow}
-                            key={`${index}-${mapping.source_joint_name}`}
-                          >
-                            <Input
-                              aria-label={`源关节 ${index + 1}`}
-                              value={mapping.source_joint_name}
-                              placeholder="URDF 源关节"
-                              onChange={(event) =>
-                                updateMappingRow(index, {
-                                  source_joint_name: event.target.value,
-                                })
-                              }
-                            />
-                            <Input
-                              aria-label={`目标关节 ${index + 1}`}
-                              value={mapping.target_joint_name}
-                              placeholder="目标执行关节"
-                              onChange={(event) =>
-                                updateMappingRow(index, {
-                                  target_joint_name: event.target.value,
-                                })
-                              }
-                            />
-                            <Select
-                              aria-label={`方向 ${index + 1}`}
-                              value={mapping.direction}
-                              options={[
-                                { value: "SAME", label: "同向" },
-                                { value: "INVERTED", label: "反向" },
-                              ]}
-                              onChange={(direction) =>
-                                updateMappingRow(index, { direction })
-                              }
-                            />
-                            <Button
-                              onClick={() => {
-                                setMappingState((previous) => ({
-                                  ...previous,
-                                  dirty: true,
-                                  rows: previous.rows.filter(
-                                    (_row, rowIndex) => rowIndex !== index,
-                                  ),
-                                }));
-                                setPreflight(null);
-                              }}
-                            >
-                              移除
-                            </Button>
+                        <header className={workspace.mappingPanelHeader}>
+                          <div>
+                            <strong>关节映射</strong>
+                            <p>
+                              源关节对应采集数据字段，目标关节对应 URDF
+                              的活动关节。
+                            </p>
                           </div>
-                        ))}
-                        <div className={workspace.actionRow}>
-                          <Button
-                            onClick={() => {
-                              setMappingState((previous) => ({
-                                ...previous,
-                                dirty: true,
-                                rows: [
-                                  ...previous.rows,
-                                  {
-                                    source_joint_name: "",
-                                    target_joint_name: "",
-                                    direction: "SAME",
-                                  },
-                                ],
-                              }));
-                              setPreflight(null);
-                            }}
-                          >
-                            添加关节映射
-                          </Button>
-                          <Button
-                            type="primary"
-                            loading={replaceJointMappings.isPending}
-                            onClick={() => void saveMappings()}
-                          >
-                            保存映射
-                          </Button>
-                        </div>
-                        {replaceJointMappings.error ? (
-                          <p className={workspace.warningNote} role="alert">
-                            {isDomainError(replaceJointMappings.error)
-                              ? replaceJointMappings.error.message
-                              : "映射未保存；请重新加载版本后重试。"}
+                          <span className={workspace.inlineMeta}>
+                            {selectedVersion.lifecycle === "DRAFT"
+                              ? mappingState.rows.length
+                              : (jointMappings.data?.length ?? 0)}{" "}
+                            项
+                          </span>
+                        </header>
+                        {selectedVersion.lifecycle !== "DRAFT" ? (
+                          <p className={workspace.safeNote}>
+                            已发布版本的关节映射仅可查看；如需修改，请创建新的草稿版本。
                           </p>
                         ) : null}
+                        {selectedVersion.lifecycle === "DRAFT" ? (
+                          <>
+                            <div className={workspace.mappingEditor}>
+                              {mappingState.rows.map((mapping, index) => (
+                                <div
+                                  className={workspace.mappingEditRow}
+                                  key={`${index}-${mapping.source_joint_name}`}
+                                >
+                                  <Input
+                                    aria-label={`源关节 ${index + 1}`}
+                                    value={mapping.source_joint_name}
+                                    placeholder="数据源关节"
+                                    onChange={(event) =>
+                                      updateMappingRow(index, {
+                                        source_joint_name: event.target.value,
+                                      })
+                                    }
+                                  />
+                                  <Input
+                                    aria-label={`目标关节 ${index + 1}`}
+                                    value={mapping.target_joint_name}
+                                    placeholder="URDF 目标关节"
+                                    onChange={(event) =>
+                                      updateMappingRow(index, {
+                                        target_joint_name: event.target.value,
+                                      })
+                                    }
+                                  />
+                                  <Select
+                                    aria-label={`方向 ${index + 1}`}
+                                    value={mapping.direction}
+                                    options={[
+                                      { value: "SAME", label: "同向" },
+                                      { value: "INVERTED", label: "反向" },
+                                    ]}
+                                    onChange={(direction) =>
+                                      updateMappingRow(index, { direction })
+                                    }
+                                  />
+                                  <Button
+                                    onClick={() => {
+                                      setMappingState((previous) => ({
+                                        ...previous,
+                                        dirty: true,
+                                        rows: previous.rows.filter(
+                                          (_row, rowIndex) =>
+                                            rowIndex !== index,
+                                        ),
+                                      }));
+                                      setPreflight(null);
+                                    }}
+                                  >
+                                    移除
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                            <div className={workspace.actionRow}>
+                              <Button
+                                onClick={() => {
+                                  setMappingState((previous) => ({
+                                    ...previous,
+                                    dirty: true,
+                                    rows: [
+                                      ...previous.rows,
+                                      {
+                                        source_joint_name: "",
+                                        target_joint_name: "",
+                                        direction: "SAME",
+                                      },
+                                    ],
+                                  }));
+                                  setPreflight(null);
+                                }}
+                              >
+                                添加关节映射
+                              </Button>
+                              <Button
+                                type="primary"
+                                loading={replaceJointMappings.isPending}
+                                onClick={() => void saveMappings()}
+                              >
+                                保存映射
+                              </Button>
+                            </div>
+                            {replaceJointMappings.error ? (
+                              <p className={workspace.warningNote} role="alert">
+                                {isDomainError(replaceJointMappings.error)
+                                  ? replaceJointMappings.error.message
+                                  : "映射未保存；请重新加载版本后重试。"}
+                              </p>
+                            ) : null}
+                          </>
+                        ) : jointMappings.data?.length ? (
+                          <div className={workspace.mappingTableWrap}>
+                            <table className={workspace.definitionTable}>
+                              <caption className={workspace.srOnly}>
+                                固定版本关节映射
+                              </caption>
+                              <thead>
+                                <tr>
+                                  <th scope="col">数据源关节</th>
+                                  <th scope="col">URDF 目标关节</th>
+                                  <th scope="col">方向</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {jointMappings.data.map((mapping, index) => (
+                                  <tr
+                                    key={`${index}-${mapping.source_joint_name}`}
+                                  >
+                                    <td>
+                                      <code>{mapping.source_joint_name}</code>
+                                    </td>
+                                    <td>
+                                      <code>{mapping.target_joint_name}</code>
+                                    </td>
+                                    <td>
+                                      {mapping.direction === "SAME"
+                                        ? "同向"
+                                        : "反向"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <PageState
+                            state="empty"
+                            title="该固定版本没有关节映射"
+                            description="该版本仍可查看模型资产，但没有可用于关节数据播放的映射。"
+                          />
+                        )}
                       </section>
                     )
                   ) : null}

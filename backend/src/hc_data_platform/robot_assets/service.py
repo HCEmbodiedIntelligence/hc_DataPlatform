@@ -177,7 +177,7 @@ class OrganizationRobotAssetService:
             request_id=request_id,
         )
 
-    def delete_provisional_robot(
+    def delete_robot(
         self,
         *,
         auth: AuthContext,
@@ -187,7 +187,7 @@ class OrganizationRobotAssetService:
     ) -> None:
         self._authorize(auth, organization_id, "robot.manage")
         try:
-            self._repository.delete_provisional_robot(
+            self._repository.delete_robot(
                 organization_id=organization_id,
                 robot_id=robot_id,
                 actor_id=auth.subject_id,
@@ -197,9 +197,12 @@ class OrganizationRobotAssetService:
         except ValueError as exc:
             raise problem(
                 status=409,
-                code="ROBOT_NOT_PROVISIONAL",
-                title="Robot cannot be deleted as a failed import",
-                detail="Only an unbound draft robot with no dependent assets can be deleted.",
+                code="ROBOT_IN_USE",
+                title="Robot instance is in use",
+                detail=(
+                    "Remove the robot's data source, upload identity, project assignment, "
+                    "topology, calibration, and raw-data references before deleting it."
+                ),
             ) from exc
 
     def update_robot(

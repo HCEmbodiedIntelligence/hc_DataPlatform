@@ -19,6 +19,7 @@ import type { ManifestPreflight } from "./formal-client";
 import UploadJobsPage from "./page";
 import {
   resetUploadQueueStoreForTests,
+  useUploadQueueStore,
   type UploadQueueItem,
 } from "./upload-queue-store";
 import { UploadMethodPanel } from "./components/UploadMethodPanel";
@@ -248,7 +249,10 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
   useShellStore.getState().clearSensitiveState();
-  useShellStore.setState({ bootstrapLoaded: false, authorizationFailed: false });
+  useShellStore.setState({
+    bootstrapLoaded: false,
+    authorizationFailed: false,
+  });
   resetUploadQueueStoreForTests();
 });
 
@@ -678,6 +682,47 @@ describe("P03 serial data upload page", () => {
       "true",
     );
   });
+
+  it("shows an interrupted LeRobot transfer in upload records", async () => {
+    useUploadQueueStore.setState({
+      scopeKey: "org-e05/project-e05/cn-shanghai",
+      items: [
+        {
+          id: "lerobot-queue-1",
+          scopeKey: "org-e05/project-e05/cn-shanghai",
+          sessionId: "a".repeat(32),
+          sourceType: "LEROBOT_NATIVE",
+          fileName: "factory-run",
+          dataPackageId: "dataset-a",
+          totalBytes: 100,
+          uploadedBytes: 40,
+          completedParts: 4,
+          totalParts: 10,
+          speedBytesPerSecond: null,
+          remainingSeconds: null,
+          transferStatus: "failed",
+          serverStatus: null,
+          failedParts: [],
+          failedPartTransfers: [],
+          failureCode: "LEROBOT_UPLOAD_INTERRUPTED",
+          failureMessage: "网络传输中断，可继续未完成上传。",
+          requestId: null,
+          createdAt: "2026-09-01T00:00:00Z",
+          robotId: "robot-a",
+          collectionTaskId: "task-a",
+        },
+      ],
+    });
+
+    renderPage("/ingest/uploads/records");
+
+    expect(await screen.findByText("LeRobot · factory-run")).toBeVisible();
+    expect(screen.getByText("Dataset dataset-a")).toBeVisible();
+    expect(screen.getByText("传输失败")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "继续未完成上传" }),
+    ).toBeEnabled();
+  });
 });
 
 describe("P03 upload queue copy", () => {
@@ -714,6 +759,40 @@ describe("P03 upload queue copy", () => {
     expect(screen.getByText("req-recover-1")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "重新恢复队列" }));
     expect(onRecover).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer queue recovery when the login session has expired", () => {
+    render(
+      <UploadQueuePanel
+        items={[]}
+        recovering={false}
+        recoveryProblem={{
+          title: "登录状态已失效",
+          detail: "请重新登录后继续。",
+          requestId: "req-expired-session",
+          retryable: false,
+          status: 401,
+          problemCode: "AUTHENTICATION_REQUIRED",
+        }}
+        folderBatch={null}
+        canManage
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onRetry={vi.fn()}
+        onCancel={vi.fn()}
+        onReattach={vi.fn()}
+        onClearSettled={vi.fn()}
+        onContinueUpload={vi.fn()}
+        onViewRecords={vi.fn()}
+        onRecover={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("登录状态已失效")).toBeVisible();
+    expect(screen.getByText("暂时无法读取上传队列")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "重新恢复队列" }),
+    ).not.toBeInTheDocument();
   });
 
   it("distinguishes transfer pause from collection-task state and exposes failed-part retry", () => {

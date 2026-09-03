@@ -8,6 +8,36 @@ import { MemoryRouter } from "react-router-dom";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { Component } from "./page";
 
+const apiFixtures = vi.hoisted(() => ({
+  jointMappings: [] as Array<{
+    source_joint_name: string;
+    target_joint_name: string;
+    direction: "SAME" | "INVERTED";
+  }>,
+  models: [] as Array<{
+    id: string;
+    manufacturer: string;
+    modelCode: string;
+    displayName: string;
+    currentPublishedVersionId: string | null;
+  }>,
+  version: undefined as
+    | {
+        id: string;
+        robotModelId: string;
+        versionLabel: string;
+        lifecycle: "DRAFT" | "PUBLISHED";
+        assetAvailability: "AVAILABLE";
+        publishReadiness: "READY";
+        assetManifestHash: string | null;
+        validationInputHash: string | null;
+        etag: string;
+        allowedActions: string[];
+        blockedReasons: Array<{ code: string; message: string }>;
+      }
+    | undefined,
+}));
+
 vi.mock("../../features/robot-models/api", () => {
   const mutation = () => ({
     error: null,
@@ -19,7 +49,7 @@ vi.mock("../../features/robot-models/api", () => {
     authorizeRobotModelAssetDownload: vi.fn(),
     useRobotModels: () => ({
       data: {
-        items: [],
+        items: apiFixtures.models,
         pageInfo: {
           start_cursor: null,
           end_cursor: null,
@@ -32,7 +62,7 @@ vi.mock("../../features/robot-models/api", () => {
       isPending: false,
       refetch: vi.fn(),
     }),
-    useRobotModelVersion: () => ({ data: undefined }),
+    useRobotModelVersion: () => ({ data: apiFixtures.version }),
     useRobotModelAssets: () => ({
       data: [],
       error: null,
@@ -46,7 +76,7 @@ vi.mock("../../features/robot-models/api", () => {
       refetch: vi.fn(),
     }),
     useRobotModelJointMappings: () => ({
-      data: [],
+      data: apiFixtures.jointMappings,
       error: null,
       isPending: false,
       refetch: vi.fn(),
@@ -67,6 +97,9 @@ vi.mock("../../features/viewer", () => ({
 }));
 
 beforeEach(() => {
+  apiFixtures.jointMappings = [];
+  apiFixtures.models = [];
+  apiFixtures.version = undefined;
   useShellStore.getState().setScope({
     organizationId: "org-p14",
     projectId: "project-p14",
@@ -115,5 +148,59 @@ describe("P14 robot model asset navigation", () => {
     expect(
       screen.getByRole("link", { name: "导入 URDF / 配置文件" }),
     ).toHaveAttribute("href", "/settings/robots");
+  });
+
+  it("shows published joint mappings as read-only version facts", async () => {
+    apiFixtures.models = [
+      {
+        id: "model-unitree",
+        manufacturer: "Unitree",
+        modelCode: "G1",
+        displayName: "Unitree G1",
+        currentPublishedVersionId: "version-unitree-1",
+      },
+    ];
+    apiFixtures.version = {
+      id: "version-unitree-1",
+      robotModelId: "model-unitree",
+      versionLabel: "2026.09.01",
+      lifecycle: "PUBLISHED",
+      assetAvailability: "AVAILABLE",
+      publishReadiness: "READY",
+      assetManifestHash: null,
+      validationInputHash: null,
+      etag: '"version-unitree-1:1"',
+      allowedActions: [],
+      blockedReasons: [],
+    };
+    apiFixtures.jointMappings = [
+      {
+        source_joint_name: "left_hip_pitch",
+        target_joint_name: "left_hip_pitch_joint",
+        direction: "SAME",
+      },
+    ];
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          "/settings/robot-models?modelId=model-unitree&versionId=version-unitree-1&detailTab=mapping",
+        ]}
+      >
+        <Component />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("table", { name: "固定版本关节映射" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("left_hip_pitch")).toBeInTheDocument();
+    expect(screen.getByText("left_hip_pitch_joint")).toBeInTheDocument();
+    expect(
+      screen.getByText(/已发布版本的关节映射仅可查看/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "保存映射" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDomainError } from "../../shared/api/domain-error";
 import type { LeRobotFolderSelection } from "./upload-contract";
 import {
   buildLeRobotImportManifest,
   LEROBOT_MULTIPART_BYTES,
   LeRobotUploadFailure,
+  MAX_SAME_ORIGIN_PROXY_PARTS,
   uploadNativeLeRobot,
   type LeRobotImportAccepted,
   type LeRobotUploadProgress,
@@ -75,6 +77,7 @@ describe("native LeRobot upload contract", () => {
     requestMock.mockReset();
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -191,6 +194,197 @@ describe("native LeRobot upload contract", () => {
     });
     expect(proxyCall?.binaryBody.size).toBe(3);
     expect(progress.some((value) => value.transferMode === "proxy")).toBe(true);
+  });
+
+  it("automatically retries retryable platform proxy failures", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      FailingDirectUpload as unknown as typeof XMLHttpRequest,
+    );
+    let proxyAttempts = 0;
+    requestMock.mockImplementation(
+      async (options: { method: string; path: string }) => {
+        if (options.method === "POST" && options.path === root) {
+          return {
+            schema_version: "lerobot-web-import-grant/v1",
+            import_id: importId,
+            assets: [
+              {
+                path: "meta/info.json",
+                multipart_upload_id: "upload-a",
+                parts: [],
+                completed: false,
+              },
+            ],
+          };
+        }
+        if (options.path.endsWith("assets:authorize-parts")) {
+          return {
+            path: "meta/info.json",
+            completed: false,
+            parts: [
+              {
+                part_number: 1,
+                url: "https://oss.invalid/direct-part",
+                expires_at: "2026-09-01T10:00:00Z",
+              },
+            ],
+          };
+        }
+        if (options.method === "PUT") {
+          proxyAttempts += 1;
+          if (proxyAttempts < 3) {
+            throw createDomainError({
+              code: "SERVER_ERROR",
+              problemCode: "INTERNAL_SERVER_ERROR",
+              message: "The server could not complete the request.",
+              fieldErrors: [],
+              operationErrors: [],
+              blockedReasons: [],
+              requestId: `request-${proxyAttempts}`,
+              retryable: true,
+              httpStatus: 500,
+            });
+          }
+          return undefined;
+        }
+        if (options.path.endsWith("assets:complete")) return undefined;
+        if (options.path.endsWith(":commit")) return accepted();
+        throw new Error(`Unexpected request ${options.method} ${options.path}`);
+      },
+    );
+
+    const upload = uploadNativeLeRobot(
+      scope,
+      oneFileSelection(),
+      binding,
+      () => {},
+    );
+    await vi.runAllTimersAsync();
+
+    await expect(upload).resolves.toEqual(accepted());
+    expect(proxyAttempts).toBe(3);
+  });
+
+  it("skips parts already persisted in the resumed server session", async () => {
+    requestMock.mockImplementation(
+      async (options: { method: string; path: string }) => {
+        if (options.method === "POST" && options.path === root) {
+          return {
+            schema_version: "lerobot-web-import-grant/v1",
+            import_id: importId,
+            assets: [
+              {
+                path: "meta/info.json",
+                multipart_upload_id: "upload-a",
+                parts: [],
+                completed: false,
+              },
+            ],
+          };
+        }
+        if (options.path.endsWith("assets:authorize-parts")) {
+          return {
+            path: "meta/info.json",
+            completed: false,
+            uploaded_part_numbers: [1],
+            parts: [],
+          };
+        }
+        if (options.path.endsWith("assets:complete")) return undefined;
+        if (options.path.endsWith(":commit")) return accepted();
+        throw new Error(`Unexpected request ${options.method} ${options.path}`);
+      },
+    );
+    const progress: LeRobotUploadProgress[] = [];
+
+    await expect(
+      uploadNativeLeRobot(scope, oneFileSelection(), binding, (value) =>
+        progress.push(value),
+      ),
+    ).resolves.toEqual(accepted());
+
+    expect(
+      requestMock.mock.calls.filter(
+        ([options]) => (options as { method: string }).method === "PUT",
+      ),
+    ).toHaveLength(0);
+    expect(progress.some((value) => value.uploadedBytes === 3)).toBe(true);
+  });
+
+  it("reserves same-origin request capacity while proxying multipart uploads", async () => {
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      FailingDirectUpload as unknown as typeof XMLHttpRequest,
+    );
+    const file = new File(["raw"], "video.mp4");
+    Object.defineProperty(file, "size", {
+      value: LEROBOT_MULTIPART_BYTES * 4,
+    });
+    const selection: LeRobotFolderSelection = {
+      ...oneFileSelection(),
+      sourceFiles: [{ file, path: "videos/camera/file.mp4" }],
+      sourceBytes: file.size,
+    };
+    let activeProxyRequests = 0;
+    let maximumActiveProxyRequests = 0;
+    let proxyRequestCount = 0;
+
+    requestMock.mockImplementation(
+      async (options: {
+        method: string;
+        path: string;
+        body?: { part_numbers?: number[] };
+      }) => {
+        if (options.method === "POST" && options.path === root) {
+          return {
+            schema_version: "lerobot-web-import-grant/v1",
+            import_id: importId,
+            assets: [
+              {
+                path: "videos/camera/file.mp4",
+                multipart_upload_id: "upload-a",
+                parts: [],
+                completed: false,
+              },
+            ],
+          };
+        }
+        if (options.path.endsWith("assets:authorize-parts")) {
+          return {
+            path: "videos/camera/file.mp4",
+            completed: false,
+            parts: (options.body?.part_numbers ?? []).map((partNumber) => ({
+              part_number: partNumber,
+              url: `https://oss.invalid/direct-part-${partNumber}`,
+              expires_at: "2026-09-01T10:00:00Z",
+            })),
+          };
+        }
+        if (options.method === "PUT") {
+          proxyRequestCount += 1;
+          activeProxyRequests += 1;
+          maximumActiveProxyRequests = Math.max(
+            maximumActiveProxyRequests,
+            activeProxyRequests,
+          );
+          await new Promise<void>((resolve) => queueMicrotask(resolve));
+          activeProxyRequests -= 1;
+          return undefined;
+        }
+        if (options.path.endsWith("assets:complete")) return undefined;
+        if (options.path.endsWith(":commit")) return accepted();
+        throw new Error(`Unexpected request ${options.method} ${options.path}`);
+      },
+    );
+
+    await expect(
+      uploadNativeLeRobot(scope, selection, binding, () => {}),
+    ).resolves.toEqual(accepted());
+
+    expect(proxyRequestCount).toBe(4);
+    expect(maximumActiveProxyRequests).toBe(MAX_SAME_ORIGIN_PROXY_PARTS);
   });
 
   it("keeps the import session for retry and skips an already completed asset", async () => {

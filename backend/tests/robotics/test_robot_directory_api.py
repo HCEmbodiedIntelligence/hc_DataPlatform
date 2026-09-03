@@ -165,12 +165,24 @@ def test_organization_binding_replaces_the_project_binding_contract() -> None:
     assert history.status_code == 200
     assert [item["binding_id"] for item in history.json()["items"]] == [bound.json()["binding_id"]]
 
-    protected = client.delete(f"{root}/{robot_id}", headers={"Authorization": "Bearer test"})
-    assert protected.status_code == 409
-    assert protected.json()["code"] == "ROBOT_NOT_PROVISIONAL"
+    deleted = client.delete(f"{root}/{robot_id}", headers={"Authorization": "Bearer test"})
+    assert deleted.status_code == 204
+    assert (
+        client.get(f"{root}/{robot_id}/bootstrap", headers={"Authorization": "Bearer test"}).json()[
+            "code"
+        ]
+        == "ROBOT_NOT_FOUND"
+    )
+    history_after_delete = client.get(
+        f"{root}/model-bindings",
+        params={"version_id": "version-a"},
+        headers={"Authorization": "Bearer test"},
+    )
+    assert history_after_delete.status_code == 200
+    assert history_after_delete.json()["items"] == []
 
 
-def test_failed_import_can_delete_only_its_provisional_robot() -> None:
+def test_delete_robot_is_idempotent() -> None:
     repository = InMemoryOrganizationRobotAssetRepository((ORGANIZATION_ID,))
     configure_organization_robot_assets(OrganizationRobotAssetService(repository))
     current: dict[str, AuthContext | None] = {"value": _auth(manage=True)}

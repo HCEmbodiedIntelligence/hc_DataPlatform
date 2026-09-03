@@ -187,9 +187,9 @@ def test_synthesizes_an_upload_ready_v2_bundle(
         (output / UPLOAD_COMMAND_PATH).read_text(encoding="utf-8")
     )
     assert command.schema_version == "continuous-recording-upload/v2"
-    assert (
-        command.capture_ended_at - command.capture_started_at
-    ).total_seconds() == pytest.approx(0.1)
+    assert (command.capture_ended_at - command.capture_started_at).total_seconds() == pytest.approx(
+        0.1
+    )
     assert len(command.recording_config.cameras) == 4
     assert {sensor.topic for sensor in command.recording_config.sensors} == set(
         subject.SENSOR_TOPICS

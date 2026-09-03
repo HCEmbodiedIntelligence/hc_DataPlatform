@@ -87,9 +87,7 @@ SENSOR_TOPICS = (
     GRIPPER_COMMAND_TOPIC,
     SOURCE_TOPIC,
 )
-REQUIRED_SENSOR_TOPICS = frozenset(REQUIRED_TOPICS).difference(
-    camera.topic for camera in CAMERAS
-)
+REQUIRED_SENSOR_TOPICS = frozenset(REQUIRED_TOPICS).difference(camera.topic for camera in CAMERAS)
 
 _DATA_COLUMNS = (
     "episode_index",
@@ -313,9 +311,7 @@ def inspect_source(source_root: Path) -> SourceInventory:
 
         raw_tasks = row.get("tasks")
         tasks = (
-            tuple(str(item) for item in raw_tasks)
-            if isinstance(raw_tasks, (list, tuple))
-            else ()
+            tuple(str(item) for item in raw_tasks) if isinstance(raw_tasks, (list, tuple)) else ()
         )
         start_offset_ns = round(cumulative_frames * 1_000_000_000 / fps)
         cumulative_frames += frame_count
@@ -463,9 +459,7 @@ def _sensor_channels(writer: Writer) -> dict[str, int]:
         END_EFFECTOR_ACTION_TOPIC: writer.register_channel(
             END_EFFECTOR_ACTION_TOPIC, "json", action_schema
         ),
-        GRIPPER_STATE_TOPIC: writer.register_channel(
-            GRIPPER_STATE_TOPIC, "json", action_schema
-        ),
+        GRIPPER_STATE_TOPIC: writer.register_channel(GRIPPER_STATE_TOPIC, "json", action_schema),
         GRIPPER_COMMAND_TOPIC: writer.register_channel(
             GRIPPER_COMMAND_TOPIC, "json", action_schema
         ),
@@ -562,15 +556,11 @@ def write_sensor_mcap(
             )
             timestamp_ns = round(global_frame_index * 1_000_000_000 / inventory.fps)
             sequence = global_frame_index + 1
-            joint_message = _json_bytes(
-                {"names": G1_JOINT_NAMES, "positions": current[7:]}
-            )
+            joint_message = _json_bytes({"names": G1_JOINT_NAMES, "positions": current[7:]})
             messages = {
                 STATE_TOPIC: joint_message,
                 JOINT_TOPIC: joint_message,
-                ACTION_TOPIC: _json_bytes(
-                    {"names": G1_JOINT_NAMES, "values": desired[7:]}
-                ),
+                ACTION_TOPIC: _json_bytes({"names": G1_JOINT_NAMES, "values": desired[7:]}),
                 END_EFFECTOR_STATE_TOPIC: _json_bytes(
                     {"names": END_EFFECTOR_NAMES, "values": end_effector_state}
                 ),

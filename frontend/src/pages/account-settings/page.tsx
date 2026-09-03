@@ -654,6 +654,7 @@ export function AccountSettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
   const principal = useShellStore((state) => state.principal);
+  const sessionExpired = useShellStore((state) => state.sessionExpired);
   const updatePrincipal = useShellStore((state) => state.updatePrincipal);
   const clearSensitiveState = useShellStore(
     (state) => state.clearSensitiveState,
@@ -675,6 +676,12 @@ export function AccountSettingsPage() {
     setSession(null, null);
     navigate("/auth/session-expired", { replace: true });
   }, [clearSensitiveState, navigate, setSession]);
+
+  useEffect(() => {
+    if (sessionExpired) {
+      navigate("/auth/session-expired", { replace: true });
+    }
+  }, [navigate, sessionExpired]);
 
   useEffect(() => {
     if (isDomainError(query.error) && query.error.httpStatus === 401) {

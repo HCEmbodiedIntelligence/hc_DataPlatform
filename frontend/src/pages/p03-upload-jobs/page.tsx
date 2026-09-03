@@ -119,9 +119,7 @@ export default function UploadJobsPage() {
   const beginPreparedUpload = useUploadQueueStore(
     (state) => state.beginPrepared,
   );
-  const startLeRobotUpload = useUploadQueueStore(
-    (state) => state.startLeRobot,
-  );
+  const startLeRobotUpload = useUploadQueueStore((state) => state.startLeRobot);
   const folderBatch = useUploadQueueStore((state) => state.folderBatch);
   const pauseUpload = useUploadQueueStore((state) => state.pause);
   const resumeUpload = useUploadQueueStore((state) => state.resume);
@@ -158,17 +156,17 @@ export default function UploadJobsPage() {
   useEffect(() => {
     const hasActiveBrowserTransfer = queueItems.some(
       (item) =>
-        item.sourceType === "BROWSER_MULTIPART" &&
+        ["BROWSER_MULTIPART", "LEROBOT_NATIVE"].includes(item.sourceType) &&
         ["uploading", "pausing", "finalizing"].includes(item.transferStatus),
     );
-    if (!hasActiveBrowserTransfer && flow.phase !== "lerobot_uploading") return;
+    if (!hasActiveBrowserTransfer) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [flow.phase, queueItems]);
+  }, [queueItems]);
 
   const records = useQuery({
     queryKey: [
@@ -179,10 +177,7 @@ export default function UploadJobsPage() {
       statusFilter,
     ],
     enabled:
-      activeTab === "records" &&
-      Boolean(scope) &&
-      canRead &&
-      !robotIdFilter,
+      activeTab === "records" && Boolean(scope) && canRead && !robotIdFilter,
     staleTime: 10_000,
     queryFn: ({ signal }) => {
       if (!scope) throw new Error("INGEST_SCOPE_UNAVAILABLE");
@@ -557,9 +552,7 @@ export default function UploadJobsPage() {
             </div>
           ) : null}
 
-          {queueVisible &&
-          !precheckVisible &&
-          !selectionVisible ? (
+          {queueVisible && !precheckVisible && !selectionVisible ? (
             <div className={styles.serialWorkspace}>
               <UploadQueuePanel
                 items={queueItems}

@@ -120,6 +120,38 @@ describe("RuntimePlatformShell", () => {
     expect(await screen.findByRole("heading", { name: "登录" })).toBeVisible();
   });
 
+  it("redirects an expired authenticated session to the re-login page", async () => {
+    const store = useShellStore.getState();
+    store.setSession(
+      {
+        actorId: "runtime-shell-user",
+        displayName: "Runtime Shell User",
+        roleIds: [],
+      },
+      "expired-runtime-token",
+    );
+    store.expireSession("expired-runtime-token");
+
+    render(
+      <ProviderHarness>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <Routes>
+            <Route
+              path="/dashboard"
+              element={<RuntimePlatformShell pageAvailability={{}} />}
+            />
+            <Route path="/auth/login" element={<h1>登录</h1>} />
+            <Route path="/auth/session-expired" element={<h1>会话已失效</h1>} />
+          </Routes>
+        </MemoryRouter>
+      </ProviderHarness>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "会话已失效" }),
+    ).toBeVisible();
+  });
+
   it("never renders a stale persisted project and corrects it from authorized session scopes", async () => {
     const store = useShellStore.getState();
     store.setSession(

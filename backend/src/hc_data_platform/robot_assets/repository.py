@@ -73,7 +73,7 @@ class OrganizationRobotAssetRepository(Protocol):
         occurred_at: datetime,
     ) -> RobotBootstrap: ...
 
-    def delete_provisional_robot(
+    def delete_robot(
         self,
         *,
         organization_id: str,
@@ -327,7 +327,7 @@ class InMemoryOrganizationRobotAssetRepository:
             self._robots[(organization_id, robot_id)] = updated
             return updated
 
-    def delete_provisional_robot(
+    def delete_robot(
         self,
         *,
         organization_id: str,
@@ -341,25 +341,18 @@ class InMemoryOrganizationRobotAssetRepository:
             robot = self._robots.get((organization_id, robot_id))
             if robot is None:
                 return False
-            if (
-                robot.robot.lifecycle_status != "DRAFT"
-                or robot.effective_model_binding is not None
-                or any(
-                    binding.robot_id == robot_id
-                    for (candidate_organization, _), binding in self._bindings.items()
-                    if candidate_organization == organization_id
-                )
-            ):
-                raise ValueError("robot is not provisional")
+            for binding_key, binding in tuple(self._bindings.items()):
+                if binding_key[0] == organization_id and binding.robot_id == robot_id:
+                    del self._bindings[binding_key]
             del self._robots[(organization_id, robot_id)]
-            for key, (_fingerprint, response) in tuple(self._receipts.items()):
+            for receipt_key, (_fingerprint, response) in tuple(self._receipts.items()):
                 response_robot_id = (
                     response.robot.id if isinstance(response, RobotBootstrap) else None
                 )
-                if key[0] == organization_id and (
-                    key[1] == robot_id or response_robot_id == robot_id
+                if receipt_key[0] == organization_id and (
+                    receipt_key[1] == robot_id or response_robot_id == robot_id
                 ):
-                    del self._receipts[key]
+                    del self._receipts[receipt_key]
             return True
 
     def bind_model(
@@ -934,7 +927,7 @@ class PostgresOrganizationRobotAssetRepository:
             raise KeyError(robot_id)
         return _bootstrap_from_mapping(self._row(cursor, raw))
 
-    def delete_provisional_robot(
+    def delete_robot(
         self,
         *,
         organization_id: str,
@@ -948,7 +941,7 @@ class PostgresOrganizationRobotAssetRepository:
         try:
             cursor.execute(
                 """
-                SELECT lifecycle_status, binding_id, robot_model_version_id
+                SELECT robot_id
                   FROM robotics.robot_assets
                  WHERE organization_id = %s AND robot_id = %s
                  FOR UPDATE
@@ -959,26 +952,33 @@ class PostgresOrganizationRobotAssetRepository:
             if raw is None:
                 connection.commit()
                 return False
-            row = self._row(cursor, raw)
-            if (
-                str(row["lifecycle_status"]) != "DRAFT"
-                or row["binding_id"] is not None
-                or row["robot_model_version_id"] is not None
-            ):
-                raise ValueError("robot is not provisional")
             cursor.execute(
                 """
                 SELECT EXISTS (
-                    SELECT 1
-                      FROM registry.organization_robot_model_bindings
-                     WHERE organization_id = %s AND robot_id = %s
-                    UNION ALL
                     SELECT 1
                       FROM robotics.robot_asset_components
                      WHERE organization_id = %s AND robot_id = %s
                     UNION ALL
                     SELECT 1
                       FROM robotics.project_robot_assignments
+                     WHERE organization_id = %s AND robot_id = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM ingest.robot_ingest_identities
+                     WHERE organization_id = %s AND robot_id = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM calibrations.calibration_sets
+                     WHERE organization_id = %s AND robot_instance_id = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM ingest.data_sources
+                     WHERE organization_id = %s
+                       AND source_type = 'ROBOT'
+                       AND source_document #>> '{binding,robot_id}' = %s
+                    UNION ALL
+                    SELECT 1
+                      FROM ingest.raw_sources
                      WHERE organization_id = %s AND robot_id = %s
                 ) AS in_use
                 """,
@@ -989,11 +989,24 @@ class PostgresOrganizationRobotAssetRepository:
                     robot_id,
                     organization_id,
                     robot_id,
+                    organization_id,
+                    robot_id,
+                    organization_id,
+                    robot_id,
+                    organization_id,
+                    robot_id,
                 ),
             )
             usage = cursor.fetchone()
             if usage is None or bool(self._row(cursor, usage)["in_use"]):
-                raise ValueError("robot is not provisional")
+                raise ValueError("robot is in use")
+            cursor.execute(
+                """
+                DELETE FROM registry.organization_robot_model_bindings
+                 WHERE organization_id = %s AND robot_id = %s
+                """,
+                (organization_id, robot_id),
+            )
             cursor.execute(
                 """
                 DELETE FROM robotics.robot_asset_command_receipts
@@ -1006,7 +1019,7 @@ class PostgresOrganizationRobotAssetRepository:
                 cursor,
                 organization_id=organization_id,
                 actor_id=actor_id,
-                action="robot.asset.provisional_deleted",
+                action="robot.asset.deleted",
                 resource_id=robot_id,
                 request_id=request_id,
                 occurred_at=occurred_at,
