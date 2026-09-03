@@ -1,0 +1,73 @@
+{
+  "alert_delivery": {
+    "alert_name": "HcObservabilityDeliveryCanary",
+    "firing": {
+      "alert_started_at": "2026-08-29T03:00:36.797Z",
+      "received_at": "2026-08-29T03:00:38.542195Z",
+      "status": "firing"
+    },
+    "fingerprint": "acf02160f46e5faf",
+    "labels": {
+      "component": "observability",
+      "severity": "critical",
+      "synthetic": "true"
+    },
+    "resolved": {
+      "alert_ended_at": "2026-08-29T03:01:24.797Z",
+      "received_at": "2026-08-29T03:01:27.042893Z",
+      "status": "resolved"
+    }
+  },
+  "artifacts": {
+    "alert_rules_sha256": "a17e9019f5c40385564d1a8e114b99766fdc70e682a7698c8d97a961b918b290",
+    "collector_config_sha256": "bbeb66ef4b0d6c9222105e117a5da0bf0633752bcea374c72920fe33bdcd3733",
+    "dashboard_sha256": "468ec2568c4dfe1fcf4226d57b96f5069dc9b74550add544636f1c64bf8e241d",
+    "frontend_agent_config_sha256": "97df844ff0d8007f72685f0c680ce100a61b7c5cc20aeec1dbfbdfa7524384dc",
+    "helm_manifest_sha256": "13bcf3f991e905a1846f9e88f8f665d3ea60a92c6ccb55255aa7a0e521465468",
+    "receiver_sha256": "279f5262f5ccab98b6fc63b1a596ecae2b0900886a4bcd579c0f5312f36bb332",
+    "values_sha256": "bb8bdda224dd789d61e26877cab50aeba15d2f1c0aac6ac577abfd66230b1ffe"
+  },
+  "dashboard": {
+    "grafana_version": "13.1.0",
+    "title": "HC Data Platform Operations",
+    "uid": "hc-data-platform-operations"
+  },
+  "environment": {
+    "cluster": "obs502",
+    "kubernetes_version": "v1.32.2",
+    "nodes": 3,
+    "observability_node": "obs502-worker",
+    "producer_node": "obs502-worker2"
+  },
+  "images": {
+    "alertmanager_linux_amd64": "sha256:82c38dcc97cd0fbf5d5e31ddfb304dbb3a6e411194477de5de82ec71b328bb40",
+    "collector_linux_amd64": "sha256:4eb842091c796156d4d3c994eb22ba793590f5723719dbf6b8436cb4dfc17f48",
+    "frontend": "sha256:aa2cd2f87ca947308793412614e57546aaa3dee9f39d7d345b246cedbb285dd0",
+    "grafana_linux_amd64": "sha256:6ea068891652aa6a65ca9065c26b89de939653803c836426970305c11fd00534",
+    "loki_linux_amd64": "sha256:d80be589cf74b6d92747a1b155bec6f07bdd65e261f797fe93a78fb4e833032e",
+    "prometheus_linux_amd64": "sha256:e906cef998316bbe319f98711e1b4d8613ad37e14b08ff831d7036e77b7464f9",
+    "receiver": "sha256:2f928ed298848d7b3589a6a49fe0ee7c5074612bf0f813d24642d3d11063c521"
+  },
+  "log_retention": {
+    "after_node_loss": {
+      "event_code": "HTTP.REQUEST_COMPLETED",
+      "records": 1,
+      "request_id": "fa8fe9d9d5e9561d59a64330aad254e1",
+      "timestamp_ns": "1787973022843678264"
+    },
+    "before_node_loss": {
+      "event_code": "HTTP.REQUEST_COMPLETED",
+      "records": 1,
+      "request_id": "fa8fe9d9d5e9561d59a64330aad254e1",
+      "timestamp_ns": "1787973022843678264"
+    },
+    "central_query_result_equal": true,
+    "node_ready_during_query": "Unknown",
+    "node_reason_during_query": "NodeStatusUnknown",
+    "node_stopped_at": "2026-08-29T03:10:41Z",
+    "node_unknown_at": "2026-08-29T03:11:28Z",
+    "producer_restart_count_after_recovery": 2
+  },
+  "passed": true,
+  "schema_version": "hc-observability-drill/v1"
+}

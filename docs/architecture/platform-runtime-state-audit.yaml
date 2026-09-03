@@ -1,0 +1,155 @@
+api_version: hc-data-platform.io/v1alpha1
+kind: PlatformRuntimeStateAudit
+metadata:
+  contract_version: 1
+  effective_date: "2026-08-29"
+  implementation_task: HA4-03
+  evidence_status: REAL_KUBERNETES_RESTART_PASSED
+
+production_contract:
+  runtime_backend: production
+  process_memory_is_source_of_truth: false
+  pod_files_are_source_of_truth: false
+  local_staging_prefix: /tmp/hc-data
+  local_staging_storage: bounded_emptyDir
+
+durable_surfaces:
+  - id: authenticated_sessions
+    source_of_truth: postgresql
+    production_adapter: PostgresAccessRepository
+    restart_invariant: an issued unexpired bearer session remains valid on a replacement API Pod
+  - id: idempotency_results
+    source_of_truth: postgresql
+    production_adapter: PsycopgIdempotencyStore
+    restart_invariant: the same key and body replays the exact response without a second mutation
+  - id: upload_control_and_payload
+    source_of_truth: postgresql_and_versioned_object_store
+    production_adapter: PostgresIngestPersistence+S3ObjectStorage
+    restart_invariant: multipart identity, parts, pause/resume state, and manifest survive API replacement
+  - id: workflow_and_task_ownership
+    source_of_truth: temporal_and_postgresql
+    production_adapter: TemporalWorkflow+PostgresWorkflowJobRepository
+    restart_invariant: Worker replacement resumes one workflow history and one idempotent side-effect result
+
+ephemeral_surfaces:
+  - id: api_tmp
+    workload: api
+    path: /tmp
+    size_limit: 256Mi
+    correctness_dependency: false
+    rebuild_strategy: request retry reloads durable PostgreSQL/S3 state
+  - id: worker_alignment_and_projection_staging
+    workload: worker
+    path: /tmp/hc-data/alignment
+    size_limit: 20Gi
+    correctness_dependency: false
+    rebuild_strategy: Temporal retries the attempt and immutable S3/Lance writes reconcile by content identity
+  - id: aligned_media_staging
+    workload: media-worker
+    path: /tmp/hc-data/aligned-media
+    size_limit: 20Gi
+    correctness_dependency: false
+    rebuild_strategy: Temporal retries keyed encoding and S3 publication verifies immutable members
+  - id: worker_readiness_sentinel
+    workload: worker_and_media-worker
+    path: /tmp/hc-runtime/worker-ready
+    size_limit: 16Mi
+    correctness_dependency: false
+    rebuild_strategy: each process creates it only after pollers and auxiliary loops start
+  - id: frontend_tmp
+    workload: frontend
+    path: /tmp
+    size_limit: 64Mi
+    correctness_dependency: false
+    rebuild_strategy: immutable static assets and runtime config are present in every image/Pod
+  - id: quality_export_scratch
+    workload: worker
+    path: system_temporary_directory
+    size_limit: 20Gi
+    correctness_dependency: false
+    rebuild_strategy: scoped temporary directories are deleted on exit and the activity is retryable
+
+process_local_caches:
+  - id: validated_settings
+    implementation: get_settings_lru_cache
+    correctness_dependency: false
+    convergence: immutable Pod environment is revalidated on every process start
+  - id: router_dependency_handles
+    implementation: configured_service_lru_caches
+    correctness_dependency: false
+    convergence: production composition replaces test adapters before readiness
+  - id: aligned_media_placeholder_images
+    implementation: FFmpegMp4Encoder_placeholder_cache
+    correctness_dependency: false
+    convergence: deterministic bytes are regenerated from width and height
+
+forbidden_states:
+  - staging_or_production_runtime_backend_memory
+  - durable_session_or_idempotency_data_in_process_memory
+  - cross_activity_file_uri_as_the_only_copy
+  - unbounded_pod_scratch_volume
+  - local_staging_path_outside_tmp_hc_data
+  - overlapping_alignment_and_aligned_media_roots
+
+acceptance:
+  required_surfaces:
+    - authenticated_sessions
+    - idempotency_results
+    - upload_control_and_payload
+    - workflow_and_task_ownership
+  kubernetes_event: delete_or_drain_the_serving_api_and_worker_nodes_without_forced_pdb_bypass
+  required_result: exact_state_and_side_effects_after_replacement_with_zero_manual_file_copy
+  capacity_claim: NOT_APPLICABLE
+
+evidence:
+  executed_at: "2026-08-29"
+  environment: disposable_kind_v1.32.2
+  runtime_backend: production
+  database_migrations: 105
+  images:
+    api: sha256:f86b80491eedc9707b31f612d82fa45be5fbd3431e2625496f718e2d9be2472f
+    worker: sha256:8b3da4dd88e6da95b0937d26e244b9bd8651ae0d94ea13712c434ac8724d27b9
+    frontend: sha256:13c4fe2e4566f337c45488cb756139ca26f217bb5dd4f35291656ba0827b3963
+  kubernetes:
+    eligible_nodes: 4
+    zones: 2
+    node_drains: 2
+    forced_eviction: false
+    pdb_bypass: false
+    final_ready_replicas_per_workload: 2
+    final_pod_restarts: 0
+    old_api_instance_id: d3968a17-ed3a-4dfe-9722-51c4b67bed4c
+    first_replacement_api_instance_id: 4e85af49-cce0-443e-bafb-d1ee702c6fc1
+    final_api_instance_id: 186b468b-896f-4502-aab3-5ac021749ec7
+  session_and_idempotency:
+    original_session_reused: true
+    replacement_login_required: false
+    account_revision: 3
+    durable_idempotency_rows: 1
+    exact_response_sha256: ab318f07bbf16bbc4ac924468fe81fd6ff84eb4effa1300d11080d45b7afcf18
+    duplicate_profile_mutations_after_replay: 0
+  upload:
+    session_id: 9b3ab2c2-ea35-4c4a-860c-78daa4af086d
+    provider_multipart_identity_preserved: true
+    browser_authorization_transport: isolated_tls_presigned_put
+    uploaded_part_number: 1
+    uploaded_part_bytes: 30
+    uploaded_part_preserved_after_replacement: true
+    final_status_before_cleanup: PAUSED
+  temporal:
+    accepted_workflows: 500
+    completed_workflows: 500
+    unique_workflow_ids: 500
+    terminal_status: BLOCKED
+    elapsed_seconds: 142.407
+    processed_instance_ids: 0
+    post_drill_storage_lifecycle_rows: 0
+    post_drill_outbox_rows: 0
+  pod_local_state:
+    api_sentinel_present_on_replacement: false
+    worker_sentinel_present_on_replacement: false
+    files_copied_between_pods: false
+  excluded_claims:
+    - shared_provider_failover
+    - production_capacity
+    - external_observability_backend

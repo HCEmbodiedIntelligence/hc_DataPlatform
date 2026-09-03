@@ -1,0 +1,78 @@
+{
+  "generator": "generate_packages.py",
+  "scenarios": [
+    {
+      "duplicate_of": null,
+      "expected_condition": "COMPLETE",
+      "expected_preflight": "ACCEPT",
+      "manifest_path": "manifests/legal.json",
+      "manifest_sha256": "47e03ccf66f9b71c73e7137e58fb732f47a14c0f4eee5d7a9a573d9efa7ff2f5",
+      "manifest_size": 1682,
+      "name": "legal",
+      "payload_path": "packages/legal.mcap",
+      "payload_sha256": "35f060e6fd2b8d443165a5771c3faa0b2f548c623f5dd4e0ad795b5534596a35",
+      "payload_size": 34881
+    },
+    {
+      "duplicate_of": null,
+      "expected_condition": "MULTI_CAMERA",
+      "expected_preflight": "ACCEPT",
+      "manifest_path": "manifests/multi_camera.json",
+      "manifest_sha256": "6bdc9055e453b1404912d7f0245c8053c9c017da8a3b8e6959ff6451444b30e9",
+      "manifest_size": 2021,
+      "name": "multi_camera",
+      "payload_path": "packages/multi_camera.mcap",
+      "payload_sha256": "a5dffd77406f5309afb6f75448fa10e63d54520a1360ef4b658555ab70aa05fe",
+      "payload_size": 65932
+    },
+    {
+      "duplicate_of": null,
+      "expected_condition": "MISSING_FRAME",
+      "expected_preflight": "ACCEPT",
+      "manifest_path": "manifests/missing_frame.json",
+      "manifest_sha256": "46181a6882fcea192373803b2f0d0321333325e91fef2fa753ff65e80da81793",
+      "manifest_size": 2022,
+      "name": "missing_frame",
+      "payload_path": "packages/missing_frame.mcap",
+      "payload_sha256": "496ff4a6b2a53bfcde24c3493d63879ec4528a8fa1f85c968abe41b04aff111d",
+      "payload_size": 64901
+    },
+    {
+      "duplicate_of": null,
+      "expected_condition": "MISSING_TOPIC",
+      "expected_preflight": "ACCEPT_WITH_MISSING_TOPIC",
+      "manifest_path": "manifests/missing_topic.json",
+      "manifest_sha256": "f736a2f30157a0ccdd3732d3e95ee4b07f51d78e9c8fb3a565f0b81dec76219d",
+      "manifest_size": 1576,
+      "name": "missing_topic",
+      "payload_path": "packages/missing_topic.mcap",
+      "payload_sha256": "b4e0fd6fa66931e8c5424bd9ddfe855f21c3a6e23989c810925573466a67e5c6",
+      "payload_size": 33017
+    },
+    {
+      "duplicate_of": null,
+      "expected_condition": "INVALID_MANIFEST",
+      "expected_preflight": "REJECT",
+      "manifest_path": "manifests/bad_manifest.json",
+      "manifest_sha256": "8c9a1d30d46b5988061b4f4607afc8b2de98df9ae8a547d5e4839cd7ed47d678",
+      "manifest_size": 1696,
+      "name": "bad_manifest",
+      "payload_path": "packages/legal.mcap",
+      "payload_sha256": "35f060e6fd2b8d443165a5771c3faa0b2f548c623f5dd4e0ad795b5534596a35",
+      "payload_size": 34881
+    },
+    {
+      "duplicate_of": "legal",
+      "expected_condition": "NO_DUPLICATE_SIDE_EFFECT",
+      "expected_preflight": "IDEMPOTENT_REPLAY",
+      "manifest_path": "manifests/legal.json",
+      "manifest_sha256": "47e03ccf66f9b71c73e7137e58fb732f47a14c0f4eee5d7a9a573d9efa7ff2f5",
+      "manifest_size": 1682,
+      "name": "duplicate_package",
+      "payload_path": "packages/legal.mcap",
+      "payload_sha256": "35f060e6fd2b8d443165a5771c3faa0b2f548c623f5dd4e0ad795b5534596a35",
+      "payload_size": 34881
+    }
+  ],
+  "schema_version": 1
+}

@@ -1,0 +1,32 @@
+{
+  "apiVersion": "hc-data-platform.io/v1alpha1",
+  "kind": "PlatformRelease",
+  "metadata": {
+    "releaseId": "platform-v0.1.0-sys103-20260829"
+  },
+  "spec": {
+    "chart": {
+      "name": "hc-data-platform",
+      "version": "0.1.0"
+    },
+    "database": {
+      "migrationManifest": "backend/migrations/manifest.txt",
+      "migrationManifestDigest": "sha256:1b19ffebd3fd243e51640d2cf5d68b37d66be32145399f3f3200849d2916655f",
+      "strategy": "forward-only-expand-contract"
+    },
+    "gitCommit": "024d172a17bb8a3b3f5280304e458d2cc998cf3b",
+    "images": {
+      "api": "hc-data-platform-api@sha256:e7c1b96ddd03518fcb9a4bcf666d0ba99d3422e90060e5ce0b29f8d42e9736af",
+      "frontend": "hc-data-platform-frontend@sha256:0e9c65855136d273a3d0986278283c83976b19557524a0e95f0dfe38e48acb9e",
+      "worker": "hc-data-platform-api@sha256:e7c1b96ddd03518fcb9a4bcf666d0ba99d3422e90060e5ce0b29f8d42e9736af"
+    },
+    "promotion": {
+      "buildOnce": true,
+      "environments": [
+        "staging",
+        "production"
+      ]
+    },
+    "semanticVersion": "0.1.0"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-migration-cutover-approval-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allow_direct_rollback_after_target_writes": {
+      "const": false,
+      "default": false,
+      "title": "Allow Direct Rollback After Target Writes",
+      "type": "boolean"
+    },
+    "allow_dual_write": {
+      "const": false,
+      "default": false,
+      "title": "Allow Dual Write",
+      "type": "boolean"
+    },
+    "allow_source_fence": {
+      "const": true,
+      "default": true,
+      "title": "Allow Source Fence",
+      "type": "boolean"
+    },
+    "allow_source_write_enable": {
+      "const": false,
+      "default": false,
+      "title": "Allow Source Write Enable",
+      "type": "boolean"
+    },
+    "allow_target_write_enable": {
+      "const": true,
+      "default": true,
+      "title": "Allow Target Write Enable",
+      "type": "boolean"
+    },
+    "allow_traffic_switch": {
+      "const": true,
+      "default": true,
+      "title": "Allow Traffic Switch",
+      "type": "boolean"
+    },
+    "approval_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approval_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Approval Key Sha256",
+      "type": "string"
+    },
+    "approved_at": {
+      "format": "date-time",
+      "title": "Approved At",
+      "type": "string"
+    },
+    "approver_identity": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Approver Identity",
+      "type": "string"
+    },
+    "approver_role": {
+      "const": "migration_cutover_approver",
+      "default": "migration_cutover_approver",
+      "title": "Approver Role",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-migration-cutover-approval/v1",
+      "default": "hc-platform-migration-cutover-approval/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "migration_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Migration Id",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "plan_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Sha256",
+      "type": "string"
+    },
+    "source_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Source Environment Id",
+      "type": "string"
+    },
+    "target_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Environment Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval_id",
+    "plan_id",
+    "plan_sha256",
+    "migration_id",
+    "operation_id",
+    "source_environment_id",
+    "target_environment_id",
+    "approver_identity",
+    "approval_key_sha256",
+    "approved_at",
+    "expires_at"
+  ],
+  "title": "hc-platform-migration-cutover-approval/v1",
+  "type": "object"
+}

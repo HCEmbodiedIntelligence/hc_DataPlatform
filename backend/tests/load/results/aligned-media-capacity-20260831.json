@@ -1,0 +1,446 @@
+{
+  "capacity_interpretation": {
+    "measured": "single-host local component behavior with real FFmpeg and Lance",
+    "not_measured": "deployed PostgreSQL/S3/network/pod scheduling and production headroom",
+    "safe_global_concurrency": "min(cpu budget / CPU per job, memory budget / memory per job, temporary disk budget / disk per job, object-store budget / traffic per job)"
+  },
+  "cases": [
+    {
+      "all_artifacts_ready_and_timeline_exact": true,
+      "all_four_camera_bundles_lance_committed": true,
+      "authorization_audit_events": 100,
+      "authorization_counters_after": {
+        "active_ffmpeg": 0,
+        "encoder_calls": 4,
+        "ensure_generation_calls": 4,
+        "internal_job_count": 4,
+        "lance_commit_count": 1
+      },
+      "authorization_counters_before": {
+        "active_ffmpeg": 0,
+        "encoder_calls": 4,
+        "ensure_generation_calls": 4,
+        "internal_job_count": 4,
+        "lance_commit_count": 1
+      },
+      "authorization_has_no_lance_dependency": true,
+      "authorization_zero_work_asserted": true,
+      "authorize_range_latency_seconds": {
+        "maximum": 0.310787,
+        "mean": 0.229938,
+        "minimum": 0.069035,
+        "p50": 0.236111,
+        "p95": 0.263768,
+        "p99": 0.276062
+      },
+      "camera_count_per_upload": 4,
+      "capacity_queue_wait_seconds": {
+        "maximum": 0.001797,
+        "mean": 0.001134,
+        "minimum": 0.000802,
+        "p50": 0.000969,
+        "p95": 0.001684,
+        "p99": 0.001774
+      },
+      "cgroup_anon_peak_bytes": 14794452992,
+      "cgroup_anon_peak_delta_bytes": 158703616,
+      "cgroup_memory_current_available": false,
+      "cgroup_memory_peak_bytes": null,
+      "cgroup_path": "/sys/fs/cgroup",
+      "cgroup_scope_note": "This host exposes only the root cgroup; process RSS is the isolated benchmark-process memory measure.",
+      "cpu_seconds": 173.64,
+      "duration_seconds_per_artifact": 60.0,
+      "exact_test_teardown": {
+        "deleted_bytes": 8362416,
+        "note": "Committed objects are deleted only because the benchmark temp root is teardown scope.",
+        "uses_prefix_delete": false,
+        "wall_seconds": 0.001335
+      },
+      "frames_per_artifact": 1800,
+      "generation_failure_count": 0,
+      "generation_jobs": 4,
+      "generation_latency_seconds": {
+        "maximum": 5.768112,
+        "mean": 5.558214,
+        "minimum": 5.325505,
+        "p50": 5.56962,
+        "p95": 5.767787,
+        "p99": 5.768047
+      },
+      "generation_wall_seconds": 18.317573,
+      "global_media_capacity": 2,
+      "io_read_bytes": 2446016512,
+      "io_write_bytes": 1436860416,
+      "max_active_ffmpeg": 2,
+      "media_activity_batch_size": 2,
+      "network_rx_bytes": 1131518,
+      "network_tx_bytes": 1054341,
+      "objects_per_artifact": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "output_bytes": 8362416,
+      "process_rss_peak_bytes": 381255680,
+      "range_failure_count": 0,
+      "range_response_bytes": 409600,
+      "raw_retained_after_case": true,
+      "ready_clients": 100,
+      "samples": 56,
+      "stage_resource_snapshots": {
+        "four_camera_lance_bundles_committed": {
+          "cgroup_anon_bytes": 13825843200,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 308686848,
+          "temporary_disk_bytes": 10188107
+        },
+        "ready_authorize_range_complete": {
+          "cgroup_anon_bytes": 13673132032,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 312258560,
+          "temporary_disk_bytes": 10188107
+        },
+        "start": {
+          "cgroup_anon_bytes": 14635749376,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 277061632,
+          "temporary_disk_bytes": 0
+        }
+      },
+      "temporary_disk_peak_bytes": 12063827,
+      "upload_concurrency": 1
+    },
+    {
+      "all_artifacts_ready_and_timeline_exact": true,
+      "all_four_camera_bundles_lance_committed": true,
+      "authorization_audit_events": 100,
+      "authorization_counters_after": {
+        "active_ffmpeg": 0,
+        "encoder_calls": 8,
+        "ensure_generation_calls": 8,
+        "internal_job_count": 8,
+        "lance_commit_count": 2
+      },
+      "authorization_counters_before": {
+        "active_ffmpeg": 0,
+        "encoder_calls": 8,
+        "ensure_generation_calls": 8,
+        "internal_job_count": 8,
+        "lance_commit_count": 2
+      },
+      "authorization_has_no_lance_dependency": true,
+      "authorization_zero_work_asserted": true,
+      "authorize_range_latency_seconds": {
+        "maximum": 0.353155,
+        "mean": 0.24506,
+        "minimum": 0.099714,
+        "p50": 0.249752,
+        "p95": 0.298296,
+        "p99": 0.315291
+      },
+      "camera_count_per_upload": 4,
+      "capacity_queue_wait_seconds": {
+        "maximum": 11.02708,
+        "mean": 2.757266,
+        "minimum": 0.000581,
+        "p50": 0.000935,
+        "p95": 11.026455,
+        "p99": 11.026955
+      },
+      "cgroup_anon_peak_bytes": 14196645888,
+      "cgroup_anon_peak_delta_bytes": 521646080,
+      "cgroup_memory_current_available": false,
+      "cgroup_memory_peak_bytes": null,
+      "cgroup_path": "/sys/fs/cgroup",
+      "cgroup_scope_note": "This host exposes only the root cgroup; process RSS is the isolated benchmark-process memory measure.",
+      "cpu_seconds": 279.016,
+      "duration_seconds_per_artifact": 60.0,
+      "exact_test_teardown": {
+        "deleted_bytes": 16724832,
+        "note": "Committed objects are deleted only because the benchmark temp root is teardown scope.",
+        "uses_prefix_delete": false,
+        "wall_seconds": 0.002917
+      },
+      "frames_per_artifact": 1800,
+      "generation_failure_count": 0,
+      "generation_jobs": 8,
+      "generation_latency_seconds": {
+        "maximum": 19.730374,
+        "mean": 9.074782,
+        "minimum": 5.178455,
+        "p50": 5.732767,
+        "p95": 19.657757,
+        "p99": 19.715851
+      },
+      "generation_wall_seconds": 28.823142,
+      "global_media_capacity": 2,
+      "io_read_bytes": 2340708352,
+      "io_write_bytes": 881602560,
+      "max_active_ffmpeg": 2,
+      "media_activity_batch_size": 2,
+      "network_rx_bytes": 1713350,
+      "network_tx_bytes": 1854901,
+      "objects_per_artifact": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "output_bytes": 16724832,
+      "process_rss_peak_bytes": 479096832,
+      "range_failure_count": 0,
+      "range_response_bytes": 409600,
+      "raw_retained_after_case": true,
+      "ready_clients": 100,
+      "samples": 88,
+      "stage_resource_snapshots": {
+        "four_camera_lance_bundles_committed": {
+          "cgroup_anon_bytes": 13910691840,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 371564544,
+          "temporary_disk_bytes": 20448085
+        },
+        "ready_authorize_range_complete": {
+          "cgroup_anon_bytes": 13902991360,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 372318208,
+          "temporary_disk_bytes": 20448085
+        },
+        "start": {
+          "cgroup_anon_bytes": 13674999808,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 312311808,
+          "temporary_disk_bytes": 0
+        }
+      },
+      "temporary_disk_peak_bytes": 22326559,
+      "upload_concurrency": 2
+    },
+    {
+      "all_artifacts_ready_and_timeline_exact": true,
+      "all_four_camera_bundles_lance_committed": true,
+      "authorization_audit_events": 100,
+      "authorization_counters_after": {
+        "active_ffmpeg": 0,
+        "encoder_calls": 16,
+        "ensure_generation_calls": 16,
+        "internal_job_count": 16,
+        "lance_commit_count": 4
+      },
+      "authorization_counters_before": {
+        "active_ffmpeg": 0,
+        "encoder_calls": 16,
+        "ensure_generation_calls": 16,
+        "internal_job_count": 16,
+        "lance_commit_count": 4
+      },
+      "authorization_has_no_lance_dependency": true,
+      "authorization_zero_work_asserted": true,
+      "authorize_range_latency_seconds": {
+        "maximum": 0.282469,
+        "mean": 0.208029,
+        "minimum": 0.063514,
+        "p50": 0.212568,
+        "p95": 0.24479,
+        "p99": 0.278935
+      },
+      "camera_count_per_upload": 4,
+      "capacity_queue_wait_seconds": {
+        "maximum": 31.471928,
+        "mean": 7.01498,
+        "minimum": 0.000573,
+        "p50": 4.757727,
+        "p95": 19.898321,
+        "p99": 29.157207
+      },
+      "cgroup_anon_peak_bytes": 14580609024,
+      "cgroup_anon_peak_delta_bytes": 676118528,
+      "cgroup_memory_current_available": false,
+      "cgroup_memory_peak_bytes": null,
+      "cgroup_path": "/sys/fs/cgroup",
+      "cgroup_scope_note": "This host exposes only the root cgroup; process RSS is the isolated benchmark-process memory measure.",
+      "cpu_seconds": 337.468,
+      "duration_seconds_per_artifact": 60.0,
+      "exact_test_teardown": {
+        "deleted_bytes": 33449664,
+        "note": "Committed objects are deleted only because the benchmark temp root is teardown scope.",
+        "uses_prefix_delete": false,
+        "wall_seconds": 0.013176
+      },
+      "frames_per_artifact": 1800,
+      "generation_failure_count": 0,
+      "generation_jobs": 16,
+      "generation_latency_seconds": {
+        "maximum": 39.880219,
+        "mean": 12.463067,
+        "minimum": 4.094474,
+        "p50": 9.379545,
+        "p95": 26.2591,
+        "p99": 37.155996
+      },
+      "generation_wall_seconds": 47.884709,
+      "global_media_capacity": 2,
+      "io_read_bytes": 3147862016,
+      "io_write_bytes": 1690918912,
+      "max_active_ffmpeg": 2,
+      "media_activity_batch_size": 2,
+      "network_rx_bytes": 3302860,
+      "network_tx_bytes": 3204269,
+      "objects_per_artifact": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "output_bytes": 33449664,
+      "process_rss_peak_bytes": 569270272,
+      "range_failure_count": 0,
+      "range_response_bytes": 409600,
+      "raw_retained_after_case": true,
+      "ready_clients": 100,
+      "samples": 151,
+      "stage_resource_snapshots": {
+        "four_camera_lance_bundles_committed": {
+          "cgroup_anon_bytes": 12867887104,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 465170432,
+          "temporary_disk_bytes": 40844780
+        },
+        "ready_authorize_range_complete": {
+          "cgroup_anon_bytes": 12984238080,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 468418560,
+          "temporary_disk_bytes": 40844780
+        },
+        "start": {
+          "cgroup_anon_bytes": 13904490496,
+          "cgroup_memory_bytes": null,
+          "process_rss_bytes": 371273728,
+          "temporary_disk_bytes": 0
+        }
+      },
+      "temporary_disk_peak_bytes": 40848650,
+      "upload_concurrency": 4
+    }
+  ],
+  "chain": [
+    "raw MCAP retained",
+    "MCAP framing/index/CRC/topic verification",
+    "bounded Arrow projection",
+    "online quality gate",
+    "causal fixed-30Hz alignment",
+    "bounded immutable Arrow alignment staging",
+    "four immutable H.264 CRF20 yuv420p MP4 publications",
+    "Lance rows with frame references only",
+    "Dataset commit marker",
+    "stateless aligned-media authorization",
+    "native HTTP Range GET"
+  ],
+  "cleanup": {
+    "alignment_staging_deleted_by_exact_key": true,
+    "raw_retained_until_test_root_teardown": true,
+    "uses_prefix_delete": false
+  },
+  "completed_at": "2026-08-31T03:06:27.645347+00:00",
+  "evidence_class": "LOCAL_COMPONENT_CAPACITY_NOT_PRODUCTION",
+  "ingest": {
+    "alignment_row_count": 1800,
+    "alignment_staging_bytes": 50266922,
+    "cgroup_anon_peak_bytes": 14635749376,
+    "cgroup_anon_peak_delta_bytes": 1447383040,
+    "cgroup_memory_current_available": false,
+    "cgroup_memory_peak_bytes": null,
+    "cgroup_path": "/sys/fs/cgroup",
+    "cgroup_scope_note": "This host exposes only the root cgroup; process RSS is the isolated benchmark-process memory measure.",
+    "cpu_seconds": 54.592,
+    "expected_unique_jpegs": 7200,
+    "io_read_bytes": 466051072,
+    "io_write_bytes": 214081536,
+    "network_rx_bytes": 959773,
+    "network_tx_bytes": 835633,
+    "process_rss_peak_bytes": 314626048,
+    "projection_bytes": 37710274,
+    "quality_finding_count": 0,
+    "quality_status": "PASS",
+    "raw_mcap_bytes": 24603527,
+    "raw_message_count": 7200,
+    "raw_verification_status": "RAW_VERIFIED",
+    "samples": 42,
+    "stage_resource_snapshots": {
+      "bounded_alignment_published": {
+        "cgroup_anon_bytes": 14635749376,
+        "cgroup_memory_bytes": null,
+        "process_rss_bytes": 276647936,
+        "temporary_disk_bytes": 162847645
+      },
+      "bounded_projection_written": {
+        "cgroup_anon_bytes": 14260469760,
+        "cgroup_memory_bytes": null,
+        "process_rss_bytes": 265777152,
+        "temporary_disk_bytes": 62313801
+      },
+      "quality_gate_complete": {
+        "cgroup_anon_bytes": 14267666432,
+        "cgroup_memory_bytes": null,
+        "process_rss_bytes": 267571200,
+        "temporary_disk_bytes": 62313801
+      },
+      "raw_mcap_written": {
+        "cgroup_anon_bytes": 13584998400,
+        "cgroup_memory_bytes": null,
+        "process_rss_bytes": 172544000,
+        "temporary_disk_bytes": 24603527
+      },
+      "raw_verified": {
+        "cgroup_anon_bytes": 13568638976,
+        "cgroup_memory_bytes": null,
+        "process_rss_bytes": 156315648,
+        "temporary_disk_bytes": 24603527
+      },
+      "start": {
+        "cgroup_anon_bytes": 13188366336,
+        "cgroup_memory_bytes": null,
+        "process_rss_bytes": 151228416,
+        "temporary_disk_bytes": 0
+      }
+    },
+    "temporary_disk_peak_bytes": 162847645,
+    "unique_jpegs": 7200,
+    "wall_seconds": 14.400335
+  },
+  "input": {
+    "camera_count": 4,
+    "camera_topics": [
+      "/camera/front/image",
+      "/camera/rear/image",
+      "/camera/left/image",
+      "/camera/right/image"
+    ],
+    "duration_seconds": 60,
+    "frames_per_camera": 1800,
+    "frequency_hz": 30,
+    "height": 180,
+    "programmatically_generated": true,
+    "unique_jpegs": 7200,
+    "width": 320
+  },
+  "schema_version": 3,
+  "started_at": "2026-08-31T03:04:23.902855+00:00"
+}

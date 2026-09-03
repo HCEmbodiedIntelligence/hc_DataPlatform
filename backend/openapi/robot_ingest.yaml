@@ -1,0 +1,165 @@
+paths:
+  /api/v1/projects/{project_id}/robot-ingest/attempts:
+    get:
+      operationId: listRobotIngestAttempts
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities:
+    get:
+      operationId: listRobotIngestIdentities
+      security:
+        - bearerAuth: []
+      responses: {}
+    post:
+      operationId: createRobotIngestIdentity
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRobotIngestIdentity'
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:
+    get:
+      operationId: getRobotIngestIdentity
+      security:
+        - bearerAuth: []
+      responses: {}
+    patch:
+      operationId: updateRobotIngestIdentity
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRobotIngestIdentity'
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials:
+    get:
+      operationId: listRobotIngestCredentials
+      security:
+        - bearerAuth: []
+      responses: {}
+    post:
+      operationId: issueRobotIngestCredential
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueCredentialCommand'
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:revoke:
+    post:
+      operationId: revokeRobotIngestCredential
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable:
+    post:
+      operationId: disableRobotIngestIdentity
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:enable:
+    post:
+      operationId: enableRobotIngestIdentity
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:rotate-credential:
+    post:
+      operationId: rotateRobotIngestCredential
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueCredentialCommand'
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics:
+    get:
+      operationId: getRobotIngestStatistics
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/uploads:
+    get:
+      operationId: listRobotIngestUploadHistory
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes:
+    get:
+      operationId: listRobotIngestUploadEpisodes
+      security:
+        - bearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads:
+    post:
+      operationId: createRobotIngestUpload
+      security:
+        - robotBearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotIngestUploadManifest'
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}:
+    get:
+      operationId: getRobotIngestUpload
+      security:
+        - robotBearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts:
+    post:
+      operationId: authorizeRobotIngestParts
+      security:
+        - robotBearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizePartsCommand'
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete:
+    post:
+      operationId: completeRobotIngestAsset
+      security:
+        - robotBearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteAssetCommand'
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}:cancel:
+    post:
+      operationId: cancelRobotIngestUpload
+      security:
+        - robotBearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}:commit:
+    post:
+      operationId: commitRobotIngestUpload
+      security:
+        - robotBearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}:pause:
+    post:
+      operationId: pauseRobotIngestUpload
+      security:
+        - robotBearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}:resume:
+    post:
+      operationId: resumeRobotIngestUpload
+      security:
+        - robotBearerAuth: []
+      responses: {}

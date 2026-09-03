@@ -1,0 +1,557 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  configureRuntime,
+  resetRuntimeConfigForTests,
+} from "../../../shared/config/runtime";
+import { useShellStore } from "../../../shared/scope/shell-store";
+import {
+  authorizeRobotModelAssetDownload,
+  authorizeRobotModelViewerAssets,
+  bindRobotModelVersion,
+  createRobotModel,
+  createRobotModelDraft,
+  listRobotModelBindings,
+  listRobotModelJointMappings,
+  listRobotModelAssets,
+  loadRobotBindingTarget,
+  preflightRobotModelPublish,
+  uploadRobotModelAssets,
+} from ".";
+
+const scope = {
+  organizationId: "org-assets",
+  projectId: "project-assets",
+  regionCode: "region-assets",
+} as const;
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+beforeEach(() => {
+  configureRuntime({
+    apiBaseUrl: "/api/v1",
+    sseBaseUrl: "/api/v1",
+    buildVersion: "p14-assets-api-test",
+    releaseEnv: "test",
+  });
+  useShellStore
+    .getState()
+    .setSession(
+      { actorId: "p14-manager", displayName: "P14 管理员", roleIds: [] },
+      "p14-session-token",
+    );
+  useShellStore.getState().setScope(scope);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetRuntimeConfigForTests();
+  useShellStore.getState().setSession(null, null);
+});
+
+describe("P14 robot model asset client", () => {
+  it("creates a robot model with its first editable version", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: "version-initial",
+          robot_model_id: "model-created",
+          version_label: "1.0.0",
+          lifecycle: "DRAFT",
+          asset_availability: "MISSING",
+          publish_readiness: "CONFIGURATION_REQUIRED",
+          asset_manifest_hash: null,
+          validation_input_hash: "b".repeat(64),
+          etag: '"registry:version-initial:1"',
+          allowed_actions: ["VIEW", "EDIT_ASSETS", "EDIT_MAPPING"],
+          blocked_reasons: [],
+        },
+        scope: {
+          organization_id: scope.organizationId,
+          project_id: scope.projectId,
+        },
+        request_id: "p15-create-model",
+        contract_version: "2026-08-19",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createRobotModel(scope.organizationId, {
+        manufacturer: "HC Robotics",
+        modelCode: "XR-01",
+        displayName: "XR-01 模型",
+        versionLabel: "1.0.0",
+        idempotencyKey: "p15-create-model-key",
+      }),
+    ).resolves.toMatchObject({
+      id: "version-initial",
+      robotModelId: "model-created",
+      lifecycle: "DRAFT",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/organizations/org-assets/robot-models",
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      manufacturer: "HC Robotics",
+      model_code: "XR-01",
+      display_name: "XR-01 模型",
+      version_label: "1.0.0",
+    });
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(
+      "p15-create-model-key",
+    );
+  });
+
+  it("creates an editable successor for a published robot model version", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: "version-draft-2",
+          robot_model_id: "model-1",
+          version_label: "2.0.0",
+          lifecycle: "DRAFT",
+          asset_availability: "MISSING",
+          publish_readiness: "CONFIGURATION_REQUIRED",
+          asset_manifest_hash: null,
+          validation_input_hash: "b".repeat(64),
+          etag: '"registry:version-draft-2:1"',
+          allowed_actions: ["VIEW", "EDIT_ASSETS", "EDIT_MAPPING"],
+          blocked_reasons: [],
+        },
+        scope: {
+          organization_id: scope.organizationId,
+          project_id: scope.projectId,
+        },
+        request_id: "p14-create-draft",
+        contract_version: "2026-08-19",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createRobotModelDraft(scope.organizationId, {
+        sourceVersionId: "version-1",
+        versionLabel: "2.0.0",
+        updateScope: "ASSETS",
+        idempotencyKey: "p14-create-draft-key",
+      }),
+    ).resolves.toMatchObject({ id: "version-draft-2", lifecycle: "DRAFT" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/organizations/org-assets/robot-model-versions/version-1:create-draft",
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      version_label: "2.0.0",
+      update_scope: "ASSETS",
+    });
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(
+      "p14-create-draft-key",
+    );
+  });
+
+  it("lists an exact version-scoped manifest with no-store transport", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        items: [
+          {
+            asset_id: "asset-1",
+            relative_path: "models/xr-01.urdf",
+            role: "URDF",
+            media_type: "application/xml",
+            size_bytes: 42,
+            sha256: "a".repeat(64),
+            created_at: "2026-08-19T11:00:00Z",
+          },
+        ],
+        scope: {
+          organization_id: scope.organizationId,
+          project_id: scope.projectId,
+        },
+        request_id: "p14-assets-list",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listRobotModelAssets(scope.organizationId, "version-1"),
+    ).resolves.toEqual([
+      expect.objectContaining({ asset_id: "asset-1", role: "URDF" }),
+    ]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/organizations/org-assets/robot-model-versions/version-1/assets",
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("GET");
+    expect(init.cache).toBe("no-store");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe("Bearer p14-session-token");
+    expect(headers.get("X-Organization-Id")).toBe(scope.organizationId);
+    expect(headers.get("X-Project-Id")).toBe(scope.projectId);
+  });
+
+  it("obtains a fresh download grant without accepting physical object locators", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        asset_id: "asset-1",
+        download_url: "https://object.example.test/grant?signature=ephemeral",
+        expires_at: "2026-08-19T11:15:00Z",
+        sha256: "b".repeat(64),
+        media_type: "application/xml",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      authorizeRobotModelAssetDownload(
+        scope.organizationId,
+        "version-1",
+        "asset-1",
+      ),
+    ).resolves.toMatchObject({ asset_id: "asset-1" });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.cache).toBe("no-store");
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        asset_id: "asset-1",
+        download_url: "https://object.example.test/grant?signature=ephemeral",
+        expires_at: "2026-08-19T11:15:00Z",
+        sha256: "b".repeat(64),
+        media_type: "application/xml",
+        object_key: "must-not-cross-the-api-boundary",
+      }),
+    );
+    await expect(
+      authorizeRobotModelAssetDownload(
+        scope.organizationId,
+        "version-1",
+        "asset-1",
+      ),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+  });
+
+  it("authorizes the URDF and every render dependency independently", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const assetId = url.match(/\/assets\/([^/]+)\/download$/u)?.[1];
+      return jsonResponse({
+        asset_id: assetId,
+        download_url: `https://object.example.test/${assetId}?signature=ephemeral`,
+        expires_at: "2026-08-19T11:15:00Z",
+        sha256: "b".repeat(64),
+        media_type: assetId === "asset-urdf" ? "application/xml" : "model/stl",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const assets = [
+      {
+        asset_id: "asset-urdf",
+        relative_path: "robot/model.urdf",
+        role: "URDF",
+        media_type: "application/xml",
+        size_bytes: 100,
+        sha256: "a".repeat(64),
+        created_at: "2026-08-19T11:00:00Z",
+      },
+      {
+        asset_id: "asset-mesh",
+        relative_path: "robot/meshes/body.stl",
+        role: "MESH",
+        media_type: "model/stl",
+        size_bytes: 200,
+        sha256: "b".repeat(64),
+        created_at: "2026-08-19T11:00:00Z",
+      },
+      {
+        asset_id: "asset-config",
+        relative_path: "robot/config.json",
+        role: "CONFIG",
+        media_type: "application/json",
+        size_bytes: 20,
+        sha256: "c".repeat(64),
+        created_at: "2026-08-19T11:00:00Z",
+      },
+    ] as const;
+
+    await expect(
+      authorizeRobotModelViewerAssets(
+        scope.organizationId,
+        "version-1",
+        assets,
+      ),
+    ).resolves.toEqual({
+      urdfUrl: "https://object.example.test/asset-urdf?signature=ephemeral",
+      urdfPath: "robot/model.urdf",
+      assetUrls: {
+        "robot/meshes/body.stl":
+          "https://object.example.test/asset-mesh?signature=ephemeral",
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps multipart grants out of its result and completes the file with the returned ETag", async () => {
+    const createEnvelope = {
+      data: {
+        upload_id: "upload-1",
+        version_id: "version-1",
+        status: "UPLOADING",
+        files: [
+          {
+            relative_path: "xr-01.urdf",
+            role: "URDF",
+            media_type: "application/xml",
+            size_bytes: 8,
+            sha256: "c".repeat(64),
+            status: "UPLOADING",
+            part_size_bytes: 16 * 1024 * 1024,
+            total_parts: 1,
+            part_authorizations: [
+              {
+                part_number: 1,
+                url: "https://object.example.test/short-lived-part-grant",
+                expires_at: "2026-08-19T11:15:00Z",
+              },
+            ],
+          },
+        ],
+        created_at: "2026-08-19T11:00:00Z",
+        updated_at: "2026-08-19T11:00:00Z",
+        completed_at: null,
+      },
+      scope: {
+        organization_id: scope.organizationId,
+        project_id: scope.projectId,
+      },
+      request_id: "p14-assets-upload",
+    };
+    const completedEnvelope = {
+      ...createEnvelope,
+      data: {
+        ...createEnvelope.data,
+        status: "COMPLETED",
+        files: createEnvelope.data.files.map((file) => ({
+          ...file,
+          status: "COMPLETED",
+          part_authorizations: [],
+        })),
+        completed_at: "2026-08-19T11:01:00Z",
+      },
+    };
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input === "https://object.example.test/short-lived-part-grant") {
+        expect(init).toMatchObject({
+          method: "PUT",
+          cache: "no-store",
+          credentials: "omit",
+        });
+        return new Response(null, {
+          status: 200,
+          headers: { ETag: '"part-etag"' },
+        });
+      }
+      if (input.endsWith("/upload-sessions"))
+        return jsonResponse(createEnvelope);
+      if (input.endsWith(":complete-file"))
+        return jsonResponse(completedEnvelope);
+      throw new Error(`unexpected request ${input}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["robot-v1"], "xr-01.urdf", {
+      type: "application/xml",
+    });
+
+    await expect(
+      uploadRobotModelAssets(
+        scope.organizationId,
+        "version-1",
+        [
+          {
+            file,
+            relativePath: "xr-01.urdf",
+            role: "URDF",
+            mediaType: "application/xml",
+            sha256: "c".repeat(64),
+          },
+        ],
+        "p14-upload-key",
+      ),
+    ).resolves.toBe("upload-1");
+
+    const completeCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith(":complete-file"),
+    );
+    expect(JSON.parse(String((completeCall?.[1] as RequestInit).body))).toEqual(
+      {
+        relative_path: "xr-01.urdf",
+        parts: [{ part_number: 1, etag: "part-etag" }],
+      },
+    );
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
+      "multipart_upload_id",
+    );
+  });
+
+  it("uses the version-scoped mapping and publish-preflight contracts without invented fields", async () => {
+    const mappingResponse = {
+      items: [
+        {
+          source_joint_name: "joint_1",
+          target_joint_name: "actuator_1",
+          direction: "SAME",
+        },
+      ],
+      mapping_hash: "d".repeat(64),
+      scope: {
+        organization_id: scope.organizationId,
+        project_id: scope.projectId,
+      },
+      request_id: "p14-mappings",
+    };
+    const preflightResponse = {
+      data: {
+        allowed: true,
+        preflight_token: "signed-preflight-token".repeat(4),
+        expires_at: "2026-08-19T11:15:00Z",
+        expected_etag: '"registry:version-1:2"',
+        asset_manifest_hash: "a".repeat(64),
+        mapping_hash: "d".repeat(64),
+        checks: [
+          {
+            code: "URDF_WELL_FORMED",
+            passed: true,
+            message: "The URDF structure and joint declarations are valid.",
+          },
+        ],
+        blockers: [],
+      },
+      scope: {
+        organization_id: scope.organizationId,
+        project_id: scope.projectId,
+      },
+      request_id: "p14-preflight",
+    };
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input.endsWith("/joint-mappings"))
+        return jsonResponse(mappingResponse);
+      if (input.endsWith(":preflight-publish"))
+        return jsonResponse(preflightResponse);
+      throw new Error(`unexpected request ${input}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listRobotModelJointMappings(scope.organizationId, "version-1"),
+    ).resolves.toEqual(mappingResponse.items);
+
+    await expect(
+      preflightRobotModelPublish(scope.organizationId, {
+        versionId: "version-1",
+        etag: '"registry:version-1:2"',
+        idempotencyKey: "p14-preflight-key",
+      }),
+    ).resolves.toMatchObject({ allowed: true });
+
+    const preflightCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith(":preflight-publish"),
+    );
+    const init = preflightCall?.[1] as RequestInit;
+    expect(init.body).toBeUndefined();
+    const headers = new Headers(init.headers);
+    expect(headers.get("If-Match")).toBe('"registry:version-1:2"');
+    expect(headers.get("Idempotency-Key")).toBe("p14-preflight-key");
+  });
+
+  it("loads a current robot ETag and records a version-scoped binding without client-supplied facts", async () => {
+    const binding = {
+      binding_id: "binding-1",
+      robot_id: "robot-1",
+      version_id: "version-1",
+      status: "ACTIVE",
+      bound_at: "2026-08-19T11:00:00Z",
+      unbound_at: null,
+    };
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith("/robots/robot-1/bootstrap")) {
+        return jsonResponse({
+          data: {
+            robot: {
+              id: "robot-1",
+              display_name: "XR-01",
+              serial_no: "XR-01-SN",
+              lifecycle_status: "ACTIVE",
+              connectivity: {
+                state: "ONLINE",
+                observed_at: null,
+                source: null,
+                reason_code: null,
+              },
+            },
+            etag: '"robot-1:2"',
+            topology_revision: "topology-1",
+            effective_model_binding: null,
+            allowed_actions: ["VIEW", "BIND_MODEL"],
+          },
+          scope: { organization_id: scope.organizationId },
+          request_id: "p14-binding-target",
+          contract_version: "2026-08-31",
+        });
+      }
+      if (input.endsWith("/model-bindings") && init?.method === "POST") {
+        return jsonResponse(binding);
+      }
+      if (input.includes("/robots/model-bindings?version_id=")) {
+        return jsonResponse({
+          items: [binding],
+          scope: { organization_id: scope.organizationId },
+          request_id: "p14-bindings-list",
+        });
+      }
+      throw new Error(`unexpected request ${input}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      loadRobotBindingTarget({
+        robotId: "robot-1",
+      }),
+    ).resolves.toEqual({
+      robotId: "robot-1",
+      displayName: "XR-01",
+      etag: '"robot-1:2"',
+    });
+    await expect(
+      listRobotModelBindings(scope.organizationId, "version-1"),
+    ).resolves.toEqual([binding]);
+    await expect(
+      bindRobotModelVersion(scope.organizationId, {
+        versionId: "version-1",
+        robotId: "robot-1",
+        robotEtag: '"robot-1:2"',
+        idempotencyKey: "binding-key",
+      }),
+    ).resolves.toEqual(binding);
+    const bindCall = fetchMock.mock.calls.at(-1);
+    const init = bindCall?.[1] as RequestInit;
+    expect(bindCall?.[0]).toBe(
+      "/api/v1/organizations/org-assets/robots/robot-1/model-bindings",
+    );
+    expect(JSON.parse(String(init.body))).toEqual({
+      version_id: "version-1",
+      robot_etag: '"robot-1:2"',
+    });
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(
+      "binding-key",
+    );
+  });
+});

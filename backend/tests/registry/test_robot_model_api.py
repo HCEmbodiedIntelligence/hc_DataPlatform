@@ -1,0 +1,919 @@
+from __future__ import annotations
+
+import hashlib
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+
+from hc_data_platform.core.errors import ProblemException
+from hc_data_platform.ingest.ports import InMemoryObjectStorage
+from hc_data_platform.registry.filesystem_storage import FilesystemRobotModelStorage
+from hc_data_platform.registry.models import (
+    CompleteRobotModelAssetFileRequest,
+    CreateRobotModelAssetUploadRequest,
+    PublishRobotModelVersionRequest,
+    ReplaceRobotModelJointMappingsRequest,
+    RobotAssetCompletedPart,
+    RobotAssetRole,
+    RobotJointDirection,
+    RobotModelAssetUploadFileRequest,
+    RobotModelJointMapping,
+    RobotModelSummary,
+    RobotModelVersion,
+)
+from hc_data_platform.registry.repository import InMemoryRegistryRepository
+from hc_data_platform.registry.router import configure_registry, router
+from hc_data_platform.registry.service import RegistryService
+from hc_data_platform.security.auth import AuthContext
+
+
+def _auth(
+    *,
+    project_id: str = "project-a",
+    can_read: bool = True,
+    can_manage: bool = False,
+) -> AuthContext:
+    organization_id = "organization-a" if project_id == "project-a" else "organization-b"
+    return AuthContext(
+        subject_id="registry-reader",
+        organization_ids=frozenset({organization_id}),
+        project_ids=frozenset({project_id}),
+        region_codes=frozenset(),
+        scope_pairs=frozenset({(project_id, None)}),
+        organization_scope_triples=frozenset({(organization_id, project_id, None)}),
+        scoped_capabilities=frozenset(
+            capability
+            for capability, enabled in (
+                ((project_id, "robot_model.read"), can_read),
+                ((project_id, "robot_model.manage"), can_manage),
+            )
+            if enabled
+        ),
+        organization_scoped_capabilities=frozenset(
+            capability
+            for capability, enabled in (
+                ((organization_id, project_id, "robot_model.read"), can_read),
+                ((organization_id, project_id, "robot_model.manage"), can_manage),
+            )
+            if enabled
+        ),
+    )
+
+
+def _service() -> tuple[RegistryService, InMemoryRegistryRepository]:
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"),),
+        models=(
+            (
+                "organization-a",
+                RobotModelSummary(
+                    id="model-a",
+                    manufacturer="HC Robotics",
+                    model_code="XR-01",
+                    display_name="XR-01 协作机器人",
+                    current_published_version_id="version-a",
+                ),
+            ),
+        ),
+        versions=(
+            (
+                "organization-a",
+                RobotModelVersion(
+                    id="version-a",
+                    robot_model_id="model-a",
+                    version_label="1.0.0",
+                    lifecycle="PUBLISHED",
+                    asset_availability="AVAILABLE",
+                    publish_readiness="READY",
+                    asset_manifest_hash="a" * 64,
+                    validation_input_hash="b" * 64,
+                    etag='"registry:version-a:1"',
+                    allowed_actions=("VIEW",),
+                    blocked_reasons=(),
+                ),
+            ),
+        ),
+    )
+    return (
+        RegistryService(
+            repository,
+            clock=lambda: datetime(2026, 8, 19, 10, tzinfo=timezone.utc),
+        ),
+        repository,
+    )
+
+
+def _app(current: dict[str, AuthContext | None]) -> FastAPI:
+    app = FastAPI()
+
+    @app.exception_handler(ProblemException)
+    async def handle_problem(_request: Request, exc: ProblemException) -> JSONResponse:
+        return JSONResponse(exc.problem.model_dump(mode="json"), status_code=exc.problem.status)
+
+    @app.middleware("http")
+    async def install_auth(request: Request, call_next: Any) -> Any:
+        request.state.auth_context = current["value"]
+        request.state.request_id = "registry-router-test"
+        return await call_next(request)
+
+    app.include_router(router)
+    return app
+
+
+def test_robot_model_read_contract_scope_and_publish_is_not_a_product_501() -> None:
+    service, repository = _service()
+    configure_registry(service)
+    current: dict[str, AuthContext | None] = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    headers = {
+        "Authorization": "Bearer test",
+    }
+
+    listing = client.get("/api/v1/organizations/organization-a/robot-models", headers=headers)
+    assert listing.status_code == 200
+    assert listing.headers["cache-control"] == "private, no-store"
+    assert listing.json() == {
+        "items": [
+            {
+                "id": "model-a",
+                "manufacturer": "HC Robotics",
+                "model_code": "XR-01",
+                "display_name": "XR-01 协作机器人",
+                "current_published_version_id": "version-a",
+            }
+        ],
+        "page_info": {
+            "has_next_page": False,
+            "has_previous_page": False,
+            "start_cursor": None,
+            "end_cursor": None,
+        },
+        "snapshot_at": "2026-08-19T10:00:00Z",
+        "scope": {"organization_id": "organization-a", "project_id": "project-a"},
+        "request_id": "registry-router-test",
+        "contract_version": "2026-08-19",
+    }
+
+    detail = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-a", headers=headers
+    )
+    assert detail.status_code == 200
+    assert detail.headers["etag"] == '"registry:version-a:1"'
+    assert detail.json()["data"]["allowed_actions"] == ["VIEW"]
+
+    preflight = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-a:preflight-publish",
+        headers={
+            **headers,
+            "If-Match": '"registry:version-a:1"',
+            "Idempotency-Key": "preflight-published-version",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.json()["data"]["allowed"] is False
+    assert preflight.json()["data"]["preflight_token"] is None
+    assert any(item["code"] == "DRAFT_VERSION" for item in preflight.json()["data"]["blockers"])
+
+    invalid_publish = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-a:publish",
+        headers={**headers, "If-Match": '"registry:version-a:1"', "Idempotency-Key": "publish-a"},
+        json={"preflight_token": "x" * 32},
+    )
+    assert invalid_publish.status_code == 422
+    assert invalid_publish.json()["code"] == "ROBOT_MODEL_PUBLISH_PREFLIGHT_TOKEN_INVALID"
+    assert repository.audit_events[-1].outcome == "SUCCEEDED"
+
+    foreign_organization = client.get(
+        "/api/v1/organizations/organization-b/robot-models", headers=headers
+    )
+    assert foreign_organization.status_code == 403
+    assert foreign_organization.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
+
+
+def test_robot_model_router_rejects_missing_auth_and_missing_capability() -> None:
+    service, _repository = _service()
+    configure_registry(service)
+    current: dict[str, AuthContext | None] = {"value": None}
+    client = TestClient(_app(current))
+    path = "/api/v1/organizations/organization-a/robot-models"
+    assert client.get(path).status_code == 401
+
+    current["value"] = _auth(can_read=False)
+    denied = client.get(path, headers={"Authorization": "Bearer test"})
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "CAPABILITY_REQUIRED"
+
+
+def test_robot_model_update_creates_idempotent_draft_without_mutating_published_source() -> None:
+    service, repository = _service()
+    configure_registry(service)
+    current: dict[str, AuthContext | None] = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    path = "/api/v1/organizations/organization-a/robot-model-versions/version-a:create-draft"
+    headers = {
+        "Authorization": "Bearer test",
+        "Idempotency-Key": "draft-version-a-110",
+    }
+
+    created = client.post(
+        path,
+        headers=headers,
+        json={"version_label": "1.1.0", "update_scope": "ASSETS"},
+    )
+    assert created.status_code == 201
+    draft = created.json()["data"]
+    assert draft["id"].startswith("version-")
+    assert draft["robot_model_id"] == "model-a"
+    assert draft["version_label"] == "1.1.0"
+    assert draft["lifecycle"] == "DRAFT"
+    assert draft["asset_availability"] == "MISSING"
+    assert created.headers["location"].endswith(draft["id"])
+
+    retried = client.post(
+        path,
+        headers=headers,
+        json={"version_label": "1.1.0", "update_scope": "ASSETS"},
+    )
+    assert retried.status_code == 201
+    assert retried.json()["data"] == draft
+    source = repository.get_robot_model_version(
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-a",
+    )
+    assert source is not None
+    assert source.lifecycle == "PUBLISHED"
+    assert source.version_label == "1.0.0"
+
+    conflict = client.post(
+        path,
+        headers=headers,
+        json={"version_label": "1.2.0", "update_scope": "MAPPINGS"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_robot_model_create_starts_with_an_idempotent_editable_version() -> None:
+    service, repository = _service()
+    configure_registry(service)
+    current: dict[str, AuthContext | None] = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    path = "/api/v1/organizations/organization-a/robot-models"
+    headers = {
+        "Authorization": "Bearer test",
+        "Idempotency-Key": "create-model-xr-02",
+    }
+    payload = {
+        "manufacturer": "HC Robotics",
+        "model_code": "XR-02",
+        "display_name": "XR-02 测试机器人",
+        "version_label": "1.0.0-draft",
+    }
+
+    created = client.post(path, headers=headers, json=payload)
+    assert created.status_code == 201
+    draft = created.json()["data"]
+    assert draft["robot_model_id"].startswith("model-")
+    assert draft["id"].startswith("version-")
+    assert draft["lifecycle"] == "DRAFT"
+    assert draft["asset_availability"] == "MISSING"
+    assert created.headers["location"].endswith(draft["id"])
+
+    retried = client.post(path, headers=headers, json=payload)
+    assert retried.status_code == 201
+    assert retried.json()["data"] == draft
+    persisted = repository.get_robot_model_version(
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id=draft["id"],
+    )
+    assert persisted is not None
+    assert persisted.lifecycle == "DRAFT"
+
+    duplicate = client.post(
+        path,
+        headers={**headers, "Idempotency-Key": "create-model-xr-02-again"},
+        json={**payload, "display_name": "另一个显示名称"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "ROBOT_MODEL_IDENTITY_EXISTS"
+
+
+def test_robot_model_asset_upload_direct_transfer_manifest_and_download_authorization() -> None:
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"),),
+        models=(
+            (
+                "organization-a",
+                RobotModelSummary(
+                    id="model-a",
+                    manufacturer="HC Robotics",
+                    model_code="XR-02",
+                    display_name="XR-02 协作机器人",
+                    current_published_version_id=None,
+                ),
+            ),
+        ),
+        versions=(
+            (
+                "organization-a",
+                RobotModelVersion(
+                    id="version-draft",
+                    robot_model_id="model-a",
+                    version_label="2.0.0-rc.1",
+                    lifecycle="DRAFT",
+                    asset_availability="MISSING",
+                    publish_readiness="NOT_READY",
+                    asset_manifest_hash=None,
+                    validation_input_hash=None,
+                    etag='"registry:version-draft:1"',
+                    allowed_actions=("MANAGE",),
+                    blocked_reasons=(),
+                ),
+            ),
+        ),
+    )
+    storage = InMemoryObjectStorage()
+    configure_registry(
+        RegistryService(
+            repository,
+            storage=storage,
+            clock=lambda: datetime(2026, 8, 19, 11, tzinfo=timezone.utc),
+        )
+    )
+    current: dict[str, AuthContext | None] = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    headers = {
+        "Authorization": "Bearer test",
+        "Idempotency-Key": "asset-upload-a",
+    }
+    body = b'<robot name="xr-02"/>'
+    upload = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-draft/upload-sessions",
+        headers=headers,
+        json={
+            "files": [
+                {
+                    "relative_path": "models/xr-02.urdf",
+                    "role": "URDF",
+                    "media_type": "application/xml",
+                    "size_bytes": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert upload.status_code == 201
+    assert upload.headers["cache-control"] == "private, no-store"
+    assert upload.headers["location"].endswith(upload.json()["data"]["upload_id"])
+    upload_data = upload.json()["data"]
+    assert upload_data["status"] == "UPLOADING"
+    assert upload_data["files"][0]["part_authorizations"][0]["part_number"] == 1
+    assert "object_key" not in str(upload_data)
+
+    repeated = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-draft/upload-sessions",
+        headers=headers,
+        json={
+            "files": [
+                {
+                    "relative_path": "models/xr-02.urdf",
+                    "role": "URDF",
+                    "media_type": "application/xml",
+                    "size_bytes": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert repeated.status_code == 201
+    assert repeated.json()["data"]["upload_id"] == upload_data["upload_id"]
+
+    record = repository.get_asset_upload(
+        organization_id="organization-a",
+        project_id="project-a",
+        upload_id=upload_data["upload_id"],
+    )
+    assert record is not None
+    part = storage.upload_part(
+        record.files[0].multipart_upload_id,
+        1,
+        body,
+        key=record.files[0].object_key,
+    )
+    renewed = client.post(
+        f"/api/v1/organizations/organization-a/robot-model-asset-uploads/{record.upload_id}:authorize-parts",
+        headers={key: value for key, value in headers.items() if key != "Idempotency-Key"},
+        json={"relative_path": "models/xr-02.urdf", "part_numbers": [1]},
+    )
+    assert renewed.status_code == 200
+    assert renewed.headers["cache-control"] == "private, no-store"
+    assert renewed.json()["items"][0]["part_number"] == 1
+
+    completed = client.post(
+        f"/api/v1/organizations/organization-a/robot-model-asset-uploads/{record.upload_id}:complete-file",
+        headers={key: value for key, value in headers.items() if key != "Idempotency-Key"},
+        json={
+            "relative_path": "models/xr-02.urdf",
+            "parts": [{"part_number": 1, "etag": part.etag}],
+        },
+    )
+    assert completed.status_code == 200
+    assert completed.json()["data"]["status"] == "COMPLETED"
+
+    assets = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-draft/assets",
+        headers={key: value for key, value in headers.items() if key != "Idempotency-Key"},
+    )
+    assert assets.status_code == 200
+    assert assets.json()["items"][0]["relative_path"] == "models/xr-02.urdf"
+    asset_id = assets.json()["items"][0]["asset_id"]
+    download = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        f"version-draft/assets/{asset_id}/download",
+        headers={key: value for key, value in headers.items() if key != "Idempotency-Key"},
+    )
+    assert download.status_code == 200
+    assert download.json()["asset_id"] == asset_id
+    assert download.json()["download_url"].startswith(
+        "/api/v1/organizations/organization-a/robot-model-assets/content?token="
+    )
+    downloaded = client.get(download.json()["download_url"])
+    assert downloaded.status_code == 200
+    assert downloaded.content == body
+    assert storage.objects == {}
+    assert all("object_key" not in str(event) for event in repository.audit_events)
+
+    replacement_body = b'<robot name="xr-02-updated"/>'
+    replacement = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-draft/upload-sessions",
+        headers={**headers, "Idempotency-Key": "asset-upload-replacement"},
+        json={
+            "files": [
+                {
+                    "relative_path": "models/xr-02.urdf",
+                    "role": "URDF",
+                    "media_type": "application/xml",
+                    "size_bytes": len(replacement_body),
+                    "sha256": hashlib.sha256(replacement_body).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert replacement.status_code == 201
+    replacement_record = repository.get_asset_upload(
+        organization_id="organization-a",
+        project_id="project-a",
+        upload_id=replacement.json()["data"]["upload_id"],
+    )
+    assert replacement_record is not None
+    replacement_part = storage.upload_part(
+        replacement_record.files[0].multipart_upload_id,
+        1,
+        replacement_body,
+        key=replacement_record.files[0].object_key,
+    )
+    replaced = client.post(
+        "/api/v1/organizations/organization-a/robot-model-asset-uploads/"
+        f"{replacement_record.upload_id}:complete-file",
+        headers={"Authorization": "Bearer test"},
+        json={
+            "relative_path": "models/xr-02.urdf",
+            "parts": [{"part_number": 1, "etag": replacement_part.etag}],
+        },
+    )
+    assert replaced.status_code == 200
+    replaced_assets = repository.list_robot_model_assets(
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+    )
+    assert len(replaced_assets) == 1
+    assert replaced_assets[0].asset_id != asset_id
+    assert replaced_assets[0].sha256 == hashlib.sha256(replacement_body).hexdigest()
+    stored_replacement = repository.get_robot_model_asset(
+        organization_id="organization-a",
+        project_id="project-a",
+        asset_id=replaced_assets[0].asset_id,
+    )
+    assert stored_replacement is not None
+    assert stored_replacement[2] == replacement_body
+    assert storage.objects == {}
+
+    invalid = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-draft/upload-sessions",
+        headers={**headers, "Idempotency-Key": "invalid-asset"},
+        json={
+            "files": [
+                {
+                    "relative_path": "models/xr-02.exe",
+                    "role": "URDF",
+                    "media_type": "application/octet-stream",
+                    "size_bytes": 1,
+                    "sha256": "a" * 64,
+                }
+            ]
+        },
+    )
+    assert invalid.status_code == 422
+
+
+def test_robot_model_assets_upload_and_download_through_server_storage(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 19, 11, tzinfo=timezone.utc)
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"),),
+        versions=(
+            (
+                "organization-a",
+                RobotModelVersion(
+                    id="version-server-draft",
+                    robot_model_id="model-server",
+                    version_label="draft",
+                    lifecycle="DRAFT",
+                    asset_availability="MISSING",
+                    publish_readiness="BLOCKED",
+                    asset_manifest_hash=None,
+                    validation_input_hash=None,
+                    etag='"registry:version-server-draft:1"',
+                    allowed_actions=("UPLOAD_ASSETS",),
+                    blocked_reasons=(),
+                ),
+            ),
+        ),
+    )
+    storage = FilesystemRobotModelStorage(
+        tmp_path / "robot-model-assets",
+        signing_secret="server-storage-test-secret",
+        clock=lambda: now,
+    )
+    configure_registry(RegistryService(repository, storage=storage, clock=lambda: now))
+    client = TestClient(_app({"value": _auth(can_manage=True)}))
+    body = b'<robot name="server-local"><link name="base"/></robot>'
+    headers = {
+        "Authorization": "Bearer test",
+        "Idempotency-Key": "server-asset-upload",
+    }
+
+    created = client.post(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        "version-server-draft/upload-sessions",
+        headers=headers,
+        json={
+            "files": [
+                {
+                    "relative_path": "models/server-local.urdf",
+                    "role": "URDF",
+                    "media_type": "application/xml",
+                    "size_bytes": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert created.status_code == 201
+    upload = created.json()["data"]
+    authorization = upload["files"][0]["part_authorizations"][0]["url"]
+    assert authorization.startswith(
+        "/api/v1/organizations/organization-a/robot-model-assets/upload-part?token="
+    )
+
+    transferred = client.put(
+        authorization,
+        content=body,
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert transferred.status_code == 200
+    assert transferred.headers["etag"]
+
+    completed = client.post(
+        "/api/v1/organizations/organization-a/robot-model-asset-uploads/"
+        f"{upload['upload_id']}:complete-file",
+        headers={"Authorization": "Bearer test"},
+        json={
+            "relative_path": "models/server-local.urdf",
+            "parts": [
+                {
+                    "part_number": 1,
+                    "etag": transferred.headers["etag"].strip('"'),
+                }
+            ],
+        },
+    )
+    assert completed.status_code == 200
+    assert completed.json()["data"]["status"] == "COMPLETED"
+
+    assets = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-server-draft/assets",
+        headers={"Authorization": "Bearer test"},
+    )
+    asset_id = assets.json()["items"][0]["asset_id"]
+    authorized = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        f"version-server-draft/assets/{asset_id}/download",
+        headers={"Authorization": "Bearer test"},
+    )
+    download_url = authorized.json()["download_url"]
+    assert download_url.startswith(
+        "/api/v1/organizations/organization-a/robot-model-assets/content?token="
+    )
+    downloaded = client.get(download_url)
+    assert downloaded.status_code == 200
+    assert downloaded.content == body
+    assert downloaded.headers["cache-control"] == "private, no-store"
+
+    discarded = client.delete(
+        "/api/v1/organizations/organization-a/robot-model-versions/"
+        "version-server-draft:discard-import",
+        headers={"Authorization": "Bearer test"},
+    )
+    assert discarded.status_code == 204
+    assert client.get(download_url).status_code == 404
+    assert not any(path.is_file() for path in (tmp_path / "robot-model-assets").rglob("*"))
+    assert (
+        client.delete(
+            "/api/v1/organizations/organization-a/robot-model-versions/"
+            "version-server-draft:discard-import",
+            headers={"Authorization": "Bearer test"},
+        ).status_code
+        == 204
+    )
+
+
+def test_robot_model_joint_mapping_replaces_a_draft_under_etag_control() -> None:
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"),),
+        versions=(
+            (
+                "organization-a",
+                RobotModelVersion(
+                    id="version-draft",
+                    robot_model_id="model-a",
+                    version_label="2.0.0-rc.1",
+                    lifecycle="DRAFT",
+                    asset_availability="AVAILABLE",
+                    publish_readiness="MAPPING_REQUIRED",
+                    asset_manifest_hash="a" * 64,
+                    validation_input_hash=None,
+                    etag='"registry:version-draft:1"',
+                    allowed_actions=("MANAGE",),
+                    blocked_reasons=(),
+                ),
+            ),
+        ),
+    )
+    service = RegistryService(
+        repository,
+        clock=lambda: datetime(2026, 8, 19, 11, tzinfo=timezone.utc),
+    )
+    command = ReplaceRobotModelJointMappingsRequest(
+        mappings=(
+            RobotModelJointMapping(
+                source_joint_name="shoulder_pan_joint",
+                target_joint_name="joint_1",
+                direction=RobotJointDirection.SAME,
+            ),
+        )
+    )
+    updated = service.replace_robot_model_joint_mappings(
+        auth=_auth(can_manage=True),
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag='"registry:version-draft:1"',
+        idempotency_key="mapping-replace-first",
+        request_id="joint-mapping-replace",
+        command=command,
+    )
+    assert updated.data.publish_readiness == "SAMPLE_VALIDATION_REQUIRED"
+    mappings = service.list_robot_model_joint_mappings(
+        auth=_auth(),
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        request_id="joint-mapping-list",
+    )
+    assert mappings.items == command.mappings
+    assert mappings.mapping_hash is not None
+
+    replay = service.replace_robot_model_joint_mappings(
+        auth=_auth(can_manage=True),
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag='"registry:version-draft:1"',
+        idempotency_key="mapping-replace-first",
+        request_id="joint-mapping-replay",
+        command=command,
+    )
+    assert replay.data.etag == updated.data.etag
+
+    with pytest.raises(ProblemException) as reused:
+        service.replace_robot_model_joint_mappings(
+            auth=_auth(can_manage=True),
+            organization_id="organization-a",
+            project_id="project-a",
+            version_id="version-draft",
+            expected_etag='"registry:version-draft:1"',
+            idempotency_key="mapping-replace-first",
+            request_id="joint-mapping-reused-key",
+            command=ReplaceRobotModelJointMappingsRequest(mappings=()),
+        )
+    assert reused.value.problem.code == "IDEMPOTENCY_KEY_REUSED"
+
+    with pytest.raises(ProblemException) as stale:
+        service.replace_robot_model_joint_mappings(
+            auth=_auth(can_manage=True),
+            organization_id="organization-a",
+            project_id="project-a",
+            version_id="version-draft",
+            expected_etag='"registry:version-draft:1"',
+            idempotency_key="mapping-replace-stale",
+            request_id="joint-mapping-stale",
+            command=command,
+        )
+    assert stale.value.problem.code == "ROBOT_MODEL_VERSION_ETAG_MISMATCH"
+
+
+def test_robot_model_publish_uses_a_durable_preflight_and_one_time_proof() -> None:
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"),),
+        models=(
+            (
+                "organization-a",
+                RobotModelSummary(
+                    id="model-a",
+                    manufacturer="HC Robotics",
+                    model_code="XR-02",
+                    display_name="XR-02 协作机器人",
+                    current_published_version_id=None,
+                ),
+            ),
+        ),
+        versions=(
+            (
+                "organization-a",
+                RobotModelVersion(
+                    id="version-draft",
+                    robot_model_id="model-a",
+                    version_label="2.0.0-rc.1",
+                    lifecycle="DRAFT",
+                    asset_availability="MISSING",
+                    publish_readiness="CONFIGURATION_REQUIRED",
+                    asset_manifest_hash=None,
+                    validation_input_hash=None,
+                    etag='"registry:version-draft:1"',
+                    allowed_actions=("MANAGE",),
+                    blocked_reasons=(),
+                ),
+            ),
+        ),
+    )
+    storage = InMemoryObjectStorage()
+    now = datetime(2026, 8, 19, 12, tzinfo=timezone.utc)
+    service = RegistryService(repository, storage=storage, clock=lambda: now)
+    auth = _auth(can_manage=True)
+    body = b'<robot name="xr"><joint name="joint_1" type="revolute"/></robot>'
+    created = service.create_asset_upload(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        request_id="create-asset",
+        idempotency_key="asset-create",
+        command=CreateRobotModelAssetUploadRequest(
+            files=(
+                RobotModelAssetUploadFileRequest(
+                    relative_path="models/xr.urdf",
+                    role=RobotAssetRole.URDF,
+                    media_type="application/xml",
+                    size_bytes=len(body),
+                    sha256=hashlib.sha256(body).hexdigest(),
+                ),
+            )
+        ),
+    )
+    record = repository.get_asset_upload(
+        organization_id="organization-a",
+        project_id="project-a",
+        upload_id=created.data.upload_id,
+    )
+    assert record is not None
+    part = storage.upload_part(
+        record.files[0].multipart_upload_id,
+        1,
+        body,
+        key=record.files[0].object_key,
+    )
+    service.complete_asset_upload_file(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        upload_id=record.upload_id,
+        request_id="complete-asset",
+        command=CompleteRobotModelAssetFileRequest(
+            relative_path="models/xr.urdf",
+            parts=(RobotAssetCompletedPart(part_number=1, etag=part.etag),),
+        ),
+    )
+    uploaded = service.get_robot_model_version(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        request_id="draft-after-upload",
+    )
+    mapped = service.replace_robot_model_joint_mappings(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag=uploaded.data.etag,
+        idempotency_key="mapping-replace-publish",
+        request_id="set-mappings",
+        command=ReplaceRobotModelJointMappingsRequest(
+            mappings=(
+                RobotModelJointMapping(
+                    source_joint_name="actuator_1",
+                    target_joint_name="joint_1",
+                    direction=RobotJointDirection.SAME,
+                ),
+            )
+        ),
+    )
+    preflight = service.preflight_robot_model_publish(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag=mapped.data.etag,
+        idempotency_key="publish-once",
+        request_id="publish-preflight",
+    )
+    assert preflight.data.allowed is True
+    assert preflight.data.preflight_token is not None
+    assert {check.code for check in preflight.data.checks} >= {
+        "ASSET_MANIFEST_CURRENT",
+        "URDF_WELL_FORMED",
+        "JOINT_MAPPINGS_COMPLETE",
+    }
+    repeated_preflight = service.preflight_robot_model_publish(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag=mapped.data.etag,
+        idempotency_key="publish-once",
+        request_id="publish-preflight-repeat",
+    )
+    assert repeated_preflight.data.preflight_token == preflight.data.preflight_token
+
+    published = service.publish_robot_model_version(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag=mapped.data.etag,
+        idempotency_key="publish-once",
+        request_id="publish",
+        command=PublishRobotModelVersionRequest(preflight_token=preflight.data.preflight_token),
+    )
+    assert published.data.lifecycle == "PUBLISHED"
+    assert published.data.publish_readiness == "READY"
+    page = service.list_robot_models(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        query=None,
+        request_id="list-after-publish",
+    )
+    assert page.items[0].current_published_version_id == "version-draft"
+    replay = service.publish_robot_model_version(
+        auth=auth,
+        organization_id="organization-a",
+        project_id="project-a",
+        version_id="version-draft",
+        expected_etag=mapped.data.etag,
+        idempotency_key="publish-once",
+        request_id="publish-replay",
+        command=PublishRobotModelVersionRequest(preflight_token=preflight.data.preflight_token),
+    )
+    assert replay.data.etag == published.data.etag
+
+    with pytest.raises(ProblemException) as invalid_token:
+        service.publish_robot_model_version(
+            auth=auth,
+            organization_id="organization-a",
+            project_id="project-a",
+            version_id="version-draft",
+            expected_etag=mapped.data.etag,
+            idempotency_key="publish-once",
+            request_id="publish-invalid-token",
+            command=PublishRobotModelVersionRequest(preflight_token="x" * 32),
+        )
+    assert invalid_token.value.problem.code == "ROBOT_MODEL_PUBLISH_PREFLIGHT_TOKEN_INVALID"

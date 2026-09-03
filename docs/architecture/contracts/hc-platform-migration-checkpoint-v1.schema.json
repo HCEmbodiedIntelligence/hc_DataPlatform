@@ -1,0 +1,289 @@
+{
+  "$defs": {
+    "MigrationStepReceiptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "direct_rollback_allowed": {
+          "title": "Direct Rollback Allowed",
+          "type": "boolean"
+        },
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Sha256",
+          "type": "string"
+        },
+        "object_inventory_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Inventory Sha256"
+        },
+        "observation_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Observation Sha256",
+          "type": "string"
+        },
+        "observer_identity": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observer Identity",
+          "type": "string"
+        },
+        "postgresql_cutover_lsn": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9A-F]+/[0-9A-F]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Postgresql Cutover Lsn"
+        },
+        "reverse_sync_required": {
+          "title": "Reverse Sync Required",
+          "type": "boolean"
+        },
+        "source_writes_enabled": {
+          "title": "Source Writes Enabled",
+          "type": "boolean"
+        },
+        "step": {
+          "enum": [
+            "precopy_verified",
+            "source_fenced",
+            "final_sync_verified",
+            "target_verified",
+            "traffic_switched",
+            "target_writes_enabled",
+            "rollback_window_retained"
+          ],
+          "title": "Step",
+          "type": "string"
+        },
+        "target_writes_enabled": {
+          "title": "Target Writes Enabled",
+          "type": "boolean"
+        },
+        "write_pause_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Write Pause Seconds"
+        }
+      },
+      "required": [
+        "step",
+        "completed_at",
+        "observer_identity",
+        "observation_sha256",
+        "evidence_sha256",
+        "source_writes_enabled",
+        "target_writes_enabled",
+        "direct_rollback_allowed",
+        "reverse_sync_required"
+      ],
+      "title": "MigrationStepReceiptV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-migration-checkpoint-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "approval_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Approval Sha256",
+      "type": "string"
+    },
+    "completed_steps": {
+      "items": {
+        "enum": [
+          "precopy_verified",
+          "source_fenced",
+          "final_sync_verified",
+          "target_verified",
+          "traffic_switched",
+          "target_writes_enabled",
+          "rollback_window_retained"
+        ],
+        "type": "string"
+      },
+      "title": "Completed Steps",
+      "type": "array"
+    },
+    "direct_rollback_allowed": {
+      "title": "Direct Rollback Allowed",
+      "type": "boolean"
+    },
+    "execution_owner_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Execution Owner Id",
+      "type": "string"
+    },
+    "fencing_token": {
+      "exclusiveMinimum": 0,
+      "title": "Fencing Token",
+      "type": "integer"
+    },
+    "format_version": {
+      "const": "hc-platform-migration-checkpoint/v1",
+      "default": "hc-platform-migration-checkpoint/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "migration_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Migration Id",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "plan_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Sha256",
+      "type": "string"
+    },
+    "previous_checkpoint_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Checkpoint Sha256"
+    },
+    "receipts": {
+      "items": {
+        "$ref": "#/$defs/MigrationStepReceiptV1"
+      },
+      "title": "Receipts",
+      "type": "array"
+    },
+    "restore_verified": {
+      "const": false,
+      "default": false,
+      "title": "Restore Verified",
+      "type": "boolean"
+    },
+    "reverse_sync_required": {
+      "title": "Reverse Sync Required",
+      "type": "boolean"
+    },
+    "rpo_bytes": {
+      "minimum": 0,
+      "title": "Rpo Bytes",
+      "type": "integer"
+    },
+    "rpo_seconds": {
+      "minimum": 0,
+      "title": "Rpo Seconds",
+      "type": "integer"
+    },
+    "source_writes_enabled": {
+      "title": "Source Writes Enabled",
+      "type": "boolean"
+    },
+    "state": {
+      "enum": [
+        "PRECOPY_READY",
+        "SOURCE_FENCED",
+        "FINAL_SYNCED",
+        "TARGET_VERIFIED",
+        "TRAFFIC_SWITCHED",
+        "TARGET_WRITABLE",
+        "ROLLBACK_WINDOW"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "state_version": {
+      "exclusiveMinimum": 0,
+      "title": "State Version",
+      "type": "integer"
+    },
+    "target_writes_enabled": {
+      "title": "Target Writes Enabled",
+      "type": "boolean"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "write_pause_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Write Pause Seconds"
+    }
+  },
+  "required": [
+    "plan_id",
+    "plan_sha256",
+    "migration_id",
+    "operation_id",
+    "approval_id",
+    "approval_sha256",
+    "execution_owner_id",
+    "fencing_token",
+    "state_version",
+    "completed_steps",
+    "receipts",
+    "state",
+    "updated_at",
+    "source_writes_enabled",
+    "target_writes_enabled",
+    "direct_rollback_allowed",
+    "reverse_sync_required",
+    "rpo_bytes",
+    "rpo_seconds"
+  ],
+  "title": "hc-platform-migration-checkpoint/v1",
+  "type": "object"
+}

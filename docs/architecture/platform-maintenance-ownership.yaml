@@ -1,0 +1,364 @@
+api_version: hc-data-platform.io/v1alpha1
+kind: PlatformMaintenanceOwnershipContract
+metadata:
+  contract_version: 1
+  effective_date: "2026-08-28"
+  adr: docs/architecture/ADR-0003-platform-maintenance-fencing-and-task-ownership.md
+  implementation_task: DR0-03
+  persistence_implementation_task: SYS1-03
+  evidence_status: IMPLEMENTED_KUBERNETES_FAULT_ACCEPTANCE_PASSED
+
+clock:
+  authority: postgresql_database_clock
+  application_wall_clock_allowed_for_lease_decisions: false
+
+maintenance_operation:
+  uniqueness: one_nonterminal_operation_per_environment
+  active_states:
+    - REQUESTED
+    - LEASED
+    - READ_ONLY
+    - DRAINING
+    - FENCED
+    - EXECUTING
+    - VERIFYING
+    - RELEASING
+    - WRITE_ENABLE_PENDING
+    - FAILED_READ_ONLY
+  terminal_states:
+    - SUCCEEDED
+    - FAILED_RELEASED
+    - CANCELLED
+  read_only_states:
+    - READ_ONLY
+    - DRAINING
+    - FENCED
+    - EXECUTING
+    - VERIFYING
+    - RELEASING
+    - WRITE_ENABLE_PENDING
+    - FAILED_READ_ONLY
+  state_mutation_predicate:
+    required_matches:
+      - operation_id
+      - environment_id
+      - owner_instance_id
+      - fencing_token
+      - unexpired_lease_using_database_clock
+      - expected_state
+      - expected_state_version
+    affected_rows_must_equal: 1
+  acquisition:
+    owner_identity: immutable_platform_instance_id
+    fencing_token_source: postgresql_monotonic_sequence
+    token_reuse_allowed: false
+    initial_lease_seconds: 30
+  renewal:
+    interval_seconds: 10
+    lease_seconds: 30
+    owner_and_token_match_required: true
+  takeover:
+    allowed_only_after_database_lease_expiry: true
+    preserves_operation_and_state: true
+    assigns_new_owner: true
+    allocates_strictly_greater_fencing_token: true
+    old_owner_can_resume: false
+  failure_policy:
+    before_read_only: FAILED_RELEASED
+    after_read_only_or_ownership_uncertain: FAILED_READ_ONLY
+    automatic_write_enable_from_failure_allowed: false
+    failed_read_only_recovery_requires_manual_approval: true
+  write_enable:
+    transition: WRITE_ENABLE_PENDING -> SUCCEEDED
+    atomic_updates:
+      - environment_mode_to_READ_WRITE
+      - allocate_new_fencing_token
+      - operation_state_to_SUCCEEDED
+      - append_audit_fact
+    preconditions:
+      - writer_inventory_zero
+      - reconciliation_passed
+      - schedules_and_claimers_ready_but_disabled
+      - required_approvals_recorded
+
+transitions:
+  - { from: REQUESTED, to: LEASED, guard: unique_environment_lease_acquired }
+  - { from: REQUESTED, to: CANCELLED, guard: no_write_fence_was_published }
+  - { from: LEASED, to: READ_ONLY, guard: atomic_mode_flip_and_epoch_increment }
+  - {
+      from: LEASED,
+      to: FAILED_RELEASED,
+      guard: ownership_known_and_read_only_not_published,
+    }
+  - {
+      from: READ_ONLY,
+      to: DRAINING,
+      guard: api_and_ingress_acknowledge_same_epoch,
+    }
+  - {
+      from: READ_ONLY,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - {
+      from: DRAINING,
+      to: FENCED,
+      guard: writer_inventory_zero_and_upload_grants_expired,
+    }
+  - {
+      from: DRAINING,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - {
+      from: FENCED,
+      to: EXECUTING,
+      guard: exact_operation_owner_token_and_plan_hash,
+    }
+  - {
+      from: FENCED,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - { from: EXECUTING, to: VERIFYING, guard: execution_receipts_persisted }
+  - {
+      from: EXECUTING,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - { from: VERIFYING, to: RELEASING, guard: verification_passed }
+  - {
+      from: VERIFYING,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - {
+      from: RELEASING,
+      to: WRITE_ENABLE_PENDING,
+      guard: replicas_ready_claimers_still_disabled,
+    }
+  - {
+      from: RELEASING,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - {
+      from: WRITE_ENABLE_PENDING,
+      to: SUCCEEDED,
+      guard: atomic_write_enable_transaction,
+    }
+  - {
+      from: WRITE_ENABLE_PENDING,
+      to: FAILED_READ_ONLY,
+      guard: failure_or_ownership_uncertain,
+    }
+  - {
+      from: FAILED_READ_ONLY,
+      to: RELEASING,
+      guard: current_owner_token_and_manual_approval,
+    }
+
+writer_permits:
+  environment_fence_row_is_authoritative: true
+  permit_fields:
+    - environment_id
+    - writer_id
+    - writer_kind
+    - fencing_token
+    - lease_until
+  commit_predicate:
+    - environment_mode_is_READ_WRITE
+    - environment_id_matches
+    - permit_fencing_token_equals_current_token
+    - permit_lease_unexpired_using_database_clock
+  rejection:
+    http_status: 503
+    error_code: PLATFORM_MAINTENANCE
+  new_permits_during_read_only_allowed: false
+  old_permits_after_epoch_increment_allowed: false
+
+platform_task_leases:
+  authority: postgresql_row_and_database_clock
+  current_row_key: [environment_id, task_id]
+  owner_identity: immutable_platform_instance_id
+  lease_identity_changes_on_takeover: true
+  fencing_token_source: postgresql_monotonic_sequence
+  initial_lease_seconds: 30
+  renewal_interval_seconds: 10
+  takeover_allowed_only_after_database_lease_expiry: true
+  acquisition_during_read_only_allowed: false
+  commit_predicate:
+    - current_lease_id_matches
+    - environment_mode_is_READ_WRITE
+    - lease_unexpired_using_database_clock
+  immutable_event_history: true
+  stable_rejections:
+    - PLATFORM_TASK_LEASE_STALE
+    - PLATFORM_TASK_LEASE_EXPIRED
+    - PLATFORM_MAINTENANCE
+
+writer_inventory:
+  zero_required_before_state: FENCED
+  sources:
+    - {
+        id: api_commands,
+        writer_kind: api_command,
+        drain: reject_new_and_wait_active_transactions,
+      }
+    - {
+        id: presigned_upload_grants,
+        writer_kind: presigned_upload_grant,
+        drain: expire_or_revoke,
+      }
+    - {
+        id: outbox_claims,
+        writer_kind: outbox_claim,
+        drain: stop_claim_and_wait_lease,
+      }
+    - {
+        id: temporal_activities,
+        writer_kind: temporal_activity,
+        drain: pause_schedule_and_wait_or_cancel_by_policy,
+      }
+    - {
+        id: aligned_media_attempts,
+        writer_kind: aligned_media_attempt,
+        drain: wait_attempt_and_publication_lease,
+      }
+    - {
+        id: maintenance_controllers,
+        writer_kind: maintenance_controller,
+        drain: only_current_operation_owner_remains,
+      }
+    - {
+        id: kubernetes_jobs,
+        writer_kind: kubernetes_job,
+        drain: wait_or_delete_only_with_operation_receipt,
+      }
+  unknown_writer_policy: fail_closed_remain_read_only
+
+task_ownership:
+  authority_kinds:
+    - temporal_workflow
+    - outbox_dispatcher
+    - kubernetes_job
+    - database_lease
+  support_roles:
+    - dispatch_only
+    - deduplicated_destination
+    - launcher_only
+    - execution_fence
+    - activity_attempt_fence
+    - capacity_fence
+    - visibility_only
+    - command_executor
+    - target_mutation_fence
+  tasks:
+    - id: ingest_rollout_pipeline
+      coordination_authority: temporal_workflow
+      durable_identity: "ingest:{organization_id}:{project_id}:{region_code}:{rollout_id}"
+      supporting_mechanisms:
+        - { kind: outbox_dispatcher, role: dispatch_only }
+        - { kind: database_lease, role: activity_attempt_fence }
+      forbidden_parallel_authorities:
+        [outbox_dispatcher, kubernetes_job, database_lease]
+      evidence:
+        - backend/src/hc_data_platform/workflow/temporal_workflows.py
+        - backend/src/hc_data_platform/security/outbox.py
+
+    - id: annotation_review_pipeline
+      coordination_authority: temporal_workflow
+      durable_identity: "annotation-review:{organization_id}:{project_id}:{task_id}:{review_id}"
+      supporting_mechanisms:
+        - { kind: outbox_dispatcher, role: dispatch_only }
+        - { kind: database_lease, role: activity_attempt_fence }
+      forbidden_parallel_authorities:
+        [outbox_dispatcher, kubernetes_job, database_lease]
+      evidence:
+        - backend/src/hc_data_platform/workflow/temporal_workflows.py
+
+    - id: aligned_media_generation_pipeline
+      coordination_authority: temporal_workflow
+      durable_identity: "aligned-media:{organization_id}:{project_id}:{artifact_key}"
+      supporting_mechanisms:
+        - { kind: database_lease, role: activity_attempt_fence }
+        - { kind: database_lease, role: capacity_fence }
+      forbidden_parallel_authorities:
+        [outbox_dispatcher, kubernetes_job, database_lease]
+      evidence:
+        - backend/src/hc_data_platform/workflow/temporal_workflows.py
+        - backend/src/hc_data_platform/aligned_media/postgres.py
+        - backend/src/hc_data_platform/aligned_media/capacity.py
+
+    - id: temporal_workflow_dispatch
+      coordination_authority: outbox_dispatcher
+      durable_identity: "outbox:{organization_id}:{event_id}:{attempt}"
+      supporting_mechanisms:
+        - { kind: temporal_workflow, role: deduplicated_destination }
+        - { kind: database_lease, role: activity_attempt_fence }
+      forbidden_parallel_authorities:
+        [temporal_workflow, kubernetes_job, database_lease]
+      evidence:
+        - backend/src/hc_data_platform/security/outbox.py
+
+    - id: helm_schema_migration
+      coordination_authority: kubernetes_job
+      durable_identity: "migration:{environment_id}:{release_id}"
+      supporting_mechanisms:
+        - { kind: postgresql_advisory_lock, role: execution_fence }
+        - { kind: helm_controller, role: launcher_only }
+      forbidden_parallel_authorities:
+        [temporal_workflow, outbox_dispatcher, database_lease]
+      evidence:
+        - deploy/helm/hc-data-platform/templates/backend-migration-job.yaml
+        - backend/src/hc_data_platform/core/migrations.py
+
+    - id: offline_restore_execution
+      coordination_authority: kubernetes_job
+      durable_identity: "restore:{environment_id}:{restore_operation_id}"
+      supporting_mechanisms:
+        - { kind: platform_maintenance_operation, role: target_mutation_fence }
+        - { kind: external_cli, role: command_executor }
+      forbidden_parallel_authorities:
+        [temporal_workflow, outbox_dispatcher, database_lease]
+      evidence:
+        - plan/PLATFORM-BACKUP-RESTORE-HA-UPGRADE-IMPLEMENTATION-PLAN.md
+
+    - id: platform_maintenance_operation
+      coordination_authority: database_lease
+      durable_identity: "maintenance:{environment_id}:{operation_id}:{fencing_token}"
+      supporting_mechanisms:
+        - { kind: external_cli, role: command_executor }
+        - { kind: kubernetes_job, role: launcher_only }
+      forbidden_parallel_authorities:
+        [temporal_workflow, outbox_dispatcher, kubernetes_job]
+      evidence:
+        - docs/architecture/ADR-0003-platform-maintenance-fencing-and-task-ownership.md
+
+    - id: aligned_media_orphan_reconciliation
+      coordination_authority: database_lease
+      durable_identity: "aligned-media-orphans:{organization_id}:{project_id}:{artifact_key}:{publication_token}"
+      supporting_mechanisms:
+        - { kind: worker_process, role: launcher_only }
+      forbidden_parallel_authorities:
+        [temporal_workflow, outbox_dispatcher, kubernetes_job]
+      evidence:
+        - backend/src/hc_data_platform/aligned_media/maintenance.py
+
+    - id: storage_inventory_scan
+      coordination_authority: database_lease
+      durable_identity: "storage-inventory:sha256:{scope_digest}"
+      supporting_mechanisms:
+        - { kind: worker_process, role: launcher_only }
+      forbidden_parallel_authorities:
+        [temporal_workflow, outbox_dispatcher, kubernetes_job]
+      evidence:
+        - backend/src/hc_data_platform/platform_ops/task_leases.py
+        - backend/src/hc_data_platform/storage/inventory_worker.py
+
+ownership_semantics:
+  outbox_dispatcher_executes_domain_business_work: false
+  temporal_workflow_claims_outbox_rows: false
+  kubernetes_job_is_a_second_domain_queue: false
+  database_lease_is_a_second_temporal_scheduler: false
+  capacity_slot_is_task_ownership: false

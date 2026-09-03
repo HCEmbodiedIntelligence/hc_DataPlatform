@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-worker
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if not .Values.backend.worker.autoscaling.enabled }}
+  replicas: {{ .Values.backend.worker.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.backend.worker.strategy.maxUnavailable }}
+      maxSurge: {{ .Values.backend.worker.strategy.maxSurge }}
+  selector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum }}
+        hc-data-platform.io/release-manifest-digest: {{ .Values.global.releaseManifestDigest | quote }}
+        hc-data-platform.io/component-image-digest: {{ .Values.backend.worker.image.digest | quote }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+        {{- with .Values.backend.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "hc-data-platform.backendServiceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.backend.worker.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "hc-data-platform.backendImage" .Values.backend.worker.image | quote }}
+          imagePullPolicy: {{ .Values.backend.worker.image.pullPolicy }}
+          command: ["opentelemetry-instrument"]
+          args: ["python", "-m", "hc_data_platform.workflow.worker"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "hc-data-platform.backendFullname" . }}
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: hc-data-backend-worker
+            - name: HC_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: HC_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HC_KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HC_COMPONENT_ROLE
+              value: worker
+            - name: HC_COMPONENT_IMAGE_DIGEST
+              value: {{ .Values.backend.worker.image.digest | quote }}
+            - name: HC_WORKER_ROLE
+              value: main
+            - name: HC_WORKER_GRACEFUL_SHUTDOWN_SECONDS
+              value: {{ .Values.backend.worker.gracefulShutdownSeconds | quote }}
+            - name: HC_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS
+              value: {{ .Values.backend.worker.maxConcurrentWorkflowTasks | quote }}
+            - name: HC_WORKER_MAX_CONCURRENT_ACTIVITIES
+              value: {{ .Values.backend.worker.maxConcurrentActivities | quote }}
+            - name: HC_WORKER_MAX_CACHED_WORKFLOWS
+              value: {{ .Values.backend.worker.maxCachedWorkflows | quote }}
+            - name: HC_WORKER_READINESS_FILE
+              value: /tmp/hc-runtime/worker-ready
+            {{- include "hc-data-platform.backendSecretEnv" . | nindent 12 }}
+          startupProbe:
+            exec:
+              command: ["python", "-c", "import os; os.kill(1, 0)"]
+            {{- toYaml .Values.backend.worker.probes.startup | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -f /tmp/hc-runtime/worker-ready"]
+            {{- toYaml .Values.backend.worker.probes.readiness | nindent 12 }}
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import os; os.kill(1, 0)"]
+            {{- toYaml .Values.backend.worker.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: runtime
+              mountPath: /tmp/hc-runtime
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ required "backend.worker.stagingSizeLimit is required" .Values.backend.worker.stagingSizeLimit | quote }}
+        - name: runtime
+          emptyDir:
+            sizeLimit: {{ required "backend.worker.runtimeSizeLimit is required" .Values.backend.worker.runtimeSizeLimit | quote }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.highAvailability.enabled }}
+      {{- include "hc-data-platform.haTopologySpreadConstraints" (dict "root" . "component" "worker") | nindent 6 }}
+      {{- else }}
+      {{- with .Values.backend.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}

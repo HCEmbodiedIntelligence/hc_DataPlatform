@@ -1,0 +1,58 @@
+{
+  "acceptance_database": {
+    "default_database_touched": false,
+    "migration_count": 107,
+    "migration_status": "current",
+    "name": "hc_obs503_acceptance",
+    "task_owned": true
+  },
+  "actual_production_actions": [
+    "platform.backup.catalog.rebuilt",
+    "platform.maintenance.requested:RESTORE",
+    "platform.maintenance.requested:RELEASE"
+  ],
+  "business_event_count": 3,
+  "business_event_ids": [
+    "cda67386-0013-4a3e-835b-d1741dc8fd3c",
+    "4e09ba70-de7e-4c86-85f5-98582cd3bce1",
+    "4ed1eb31-6701-4a32-910d-a7664c72151e"
+  ],
+  "capability_boundary": {
+    "export": "platform.maintenance.verify",
+    "list": [
+      "platform.operations.read",
+      "platform.admin"
+    ],
+    "wrong_release_operator_http_status": 403
+  },
+  "contracts": {
+    "generated_platform_operations_client_sha256": "98bf24303aaf152a16b36e4dc0724efb0cc5d600dd1765b80fe4db453c7ff65d",
+    "migration_manifest_sha256": "a52d9411b8a513360aa489bc24599d9a9f25406ed52f11d9f4a64ab806e83a4c",
+    "openapi_sha256": "27d9468c75010ad58fa6eae5947c4483d1810cf1fe9416a2b90797dbfc2386a9",
+    "platform_audit_migration_sha256": "bed69e951ad8860566962972484bf36cc921aac172fd83d71b9687e987c2a584"
+  },
+  "domains": [
+    "BACKUP",
+    "RELEASE",
+    "RESTORE"
+  ],
+  "executed_at": "2026-08-29T11:54:32+08:00",
+  "export": {
+    "event_count": 5,
+    "forbidden_value_match_count": 0,
+    "format": "application/x-ndjson",
+    "sha256": "042d791e9ccf48da250894b0cb9c4efdd75fe55df7f031a470ba51a19a86d931"
+  },
+  "integrity": {
+    "checked_chain_count_before_tamper": 1,
+    "checked_event_count_before_first_verification": 3,
+    "integrity_entry_update_rejected": true,
+    "source_update_rejected": true,
+    "status_after_head_tamper": "FAILED",
+    "status_before_tamper": "PASSED",
+    "tampered_export_http_status": 409
+  },
+  "result": "PASSED",
+  "schema_version": "hc-obs5-03-acceptance/v1",
+  "test": "backend/tests/platform_ops/test_platform_audit_postgres.py"
+}

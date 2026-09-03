@@ -1,0 +1,375 @@
+.pageHeader {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hc-space-4, 16px);
+  min-width: 0;
+  padding: 0;
+}
+
+.pageHeaderCopy {
+  min-width: 0;
+}
+
+.pageTitle.pageTitle {
+  margin: 0;
+  color: var(--hc-color-text, #171a2a);
+  font-size: clamp(1.5rem, 1.34rem + 0.34vw, 1.75rem);
+  font-weight: 680;
+  line-height: 1.22;
+  letter-spacing: -0.026em;
+  text-wrap: balance;
+}
+
+.pageDescription {
+  max-width: 72ch;
+  margin-top: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.pageMetadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hc-space-2, 8px);
+  align-items: center;
+  margin-top: var(--hc-space-2, 8px);
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.875rem;
+}
+
+.pageActions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hc-space-2, 8px);
+  padding: 0;
+  margin: 0;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 0.75rem;
+  list-style: none;
+}
+
+.breadcrumbs li:not(:last-child)::after {
+  padding-left: var(--hc-space-2, 8px);
+  color: var(--hc-color-border, #d9ddea);
+  content: "/";
+}
+
+.breadcrumbLink {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+.breadcrumbLink:hover {
+  color: var(--hc-color-primary, #4c57c6);
+  text-decoration: underline;
+}
+
+.standardPage,
+.detailPage,
+.workbench {
+  display: grid;
+  min-width: 0;
+  gap: var(--hc-layout-section-gap, 16px);
+}
+
+.summaryRegion,
+.toolbarRegion,
+.contentRegion,
+.tabsRegion,
+.detailContent,
+.inspectorRegion,
+.workbenchToolbar,
+.workbenchNavigation,
+.workbenchMedia,
+.workbenchEditor,
+.workbenchInspector,
+.workbenchTimeline {
+  min-width: 0;
+}
+
+.summaryRegion {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--hc-layout-grid-gap, 16px);
+}
+
+.contentRegion,
+.detailContent,
+.inspectorRegion,
+.workbenchNavigation,
+.workbenchMedia,
+.workbenchEditor,
+.workbenchInspector,
+.workbenchTimeline {
+  border: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+  border-radius: var(--hc-radius-md, 12px);
+  background: var(--hc-color-surface, #fff);
+  box-shadow: var(--hc-shadow-sm);
+}
+
+.contentRegion,
+.detailContent,
+.inspectorRegion,
+.workbenchNavigation,
+.workbenchEditor,
+.workbenchInspector {
+  padding: var(--hc-space-4, 16px);
+}
+
+.paginationRegion {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.resourceIdentity {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--hc-space-1, 4px);
+  align-items: center;
+}
+
+.resourceIdentity code {
+  overflow-wrap: anywhere;
+  color: var(--hc-color-text, #171a2a);
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--hc-layout-grid-gap, 16px);
+  align-items: start;
+}
+
+.detailGrid[data-has-inspector="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+}
+
+.inspectorRegion {
+  position: sticky;
+  top: calc(var(--hc-shell-header-height, 68px) + var(--hc-page-gutter, 24px));
+  max-height: calc(100vh - 116px);
+  overflow: auto;
+}
+
+.filterToolbar,
+.filterToolbarCompact,
+.workbenchToolbar {
+  padding: var(--hc-space-3, 12px) var(--hc-space-4, 16px);
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: var(--hc-radius-md, 12px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.filterForm {
+  display: flex;
+  gap: var(--hc-space-3, 12px);
+  align-items: flex-end;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.filterFields {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: var(--hc-space-3, 12px);
+  min-width: 0;
+}
+
+.filterActions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.filterToolbarCompact {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.filterToolbarCollapsible {
+  padding: 0;
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.collapsibleHeader {
+  display: flex;
+  min-height: 48px;
+  padding: 4px 10px 4px 16px;
+  gap: var(--hc-space-3, 12px);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filterHeading {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--hc-space-3, 12px);
+  align-items: center;
+  min-width: 0;
+}
+
+.filterHeading h2 {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.4;
+}
+
+.filterSummary {
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filterToggle:global(.ant-btn) {
+  flex: 0 0 auto;
+  min-height: 36px;
+  color: var(--hc-color-info-text, #1e4e9b);
+  font-weight: 600;
+}
+
+.filterToggle:global(.ant-btn:focus-visible) {
+  outline: 2px solid var(--hc-color-focus, #5965d8);
+  outline-offset: 2px;
+}
+
+.collapsibleBody {
+  border-top: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+}
+
+.filterToolbarCollapsible .filterForm {
+  padding: 10px 16px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filterToolbarCollapsible {
+    transition: none;
+  }
+}
+
+.entityDrawer :global(.ant-drawer-body) {
+  overflow-wrap: anywhere;
+}
+
+.entityDrawer :global(.ant-drawer-content-wrapper) {
+  width: min(var(--hc-drawer-width, 540px), 100vw) !important;
+}
+
+.workbenchGrid {
+  display: grid;
+  grid-template-areas:
+    "navigation media inspector"
+    "navigation editor inspector"
+    "timeline timeline timeline";
+  grid-template-columns: minmax(200px, 240px) minmax(360px, 1fr) minmax(
+      260px,
+      320px
+    );
+  gap: var(--hc-layout-grid-gap, 16px);
+  align-items: stretch;
+}
+
+.workbenchNavigation {
+  grid-area: navigation;
+}
+
+.workbenchMedia {
+  grid-area: media;
+  min-height: 280px;
+  overflow: hidden;
+}
+
+.workbenchEditor {
+  grid-area: editor;
+}
+
+.workbenchInspector {
+  grid-area: inspector;
+}
+
+.workbenchTimeline {
+  grid-area: timeline;
+  min-height: 96px;
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .detailGrid[data-has-inspector="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspectorRegion {
+    position: static;
+    max-height: none;
+  }
+
+  .workbenchGrid {
+    grid-template-areas:
+      "navigation media"
+      "editor editor"
+      "inspector inspector"
+      "timeline timeline";
+    grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .pageHeader,
+  .filterForm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pageActions,
+  .filterActions {
+    justify-content: flex-start;
+  }
+
+  .workbenchGrid {
+    grid-template-areas:
+      "navigation"
+      "media"
+      "editor"
+      "inspector"
+      "timeline";
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 390px) {
+  .standardPage,
+  .detailPage,
+  .workbench {
+    gap: var(--hc-space-3, 12px);
+  }
+
+  .contentRegion,
+  .detailContent,
+  .inspectorRegion,
+  .workbenchNavigation,
+  .workbenchEditor,
+  .workbenchInspector {
+    padding: var(--hc-space-3, 12px);
+  }
+
+  .pageActions > * {
+    flex: 1 1 auto;
+  }
+}

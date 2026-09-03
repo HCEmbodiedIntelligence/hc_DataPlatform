@@ -1,0 +1,53 @@
+{
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-signature-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "algorithm": {
+      "const": "Ed25519",
+      "default": "Ed25519",
+      "title": "Algorithm",
+      "type": "string"
+    },
+    "canonicalization": {
+      "const": "hc-json-c14n/v1",
+      "default": "hc-json-c14n/v1",
+      "title": "Canonicalization",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-signature/v1",
+      "default": "hc-platform-signature/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "key_reference": {
+      "pattern": "^kms://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._:-]+)*/versions/v[1-9][0-9]*$",
+      "title": "Key Reference",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "public_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Public Key Sha256",
+      "type": "string"
+    },
+    "signature_base64url": {
+      "pattern": "^[A-Za-z0-9_-]{86}$",
+      "title": "Signature Base64Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key_reference",
+    "public_key_sha256",
+    "manifest_sha256",
+    "signature_base64url"
+  ],
+  "title": "hc-platform-signature/v1",
+  "type": "object"
+}

@@ -1,0 +1,293 @@
+{{- if .Values.backend.restoreJob.enabled }}
+{{- $job := .Values.backend.restoreJob -}}
+{{- $operation := default "execute" $job.operation -}}
+{{- if not (has $operation (list "execute" "reconcile")) -}}
+{{- fail "backend.restoreJob.operation must be execute or reconcile" -}}
+{{- end -}}
+{{- if and (eq $operation "reconcile") (empty $job.reconciledAt) -}}
+{{- fail "backend.restoreJob.reconciledAt is required for reconcile" -}}
+{{- end -}}
+{{- $backupId := required "backend.restoreJob.backupId is required" $job.backupId -}}
+{{- $target := required "backend.restoreJob.targetEnvironment is required" $job.targetEnvironment -}}
+{{- $inputSecret := required "backend.restoreJob.inputSecret.name is required" $job.inputSecret.name -}}
+{{- $stagingClaim := required "backend.restoreJob.staging.existingClaim is required" $job.staging.existingClaim -}}
+{{- $environmentConfigMap := required "backend.restoreJob.environmentConfigMap.name is required" $job.environmentConfigMap.name -}}
+{{- $environmentSecret := required "backend.restoreJob.environmentSecret.name is required" $job.environmentSecret.name -}}
+{{- $serviceAccount := required "backend.restoreJob.serviceAccountName is required" $job.serviceAccountName -}}
+{{- $temporalTls := $job.temporalTlsSecret -}}
+{{- $inputKeys := list $job.inputSecret.backupPlanKey $job.inputSecret.targetDocumentKey $job.inputSecret.restorePlanKey -}}
+{{- if eq $operation "execute" -}}
+{{- $inputKeys = concat $inputKeys (list $job.inputSecret.approvalKey $job.inputSecret.approvalSignatureKey) -}}
+{{- end -}}
+{{- range $key := $inputKeys -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $key) -}}
+{{- fail "backend.restoreJob input Secret key is invalid" -}}
+{{- end -}}
+{{- end -}}
+{{- if and $job.ageIdentitySecret.name (not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $job.ageIdentitySecret.key)) -}}
+{{- fail "backend.restoreJob.ageIdentitySecret.key is invalid" -}}
+{{- end -}}
+{{- if $temporalTls.name -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $temporalTls.caKey) -}}
+{{- fail "backend.restoreJob.temporalTlsSecret.caKey is invalid" -}}
+{{- end -}}
+{{- if ne (empty $temporalTls.clientCertificateKey) (empty $temporalTls.clientPrivateKeyKey) -}}
+{{- fail "backend.restoreJob Temporal client certificate and private key must be configured together" -}}
+{{- end -}}
+{{- range $key := list $temporalTls.clientCertificateKey $temporalTls.clientPrivateKeyKey -}}
+{{- if and $key (not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $key)) -}}
+{{- fail "backend.restoreJob Temporal TLS Secret key is invalid" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-restore-{{ $operation }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: restore-maintenance
+  {{- with $job.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ $job.backoffLimit }}
+  activeDeadlineSeconds: {{ $job.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: restore-maintenance
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $serviceAccount | quote }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: private-restore-bootstrap
+          image: {{ include "hc-data-platform.backendImage" $job.image | quote }}
+          imagePullPolicy: {{ $job.image.pullPolicy }}
+          command: ["python", "-c"]
+          args:
+            - |
+              import os
+              from pathlib import Path
+              work = Path("/backup-staging/restore-work")
+              private = Path("/restore-private/runtime")
+              work.mkdir(mode=0o700, exist_ok=True)
+              work.chmod(0o700)
+              private.mkdir(mode=0o700, exist_ok=True)
+              private.chmod(0o700)
+              copies = [
+                  (Path("/input/restore/{{ $job.inputSecret.backupPlanKey }}"), work / "whole-backup-plan.json"),
+                  (Path("/input/restore/{{ $job.inputSecret.targetDocumentKey }}"), work / "restore-target.json"),
+                  (Path("/input/restore/{{ $job.inputSecret.restorePlanKey }}"), work / "restore-plan.json"),
+              ]
+              {{- if eq $operation "execute" }}
+              copies.extend([
+                  (Path("/input/restore/{{ $job.inputSecret.approvalKey }}"), work / "restore-approval.json"),
+                  (Path("/input/restore/{{ $job.inputSecret.approvalSignatureKey }}"), work / "restore-approval.sig"),
+              ])
+              {{- end }}
+              copies.extend([
+                  (Path("/input/kubernetes/token"), private / "kubernetes-token"),
+                  (Path("/input/kubernetes/ca.crt"), private / "kubernetes-ca.crt"),
+              ])
+              {{- if $job.ageIdentitySecret.name }}
+              copies.append((Path("/input/age/{{ $job.ageIdentitySecret.key }}"), private / "age-identity.txt"))
+              {{- end }}
+              {{- if $temporalTls.name }}
+              copies.append((Path("/input/temporal/{{ $temporalTls.caKey }}"), private / "temporal-ca.crt"))
+              {{- if $temporalTls.clientCertificateKey }}
+              copies.extend([
+                  (Path("/input/temporal/{{ $temporalTls.clientCertificateKey }}"), private / "temporal-client.crt"),
+                  (Path("/input/temporal/{{ $temporalTls.clientPrivateKeyKey }}"), private / "temporal-client.key"),
+              ])
+              {{- end }}
+              {{- end }}
+              for source, destination in copies:
+                  payload = source.read_bytes()
+                  if destination.exists():
+                      if destination.read_bytes() != payload:
+                          raise RuntimeError("immutable restore input conflict")
+                  else:
+                      descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                      with os.fdopen(descriptor, "wb", buffering=0) as stream:
+                          stream.write(payload)
+                          stream.flush()
+                          os.fsync(stream.fileno())
+                  destination.chmod(0o600)
+          securityContext:
+            {{- toYaml .Values.backend.backupContainerSecurityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: staging
+              mountPath: /backup-staging
+            - name: restore-input
+              mountPath: /input/restore
+              readOnly: true
+            - name: kubernetes-api
+              mountPath: /input/kubernetes
+              readOnly: true
+            {{- if $job.ageIdentitySecret.name }}
+            - name: age-identity
+              mountPath: /input/age
+              readOnly: true
+            {{- end }}
+            {{- if $temporalTls.name }}
+            - name: temporal-tls
+              mountPath: /input/temporal
+              readOnly: true
+            {{- end }}
+            - name: restore-private
+              mountPath: /restore-private
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: restore-maintenance
+          image: {{ include "hc-data-platform.backendImage" $job.image | quote }}
+          imagePullPolicy: {{ $job.image.pullPolicy }}
+          command: ["hc-platform"]
+          args:
+            - restore
+            - {{ $operation }}
+            - {{ $backupId | quote }}
+            - --target
+            - {{ $target | quote }}
+            - --backup-plan
+            - /backup-staging/restore-work/whole-backup-plan.json
+            - --target-document
+            - /backup-staging/restore-work/restore-target.json
+            - --restore-plan
+            - /backup-staging/restore-work/restore-plan.json
+            {{- if eq $operation "execute" }}
+            - --approval
+            - /backup-staging/restore-work/restore-approval.json
+            - --approval-signature
+            - /backup-staging/restore-work/restore-approval.sig
+            {{- else }}
+            - --report
+            - /backup-staging/restore-work/restore-reconciliation-report.json
+            - --reconciled-at
+            - {{ $job.reconciledAt | quote }}
+            {{- end }}
+            - --checkpoint
+            - /backup-staging/restore-work/restore-checkpoint.json
+            - --staging-directory
+            - /backup-staging/restore-work
+          securityContext:
+            {{- toYaml .Values.backend.backupContainerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ $environmentConfigMap | quote }}
+            - secretRef:
+                name: {{ $environmentSecret | quote }}
+          env:
+            - name: HC_RESTORE_KUBERNETES_TOKEN_FILE
+              value: /restore-private/runtime/kubernetes-token
+            - name: HC_RESTORE_KUBERNETES_CA_FILE
+              value: /restore-private/runtime/kubernetes-ca.crt
+            {{- if $job.ageIdentitySecret.name }}
+            - name: HC_RESTORE_AGE_IDENTITY_FILE
+              value: /restore-private/runtime/age-identity.txt
+            {{- end }}
+            {{- if $temporalTls.name }}
+            - name: HC_RESTORE_TEMPORAL_TLS_CA_FILE
+              value: /restore-private/runtime/temporal-ca.crt
+            {{- if $temporalTls.clientCertificateKey }}
+            - name: HC_RESTORE_TEMPORAL_TLS_CERT_FILE
+              value: /restore-private/runtime/temporal-client.crt
+            - name: HC_RESTORE_TEMPORAL_TLS_KEY_FILE
+              value: /restore-private/runtime/temporal-client.key
+            {{- end }}
+            {{- end }}
+          resources:
+            {{- toYaml $job.resources | nindent 12 }}
+          volumeMounts:
+            - name: staging
+              mountPath: /backup-staging
+            - name: restore-private
+              mountPath: /restore-private
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: staging
+          persistentVolumeClaim:
+            claimName: {{ $stagingClaim | quote }}
+        - name: restore-input
+          secret:
+            secretName: {{ $inputSecret | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $job.inputSecret.backupPlanKey | quote }}
+                path: {{ $job.inputSecret.backupPlanKey | quote }}
+              - key: {{ $job.inputSecret.targetDocumentKey | quote }}
+                path: {{ $job.inputSecret.targetDocumentKey | quote }}
+              - key: {{ $job.inputSecret.restorePlanKey | quote }}
+                path: {{ $job.inputSecret.restorePlanKey | quote }}
+              {{- if eq $operation "execute" }}
+              - key: {{ $job.inputSecret.approvalKey | quote }}
+                path: {{ $job.inputSecret.approvalKey | quote }}
+              - key: {{ $job.inputSecret.approvalSignatureKey | quote }}
+                path: {{ $job.inputSecret.approvalSignatureKey | quote }}
+              {{- end }}
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: {{ $job.kubernetesTokenAudience | quote }}
+                  expirationSeconds: 3600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        {{- if $job.ageIdentitySecret.name }}
+        - name: age-identity
+          secret:
+            secretName: {{ $job.ageIdentitySecret.name | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $job.ageIdentitySecret.key | quote }}
+                path: {{ $job.ageIdentitySecret.key | quote }}
+        {{- end }}
+        {{- if $temporalTls.name }}
+        - name: temporal-tls
+          secret:
+            secretName: {{ $temporalTls.name | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $temporalTls.caKey | quote }}
+                path: {{ $temporalTls.caKey | quote }}
+              {{- if $temporalTls.clientCertificateKey }}
+              - key: {{ $temporalTls.clientCertificateKey | quote }}
+                path: {{ $temporalTls.clientCertificateKey | quote }}
+              - key: {{ $temporalTls.clientPrivateKeyKey | quote }}
+                path: {{ $temporalTls.clientPrivateKeyKey | quote }}
+              {{- end }}
+        {{- end }}
+        - name: restore-private
+          emptyDir:
+            sizeLimit: 10Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+{{- end }}

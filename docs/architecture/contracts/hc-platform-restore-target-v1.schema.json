@@ -1,0 +1,221 @@
+{
+  "$defs": {
+    "ReleaseIdentityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_name": {
+          "const": "hc-data-platform",
+          "default": "hc-data-platform",
+          "title": "Chart Name",
+          "type": "string"
+        },
+        "chart_version": {
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$",
+          "title": "Chart Version",
+          "type": "string"
+        },
+        "git_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "images": {
+          "$ref": "#/$defs/ReleaseImagesV1"
+        },
+        "migration_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Migration Manifest Sha256",
+          "type": "string"
+        },
+        "release_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Manifest Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "git_commit",
+        "chart_version",
+        "images",
+        "migration_manifest_sha256",
+        "release_manifest_sha256"
+      ],
+      "title": "ReleaseIdentityV1",
+      "type": "object"
+    },
+    "ReleaseImagesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Api",
+          "type": "string"
+        },
+        "frontend": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Frontend",
+          "type": "string"
+        },
+        "worker": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api",
+        "worker",
+        "frontend"
+      ],
+      "title": "ReleaseImagesV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-restore-target-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "available_kms_key_references": {
+      "items": {
+        "pattern": "^kms://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._:-]+)*/versions/v[1-9][0-9]*$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Available Kms Key References",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "expected_backup_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Expected Backup Id",
+      "type": "string"
+    },
+    "expected_source_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Expected Source Environment Id",
+      "type": "string"
+    },
+    "expected_source_platform_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Expected Source Platform Id",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-restore-target/v1",
+      "default": "hc-platform-restore-target/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "object_store_versioning_enabled": {
+      "const": true,
+      "default": true,
+      "title": "Object Store Versioning Enabled",
+      "type": "boolean"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "postgresql_major": {
+      "maximum": 99,
+      "minimum": 14,
+      "title": "Postgresql Major",
+      "type": "integer"
+    },
+    "purpose": {
+      "enum": [
+        "disaster_recovery",
+        "planned_migration",
+        "rehearsal"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "requested_release": {
+      "$ref": "#/$defs/ReleaseIdentityV1"
+    },
+    "required_external_dependencies_ready": {
+      "const": true,
+      "default": true,
+      "title": "Required External Dependencies Ready",
+      "type": "boolean"
+    },
+    "supported_backup_formats": {
+      "default": [
+        "hc-platform-backup/v1"
+      ],
+      "items": {
+        "const": "hc-platform-backup/v1",
+        "type": "string"
+      },
+      "title": "Supported Backup Formats",
+      "type": "array"
+    },
+    "target_environment_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Environment Id",
+      "type": "string"
+    },
+    "target_instance_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Target Instance Id",
+      "type": "string"
+    },
+    "target_is_empty": {
+      "title": "Target Is Empty",
+      "type": "boolean"
+    },
+    "temporal_namespace_ready": {
+      "const": true,
+      "default": true,
+      "title": "Temporal Namespace Ready",
+      "type": "boolean"
+    },
+    "temporary_restore_authorization_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Temporary Restore Authorization Id"
+    },
+    "trusted_signing_key_sha256": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Trusted Signing Key Sha256",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "writes_enabled": {
+      "const": false,
+      "default": false,
+      "title": "Writes Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "operation_id",
+    "expected_backup_id",
+    "expected_source_platform_id",
+    "expected_source_environment_id",
+    "target_instance_id",
+    "target_environment_id",
+    "purpose",
+    "target_is_empty",
+    "requested_release",
+    "postgresql_major",
+    "trusted_signing_key_sha256",
+    "available_kms_key_references"
+  ],
+  "title": "hc-platform-restore-target/v1",
+  "type": "object"
+}

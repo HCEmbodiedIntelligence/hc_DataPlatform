@@ -1,0 +1,759 @@
+openapi: 3.1.0
+info:
+  title: HC Data Platform Continuous Recording API
+  version: 1.0.0
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads:
+    post:
+      operationId: beginContinuousRecordingUpload
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateRecordingUploadCommand"}
+      responses:
+        "201":
+          description: Per-asset OSS multipart upload grants
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingUploadGrant"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}:
+    get:
+      operationId: getContinuousRecordingUpload
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Multi-object recording upload state
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingUploadEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}/assets/{asset_id}:authorize-parts:
+    post:
+      operationId: authorizeContinuousRecordingAssetParts
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AuthorizeRecordingAssetPartsCommand"}
+      responses:
+        "200":
+          description: Renewed OSS multipart grants
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingAssetPartGrant"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}/assets/{asset_id}:complete:
+    post:
+      operationId: completeContinuousRecordingAsset
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CompleteRecordingAssetCommand"}
+      responses:
+        "200":
+          description: Asset completed and verified by size, CRC64, and SHA-256
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingUploadEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/uploads/{upload_id}:commit:
+    post:
+      operationId: commitContinuousRecordingUpload
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Multi-object recording committed for slicing
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuousRecordingEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings:
+    post:
+      operationId: registerContinuousRecording
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RegisterContinuousRecordingCommand"}
+      responses:
+        "201":
+          description: Continuous recording registered
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuousRecordingEnvelope"}
+    get:
+      operationId: listContinuousRecordings
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Scoped continuous recordings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuousRecordingPage"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}:
+    get:
+      operationId: getContinuousRecording
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Continuous recording and current slice revision
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ContinuousRecordingEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:
+    put:
+      operationId: saveContinuousRecordingSliceDraft
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SaveSliceDraftCommand"}
+      responses:
+        "200":
+          description: New immutable slice draft revision
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SliceRevisionEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:finalize:
+    post:
+      operationId: finalizeContinuousRecordingSlices
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/FinalizeSliceCommand"}
+      responses:
+        "200":
+          description: Finalized virtual Episodes
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SliceRevisionEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-proposals:
+    post:
+      operationId: proposeContinuousRecordingSlices
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProposeModelSlicesCommand"}
+      responses:
+        "200":
+          description: Versioned model proposal awaiting human review
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SliceRevisionEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes:
+    get:
+      operationId: listContinuousRecordingEpisodes
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Finalized Episodes and QC/alignment state
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/EpisodeProcessingPage"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window:
+    get:
+      operationId: readContinuousRecordingSensorWindow
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: topic
+          in: query
+          required: false
+          schema: {type: [string, "null"], minLength: 1, maxLength: 512}
+        - name: start_offset_ns
+          in: query
+          required: false
+          schema:
+            allOf: [{$ref: "#/components/schemas/NanosecondsDecimal"}]
+            default: "0"
+        - name: end_offset_ns
+          in: query
+          required: false
+          schema:
+            allOf: [{$ref: "#/components/schemas/NanosecondsDecimal"}]
+            default: "4000000000"
+        - name: maximum_samples
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 10000, default: 5000}
+      responses:
+        "200":
+          description: Decoded original SENSOR_DATA samples on the recording clock
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingSensorWindow"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/video-sources:
+    get:
+      operationId: authorizeContinuousRecordingVideos
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Signed original-video URLs for the manual slice editor
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecordingVideoSourceEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources:
+    get:
+      operationId: authorizeContinuousRecordingEpisodeVideos
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Signed original-video URLs plus Episode time windows
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/EpisodeVideoSourceEnvelope"}
+components:
+  schemas:
+    RecordingScope:
+      type: object
+      additionalProperties: false
+      required: [organization_id, project_id, region_code]
+      properties:
+        organization_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+    RecordingStatus:
+      type: string
+      enum: [READY_FOR_SLICING, SLICED]
+    SliceRevisionStatus:
+      type: string
+      enum: [DRAFT, FINALIZED]
+    SliceAuthoringMode:
+      type: string
+      enum: [HUMAN, MODEL]
+    RecordingAssetRole:
+      type: string
+      enum: [RAW_VIDEO, SENSOR_DATA, RECORDING_CONFIG, CALIBRATION, AUXILIARY]
+    RecordingAssetStatus:
+      type: string
+      enum: [UPLOADING, COMMITTED, FAILED]
+    RecordingUploadStatus:
+      type: string
+      enum: [UPLOADING, READY_TO_COMMIT, COMMITTED, FAILED]
+    EpisodeProcessingStatus:
+      type: string
+      enum:
+        - PENDING_QC
+        - QC_RUNNING
+        - QC_FAILED
+        - PENDING_ALIGNMENT
+        - ALIGNING
+        - READY
+        - FAILED
+    NanosecondsDecimal:
+      type: string
+      pattern: "^(?:0|[1-9][0-9]*)$"
+      description: Nanoseconds encoded as a canonical decimal string for JSON precision.
+    SensorTimestampMode:
+      type: string
+      enum: [ABSOLUTE_NS, RECORDING_OFFSET_NS]
+    CameraRecordingConfig:
+      type: object
+      additionalProperties: false
+      required:
+        - camera_id
+        - fps
+        - codec
+        - clock_domain
+        - time_base_numerator
+        - time_base_denominator
+      properties:
+        camera_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        topic: {type: [string, "null"]}
+        fps: {type: number, exclusiveMinimum: 0, maximum: 1000}
+        width: {type: [integer, "null"], minimum: 2, maximum: 32768}
+        height: {type: [integer, "null"], minimum: 2, maximum: 32768}
+        codec: {type: string, minLength: 1, maxLength: 64}
+        clock_domain: {type: string, minLength: 1, maxLength: 128}
+        time_base_numerator: {type: integer, minimum: 1, default: 1}
+        time_base_denominator: {type: integer, minimum: 1, maximum: 1000000000}
+        capture_start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+    SensorRecordingConfig:
+      type: object
+      additionalProperties: false
+      required: [topic, clock_domain]
+      properties:
+        topic: {type: string, minLength: 1, maxLength: 512}
+        clock_domain: {type: string, minLength: 1, maxLength: 128}
+        timestamp_mode: {$ref: "#/components/schemas/SensorTimestampMode"}
+        required: {type: boolean, default: true}
+    RecordingConfiguration:
+      type: object
+      additionalProperties: false
+      required: [recorder_version, primary_clock_domain, cameras]
+      properties:
+        schema_version: {type: string, const: recording-config/v1}
+        recorder_version: {type: string, minLength: 1, maxLength: 128}
+        primary_clock_domain: {type: string, minLength: 1, maxLength: 128}
+        cameras:
+          type: array
+          minItems: 1
+          maxItems: 128
+          items: {$ref: "#/components/schemas/CameraRecordingConfig"}
+        sensors:
+          type: array
+          maxItems: 2048
+          default: []
+          items: {$ref: "#/components/schemas/SensorRecordingConfig"}
+    RecordingAssetManifest:
+      type: object
+      additionalProperties: false
+      required: [path, role, media_type, size, sha256]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 1024}
+        role: {$ref: "#/components/schemas/RecordingAssetRole"}
+        camera_id:
+          anyOf:
+            - {$ref: "#/components/schemas/IngestIdentifier"}
+            - {type: "null"}
+        media_type: {type: string, minLength: 1, maxLength: 255}
+        size: {type: integer, minimum: 1}
+        sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        crc64: {type: [integer, "null"], minimum: 0}
+        part_count: {type: integer, minimum: 1, maximum: 10000, default: 1}
+    CreateRecordingUploadCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - recording_id
+        - rollout_id
+        - data_package_id
+        - collection_task_id
+        - collection_job_id
+        - robot_id
+        - device_id
+        - capture_started_at
+        - capture_ended_at
+        - recording_config
+        - assets
+      properties:
+        schema_version: {type: string, const: continuous-recording-upload/v2}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_job_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        robot_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        capture_started_at: {type: string, format: date-time}
+        capture_ended_at: {type: string, format: date-time}
+        recording_config: {$ref: "#/components/schemas/RecordingConfiguration"}
+        assets:
+          type: array
+          minItems: 3
+          maxItems: 256
+          items: {$ref: "#/components/schemas/RecordingAssetManifest"}
+    RecordingUpload:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - upload_id
+        - command
+        - manifest_sha256
+        - status
+        - created_by
+        - created_at
+        - updated_at
+      properties:
+        schema_version: {type: string, const: continuous-recording-upload/v2}
+        scope: {$ref: "#/components/schemas/RecordingScope"}
+        upload_id: {type: string, format: uuid}
+        command: {$ref: "#/components/schemas/CreateRecordingUploadCommand"}
+        manifest_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        status: {$ref: "#/components/schemas/RecordingUploadStatus"}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    RecordingAssetSummary:
+      type: object
+      additionalProperties: false
+      required: [asset_id, path, role, media_type, size, sha256, status]
+      properties:
+        asset_id: {type: string, format: uuid}
+        path: {type: string}
+        role: {$ref: "#/components/schemas/RecordingAssetRole"}
+        camera_id:
+          anyOf:
+            - {$ref: "#/components/schemas/IngestIdentifier"}
+            - {type: "null"}
+        media_type: {type: string}
+        size: {type: integer, minimum: 1}
+        sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        status: {$ref: "#/components/schemas/RecordingAssetStatus"}
+    RecordingAssetUploadGrant:
+      type: object
+      additionalProperties: false
+      required: [asset, multipart_upload_id, parts]
+      properties:
+        asset: {$ref: "#/components/schemas/RecordingAssetSummary"}
+        multipart_upload_id: {type: string}
+        parts:
+          type: array
+          items: {$ref: "#/components/schemas/PartAuthorization"}
+    RecordingUploadGrant:
+      type: object
+      additionalProperties: false
+      required: [upload, assets]
+      properties:
+        upload: {$ref: "#/components/schemas/RecordingUpload"}
+        assets:
+          type: array
+          items: {$ref: "#/components/schemas/RecordingAssetUploadGrant"}
+    RecordingUploadEnvelope:
+      type: object
+      additionalProperties: false
+      required: [upload, assets]
+      properties:
+        upload: {$ref: "#/components/schemas/RecordingUpload"}
+        assets:
+          type: array
+          items: {$ref: "#/components/schemas/RecordingAssetSummary"}
+    AuthorizeRecordingAssetPartsCommand:
+      type: object
+      additionalProperties: false
+      required: [part_numbers]
+      properties:
+        part_numbers:
+          type: array
+          minItems: 1
+          maxItems: 256
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 10000}
+    RecordingAssetPartGrant:
+      type: object
+      additionalProperties: false
+      required: [asset_id, parts]
+      properties:
+        asset_id: {type: string, format: uuid}
+        parts:
+          type: array
+          items: {$ref: "#/components/schemas/PartAuthorization"}
+    CompleteRecordingAssetCommand:
+      type: object
+      additionalProperties: false
+      required: [parts]
+      properties:
+        parts:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/CompletedPart"}
+    RegisterContinuousRecordingCommand:
+      type: object
+      additionalProperties: false
+      required: [upload_session_id]
+      properties:
+        upload_session_id: {type: string, format: uuid}
+    EpisodeSliceInput:
+      type: object
+      additionalProperties: false
+      required: [episode_id, start_offset_ns, end_offset_ns]
+      properties:
+        episode_id: {type: string, pattern: "^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"}
+        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        title: {type: [string, "null"], minLength: 1, maxLength: 256}
+        task_label: {type: [string, "null"], minLength: 1, maxLength: 128}
+        notes: {type: [string, "null"], maxLength: 4096}
+    SaveSliceDraftCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        slices:
+          type: array
+          maxItems: 10000
+          default: []
+          items: {$ref: "#/components/schemas/EpisodeSliceInput"}
+    ModelSliceProposalMetadata:
+      type: object
+      additionalProperties: false
+      required: [model_id, model_version]
+      properties:
+        model_id: {type: string, minLength: 1, maxLength: 256}
+        model_version: {type: string, minLength: 1, maxLength: 256}
+        prompt_version: {type: [string, "null"], minLength: 1, maxLength: 256}
+        confidence: {type: [number, "null"], minimum: 0, maximum: 1}
+    ProposeModelSlicesCommand:
+      type: object
+      additionalProperties: false
+      required: [slices, model]
+      properties:
+        slices:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/EpisodeSliceInput"}
+        model: {$ref: "#/components/schemas/ModelSliceProposalMetadata"}
+    FinalizeSliceCommand:
+      type: object
+      additionalProperties: false
+      required: [expected_draft_revision]
+      properties:
+        expected_draft_revision: {type: integer, minimum: 1}
+    ContinuousRecording:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - recording_id
+        - rollout_id
+        - data_package_id
+        - collection_task_id
+        - collection_job_id
+        - robot_id
+        - device_id
+        - capture_started_at
+        - capture_ended_at
+        - duration_ns
+        - source_sha256
+        - manifest_fingerprint
+        - etag
+      properties:
+        schema_version:
+          type: string
+          enum: [continuous-recording/v1, continuous-recording/v2]
+        scope: {$ref: "#/components/schemas/RecordingScope"}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        upload_session_id: {type: [string, "null"], format: uuid}
+        recording_upload_id: {type: [string, "null"], format: uuid}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_job_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        robot_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        capture_started_at: {type: string, format: date-time}
+        capture_ended_at: {type: string, format: date-time}
+        duration_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        source_sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        manifest_fingerprint: {type: string, pattern: "^[a-f0-9]{64}$"}
+        video_asset_count: {type: integer, minimum: 0, maximum: 128}
+        status: {$ref: "#/components/schemas/RecordingStatus"}
+        current_revision: {type: integer, minimum: 0}
+        finalized_revision: {type: [integer, "null"], minimum: 1}
+        etag: {type: string, pattern: '^"v[1-9][0-9]*"$'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    EpisodeSlice:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - recording_id
+        - revision
+        - ordinal
+        - episode_id
+        - start_offset_ns
+        - end_offset_ns
+        - started_at
+        - ended_at
+        - source_sha256
+      properties:
+        schema_version: {type: string, const: recording-episode-slice/v1}
+        scope: {$ref: "#/components/schemas/RecordingScope"}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        revision: {type: integer, minimum: 1}
+        ordinal: {type: integer, minimum: 0}
+        episode_id: {type: string, pattern: "^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"}
+        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        started_at: {type: string, format: date-time}
+        ended_at: {type: string, format: date-time}
+        title: {type: [string, "null"], minLength: 1, maxLength: 256}
+        task_label: {type: [string, "null"], minLength: 1, maxLength: 128}
+        notes: {type: [string, "null"], maxLength: 4096}
+        source_sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        source_upload_session_id: {type: [string, "null"], format: uuid}
+        source_recording_upload_id: {type: [string, "null"], format: uuid}
+    RecordingSliceRevision:
+      type: object
+      additionalProperties: false
+      required: [scope, recording_id, revision, status, slices, created_by, created_at]
+      properties:
+        schema_version: {type: string, const: recording-slice-revision/v1}
+        scope: {$ref: "#/components/schemas/RecordingScope"}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        revision: {type: integer, minimum: 1}
+        status: {$ref: "#/components/schemas/SliceRevisionStatus"}
+        slices: {type: array, items: {$ref: "#/components/schemas/EpisodeSlice"}}
+        authoring_mode: {$ref: "#/components/schemas/SliceAuthoringMode"}
+        model:
+          anyOf:
+            - {$ref: "#/components/schemas/ModelSliceProposalMetadata"}
+            - {type: "null"}
+        created_by: {type: string, minLength: 1, maxLength: 512}
+        created_at: {type: string, format: date-time}
+    ContinuousRecordingEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {$ref: "#/components/schemas/ContinuousRecording"}
+        current_slice_revision:
+          anyOf:
+            - {$ref: "#/components/schemas/RecordingSliceRevision"}
+            - {type: "null"}
+    ContinuousRecordingPage:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/ContinuousRecording"}}
+        total: {type: integer, minimum: 0}
+    SliceRevisionEnvelope:
+      type: object
+      additionalProperties: false
+      required: [recording, revision]
+      properties:
+        recording: {$ref: "#/components/schemas/ContinuousRecording"}
+        revision: {$ref: "#/components/schemas/RecordingSliceRevision"}
+    EpisodeProcessing:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - recording_id
+        - episode_id
+        - finalized_revision
+        - start_offset_ns
+        - end_offset_ns
+        - status
+        - created_at
+        - updated_at
+      properties:
+        schema_version: {type: string, const: recording-episode/v1}
+        scope: {$ref: "#/components/schemas/RecordingScope"}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        episode_id: {type: string, pattern: "^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"}
+        finalized_revision: {type: integer, minimum: 1}
+        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        status: {$ref: "#/components/schemas/EpisodeProcessingStatus"}
+        workflow_id: {type: [string, "null"], minLength: 1, maxLength: 1024}
+        event_id: {type: [string, "null"], format: uuid}
+        qc_report_id: {type: [string, "null"]}
+        alignment_attempt_id: {type: [string, "null"]}
+        dataset_id: {type: [string, "null"], minLength: 1, maxLength: 128}
+        dataset_version: {type: [integer, "null"], minimum: 1}
+        lance_version: {type: [integer, "null"], minimum: 1}
+        annotation_task_id: {type: [string, "null"], minLength: 1, maxLength: 128}
+        aligned_media_camera_count: {type: [integer, "null"], minimum: 1, maximum: 128}
+        failure_code: {type: [string, "null"], pattern: "^[A-Z0-9_]+$"}
+        failure_stage: {type: [string, "null"], minLength: 1, maxLength: 128}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    EpisodeProcessingPage:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/EpisodeProcessing"}
+        total: {type: integer, minimum: 0}
+    EpisodeVideoSource:
+      type: object
+      additionalProperties: false
+      required:
+        - recording_id
+        - episode_id
+        - asset_id
+        - camera_id
+        - media_type
+        - source_url
+        - start_offset_ns
+        - end_offset_ns
+        - fps
+        - codec
+        - expires_at
+      properties:
+        schema_version: {type: string, const: episode-video-source/v1}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        episode_id: {type: string}
+        asset_id: {type: string, format: uuid}
+        camera_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        media_type: {type: string}
+        source_url: {type: string}
+        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        fps: {type: number, exclusiveMinimum: 0}
+        codec: {type: string}
+        expires_at: {type: string, format: date-time}
+        byte_range_supported: {type: boolean, const: true}
+        materialization: {type: string, const: ORIGINAL_VIDEO_TIME_WINDOW}
+    EpisodeVideoSourceEnvelope:
+      type: object
+      additionalProperties: false
+      required: [sources]
+      properties:
+        sources:
+          type: array
+          items: {$ref: "#/components/schemas/EpisodeVideoSource"}
+    RecordingVideoSource:
+      type: object
+      additionalProperties: false
+      required:
+        - recording_id
+        - asset_id
+        - camera_id
+        - media_type
+        - source_url
+        - duration_ns
+        - fps
+        - codec
+        - expires_at
+      properties:
+        schema_version: {type: string, const: recording-video-source/v1}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        asset_id: {type: string, format: uuid}
+        camera_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        media_type: {type: string}
+        source_url: {type: string}
+        duration_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        fps: {type: number, exclusiveMinimum: 0}
+        codec: {type: string}
+        expires_at: {type: string, format: date-time}
+        byte_range_supported: {type: boolean, const: true}
+        materialization: {type: string, const: ORIGINAL_RECORDING}
+    RecordingVideoSourceEnvelope:
+      type: object
+      additionalProperties: false
+      required: [sources]
+      properties:
+        sources:
+          type: array
+          items: {$ref: "#/components/schemas/RecordingVideoSource"}
+    RecordingSensorSample:
+      type: object
+      additionalProperties: false
+      required: [offset_ns, source_timestamp_ns, value]
+      properties:
+        offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        source_timestamp_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        value: {}
+    RecordingSensorWindow:
+      type: object
+      additionalProperties: false
+      required:
+        - recording_id
+        - topic
+        - start_offset_ns
+        - end_offset_ns
+        - samples
+      properties:
+        schema_version: {type: string, const: recording-sensor-window/v1}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        topic: {type: string, minLength: 1, maxLength: 512}
+        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
+        samples:
+          type: array
+          items: {$ref: "#/components/schemas/RecordingSensorSample"}
+        truncated: {type: boolean, default: false}

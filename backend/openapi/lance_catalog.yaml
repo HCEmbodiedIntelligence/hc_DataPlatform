@@ -1,0 +1,244 @@
+openapi: 3.1.0
+info:
+  title: Lance Catalog API Fragment
+  version: 1.0.0
+paths:
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions:
+    get:
+      operationId: listLanceCatalogVersions
+      tags: [lance_catalog]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DatasetId'
+      responses:
+        '200':
+          description: Immutable logical dataset version snapshots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatasetVersionRef'
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/lance-versions/{version}:
+    get:
+      operationId: getLanceCatalogVersionSnapshot
+      tags: [lance_catalog]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DatasetId'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: One immutable logical version pinned to a Lance snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetVersionRef'
+        '404': {description: Dataset or version was not found.}
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/rollouts/{rollout_id}/steps:
+    get:
+      operationId: readStepWindow
+      tags: [lance_catalog]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DatasetId'
+        - $ref: '#/components/parameters/RolloutId'
+        - name: start_step
+          in: query
+          required: true
+          schema: {type: integer, minimum: 0}
+        - name: end_step
+          in: query
+          required: true
+          schema: {type: integer, minimum: 0}
+        - name: version
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: Stable, half-open logical step window.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepWindow'
+        '404': {description: Dataset, version, or rollout was not found.}
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/rollouts/{rollout_id}/lineage:
+    get:
+      operationId: getRolloutLineage
+      tags: [lance_catalog]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DatasetId'
+        - $ref: '#/components/parameters/RolloutId'
+        - name: version
+          in: query
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: Source, converter, fragment, and Lance snapshot lineage.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutLineage'
+        '404': {description: Lineage was not found.}
+  /api/v1/projects/{project_id}/datasets/{dataset_id}/reconciliation:
+    post:
+      operationId: reconcileLanceCatalog
+      tags: [lance_catalog]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DatasetId'
+      responses:
+        '200':
+          description: Logical versions restored from durable Lance receipts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatasetVersionRef'
+        '409': {description: Receipt history is non-contiguous or conflicts with the catalog.}
+        '503': {description: PostgreSQL indexing is still unavailable.}
+components:
+  parameters:
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+    DatasetId:
+      name: dataset_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+    RolloutId:
+      name: rollout_id
+      in: path
+      required: true
+      schema: {type: string, minLength: 1}
+    Version:
+      name: version
+      in: path
+      required: true
+      schema: {type: integer, minimum: 1}
+  schemas:
+    DatasetVersionRef:
+      type: object
+      required:
+        - project_id
+        - dataset_id
+        - version
+        - schema_snapshot_id
+        - schema_fingerprint
+        - frequency_hz
+        - content_hash
+        - dataset_uri
+        - lance_version
+        - storage_commit_id
+        - committed_rollouts
+        - created_at
+      properties:
+        project_id: {type: string}
+        dataset_id: {type: string}
+        version: {type: integer, minimum: 1}
+        schema_snapshot_id: {type: string}
+        schema_fingerprint: {$ref: '#/components/schemas/Sha256'}
+        frequency_hz: {type: number, exclusiveMinimum: 0}
+        content_hash: {$ref: '#/components/schemas/Sha256'}
+        dataset_uri: {type: string}
+        lance_version: {type: integer, minimum: 1}
+        storage_commit_id: {$ref: '#/components/schemas/Sha256'}
+        committed_rollouts:
+          type: array
+          items: {type: string}
+        created_at: {type: string, format: date-time}
+    StepRecord:
+      type: object
+      required:
+        - rollout_id
+        - step_index
+        - timestamp_ns
+        - modalities
+        - source_timestamps_ns
+        - time_error_ns
+        - valid
+        - repeated
+        - sample_valid
+      properties:
+        rollout_id: {type: string}
+        step_index: {type: integer, minimum: 0}
+        timestamp_ns: {type: string, pattern: '^(0|[1-9][0-9]*)$'}
+        modalities:
+          type: object
+          description: >-
+            Logical modality values. Binary media is not embedded or base64 encoded;
+            it is represented as {$type: binary, byte_length, transport:
+            preview_media} and fetched through the authorized preview-media API.
+          additionalProperties: true
+        source_timestamps_ns:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: integer, minimum: 0}
+        time_error_ns:
+          type: object
+          additionalProperties: {type: [integer, 'null']}
+        valid:
+          type: object
+          additionalProperties: {type: boolean}
+        repeated:
+          type: object
+          additionalProperties: {type: boolean}
+        sample_valid: {type: boolean}
+    StepWindow:
+      type: object
+      required:
+        - project_id
+        - dataset_id
+        - dataset_version
+        - rollout_id
+        - start_step
+        - end_step
+        - steps
+      properties:
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: integer, minimum: 1}
+        rollout_id: {type: string}
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 0}
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/StepRecord'}
+    RolloutLineage:
+      type: object
+      required:
+        - project_id
+        - dataset_id
+        - dataset_version
+        - rollout_id
+        - source_sha256
+        - converter_version
+        - schema_snapshot_id
+        - schema_fingerprint
+        - fragment_uri
+        - fragment_content_hash
+        - dataset_uri
+        - lance_version
+      properties:
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: integer, minimum: 1}
+        rollout_id: {type: string}
+        source_sha256: {$ref: '#/components/schemas/Sha256'}
+        converter_version: {type: string}
+        schema_snapshot_id: {type: string}
+        schema_fingerprint: {$ref: '#/components/schemas/Sha256'}
+        fragment_uri: {type: string}
+        fragment_content_hash: {$ref: '#/components/schemas/Sha256'}
+        dataset_uri: {type: string}
+        lance_version: {type: integer, minimum: 1}
+    Sha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'

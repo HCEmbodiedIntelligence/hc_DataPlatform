@@ -1,0 +1,21 @@
+apiVersion: hc-data-platform.io/v1alpha1
+kind: PlatformRelease
+metadata:
+  releaseId: platform-v2026.08.17.1
+spec:
+  gitCommit: 0123456789abcdef0123456789abcdef01234567
+  semanticVersion: 0.1.0
+  chart:
+    name: hc-data-platform
+    version: 0.1.0
+  images:
+    frontend: registry.example.com/hc-data-platform/frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    api: registry.example.com/hc-data-platform/api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    worker: registry.example.com/hc-data-platform/worker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  database:
+    migrationManifest: backend/migrations/manifest.txt
+    migrationManifestDigest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    strategy: forward-only-expand-contract
+  promotion:
+    buildOnce: true
+    environments: [staging, production]

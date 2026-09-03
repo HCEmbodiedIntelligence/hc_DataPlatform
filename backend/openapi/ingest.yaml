@@ -1,0 +1,828 @@
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/device-capture-facts:
+    post:
+      operationId: recordDeviceCaptureFact
+      tags: [ingest]
+      description: >-
+        Records an immutable CAPTURED or SAVED assertion from an authenticated device-agent
+        service identity. Cloud upload registration and Raw commit events never create this fact.
+      parameters:
+        - &authorization_parameter {name: Authorization, in: header, required: true, schema: {type: string, pattern: "^Bearer .+$"}}
+        - &project_parameter {name: project_id, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}}
+        - &region_parameter {name: region_code, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DeviceCaptureFactRequest"}
+      responses:
+        "200":
+          description: The newly persisted fact, or the identical existing fact on retry.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Device facts are never cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeviceCaptureFact"}
+        "401": &unauthorized_response
+          description: Verified AuthContext is absent.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "403": &forbidden_response
+          description: Exact service-identity organization/project/region scope is denied.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "409": &conflict_response
+          description: Immutable identity, content, state, or collection assignment conflict.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422": &validation_response
+          description: Request or raw-object integrity validation failed.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions:
+    post:
+      operationId: createUploadSession
+      tags: [ingest]
+      description: Creates, resumes, or returns the immutable package upload; supports browser multipart and an authorized canonical object-storage address.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateUploadRequest"}
+      responses:
+        "201":
+          description: Multipart session and short-lived direct-upload authorizations.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Signed URLs are never cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSessionGrant"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "409": *conflict_response
+        "413": &payload_too_large_response
+          description: JSON request exceeds its bounded control-plane limit.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "415": &unsupported_media_response
+          description: Content-Type is not application/json.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+    get:
+      operationId: listUploadSessions
+      tags: [ingest]
+      description: Lists persisted browser and object-reference upload sessions in one project and region.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - {name: status, in: query, schema: {type: string, enum: [REGISTERED, UPLOADING, PAUSED, MULTIPART_COMPLETED, RAW_COMMITTED, FAILED, CANCELLED]}}
+        - {name: data_package_id, in: query, schema: {$ref: "#/components/schemas/IngestIdentifier"}}
+        - {name: cursor, in: query, schema: {type: string, minLength: 16, maxLength: 16384}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        "200":
+          description: Upload sessions ordered by most recent update.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSessionListV1"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-manifests:preflight:
+    post:
+      operationId: preflightUploadManifest
+      tags: [ingest]
+      description: Parses a bounded untrusted Manifest and returns read-only package identifiers, cameras, topics, files, checksums, and missing expected topics without writing P20 task configuration.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RolloutManifestV1"}
+      responses:
+        "200":
+          description: Validated normalized Manifest discovery.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ManifestPreflightResultV1"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "413": *payload_too_large_response
+        "415": *unsupported_media_response
+        "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:
+    get:
+      operationId: getUploadSession
+      tags: [ingest]
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - &session_parameter {name: session_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Persisted upload session.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSession"}
+        "404": &not_found_response
+          description: Session does not exist in the authorized scope.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media:
+    get:
+      operationId: getUploadRawMedia
+      tags: [ingest]
+      description: Issues an audited, short-lived GET URL for the immutable committed Raw MCAP capture. The URL and any object locator are sensitive and must not be cached or logged.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Authorized Raw MCAP source. Browser rendering support is determined by the client capability, not by this grant.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Signed URLs must not be cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawMediaSourceV1"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "404": *not_found_response
+        "409": *conflict_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/processing:
+    get:
+      operationId: getUploadProcessingStatus
+      tags: [ingest]
+      description: Returns only the durable processing state and preview lineage linked to the authorized upload session. It never exposes an arbitrary Workflow result.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Uploader-safe processing state. A not-yet-visible Temporal execution remains PENDING while its durable dispatch is outstanding.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Processing state is never cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadProcessingStatusV1"}
+        "401": *unauthorized_response
+        "403": *forbidden_response
+        "404": *not_found_response
+        "409": *conflict_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/parts:
+    get:
+      operationId: listUploadParts
+      tags: [ingest]
+      description: Reconciles and returns the object store's uploaded multipart parts.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Parts sorted by ascending part_number.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/UploadPart"}
+        "404": *not_found_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:renew:
+    post:
+      operationId: renewUploadPartAuthorizations
+      tags: [ingest]
+      description: Reissues short-lived PUT URLs; object bytes never pass through this API.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PartNumbersRequest"}
+      responses:
+        "200":
+          description: Short-lived direct PUT authorizations.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Clients must not cache signed URLs.}
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/PartAuthorization"}
+        "409": *conflict_response
+        "413": *payload_too_large_response
+        "415": *unsupported_media_response
+        "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:complete:
+    post:
+      operationId: completeUploadSession
+      tags: [ingest]
+      description: Completes multipart only when the sorted client list exactly matches storage.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CompleteUploadRequest"}
+      responses:
+        "200":
+          description: Multipart object exists but is not committed until the manifest call succeeds.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSession"}
+        "409": *conflict_response
+        "413": *payload_too_large_response
+        "415": *unsupported_media_response
+        "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:retry-parts:
+    post:
+      operationId: retryFailedUploadParts
+      tags: [ingest]
+      description: Records sorted failed parts, increments their bounded retry counters, and returns fresh short-lived PUT authorizations.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RetryFailedPartsRequest"}
+      responses:
+        "200":
+          description: Fresh direct-upload part authorizations.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Clients must not cache signed URLs.}
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: "#/components/schemas/PartAuthorization"}}
+        "409": *conflict_response
+        "413": *payload_too_large_response
+        "415": *unsupported_media_response
+        "422": *validation_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/manifest:
+    get:
+      operationId: getUploadManifestDiscovery
+      tags: [ingest]
+      description: Returns the persisted read-only Manifest preflight and discovery facts for this package.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Persisted normalized Manifest discovery.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ManifestPreflightResultV1"}
+        "404": *not_found_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:pause:
+    post:
+      operationId: pauseUploadSession
+      tags: [ingest]
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Session paused without aborting uploaded parts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSession"}
+        "409": *conflict_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:resume:
+    post:
+      operationId: resumeUploadSession
+      tags: [ingest]
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ResumeUploadRequest"}
+      responses:
+        "200":
+          description: Resumed persisted session and optional renewed PUT URLs.
+          headers:
+            Cache-Control: {schema: {type: string}, description: Signed URLs are never cached.}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSessionGrant"}
+        "409": *conflict_response
+        "413": *payload_too_large_response
+        "415": *unsupported_media_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:cancel:
+    post:
+      operationId: cancelUploadSession
+      tags: [ingest]
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Multipart state aborted and session cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSession"}
+        "409": *conflict_response
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}:commit-manifest:
+    post:
+      operationId: commitRolloutManifest
+      tags: [ingest]
+      description: Streams integrity checks, writes the immutable manifest commit marker, and atomically persists the single recoverable ingest workflow trigger and audit fact. It never starts Temporal before the database commit.
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RolloutManifestV1"}
+      responses:
+        "200":
+          description: Immutable raw object committed with its queryable deterministic workflow locator; retries return the same resource and locator.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawObjectCommittedV1"}
+        "409": *conflict_response
+        "413": *payload_too_large_response
+        "415": *unsupported_media_response
+        "422": *validation_response
+components:
+  schemas:
+    IngestIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: "^[A-Za-z0-9._-]+$"
+    Crc64Decimal:
+      type: string
+      maxLength: 20
+      pattern: "^(?:0|[1-9][0-9]{0,19})$"
+      description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose uint64 precision.
+    HuggingFaceEpisodeSourceV1:
+      type: object
+      additionalProperties: false
+      required: [repository, resolved_revision, episode_index]
+      properties:
+        kind: {type: string, const: HUGGING_FACE_EPISODE, default: HUGGING_FACE_EPISODE}
+        repository: {type: string, minLength: 3, maxLength: 256, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"}
+        resolved_revision: {type: string, minLength: 7, maxLength: 64, pattern: "^[A-Fa-f0-9]+$"}
+        episode_index: {type: integer, minimum: 0}
+    ContinuousCaptureSourceV1:
+      type: object
+      additionalProperties: false
+      required: [recording_id, device_id]
+      properties:
+        kind: {type: string, const: CONTINUOUS_CAPTURE, default: CONTINUOUS_CAPTURE}
+        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        recorder_boot_id:
+          anyOf:
+            - {$ref: "#/components/schemas/IngestIdentifier"}
+            - {type: "null"}
+    IngestProcessingMode:
+      type: string
+      enum: [DIRECT_EPISODE, CONTINUOUS_RECORDING]
+    RolloutManifestV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, task_id, collection_job_id, rollout_id, collection_session_id, recording_request_id, data_package_id, sequence_no, robot_id, start_time, end_time, cameras, topics, expected_topics, actual_topics, files, file_size, sha256, crc64, compression, recorder_version]
+      properties:
+        schema_version: {type: integer, const: 1}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_job_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_session_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        recording_request_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        pico_instance_id: {anyOf: [{$ref: "#/components/schemas/IngestIdentifier"}, {type: "null"}]}
+        sequence_no: {type: integer, minimum: 1}
+        robot_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        start_time: {type: string, format: date-time}
+        end_time: {type: string, format: date-time}
+        cameras: {type: array, maxItems: 128, items: {$ref: "#/components/schemas/ManifestCameraV1"}}
+        topics: {type: array, maxItems: 2048, items: {$ref: "#/components/schemas/ManifestTopicV1"}}
+        expected_topics: {type: array, maxItems: 2048, items: {$ref: "#/components/schemas/TopicName"}}
+        actual_topics: {type: array, maxItems: 2048, items: {$ref: "#/components/schemas/TopicName"}}
+        files: {type: array, minItems: 1, maxItems: 256, items: {$ref: "#/components/schemas/ManifestFileV1"}}
+        file_size: {type: integer, minimum: 1, maximum: 5497558138880}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        crc64: {$ref: "#/components/schemas/Crc64Decimal"}
+        compression: {type: string, enum: [none, zstd]}
+        recorder_version: {type: string, minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9][A-Za-z0-9._/+:-]*$"}
+        processing_mode:
+          allOf: [{$ref: "#/components/schemas/IngestProcessingMode"}]
+          default: DIRECT_EPISODE
+        source_recording:
+          anyOf:
+            - {$ref: "#/components/schemas/HuggingFaceEpisodeSourceV1"}
+            - {$ref: "#/components/schemas/ContinuousCaptureSourceV1"}
+            - {type: "null"}
+    TopicName:
+      type: string
+      minLength: 1
+      maxLength: 512
+      pattern: "^/[A-Za-z0-9_./-]+$"
+    ManifestFileV1:
+      type: object
+      additionalProperties: false
+      required: [path, size, sha256, crc64, media_type, role]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 1024, pattern: "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"}
+        size: {type: integer, minimum: 1, maximum: 5497558138880}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        crc64: {$ref: "#/components/schemas/Crc64Decimal"}
+        media_type: {type: string, minLength: 1, maxLength: 128, default: application/octet-stream}
+        role: {type: string, enum: [RAW_MCAP, CAPTURE_BUNDLE, AUXILIARY], default: RAW_MCAP}
+    ManifestCameraV1:
+      type: object
+      additionalProperties: false
+      required: [camera_id, topic]
+      properties:
+        camera_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        topic: {$ref: "#/components/schemas/TopicName"}
+        frame_id: {anyOf: [{$ref: "#/components/schemas/IngestIdentifier"}, {type: "null"}]}
+        encoding: {type: [string, "null"], maxLength: 128}
+    ManifestTopicV1:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {$ref: "#/components/schemas/TopicName"}
+        required: {type: boolean, default: false}
+        message_encoding: {type: [string, "null"], maxLength: 128}
+        schema_name: {type: [string, "null"], maxLength: 256}
+    CreateUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [manifest]
+      properties:
+        manifest: {$ref: "#/components/schemas/RolloutManifestV1"}
+        part_numbers:
+          type: array
+          maxItems: 256
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 10000}
+        object_storage_uri:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 2048
+          description: Exact canonical address authorized by the server's configured MinIO/S3/OSS adapter; client credentials and signed query strings are rejected.
+    PartNumbersRequest:
+      type: object
+      additionalProperties: false
+      required: [part_numbers]
+      properties:
+        part_numbers:
+          type: array
+          minItems: 1
+          maxItems: 256
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 10000}
+    ResumeUploadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        part_numbers:
+          type: array
+          maxItems: 256
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 10000}
+    CompletedPart:
+      type: object
+      additionalProperties: false
+      required: [part_number, etag]
+      properties:
+        part_number: {type: integer, minimum: 1, maximum: 10000}
+        etag: {type: string, minLength: 1, maxLength: 512}
+    CompleteUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [parts]
+      properties:
+        parts:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/CompletedPart"}
+          x-sorted-by: part_number
+    FailedPartV1:
+      type: object
+      additionalProperties: false
+      required: [part_number, failure_code]
+      properties:
+        part_number: {type: integer, minimum: 1, maximum: 10000}
+        failure_code: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Z0-9_]+$"}
+    RetryFailedPartsRequest:
+      type: object
+      additionalProperties: false
+      required: [failures]
+      properties:
+        failures:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items: {$ref: "#/components/schemas/FailedPartV1"}
+          x-sorted-by: part_number
+    PartAuthorization:
+      type: object
+      required: [part_number, url, expires_at]
+      properties:
+        part_number: {type: integer, minimum: 1, maximum: 10000}
+        url: {type: string, format: uri, writeOnly: true}
+        expires_at: {type: string, format: date-time}
+    DeviceCaptureFactRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_event_id, event_type, collection_task_id, collection_job_id, recording_request_id, data_package_id, robot_id, device_id, device_sequence_no, capture_started_at, capture_ended_at, saved_at, local_artifact_size, local_artifact_sha256, recorder_version, occurred_at]
+      properties:
+        schema_version: {type: string, const: device-capture-fact/v1, default: device-capture-fact/v1}
+        source_event_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        event_type: {type: string, enum: [CAPTURED, SAVED]}
+        collection_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        collection_job_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        recording_request_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        robot_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        device_sequence_no: {type: integer, minimum: 0}
+        capture_started_at: {type: string, format: date-time}
+        capture_ended_at: {type: string, format: date-time}
+        saved_at: {type: [string, "null"], format: date-time}
+        local_artifact_size: {type: [integer, "null"], minimum: 1, maximum: 5497558138880}
+        local_artifact_sha256: {type: [string, "null"], pattern: "^[a-f0-9]{64}$"}
+        recorder_version: {type: string, minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9][A-Za-z0-9._/+:-]*$"}
+        occurred_at: {type: string, format: date-time}
+      description: >-
+        CAPTURED forbids saved_at and local artifact fields. SAVED requires saved_at,
+        local_artifact_size, and local_artifact_sha256. All timestamps require offsets.
+    DeviceCaptureFact:
+      allOf:
+        - {$ref: "#/components/schemas/DeviceCaptureFactRequest"}
+        - type: object
+          required: [fact_id, organization_id, project_id, region_code, producer_subject_id, received_at]
+          properties:
+            fact_id: {type: string, format: uuid}
+            organization_id: {$ref: "#/components/schemas/IngestIdentifier"}
+            project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+            region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+            producer_subject_id: {type: string, minLength: 1, maxLength: 512}
+            received_at: {type: string, format: date-time}
+    UploadSession:
+      type: object
+      required: [session_id, project_id, region_code, rollout_id, data_package_id, object_key, source_type, expected_sha256, expected_size, expected_crc64, manifest_fingerprint, status, created_at, updated_at]
+      properties:
+        session_id: {type: string, format: uuid}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        object_key: {type: string, pattern: "^raw/v1/"}
+        source_type: {type: string, enum: [BROWSER_MULTIPART, OBJECT_STORAGE_REFERENCE]}
+        multipart_upload_id: {type: [string, "null"]}
+        expected_sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        expected_size: {type: integer, minimum: 1}
+        expected_crc64: {$ref: "#/components/schemas/Crc64Decimal"}
+        manifest_fingerprint: {type: string, pattern: "^[a-f0-9]{64}$"}
+        status: {type: string, enum: [REGISTERED, UPLOADING, PAUSED, MULTIPART_COMPLETED, RAW_COMMITTED, FAILED, CANCELLED]}
+        etag: {type: [string, "null"]}
+        failure_code: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        completed_at: {type: [string, "null"], format: date-time}
+        workflow:
+          oneOf:
+            - {$ref: "#/components/schemas/IngestWorkflowLocator"}
+            - {type: "null"}
+    UploadSessionGrant:
+      type: object
+      required: [session, parts, idempotency_outcome]
+      properties:
+        session: {$ref: "#/components/schemas/UploadSession"}
+        parts:
+          type: array
+          items: {$ref: "#/components/schemas/PartAuthorization"}
+        idempotency_outcome: {type: string, enum: [CREATED, RESUMED, ALREADY_COMMITTED]}
+    UploadSessionListV1:
+      type: object
+      additionalProperties: false
+      required: [items, total, next_cursor]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/UploadSession"}}
+        total: {type: integer, minimum: 0}
+        next_cursor: {type: [string, "null"], minLength: 16, maxLength: 16384}
+    UploadPart:
+      type: object
+      required: [session_id, project_id, region_code, part_number, status, updated_at]
+      properties:
+        session_id: {type: string, format: uuid}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+        part_number: {type: integer, minimum: 1, maximum: 10000}
+        status: {type: string, enum: [AUTHORIZED, UPLOADED, FAILED]}
+        etag: {type: [string, "null"]}
+        size: {type: [integer, "null"], minimum: 0}
+        crc64:
+          anyOf:
+            - {$ref: "#/components/schemas/Crc64Decimal"}
+            - {type: "null"}
+        retry_count: {type: integer, minimum: 0, maximum: 10, default: 0}
+        failure_code: {type: [string, "null"]}
+        authorization_expires_at: {type: [string, "null"], format: date-time}
+        updated_at: {type: string, format: date-time}
+    RawObjectCommittedV1:
+      type: object
+      required: [event_type, schema_version, project_id, region_code, rollout_id, data_package_id, object_key, manifest_key, sha256, file_size, committed_at]
+      properties:
+        event_type: {type: string, const: rollout.raw_committed.v1}
+        schema_version: {type: integer, const: 1}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        object_key: {type: string, pattern: "^raw/v1/"}
+        manifest_key: {type: string, pattern: "/rollout_manifest.json$"}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        file_size: {type: integer, minimum: 1}
+        processing_mode:
+          allOf: [{$ref: "#/components/schemas/IngestProcessingMode"}]
+          default: DIRECT_EPISODE
+        continuous_recording_id:
+          anyOf:
+            - {$ref: "#/components/schemas/IngestIdentifier"}
+            - {type: "null"}
+        committed_at: {type: string, format: date-time}
+        workflow:
+          oneOf:
+            - {$ref: "#/components/schemas/IngestWorkflowLocator"}
+            - {type: "null"}
+    RawMediaSourceV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, format, media_type, download_url, expires_at, byte_length, sha256]
+      properties:
+        schema_version: {type: string, const: raw-media-source/v1}
+        format: {type: string, enum: [MCAP, CAPTURE_BUNDLE], default: MCAP}
+        media_type: {type: string, minLength: 1, maxLength: 128, default: application/x-mcap}
+        download_url: {type: string, format: uri, minLength: 1, maxLength: 8192, description: Short-lived signed GET URL; sensitive and never cacheable.}
+        expires_at: {type: string, format: date-time}
+        byte_length: {type: integer, minimum: 1}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+    UploadAlignedMediaTargetV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, dataset_id, rollout_id, dataset_version, annotation_task_id, start_step, end_step]
+      properties:
+        schema_version: {type: string, const: upload-aligned-media-target/v1}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        dataset_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        dataset_version: {type: integer, minimum: 1}
+        annotation_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        fps: {type: integer, const: 30, default: 30}
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 1}
+    DatasetIngestViewerTarget:
+      type: object
+      additionalProperties: false
+      required: [schema_version, dataset_id, version_id, episode_id, revision_id]
+      properties:
+        schema_version: {type: string, const: dataset-ingest-viewer-target/v1}
+        dataset_id:
+          type: string
+          pattern: "^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+        version_id:
+          type: string
+          pattern: "^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+        episode_id:
+          type: string
+          pattern: "^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+        revision_id:
+          type: string
+          pattern: "^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+    UploadProcessingStatusV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, session_id, rollout_id, workflow_id, status, stage, attempt, aligned_media, viewer, error_code, updated_at]
+      properties:
+        schema_version: {type: string, const: upload-processing-status/v1}
+        session_id: {type: string, format: uuid}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        workflow_id: {type: string, minLength: 1}
+        status: {type: string, enum: [PENDING, RUNNING, SUCCEEDED, TECHNICAL_FAILED, QUALITY_RISK, QUALITY_REJECTED, CANCELLED]}
+        stage: {type: string, minLength: 1, maxLength: 128}
+        attempt: {type: integer, minimum: 0}
+        aligned_media:
+          oneOf:
+            - {$ref: "#/components/schemas/UploadAlignedMediaTargetV1"}
+            - {type: "null"}
+        viewer:
+          oneOf:
+            - {$ref: "#/components/schemas/DatasetIngestViewerTarget"}
+            - {type: "null"}
+        error_code:
+          type: [string, "null"]
+          maxLength: 128
+          pattern: "^[A-Z0-9_]+$"
+        updated_at: {type: string, format: date-time}
+    IngestWorkflowLocator:
+      type: object
+      additionalProperties: false
+      required: [event_id, workflow_id, status, attempts, updated_at]
+      properties:
+        event_id: {type: string, format: uuid}
+        workflow_id: {type: string, minLength: 1}
+        status: {type: string, enum: [PENDING, DISPATCHED, RETRY_WAIT]}
+        attempts: {type: integer, minimum: 0}
+        last_error_code:
+          type: [string, "null"]
+          pattern: "^[A-Z0-9_]+$"
+        updated_at: {type: string, format: date-time}
+    ManifestIdentifiersV1:
+      type: object
+      additionalProperties: false
+      required: [collection_session_id, recording_request_id, data_package_id, robot_id]
+      properties:
+        collection_session_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        recording_request_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        robot_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        pico_instance_id: {anyOf: [{$ref: "#/components/schemas/IngestIdentifier"}, {type: "null"}]}
+    ManifestTimeRangeV1:
+      type: object
+      additionalProperties: false
+      required: [start_time, end_time]
+      properties:
+        start_time: {type: string, format: date-time}
+        end_time: {type: string, format: date-time}
+    ManifestDiscoveryV1:
+      type: object
+      additionalProperties: false
+      required: [source, read_only, cameras, topics, missing_expected_topics]
+      properties:
+        source: {type: string, const: MANIFEST}
+        read_only: {type: boolean, const: true}
+        cameras: {type: array, items: {$ref: "#/components/schemas/ManifestCameraV1"}}
+        topics: {type: array, items: {$ref: "#/components/schemas/ManifestTopicV1"}}
+        missing_expected_topics: {type: array, items: {$ref: "#/components/schemas/TopicName"}}
+    ManifestPreflightResultV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, manifest_fingerprint, identifiers, time_range, files, total_file_size, discovery, manifest]
+      properties:
+        schema_version: {type: string, const: manifest-preflight/v1}
+        manifest_fingerprint: {type: string, pattern: "^[a-f0-9]{64}$"}
+        source_fingerprint:
+          anyOf:
+            - {type: string, pattern: "^[a-f0-9]{64}$"}
+            - {type: "null"}
+        identifiers: {$ref: "#/components/schemas/ManifestIdentifiersV1"}
+        time_range: {$ref: "#/components/schemas/ManifestTimeRangeV1"}
+        files: {type: array, items: {$ref: "#/components/schemas/ManifestFileV1"}}
+        total_file_size: {type: integer, minimum: 1, maximum: 5497558138880}
+        discovery: {$ref: "#/components/schemas/ManifestDiscoveryV1"}
+        manifest: {$ref: "#/components/schemas/RolloutManifestV1"}

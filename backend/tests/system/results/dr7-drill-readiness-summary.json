@@ -1,0 +1,41 @@
+{
+  "schema_version": "hc-implementation-evidence/v1",
+  "scope": "DR7-01..DR7-06",
+  "observed_at": "2026-08-29T05:35:00Z",
+  "status": "EVIDENCE_GATE_READY_EXTERNAL_EXERCISES_INCOMPLETE",
+  "machine_gate": {
+    "bundle_format": "hc-platform-dr-evidence-bundle/v1",
+    "signature_algorithm": "Ed25519",
+    "maximum_validity_days": 31,
+    "release_manifest_digest_bound": true,
+    "three_distinct_duties_required": true,
+    "cleanup_required": true,
+    "exclusions_allowed_for_pass": false,
+    "all_six_scenarios_required": true,
+    "valid_production_bundle_exists": false
+  },
+  "scenario_status": {
+    "DR7-01": "EXTERNAL_CLEAN_SERVER_RESTORE_AND_WRITE_SMOKE_REQUIRED",
+    "DR7-02": "EXTERNAL_5TB_RPO0_PLANNED_MIGRATION_REQUIRED",
+    "DR7-03": "PASSED_FOR_CURRENT_RELEASE_ONLY",
+    "DR7-04": "PRODUCTION_FAILURE_DOMAIN_PROVIDER_FAILOVER_REQUIRED",
+    "DR7-05": "REAL_SIGNED_TARGET_RELEASE_FAILURE_INJECTION_REQUIRED",
+    "DR7-06": "INDEPENDENT_SECRET_AND_BACKUP_TAMPER_DRILL_REQUIRED"
+  },
+  "negative_contracts_verified": [
+    "tampered bundle rejected",
+    "wrong release rejected",
+    "future-dated bundle rejected",
+    "expired bundle rejected",
+    "exercise older than 31 days rejected",
+    "missing or duplicated scenario rejected",
+    "shared executor approver verifier duty rejected",
+    "passing exercise with exclusions rejected",
+    "integrity-only backup does not satisfy VERIFIED_RESTORE"
+  ],
+  "fingerprints": {
+    "dr_evidence_implementation_sha256": "39283cd79df55ab43250487a80acdf13c220849fc74412ad8ac2bf39d90ea241",
+    "dr_runbook_sha256": "bb0c2cf2f66bd822fec402f00b2056c3be8b7f591f929c297c7a8d11dbaad3f5"
+  },
+  "claim_boundary": "Machine verification proves envelope integrity, release identity, duties, completeness, and freshness; it cannot turn a local or synthetic exercise into production evidence."
+}

@@ -1,0 +1,333 @@
+api_version: hc-data-platform.io/v1alpha1
+kind: PlatformStateInventory
+metadata:
+  contract_version: 2
+  effective_date: "2026-08-31"
+  adr: docs/architecture/ADR-0001-platform-state-boundaries-and-recovery-objectives.md
+  implementation_task: DR0-01
+  evidence_status: DESIGN_FROZEN_CAPACITY_NOT_PASSED
+
+recovery_unit:
+  identity_fields:
+    - platform_id
+    - environment_id
+  recovery_commander_role: platform_sre
+  write_enable_rule: all_required_domains_verified_and_approvals_recorded
+
+scale_profile:
+  name: production_5tb_day_v1
+  daily_ingest_bytes: 5000000000000
+  headroom_percent: 30
+  minimum_sustained_full_pipeline_bytes_per_second: 75231481.48
+  maximum_rollout_bytes: 21474836480
+  concurrent_upload_sessions: 50
+  functional_migration_reference_bytes: 100000000
+  portable_restore_capacity_basis: actual_referenced_bytes
+  portable_restore_rto_seconds: 86400
+  current_evidence: NOT_PASSED
+  evidence_source: backend/tests/load/CAPACITY-REPORT.md
+  release_policy: production_release_blocking
+
+temporal_mode:
+  production: external_managed
+  namespace_policy: one_isolated_namespace_per_environment
+  development: compose_single_node_development_only
+  internal_database_in_business_dump: false
+  self_hosted_production:
+    allowed: false
+    enablement_requirement: superseding_adr_and_verified_cold_restore
+  backup_contract:
+    platform_records:
+      - redacted_cluster_reference
+      - namespace
+      - service_version
+      - schedules
+      - open_workflow_inventory
+    history_owner: temporal_operations
+    hot_internal_table_dump_allowed: false
+
+owner_roles:
+  platform_sre:
+    responsibility: backup_restore_orchestration_fencing_reconciliation_write_enable
+  database_operations:
+    responsibility: postgresql_ha_wal_pitr_dump_restore_and_ledger_validation
+  object_storage_operations:
+    responsibility: versioning_replication_object_lock_inventory_and_restore
+  temporal_operations:
+    responsibility: external_temporal_ha_backup_restore_and_namespace_recovery
+  security_kms_operations:
+    responsibility: secret_versions_kms_envelopes_signing_and_break_glass
+  release_engineering:
+    responsibility: gitops_registry_chart_release_manifest_sbom_and_signatures
+  observability_operations:
+    responsibility: runtime_log_retention_backup_query_and_alerting
+  identity_operations:
+    responsibility: external_identity_provider_and_jwks_recovery
+  data_owner_security_approver:
+    responsibility: reconciliation_sampling_audit_review_and_write_enable_approval
+
+state_domains:
+  - id: postgresql_business
+    disposition: included
+    required_for_write_enable: true
+    source_of_truth: shared_ha_postgresql_business_database
+    owner: database_operations
+    protected_components:
+      - business_metadata
+      - accounts_sessions_and_authorization
+      - p19_audit_events_integrity_chain_and_legal_holds
+      - outbox_and_job_projections
+      - migration_ledger_and_checksums
+      - platform_control_plane_catalogs
+    exclusions:
+      - temporal_internal_tables
+      - diagnostic_runtime_logs
+    rpo_seconds: 900
+    rto_seconds: 7200
+    backup:
+      continuous: physical_baseline_plus_wal_pitr
+      consistent_set: pg_dump_custom_format_under_platform_maintenance_fence
+      required_metadata:
+        - postgresql_major_version
+        - pitr_coordinate
+        - migration_manifest_and_checksums
+        - dump_sha256
+    restore:
+      method: restore_same_postgresql_major_then_same_platform_release_without_auto_upgrade
+      order: after_object_staging_before_temporal_reconnect
+    omission_policy:
+      action: fail_backup_and_restore_preflight
+      error_code: BACKUP_DOMAIN_POSTGRESQL_REQUIRED
+    verification:
+      - migration_ledger_exact_match
+      - schema_constraints_and_extensions
+      - critical_row_counts_and_aggregates
+      - p19_audit_chain
+      - authorization_and_session_invariants
+      - outbox_and_job_reconciliation
+
+  - id: object_store
+    disposition: included
+    required_for_write_enable: true
+    source_of_truth: versioned_ha_s3_compatible_bucket
+    owner: object_storage_operations
+    protected_components:
+      - raw_and_upload_packages
+      - immutable_manifests
+      - lance_fragments_and_snapshots
+      - published_exports
+      - immutable_aligned_camera_mp4
+      - registered_robot_assets
+    rpo_seconds: 3600
+    rto_seconds: 86400
+    rto_scale_basis: actual_referenced_bytes
+    backup:
+      continuous: bucket_versioning_plus_cross_site_replication
+      snapshot: exact_key_version_inventory
+      portable: bounded_tar_zstd_age_parts_with_resume_and_per_part_hash
+      required_metadata:
+        - bucket_and_prefix
+        - versioning_status
+        - key_and_version_id
+        - size_etag_and_sha256
+        - inventory_count_and_total_bytes
+    restore:
+      method: restore_exact_versions_to_staging_bucket_or_prefix_then_switch_alias
+      order: before_postgresql_restore
+    omission_policy:
+      action: fail_backup_and_restore_preflight
+      error_code: BACKUP_DOMAIN_OBJECT_STORE_REQUIRED
+    verification:
+      - exact_object_count
+      - exact_total_bytes
+      - full_sha256_for_portable_restore
+      - database_reference_to_object_existence
+      - no_unfinished_multipart_at_consistency_coordinate
+
+  - id: temporal_workflows
+    disposition: external
+    required_for_write_enable: true
+    source_of_truth: external_managed_temporal_namespace
+    owner: temporal_operations
+    rpo_seconds: 900
+    rto_seconds: 7200
+    backup:
+      continuous: provider_supported_ha_and_backup
+      platform_record: signed_policy_schedule_and_open_workflow_inventory
+      forbidden_method: hot_dump_of_temporal_internal_tables
+    restore:
+      method: provider_supported_namespace_or_history_restore_then_platform_reconnect
+      order: after_postgresql_restore_before_worker_enable
+    omission_policy:
+      action: fail_backup_and_restore_preflight
+      error_code: BACKUP_DOMAIN_TEMPORAL_REQUIRED
+    verification:
+      - exact_namespace_and_service_version
+      - schedules_paused_or_reconciled
+      - open_closed_workflow_inventory_reconciled_with_postgresql
+      - worker_task_queue_smoke
+
+  - id: deployment_configuration
+    disposition: included
+    required_for_write_enable: true
+    source_of_truth: protected_gitops_repository
+    owner: release_engineering
+    protected_components:
+      - helm_chart_and_environment_values
+      - public_effective_config
+      - configmap_semantics
+      - dependency_endpoints_and_scope_configuration
+    exclusions:
+      - plaintext_secret_values
+    rpo_seconds: 0
+    rto_seconds: 1800
+    backup:
+      method: immutable_git_revision_plus_redacted_effective_config_export
+      required_metadata:
+        - git_commit
+        - chart_version
+        - public_config_sha256
+        - required_secret_names_keys_and_fingerprints
+    restore:
+      method: deploy_exact_revision_with_explicit_environment_endpoint_remapping
+      order: before_application_start
+    omission_policy:
+      action: fail_backup_and_restore_preflight
+      error_code: BACKUP_DOMAIN_CONFIGURATION_REQUIRED
+    verification:
+      - helm_schema_lint_and_template
+      - no_plaintext_secrets
+      - exact_release_identity
+      - explicit_endpoint_remapping_only
+
+  - id: secrets_and_kms
+    disposition: external
+    required_for_write_enable: true
+    source_of_truth: versioned_secret_manager_and_kms
+    owner: security_kms_operations
+    protected_components:
+      - postgres_credentials
+      - object_store_credentials
+      - cursor_hmac_secret
+      - data_source_credential_master_key
+      - auth_abuse_hmac_secret
+      - turnstile_and_smtp_credentials
+      - optional_provider_credentials
+      - backup_encryption_and_signing_key_references
+    rpo_seconds: 0
+    rto_seconds: 1800
+    backup:
+      method: independent_secret_version_backup_or_kms_envelope_metadata
+      manifest_content: names_keys_versions_fingerprints_and_kms_references_only
+      plaintext_export_allowed: false
+    restore:
+      method: restore_exact_versions_or_explicit_source_side_decrypt_and_reencrypt_mapping
+      order: before_database_decryption_or_application_start
+    omission_policy:
+      action: fail_backup_and_restore_preflight_without_generating_replacements
+      error_code: BACKUP_DOMAIN_SECRET_REQUIRED
+    verification:
+      - required_dependency_fingerprints_match
+      - decrypt_known_ciphertext_probe
+      - signature_verification
+      - plaintext_secret_scan_zero
+
+  - id: release_artifacts
+    disposition: included
+    required_for_write_enable: true
+    source_of_truth: immutable_registry_and_signed_release_record
+    owner: release_engineering
+    protected_components:
+      - frontend_api_and_worker_image_digests
+      - helm_chart
+      - release_manifest
+      - migration_manifest_checksums
+      - sbom_provenance_and_signatures
+    rpo_seconds: 0
+    rto_seconds: 1800
+    backup:
+      method: immutable_registry_replication_and_permanent_signed_release_record
+    restore:
+      method: fetch_and_verify_exact_backup_recorded_release_before_data_restore
+      order: first
+    omission_policy:
+      action: fail_restore_preflight
+      error_code: BACKUP_DOMAIN_RELEASE_REQUIRED
+    verification:
+      - image_digest_exact_match
+      - signature_and_provenance_valid
+      - chart_and_migration_manifest_hash_match
+      - same_release_boots_read_only
+
+  - id: backup_repository
+    disposition: included
+    required_for_write_enable: true
+    source_of_truth: independent_versioned_object_locked_backup_repository
+    owner: platform_sre
+    rpo_seconds: 0
+    rto_seconds: 14400
+    backup:
+      method: cross_site_replication_with_object_lock_and_independent_catalog_export
+    restore:
+      method: rebuild_catalog_from_signed_manifests_checksums_and_repository_inventory
+      order: before_restore_plan
+    omission_policy:
+      action: fail_backup_and_restore_preflight
+      error_code: BACKUP_REPOSITORY_UNAVAILABLE
+    verification:
+      - manifest_signature
+      - checksum_tree
+      - immutable_retention
+      - catalog_rebuild_from_repository_only
+
+  - id: runtime_logs
+    disposition: external
+    required_for_write_enable: false
+    source_of_truth: central_observability_log_backend
+    owner: observability_operations
+    protected_components:
+      - redacted_application_logs
+      - gateway_logs
+      - collector_metadata_and_alert_history
+    exclusions:
+      - p19_audit_events
+    rpo_seconds: 3600
+    rto_seconds: 14400
+    backup:
+      method: backend_retention_replication_and_policy_driven_snapshot
+    restore:
+      method: restore_query_backend_or_reconnect_retained_external_backend
+      order: may_complete_after_business_read_only_start
+    omission_policy:
+      action: record_degraded_domain_alert_and_require_compliance_approval
+      error_code: RESTORE_RUNTIME_LOGS_DEGRADED
+    verification:
+      - request_workflow_operation_correlation
+      - secret_and_pii_scan_zero
+      - post_restore_log_query
+
+  - id: external_dependencies
+    disposition: external
+    required_for_write_enable: true
+    source_of_truth: provider_specific_external_services
+    owner: identity_operations
+    protected_components:
+      - oidc_issuer_and_jwks
+      - smtp_delivery
+      - turnstile_verification
+      - optional_auto_annotation_provider
+    rpo_seconds: null
+    rpo_basis: external_provider_sla_not_platform_copied_state
+    rto_seconds: 7200
+    backup:
+      method: signed_dependency_reference_version_owner_sla_and_credential_fingerprint
+    restore:
+      method: reconnect_and_run_fail_closed_health_and_identity_probes
+      order: before_public_write_enable
+    omission_policy:
+      action: record_external_and_keep_affected_capability_or_platform_read_only
+      error_code: RESTORE_EXTERNAL_DEPENDENCY_UNAVAILABLE
+    verification:
+      - oidc_signature_and_issuer_probe
+      - smtp_or_challenge_probe_when_feature_enabled
+      - optional_provider_capability_is_explicitly_ready_or_unavailable

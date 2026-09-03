@@ -1,0 +1,2776 @@
+components:
+  schemas:
+    AuditActorSnapshot:
+      additionalProperties: false
+      properties:
+        delegated_by_principal_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          - type: 'null'
+          title: Delegated By Principal Id
+        display_name:
+          maxLength: 256
+          minLength: 1
+          title: Display Name
+          type: string
+        principal_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          - type: 'null'
+          title: Principal Id
+        role_ids:
+          default: []
+          items:
+            type: string
+          maxItems: 32
+          title: Role Ids
+          type: array
+        type:
+          enum:
+          - USER
+          - SERVICE_ACCOUNT
+          - SYSTEM
+          - ANONYMOUS
+          title: Type
+          type: string
+      required:
+      - type
+      - display_name
+      title: AuditActorSnapshot
+      type: object
+    AuditBlockedReason:
+      additionalProperties: false
+      properties:
+        action:
+          default: VIEW
+          enum:
+          - VIEW
+          - EXPORT
+          - MANAGE_RETENTION
+          title: Action
+          type: string
+        code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Code
+          type: string
+        message:
+          maxLength: 512
+          minLength: 1
+          title: Message
+          type: string
+      required:
+      - code
+      - message
+      title: AuditBlockedReason
+      type: object
+    AuditBootstrap:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default:
+          - VIEW
+          items:
+            enum:
+            - VIEW
+            - EXPORT
+            - MANAGE_RETENTION
+            type: string
+          title: Allowed Actions
+          type: array
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/AuditBlockedReason'
+          title: Blocked Reasons
+          type: array
+        catalog_version:
+          maxLength: 128
+          minLength: 1
+          title: Catalog Version
+          type: string
+        integrity:
+          default: UNKNOWN
+          enum:
+          - UNKNOWN
+          - PASSED
+          - FAILED
+          title: Integrity
+          type: string
+        metrics:
+          additionalProperties:
+            type: string
+          title: Metrics
+          type: object
+        policy_version:
+          maxLength: 128
+          minLength: 1
+          title: Policy Version
+          type: string
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+      required:
+      - scope
+      - metrics
+      - as_of
+      - catalog_version
+      - policy_version
+      title: AuditBootstrap
+      type: object
+    AuditBootstrapEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: v1
+          default: v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/AuditBootstrap'
+        request_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: AuditBootstrapEnvelope
+      type: object
+    AuditChangeSummary:
+      additionalProperties: false
+      description: 'A deliberately metadata-only change summary.
+
+
+        The current durable stream has before/after digests but no globally approved
+
+        field-level allowlist. Returning a digest or the arbitrary JSON details
+
+        would turn P19 into a disclosure channel, so this shape remains optional
+
+        and is not populated until such a server-side allowlist exists.'
+      properties:
+        after:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: integer
+            - type: number
+            - type: boolean
+            - items:
+                anyOf:
+                - type: string
+                - type: integer
+                - type: number
+                - type: boolean
+                - type: 'null'
+              type: array
+            - type: 'null'
+          title: After
+          type: object
+        before:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: integer
+            - type: number
+            - type: boolean
+            - items:
+                anyOf:
+                - type: string
+                - type: integer
+                - type: number
+                - type: boolean
+                - type: 'null'
+              type: array
+            - type: 'null'
+          title: Before
+          type: object
+        changed_fields:
+          default: []
+          items:
+            type: string
+          maxItems: 64
+          title: Changed Fields
+          type: array
+        omitted_field_classes:
+          default: []
+          items:
+            type: string
+          maxItems: 32
+          title: Omitted Field Classes
+          type: array
+        summary_code:
+          maxLength: 128
+          minLength: 1
+          title: Summary Code
+          type: string
+      required:
+      - summary_code
+      title: AuditChangeSummary
+      type: object
+    AuditCursorEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: v1
+          default: v1
+          title: Contract Version
+          type: string
+        items:
+          default: []
+          items:
+            $ref: '#/components/schemas/AuditReadProjection'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/AuditPageInfo'
+        redaction:
+          $ref: '#/components/schemas/AuditRedaction'
+        request_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - page_info
+      - snapshot_at
+      - redaction
+      - scope
+      - request_id
+      title: AuditCursorEnvelope
+      type: object
+    AuditEventEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: v1
+          default: v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/AuditReadProjection'
+        request_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: AuditEventEnvelope
+      type: object
+    AuditExportArtifact:
+      additionalProperties: false
+      properties:
+        media_type:
+          const: application/x-ndjson
+          default: application/x-ndjson
+          title: Media Type
+          type: string
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Size Bytes
+          type: string
+      required:
+      - sha256
+      - size_bytes
+      title: AuditExportArtifact
+      type: object
+    AuditExportDownloadAuthorization:
+      additionalProperties: false
+      properties:
+        artifact:
+          $ref: '#/components/schemas/AuditExportArtifact'
+        download_url:
+          maxLength: 16384
+          minLength: 1
+          title: Download Url
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        job_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Job Id
+          type: string
+      required:
+      - job_id
+      - download_url
+      - expires_at
+      - artifact
+      title: AuditExportDownloadAuthorization
+      type: object
+    AuditExportJob:
+      additionalProperties: false
+      properties:
+        artifact:
+          anyOf:
+          - $ref: '#/components/schemas/AuditExportArtifact'
+          - type: 'null'
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        created_by:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Created By
+          type: string
+        error_code:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Error Code
+        error_message:
+          anyOf:
+          - maxLength: 512
+            type: string
+          - type: 'null'
+          title: Error Message
+        job_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Job Id
+          type: string
+        occurred_from:
+          format: date-time
+          title: Occurred From
+          type: string
+        occurred_to:
+          format: date-time
+          title: Occurred To
+          type: string
+        progress:
+          $ref: '#/components/schemas/AuditExportProgress'
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+        status:
+          enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - job_id
+      - scope
+      - status
+      - progress
+      - occurred_from
+      - occurred_to
+      - created_by
+      - created_at
+      - updated_at
+      title: AuditExportJob
+      type: object
+    AuditExportProgress:
+      additionalProperties: false
+      properties:
+        exported_event_count:
+          minimum: 0.0
+          title: Exported Event Count
+          type: integer
+        scanned_page_count:
+          minimum: 0.0
+          title: Scanned Page Count
+          type: integer
+      required:
+      - exported_event_count
+      - scanned_page_count
+      title: AuditExportProgress
+      type: object
+    AuditFacets:
+      additionalProperties: false
+      properties:
+        actor_ids:
+          default: []
+          items:
+            maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          maxItems: 500
+          title: Actor Ids
+          type: array
+        event_names:
+          default: []
+          items:
+            type: string
+          maxItems: 500
+          title: Event Names
+          type: array
+        outcomes:
+          default: []
+          items:
+            enum:
+            - SUCCEEDED
+            - DENIED
+            - FAILED
+            - PARTIAL
+            type: string
+          maxItems: 4
+          title: Outcomes
+          type: array
+        resource_types:
+          default: []
+          items:
+            type: string
+          maxItems: 500
+          title: Resource Types
+          type: array
+        risk_levels:
+          default: []
+          items:
+            enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+            - CRITICAL
+            type: string
+          maxItems: 4
+          title: Risk Levels
+          type: array
+      title: AuditFacets
+      type: object
+    AuditFacetsEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: v1
+          default: v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/AuditFacets'
+        request_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: AuditFacetsEnvelope
+      type: object
+    AuditIntegrityCheck:
+      additionalProperties: false
+      description: Safe aggregate result of a server-side audit-chain verification.
+      properties:
+        checked_at:
+          format: date-time
+          title: Checked At
+          type: string
+        checked_chain_count:
+          minimum: 0.0
+          title: Checked Chain Count
+          type: integer
+        checked_event_count:
+          minimum: 0.0
+          title: Checked Event Count
+          type: integer
+        status:
+          enum:
+          - PASSED
+          - FAILED
+          title: Status
+          type: string
+        verified_through:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Verified Through
+        version:
+          maxLength: 128
+          minLength: 1
+          title: Version
+          type: string
+      required:
+      - status
+      - version
+      - checked_at
+      - checked_event_count
+      - checked_chain_count
+      title: AuditIntegrityCheck
+      type: object
+    AuditIntegrityEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: v1
+          default: v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/AuditIntegrityCheck'
+        request_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: AuditIntegrityEnvelope
+      type: object
+    AuditIntegrityProjection:
+      additionalProperties: false
+      properties:
+        checkpoint_id:
+          title: Checkpoint Id
+          type: 'null'
+        record_digest:
+          title: Record Digest
+          type: 'null'
+        status:
+          default: UNKNOWN
+          enum:
+          - UNKNOWN
+          - PASSED
+          - FAILED
+          title: Status
+          type: string
+        version:
+          maxLength: 128
+          minLength: 1
+          title: Version
+          type: string
+      required:
+      - version
+      title: AuditIntegrityProjection
+      type: object
+    AuditLegalHold:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        created_by:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Created By
+          type: string
+        hold_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Hold Id
+          type: string
+        occurred_from:
+          format: date-time
+          title: Occurred From
+          type: string
+        occurred_to:
+          format: date-time
+          title: Occurred To
+          type: string
+        reason:
+          maxLength: 2000
+          minLength: 3
+          title: Reason
+          type: string
+        released_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Released At
+        released_by:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          - type: 'null'
+          title: Released By
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+        status:
+          enum:
+          - ACTIVE
+          - RELEASED
+          title: Status
+          type: string
+      required:
+      - hold_id
+      - scope
+      - reason
+      - occurred_from
+      - occurred_to
+      - status
+      - created_by
+      - created_at
+      title: AuditLegalHold
+      type: object
+    AuditOutcomeProjection:
+      additionalProperties: false
+      properties:
+        http_status:
+          anyOf:
+          - maximum: 599.0
+            minimum: 100.0
+            type: integer
+          - type: 'null'
+          title: Http Status
+        reason_code:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Reason Code
+        status:
+          enum:
+          - SUCCEEDED
+          - DENIED
+          - FAILED
+          - PARTIAL
+          title: Status
+          type: string
+      required:
+      - status
+      title: AuditOutcomeProjection
+      type: object
+    AuditPageInfo:
+      additionalProperties: false
+      properties:
+        end_cursor:
+          anyOf:
+          - maxLength: 16384
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: End Cursor
+        has_next_page:
+          title: Has Next Page
+          type: boolean
+        has_previous_page:
+          title: Has Previous Page
+          type: boolean
+        start_cursor:
+          anyOf:
+          - maxLength: 16384
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: Start Cursor
+      required:
+      - has_next_page
+      - has_previous_page
+      title: AuditPageInfo
+      type: object
+    AuditProducer:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: audit-event-v1
+          default: audit-event-v1
+          title: Contract Version
+          type: string
+        producer_event_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Producer Event Id
+          type: string
+        service:
+          maxLength: 128
+          minLength: 1
+          title: Service
+          type: string
+      required:
+      - service
+      - producer_event_id
+      title: AuditProducer
+      type: object
+    AuditReadProjection:
+      additionalProperties: false
+      properties:
+        actor:
+          $ref: '#/components/schemas/AuditActorSnapshot'
+        allowed_actions:
+          default:
+          - VIEW
+          items:
+            enum:
+            - VIEW
+            - EXPORT
+            - MANAGE_RETENTION
+            type: string
+          title: Allowed Actions
+          type: array
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/AuditBlockedReason'
+          title: Blocked Reasons
+          type: array
+        change:
+          anyOf:
+          - $ref: '#/components/schemas/AuditChangeSummary'
+          - type: 'null'
+        event_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Event Id
+          type: string
+        event_name:
+          maxLength: 160
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$
+          title: Event Name
+          type: string
+        integrity:
+          $ref: '#/components/schemas/AuditIntegrityProjection'
+        occurred_at:
+          format: date-time
+          title: Occurred At
+          type: string
+        outcome:
+          $ref: '#/components/schemas/AuditOutcomeProjection'
+        producer:
+          $ref: '#/components/schemas/AuditProducer'
+        recorded_at:
+          format: date-time
+          title: Recorded At
+          type: string
+        relationships:
+          $ref: '#/components/schemas/AuditRelationships'
+        request:
+          $ref: '#/components/schemas/AuditRequestContext'
+        resource:
+          $ref: '#/components/schemas/AuditResourceRef'
+        retention:
+          $ref: '#/components/schemas/AuditRetentionProjection'
+        risk:
+          $ref: '#/components/schemas/AuditRiskProjection'
+        schema_version:
+          const: 1
+          default: 1
+          title: Schema Version
+          type: integer
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+      required:
+      - event_id
+      - event_name
+      - occurred_at
+      - recorded_at
+      - actor
+      - scope
+      - resource
+      - request
+      - outcome
+      - risk
+      - retention
+      - integrity
+      - producer
+      title: AuditReadProjection
+      type: object
+    AuditRedaction:
+      additionalProperties: false
+      properties:
+        omitted_field_classes:
+          default: []
+          items:
+            type: string
+          maxItems: 32
+          title: Omitted Field Classes
+          type: array
+        policy_version:
+          maxLength: 128
+          minLength: 1
+          title: Policy Version
+          type: string
+      required:
+      - policy_version
+      title: AuditRedaction
+      type: object
+    AuditRelationships:
+      additionalProperties: false
+      properties:
+        parent_event_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          - type: 'null'
+          title: Parent Event Id
+        related_event_ids:
+          default: []
+          items:
+            maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          maxItems: 100
+          title: Related Event Ids
+          type: array
+        resource_refs:
+          default: []
+          items:
+            $ref: '#/components/schemas/AuditResourceRef'
+          maxItems: 100
+          title: Resource Refs
+          type: array
+      title: AuditRelationships
+      type: object
+    AuditRequestContext:
+      additionalProperties: false
+      properties:
+        client_type:
+          enum:
+          - WEB
+          - API
+          - WORKER
+          - SYSTEM
+          title: Client Type
+          type: string
+        device_summary:
+          title: Device Summary
+          type: 'null'
+        ip_address:
+          title: Ip Address
+          type: 'null'
+        job_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+            type: string
+          - type: 'null'
+          title: Job Id
+        request_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Request Id
+          type: string
+      required:
+      - request_id
+      - client_type
+      title: AuditRequestContext
+      type: object
+    AuditResourceParentRef:
+      additionalProperties: false
+      properties:
+        id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Id
+          type: string
+        type:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Type
+          type: string
+      required:
+      - type
+      - id
+      title: AuditResourceParentRef
+      type: object
+    AuditResourceRef:
+      additionalProperties: false
+      properties:
+        display_name:
+          maxLength: 256
+          minLength: 1
+          title: Display Name
+          type: string
+        id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Id
+          type: string
+        parent_refs:
+          default: []
+          items:
+            $ref: '#/components/schemas/AuditResourceParentRef'
+          maxItems: 20
+          title: Parent Refs
+          type: array
+        type:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Type
+          type: string
+      required:
+      - type
+      - id
+      - display_name
+      title: AuditResourceRef
+      type: object
+    AuditRetentionPolicy:
+      additionalProperties: false
+      description: Versioned project/region retention policy used by every P19 projection.
+      properties:
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        policy_version:
+          minimum: 1.0
+          title: Policy Version
+          type: integer
+        scope:
+          $ref: '#/components/schemas/AuditScope'
+        security_days:
+          maximum: 3650.0
+          minimum: 90.0
+          title: Security Days
+          type: integer
+        standard_days:
+          maximum: 3650.0
+          minimum: 30.0
+          title: Standard Days
+          type: integer
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        updated_by:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Updated By
+          type: string
+      required:
+      - scope
+      - policy_version
+      - standard_days
+      - security_days
+      - etag
+      - updated_by
+      - updated_at
+      title: AuditRetentionPolicy
+      type: object
+    AuditRetentionProjection:
+      additionalProperties: false
+      properties:
+        class:
+          enum:
+          - STANDARD
+          - SECURITY
+          - LEGAL_HOLD
+          title: Class
+          type: string
+        legal_hold:
+          default: false
+          title: Legal Hold
+          type: boolean
+        policy_version:
+          maxLength: 128
+          minLength: 1
+          title: Policy Version
+          type: string
+        retain_until:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Retain Until
+      required:
+      - class
+      - policy_version
+      title: AuditRetentionProjection
+      type: object
+    AuditRiskProjection:
+      additionalProperties: false
+      properties:
+        level:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Level
+          type: string
+        signal_codes:
+          default: []
+          items:
+            type: string
+          maxItems: 32
+          title: Signal Codes
+          type: array
+      required:
+      - level
+      title: AuditRiskProjection
+      type: object
+    AuditScope:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Organization Id
+          type: string
+        project_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$
+          title: Project Id
+          type: string
+        region_code:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+            type: string
+          - type: 'null'
+          title: Region Code
+      required:
+      - organization_id
+      - project_id
+      title: AuditScope
+      type: object
+    CreateAuditExportRequest:
+      additionalProperties: false
+      properties:
+        occurred_from:
+          format: date-time
+          title: Occurred From
+          type: string
+        occurred_to:
+          format: date-time
+          title: Occurred To
+          type: string
+      required:
+      - occurred_from
+      - occurred_to
+      title: CreateAuditExportRequest
+      type: object
+    CreateAuditLegalHoldRequest:
+      additionalProperties: false
+      properties:
+        occurred_from:
+          format: date-time
+          title: Occurred From
+          type: string
+        occurred_to:
+          format: date-time
+          title: Occurred To
+          type: string
+        reason:
+          maxLength: 2000
+          minLength: 3
+          title: Reason
+          type: string
+      required:
+      - reason
+      - occurred_from
+      - occurred_to
+      title: CreateAuditLegalHoldRequest
+      type: object
+    UpdateAuditRetentionPolicyRequest:
+      additionalProperties: false
+      properties:
+        security_days:
+          maximum: 3650.0
+          minimum: 90.0
+          title: Security Days
+          type: integer
+        standard_days:
+          maximum: 3650.0
+          minimum: 30.0
+          title: Standard Days
+          type: integer
+      required:
+      - standard_days
+      - security_days
+      title: UpdateAuditRetentionPolicyRequest
+      type: object
+info:
+  title: HC P19 audit governance contract
+  version: '2026-08-21'
+openapi: 3.1.0
+paths:
+  /api/v1/projects/{project_id}/audit/bootstrap:
+    get:
+      operationId: getAuditBootstrap
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: occurred_from
+        required: true
+        schema:
+          format: date-time
+          title: Occurred From
+          type: string
+      - in: query
+        name: occurred_to
+        required: true
+        schema:
+          format: date-time
+          title: Occurred To
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditBootstrapEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Audit Bootstrap
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/events:
+    get:
+      operationId: listAuditEvents
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: occurred_from
+        required: true
+        schema:
+          format: date-time
+          title: Occurred From
+          type: string
+      - in: query
+        name: occurred_to
+        required: true
+        schema:
+          format: date-time
+          title: Occurred To
+          type: string
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: occurred_at:desc,event_id:desc
+          pattern: ^occurred_at:desc,event_id:desc$
+          title: Sort
+          type: string
+      - in: query
+        name: actor_id
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Actor Id
+      - in: query
+        name: event_name
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Event Name
+      - in: query
+        name: resource_type
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Resource Type
+      - in: query
+        name: resource_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Resource Id
+      - in: query
+        name: outcome
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Outcome
+      - in: query
+        name: risk_level
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Risk Level
+      - in: query
+        name: request_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Request Id
+      - in: query
+        name: region_code
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Region Code
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditCursorEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Audit Events
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/events/facets:
+    get:
+      operationId: getAuditFacets
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: occurred_from
+        required: true
+        schema:
+          format: date-time
+          title: Occurred From
+          type: string
+      - in: query
+        name: occurred_to
+        required: true
+        schema:
+          format: date-time
+          title: Occurred To
+          type: string
+      - in: query
+        name: actor_id
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Actor Id
+      - in: query
+        name: event_name
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Event Name
+      - in: query
+        name: resource_type
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Resource Type
+      - in: query
+        name: resource_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Resource Id
+      - in: query
+        name: outcome
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Outcome
+      - in: query
+        name: risk_level
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Risk Level
+      - in: query
+        name: request_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Request Id
+      - in: query
+        name: region_code
+        required: false
+        schema:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Region Code
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditFacetsEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Audit Facets
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/events/{event_id}:
+    get:
+      operationId: getAuditEvent
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: event_id
+        required: true
+        schema:
+          title: Event Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Audit Event
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/exports:
+    post:
+      operationId: createAuditExport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAuditExportRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportJob'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Audit Export
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/exports/{job_id}:
+    get:
+      operationId: getAuditExport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportJob'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Audit Export
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/exports/{job_id}/download:
+    get:
+      operationId: authorizeAuditExportDownload
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportDownloadAuthorization'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Authorize Audit Export Download
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/exports/{job_id}:cancel:
+    post:
+      operationId: cancelAuditExport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportJob'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Cancel Audit Export
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/exports/{job_id}:retry:
+    post:
+      operationId: retryAuditExport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportJob'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Retry Audit Export
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/integrity:
+    get:
+      operationId: verifyAuditIntegrity
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditIntegrityEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Verify Audit Integrity
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/legal-holds:
+    get:
+      operationId: listAuditLegalHolds
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AuditLegalHold'
+                title: Response Listauditlegalholds
+                type: array
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Audit Legal Holds
+      tags:
+      - audit
+    post:
+      operationId: createAuditLegalHold
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAuditLegalHoldRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLegalHold'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Audit Legal Hold
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/legal-holds/{hold_id}:release:
+    post:
+      operationId: releaseAuditLegalHold
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: hold_id
+        required: true
+        schema:
+          title: Hold Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLegalHold'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Release Audit Legal Hold
+      tags:
+      - audit
+  /api/v1/projects/{project_id}/audit/retention-policy:
+    get:
+      operationId: getAuditRetentionPolicy
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditRetentionPolicy'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Audit Retention Policy
+      tags:
+      - audit
+    put:
+      operationId: updateAuditRetentionPolicy
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 3
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAuditRetentionPolicyRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditRetentionPolicy'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '410':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The audit read request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Update Audit Retention Policy
+      tags:
+      - audit

@@ -1,0 +1,154 @@
+groups:
+  - name: hc-platform-runtime
+    interval: 30s
+    rules:
+      - alert: HcPlatformApi5xxRateHigh
+        expr: sum(rate(hc_platform_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(hc_platform_http_requests_total[5m])), 1) > 0.02
+        for: 10m
+        labels: {severity: critical, component: api}
+        annotations:
+          summary: Platform API 5xx rate exceeds two percent
+          description: Bounded route-template metrics show a sustained API server-error rate.
+          runbook_url: /runbooks/observability-alerts#api-5xx
+      - alert: HcPlatformApi429RateHigh
+        expr: sum(rate(hc_platform_http_requests_total{status_code="429"}[5m])) > 5
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: Platform API client-error or throttling rate is elevated
+          description: Inspect safe route-template metrics and abuse-control counters; never add client identity labels.
+          runbook_url: /runbooks/observability-alerts#api-429
+      - alert: HcPlatformWorkflowFailures
+        expr: sum by (workflow_kind, error_code) (rate(hc_data_workflow_failures_total[10m])) > 0.05
+        for: 15m
+        labels: {severity: warning, component: workflow}
+        annotations:
+          summary: Durable workflow failures are elevated
+          description: Use bounded failure class metrics and structured logs for operation correlation.
+          runbook_url: /runbooks/observability-alerts#workflow-failures
+      - alert: HcPlatformOutboxLagHigh
+        expr: max(hc_platform_outbox_oldest_pending_seconds) > 300
+        for: 10m
+        labels: {severity: critical, component: outbox}
+        annotations:
+          summary: Outbox oldest pending record exceeds five minutes
+          description: PostgreSQL outbox dispatch is not converging within the operational bound.
+          runbook_url: /runbooks/observability-alerts#outbox-lag
+      - alert: HcPlatformTemporalTaskQueueLagHigh
+        expr: max(hc_platform_temporal_task_queue_lag_seconds) > 300
+        for: 10m
+        labels: {severity: critical, component: temporal}
+        annotations:
+          summary: Temporal task queue lag exceeds five minutes
+          description: Check poller availability and compatible Worker build routing.
+          runbook_url: /runbooks/observability-alerts#temporal-lag
+  - name: hc-platform-data-safety
+    interval: 30s
+    rules:
+      - alert: HcPlatformBackupStale
+        expr: time() - max(hc_platform_backup_last_integrity_verified_timestamp_seconds) > 86400
+        for: 15m
+        labels: {severity: critical, component: backup}
+        annotations:
+          summary: No recent integrity-verified platform backup
+          description: The newest integrity-verified backup is older than the approved freshness objective.
+          runbook_url: /runbooks/observability-alerts#backup-stale-or-failed
+      - alert: HcPlatformBackupFailure
+        expr: increase(hc_platform_backup_failures_total[15m]) > 0
+        for: 0m
+        labels: {severity: critical, component: backup}
+        annotations:
+          summary: Platform backup operation failed
+          description: Inspect the signed operation and immutable checkpoint without copying Secret material.
+          runbook_url: /runbooks/observability-alerts#backup-stale-or-failed
+      - alert: HcPlatformBackupDeepVerificationFailure
+        expr: increase(hc_platform_backup_deep_verification_failures_total[15m]) > 0
+        for: 0m
+        labels: {severity: critical, component: backup}
+        annotations:
+          summary: Deep backup verification failed
+          description: Quarantine the affected backup generation and retain its immutable verification evidence.
+          runbook_url: /runbooks/observability-alerts#backup-deep-verification
+      - alert: HcPlatformInstanceStale
+        expr: time() - max by (role) (hc_platform_instance_last_heartbeat_timestamp_seconds) > 90
+        for: 2m
+        labels: {severity: critical, component: runtime}
+        annotations:
+          summary: A required platform role has no recent heartbeat
+          description: Node-directory heartbeat freshness exceeded the 90-second stale boundary.
+          runbook_url: /runbooks/observability-alerts#instance-stale
+      - alert: HcPlatformRuntimeConfigDrift
+        expr: max(hc_platform_applied_config_revision) - min(hc_platform_applied_config_revision) > 0
+        for: 2m
+        labels: {severity: warning, component: runtime-config}
+        annotations:
+          summary: Platform instances disagree on runtime configuration revision
+          description: Notification and authoritative polling have not converged to one revision.
+          runbook_url: /runbooks/observability-alerts#runtime-config-drift
+      - alert: HcPlatformNodeVersionDrift
+        expr: count(count by (release_digest) (hc_platform_instance_release_identity)) > 1
+        for: 2m
+        labels: {severity: critical, component: runtime}
+        annotations:
+          summary: Active platform nodes run more than one release identity
+          description: Stop progression and reconcile the signed release manifest before accepting writes.
+          runbook_url: /runbooks/observability-alerts#node-version-drift
+      - alert: HcPlatformMigrationFailure
+        expr: increase(hc_platform_migration_failures_total[15m]) > 0
+        for: 0m
+        labels: {severity: critical, component: migration}
+        annotations:
+          summary: Planned migration or release migration failed
+          description: Stop cutover and follow the immutable checkpoint and compatibility matrix.
+          runbook_url: /runbooks/observability-alerts#migration-failure
+      - alert: HcPlatformObjectReplicationLagHigh
+        expr: max(hc_platform_object_replication_lag_seconds) > 900
+        for: 15m
+        labels: {severity: critical, component: object-storage}
+        annotations:
+          summary: Object replication lag exceeds the approved RPO
+          description: Do not advance backup or migration state while replica evidence is stale.
+          runbook_url: /runbooks/observability-alerts#object-replication-lag
+      - alert: HcPlatformAuditIntegrityFailure
+        expr: increase(hc_platform_audit_integrity_failures_total[5m]) > 0
+        for: 0m
+        labels: {severity: critical, component: audit}
+        annotations:
+          summary: P19 audit-chain verification failed
+          description: Freeze export and mutation paths; preserve append-only evidence for investigation.
+          runbook_url: /runbooks/observability-alerts#audit-integrity
+  - name: hc-platform-infrastructure
+    interval: 30s
+    rules:
+      - alert: HcPlatformOtelLogExportFailures
+        expr: sum(rate(otelcol_exporter_send_failed_log_records_total[5m])) > 0
+        for: 5m
+        labels: {severity: critical, component: observability}
+        annotations:
+          summary: OpenTelemetry Collector cannot export runtime logs
+          description: Check Loki readiness, Collector queues, and network policy before logs age out.
+          runbook_url: /runbooks/observability-alerts#log-export-failure
+      - alert: HcPlatformDatabasePoolSaturated
+        expr: max(pg_stat_activity_count / clamp_min(pg_settings_max_connections, 1)) > 0.85
+        for: 10m
+        labels: {severity: critical, component: postgresql}
+        annotations:
+          summary: PostgreSQL connection usage exceeds 85 percent
+          description: Stop unsafe scaling and identify bounded pool ownership by service.
+          runbook_url: /runbooks/observability-alerts#database-pool
+      - alert: HcPlatformDiskSpaceLow
+        expr: min(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / clamp_min(node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}, 1)) < 0.15
+        for: 15m
+        labels: {severity: critical, component: storage}
+        annotations:
+          summary: Platform or observability storage has less than 15 percent free
+          description: Follow capacity and retention procedures; never delete backup or audit facts ad hoc.
+          runbook_url: /runbooks/observability-alerts#disk-space
+      - alert: HcObservabilityDeliveryCanary
+        expr: hc_observability_alert_canary == 1
+        for: 0m
+        labels: {severity: critical, component: observability, synthetic: "true"}
+        annotations:
+          summary: Synthetic observability delivery canary
+          description: This alert must only fire during the approved end-to-end notification drill.
+          runbook_url: /runbooks/observability-alerts#delivery-canary

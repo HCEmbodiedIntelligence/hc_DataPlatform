@@ -1,0 +1,73 @@
+global:
+  releaseId: obs5-02-drill
+  releaseManifestDigest: sha256:8b33d9d8edb87b201411289079e3d416ba53058d513956bd2e43f10d89f08c1d
+  gitCommit: unknown
+  migrationManifestDigest: sha256:1df7f0aa02edce8ab5e985eeb1aed4253a1cb7e0782269ff4655251044372e8a
+frontend:
+  replicaCount: 1
+  image:
+    repository: hc-data-platform-frontend
+    digest: sha256:aa2cd2f87ca947308793412614e57546aaa3dee9f39d7d345b246cedbb285dd0
+    pullPolicy: IfNotPresent
+  runtimeConfig:
+    releaseEnvironment: test
+nodeSelector:
+  hc.platform/drill-role: producer
+podDisruptionBudget:
+  enabled: false
+backend:
+  api:
+    replicaCount: 0
+  worker:
+    replicaCount: 0
+  mediaWorker:
+    replicaCount: 0
+  config:
+    environment: test
+observability:
+  enabled: true
+  collector:
+    replicaCount: 2
+    nodeSelector:
+      hc.platform/drill-role: observability
+    image:
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      digest: sha256:4eb842091c796156d4d3c994eb22ba793590f5723719dbf6b8436cb4dfc17f48
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 25m, memory: 128Mi}
+      limits: {cpu: 250m, memory: 384Mi}
+  frontendLogAgent:
+    resources:
+      requests: {cpu: 10m, memory: 64Mi}
+      limits: {cpu: 100m, memory: 256Mi}
+  loki:
+    embedded: true
+    nodeSelector:
+      hc.platform/drill-role: observability
+    image:
+      repository: grafana/loki
+      digest: sha256:d80be589cf74b6d92747a1b155bec6f07bdd65e261f797fe93a78fb4e833032e
+      pullPolicy: IfNotPresent
+    retentionPeriod: 24h
+    persistence:
+      enabled: false
+      size: 1Gi
+    resources:
+      requests: {cpu: 50m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 1Gi}
+  grafana:
+    managed:
+      enabled: true
+      nodeSelector:
+        hc.platform/drill-role: observability
+      image:
+        repository: grafana/grafana
+        digest: sha256:6ea068891652aa6a65ca9065c26b89de939653803c836426970305c11fd00534
+        pullPolicy: IfNotPresent
+      existingAdminSecret:
+        name: obs-drill-grafana-admin
+      prometheusUrl: http://obs-drill-prometheus:9090
+      resources:
+        requests: {cpu: 25m, memory: 128Mi}
+        limits: {cpu: 250m, memory: 512Mi}

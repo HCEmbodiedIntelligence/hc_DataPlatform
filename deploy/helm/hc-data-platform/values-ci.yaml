@@ -1,0 +1,28 @@
+global:
+  releaseId: platform-v0.1.0-ci
+  releaseManifestDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  gitCommit: 1111111111111111111111111111111111111111
+  migrationManifestDigest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+frontend:
+  image:
+    repository: registry.example.invalid/hc-data-platform/frontend
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+
+backend:
+  api:
+    image:
+      repository: registry.example.invalid/hc-data-platform/api
+      digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+  worker:
+    image:
+      repository: registry.example.invalid/hc-data-platform/worker
+      digest: sha256:3333333333333333333333333333333333333333333333333333333333333333
+  config:
+    platformEnvironmentId: hc-ci
+    secretBundleRevision: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    workflowActivityFactory: hc_data_platform.runtime:activity_dependencies
+    objectStorePublicEndpoint: https://uploads.example.invalid
+    authTrustedProxyCidrs: '["10.0.0.0/8"]'
+    authTurnstileSiteKey: ci-turnstile-site-key
+    authTurnstileExpectedHostnames: '["app.example.invalid"]'

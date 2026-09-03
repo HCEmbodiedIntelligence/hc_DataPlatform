@@ -1,0 +1,2900 @@
+components:
+  schemas:
+    BackupCatalogListItem:
+      additionalProperties: false
+      description: Redacted immutable catalog projection safe for the online API.
+      properties:
+        backup_completed_at:
+          format: date-time
+          title: Backup Completed At
+          type: string
+        backup_created_at:
+          format: date-time
+          title: Backup Created At
+          type: string
+        backup_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$
+          title: Backup Id
+          type: string
+        format_version:
+          const: hc-platform-backup/v1
+          title: Format Version
+          type: string
+        mode:
+          enum:
+          - portable
+          - snapshot
+          title: Mode
+          type: string
+        release_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Release Manifest Sha256
+          type: string
+        repository_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$
+          title: Repository Id
+          type: string
+        source_environment_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$
+          title: Source Environment Id
+          type: string
+        status:
+          enum:
+          - CREATING
+          - CREATED
+          - INTEGRITY_VERIFIED
+          - RESTORE_VERIFIED
+          - FAILED
+          - CORRUPT
+          - EXPIRED
+          title: Status
+          type: string
+        status_occurred_at:
+          format: date-time
+          title: Status Occurred At
+          type: string
+      required:
+      - backup_id
+      - format_version
+      - mode
+      - status
+      - source_environment_id
+      - repository_id
+      - release_manifest_sha256
+      - backup_created_at
+      - backup_completed_at
+      - status_occurred_at
+      title: BackupCatalogListItem
+      type: object
+    BackupCatalogPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-backup-catalog-page/v1
+          default: hc-platform-backup-catalog-page/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/BackupCatalogListItem'
+          title: Items
+          type: array
+        next_cursor:
+          anyOf:
+          - maxLength: 1024
+            type: string
+          - type: 'null'
+          title: Next Cursor
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+      required:
+      - observed_at
+      - count
+      - items
+      title: BackupCatalogPage
+      type: object
+    InstanceReadinessSummary:
+      additionalProperties: false
+      description: Small allowlisted readiness projection; never stores dependency error text.
+      properties:
+        failed_checks:
+          default: []
+          items:
+            pattern: ^[a-z][a-z0-9_-]{0,63}$
+            type: string
+          title: Failed Checks
+          type: array
+        status:
+          enum:
+          - starting
+          - ready
+          - not_ready
+          - draining
+          title: Status
+          type: string
+      required:
+      - status
+      title: InstanceReadinessSummary
+      type: object
+    MaintenanceLeaseRequest:
+      additionalProperties: false
+      properties:
+        fencing_token:
+          exclusiveMinimum: 0.0
+          title: Fencing Token
+          type: integer
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      - fencing_token
+      title: MaintenanceLeaseRequest
+      type: object
+    MaintenanceOperation:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        environment_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,126}[A-Za-z0-9])?$
+          title: Environment Id
+          type: string
+        fencing_token:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Fencing Token
+        lease_until:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Lease Until
+        manual_approval_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Manual Approval Id
+        operation_id:
+          maxLength: 128
+          minLength: 1
+          title: Operation Id
+          type: string
+        operation_kind:
+          enum:
+          - BACKUP
+          - RESTORE
+          - MIGRATION
+          - RELEASE
+          - OTHER
+          title: Operation Kind
+          type: string
+        owner_instance_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Owner Instance Id
+        plan_digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Plan Digest
+          type: string
+        reconciliation_passed:
+          title: Reconciliation Passed
+          type: boolean
+        requested_by:
+          maxLength: 255
+          minLength: 1
+          title: Requested By
+          type: string
+        state:
+          $ref: '#/components/schemas/MaintenanceState'
+        state_version:
+          minimum: 0.0
+          title: State Version
+          type: integer
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - operation_id
+      - environment_id
+      - operation_kind
+      - plan_digest
+      - requested_by
+      - state
+      - owner_instance_id
+      - lease_until
+      - state_version
+      - reconciliation_passed
+      - manual_approval_id
+      - created_at
+      - updated_at
+      title: MaintenanceOperation
+      type: object
+    MaintenanceOperationRequest:
+      additionalProperties: false
+      properties:
+        operation_id:
+          maxLength: 128
+          minLength: 1
+          title: Operation Id
+          type: string
+        operation_kind:
+          enum:
+          - BACKUP
+          - RESTORE
+          - MIGRATION
+          - RELEASE
+          - OTHER
+          title: Operation Kind
+          type: string
+        plan_digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Plan Digest
+          type: string
+      required:
+      - operation_id
+      - operation_kind
+      - plan_digest
+      title: MaintenanceOperationRequest
+      type: object
+    MaintenanceOwnerRequest:
+      additionalProperties: false
+      properties:
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      title: MaintenanceOwnerRequest
+      type: object
+    MaintenanceReconciliationRequest:
+      additionalProperties: false
+      properties:
+        expected_state_version:
+          minimum: 0.0
+          title: Expected State Version
+          type: integer
+        fencing_token:
+          exclusiveMinimum: 0.0
+          title: Fencing Token
+          type: integer
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      - fencing_token
+      - expected_state_version
+      title: MaintenanceReconciliationRequest
+      type: object
+    MaintenanceState:
+      enum:
+      - REQUESTED
+      - LEASED
+      - READ_ONLY
+      - DRAINING
+      - FENCED
+      - EXECUTING
+      - VERIFYING
+      - RELEASING
+      - WRITE_ENABLE_PENDING
+      - SUCCEEDED
+      - FAILED_RELEASED
+      - FAILED_READ_ONLY
+      - CANCELLED
+      title: MaintenanceState
+      type: string
+    MaintenanceTransitionRequest:
+      additionalProperties: false
+      properties:
+        expected_state:
+          $ref: '#/components/schemas/MaintenanceState'
+        expected_state_version:
+          minimum: 0.0
+          title: Expected State Version
+          type: integer
+        fencing_token:
+          exclusiveMinimum: 0.0
+          title: Fencing Token
+          type: integer
+        manual_approval_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Manual Approval Id
+        next_state:
+          $ref: '#/components/schemas/MaintenanceState'
+        owner_instance_id:
+          format: uuid
+          title: Owner Instance Id
+          type: string
+      required:
+      - owner_instance_id
+      - fencing_token
+      - expected_state
+      - expected_state_version
+      - next_state
+      title: MaintenanceTransitionRequest
+      type: object
+    ObjectStoreConfigurationStatus:
+      additionalProperties: false
+      properties:
+        access_key_configured:
+          title: Access Key Configured
+          type: boolean
+        access_key_hint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Access Key Hint
+        activation_required:
+          default: false
+          title: Activation Required
+          type: boolean
+        bucket:
+          title: Bucket
+          type: string
+        configured:
+          title: Configured
+          type: boolean
+        endpoint:
+          title: Endpoint
+          type: string
+        environment_id:
+          title: Environment Id
+          type: string
+        format_version:
+          const: hc-object-store-config/v1
+          default: hc-object-store-config/v1
+          title: Format Version
+          type: string
+        provider:
+          enum:
+          - oss
+          - s3
+          title: Provider
+          type: string
+        public_endpoint:
+          title: Public Endpoint
+          type: string
+        region:
+          title: Region
+          type: string
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        source:
+          enum:
+          - unconfigured
+          - environment
+          - database
+          title: Source
+          type: string
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated At
+      required:
+      - environment_id
+      - revision
+      - source
+      - configured
+      - provider
+      - endpoint
+      - public_endpoint
+      - bucket
+      - region
+      - access_key_configured
+      title: ObjectStoreConfigurationStatus
+      type: object
+    ObjectStoreConfigurationUpdate:
+      additionalProperties: false
+      properties:
+        access_key:
+          anyOf:
+          - format: password
+            maxLength: 512
+            minLength: 1
+            type: string
+            writeOnly: true
+          - type: 'null'
+          title: Access Key
+        bucket:
+          pattern: ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$
+          title: Bucket
+          type: string
+        endpoint:
+          maxLength: 2048
+          minLength: 1
+          title: Endpoint
+          type: string
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        provider:
+          const: oss
+          default: oss
+          title: Provider
+          type: string
+        public_endpoint:
+          maxLength: 2048
+          minLength: 1
+          title: Public Endpoint
+          type: string
+        region:
+          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
+          title: Region
+          type: string
+        secret_key:
+          anyOf:
+          - format: password
+            maxLength: 2048
+            minLength: 1
+            type: string
+            writeOnly: true
+          - type: 'null'
+          title: Secret Key
+      required:
+      - expected_revision
+      - endpoint
+      - public_endpoint
+      - bucket
+      - region
+      title: ObjectStoreConfigurationUpdate
+      type: object
+    ObjectStoreLocationStatus:
+      additionalProperties: false
+      description: Authenticated, credential-free storage location for the shell selector.
+      properties:
+        configured:
+          title: Configured
+          type: boolean
+        format_version:
+          const: hc-object-store-location/v1
+          default: hc-object-store-location/v1
+          title: Format Version
+          type: string
+        provider:
+          enum:
+          - oss
+          - s3
+          title: Provider
+          type: string
+        public_endpoint:
+          title: Public Endpoint
+          type: string
+        region:
+          title: Region
+          type: string
+      required:
+      - configured
+      - provider
+      - public_endpoint
+      - region
+      title: ObjectStoreLocationStatus
+      type: object
+    PlatformAuditEventProjection:
+      additionalProperties: false
+      properties:
+        actor:
+          $ref: '#/components/schemas/PlatformAuditSubjectRef'
+        domain:
+          enum:
+          - BACKUP
+          - RESTORE
+          - RELEASE
+          - PLATFORM
+          title: Domain
+          type: string
+        event_id:
+          format: uuid
+          title: Event Id
+          type: string
+        event_name:
+          maxLength: 255
+          minLength: 1
+          title: Event Name
+          type: string
+        integrity:
+          const: CHAINED
+          default: CHAINED
+          title: Integrity
+          type: string
+        occurred_at:
+          format: date-time
+          title: Occurred At
+          type: string
+        outcome:
+          enum:
+          - SUCCEEDED
+          - DENIED
+          - FAILED
+          title: Outcome
+          type: string
+        redaction:
+          $ref: '#/components/schemas/PlatformAuditRedaction'
+        request_id:
+          maxLength: 255
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,253}[A-Za-z0-9])?$
+          title: Request Id
+          type: string
+        resource:
+          $ref: '#/components/schemas/PlatformAuditResourceRef'
+        schema_version:
+          const: hc-platform-audit-event/v1
+          default: hc-platform-audit-event/v1
+          title: Schema Version
+          type: string
+        sequence_no:
+          exclusiveMinimum: 0.0
+          title: Sequence No
+          type: integer
+      required:
+      - event_id
+      - sequence_no
+      - domain
+      - event_name
+      - occurred_at
+      - actor
+      - resource
+      - request_id
+      - outcome
+      - redaction
+      title: PlatformAuditEventProjection
+      type: object
+    PlatformAuditIntegrity:
+      additionalProperties: false
+      properties:
+        checked_at:
+          format: date-time
+          title: Checked At
+          type: string
+        checked_chain_count:
+          maximum: 1.0
+          minimum: 0.0
+          title: Checked Chain Count
+          type: integer
+        checked_event_count:
+          minimum: 0.0
+          title: Checked Event Count
+          type: integer
+        format_version:
+          const: hc-platform-audit-integrity/v1
+          default: hc-platform-audit-integrity/v1
+          title: Format Version
+          type: string
+        status:
+          enum:
+          - PASSED
+          - FAILED
+          title: Status
+          type: string
+        verified_through:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Verified Through
+      required:
+      - status
+      - checked_at
+      - checked_event_count
+      - checked_chain_count
+      title: PlatformAuditIntegrity
+      type: object
+    PlatformAuditPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-audit-page/v1
+          default: hc-platform-audit-page/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformAuditEventProjection'
+          title: Items
+          type: array
+        next_cursor:
+          anyOf:
+          - maxLength: 16384
+            type: string
+          - type: 'null'
+          title: Next Cursor
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - snapshot_at
+      - count
+      - items
+      title: PlatformAuditPage
+      type: object
+    PlatformAuditRedaction:
+      additionalProperties: false
+      properties:
+        omitted_field_classes:
+          default:
+          - actor_identifier
+          - resource_identifier
+          - safe_details_values
+          items:
+            type: string
+          title: Omitted Field Classes
+          type: array
+        policy_version:
+          const: platform-audit-redaction/v1
+          default: platform-audit-redaction/v1
+          title: Policy Version
+          type: string
+        retained_detail_keys:
+          default: []
+          items:
+            type: string
+          title: Retained Detail Keys
+          type: array
+      title: PlatformAuditRedaction
+      type: object
+    PlatformAuditResourceRef:
+      additionalProperties: false
+      properties:
+        id_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Id Ref
+          type: string
+        type:
+          maxLength: 128
+          minLength: 1
+          title: Type
+          type: string
+      required:
+      - type
+      - id_ref
+      title: PlatformAuditResourceRef
+      type: object
+    PlatformAuditSubjectRef:
+      additionalProperties: false
+      properties:
+        id_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Id Ref
+          type: string
+        type:
+          const: USER_OR_SERVICE
+          default: USER_OR_SERVICE
+          title: Type
+          type: string
+      required:
+      - id_ref
+      title: PlatformAuditSubjectRef
+      type: object
+    PlatformInstance:
+      additionalProperties: false
+      description: One database-observed platform process in the node directory.
+      properties:
+        applied_config_revision:
+          minimum: 0.0
+          title: Applied Config Revision
+          type: integer
+        component_image_digest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - const: unreleased
+            type: string
+          title: Component Image Digest
+        instance_id:
+          format: uuid
+          title: Instance Id
+          type: string
+        kubernetes_node_name:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Kubernetes Node Name
+        kubernetes_zone:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Kubernetes Zone
+        last_heartbeat_at:
+          format: date-time
+          title: Last Heartbeat At
+          type: string
+        node_name:
+          maxLength: 253
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+          title: Node Name
+          type: string
+        pod_name:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Pod Name
+        readiness:
+          $ref: '#/components/schemas/InstanceReadinessSummary'
+        release_id:
+          pattern: ^(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})$
+          title: Release Id
+          type: string
+        release_manifest_digest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - const: unreleased
+            type: string
+          title: Release Manifest Digest
+        role:
+          enum:
+          - frontend
+          - api
+          - worker
+          - media-worker
+          - maintenance-controller
+          title: Role
+          type: string
+        runtime_version:
+          maxLength: 128
+          minLength: 1
+          title: Runtime Version
+          type: string
+        stale:
+          title: Stale
+          type: boolean
+        started_at:
+          format: date-time
+          title: Started At
+          type: string
+      required:
+      - instance_id
+      - node_name
+      - role
+      - release_id
+      - release_manifest_digest
+      - component_image_digest
+      - runtime_version
+      - started_at
+      - last_heartbeat_at
+      - readiness
+      - applied_config_revision
+      - stale
+      title: PlatformInstance
+      type: object
+    PlatformInstancePage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-instance-directory/v1
+          default: hc-platform-instance-directory/v1
+          title: Format Version
+          type: string
+        heartbeat_interval_seconds:
+          const: 30
+          default: 30
+          title: Heartbeat Interval Seconds
+          type: integer
+        instances:
+          items:
+            $ref: '#/components/schemas/PlatformInstance'
+          title: Instances
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        stale_after_seconds:
+          const: 90
+          default: 90
+          title: Stale After Seconds
+          type: integer
+      required:
+      - observed_at
+      - count
+      - instances
+      title: PlatformInstancePage
+      type: object
+    PlatformLogEvent:
+      additionalProperties: false
+      properties:
+        duration_ms:
+          anyOf:
+          - minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Duration Ms
+        error_type:
+          anyOf:
+          - pattern: ^[A-Za-z][A-Za-z0-9_.]{0,127}$
+            type: string
+          - type: 'null'
+          title: Error Type
+        event_code:
+          pattern: ^[A-Z][A-Z0-9_.-]{0,127}$
+          title: Event Code
+          type: string
+        http_method:
+          anyOf:
+          - enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - HEAD
+            - OPTIONS
+            type: string
+          - type: 'null'
+          title: Http Method
+        operation_id:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Operation Id
+        release_id:
+          maxLength: 253
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+          title: Release Id
+          type: string
+        request_id:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Request Id
+        retry_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Retry Count
+        role:
+          enum:
+          - api
+          - worker
+          - media-worker
+          - frontend
+          - gateway
+          title: Role
+          type: string
+        route:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            pattern: ^/[A-Za-z0-9{}_.:/-]*$
+            type: string
+          - type: 'null'
+          title: Route
+        schema_version:
+          const: hc-platform-log-event/v1
+          default: hc-platform-log-event/v1
+          title: Schema Version
+          type: string
+        service:
+          enum:
+          - hc-data-platform-api
+          - hc-data-platform-worker
+          - hc-data-platform-media-worker
+          - hc-data-platform-frontend
+          - hc-data-platform-gateway
+          title: Service
+          type: string
+        severity:
+          enum:
+          - TRACE
+          - DEBUG
+          - INFO
+          - WARN
+          - ERROR
+          - FATAL
+          title: Severity
+          type: string
+        status_code:
+          anyOf:
+          - maximum: 599.0
+            minimum: 100.0
+            type: integer
+          - type: 'null'
+          title: Status Code
+        timestamp:
+          format: date-time
+          title: Timestamp
+          type: string
+        workflow_id:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Workflow Id
+      required:
+      - timestamp
+      - severity
+      - service
+      - role
+      - release_id
+      - event_code
+      - request_id
+      - operation_id
+      - workflow_id
+      - error_type
+      title: PlatformLogEvent
+      type: object
+    PlatformLogPage:
+      additionalProperties: false
+      properties:
+        count:
+          maximum: 200.0
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-platform-log-page/v1
+          default: hc-platform-log-page/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformLogEvent'
+          maxItems: 200
+          title: Items
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        occurred_from:
+          format: date-time
+          title: Occurred From
+          type: string
+        occurred_to:
+          format: date-time
+          title: Occurred To
+          type: string
+        truncated:
+          title: Truncated
+          type: boolean
+      required:
+      - observed_at
+      - occurred_from
+      - occurred_to
+      - count
+      - truncated
+      - items
+      title: PlatformLogPage
+      type: object
+    PlatformOperationsBackup:
+      additionalProperties: false
+      description: A backup projection without repository, environment, or object locators.
+      properties:
+        backup_completed_at:
+          format: date-time
+          title: Backup Completed At
+          type: string
+        backup_created_at:
+          format: date-time
+          title: Backup Created At
+          type: string
+        backup_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Backup Ref
+          type: string
+        format_version:
+          const: hc-platform-backup/v1
+          title: Format Version
+          type: string
+        mode:
+          enum:
+          - portable
+          - snapshot
+          title: Mode
+          type: string
+        release_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Release Manifest Sha256
+          type: string
+        status:
+          enum:
+          - CREATING
+          - CREATED
+          - INTEGRITY_VERIFIED
+          - RESTORE_VERIFIED
+          - FAILED
+          - CORRUPT
+          - EXPIRED
+          title: Status
+          type: string
+        status_occurred_at:
+          format: date-time
+          title: Status Occurred At
+          type: string
+      required:
+      - backup_ref
+      - format_version
+      - mode
+      - status
+      - release_manifest_sha256
+      - backup_created_at
+      - backup_completed_at
+      - status_occurred_at
+      title: PlatformOperationsBackup
+      type: object
+    PlatformOperationsNode:
+      additionalProperties: false
+      description: An operational node projection with every host and process locator removed.
+      properties:
+        applied_config_revision:
+          minimum: 0.0
+          title: Applied Config Revision
+          type: integer
+        failed_checks:
+          items:
+            pattern: ^[a-z][a-z0-9_-]{0,63}$
+            type: string
+          title: Failed Checks
+          type: array
+        last_heartbeat_at:
+          format: date-time
+          title: Last Heartbeat At
+          type: string
+        node_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Node Ref
+          type: string
+        readiness:
+          enum:
+          - starting
+          - ready
+          - not_ready
+          - draining
+          title: Readiness
+          type: string
+        release_id:
+          pattern: ^(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})$
+          title: Release Id
+          type: string
+        release_manifest_digest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - const: unreleased
+            type: string
+          title: Release Manifest Digest
+        role:
+          enum:
+          - frontend
+          - api
+          - worker
+          - media-worker
+          - maintenance-controller
+          title: Role
+          type: string
+        stale:
+          title: Stale
+          type: boolean
+        started_at:
+          format: date-time
+          title: Started At
+          type: string
+      required:
+      - node_ref
+      - role
+      - release_id
+      - release_manifest_digest
+      - started_at
+      - last_heartbeat_at
+      - readiness
+      - failed_checks
+      - applied_config_revision
+      - stale
+      title: PlatformOperationsNode
+      type: object
+    PlatformOperationsOverview:
+      additionalProperties: false
+      properties:
+        backup_count:
+          maximum: 20.0
+          minimum: 0.0
+          title: Backup Count
+          type: integer
+        backups:
+          items:
+            $ref: '#/components/schemas/PlatformOperationsBackup'
+          maxItems: 20
+          title: Backups
+          type: array
+        environment_ref:
+          pattern: ^id-hmac-sha256:[0-9a-f]{64}$
+          title: Environment Ref
+          type: string
+        format_version:
+          const: hc-platform-operations-overview/v1
+          default: hc-platform-operations-overview/v1
+          title: Format Version
+          type: string
+        node_count:
+          minimum: 0.0
+          title: Node Count
+          type: integer
+        nodes:
+          items:
+            $ref: '#/components/schemas/PlatformOperationsNode'
+          title: Nodes
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        release:
+          $ref: '#/components/schemas/PlatformReleaseIdentityV1'
+        upgrade_preflight:
+          $ref: '#/components/schemas/UpgradePreflight'
+      required:
+      - observed_at
+      - environment_ref
+      - release
+      - node_count
+      - nodes
+      - backup_count
+      - backups
+      - upgrade_preflight
+      title: PlatformOperationsOverview
+      type: object
+    PlatformOrganization:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      title: PlatformOrganization
+      type: object
+    PlatformOrganizationCreate:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      title: PlatformOrganizationCreate
+      type: object
+    PlatformOrganizationPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          default: hc-platform-organization-directory/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformOrganization'
+          title: Items
+          type: array
+      required:
+      - count
+      - items
+      title: PlatformOrganizationPage
+      type: object
+    PlatformProject:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        organization_name:
+          maxLength: 256
+          minLength: 1
+          title: Organization Name
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Project Id
+          type: string
+        project_name:
+          maxLength: 256
+          minLength: 1
+          title: Project Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      - project_id
+      - project_name
+      title: PlatformProject
+      type: object
+    PlatformProjectCreate:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Project Id
+          type: string
+        project_name:
+          maxLength: 256
+          minLength: 1
+          title: Project Name
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - project_name
+      title: PlatformProjectCreate
+      type: object
+    PlatformProjectPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          default: hc-platform-project-directory/v1
+          title: Format Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PlatformProject'
+          title: Items
+          type: array
+      required:
+      - count
+      - items
+      title: PlatformProjectPage
+      type: object
+    RuntimeConfigHistoryPage:
+      additionalProperties: false
+      properties:
+        count:
+          minimum: 0.0
+          title: Count
+          type: integer
+        format_version:
+          const: hc-runtime-config-history/v1
+          default: hc-runtime-config-history/v1
+          title: Format Version
+          type: string
+        revisions:
+          items:
+            $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          title: Revisions
+          type: array
+      required:
+      - count
+      - revisions
+      title: RuntimeConfigHistoryPage
+      type: object
+    RuntimeConfigPublishRequest:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        reason:
+          maxLength: 500
+          minLength: 8
+          title: Reason
+          type: string
+        schema_version:
+          const: hc-runtime-config/v1
+          title: Schema Version
+          type: string
+        values:
+          additionalProperties: true
+          maxProperties: 3
+          minProperties: 1
+          title: Values
+          type: object
+      required:
+      - expected_revision
+      - schema_version
+      - values
+      - reason
+      title: RuntimeConfigPublishRequest
+      type: object
+    RuntimeConfigRollbackRequest:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        reason:
+          maxLength: 500
+          minLength: 8
+          title: Reason
+          type: string
+      required:
+      - expected_revision
+      - reason
+      title: RuntimeConfigRollbackRequest
+      type: object
+    RuntimeConfigSnapshot:
+      additionalProperties: false
+      properties:
+        actor_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Actor Id
+        content_sha256:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Content Sha256
+          type: string
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created At
+        environment_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,126}[A-Za-z0-9])?$
+          title: Environment Id
+          type: string
+        format_version:
+          const: hc-runtime-config-snapshot/v1
+          default: hc-runtime-config-snapshot/v1
+          title: Format Version
+          type: string
+        reason:
+          anyOf:
+          - maxLength: 500
+            minLength: 8
+            type: string
+          - type: 'null'
+          title: Reason
+        request_id:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Request Id
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        rollback_of_revision:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Rollback Of Revision
+        schema_version:
+          const: hc-runtime-config/v1
+          default: hc-runtime-config/v1
+          title: Schema Version
+          type: string
+        values:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+          title: Values
+          type: object
+      required:
+      - environment_id
+      - revision
+      - values
+      - content_sha256
+      title: RuntimeConfigSnapshot
+      type: object
+    UpgradePreflight:
+      additionalProperties: false
+      properties:
+        checks:
+          items:
+            $ref: '#/components/schemas/UpgradePreflightCheck'
+          maxItems: 7
+          minItems: 7
+          title: Checks
+          type: array
+        status:
+          enum:
+          - READY
+          - BLOCKED
+          title: Status
+          type: string
+      required:
+      - status
+      - checks
+      title: UpgradePreflight
+      type: object
+    UpgradePreflightCheck:
+      additionalProperties: false
+      properties:
+        code:
+          enum:
+          - RELEASE_IDENTITY
+          - NODE_CONVERGENCE
+          - NODE_READINESS
+          - CONFIG_CONVERGENCE
+          - VERIFIED_BACKUP
+          - VERIFIED_RESTORE
+          - CENTRAL_LOG_SEARCH
+          title: Code
+          type: string
+        reason_code:
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Reason Code
+          type: string
+        status:
+          enum:
+          - PASS
+          - BLOCKED
+          title: Status
+          type: string
+      required:
+      - code
+      - status
+      - reason_code
+      title: UpgradePreflightCheck
+      type: object
+info:
+  title: HC platform operations contract
+  version: '2026-08-29'
+openapi: 3.1.0
+paths:
+  /api/v1/platform/audit/events:
+    get:
+      operationId: listPlatformAuditEvents
+      parameters:
+      - in: query
+        name: occurred_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred From
+      - in: query
+        name: occurred_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred To
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Cursor
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformAuditPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Platform Audit Events
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/audit/events:export:
+    get:
+      operationId: exportPlatformAuditEvents
+      parameters:
+      - in: query
+        name: occurred_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred From
+      - in: query
+        name: occurred_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Occurred To
+      responses:
+        '200':
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+          description: Capability-controlled redacted NDJSON export.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The platform audit integrity chain failed verification.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The requested export window is too large.
+      security:
+      - bearerAuth: []
+      summary: Export Platform Audit Events
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.maintenance.verify
+        mode: one-exact
+  /api/v1/platform/audit/integrity:
+    get:
+      operationId: verifyPlatformAuditIntegrity
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformAuditIntegrity'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Verify Platform Audit Integrity
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.maintenance.verify
+        mode: one-exact
+  /api/v1/platform/backups:
+    get:
+      operationId: listPlatformBackups
+      parameters:
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - CREATING
+            - CREATED
+            - INTEGRITY_VERIFIED
+            - RESTORE_VERIFIED
+            - FAILED
+            - CORRUPT
+            - EXPIRED
+            type: string
+          - type: 'null'
+          title: Status
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 1024
+            type: string
+          - type: 'null'
+          title: Cursor
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupCatalogPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The backup catalog query is invalid.
+      security:
+      - bearerAuth: []
+      summary: List Platform Backups
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/instances:
+    get:
+      operationId: listPlatformInstances
+      parameters:
+      - in: query
+        name: stale
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Stale
+      - in: query
+        name: role
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - frontend
+            - api
+            - worker
+            - media-worker
+            - maintenance-controller
+            type: string
+          - type: 'null'
+          title: Role
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformInstancePage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Platform Instances
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/logs:
+    get:
+      operationId: queryPlatformRuntimeLogs
+      parameters:
+      - in: query
+        name: occurred_from
+        required: true
+        schema:
+          format: date-time
+          title: Occurred From
+          type: string
+      - in: query
+        name: occurred_to
+        required: true
+        schema:
+          format: date-time
+          title: Occurred To
+          type: string
+      - in: query
+        name: service
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - hc-data-platform-api
+            - hc-data-platform-worker
+            - hc-data-platform-media-worker
+            - hc-data-platform-frontend
+            - hc-data-platform-gateway
+            type: string
+          - type: 'null'
+          title: Service
+      - in: query
+        name: severity
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - TRACE
+            - DEBUG
+            - INFO
+            - WARN
+            - ERROR
+            - FATAL
+            type: string
+          - type: 'null'
+          title: Severity
+      - in: query
+        name: event_code
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^[A-Z][A-Z0-9_.-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Event Code
+      - in: query
+        name: request_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Request Id
+      - in: query
+        name: operation_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Operation Id
+      - in: query
+        name: workflow_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 253
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,251}[A-Za-z0-9])?$
+            type: string
+          - type: 'null'
+          title: Workflow Id
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformLogPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The runtime-log query is invalid.
+        '502':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The central runtime-log backend violated its fixed contract.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Central runtime-log search is temporarily unavailable.
+      security:
+      - bearerAuth: []
+      summary: Query Platform Runtime Logs
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/maintenance-operations:
+    post:
+      operationId: requestPlatformMaintenanceOperation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceOperationRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Request Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:
+    get:
+      operationId: getPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:acquire:
+    post:
+      operationId: acquirePlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceOwnerRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Acquire Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:reconcile:
+    post:
+      operationId: reconcilePlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceReconciliationRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Reconcile Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.maintenance.verify
+        mode: one-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:renew:
+    post:
+      operationId: renewPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceLeaseRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Renew Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:takeover:
+    post:
+      operationId: takeoverPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceOwnerRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Takeover Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.break_glass
+        mode: one-exact
+  /api/v1/platform/maintenance-operations/{operation_id}:transition:
+    post:
+      operationId: transitionPlatformMaintenanceOperation
+      parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema:
+          title: Operation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceTransitionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOperation'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The operation was not found in the configured environment.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The command conflicts with the current owner, lease, token, or state.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Transition Maintenance Operation
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        break_glass_when:
+        - current_state=FAILED_READ_ONLY
+        - next_state=SUCCEEDED
+        mapping:
+          BACKUP: platform.maintenance.operate
+          MIGRATION: platform.release.operate
+          OTHER: platform.maintenance.operate
+          RELEASE: platform.release.operate
+          RESTORE: platform.break_glass
+        mode: operation-kind-exact
+  /api/v1/platform/object-store-config:
+    get:
+      operationId: getPlatformObjectStoreConfig
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreConfigurationStatus'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Get Object Store Config
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+    put:
+      operationId: updatePlatformObjectStoreConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectStoreConfigurationUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreConfigurationStatus'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The expected object-store configuration revision is stale.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The object-store configuration is incomplete or invalid.
+      security:
+      - bearerAuth: []
+      summary: Update Object Store Config
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+  /api/v1/platform/object-store-location:
+    get:
+      operationId: getPlatformObjectStoreLocation
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreLocationStatus'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+      security:
+      - bearerAuth: []
+      summary: Get Object Store Location
+      tags:
+      - platform-operations
+  /api/v1/platform/organizations:
+    get:
+      operationId: listPlatformOrganizations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOrganizationPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: List Platform Organizations
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+    post:
+      operationId: createPlatformOrganization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformOrganizationCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOrganization'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The organization already exists.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Platform Organization
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+  /api/v1/platform/overview:
+    get:
+      operationId: getPlatformOperationsOverview
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformOperationsOverview'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Get Platform Operations Overview
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/projects:
+    get:
+      operationId: listPlatformProjects
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformProjectPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: List Platform Projects
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+    post:
+      operationId: createPlatformProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformProjectCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformProject'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The selected organization does not exist.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The organization project already exists.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Platform Project
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        mode: one-exact
+  /api/v1/platform/runtime-config:
+    get:
+      operationId: getPlatformRuntimeConfig
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+      security:
+      - bearerAuth: []
+      summary: Get Runtime Config
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+  /api/v1/platform/runtime-config/revisions:
+    get:
+      operationId: listPlatformRuntimeConfigRevisions
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigHistoryPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Runtime Config Revisions
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.admin
+        - platform.operations.read
+        mode: any-exact
+    post:
+      operationId: publishPlatformRuntimeConfigRevision
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeConfigPublishRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The expected runtime configuration revision is stale.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The runtime configuration command is not allowlisted.
+      security:
+      - bearerAuth: []
+      summary: Publish Runtime Config Revision
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact
+  /api/v1/platform/runtime-config/revisions/{target_revision}:rollback:
+    post:
+      operationId: rollbackPlatformRuntimeConfigRevision
+      parameters:
+      - in: path
+        name: target_revision
+        required: true
+        schema:
+          minimum: 0
+          title: Target Revision
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeConfigRollbackRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeConfigSnapshot'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: A verified Bearer session is required.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: An exact platform capability is required.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The target runtime configuration revision was not found.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The expected runtime configuration revision is stale.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The runtime configuration command is invalid.
+      security:
+      - bearerAuth: []
+      summary: Rollback Runtime Config Revision
+      tags:
+      - platform-operations
+      x-hc-platform-capability-policy:
+        capabilities:
+        - platform.release.operate
+        mode: one-exact

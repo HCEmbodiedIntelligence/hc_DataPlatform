@@ -1,0 +1,2055 @@
+components:
+  schemas:
+    CreateDraftFromIssueCommand:
+      additionalProperties: false
+      description: The browser may not submit source or draft context to this P09 command.
+      properties: {}
+      title: CreateDraftFromIssueCommand
+      type: object
+    CreateManualIssueCommand:
+      additionalProperties: false
+      properties:
+        annotation_task_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Annotation Task Id
+        discovery_source:
+          default: DATA_VIEWER
+          enum:
+          - DATA_VIEWER
+          - ANNOTATOR
+          - REVIEWER
+          title: Discovery Source
+          type: string
+        end_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: End Ns
+        episode_id:
+          anyOf:
+          - pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Episode Id
+        episode_revision_id:
+          anyOf:
+          - pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Episode Revision Id
+        episode_stream_id:
+          anyOf:
+          - pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Episode Stream Id
+        issue_type:
+          enum:
+          - POSE_JITTER
+          - TIMESTAMP_DRIFT
+          - MISSING_FRAME
+          - STREAM_GAP
+          - CALIBRATION_MISMATCH
+          - INVALID_MASK
+          - OTHER
+          title: Issue Type
+          type: string
+        note:
+          maxLength: 8192
+          title: Note
+          type: string
+        origin_dataset_version_id:
+          anyOf:
+          - pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Origin Dataset Version Id
+        relative_end_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Relative End Ns
+        relative_start_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Relative Start Ns
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        source_kind:
+          default: DATASET
+          enum:
+          - DATASET
+          - ANNOTATION_TASK
+          title: Source Kind
+          type: string
+        start_ns:
+          anyOf:
+          - pattern: ^(0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Start Ns
+        stream_ref:
+          anyOf:
+          - maxLength: 512
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Stream Ref
+      required:
+      - issue_type
+      - severity
+      - note
+      title: CreateManualIssueCommand
+      type: object
+    ManualIssueBlockedReason:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        message:
+          maxLength: 1000
+          minLength: 1
+          title: Message
+          type: string
+      required:
+      - code
+      - message
+      title: ManualIssueBlockedReason
+      type: object
+    ManualIssueCounts:
+      additionalProperties: false
+      properties:
+        in_progress:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: In Progress
+          type: string
+        open:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Open
+          type: string
+        resolved:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Resolved
+          type: string
+        total:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Total
+          type: string
+      required:
+      - total
+      - open
+      - in_progress
+      - resolved
+      title: ManualIssueCounts
+      type: object
+    ManualIssueCreateDraftEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        data:
+          discriminator:
+            mapping:
+              ALREADY_LINKED: '#/components/schemas/ManualIssueDraftCreated'
+              CREATED: '#/components/schemas/ManualIssueDraftCreated'
+              SELECTION_REQUIRED: '#/components/schemas/ManualIssueDraftSelectionRequired'
+            propertyName: disposition
+          oneOf:
+          - $ref: '#/components/schemas/ManualIssueDraftCreated'
+          - $ref: '#/components/schemas/ManualIssueDraftSelectionRequired'
+          title: Data
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/ManualIssueScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: ManualIssueCreateDraftEnvelope
+      type: object
+    ManualIssueDetailEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/ManualIssueRecord'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/ManualIssueScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: ManualIssueDetailEnvelope
+      type: object
+    ManualIssueDraftCandidate:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        base_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Version Id
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        manual_issue_ids:
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - pattern: ^issue_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          title: Manual Issue Ids
+          type: array
+        status:
+          const: EDITING
+          default: EDITING
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - draft_id
+      - base_version_id
+      - base_revision_id
+      - manual_issue_ids
+      - updated_at
+      title: ManualIssueDraftCandidate
+      type: object
+    ManualIssueDraftContext:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        base_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Version Id
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        manual_issue_ids:
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - pattern: ^issue_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          title: Manual Issue Ids
+          type: array
+        schema_version:
+          const: 1
+          default: 1
+          title: Schema Version
+          type: integer
+        selected_channel_path:
+          anyOf:
+          - maxLength: 512
+            type: string
+          - type: 'null'
+          title: Selected Channel Path
+        selected_stream_id:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Selected Stream Id
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+      required:
+      - dataset_id
+      - base_version_id
+      - episode_id
+      - base_revision_id
+      - selected_stream_id
+      - start_ns
+      - end_ns
+      - manual_issue_ids
+      title: ManualIssueDraftContext
+      type: object
+    ManualIssueDraftCreated:
+      additionalProperties: false
+      properties:
+        candidates:
+          default: []
+          maxItems: 0
+          minItems: 0
+          title: Candidates
+          type: array
+        context:
+          $ref: '#/components/schemas/ManualIssueDraftContext'
+        disposition:
+          enum:
+          - CREATED
+          - ALREADY_LINKED
+          title: Disposition
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        expires_at:
+          title: Expires At
+          type: 'null'
+        selection_token:
+          title: Selection Token
+          type: 'null'
+      required:
+      - disposition
+      - draft_id
+      - context
+      title: ManualIssueDraftCreated
+      type: object
+    ManualIssueDraftRef:
+      additionalProperties: false
+      properties:
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        status:
+          enum:
+          - EDITING
+          - COMMITTED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - draft_id
+      - status
+      - updated_at
+      title: ManualIssueDraftRef
+      type: object
+    ManualIssueDraftSelectionRequired:
+      additionalProperties: false
+      properties:
+        candidates:
+          items:
+            $ref: '#/components/schemas/ManualIssueDraftCandidate'
+          minItems: 2
+          title: Candidates
+          type: array
+        context:
+          title: Context
+          type: 'null'
+        disposition:
+          const: SELECTION_REQUIRED
+          default: SELECTION_REQUIRED
+          title: Disposition
+          type: string
+        draft_id:
+          title: Draft Id
+          type: 'null'
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        selection_token:
+          maxLength: 2048
+          minLength: 16
+          title: Selection Token
+          type: string
+      required:
+      - selection_token
+      - expires_at
+      - candidates
+      title: ManualIssueDraftSelectionRequired
+      type: object
+    ManualIssueFacets:
+      additionalProperties: false
+      properties:
+        assignees:
+          default: []
+          items:
+            $ref: '#/components/schemas/ManualIssuePrincipal'
+          title: Assignees
+          type: array
+        discovery_sources:
+          default: []
+          items:
+            enum:
+            - DATA_VIEWER
+            - ANNOTATOR
+            - REVIEWER
+            type: string
+          title: Discovery Sources
+          type: array
+        issue_types:
+          default: []
+          items:
+            enum:
+            - POSE_JITTER
+            - TIMESTAMP_DRIFT
+            - MISSING_FRAME
+            - STREAM_GAP
+            - CALIBRATION_MISMATCH
+            - INVALID_MASK
+            - OTHER
+            type: string
+          title: Issue Types
+          type: array
+        severities:
+          default: []
+          items:
+            enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+            - CRITICAL
+            type: string
+          title: Severities
+          type: array
+        statuses:
+          default: []
+          items:
+            enum:
+            - OPEN
+            - IN_PROGRESS
+            - RESOLVED
+            type: string
+          title: Statuses
+          type: array
+      title: ManualIssueFacets
+      type: object
+    ManualIssueListEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/ManualIssueListItem'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/ManualIssuePageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/ManualIssueScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - scope
+      - request_id
+      title: ManualIssueListEnvelope
+      type: object
+    ManualIssueListItem:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            enum:
+            - VIEW_EPISODE
+            - TRIAGE
+            - START_WORK
+            - CREATE_DRAFT
+            - CONTINUE_DRAFT
+            - RESOLVE
+            - PREVIEW_RANGE
+            type: string
+          title: Allowed Actions
+          type: array
+        annotation_task_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Annotation Task Id
+        assignee:
+          anyOf:
+          - $ref: '#/components/schemas/ManualIssuePrincipal'
+          - type: 'null'
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        discovery_source:
+          default: DATA_VIEWER
+          enum:
+          - DATA_VIEWER
+          - ANNOTATOR
+          - REVIEWER
+          title: Discovery Source
+          type: string
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        episode_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Revision Id
+          type: string
+        episode_stream_id:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Episode Stream Id
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        id:
+          pattern: ^issue_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        issue_type:
+          enum:
+          - POSE_JITTER
+          - TIMESTAMP_DRIFT
+          - MISSING_FRAME
+          - STREAM_GAP
+          - CALIBRATION_MISMATCH
+          - INVALID_MASK
+          - OTHER
+          title: Issue Type
+          type: string
+        origin_dataset_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Origin Dataset Version Id
+          type: string
+        related_draft_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Related Draft Count
+          type: string
+        resolution_note:
+          anyOf:
+          - maxLength: 4096
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Resolution Note
+        resolution_version:
+          anyOf:
+          - $ref: '#/components/schemas/ManualIssueResolutionVersion'
+          - type: 'null'
+        resolved_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Resolved At
+        resolved_by:
+          anyOf:
+          - $ref: '#/components/schemas/ManualIssuePrincipal'
+          - type: 'null'
+        scope:
+          $ref: '#/components/schemas/ManualIssueScope'
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+        status:
+          enum:
+          - OPEN
+          - IN_PROGRESS
+          - RESOLVED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - etag
+      - scope
+      - dataset_id
+      - origin_dataset_version_id
+      - episode_id
+      - episode_revision_id
+      - episode_stream_id
+      - start_ns
+      - end_ns
+      - issue_type
+      - severity
+      - status
+      - related_draft_count
+      - updated_at
+      title: ManualIssueListItem
+      type: object
+    ManualIssuePageData:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            enum:
+            - VIEW_EPISODE
+            - TRIAGE
+            - START_WORK
+            - CREATE_DRAFT
+            - CONTINUE_DRAFT
+            - RESOLVE
+            - PREVIEW_RANGE
+            type: string
+          title: Allowed Actions
+          type: array
+        counts:
+          $ref: '#/components/schemas/ManualIssueCounts'
+        facets:
+          $ref: '#/components/schemas/ManualIssueFacets'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - counts
+      - facets
+      - snapshot_at
+      title: ManualIssuePageData
+      type: object
+    ManualIssuePageEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/ManualIssuePageData'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/ManualIssueScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: ManualIssuePageEnvelope
+      type: object
+    ManualIssuePageInfo:
+      additionalProperties: false
+      properties:
+        after:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: After
+        before:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Before
+        has_next:
+          title: Has Next
+          type: boolean
+        has_previous:
+          title: Has Previous
+          type: boolean
+      required:
+      - has_next
+      - has_previous
+      title: ManualIssuePageInfo
+      type: object
+    ManualIssuePrincipal:
+      additionalProperties: false
+      properties:
+        display_name:
+          maxLength: 256
+          minLength: 1
+          title: Display Name
+          type: string
+        id:
+          maxLength: 256
+          minLength: 1
+          title: Id
+          type: string
+      required:
+      - id
+      - display_name
+      title: ManualIssuePrincipal
+      type: object
+    ManualIssueRecord:
+      additionalProperties: false
+      description: Stored source-bound issue and the P09 detail representation.
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            enum:
+            - VIEW_EPISODE
+            - TRIAGE
+            - START_WORK
+            - CREATE_DRAFT
+            - CONTINUE_DRAFT
+            - RESOLVE
+            - PREVIEW_RANGE
+            type: string
+          title: Allowed Actions
+          type: array
+        annotation_task_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Annotation Task Id
+        assignee:
+          anyOf:
+          - $ref: '#/components/schemas/ManualIssuePrincipal'
+          - type: 'null'
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/ManualIssueBlockedReason'
+          title: Blocked Reasons
+          type: array
+        calibration_set_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Calibration Set Id
+        context_status:
+          const: VALID
+          default: VALID
+          title: Context Status
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        discovery_source:
+          default: DATA_VIEWER
+          enum:
+          - DATA_VIEWER
+          - ANNOTATOR
+          - REVIEWER
+          title: Discovery Source
+          type: string
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        episode_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Revision Id
+          type: string
+        episode_stream_id:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Episode Stream Id
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          title: Etag
+          type: string
+        id:
+          pattern: ^issue_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        issue_type:
+          enum:
+          - POSE_JITTER
+          - TIMESTAMP_DRIFT
+          - MISSING_FRAME
+          - STREAM_GAP
+          - CALIBRATION_MISMATCH
+          - INVALID_MASK
+          - OTHER
+          title: Issue Type
+          type: string
+        note:
+          maxLength: 8192
+          title: Note
+          type: string
+        origin_dataset_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Origin Dataset Version Id
+          type: string
+        related_drafts:
+          default: []
+          items:
+            $ref: '#/components/schemas/ManualIssueDraftRef'
+          title: Related Drafts
+          type: array
+        resolution_note:
+          anyOf:
+          - maxLength: 4096
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Resolution Note
+        resolution_version:
+          anyOf:
+          - $ref: '#/components/schemas/ManualIssueResolutionVersion'
+          - type: 'null'
+        resolved_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Resolved At
+        resolved_by:
+          anyOf:
+          - $ref: '#/components/schemas/ManualIssuePrincipal'
+          - type: 'null'
+        robot_model_version_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Model Version Id
+        schema_snapshot_id:
+          maxLength: 256
+          minLength: 1
+          title: Schema Snapshot Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/ManualIssueScope'
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+        status:
+          enum:
+          - OPEN
+          - IN_PROGRESS
+          - RESOLVED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - etag
+      - scope
+      - dataset_id
+      - origin_dataset_version_id
+      - episode_id
+      - episode_revision_id
+      - episode_stream_id
+      - schema_snapshot_id
+      - start_ns
+      - end_ns
+      - issue_type
+      - severity
+      - status
+      - note
+      - created_at
+      - updated_at
+      title: ManualIssueRecord
+      type: object
+    ManualIssueResolutionVersion:
+      additionalProperties: false
+      properties:
+        lineage_depth:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Lineage Depth
+          type: string
+        producer_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Producer Draft Id
+          type: string
+        resolved_at:
+          format: date-time
+          title: Resolved At
+          type: string
+        root_issue_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Root Issue Draft Id
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - version_id
+      - producer_draft_id
+      - root_issue_draft_id
+      - lineage_depth
+      - resolved_at
+      title: ManualIssueResolutionVersion
+      type: object
+    ManualIssueScope:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          title: Organization Id
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 64
+          minLength: 1
+          title: Region Code
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - region_code
+      title: ManualIssueScope
+      type: object
+    ResolveManualIssueCommand:
+      additionalProperties: false
+      properties:
+        resolution_note:
+          maxLength: 4096
+          minLength: 1
+          title: Resolution Note
+          type: string
+        resolution_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Resolution Version Id
+          type: string
+      required:
+      - resolution_version_id
+      - resolution_note
+      title: ResolveManualIssueCommand
+      type: object
+    TriageManualIssueCommand:
+      additionalProperties: false
+      properties:
+        assignee_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Assignee Id
+        reason:
+          maxLength: 4096
+          minLength: 1
+          title: Reason
+          type: string
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        target_status:
+          enum:
+          - OPEN
+          - IN_PROGRESS
+          title: Target Status
+          type: string
+      required:
+      - target_status
+      - severity
+      - reason
+      title: TriageManualIssueCommand
+      type: object
+info:
+  title: HC P09 ManualIssue contract
+  version: '2026-08-19'
+openapi: 3.1.0
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues:
+    get:
+      operationId: listManualIssues
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: dataset_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Dataset Id
+      - in: query
+        name: version_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Version Id
+      - in: query
+        name: episode_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Episode Id
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - OPEN
+              - IN_PROGRESS
+              - RESOLVED
+              type: string
+            type: array
+          - type: 'null'
+          title: Status
+      - in: query
+        name: issue_type
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - POSE_JITTER
+              - TIMESTAMP_DRIFT
+              - MISSING_FRAME
+              - STREAM_GAP
+              - CALIBRATION_MISMATCH
+              - INVALID_MASK
+              - OTHER
+              type: string
+            type: array
+          - type: 'null'
+          title: Issue Type
+      - in: query
+        name: severity
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - LOW
+              - MEDIUM
+              - HIGH
+              - CRITICAL
+              type: string
+            type: array
+          - type: 'null'
+          title: Severity
+      - in: query
+        name: discovery_source
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - DATA_VIEWER
+              - ANNOTATOR
+              - REVIEWER
+              type: string
+            type: array
+          - type: 'null'
+          title: Discovery Source
+      - in: query
+        name: assignee_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Assignee Id
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: updated_at:desc,id:desc
+          enum:
+          - updated_at:desc,id:desc
+          - updated_at:asc,id:asc
+          - severity:desc,updated_at:desc,id:desc
+          - created_at:desc,id:desc
+          title: Sort
+          type: string
+      - in: query
+        name: after
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: After
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 16384
+            minLength: 16
+            type: string
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssueListEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Manual Issues
+      tags:
+      - manual-cleaning
+    post:
+      operationId: createManualIssue
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateManualIssueCommand'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssueDetailEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Manual Issue
+      tags:
+      - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:
+    get:
+      operationId: getManualIssue
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: issue_id
+        required: true
+        schema:
+          title: Issue Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssueDetailEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Manual Issue
+      tags:
+      - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}/cleaning-drafts:
+    post:
+      operationId: createCleaningDraftFromManualIssue
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: issue_id
+        required: true
+        schema:
+          title: Issue Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDraftFromIssueCommand'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssueCreateDraftEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Cleaning Draft From Manual Issue
+      tags:
+      - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:resolve:
+    post:
+      operationId: resolveManualIssue
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: issue_id
+        required: true
+        schema:
+          title: Issue Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveManualIssueCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssueDetailEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Resolve Manual Issue
+      tags:
+      - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:triage:
+    post:
+      operationId: triageManualIssue
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: issue_id
+        required: true
+        schema:
+          title: Issue Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      - in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriageManualIssueCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssueDetailEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Triage Manual Issue
+      tags:
+      - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues:page:
+    get:
+      operationId: getManualIssuesPage
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: dataset_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Dataset Id
+      - in: query
+        name: version_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Version Id
+      - in: query
+        name: episode_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Episode Id
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - OPEN
+              - IN_PROGRESS
+              - RESOLVED
+              type: string
+            type: array
+          - type: 'null'
+          title: Status
+      - in: query
+        name: issue_type
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - POSE_JITTER
+              - TIMESTAMP_DRIFT
+              - MISSING_FRAME
+              - STREAM_GAP
+              - CALIBRATION_MISMATCH
+              - INVALID_MASK
+              - OTHER
+              type: string
+            type: array
+          - type: 'null'
+          title: Issue Type
+      - in: query
+        name: severity
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - LOW
+              - MEDIUM
+              - HIGH
+              - CRITICAL
+              type: string
+            type: array
+          - type: 'null'
+          title: Severity
+      - in: query
+        name: discovery_source
+        required: false
+        schema:
+          anyOf:
+          - items:
+              enum:
+              - DATA_VIEWER
+              - ANNOTATOR
+              - REVIEWER
+              type: string
+            type: array
+          - type: 'null'
+          title: Discovery Source
+      - in: query
+        name: assignee_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Assignee Id
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualIssuePageEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The ManualIssue request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Manual Issues Page
+      tags:
+      - manual-cleaning

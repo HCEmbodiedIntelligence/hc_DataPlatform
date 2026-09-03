@@ -1,0 +1,692 @@
+.page {
+  width: 100%;
+  max-width: 1540px;
+  min-height: calc(100vh - 68px);
+  margin: 0 auto;
+  color: var(--hc-color-text, #171a2a);
+}
+
+.page :global([data-layout="standard-page"]) {
+  gap: 16px;
+}
+
+.page :global([class*="pageTitle"]) {
+  margin-top: 2px;
+  font-size: clamp(1.75rem, 1.55rem + 0.45vw, 2.1rem);
+  font-weight: 760;
+  line-height: 1.16;
+}
+
+.page :global([class*="contentRegion"]) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.sourceCard,
+.tasksCard {
+  min-width: 0;
+  overflow: hidden;
+  border-color: var(--hc-color-border, #d9ddea);
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgb(31 42 76 / 7%);
+}
+
+.sourceCard :global(.ant-card-head),
+.tasksCard :global(.ant-card-head) {
+  min-height: 52px;
+  padding: 0 18px;
+  border-bottom-color: var(--hc-color-border-subtle, #e7e9f2);
+  background: #fff;
+}
+
+.sourceCard :global(.ant-card-body),
+.tasksCard :global(.ant-card-body) {
+  padding: 0;
+}
+
+.cardTitle {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  color: var(--hc-color-text, #171a2a);
+  font-size: 15px;
+  font-weight: 720;
+}
+
+.cardTitle svg {
+  color: var(--hc-color-primary, #4c57c6);
+}
+
+.selectionCount {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.filterSection,
+.exportSettings {
+  padding: 15px 18px 16px;
+}
+
+.filterSection {
+  border-bottom: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+  background: #fbfcfe;
+}
+
+.sectionHeader {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sectionHeader > div {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.sectionHeader > div > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.sectionHeader strong,
+.sectionHeader small {
+  display: block;
+}
+
+.sectionHeader strong {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.sectionHeader small {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 10px;
+}
+
+.stepBadge {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  color: #fff;
+  border-radius: 8px;
+  background: var(--hc-color-primary, #4c57c6);
+  font-size: 11px;
+  font-weight: 750;
+  place-items: center;
+}
+
+.sectionHeader :global(.ant-btn) {
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.filterField,
+.taskToolbar > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.filterField label,
+.taskToolbar label {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.filterField :global(.ant-select),
+.taskToolbar :global(.ant-select) {
+  width: 100%;
+}
+
+.filterField :global(.ant-select-selector),
+.taskToolbar :global(.ant-input-affix-wrapper),
+.taskToolbar :global(.ant-select-selector) {
+  min-height: 40px !important;
+  border-radius: 9px !important;
+}
+
+.filterField :global(.ant-select-selection-overflow) {
+  flex-wrap: nowrap;
+}
+
+.filterField :global(.ant-select-selection-item) {
+  max-width: 150px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.filterField :global(.ant-select-focused .ant-select-selector) {
+  outline: 2px solid var(--hc-color-focus, #5965d8);
+  outline-offset: 1px;
+}
+
+.scopeNote {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) max-content;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 18px;
+  padding: 10px 12px;
+  color: #344065;
+  border: 1px solid #dce3f6;
+  border-radius: 10px;
+  background: #f7f9ff;
+}
+
+.scopeNote > svg {
+  color: var(--hc-color-primary, #4c57c6);
+}
+
+.scopeNote > span:not(.episodeRule) {
+  display: grid;
+  gap: 2px;
+}
+
+.scopeNote strong {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.scopeNote small {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.episodeRule {
+  padding: 5px 8px;
+  color: #35409a;
+  border: 1px solid #d4d9f5;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sourceAlert {
+  margin: 0 18px 12px;
+}
+
+.sourceTable :global(.ant-table),
+.taskTable :global(.ant-table) {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 12px;
+}
+
+.sourceTable :global(.ant-table-thead > tr > th),
+.taskTable :global(.ant-table-thead > tr > th) {
+  color: var(--hc-color-text-muted, #676b80);
+  background: #f7f8fb;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sourceTable :global(.ant-table-tbody > tr > td),
+.taskTable :global(.ant-table-tbody > tr > td) {
+  vertical-align: middle;
+}
+
+.sourceTable :global(.ant-table-tbody > tr:hover > td),
+.taskTable :global(.ant-table-tbody > tr:hover > td) {
+  background: #fafbff;
+}
+
+.sourceTable :global(.ant-checkbox-wrapper),
+.sourceTable :global(.ant-checkbox) {
+  cursor: pointer;
+}
+
+.primaryCell,
+.versionCell {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.primaryCell strong,
+.primaryCell span,
+.primaryCell code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.primaryCell strong {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 12px;
+}
+
+.primaryCell span,
+.primaryCell code {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.versionCell {
+  grid-template-columns: minmax(0, auto) max-content;
+  gap: 8px;
+  align-items: center;
+  justify-content: start;
+}
+
+.unavailableRow {
+  opacity: 0.62;
+}
+
+.exportSettings {
+  border-top: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+  background: #fbfcfe;
+}
+
+.exportComposer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.78fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.formatFieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.formatFieldset legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.formatOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  height: 100%;
+}
+
+.formatOptions > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  min-height: 68px;
+  padding: 10px 11px;
+  border: 1px solid var(--hc-color-border, #d9ddea);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.formatOptions > label:hover,
+.formatOptions > label:focus-within {
+  border-color: var(--hc-color-primary, #4c57c6);
+}
+
+.formatOptions > label:focus-within {
+  outline: 2px solid var(--hc-color-focus, #5965d8);
+  outline-offset: 2px;
+}
+
+.formatOptions > label[data-selected="true"] {
+  border-color: var(--hc-color-primary, #4c57c6);
+  background: #f5f6ff;
+  box-shadow: inset 0 0 0 1px var(--hc-color-primary, #4c57c6);
+}
+
+.formatOptions :global(.ant-checkbox-wrapper) {
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+}
+
+.formatOptions > label > span:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.formatOptions strong,
+.formatOptions small {
+  display: block;
+}
+
+.formatOptions strong {
+  font-size: 12px;
+}
+
+.formatOptions small {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.batchSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #dce2f1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.summaryStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(64px, 1fr));
+  min-width: 0;
+}
+
+.summaryStats > span {
+  display: grid;
+  gap: 2px;
+  padding: 2px 10px;
+  border-right: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+}
+
+.summaryStats > span:first-child {
+  padding-left: 0;
+}
+
+.summaryStats > span:last-child {
+  border-right: 0;
+}
+
+.summaryStats small {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 9px;
+}
+
+.summaryStats strong {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.batchAction {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
+}
+
+.batchAction > small {
+  max-width: 31ch;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 9px;
+  text-align: right;
+}
+
+.primaryAction:global(.ant-btn) {
+  min-width: 170px;
+  min-height: 38px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.composerAlert {
+  margin-top: 10px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+}
+
+.metrics > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 52px;
+  padding: 9px 18px;
+  border-right: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+}
+
+.metrics > div:last-child {
+  border-right: 0;
+}
+
+.metrics span {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 11px;
+}
+
+.metrics strong {
+  color: var(--hc-color-text, #171a2a);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.taskToolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 180px;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+  background: #fbfcfe;
+}
+
+.taskAlert {
+  margin: 12px 18px 0;
+}
+
+.compactProgress {
+  display: grid;
+  width: 132px;
+  gap: 2px;
+}
+
+.compactProgress span {
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobId {
+  display: block;
+  max-width: 190px;
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskTable :global(.ant-btn) {
+  min-height: 32px;
+  border-radius: 8px;
+}
+
+.taskEmpty {
+  display: grid;
+  min-height: 210px;
+  padding: 34px 24px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.taskEmpty > span {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 11px;
+  color: #5965d8;
+  border: 1px solid #dfe3f8;
+  border-radius: 16px;
+  background: #f1f3ff;
+  place-items: center;
+}
+
+.taskEmpty h3:global(.ant-typography) {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.taskEmpty p:global(.ant-typography) {
+  max-width: 48ch;
+  margin: 0;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .filterGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .exportComposer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px;
+  }
+
+  .selectionCount {
+    display: none;
+  }
+
+  .scopeNote {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .episodeRule {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .formatOptions,
+  .taskToolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .batchSummary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .batchAction {
+    justify-items: stretch;
+  }
+
+  .batchAction > small {
+    max-width: none;
+    text-align: left;
+  }
+
+  .primaryAction:global(.ant-btn) {
+    width: 100%;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metrics > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .metrics > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--hc-color-border-subtle, #e7e9f2);
+  }
+}
+
+@media (max-width: 520px) {
+  .page {
+    padding: 12px;
+  }
+
+  .sourceCard :global(.ant-card-head),
+  .tasksCard :global(.ant-card-head) {
+    padding: 0 14px;
+  }
+
+  .filterSection,
+  .exportSettings {
+    padding: 13px 14px;
+  }
+
+  .filterGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scopeNote {
+    margin: 10px 14px;
+  }
+
+  .sourceAlert,
+  .taskAlert {
+    margin-right: 14px;
+    margin-left: 14px;
+  }
+
+  .summaryStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 9px;
+  }
+
+  .summaryStats > span:nth-child(2) {
+    border-right: 0;
+  }
+
+  .summaryStats > span:nth-child(3) {
+    padding-left: 0;
+  }
+
+  .taskToolbar {
+    padding: 12px 14px;
+  }
+
+  .sourceTable :global(.ant-table-thead > tr > th),
+  .sourceTable :global(.ant-table-tbody > tr > td),
+  .taskTable :global(.ant-table-thead > tr > th),
+  .taskTable :global(.ant-table-tbody > tr > td) {
+    padding: 9px 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page *,
+  .page *::before,
+  .page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

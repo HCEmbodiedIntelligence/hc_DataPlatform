@@ -1,0 +1,2909 @@
+components:
+  schemas:
+    CleaningAsyncJob:
+      additionalProperties: false
+      properties:
+        cancellable:
+          title: Cancellable
+          type: boolean
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        error:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Error
+        etag:
+          maxLength: 256
+          minLength: 3
+          pattern: ^"[^"\r\n]+"$
+          title: Etag
+          type: string
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        finished_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Finished At
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        kind:
+          enum:
+          - CLEANING_PREVIEW
+          - CLEANING_COMMIT
+          title: Kind
+          type: string
+        progress:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Progress
+        resource_ref:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: 'null'
+          title: Resource Ref
+          type: object
+        result_ref:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Result Ref
+        retry_of_job_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Retry Of Job Id
+        scope:
+          $ref: '#/components/schemas/CleaningWorkbenchScope'
+        stage:
+          maxLength: 128
+          minLength: 1
+          title: Stage
+          type: string
+        started_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Started At
+        status:
+          enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLING
+          - CANCELLED
+          - EXPIRED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - job_id
+      - kind
+      - status
+      - stage
+      - scope
+      - resource_ref
+      - created_at
+      - updated_at
+      - etag
+      - cancellable
+      title: CleaningAsyncJob
+      type: object
+    CleaningDraft:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            enum:
+            - VIEW
+            - ACQUIRE_LEASE
+            - SAVE_EDL
+            - CREATE_PREVIEW
+            - COMMIT
+            - OPEN_REVIEW
+            - OPEN_SUCCESSOR
+            type: string
+          title: Allowed Actions
+          type: array
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        base_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Version Id
+          type: string
+        commit_status:
+          enum:
+          - NONE
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          title: Commit Status
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          pattern: ^"[^"\r\n]+"$
+          title: Etag
+          type: string
+        manual_issue_count:
+          enum:
+          - '0'
+          - '1'
+          title: Manual Issue Count
+          type: string
+        origin:
+          discriminator:
+            mapping:
+              ISSUE_DERIVED: '#/components/schemas/IssueDerivedOrigin'
+              REVIEW_RETURN: '#/components/schemas/ReviewReturnOrigin'
+            propertyName: origin_type
+          oneOf:
+          - $ref: '#/components/schemas/IssueDerivedOrigin'
+          - $ref: '#/components/schemas/ReviewReturnOrigin'
+          title: Origin
+        output_version_status:
+          anyOf:
+          - enum:
+            - REVIEWING
+            - READY
+            - RETURNED
+            type: string
+          - type: 'null'
+          title: Output Version Status
+        preview_status:
+          enum:
+          - NONE
+          - QUEUED
+          - RUNNING
+          - READY
+          - FAILED
+          - EXPIRED
+          - STALE
+          title: Preview Status
+          type: string
+        review_decision_id:
+          anyOf:
+          - pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Review Decision Id
+        review_finding_count:
+          default: '0'
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Review Finding Count
+          type: string
+        review_summary:
+          anyOf:
+          - $ref: '#/components/schemas/ReviewReturnSummary'
+          - type: 'null'
+        status:
+          enum:
+          - EDITING
+          - COMMITTED
+          title: Status
+          type: string
+        successor_draft_id:
+          anyOf:
+          - pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Successor Draft Id
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - draft_id
+      - etag
+      - status
+      - origin
+      - base_version_id
+      - base_revision_id
+      - episode_id
+      - manual_issue_count
+      - preview_status
+      - commit_status
+      - created_at
+      - updated_at
+      title: CleaningDraft
+      type: object
+    CleaningDraftBase:
+      additionalProperties: false
+      properties:
+        calibration_set_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Calibration Set Id
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Revision Id
+          type: string
+        robot_model_version_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Robot Model Version Id
+        schema_snapshot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Schema Snapshot Id
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - dataset_id
+      - version_id
+      - episode_id
+      - revision_id
+      - schema_snapshot_id
+      title: CleaningDraftBase
+      type: object
+    CleaningDraftBootstrapData:
+      additionalProperties: false
+      properties:
+        active_commit:
+          anyOf:
+          - discriminator:
+              mapping:
+                FAILED: '#/components/schemas/CommitFailed'
+                QUEUED: '#/components/schemas/CommitQueued'
+                SUCCEEDED: '#/components/schemas/CommitSucceeded'
+              propertyName: status
+            oneOf:
+            - $ref: '#/components/schemas/CommitQueued'
+            - $ref: '#/components/schemas/CommitSucceeded'
+            - $ref: '#/components/schemas/CommitFailed'
+          - type: 'null'
+          title: Active Commit
+        active_preview:
+          anyOf:
+          - discriminator:
+              mapping:
+                EXPIRED: '#/components/schemas/PreviewExpiredOrStale'
+                FAILED: '#/components/schemas/PreviewFailed'
+                QUEUED: '#/components/schemas/PreviewQueued'
+                READY: '#/components/schemas/PreviewReady'
+                RUNNING: '#/components/schemas/PreviewRunning'
+                STALE: '#/components/schemas/PreviewExpiredOrStale'
+              propertyName: status
+            oneOf:
+            - $ref: '#/components/schemas/PreviewQueued'
+            - $ref: '#/components/schemas/PreviewRunning'
+            - $ref: '#/components/schemas/PreviewReady'
+            - $ref: '#/components/schemas/PreviewFailed'
+            - $ref: '#/components/schemas/PreviewExpiredOrStale'
+          - type: 'null'
+          title: Active Preview
+        allowed_actions:
+          default: []
+          items:
+            enum:
+            - VIEW
+            - ACQUIRE_LEASE
+            - SAVE_EDL
+            - CREATE_PREVIEW
+            - COMMIT
+            - OPEN_REVIEW
+            - OPEN_SUCCESSOR
+            type: string
+          title: Allowed Actions
+          type: array
+        base:
+          $ref: '#/components/schemas/CleaningDraftBase'
+        draft:
+          $ref: '#/components/schemas/CleaningDraft'
+        edl:
+          $ref: '#/components/schemas/CleaningEdl'
+        lease:
+          anyOf:
+          - $ref: '#/components/schemas/CooperativeLease'
+          - type: 'null'
+        origin:
+          discriminator:
+            mapping:
+              ISSUE_DERIVED: '#/components/schemas/IssueDerivedOrigin'
+              REVIEW_RETURN: '#/components/schemas/ReviewReturnOrigin'
+            propertyName: origin_type
+          oneOf:
+          - $ref: '#/components/schemas/IssueDerivedOrigin'
+          - $ref: '#/components/schemas/ReviewReturnOrigin'
+          title: Origin
+        review_feedback:
+          anyOf:
+          - $ref: '#/components/schemas/ReviewReturnFeedback'
+          - type: 'null'
+        streams:
+          items:
+            $ref: '#/components/schemas/CleaningStream'
+          minItems: 1
+          title: Streams
+          type: array
+        successor_composition:
+          anyOf:
+          - $ref: '#/components/schemas/ReviewSuccessorComposition'
+          - type: 'null'
+      required:
+      - draft
+      - origin
+      - base
+      - streams
+      - edl
+      title: CleaningDraftBootstrapData
+      type: object
+    CleaningDraftBootstrapEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/CleaningDraftBootstrapData'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CleaningWorkbenchScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: CleaningDraftBootstrapEnvelope
+      type: object
+    CleaningEdl:
+      additionalProperties: false
+      properties:
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          pattern: ^"[^"\r\n]+"$
+          title: Etag
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        operations:
+          default: []
+          items:
+            discriminator:
+              mapping:
+                DISABLE_CHANNEL: '#/components/schemas/DisableChannelOperation'
+                EXCLUDE_RANGE: '#/components/schemas/ExcludeRangeOperation'
+                INVALIDATE_EPISODE: '#/components/schemas/InvalidateEpisodeOperation'
+                INVALID_MASK: '#/components/schemas/InvalidMaskOperation'
+                SET_METADATA: '#/components/schemas/SetMetadataOperation'
+                SPLIT: '#/components/schemas/SplitOperation'
+                TIME_OFFSET: '#/components/schemas/TimeOffsetOperation'
+                TRIM: '#/components/schemas/TrimOperation'
+              propertyName: type
+            oneOf:
+            - $ref: '#/components/schemas/TrimOperation'
+            - $ref: '#/components/schemas/ExcludeRangeOperation'
+            - $ref: '#/components/schemas/SplitOperation'
+            - $ref: '#/components/schemas/TimeOffsetOperation'
+            - $ref: '#/components/schemas/DisableChannelOperation'
+            - $ref: '#/components/schemas/SetMetadataOperation'
+            - $ref: '#/components/schemas/InvalidateEpisodeOperation'
+            - $ref: '#/components/schemas/InvalidMaskOperation'
+          title: Operations
+          type: array
+        summary:
+          $ref: '#/components/schemas/CleaningSummary'
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        validation:
+          $ref: '#/components/schemas/CleaningValidation'
+      required:
+      - edl_revision
+      - etag
+      - operation_hash
+      - validation
+      - summary
+      - updated_at
+      title: CleaningEdl
+      type: object
+    CleaningOutputRevision:
+      additionalProperties: false
+      properties:
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        episode_stream_ids:
+          items:
+            pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          minItems: 1
+          title: Episode Stream Ids
+          type: array
+        member_mode:
+          enum:
+          - EDIT_RESULT
+          - CARRY_FORWARD
+          title: Member Mode
+          type: string
+        ordinal:
+          minimum: 0.0
+          title: Ordinal
+          type: integer
+        revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Revision Id
+          type: string
+        source_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Source Revision Id
+          type: string
+      required:
+      - revision_id
+      - ordinal
+      - episode_id
+      - episode_stream_ids
+      - source_revision_id
+      - member_mode
+      title: CleaningOutputRevision
+      type: object
+    CleaningOutputVersion:
+      additionalProperties: false
+      properties:
+        commit_id:
+          pattern: ^commit_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Commit Id
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        status:
+          enum:
+          - REVIEWING
+          - READY
+          - RETURNED
+          title: Status
+          type: string
+        version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Version Id
+          type: string
+      required:
+      - version_id
+      - status
+      - draft_id
+      - commit_id
+      title: CleaningOutputVersion
+      type: object
+    CleaningStream:
+      additionalProperties: false
+      properties:
+        channel_path:
+          maxLength: 512
+          minLength: 1
+          title: Channel Path
+          type: string
+        duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Duration Ns
+          type: string
+        kind:
+          maxLength: 64
+          minLength: 1
+          title: Kind
+          type: string
+        stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Stream Id
+          type: string
+      required:
+      - stream_id
+      - channel_path
+      - kind
+      - duration_ns
+      title: CleaningStream
+      type: object
+    CleaningSummary:
+      additionalProperties: false
+      properties:
+        calculated_at:
+          format: date-time
+          title: Calculated At
+          type: string
+        disabled_stream_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Disabled Stream Count
+          type: string
+        estimate_status:
+          enum:
+          - ESTIMATED
+          - CONFIRMED
+          - COMPUTING
+          - FAILED
+          title: Estimate Status
+          type: string
+        excluded_union_duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Excluded Union Duration Ns
+          type: string
+        invalid_mask_union_duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Invalid Mask Union Duration Ns
+          type: string
+        new_derived_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: New Derived Bytes
+          type: string
+        output_duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Output Duration Ns
+          type: string
+        output_segment_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Output Segment Count
+          type: string
+        requires_materialization:
+          title: Requires Materialization
+          type: boolean
+        reuse_rate:
+          pattern: ^(0|1|0\.[0-9]+)$
+          title: Reuse Rate
+          type: string
+        reused_source_bytes:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Reused Source Bytes
+          type: string
+        source_duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Source Duration Ns
+          type: string
+        trimmed_domain_duration_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Trimmed Domain Duration Ns
+          type: string
+      required:
+      - source_duration_ns
+      - trimmed_domain_duration_ns
+      - excluded_union_duration_ns
+      - invalid_mask_union_duration_ns
+      - output_duration_ns
+      - output_segment_count
+      - disabled_stream_count
+      - reused_source_bytes
+      - new_derived_bytes
+      - reuse_rate
+      - requires_materialization
+      - estimate_status
+      - calculated_at
+      title: CleaningSummary
+      type: object
+    CleaningValidation:
+      additionalProperties: false
+      properties:
+        issues:
+          default: []
+          items:
+            $ref: '#/components/schemas/CleaningValidationIssue'
+          title: Issues
+          type: array
+        status:
+          enum:
+          - PASSED
+          - FAILED
+          title: Status
+          type: string
+        validated_edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Validated Edl Revision
+          type: string
+        validated_operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Validated Operation Hash
+          type: string
+      required:
+      - status
+      - validated_edl_revision
+      - validated_operation_hash
+      title: CleaningValidation
+      type: object
+    CleaningValidationIssue:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z0-9_:-]+$
+          title: Code
+          type: string
+        json_pointer:
+          anyOf:
+          - pattern: ^/[^\s]*$
+            type: string
+          - type: 'null'
+          title: Json Pointer
+        message:
+          maxLength: 2048
+          minLength: 1
+          title: Message
+          type: string
+        operation_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+            type: string
+          - type: 'null'
+          title: Operation Id
+        severity:
+          enum:
+          - BLOCKER
+          - WARNING
+          - INFO
+          title: Severity
+          type: string
+      required:
+      - code
+      - severity
+      - message
+      title: CleaningValidationIssue
+      type: object
+    CleaningWorkbenchScope:
+      additionalProperties: false
+      properties:
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Organization Id
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          title: Region Code
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - region_code
+      title: CleaningWorkbenchScope
+      type: object
+    CommitAcceptedEnvelope:
+      additionalProperties: false
+      properties:
+        commit:
+          discriminator:
+            mapping:
+              FAILED: '#/components/schemas/CommitFailed'
+              QUEUED: '#/components/schemas/CommitQueued'
+              SUCCEEDED: '#/components/schemas/CommitSucceeded'
+            propertyName: status
+          oneOf:
+          - $ref: '#/components/schemas/CommitQueued'
+          - $ref: '#/components/schemas/CommitSucceeded'
+          - $ref: '#/components/schemas/CommitFailed'
+          title: Commit
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        job:
+          $ref: '#/components/schemas/CleaningAsyncJob'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CleaningWorkbenchScope'
+      required:
+      - commit
+      - job
+      - scope
+      - request_id
+      title: CommitAcceptedEnvelope
+      type: object
+    CommitAcknowledgement:
+      additionalProperties: false
+      properties:
+        compared_preview:
+          const: true
+          title: Compared Preview
+          type: boolean
+        reviewed_summary:
+          const: true
+          title: Reviewed Summary
+          type: boolean
+      required:
+      - reviewed_summary
+      - compared_preview
+      title: CommitAcknowledgement
+      type: object
+    CommitCleaningDraftCommand:
+      additionalProperties: false
+      properties:
+        acknowledgement:
+          $ref: '#/components/schemas/CommitAcknowledgement'
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        successor_composition_hash:
+          anyOf:
+          - pattern: ^sha256:[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Successor Composition Hash
+      required:
+      - preview_id
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      - acknowledgement
+      title: CommitCleaningDraftCommand
+      type: object
+    CommitFailed:
+      additionalProperties: false
+      properties:
+        commit_id:
+          pattern: ^commit_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Commit Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        error_ref:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Error Ref
+          type: string
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        materialization_status:
+          enum:
+          - NOT_STARTED
+          - FAILED
+          title: Materialization Status
+          type: string
+        output_revisions:
+          default: []
+          maxItems: 0
+          minItems: 0
+          title: Output Revisions
+          type: array
+        output_version:
+          title: Output Version
+          type: 'null'
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          const: FAILED
+          default: FAILED
+          title: Status
+          type: string
+        successor_composition_hash:
+          anyOf:
+          - pattern: ^sha256:[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Successor Composition Hash
+      required:
+      - commit_id
+      - draft_id
+      - preview_id
+      - job_id
+      - created_at
+      - error_ref
+      - materialization_status
+      title: CommitFailed
+      type: object
+    CommitQueued:
+      additionalProperties: false
+      properties:
+        commit_id:
+          pattern: ^commit_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Commit Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        materialization_status:
+          enum:
+          - NOT_STARTED
+          - RUNNING
+          title: Materialization Status
+          type: string
+        output_revisions:
+          default: []
+          maxItems: 0
+          minItems: 0
+          title: Output Revisions
+          type: array
+        output_version:
+          title: Output Version
+          type: 'null'
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          const: QUEUED
+          default: QUEUED
+          title: Status
+          type: string
+        successor_composition_hash:
+          anyOf:
+          - pattern: ^sha256:[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Successor Composition Hash
+      required:
+      - commit_id
+      - draft_id
+      - preview_id
+      - job_id
+      - created_at
+      - materialization_status
+      title: CommitQueued
+      type: object
+    CommitSucceeded:
+      additionalProperties: false
+      properties:
+        commit_id:
+          pattern: ^commit_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Commit Id
+          type: string
+        completed_at:
+          format: date-time
+          title: Completed At
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        materialization_status:
+          enum:
+          - NOT_STARTED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          title: Materialization Status
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        output_revisions:
+          items:
+            $ref: '#/components/schemas/CleaningOutputRevision'
+          minItems: 1
+          title: Output Revisions
+          type: array
+        output_version:
+          $ref: '#/components/schemas/CleaningOutputVersion'
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          const: SUCCEEDED
+          default: SUCCEEDED
+          title: Status
+          type: string
+        successor_composition_hash:
+          anyOf:
+          - pattern: ^sha256:[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Successor Composition Hash
+      required:
+      - commit_id
+      - draft_id
+      - preview_id
+      - job_id
+      - created_at
+      - completed_at
+      - output_revisions
+      - output_version
+      - materialization_status
+      - operation_hash
+      title: CommitSucceeded
+      type: object
+    CooperativeLease:
+      additionalProperties: false
+      properties:
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        etag:
+          maxLength: 256
+          minLength: 3
+          pattern: ^"[^"\r\n]+"$
+          title: Etag
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        holder_summary:
+          title: Holder Summary
+          type: 'null'
+        lease_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Lease Revision
+          type: string
+        read_only:
+          title: Read Only
+          type: boolean
+        session_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Session Id
+          type: string
+      required:
+      - session_id
+      - draft_id
+      - etag
+      - lease_revision
+      - expires_at
+      - read_only
+      title: CooperativeLease
+      type: object
+    CreateCleaningPreviewCommand:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+      required:
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      title: CreateCleaningPreviewCommand
+      type: object
+    DisableChannelOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        episode_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Stream Id
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        type:
+          const: DISABLE_CHANNEL
+          default: DISABLE_CHANNEL
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - episode_stream_id
+      title: DisableChannelOperation
+      type: object
+    ExcludeRangeOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        reason:
+          anyOf:
+          - maxLength: 2048
+            type: string
+          - type: 'null'
+          title: Reason
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+        type:
+          const: EXCLUDE_RANGE
+          default: EXCLUDE_RANGE
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - start_ns
+      - end_ns
+      title: ExcludeRangeOperation
+      type: object
+    ImmutableReviewDecision:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        decision:
+          const: RETURNED
+          default: RETURNED
+          title: Decision
+          type: string
+        id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        immutable:
+          const: true
+          default: true
+          title: Immutable
+          type: boolean
+        output_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Version Id
+          type: string
+      required:
+      - id
+      - output_version_id
+      - created_at
+      title: ImmutableReviewDecision
+      type: object
+    InvalidMaskOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_stream_id:
+          anyOf:
+          - pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Episode Stream Id
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        reason_code:
+          anyOf:
+          - maxLength: 96
+            type: string
+          - type: 'null'
+          title: Reason Code
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+        type:
+          const: INVALID_MASK
+          default: INVALID_MASK
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - start_ns
+      - end_ns
+      title: InvalidMaskOperation
+      type: object
+    InvalidateEpisodeOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        note:
+          anyOf:
+          - maxLength: 2048
+            type: string
+          - type: 'null'
+          title: Note
+        reason_code:
+          maxLength: 96
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_:-]*$
+          title: Reason Code
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        type:
+          const: INVALIDATE_EPISODE
+          default: INVALIDATE_EPISODE
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - reason_code
+      title: InvalidateEpisodeOperation
+      type: object
+    IssueDerivedContext:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        base_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Version Id
+          type: string
+        dataset_id:
+          pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Dataset Id
+          type: string
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_id:
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+          type: string
+        manual_issue_ids:
+          items:
+            pattern: ^issue_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          maxItems: 1
+          minItems: 1
+          title: Manual Issue Ids
+          type: array
+        schema_version:
+          const: 1
+          default: 1
+          title: Schema Version
+          type: integer
+        selected_channel_path:
+          anyOf:
+          - maxLength: 512
+            type: string
+          - type: 'null'
+          title: Selected Channel Path
+        selected_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Selected Stream Id
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+      required:
+      - dataset_id
+      - base_version_id
+      - episode_id
+      - base_revision_id
+      - selected_stream_id
+      - start_ns
+      - end_ns
+      - manual_issue_ids
+      title: IssueDerivedContext
+      type: object
+    IssueDerivedOrigin:
+      additionalProperties: false
+      properties:
+        manual_issue_context:
+          $ref: '#/components/schemas/IssueDerivedContext'
+        origin_type:
+          const: ISSUE_DERIVED
+          default: ISSUE_DERIVED
+          title: Origin Type
+          type: string
+        review_return_lineage:
+          title: Review Return Lineage
+          type: 'null'
+      required:
+      - manual_issue_context
+      title: IssueDerivedOrigin
+      type: object
+    PreviewAcceptedEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        job:
+          $ref: '#/components/schemas/CleaningAsyncJob'
+        preview:
+          discriminator:
+            mapping:
+              EXPIRED: '#/components/schemas/PreviewExpiredOrStale'
+              FAILED: '#/components/schemas/PreviewFailed'
+              QUEUED: '#/components/schemas/PreviewQueued'
+              READY: '#/components/schemas/PreviewReady'
+              RUNNING: '#/components/schemas/PreviewRunning'
+              STALE: '#/components/schemas/PreviewExpiredOrStale'
+            propertyName: status
+          oneOf:
+          - $ref: '#/components/schemas/PreviewQueued'
+          - $ref: '#/components/schemas/PreviewRunning'
+          - $ref: '#/components/schemas/PreviewReady'
+          - $ref: '#/components/schemas/PreviewFailed'
+          - $ref: '#/components/schemas/PreviewExpiredOrStale'
+          title: Preview
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CleaningWorkbenchScope'
+      required:
+      - preview
+      - job
+      - scope
+      - request_id
+      title: PreviewAcceptedEnvelope
+      type: object
+    PreviewExpiredOrStale:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          enum:
+          - EXPIRED
+          - STALE
+          title: Status
+          type: string
+      required:
+      - preview_id
+      - draft_id
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      - job_id
+      - created_at
+      - status
+      title: PreviewExpiredOrStale
+      type: object
+    PreviewFailed:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        error_ref:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Error Ref
+          type: string
+        expires_at:
+          title: Expires At
+          type: 'null'
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          const: FAILED
+          default: FAILED
+          title: Status
+          type: string
+      required:
+      - preview_id
+      - draft_id
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      - job_id
+      - created_at
+      - error_ref
+      title: PreviewFailed
+      type: object
+    PreviewQueued:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        expires_at:
+          title: Expires At
+          type: 'null'
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          const: QUEUED
+          default: QUEUED
+          title: Status
+          type: string
+      required:
+      - preview_id
+      - draft_id
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      - job_id
+      - created_at
+      title: PreviewQueued
+      type: object
+    PreviewReady:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        source_to_output_map:
+          $ref: '#/components/schemas/SourceToOutputMap'
+        status:
+          const: READY
+          default: READY
+          title: Status
+          type: string
+        summary:
+          $ref: '#/components/schemas/CleaningSummary'
+        validation:
+          $ref: '#/components/schemas/CleaningValidation'
+        viewer_manifest:
+          $ref: '#/components/schemas/ViewerManifest'
+      required:
+      - preview_id
+      - draft_id
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      - job_id
+      - created_at
+      - viewer_manifest
+      - source_to_output_map
+      - validation
+      - summary
+      - expires_at
+      title: PreviewReady
+      type: object
+    PreviewRunning:
+      additionalProperties: false
+      properties:
+        base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Base Revision Id
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Draft Id
+          type: string
+        edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Edl Revision
+          type: string
+        expires_at:
+          title: Expires At
+          type: 'null'
+        job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Job Id
+          type: string
+        operation_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Operation Hash
+          type: string
+        preview_id:
+          pattern: ^preview_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Preview Id
+          type: string
+        status:
+          const: RUNNING
+          default: RUNNING
+          title: Status
+          type: string
+      required:
+      - preview_id
+      - draft_id
+      - base_revision_id
+      - edl_revision
+      - operation_hash
+      - job_id
+      - created_at
+      title: PreviewRunning
+      type: object
+    ReviewFindingProjection:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        episode_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Stream Id
+          type: string
+        finding_type:
+          maxLength: 96
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_:-]*$
+          title: Finding Type
+          type: string
+        id:
+          pattern: ^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Id
+          type: string
+        immutable:
+          const: true
+          default: true
+          title: Immutable
+          type: boolean
+        note:
+          maxLength: 8192
+          minLength: 1
+          title: Note
+          type: string
+        output_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Revision Id
+          type: string
+        severity:
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+          - CRITICAL
+          title: Severity
+          type: string
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+      required:
+      - id
+      - output_revision_id
+      - episode_stream_id
+      - start_ns
+      - end_ns
+      - finding_type
+      - severity
+      - note
+      - created_at
+      title: ReviewFindingProjection
+      type: object
+    ReviewFindingsData:
+      additionalProperties: false
+      properties:
+        feedback:
+          $ref: '#/components/schemas/ReviewReturnFeedback'
+      required:
+      - feedback
+      title: ReviewFindingsData
+      type: object
+    ReviewFindingsEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/ReviewFindingsData'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CleaningWorkbenchScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: ReviewFindingsEnvelope
+      type: object
+    ReviewReturnFeedback:
+      additionalProperties: false
+      properties:
+        findings:
+          items:
+            $ref: '#/components/schemas/ReviewFindingProjection'
+          minItems: 1
+          title: Findings
+          type: array
+        output_version:
+          $ref: '#/components/schemas/CleaningOutputVersion'
+        output_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Version Id
+          type: string
+        output_version_status:
+          const: RETURNED
+          default: RETURNED
+          title: Output Version Status
+          type: string
+        returned_from_review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Review Decision Id
+          type: string
+        returned_from_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Version Id
+          type: string
+        review_decision:
+          $ref: '#/components/schemas/ImmutableReviewDecision'
+        review_finding_ids:
+          items:
+            pattern: ^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          minItems: 1
+          title: Review Finding Ids
+          type: array
+        successor_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Successor Draft Id
+          type: string
+        supersedes_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Supersedes Draft Id
+          type: string
+      required:
+      - review_decision
+      - output_version
+      - output_version_id
+      - findings
+      - review_finding_ids
+      - successor_draft_id
+      - supersedes_draft_id
+      - returned_from_version_id
+      - returned_from_review_decision_id
+      title: ReviewReturnFeedback
+      type: object
+    ReviewReturnLineage:
+      additionalProperties: false
+      properties:
+        lineage_type:
+          const: REVIEW_RETURN
+          default: REVIEW_RETURN
+          title: Lineage Type
+          type: string
+        returned_from_review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Review Decision Id
+          type: string
+        returned_from_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Version Id
+          type: string
+        supersedes_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Supersedes Draft Id
+          type: string
+      required:
+      - supersedes_draft_id
+      - returned_from_version_id
+      - returned_from_review_decision_id
+      title: ReviewReturnLineage
+      type: object
+    ReviewReturnOrigin:
+      additionalProperties: false
+      properties:
+        manual_issue_context:
+          title: Manual Issue Context
+          type: 'null'
+        origin_type:
+          const: REVIEW_RETURN
+          default: REVIEW_RETURN
+          title: Origin Type
+          type: string
+        review_return_lineage:
+          $ref: '#/components/schemas/ReviewReturnLineage'
+      required:
+      - review_return_lineage
+      title: ReviewReturnOrigin
+      type: object
+    ReviewReturnSummary:
+      additionalProperties: false
+      properties:
+        finding_count:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Finding Count
+          type: string
+        output_version_status:
+          const: RETURNED
+          default: RETURNED
+          title: Output Version Status
+          type: string
+        returned_from_review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Review Decision Id
+          type: string
+        returned_from_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Returned From Version Id
+          type: string
+        review_decision_id:
+          pattern: ^review_decision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Review Decision Id
+          type: string
+        review_finding_ids:
+          items:
+            pattern: ^review_finding_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          minItems: 1
+          title: Review Finding Ids
+          type: array
+        successor_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Successor Draft Id
+          type: string
+        supersedes_draft_id:
+          pattern: ^draft_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Supersedes Draft Id
+          type: string
+      required:
+      - review_decision_id
+      - review_finding_ids
+      - finding_count
+      - successor_draft_id
+      - supersedes_draft_id
+      - returned_from_version_id
+      - returned_from_review_decision_id
+      title: ReviewReturnSummary
+      type: object
+    ReviewSuccessorComposition:
+      additionalProperties: false
+      properties:
+        composition_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Composition Hash
+          type: string
+        editable_base_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Editable Base Revision Id
+          type: string
+        members:
+          items:
+            $ref: '#/components/schemas/ReviewSuccessorCompositionMember'
+          minItems: 1
+          title: Members
+          type: array
+        schema_version:
+          const: 1
+          default: 1
+          title: Schema Version
+          type: integer
+        source_version_id:
+          pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Source Version Id
+          type: string
+      required:
+      - source_version_id
+      - editable_base_revision_id
+      - members
+      - composition_hash
+      title: ReviewSuccessorComposition
+      type: object
+    ReviewSuccessorCompositionMember:
+      additionalProperties: false
+      properties:
+        handling:
+          enum:
+          - EDITABLE_BASE
+          - CARRY_FORWARD
+          title: Handling
+          type: string
+        source_ordinal:
+          minimum: 0.0
+          title: Source Ordinal
+          type: integer
+        source_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Source Revision Id
+          type: string
+      required:
+      - source_revision_id
+      - source_ordinal
+      - handling
+      title: ReviewSuccessorCompositionMember
+      type: object
+    SaveCleaningEdlCommand:
+      additionalProperties: false
+      properties:
+        client_mutation_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Client Mutation Id
+          type: string
+        expected_edl_revision:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Expected Edl Revision
+          type: string
+        expected_operation_hash:
+          anyOf:
+          - pattern: ^sha256:[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Expected Operation Hash
+        operations:
+          items:
+            discriminator:
+              mapping:
+                DISABLE_CHANNEL: '#/components/schemas/DisableChannelOperation'
+                EXCLUDE_RANGE: '#/components/schemas/ExcludeRangeOperation'
+                INVALIDATE_EPISODE: '#/components/schemas/InvalidateEpisodeOperation'
+                INVALID_MASK: '#/components/schemas/InvalidMaskOperation'
+                SET_METADATA: '#/components/schemas/SetMetadataOperation'
+                SPLIT: '#/components/schemas/SplitOperation'
+                TIME_OFFSET: '#/components/schemas/TimeOffsetOperation'
+                TRIM: '#/components/schemas/TrimOperation'
+              propertyName: type
+            oneOf:
+            - $ref: '#/components/schemas/TrimOperation'
+            - $ref: '#/components/schemas/ExcludeRangeOperation'
+            - $ref: '#/components/schemas/SplitOperation'
+            - $ref: '#/components/schemas/TimeOffsetOperation'
+            - $ref: '#/components/schemas/DisableChannelOperation'
+            - $ref: '#/components/schemas/SetMetadataOperation'
+            - $ref: '#/components/schemas/InvalidateEpisodeOperation'
+            - $ref: '#/components/schemas/InvalidMaskOperation'
+          title: Operations
+          type: array
+      required:
+      - expected_edl_revision
+      - operations
+      - client_mutation_id
+      title: SaveCleaningEdlCommand
+      type: object
+    SaveCleaningEdlData:
+      additionalProperties: false
+      properties:
+        draft:
+          $ref: '#/components/schemas/CleaningDraft'
+        edl:
+          $ref: '#/components/schemas/CleaningEdl'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Request Id
+          type: string
+      required:
+      - draft
+      - edl
+      - request_id
+      title: SaveCleaningEdlData
+      type: object
+    SaveCleaningEdlEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: manual-cleaning.v1
+          default: manual-cleaning.v1
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/SaveCleaningEdlData'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CleaningWorkbenchScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: SaveCleaningEdlEnvelope
+      type: object
+    SetMetadataOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        patch:
+          patternProperties:
+            ^[a-z][a-z0-9_.-]{0,63}$:
+              anyOf:
+              - type: string
+              - type: boolean
+              - type: 'null'
+          title: Patch
+          type: object
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        type:
+          const: SET_METADATA
+          default: SET_METADATA
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - patch
+      title: SetMetadataOperation
+      type: object
+    SourceToOutputMap:
+      additionalProperties: false
+      properties:
+        mapping_version:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Mapping Version
+          type: string
+        segments:
+          items:
+            $ref: '#/components/schemas/SourceToOutputMapSegment'
+          minItems: 1
+          title: Segments
+          type: array
+      required:
+      - segments
+      - mapping_version
+      title: SourceToOutputMap
+      type: object
+    SourceToOutputMapSegment:
+      additionalProperties: false
+      properties:
+        output_end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Output End Ns
+          type: string
+        output_revision_id:
+          pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Output Revision Id
+          type: string
+        output_start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Output Start Ns
+          type: string
+        source_end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Source End Ns
+          type: string
+        source_start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Source Start Ns
+          type: string
+      required:
+      - source_start_ns
+      - source_end_ns
+      - output_revision_id
+      - output_start_ns
+      - output_end_ns
+      title: SourceToOutputMapSegment
+      type: object
+    SplitOperation:
+      additionalProperties: false
+      properties:
+        at_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: At Ns
+          type: string
+        enabled:
+          title: Enabled
+          type: boolean
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        type:
+          const: SPLIT
+          default: SPLIT
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - at_ns
+      title: SplitOperation
+      type: object
+    TimeOffsetOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        episode_stream_id:
+          pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Stream Id
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        offset_ns:
+          pattern: ^-?(0|[1-9][0-9]*)$
+          title: Offset Ns
+          type: string
+        reference_stream_id:
+          anyOf:
+          - pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Reference Stream Id
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        scope:
+          const: EPISODE
+          default: EPISODE
+          title: Scope
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        type:
+          const: TIME_OFFSET
+          default: TIME_OFFSET
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - episode_stream_id
+      - offset_ns
+      title: TimeOffsetOperation
+      type: object
+    TrimOperation:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        end_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: End Ns
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Id
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        sequence_no:
+          minimum: 0.0
+          title: Sequence No
+          type: integer
+        start_ns:
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Start Ns
+          type: string
+        type:
+          const: TRIM
+          default: TRIM
+          title: Type
+          type: string
+      required:
+      - id
+      - sequence_no
+      - enabled
+      - start_ns
+      - end_ns
+      title: TrimOperation
+      type: object
+    ViewerManifest:
+      additionalProperties: false
+      properties:
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        manifest_hash:
+          pattern: ^sha256:[a-f0-9]{64}$
+          title: Manifest Hash
+          type: string
+        manifest_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Manifest Id
+          type: string
+        streams:
+          items:
+            pattern: ^stream_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          minItems: 1
+          title: Streams
+          type: array
+      required:
+      - manifest_id
+      - manifest_hash
+      - expires_at
+      - streams
+      title: ViewerManifest
+      type: object
+info:
+  title: HC P11 CleaningDraft workbench contract
+  version: '2026-08-19'
+openapi: 3.1.0
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/bootstrap:
+    get:
+      operationId: getCleaningDraftBootstrap
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: draft_id
+        required: true
+        schema:
+          title: Draft Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CleaningDraftBootstrapEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Cleaning Draft Bootstrap
+      tags:
+      - cleaning-workbench
+  /api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/commits:
+    post:
+      operationId: commitCleaningDraft
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: draft_id
+        required: true
+        schema:
+          title: Draft Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitCleaningDraftCommand'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitAcceptedEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Commit Cleaning Draft
+      tags:
+      - cleaning-workbench
+  /api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/edl:
+    put:
+      operationId: saveCleaningEdl
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: draft_id
+        required: true
+        schema:
+          title: Draft Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveCleaningEdlCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveCleaningEdlEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Save Cleaning Edl
+      tags:
+      - cleaning-workbench
+  /api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/previews:
+    post:
+      operationId: createCleaningPreview
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: draft_id
+        required: true
+        schema:
+          title: Draft Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCleaningPreviewCommand'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewAcceptedEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Cleaning Preview
+      tags:
+      - cleaning-workbench
+  /api/v1/projects/{project_id}/regions/{region_code}/cleaning-drafts/{draft_id}/review-findings:
+    get:
+      operationId: getCleaningReviewFindings
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: draft_id
+        required: true
+        schema:
+          title: Draft Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewFindingsEnvelope'
+          description: Successful Response
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '428':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+        '500':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The CleaningDraft workbench request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Cleaning Review Findings
+      tags:
+      - cleaning-workbench

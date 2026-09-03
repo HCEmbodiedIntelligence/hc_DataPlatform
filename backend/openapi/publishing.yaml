@@ -1,0 +1,399 @@
+paths:
+  /api/v1/datasets/publication-preflight:
+    post:
+      operationId: preflightDatasetPublication
+      tags: [publishing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PublishDatasetRequestV1'}
+      responses:
+        '200':
+          description: Deterministic eligibility and effective-exclusion report.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublishPreflightReportV1'}
+        '409': {description: A frozen upstream snapshot is internally inconsistent.}
+        '422': {description: The publication target or Lance version is invalid.}
+  /api/v1/datasets/publications:
+    post:
+      operationId: publishDatasetVersion
+      tags: [publishing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PublishDatasetRequestV1'}
+      responses:
+        '201':
+          description: Immutable published dataset version and logical asset hashes.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublishedDatasetManifestV1'}
+        '409': {description: The version already exists with different frozen content.}
+        '422': {description: No PASS + DERIVED_READY + APPROVED rollout is eligible.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}:
+    get:
+      operationId: getPublishedDatasetVersion
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - in: query
+          name: project_id
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Frozen publication manifest.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublishedDatasetManifestV1'}
+        '404': {description: The immutable dataset version does not exist.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports:
+    post:
+      operationId: exportPublishedDatasetVersion
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExportDatasetRequestV1'}
+      responses:
+        '202':
+          description: Durable export workflow accepted or idempotently replayed.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Location:
+              description: Canonical export-job status resource.
+              schema: {type: string, minLength: 1}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The immutable dataset version does not exist.}
+        '409': {description: An existing durable export result or immutable source is inconsistent.}
+        '422': {description: Invalid export request.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:
+    get:
+      operationId: getPublishedDatasetExportJob
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: Current durable export status, with no physical locator or download grant.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+        '409': {description: The workflow result is malformed or mismatched.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:cancel:
+    post:
+      operationId: cancelPublishedDatasetExportJob
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: Cancellation requested, or the existing terminal job returned idempotently.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:retry:
+    post:
+      operationId: retryPublishedDatasetExportJob
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+        - $ref: '#/components/parameters/PublishingIdempotencyKey'
+      responses:
+        '202':
+          description: A durable retry workflow accepted or idempotently replayed.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportJobV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+        '409': {description: Only failed or cancelled jobs can be retried.}
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}/download:
+    get:
+      operationId: authorizePublishedDatasetExportDownload
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingExportJobId'
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: A freshly minted short-lived download authorization, audited at issuance.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportDownloadAuthorizationV1'}
+        '404': {description: The export job does not belong to this immutable dataset version.}
+        '409': {description: Export is not complete or its promoted artifact failed integrity checks.}
+components:
+  parameters:
+    PublishingDatasetId:
+      in: path
+      name: dataset_id
+      required: true
+      schema: {type: string, minLength: 1}
+    PublishingDatasetVersion:
+      in: path
+      name: dataset_version
+      required: true
+      schema: {type: string, minLength: 1}
+    PublishingExportJobId:
+      in: path
+      name: job_id
+      required: true
+      schema: {type: string, minLength: 1}
+    PublishingProjectId:
+      in: query
+      name: project_id
+      required: true
+      schema: {type: string, minLength: 1}
+    PublishingIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
+  headers:
+    NoStore:
+      description: Response may contain workflow state or a bearer capability and must not be stored.
+      schema: {type: string, const: no-store}
+  schemas:
+    PublishDatasetRequestV1:
+      type: object
+      additionalProperties: false
+      required: [project_id, dataset_id, dataset_version, base_lance_version]
+      properties:
+        project_id: {type: string, minLength: 1}
+        dataset_id: {type: string, minLength: 1}
+        dataset_version: {type: string, minLength: 1}
+        base_lance_version: {type: string, minLength: 1}
+    PublishingStepRangeV1:
+      type: object
+      additionalProperties: false
+      required: [start_step, end_step]
+      properties:
+        start_step: {type: integer, minimum: 0}
+        end_step: {type: integer, minimum: 1}
+    PublishingQualityStatus:
+      type: string
+      enum: [PENDING, RUNNING, PASS, RISK, REJECT]
+    PublishingDerivedStatus:
+      type: string
+      enum: [PENDING, CONVERTING, STAGED, COMMITTING, DERIVED_READY, FAILED]
+    PublishedRolloutV1:
+      type: object
+      additionalProperties: false
+      required:
+        - rollout_id
+        - source_mcap_sha256
+        - base_lance_version
+        - annotation_revision
+        - quality_profile_version
+        - alignment_profile_version
+        - alignment_frequency_hz
+        - converter_version
+        - total_steps
+        - included_step_ranges
+        - excluded_step_ranges
+      properties:
+        rollout_id: {type: string, minLength: 1}
+        source_mcap_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        base_lance_version: {type: string, minLength: 1}
+        annotation_revision: {type: integer, minimum: 0}
+        annotation_task_id: {type: [string, 'null']}
+        quality_profile_version: {type: string, minLength: 1}
+        alignment_profile_version: {type: string, minLength: 1}
+        alignment_frequency_hz: {type: integer, minimum: 1}
+        converter_version: {type: string, minLength: 1}
+        total_steps: {type: integer, minimum: 1}
+        included_step_ranges:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/PublishingStepRangeV1'}
+        excluded_step_ranges:
+          type: array
+          items: {$ref: '#/components/schemas/PublishingStepRangeV1'}
+    ExcludedPublishedRolloutV1:
+      type: object
+      additionalProperties: false
+      required: [rollout_id, reasons, quality_status, derived_status]
+      properties:
+        rollout_id: {type: string}
+        reasons:
+          type: array
+          minItems: 1
+          items: {type: string}
+        quality_status: {$ref: '#/components/schemas/PublishingQualityStatus'}
+        derived_status: {$ref: '#/components/schemas/PublishingDerivedStatus'}
+    PublishPreflightReportV1:
+      type: object
+      additionalProperties: false
+      required:
+        - project_id
+        - dataset_id
+        - dataset_version
+        - eligible_rollouts
+        - excluded_rollouts
+      properties:
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: string}
+        eligible_rollouts:
+          type: array
+          items: {$ref: '#/components/schemas/PublishedRolloutV1'}
+        excluded_rollouts:
+          type: array
+          items: {$ref: '#/components/schemas/ExcludedPublishedRolloutV1'}
+    PublishedDatasetManifestV1:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - project_id
+        - dataset_id
+        - dataset_version
+        - base_lance_version
+        - created_at
+        - content_hash
+        - annotations_uri
+        - annotations_content_sha256
+        - training_manifest_uri
+        - training_manifest_content_sha256
+        - rollouts
+        - excluded_rollouts
+      properties:
+        schema_version: {type: string, const: published-dataset-manifest/v1}
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: string}
+        base_lance_version: {type: string}
+        created_at: {type: string, format: date-time}
+        content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        annotations_uri: {type: string}
+        annotations_content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        training_manifest_uri: {type: string}
+        training_manifest_content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        rollouts:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/PublishedRolloutV1'}
+        excluded_rollouts:
+          type: array
+          items: {$ref: '#/components/schemas/ExcludedPublishedRolloutV1'}
+    ExportDatasetRequestV1:
+      type: object
+      additionalProperties: false
+      required: [project_id, format]
+      properties:
+        project_id: {type: string, minLength: 1}
+        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+    ExportJobStatus:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+    ExportJobResultV1:
+      type: object
+      additionalProperties: false
+      required:
+        - format
+        - project_id
+        - dataset_id
+        - dataset_version
+        - manifest_content_hash
+        - attempt_id
+        - artifact_content_hash
+        - row_count
+        - media_type
+      properties:
+        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        project_id: {type: string, minLength: 1}
+        dataset_id: {type: string, minLength: 1}
+        dataset_version: {type: string, minLength: 1}
+        manifest_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        attempt_id: {type: string, minLength: 1}
+        artifact_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        row_count: {type: integer, minimum: 0}
+        media_type: {type: string, minLength: 1}
+    ExportJobProgressV1:
+      type: object
+      additionalProperties: false
+      required: [phase, completed_phases, total_phases]
+      properties:
+        phase: {type: string, minLength: 1}
+        completed_phases: {type: integer, minimum: 0}
+        total_phases: {type: integer, minimum: 1}
+    ExportJobV1:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - project_id
+        - dataset_id
+        - dataset_version
+        - format
+        - attempt_id
+        - status
+        - stage
+        - progress
+        - cancellation_requested
+        - created_at
+        - updated_at
+      properties:
+        job_id: {type: string, minLength: 1}
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: string}
+        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        attempt_id: {type: string, minLength: 1}
+        status: {$ref: '#/components/schemas/ExportJobStatus'}
+        stage: {type: string, minLength: 1}
+        progress: {$ref: '#/components/schemas/ExportJobProgressV1'}
+        cancellation_requested: {type: boolean}
+        result:
+          anyOf:
+            - {$ref: '#/components/schemas/ExportJobResultV1'}
+            - {type: 'null'}
+        error_code: {type: [string, 'null']}
+        error_message: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ExportDownloadAuthorizationV1:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - format
+        - download_url
+        - expires_at
+        - artifact_content_hash
+        - media_type
+      properties:
+        job_id: {type: string, minLength: 1}
+        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        download_url: {type: string, minLength: 1}
+        expires_at: {type: string, format: date-time}
+        artifact_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        media_type: {type: string, minLength: 1}

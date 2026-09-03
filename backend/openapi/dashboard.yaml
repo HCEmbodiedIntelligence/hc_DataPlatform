@@ -1,0 +1,551 @@
+openapi: 3.1.0
+info:
+  title: P01 Dashboard API Fragment
+  version: 1.1.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/projects/{project_id}/dashboard/task-status:
+    get:
+      operationId: getDashboardTaskStatus
+      tags: [dashboard]
+      description: >-
+        Returns the current durable state of collection tasks in one exact project-region scope.
+        Package membership is fixed by collection_jobs.task_id and rollouts.collection_job_id;
+        downstream facts are the latest persisted facts for that same cohort and are not inferred
+        from independent event-time windows. With no task_id, pipeline aggregates every task in
+        the scope; task_id is an optional drill-down. Registration is not a device CAPTURED/SAVED fact.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardTaskId'}
+      responses:
+        '200':
+          description: Current task list and an optional explicitly selected task projection.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardTaskStatusResponse'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '404': {$ref: '#/components/responses/DashboardTaskNotFound'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+  /api/v1/projects/{project_id}/dashboard/activity:
+    get:
+      operationId: getDashboardActivity
+      tags: [dashboard]
+      description: >-
+        Recent durable business events, not throughput buckets or byte trends. Every item has a
+        stable event ID, source ID, deduplication key, fact time, safe display text, target, and
+        deterministic descending ordering by occurred_at, event_type, and source_id.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+        - {$ref: '#/components/parameters/DashboardCursor'}
+        - {$ref: '#/components/parameters/DashboardLimit'}
+      responses:
+        '200':
+          description: Scope-bound recent business-event page; missing lineage is explicit PARTIAL.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardActivityResponse'}
+        '400': {$ref: '#/components/responses/DashboardInvalidCursor'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+  /api/v1/projects/{project_id}/dashboard/coverage:
+    get:
+      operationId: getDashboardCoverage
+      tags: [dashboard]
+      description: >-
+        Always returns BLOCKED until a versioned collection plan, robot group, task catalog, and
+        denominator exist. Historical observations are not projected as a percentage.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+      responses:
+        '200':
+          description: Explicit coverage blocker; no fabricated numeric zero or percentage.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardCoverageResponse'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+  /api/v1/projects/{project_id}/dashboard/pending-items:
+    get:
+      operationId: getDashboardPendingItems
+      tags: [dashboard]
+      description: >-
+        Current upload failures, QC anomalies, pending Tag reviews, and pending publications,
+        intersected with principal capabilities. Items are deduplicated and ordered by domain
+        severity, oldest opened_at, item_type, and source_id. No SLA duration is implied.
+      parameters:
+        - {$ref: '#/components/parameters/DashboardProjectId'}
+        - {$ref: '#/components/parameters/DashboardRegionCode'}
+        - {$ref: '#/components/parameters/DashboardFrom'}
+        - {$ref: '#/components/parameters/DashboardTo'}
+        - {$ref: '#/components/parameters/DashboardTimezone'}
+        - {$ref: '#/components/parameters/DashboardCursor'}
+        - {$ref: '#/components/parameters/DashboardLimit'}
+      responses:
+        '200':
+          description: Capability-intersected pending page with allowlisted relative deep links.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/DashboardNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DashboardPendingItemsResponse'}
+        '400': {$ref: '#/components/responses/DashboardInvalidCursor'}
+        '401': {$ref: '#/components/responses/DashboardUnauthorized'}
+        '403': {$ref: '#/components/responses/DashboardForbidden'}
+        '422': {$ref: '#/components/responses/DashboardInvalidQuery'}
+        '429': {$ref: '#/components/responses/DashboardRateLimited'}
+components:
+  parameters:
+    DashboardProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/DashboardIdentifier'}
+    DashboardRegionCode:
+      name: region_code
+      in: query
+      required: true
+      description: Exact authorized region. Administrators are not aggregated across regions.
+      schema: {$ref: '#/components/schemas/DashboardIdentifier'}
+    DashboardTaskId:
+      name: task_id
+      in: query
+      required: false
+      description: Optional collection task drill-down; omitted requests aggregate all tasks in the scope.
+      schema: {$ref: '#/components/schemas/DashboardIdentifier'}
+    DashboardFrom:
+      name: from
+      in: query
+      required: true
+      description: Inclusive RFC 3339 instant with an explicit UTC offset.
+      schema: {type: string, format: date-time}
+    DashboardTo:
+      name: to
+      in: query
+      required: true
+      description: Exclusive RFC 3339 instant with an explicit UTC offset.
+      schema: {type: string, format: date-time}
+    DashboardTimezone:
+      name: timezone
+      in: query
+      required: true
+      description: >-
+        Explicit project IANA timezone. The UI defaults to 24 hours and may request 7 or 30 days;
+        the service never reads a browser-local timezone.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$'
+    DashboardCursor:
+      name: cursor
+      in: query
+      required: false
+      description: >-
+        HMAC-protected cursor bound to principal, project, region, range, timezone, endpoint, and
+        the endpoint's complete stable source tuple. Cross-scope cursor reuse is rejected.
+      schema: {type: string, minLength: 1, maxLength: 16384}
+    DashboardLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+  headers:
+    DashboardNoStore:
+      required: true
+      schema: {type: string, const: no-store}
+  responses:
+    DashboardInvalidCursor:
+      description: Cursor is malformed or belongs to another principal or exact query scope.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardUnauthorized:
+      description: A verified Bearer identity is required.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardForbidden:
+      description: Exact project/region scope and dashboard.read capability are required.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardTaskNotFound:
+      description: The requested task is not associated with this exact project-region scope.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardInvalidQuery:
+      description: >-
+        Validation failed, timestamps lack offsets, timezone is invalid, from is not before to,
+        or the configured synchronous technical query budget was exceeded.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    DashboardRateLimited:
+      description: The deployment query-admission policy rejected this request.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+  schemas:
+    DashboardIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9._-]+$'
+    DashboardSectionStatus:
+      type: string
+      enum: [READY, EMPTY, PARTIAL, STALE, ERROR, BLOCKED]
+    DashboardSectionError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable, needs_product_confirmation]
+      properties:
+        code: {type: string, minLength: 1, maxLength: 128}
+        message: {type: string, minLength: 1, maxLength: 500}
+        retryable: {type: boolean, default: false}
+        needs_product_confirmation: {type: boolean, default: false}
+    DashboardSectionState:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+      description: >-
+        BLOCKED is not numeric zero. PARTIAL may include only explicitly identified factual data.
+    TaskLifecycle:
+      type: string
+      enum: [ACTIVE, CLOSED, CANCELLED]
+      description: Configuration lifecycle only; target attainment is reported separately.
+    TaskAttainment:
+      type: string
+      enum: [NOT_CONFIGURED, IN_PROGRESS, ATTAINED, EXCEEDED, UNKNOWN]
+    TaskProcessingStage:
+      type: string
+      enum: [TASK_EXECUTION, PACKAGE_UPLOAD, RAW_RECEIPT, AUTOMATIC_VALIDATION, STANDARDIZATION, ANNOTATION, REVIEW, PUBLICATION]
+    TaskPackageMainState:
+      type: string
+      enum: [REGISTERED, UPLOADING, UPLOAD_PAUSED, UPLOAD_FAILED, CANCELLED, RAW_RECEIVED, VALIDATION_RUNNING, VALIDATION_FAILED, QC_WAITING, QC_RISK, QC_REJECT, STANDARDIZATION_WAITING, ALIGNING, ALIGNMENT_FAILED, LANCE_WRITING, LANCE_FAILED, STANDARDIZED_READY, ANNOTATING, REVIEW_PENDING, PUBLISH_PENDING, PUBLISHED, UNKNOWN]
+    TaskStageCounts:
+      type: object
+      additionalProperties: false
+      required: [stage, waiting, running, succeeded, risk, blocked, failed, unavailable]
+      properties:
+        stage: {$ref: '#/components/schemas/TaskProcessingStage'}
+        waiting: {type: integer, minimum: 0, default: 0}
+        running: {type: integer, minimum: 0, default: 0}
+        succeeded: {type: integer, minimum: 0, default: 0}
+        risk: {type: integer, minimum: 0, default: 0}
+        isolated: {type: integer, minimum: 0, default: 0, description: Packages routed to problem data without blocking the task.}
+        blocked: {type: integer, minimum: 0, default: 0}
+        failed: {type: integer, minimum: 0, default: 0}
+        unavailable: {type: integer, minimum: 0, default: 0}
+    TaskQcCounts:
+      type: object
+      additionalProperties: false
+      required: [waiting, passed, risk, rejected, unavailable]
+      properties:
+        waiting: {type: integer, minimum: 0}
+        passed: {type: integer, minimum: 0}
+        risk: {type: integer, minimum: 0}
+        rejected: {type: integer, minimum: 0}
+        duplicate: {type: integer, minimum: 0, default: 0}
+        unavailable: {type: integer, minimum: 0, default: 0}
+    TaskStandardizationCounts:
+      type: object
+      additionalProperties: false
+      required: [waiting, aligning, alignment_failed, lance_writing, lance_failed, ready, unavailable]
+      properties:
+        waiting: {type: integer, minimum: 0}
+        aligning: {type: integer, minimum: 0}
+        alignment_failed: {type: integer, minimum: 0}
+        lance_writing: {type: integer, minimum: 0}
+        lance_failed: {type: integer, minimum: 0}
+        ready: {type: integer, minimum: 0}
+        isolated_by_quality: {type: integer, minimum: 0, default: 0, description: Packages isolated into problem data after automatic QC.}
+        unavailable: {type: integer, minimum: 0, default: 0}
+    TaskStatusTarget:
+      type: object
+      additionalProperties: false
+      required: [package_count, duration_seconds]
+      properties:
+        package_count: {type: [integer, 'null'], minimum: 1}
+        duration_seconds: {type: [number, 'null'], exclusiveMinimum: 0}
+    TaskDeviceProgress:
+      type: object
+      additionalProperties: false
+      required: [source, captured_count, saved_count, confirmed_duration_seconds]
+      properties:
+        source: {type: string, const: DEVICE_ATTESTED_FACT, default: DEVICE_ATTESTED_FACT}
+        captured_count: {type: integer, minimum: 0, default: 0}
+        saved_count: {type: integer, minimum: 0, default: 0}
+        confirmed_duration_seconds: {type: number, minimum: 0, default: 0}
+      description: >-
+        Counts only authenticated device-agent CAPTURED/SAVED facts. Upload registration,
+        Raw object commit, and Manifest timestamps never populate these values.
+    TaskStatusListItem:
+      type: object
+      additionalProperties: false
+      required: [task_id, task_code, name, lifecycle, target, registered_count, received_count, device_progress]
+      properties:
+        task_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        task_code: {type: string, minLength: 1, maxLength: 16}
+        name: {type: string, minLength: 1, maxLength: 200}
+        lifecycle: {$ref: '#/components/schemas/TaskLifecycle'}
+        target:
+          oneOf:
+            - {$ref: '#/components/schemas/TaskStatusTarget'}
+            - {type: 'null'}
+        registered_count: {type: integer, minimum: 0}
+        received_count: {type: integer, minimum: 0}
+        device_progress: {$ref: '#/components/schemas/TaskDeviceProgress'}
+    TaskStatusBlocker:
+      type: object
+      additionalProperties: false
+      required: [reason_code, label, category, count, retryable, deep_link]
+      properties:
+        reason_code: {type: string, minLength: 1, maxLength: 128}
+        label: {type: string, minLength: 1, maxLength: 200}
+        category: {type: string, enum: [UPLOAD, RAW_VALIDATION, QUALITY, TECHNICAL, REVIEW]}
+        count: {type: integer, minimum: 1}
+        retryable: {type: boolean, default: false}
+        deep_link: {type: [string, 'null'], minLength: 1, maxLength: 1024}
+    TaskStatusAction:
+      type: object
+      additionalProperties: false
+      required: [action, label, deep_link]
+      properties:
+        action: {type: string, enum: [VIEW_UPLOAD_FAILURES, VIEW_RAW_DIAGNOSTICS, VIEW_QC_ANOMALIES, RETRY_TECHNICAL_PROCESSING, ENTER_ANNOTATION, VIEW_PENDING_REVIEW, CLOSE_TASK, VIEW_TASK]}
+        label: {type: string, minLength: 1, maxLength: 128}
+        deep_link: {type: string, minLength: 1, maxLength: 1024}
+    SelectedTaskStatus:
+      type: object
+      additionalProperties: false
+      required: [task, attainment, current_stage, current_stage_label, next_step, qc, standardization, stages, main_state_counts, blocker_count, blockers, actions, unavailable_sources]
+      properties:
+        task: {$ref: '#/components/schemas/TaskStatusListItem'}
+        attainment: {$ref: '#/components/schemas/TaskAttainment'}
+        current_stage: {$ref: '#/components/schemas/TaskProcessingStage'}
+        current_stage_label: {type: string, minLength: 1, maxLength: 128}
+        next_step: {type: string, minLength: 1, maxLength: 300}
+        qc: {$ref: '#/components/schemas/TaskQcCounts'}
+        standardization: {$ref: '#/components/schemas/TaskStandardizationCounts'}
+        stages:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items: {$ref: '#/components/schemas/TaskStageCounts'}
+        main_state_counts:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+        blocker_count: {type: integer, minimum: 0}
+        blockers:
+          type: array
+          items: {$ref: '#/components/schemas/TaskStatusBlocker'}
+        actions:
+          type: array
+          items: {$ref: '#/components/schemas/TaskStatusAction'}
+        unavailable_sources:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 128}
+    TaskPipelineStatus:
+      type: object
+      additionalProperties: false
+      required: [task_count, package_count, qc, stages, unavailable_sources]
+      description: >-
+        Current package flow for all tasks when task_id is omitted, or for the selected task when
+        task_id is present. Every package is classified exactly once in every stage.
+      properties:
+        task_count: {type: integer, minimum: 0}
+        package_count: {type: integer, minimum: 0}
+        qc: {$ref: '#/components/schemas/TaskQcCounts'}
+        stages:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items: {$ref: '#/components/schemas/TaskStageCounts'}
+        unavailable_sources:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 128}
+    DashboardTaskStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, region_code, as_of, section, tasks, pipeline, selected_task_id, selected]
+      properties:
+        schema_version: {type: string, const: '1', default: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        as_of: {type: string, format: date-time}
+        section: {$ref: '#/components/schemas/DashboardSectionState'}
+        tasks:
+          type: array
+          items: {$ref: '#/components/schemas/TaskStatusListItem'}
+        pipeline: {$ref: '#/components/schemas/TaskPipelineStatus'}
+        selected_task_id:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardIdentifier'}
+            - {type: 'null'}
+        selected:
+          oneOf:
+            - {$ref: '#/components/schemas/SelectedTaskStatus'}
+            - {type: 'null'}
+    DashboardResourceType:
+      type: string
+      enum: [UPLOAD_SESSION, ROLLOUT, ANNOTATION_TASK, DATASET_VERSION]
+    DashboardTargetResource:
+      type: object
+      additionalProperties: false
+      required: [resource_type, resource_id, resource_version, deep_link]
+      properties:
+        resource_type: {$ref: '#/components/schemas/DashboardResourceType'}
+        resource_id: {type: string, minLength: 1, maxLength: 512}
+        resource_version: {type: [string, 'null'], minLength: 1, maxLength: 512}
+        deep_link:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1024
+          description: Relative link from a fixed upload, annotation, or dataset template.
+    DashboardActivityEventType:
+      type: string
+      enum: [UPLOAD_COMMITTED, QC_COMPLETED, TAG_REVIEW_DECIDED, DATASET_PUBLISHED]
+    DashboardActivityEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [event_id, event_type, source_id, deduplication_key, occurred_at, source_state, title,
+         summary, target]
+      properties:
+        event_id: {type: string, minLength: 1, maxLength: 512}
+        event_type: {$ref: '#/components/schemas/DashboardActivityEventType'}
+        source_id: {type: string, minLength: 1, maxLength: 512}
+        deduplication_key: {type: string, minLength: 1, maxLength: 512}
+        occurred_at: {type: string, format: date-time}
+        source_state: {type: string, minLength: 1, maxLength: 64}
+        title: {type: string, minLength: 1, maxLength: 128}
+        summary: {type: string, minLength: 1, maxLength: 256}
+        target: {$ref: '#/components/schemas/DashboardTargetResource'}
+    DashboardActivityPage:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error, page_info, items]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+        page_info:
+          oneOf:
+            - {$ref: '#/components/schemas/PageInfo'}
+            - {type: 'null'}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DashboardActivityEvent'}
+    DashboardPendingItemType:
+      type: string
+      enum: [UPLOAD_FAILED, QC_ANOMALY, TAG_REVIEW_PENDING, PUBLICATION_PENDING]
+    DashboardPendingSeverity:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW]
+    DashboardPendingItem:
+      type: object
+      additionalProperties: false
+      required:
+        [item_type, source_id, deduplication_key, source_state, severity, opened_at, target]
+      properties:
+        item_type: {$ref: '#/components/schemas/DashboardPendingItemType'}
+        source_id: {type: string, minLength: 1, maxLength: 512}
+        deduplication_key: {type: string, minLength: 1, maxLength: 512}
+        source_state: {type: string, minLength: 1, maxLength: 64}
+        severity: {$ref: '#/components/schemas/DashboardPendingSeverity'}
+        opened_at: {type: string, format: date-time}
+        target: {$ref: '#/components/schemas/DashboardTargetResource'}
+    DashboardPendingItemsPage:
+      type: object
+      additionalProperties: false
+      required: [status, as_of, error, page_info, authorized_source_types, items]
+      properties:
+        status: {$ref: '#/components/schemas/DashboardSectionStatus'}
+        as_of: {type: [string, 'null'], format: date-time}
+        error:
+          oneOf:
+            - {$ref: '#/components/schemas/DashboardSectionError'}
+            - {type: 'null'}
+        page_info:
+          oneOf:
+            - {$ref: '#/components/schemas/PageInfo'}
+            - {type: 'null'}
+        authorized_source_types:
+          type: array
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/DashboardPendingItemType'}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DashboardPendingItem'}
+    DashboardActivityResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, region_code, from, to, timezone, as_of, activity]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        activity: {$ref: '#/components/schemas/DashboardActivityPage'}
+    DashboardCoverageResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, project_id, region_code, from, to, timezone, as_of, coverage]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        coverage: {$ref: '#/components/schemas/DashboardSectionState'}
+    DashboardPendingItemsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        [schema_version, project_id, region_code, from, to, timezone, as_of, pending_items]
+      properties:
+        schema_version: {type: string, const: '1'}
+        project_id: {$ref: '#/components/schemas/DashboardIdentifier'}
+        region_code: {$ref: '#/components/schemas/DashboardIdentifier'}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+        as_of: {type: string, format: date-time}
+        pending_items: {$ref: '#/components/schemas/DashboardPendingItemsPage'}

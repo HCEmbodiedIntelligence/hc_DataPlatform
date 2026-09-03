@@ -1,0 +1,299 @@
+{
+  "$defs": {
+    "MigrationEndpointV1": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "instance_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Instance Id",
+          "type": "string"
+        },
+        "object_bucket_reference": {
+          "maxLength": 2048,
+          "pattern": "^[a-z][a-z0-9+.-]*://[^\\x00\\r\\n]+$",
+          "title": "Object Bucket Reference",
+          "type": "string"
+        },
+        "object_prefix": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Object Prefix",
+          "type": "string"
+        },
+        "object_store_endpoint": {
+          "maxLength": 2048,
+          "pattern": "^[a-z][a-z0-9+.-]*://[^\\x00\\r\\n]+$",
+          "title": "Object Store Endpoint",
+          "type": "string"
+        },
+        "platform_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Platform Id",
+          "type": "string"
+        },
+        "postgresql_database": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Postgresql Database",
+          "type": "string"
+        },
+        "release_identity_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Identity Sha256",
+          "type": "string"
+        },
+        "temporal_cluster_reference": {
+          "maxLength": 2048,
+          "pattern": "^[a-z][a-z0-9+.-]*://[^\\x00\\r\\n]+$",
+          "title": "Temporal Cluster Reference",
+          "type": "string"
+        },
+        "temporal_namespace": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+          "title": "Temporal Namespace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform_id",
+        "environment_id",
+        "instance_id",
+        "release_identity_sha256",
+        "postgresql_database",
+        "object_store_endpoint",
+        "object_bucket_reference",
+        "object_prefix",
+        "temporal_cluster_reference",
+        "temporal_namespace"
+      ],
+      "title": "MigrationEndpointV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-planned-migration-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actual_referenced_bytes": {
+      "minimum": 0,
+      "title": "Actual Referenced Bytes",
+      "type": "integer"
+    },
+    "capacity_evidence_required": {
+      "const": true,
+      "default": true,
+      "title": "Capacity Evidence Required",
+      "type": "boolean"
+    },
+    "database_required_bytes": {
+      "minimum": 0,
+      "title": "Database Required Bytes",
+      "type": "integer"
+    },
+    "direct_rollback_after_target_writes_allowed": {
+      "const": false,
+      "default": false,
+      "title": "Direct Rollback After Target Writes Allowed",
+      "type": "boolean"
+    },
+    "expected_postgresql_major": {
+      "maximum": 99,
+      "minimum": 12,
+      "title": "Expected Postgresql Major",
+      "type": "integer"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-planned-migration/v1",
+      "default": "hc-platform-planned-migration/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "headroom_ratio": {
+      "default": 0.3,
+      "maximum": 10,
+      "minimum": 0,
+      "title": "Headroom Ratio",
+      "type": "number"
+    },
+    "log_required_bytes": {
+      "minimum": 0,
+      "title": "Log Required Bytes",
+      "type": "integer"
+    },
+    "maximum_dns_ttl_seconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 300,
+      "title": "Maximum Dns Ttl Seconds",
+      "type": "integer"
+    },
+    "maximum_observation_age_seconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 300,
+      "title": "Maximum Observation Age Seconds",
+      "type": "integer"
+    },
+    "maximum_precopy_postgresql_lag_bytes": {
+      "minimum": 0,
+      "title": "Maximum Precopy Postgresql Lag Bytes",
+      "type": "integer"
+    },
+    "maximum_precopy_seconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 86400,
+      "title": "Maximum Precopy Seconds",
+      "type": "integer"
+    },
+    "maximum_write_pause_seconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 1800,
+      "title": "Maximum Write Pause Seconds",
+      "type": "integer"
+    },
+    "migration_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Migration Id",
+      "type": "string"
+    },
+    "minimum_rollback_window_seconds": {
+      "maximum": 604800,
+      "minimum": 3600,
+      "title": "Minimum Rollback Window Seconds",
+      "type": "integer"
+    },
+    "object_migration_mode": {
+      "default": "reuse_external",
+      "enum": [
+        "reuse_external",
+        "copy_referenced",
+        "portable"
+      ],
+      "title": "Object Migration Mode",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "planned_at": {
+      "format": "date-time",
+      "title": "Planned At",
+      "type": "string"
+    },
+    "portable_encryption_recipient_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Portable Encryption Recipient Sha256"
+    },
+    "portable_max_part_bytes": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Portable Max Part Bytes"
+    },
+    "required_capacity_bytes": {
+      "minimum": 0,
+      "title": "Required Capacity Bytes",
+      "type": "integer"
+    },
+    "reverse_sync_required_after_target_writes": {
+      "const": true,
+      "default": true,
+      "title": "Reverse Sync Required After Target Writes",
+      "type": "boolean"
+    },
+    "rpo_target_bytes": {
+      "const": 0,
+      "default": 0,
+      "title": "Rpo Target Bytes",
+      "type": "integer"
+    },
+    "rpo_target_seconds": {
+      "const": 0,
+      "default": 0,
+      "title": "Rpo Target Seconds",
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/MigrationEndpointV1"
+    },
+    "source_remains_read_only_during_rollback_window": {
+      "const": true,
+      "default": true,
+      "title": "Source Remains Read Only During Rollback Window",
+      "type": "boolean"
+    },
+    "target": {
+      "$ref": "#/$defs/MigrationEndpointV1"
+    },
+    "temporary_required_bytes": {
+      "minimum": 0,
+      "title": "Temporary Required Bytes",
+      "type": "integer"
+    },
+    "trusted_cutover_approval_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Trusted Cutover Approval Key Sha256",
+      "type": "string"
+    },
+    "trusted_observer_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Trusted Observer Key Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_id",
+    "migration_id",
+    "operation_id",
+    "source",
+    "target",
+    "expected_postgresql_major",
+    "trusted_cutover_approval_key_sha256",
+    "trusted_observer_key_sha256",
+    "planned_at",
+    "expires_at",
+    "maximum_write_pause_seconds",
+    "maximum_dns_ttl_seconds",
+    "maximum_observation_age_seconds",
+    "minimum_rollback_window_seconds",
+    "actual_referenced_bytes",
+    "database_required_bytes",
+    "temporary_required_bytes",
+    "log_required_bytes",
+    "required_capacity_bytes",
+    "maximum_precopy_seconds",
+    "maximum_precopy_postgresql_lag_bytes"
+  ],
+  "title": "hc-platform-planned-migration/v1",
+  "type": "object"
+}

@@ -1,0 +1,69 @@
+name: platform-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected GitHub Environment to deploy
+        type: choice
+        options: [staging, production]
+        required: true
+      release_id:
+        description: Existing platform-v* Git tag
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hc-data-platform-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_id }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: Download the immutable release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ inputs.release_id }}" --pattern release.yaml --pattern release-values.yaml
+      - name: Configure cluster credentials
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          install -d -m 0700 "${RUNNER_TEMP}/kube"
+          printf '%s' "${KUBECONFIG_CONTENT}" > "${RUNNER_TEMP}/kube/config"
+          chmod 0600 "${RUNNER_TEMP}/kube/config"
+          echo "KUBECONFIG=${RUNNER_TEMP}/kube/config" >> "${GITHUB_ENV}"
+      - name: Materialize protected environment values
+        env:
+          HELM_VALUES_YAML: ${{ secrets.HELM_VALUES_YAML }}
+        run: printf '%s' "${HELM_VALUES_YAML}" > "${RUNNER_TEMP}/platform-values.yaml"
+      - name: Deploy one atomic platform revision
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          NAMESPACE: ${{ vars.KUBERNETES_NAMESPACE }}
+        run: |
+          helm upgrade --install hc-data-platform deploy/helm/hc-data-platform \
+            --namespace "${NAMESPACE}" --create-namespace \
+            --values "${RUNNER_TEMP}/platform-values.yaml" \
+            --values release-values.yaml \
+            --atomic --wait --timeout 15m --history-max 20
+      - name: Verify unified rollout
+        env:
+          NAMESPACE: ${{ vars.KUBERNETES_NAMESPACE }}
+          PUBLIC_HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL }}
+        run: |
+          kubectl -n "${NAMESPACE}" rollout status deployment/hc-data-platform-frontend --timeout=10m
+          kubectl -n "${NAMESPACE}" rollout status deployment/hc-data-platform-backend-api --timeout=10m
+          kubectl -n "${NAMESPACE}" rollout status deployment/hc-data-platform-backend-worker --timeout=10m
+          curl --fail --show-error --silent "${PUBLIC_HEALTH_URL}/healthz"
+          curl --fail --show-error --silent "${PUBLIC_HEALTH_URL}/health/ready"

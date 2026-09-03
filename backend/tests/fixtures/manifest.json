@@ -1,0 +1,88 @@
+{
+  "generator": "generate_fixtures.py",
+  "mcap": [
+    {
+      "expected_codes": [],
+      "expected_status": "RAW_VERIFIED",
+      "path": "mcap/legal.mcap",
+      "required_topics": [
+        "/camera/front/image",
+        "/joint_states",
+        "/action",
+        "/points"
+      ],
+      "sha256": "bacb455c960d9255a73ceef46849c12b774b760956f5c80d4dd61fe53ddc145c",
+      "size": 5966
+    },
+    {
+      "expected_codes": [
+        "MCAP_TRAILING_MAGIC_MISSING"
+      ],
+      "expected_status": "REJECTED",
+      "path": "mcap/truncated.mcap",
+      "required_topics": [
+        "/camera/front/image",
+        "/joint_states",
+        "/action",
+        "/points"
+      ],
+      "sha256": "3520d22c52dd8b58fdeabb8b29432d28b215fe45408a9c915f5487c157cdc19f",
+      "size": 5961
+    },
+    {
+      "expected_codes": [
+        "MCAP_CHUNK_CRC_MISMATCH"
+      ],
+      "expected_status": "REJECTED",
+      "path": "mcap/bad_crc.mcap",
+      "required_topics": [
+        "/camera/front/image"
+      ],
+      "sha256": "1bea6f1dbbdfb0908a1714a9dced283b082fb6c641e1f8179eeb9065ad7fcc14",
+      "size": 293
+    },
+    {
+      "expected_codes": [
+        "MCAP_REQUIRED_TOPIC_MISSING"
+      ],
+      "expected_status": "REJECTED",
+      "path": "mcap/missing_topic.mcap",
+      "required_topics": [
+        "/camera/front/image",
+        "/joint_states",
+        "/action",
+        "/points"
+      ],
+      "sha256": "c341f816ccca5b135217bae61c6326fa821055ce46c68c9c76869fb2d109ec2b",
+      "size": 4636
+    }
+  ],
+  "schema_version": 1,
+  "structured": [
+    {
+      "path": "structured/legal_30hz.json",
+      "sha256": "13f07d66d3f8736a688eaf2722ac162ce5d78109ae9523fdcbbf5e391d65891f",
+      "size": 4815
+    },
+    {
+      "path": "structured/28hz.json",
+      "sha256": "1591252b16553822be5afd7146a9ccbe357327c798521328169be2ec04f1ba1a",
+      "size": 4775
+    },
+    {
+      "path": "structured/timestamp_backward.json",
+      "sha256": "d8598b82048e046e471917730a90f7112d65f28ffef7149288282c995cb5fb68",
+      "size": 4868
+    },
+    {
+      "path": "structured/black_frames.json",
+      "sha256": "017f1d3a97f8c9e392a656b82d8347b39247d9f00b581039b5d979315bdec7d2",
+      "size": 9717
+    },
+    {
+      "path": "structured/empty_point_cloud.json",
+      "sha256": "a2a3fd5b88148779cd3001ccf3b08ad4b82348ce4403755d6e6ae4a6a8752049",
+      "size": 7815
+    }
+  ]
+}

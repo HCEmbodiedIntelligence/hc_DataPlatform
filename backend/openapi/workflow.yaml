@@ -1,0 +1,130 @@
+paths:
+  /api/v1/jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      parameters:
+        - in: query
+          name: project_id
+          required: false
+          schema: {type: string}
+        - in: query
+          name: status
+          required: false
+          schema: {$ref: '#/components/schemas/JobStatus'}
+      responses:
+        "200":
+          description: Durable workflow jobs ordered newest first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobListV1'}
+  /api/v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Durable workflow job status reconstructed from Temporal history
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - {$ref: '#/components/schemas/JobRecord'}
+                  - {$ref: '#/components/schemas/DataSourceAsyncJob'}
+                  - {$ref: '#/components/schemas/DatasetPageAsyncJob'}
+        "404": {description: Job not found}
+  /api/v1/jobs/{job_id}:cancel:
+    post:
+      operationId: cancelJob
+      tags: [jobs]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Current terminal state or accepted cancellation state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobRecord'}
+        "404": {description: Job not found}
+components:
+  schemas:
+    JobStatus:
+      type: string
+      enum:
+        - PENDING
+        - RUNNING
+        - SUCCEEDED
+        - TECHNICAL_FAILED
+        - QUALITY_RISK
+        - QUALITY_REJECTED
+        - CANCELLED
+    JobRecord:
+      type: object
+      required:
+        - job_id
+        - workflow_id
+        - workflow_version
+        - job_type
+        - project_id
+        - resource_id
+        - status
+        - stage
+        - attempt
+        - cancellation_requested
+        - created_at
+        - updated_at
+      properties:
+        job_id: {type: string}
+        workflow_id: {type: string}
+        workflow_run_id: {type: [string, "null"]}
+        workflow_version: {type: string}
+        job_type: {type: string}
+        project_id: {type: string}
+        resource_id: {type: string}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        stage: {type: string}
+        attempt: {type: integer, minimum: 0}
+        result: {type: [object, "null"], additionalProperties: true}
+        error_code: {type: [string, "null"]}
+        error_message: {type: [string, "null"]}
+        cancellation_requested: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    JobListV1:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/JobRecord'}
+        total: {type: integer, minimum: 0}
+    DataSourceAsyncJob:
+      type: object
+      required: [job_id, status, resource_id, created_at, updated_at, resource_version]
+      properties:
+        job_id: {type: string, minLength: 1, maxLength: 256}
+        job_type: {type: string, const: DATA_SOURCE_CONNECTION_TEST}
+        status: {type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]}
+        resource_type: {type: string, const: DATA_SOURCE}
+        resource_id: {type: string, minLength: 1, maxLength: 256}
+        progress:
+          type: [object, "null"]
+          additionalProperties: {type: string}
+        result_ref:
+          type: [object, "null"]
+          additionalProperties: {type: string}
+        error:
+          anyOf:
+            - {$ref: '#/components/schemas/DataSourceJobError'}
+            - {type: 'null'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        resource_version: {type: string, pattern: '^(0|[1-9]\d*)$'}

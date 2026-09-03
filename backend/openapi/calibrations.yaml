@@ -1,0 +1,1849 @@
+components:
+  schemas:
+    CalibrationBlockedReason:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        message:
+          maxLength: 512
+          minLength: 1
+          title: Message
+          type: string
+      required:
+      - code
+      - message
+      title: CalibrationBlockedReason
+      type: object
+    CalibrationCameraIntrinsics:
+      additionalProperties: false
+      description: Camera facts used by the calibration viewer; no implicit zero matrix exists.
+      properties:
+        cx_px:
+          minimum: 0.0
+          title: Cx Px
+          type: number
+        cy_px:
+          minimum: 0.0
+          title: Cy Px
+          type: number
+        distortion:
+          default: []
+          items:
+            type: number
+          maxItems: 16
+          title: Distortion
+          type: array
+        frame_id:
+          maxLength: 128
+          minLength: 1
+          title: Frame Id
+          type: string
+        fx_px:
+          exclusiveMinimum: 0.0
+          title: Fx Px
+          type: number
+        fy_px:
+          exclusiveMinimum: 0.0
+          title: Fy Px
+          type: number
+        height_px:
+          maximum: 32768.0
+          minimum: 1.0
+          title: Height Px
+          type: integer
+        width_px:
+          maximum: 32768.0
+          minimum: 1.0
+          title: Width Px
+          type: integer
+      required:
+      - frame_id
+      - width_px
+      - height_px
+      - fx_px
+      - fy_px
+      - cx_px
+      - cy_px
+      title: CalibrationCameraIntrinsics
+      type: object
+    CalibrationDocument:
+      additionalProperties: false
+      description: Canonical, hashable input for one immutable calibration version.
+      properties:
+        camera_intrinsics:
+          default: []
+          items:
+            $ref: '#/components/schemas/CalibrationCameraIntrinsics'
+          maxItems: 128
+          title: Camera Intrinsics
+          type: array
+        frame_transforms:
+          items:
+            $ref: '#/components/schemas/CalibrationFrameTransform'
+          maxItems: 256
+          minItems: 1
+          title: Frame Transforms
+          type: array
+      required:
+      - frame_transforms
+      title: CalibrationDocument
+      type: object
+    CalibrationFrameTransform:
+      additionalProperties: false
+      description: One directed rigid transform in the durable calibration document.
+      properties:
+        child_frame:
+          maxLength: 128
+          minLength: 1
+          title: Child Frame
+          type: string
+        covariance:
+          anyOf:
+          - items:
+              type: number
+            maxItems: 36
+            minItems: 36
+            type: array
+          - type: 'null'
+          title: Covariance
+        parent_frame:
+          maxLength: 128
+          minLength: 1
+          title: Parent Frame
+          type: string
+        quaternion_xyzw:
+          maxItems: 4
+          minItems: 4
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          title: Quaternion Xyzw
+          type: array
+        translation_m:
+          maxItems: 3
+          minItems: 3
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          title: Translation M
+          type: array
+      required:
+      - parent_frame
+      - child_frame
+      - translation_m
+      - quaternion_xyzw
+      title: CalibrationFrameTransform
+      type: object
+    CalibrationPublishPreflight:
+      additionalProperties: false
+      properties:
+        allowed:
+          title: Allowed
+          type: boolean
+        blockers:
+          default: []
+          items:
+            $ref: '#/components/schemas/CalibrationBlockedReason'
+          title: Blockers
+          type: array
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        impacts:
+          default: []
+          items:
+            $ref: '#/components/schemas/CalibrationBlockedReason'
+          title: Impacts
+          type: array
+        preflight_token:
+          anyOf:
+          - maxLength: 2048
+            minLength: 32
+            type: string
+          - type: 'null'
+          title: Preflight Token
+        resource_revision:
+          maxLength: 256
+          minLength: 1
+          title: Resource Revision
+          type: string
+        warnings:
+          default: []
+          items:
+            $ref: '#/components/schemas/CalibrationBlockedReason'
+          title: Warnings
+          type: array
+      required:
+      - allowed
+      - resource_revision
+      title: CalibrationPublishPreflight
+      type: object
+    CalibrationPublishPreflightEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-21'
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/CalibrationPublishPreflight'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CalibrationScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: CalibrationPublishPreflightEnvelope
+      type: object
+    CalibrationPublishPreflightRequest:
+      additionalProperties: false
+      description: The browser's declared publish inputs, rechecked against stored facts.
+      properties:
+        acknowledge_warning_codes:
+          default: []
+          items:
+            type: string
+          maxItems: 64
+          title: Acknowledge Warning Codes
+          type: array
+        change_summary:
+          maxLength: 2000
+          minLength: 1
+          title: Change Summary
+          type: string
+        compatibility_check_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Compatibility Check Id
+        expected_etag:
+          maxLength: 256
+          minLength: 1
+          title: Expected Etag
+          type: string
+        expected_hash:
+          maxLength: 128
+          minLength: 1
+          title: Expected Hash
+          type: string
+        validation_context_hash:
+          maxLength: 128
+          minLength: 1
+          title: Validation Context Hash
+          type: string
+        validation_report_id:
+          maxLength: 128
+          minLength: 1
+          title: Validation Report Id
+          type: string
+      required:
+      - expected_hash
+      - expected_etag
+      - validation_report_id
+      - change_summary
+      - validation_context_hash
+      title: CalibrationPublishPreflightRequest
+      type: object
+    CalibrationPublishRequest:
+      additionalProperties: false
+      properties:
+        preflight_token:
+          maxLength: 2048
+          minLength: 32
+          title: Preflight Token
+          type: string
+      required:
+      - preflight_token
+      title: CalibrationPublishRequest
+      type: object
+    CalibrationScope:
+      additionalProperties: false
+      properties:
+        project_id:
+          maxLength: 128
+          minLength: 1
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 64
+          minLength: 1
+          title: Region Code
+          type: string
+      required:
+      - project_id
+      - region_code
+      title: CalibrationScope
+      type: object
+    CalibrationSetEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-19'
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/CalibrationSetRecord'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CalibrationScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: CalibrationSetEnvelope
+      type: object
+    CalibrationSetPage:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-19'
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/CalibrationSetRecord'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CalibrationScope'
+        snapshot_at:
+          format: date-time
+          title: Snapshot At
+          type: string
+      required:
+      - items
+      - page_info
+      - snapshot_at
+      - scope
+      - request_id
+      title: CalibrationSetPage
+      type: object
+    CalibrationSetRecord:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            type: string
+          title: Allowed Actions
+          type: array
+        availability:
+          anyOf:
+          - maxLength: 64
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Availability
+        blocked_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/CalibrationBlockedReason'
+          title: Blocked Reasons
+          type: array
+        component_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Component Id
+        content_hash:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Content Hash
+        etag:
+          maxLength: 256
+          minLength: 1
+          title: Etag
+          type: string
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        robot_instance_id:
+          maxLength: 128
+          minLength: 1
+          title: Robot Instance Id
+          type: string
+        snapshot_status:
+          maxLength: 64
+          minLength: 1
+          title: Snapshot Status
+          type: string
+        validation:
+          anyOf:
+          - $ref: '#/components/schemas/CalibrationValidation'
+          - type: 'null'
+        validation_context_hash:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Validation Context Hash
+        version:
+          pattern: ^(0|[1-9]\d*)$
+          title: Version
+          type: string
+      required:
+      - id
+      - robot_instance_id
+      - version
+      - snapshot_status
+      - etag
+      title: CalibrationSetRecord
+      type: object
+    CalibrationValidation:
+      additionalProperties: false
+      properties:
+        content_hash:
+          maxLength: 128
+          minLength: 1
+          title: Content Hash
+          type: string
+        report_id:
+          maxLength: 128
+          minLength: 1
+          title: Report Id
+          type: string
+        status:
+          maxLength: 64
+          minLength: 1
+          title: Status
+          type: string
+        validation_context_hash:
+          maxLength: 128
+          minLength: 1
+          title: Validation Context Hash
+          type: string
+      required:
+      - status
+      - content_hash
+      - validation_context_hash
+      - report_id
+      title: CalibrationValidation
+      type: object
+    CalibrationValidationFinding:
+      additionalProperties: false
+      properties:
+        code:
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        message:
+          maxLength: 512
+          minLength: 1
+          title: Message
+          type: string
+        path:
+          maxLength: 512
+          minLength: 1
+          title: Path
+          type: string
+        severity:
+          pattern: ^(ERROR|WARNING)$
+          title: Severity
+          type: string
+      required:
+      - code
+      - severity
+      - message
+      - path
+      title: CalibrationValidationFinding
+      type: object
+    CalibrationValidationReport:
+      additionalProperties: false
+      properties:
+        checked_at:
+          format: date-time
+          title: Checked At
+          type: string
+        checked_by:
+          maxLength: 128
+          minLength: 1
+          title: Checked By
+          type: string
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Hash
+          type: string
+        findings:
+          default: []
+          items:
+            $ref: '#/components/schemas/CalibrationValidationFinding'
+          title: Findings
+          type: array
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        set_id:
+          maxLength: 128
+          minLength: 1
+          title: Set Id
+          type: string
+        status:
+          pattern: ^(PASSED|FAILED)$
+          title: Status
+          type: string
+        validation_context_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Validation Context Hash
+          type: string
+        version:
+          pattern: ^(0|[1-9]\d*)$
+          title: Version
+          type: string
+      required:
+      - id
+      - set_id
+      - version
+      - content_hash
+      - validation_context_hash
+      - status
+      - checked_by
+      - checked_at
+      title: CalibrationValidationReport
+      type: object
+    CalibrationValidationReportEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-21'
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/CalibrationValidationReport'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CalibrationScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: CalibrationValidationReportEnvelope
+      type: object
+    CalibrationVersionDocument:
+      additionalProperties: false
+      properties:
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Hash
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        created_by:
+          maxLength: 128
+          minLength: 1
+          title: Created By
+          type: string
+        document:
+          $ref: '#/components/schemas/CalibrationDocument'
+        set_id:
+          maxLength: 128
+          minLength: 1
+          title: Set Id
+          type: string
+        source:
+          maxLength: 64
+          minLength: 1
+          title: Source
+          type: string
+        version:
+          pattern: ^(0|[1-9]\d*)$
+          title: Version
+          type: string
+      required:
+      - set_id
+      - version
+      - source
+      - content_hash
+      - document
+      - created_by
+      - created_at
+      title: CalibrationVersionDocument
+      type: object
+    CalibrationVersionDocumentEnvelope:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-21'
+          title: Contract Version
+          type: string
+        data:
+          $ref: '#/components/schemas/CalibrationVersionDocument'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CalibrationScope'
+      required:
+      - data
+      - scope
+      - request_id
+      title: CalibrationVersionDocumentEnvelope
+      type: object
+    CalibrationVersionPage:
+      additionalProperties: false
+      properties:
+        contract_version:
+          default: '2026-08-21'
+          title: Contract Version
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/CalibrationVersionSummary'
+          title: Items
+          type: array
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+        request_id:
+          maxLength: 128
+          minLength: 1
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/CalibrationScope'
+      required:
+      - items
+      - page_info
+      - scope
+      - request_id
+      title: CalibrationVersionPage
+      type: object
+    CalibrationVersionSummary:
+      additionalProperties: false
+      properties:
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Hash
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        created_by:
+          maxLength: 128
+          minLength: 1
+          title: Created By
+          type: string
+        source:
+          maxLength: 64
+          minLength: 1
+          title: Source
+          type: string
+        version:
+          pattern: ^(0|[1-9]\d*)$
+          title: Version
+          type: string
+      required:
+      - version
+      - source
+      - content_hash
+      - created_by
+      - created_at
+      title: CalibrationVersionSummary
+      type: object
+    CreateCalibrationSetRequest:
+      additionalProperties: false
+      description: Create a draft v1 from a manually entered or imported real document.
+      properties:
+        component_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Component Id
+        document:
+          $ref: '#/components/schemas/CalibrationDocument'
+        robot_instance_id:
+          maxLength: 128
+          minLength: 1
+          title: Robot Instance Id
+          type: string
+        set_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          title: Set Id
+          type: string
+        source:
+          pattern: ^(MANUAL|IMPORT)$
+          title: Source
+          type: string
+      required:
+      - set_id
+      - robot_instance_id
+      - source
+      - document
+      title: CreateCalibrationSetRequest
+      type: object
+    RecalibrateCalibrationSetRequest:
+      additionalProperties: false
+      description: Create a successor draft; previously stored version content is immutable.
+      properties:
+        change_summary:
+          maxLength: 2000
+          minLength: 1
+          title: Change Summary
+          type: string
+        document:
+          $ref: '#/components/schemas/CalibrationDocument'
+      required:
+      - document
+      - change_summary
+      title: RecalibrateCalibrationSetRequest
+      type: object
+info:
+  title: HC calibrations contract
+  version: '2026-08-19'
+openapi: 3.1.0
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets:
+    get:
+      operationId: listCalibrationSets
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: query
+        name: component_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Component Id
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationSetPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Calibration Sets
+      tags:
+      - calibrations
+    post:
+      operationId: createCalibrationSet
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCalibrationSetRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationSetEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Create Calibration Set
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}:
+    get:
+      operationId: getCalibrationSet
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationSetEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Calibration Set
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions:
+    get:
+      operationId: listCalibrationVersions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationVersionPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Calibration Versions
+      tags:
+      - calibrations
+    post:
+      operationId: recalibrateCalibrationSet
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecalibrateCalibrationSetRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationSetEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Recalibrate Calibration Set
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}/dataset-associations:
+    get:
+      operationId: listCalibrationDatasetAssociations
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationDatasetAssociationPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: List Calibration Dataset Associations
+      tags:
+      - calibrations
+    post:
+      operationId: associateCalibrationDatasetVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalibrationDatasetAssociationRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationDatasetAssociationEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Associate Calibration Dataset Version
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}/document:
+    get:
+      operationId: getCalibrationVersionDocument
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationVersionDocumentEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Calibration Version Document
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}:preflight-publish:
+    post:
+      operationId: preflightCalibrationPublish
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalibrationPublishPreflightRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationPublishPreflightEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Preflight Calibration Publish
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}:publish:
+    post:
+      operationId: publishCalibrationVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalibrationPublishRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationSetEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Publish Calibration Version
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}/versions/{version}:validate:
+    post:
+      operationId: validateCalibrationVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: set_id
+        required: true
+        schema:
+          title: Set Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationValidationReportEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Validate Calibration Version
+      tags:
+      - calibrations
+  /api/v1/projects/{project_id}/regions/{region_code}/calibration-validation-reports/{report_id}:
+    get:
+      operationId: getCalibrationValidationReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationValidationReportEnvelope'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The calibration request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Calibration Validation Report
+      tags:
+      - calibrations

@@ -1,0 +1,996 @@
+import { Alert, Button, Card, Input, Modal, Tabs, Typography } from 'antd';
+import { Eye, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { isDatasetId, type DatasetId } from '../../entities/dataset';
+import type { DatasetVersion, DatasetVersionId } from '../../entities/dataset-version';
+import type { EpisodeListItemVm } from '../../features/datasets/api';
+import {
+  useDatasetBootstrapQuery,
+  useDatasetVersionCapacityQuery,
+  useDatasetVersionSchemaSummaryQuery,
+  useDatasetVersionSourceProvenanceQuery,
+  useDatasetVersionsQuery,
+  usePublishDatasetVersionMutation,
+  useVersionEpisodesQuery,
+} from '../../features/datasets/api';
+import { routes, type DatasetDetailTab } from '../../features/datasets/routing';
+import { isDomainError } from '../../shared/api/domain-error';
+import { useCapabilities } from '../../shared/auth/use-capabilities';
+import { formatEffectiveDuration, formatStorageSize } from '../../shared/lib/metric-presentation';
+import {
+  DetailPageScaffold,
+  CopyableId,
+  EntityDrawer,
+  FilterToolbar,
+  PageState,
+  StatusTag,
+  MetricCard,
+  type PageStateKind,
+} from '../../shared/ui';
+import { DatasetCursorPager, EpisodeTable, SourceTable, VersionTable } from './components/DatasetDetailTables';
+import datasetDetailQueryCodec, { type DatasetDetailSearch } from './query-codec';
+import { episodeInclusionLabel, episodeReviewPresentation, episodeSuccessPresentation } from './episode-presentation';
+import styles from './styles.module.css';
+
+const invalidDataset = 'dataset_invalid' as DatasetId;
+const invalidVersion = 'version_invalid' as DatasetVersionId;
+const tabs: readonly { id: DatasetDetailTab; label: string }[] = [
+  { id: 'overview', label: '概要' },
+  { id: 'versions', label: '数据版本' },
+  { id: 'episodes', label: 'Episodes' },
+  { id: 'schema', label: '数据结构' },
+  { id: 'sources', label: '来源' },
+  { id: 'capacity', label: '容量' },
+];
+
+function pageStateForError(error: unknown): PageStateKind {
+  if (!isDomainError(error)) return 'error';
+  switch (error.code) {
+    case 'FORBIDDEN':
+    case 'UNAUTHENTICATED':
+      return 'forbidden';
+    case 'NOT_FOUND':
+      return 'not-found';
+    case 'GONE':
+      return 'gone';
+    case 'VERSION_CONFLICT':
+    case 'PRECONDITION_FAILED':
+      return 'conflict';
+    case 'RATE_LIMITED':
+      return 'rate-limited';
+    case 'NETWORK_ERROR':
+      return 'offline';
+    case 'CONTRACT_MISMATCH':
+      return 'contract-mismatch';
+    default:
+      return 'error';
+  }
+}
+
+function requestId(error: unknown): string | null {
+  return isDomainError(error) ? error.requestId : null;
+}
+
+function VersionFilters({
+  search,
+  onApply,
+}: Readonly<{
+  search: DatasetDetailSearch;
+  onApply: (changes: Partial<DatasetDetailSearch>) => void;
+}>) {
+  const [draft, setDraft] = useState(() => ({
+    q: search.q ?? '',
+    kind: search.versionKind ?? '',
+    status: search.versionStatus ?? '',
+    sort: search.sort ?? 'created-desc',
+    limit: search.limit,
+  }));
+  useEffect(() => {
+    setDraft({
+      q: search.q ?? '',
+      kind: search.versionKind ?? '',
+      status: search.versionStatus ?? '',
+      sort: search.sort ?? 'created-desc',
+      limit: search.limit,
+    });
+  }, [search.limit, search.q, search.sort, search.versionKind, search.versionStatus]);
+  return (
+    <FilterToolbar
+      label="版本筛选"
+      onApply={() =>
+        onApply({
+          q: draft.q.trim() || undefined,
+          versionKind: (draft.kind || undefined) as DatasetDetailSearch['versionKind'],
+          versionStatus: (draft.status || undefined) as DatasetDetailSearch['versionStatus'],
+          sort: draft.sort,
+          limit: draft.limit,
+        })
+      }
+      onReset={() =>
+        onApply({
+          q: undefined,
+          versionKind: undefined,
+          versionStatus: undefined,
+          sort: 'created-desc',
+          limit: 20,
+        })
+      }
+    >
+      <label className={styles.filterField}>
+        搜索
+        <input value={draft.q} onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))} />
+      </label>
+      <label className={styles.filterField}>
+        类型
+        <select value={draft.kind} onChange={(event) => setDraft((value) => ({ ...value, kind: event.target.value }))}>
+          <option value="">全部</option>
+          <option value="raw">原始基线 · RAW</option>
+          <option value="cleaned">清洗视图 · CLEANED</option>
+        </select>
+      </label>
+      <label className={styles.filterField}>
+        状态
+        <select
+          value={draft.status}
+          onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}
+        >
+          <option value="">全部</option>
+          <option value="reviewing">待复核 · REVIEWING</option>
+          <option value="returned">已退回 · RETURNED</option>
+          <option value="ready">可使用 · READY</option>
+        </select>
+      </label>
+      <label className={styles.filterField}>
+        排序
+        <select value={draft.sort} onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}>
+          <option value="created-desc">最近创建</option>
+          <option value="created-asc">最早创建</option>
+          <option value="version-desc">版本降序</option>
+          <option value="version-asc">版本升序</option>
+        </select>
+      </label>
+      <label className={styles.filterField}>
+        每页
+        <select
+          value={draft.limit}
+          onChange={(event) =>
+            setDraft((value) => ({
+              ...value,
+              limit: Number(event.target.value) as 10 | 20 | 50,
+            }))
+          }
+        >
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+        </select>
+      </label>
+    </FilterToolbar>
+  );
+}
+
+function EpisodeFilters({
+  search,
+  onApply,
+}: Readonly<{
+  search: DatasetDetailSearch;
+  onApply: (changes: Partial<DatasetDetailSearch>) => void;
+}>) {
+  const [draft, setDraft] = useState(() => ({
+    q: search.q ?? '',
+    task: search.collectionTaskId ?? search.task ?? '',
+    success: search.successState ?? '',
+    sort: search.sort ?? 'ordinal-asc',
+    limit: search.limit,
+  }));
+  useEffect(
+    () =>
+      setDraft({
+        q: search.q ?? '',
+        task: search.collectionTaskId ?? search.task ?? '',
+        success: search.successState ?? '',
+        sort: search.sort ?? 'ordinal-asc',
+        limit: search.limit,
+      }),
+    [search.collectionTaskId, search.limit, search.q, search.sort, search.successState, search.task],
+  );
+  return (
+    <FilterToolbar
+      label="Episode 筛选"
+      onApply={() =>
+        onApply({
+          q: draft.q.trim() || undefined,
+          task: search.collectionTaskId ? undefined : draft.task.trim() || undefined,
+          successState: (draft.success || undefined) as DatasetDetailSearch['successState'],
+          sort: draft.sort,
+          limit: draft.limit,
+        })
+      }
+      onReset={() =>
+        onApply({
+          q: undefined,
+          task: undefined,
+          successState: undefined,
+          sort: 'ordinal-asc',
+          limit: 20,
+        })
+      }
+    >
+      <label className={styles.filterField}>
+        搜索
+        <input value={draft.q} onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))} />
+      </label>
+      <label className={styles.filterField}>
+        任务
+        <input
+          readOnly={Boolean(search.collectionTaskId)}
+          title={search.collectionTaskId ? '此任务范围由入口 URL 锁定' : undefined}
+          value={draft.task}
+          onChange={(event) =>
+            search.collectionTaskId ? undefined : setDraft((value) => ({ ...value, task: event.target.value }))
+          }
+        />
+      </label>
+      <label className={styles.filterField}>
+        成功状态
+        <select
+          value={draft.success}
+          onChange={(event) => setDraft((value) => ({ ...value, success: event.target.value }))}
+        >
+          <option value="">全部</option>
+          <option value="succeeded">SUCCEEDED</option>
+          <option value="failed">FAILED</option>
+          <option value="unknown">UNKNOWN</option>
+        </select>
+      </label>
+      <label className={styles.filterField}>
+        排序
+        <select value={draft.sort} onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}>
+          <option value="ordinal-asc">Ordinal</option>
+          <option value="started-desc">最近开始</option>
+          <option value="started-asc">最早开始</option>
+        </select>
+      </label>
+      <label className={styles.filterField}>
+        每页
+        <select
+          value={draft.limit}
+          onChange={(event) =>
+            setDraft((value) => ({
+              ...value,
+              limit: Number(event.target.value) as 10 | 20 | 50,
+            }))
+          }
+        >
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+        </select>
+      </label>
+    </FilterToolbar>
+  );
+}
+
+function SourceFilters({
+  search,
+  onApply,
+}: Readonly<{
+  search: DatasetDetailSearch;
+  onApply: (changes: Partial<DatasetDetailSearch>) => void;
+}>) {
+  const [draft, setDraft] = useState(() => ({
+    q: search.q ?? '',
+    sort: search.sort ?? 'registered-desc',
+    limit: search.limit,
+  }));
+  useEffect(
+    () =>
+      setDraft({
+        q: search.q ?? '',
+        sort: search.sort ?? 'registered-desc',
+        limit: search.limit,
+      }),
+    [search.limit, search.q, search.sort],
+  );
+  return (
+    <FilterToolbar
+      label="来源筛选"
+      onApply={() =>
+        onApply({
+          q: draft.q.trim() || undefined,
+          sort: draft.sort,
+          limit: draft.limit,
+        })
+      }
+      onReset={() => onApply({ q: undefined, sort: 'registered-desc', limit: 20 })}
+    >
+      <label className={styles.filterField}>
+        搜索
+        <input value={draft.q} onChange={(event) => setDraft((value) => ({ ...value, q: event.target.value }))} />
+      </label>
+      <label className={styles.filterField}>
+        排序
+        <select value={draft.sort} onChange={(event) => setDraft((value) => ({ ...value, sort: event.target.value }))}>
+          <option value="registered-desc">最近注册</option>
+          <option value="registered-asc">最早注册</option>
+          <option value="source-name-asc">来源名称</option>
+        </select>
+      </label>
+      <label className={styles.filterField}>
+        每页
+        <select
+          value={draft.limit}
+          onChange={(event) =>
+            setDraft((value) => ({
+              ...value,
+              limit: Number(event.target.value) as 10 | 20 | 50,
+            }))
+          }
+        >
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+        </select>
+      </label>
+    </FilterToolbar>
+  );
+}
+
+export function DatasetDetailPage() {
+  const { datasetId: rawDatasetId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [compactInspector, setCompactInspector] = useState(() => globalThis.innerWidth <= 1440);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publicationVersion, setPublicationVersion] = useState('');
+  const search = datasetDetailQueryCodec.parse(params);
+  const rawCollectionTaskId = params.get('collectionTaskId');
+  const collectionTaskParamInvalid = rawCollectionTaskId !== null && search.collectionTaskId === undefined;
+  const capabilities = useCapabilities();
+  const valid = isDatasetId(rawDatasetId);
+  const validRequest = valid && !collectionTaskParamInvalid;
+  const datasetId = valid ? rawDatasetId : invalidDataset;
+  const bootstrap = useDatasetBootstrapQuery(datasetId, validRequest && capabilities.has('dataset.read'));
+  const publishVersion = usePublishDatasetVersionMutation();
+  const chosenVersionId =
+    search.versionId ??
+    bootstrap.data?.suggestedVersionId ??
+    bootstrap.data?.currentReadyVersion?.versionId ??
+    invalidVersion;
+  const hasChosenVersion = chosenVersionId !== invalidVersion;
+  const workingVersionId = bootstrap.data?.workingVersionId ?? null;
+  const baseLanceVersion = workingVersionId?.match(/^version_lance_([1-9][0-9]*)$/u)?.[1] ?? null;
+  const versions = useDatasetVersionsQuery(
+    datasetId,
+    search,
+    validRequest && search.tab === 'versions' && capabilities.has('dataset_version.read'),
+  );
+  const episodes = useVersionEpisodesQuery(
+    datasetId,
+    chosenVersionId,
+    search,
+    validRequest && search.tab === 'episodes' && hasChosenVersion && capabilities.has('episode.read'),
+  );
+  const schema = useDatasetVersionSchemaSummaryQuery(
+    datasetId,
+    chosenVersionId,
+    validRequest && search.tab === 'schema' && hasChosenVersion && capabilities.has('data_schema.read'),
+  );
+  const sources = useDatasetVersionSourceProvenanceQuery(
+    datasetId,
+    chosenVersionId,
+    search,
+    validRequest && search.tab === 'sources' && hasChosenVersion && capabilities.has('dataset_version.read'),
+  );
+  const capacity = useDatasetVersionCapacityQuery(
+    datasetId,
+    chosenVersionId,
+    validRequest && search.tab === 'capacity' && hasChosenVersion && capabilities.has('storage.overview.read'),
+  );
+  const versionBoundTab = ['episodes', 'schema', 'sources', 'capacity'].includes(search.tab);
+
+  useEffect(() => {
+    const media = globalThis.matchMedia('(max-width: 1440px)');
+    const update = () => setCompactInspector(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  const applySearch = (changes: Partial<DatasetDetailSearch>, replace = false) => {
+    const next = datasetDetailQueryCodec.withChanges(search, changes);
+    const serialized = datasetDetailQueryCodec.build(next).toString();
+    const base = routes.datasetDetail.build({ datasetId });
+    void navigate(serialized ? `${base}?${serialized}` : base, { replace });
+  };
+
+  useEffect(() => {
+    if (!validRequest || !versionBoundTab || search.versionId || !hasChosenVersion) return;
+    const next = datasetDetailQueryCodec.withChanges(search, {
+      versionId: chosenVersionId,
+    });
+    const serialized = datasetDetailQueryCodec.build(next).toString();
+    const base = routes.datasetDetail.build({ datasetId });
+    void navigate(serialized ? `${base}?${serialized}` : base, {
+      replace: true,
+    });
+  }, [chosenVersionId, datasetId, hasChosenVersion, navigate, search, search.versionId, validRequest, versionBoundTab]);
+
+  useEffect(() => {
+    if (
+      !episodes.isSuccess ||
+      !search.episodeId ||
+      episodes.data.items.some((item) => item.episodeId === search.episodeId)
+    )
+      return;
+    const next = datasetDetailQueryCodec.withChanges(search, {
+      episodeId: undefined,
+    });
+    const serialized = datasetDetailQueryCodec.build(next).toString();
+    const base = routes.datasetDetail.build({ datasetId });
+    void navigate(serialized ? `${base}?${serialized}` : base, {
+      replace: true,
+    });
+  }, [datasetId, episodes.data, episodes.isSuccess, navigate, search, search.episodeId]);
+
+  if (!valid)
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="not-found" title="Dataset ID 格式无效" description="必须使用稳定、不可变的 Dataset ID。" />
+      </main>
+    );
+  if (collectionTaskParamInvalid)
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState
+          state="not-found"
+          title="采集任务参数无效"
+          description="collectionTaskId 必须是稳定、不可变的采集任务 ID。"
+        />
+      </main>
+    );
+  if (capabilities.loading || bootstrap.isPending)
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="loading" label="数据集详情" />
+      </main>
+    );
+  if (capabilities.failed || !capabilities.has('dataset.read'))
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="forbidden" />
+      </main>
+    );
+  if (bootstrap.isError)
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState
+          state={pageStateForError(bootstrap.error)}
+          requestId={requestId(bootstrap.error)}
+          onRetry={() => void bootstrap.refetch()}
+        />
+      </main>
+    );
+
+  const data = bootstrap.data;
+  const selectedEpisode = episodes.data?.items.find((item) => item.episodeId === search.episodeId);
+  const openViewer = (episode: EpisodeListItemVm) =>
+    void navigate(
+      routes.episodeViewer.build({
+        datasetId,
+        versionId: episode.versionId,
+        episodeId: episode.episodeId,
+        returnTo: `${location.pathname}${location.search}`,
+      }),
+    );
+  const tabContent = (() => {
+    if (search.tab === 'overview')
+      return (
+        <div className={styles.stack}>
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <Typography.Title level={2}>概要</Typography.Title>
+              </div>
+              <StatusTag
+                status={data.dataset.availability}
+                tone={data.dataset.availability === 'ACTIVE' ? 'success' : 'warning'}
+                known={data.dataset.availability !== 'UNKNOWN'}
+              />
+            </div>
+            <div className={`${styles.metricGrid} ${styles.overviewMetricGrid}`}>
+              <MetricCard label="Episodes" value={data.summary.episodeCount} basis="授权聚合" />
+              <MetricCard
+                label="有效时长"
+                value={formatEffectiveDuration(data.summary.effectiveDurationNs)}
+                basis="授权聚合"
+              />
+              <MetricCard label="源数据量" value={formatStorageSize(data.summary.sourceBytes)} basis="授权聚合" />
+              <MetricCard
+                label="必需物理容量"
+                value={formatStorageSize(data.summary.requiredPhysicalBytes)}
+                basis="授权聚合"
+              />
+              <MetricCard
+                label="实际 OSS"
+                value={formatStorageSize(data.summary.actualOssBytes)}
+                state={data.summary.actualOssBytes === null ? 'unknown' : 'ready'}
+                basis="容量事实"
+              />
+              <MetricCard label="待复核" value={data.summary.pendingReviewVersionCount} />
+              <MetricCard label="已退回" value={data.summary.returnedVersionCount} />
+              <MetricCard
+                label="可处理草稿"
+                value={data.summary.actionableDraftCount}
+                asOf={new Date(data.summary.calculatedAt).toLocaleString()}
+              />
+            </div>
+          </section>
+          <Card
+            title="当前已发布版本"
+            extra={
+              data.currentReadyVersion ? (
+                <Button
+                  type="primary"
+                  onClick={() =>
+                    void navigate(
+                      routes.versionDetail.build({
+                        datasetId,
+                        versionId: data.currentReadyVersion!.versionId,
+                        returnTo: `${location.pathname}${location.search}`,
+                      }),
+                    )
+                  }
+                >
+                  打开 {data.currentReadyVersion.displayVersion}
+                </Button>
+              ) : null
+            }
+          >
+            {data.currentReadyVersion ? (
+              <Typography.Paragraph>
+                <code>{data.currentReadyVersion.versionId}</code> · 数据清单{' '}
+                {data.currentReadyVersion.manifestSha256.slice(0, 12)}…
+              </Typography.Paragraph>
+            ) : (
+              <PageState state="empty" description="该数据集尚无手动发布的数据集版本。" />
+            )}
+          </Card>
+        </div>
+      );
+    if (search.tab === 'versions')
+      return (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <Typography.Title level={2}>数据集版本</Typography.Title>
+            </div>
+            {capabilities.has('dataset_version.publish') ? (
+              <Button type="primary" disabled={!baseLanceVersion} onClick={() => setPublishOpen(true)}>
+                手动发布版本
+              </Button>
+            ) : null}
+          </div>
+          <VersionFilters search={search} onApply={applySearch} />
+          {versions.isPending ? (
+            <PageState state="loading" label="版本列表" />
+          ) : versions.isError ? (
+            <PageState
+              state={pageStateForError(versions.error)}
+              requestId={requestId(versions.error)}
+              onRetry={() => void versions.refetch()}
+            />
+          ) : versions.data.items.length === 0 ? (
+            <PageState
+              state="empty"
+              title="尚未发布数据集版本"
+              description="Episode 与 Schema 可继续使用内部工作快照；只有点击“手动发布版本”才会生成数据集版本。"
+            />
+          ) : (
+            <>
+              <VersionTable
+                items={versions.data.items}
+                onOpen={(version: DatasetVersion) =>
+                  void navigate(
+                    routes.versionDetail.build({
+                      datasetId,
+                      versionId: version.id,
+                      tab: version.status === 'REVIEWING' ? 'review' : 'revisions',
+                      returnTo: `${location.pathname}${location.search}`,
+                    }),
+                  )
+                }
+              />
+              <DatasetCursorPager page={versions.data} busy={versions.isFetching} onChange={applySearch} />
+            </>
+          )}
+        </section>
+      );
+    if (search.tab === 'episodes')
+      return (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <Typography.Title level={2}>Episodes</Typography.Title>
+            </div>
+          </div>
+          {!hasChosenVersion ? (
+            <PageState state="empty" description="没有可用于列出 Episode 的固定版本。" />
+          ) : (
+            <div className={styles.episodeWorkspace}>
+              <aside className={styles.filterPanel} aria-label="Episode 筛选面板">
+                <EpisodeFilters search={search} onApply={applySearch} />
+              </aside>
+              <div className={styles.tablePanel}>
+                {episodes.isPending ? (
+                  <PageState state="loading" label="Episode 列表" />
+                ) : episodes.isError ? (
+                  <PageState
+                    state={pageStateForError(episodes.error)}
+                    requestId={requestId(episodes.error)}
+                    onRetry={() => void episodes.refetch()}
+                  />
+                ) : episodes.data.items.length === 0 ? (
+                  search.collectionTaskId ? (
+                    <PageState
+                      state="empty"
+                      title="该采集任务暂无数据"
+                      description="任务尚未产生可在当前数据集版本中浏览的 Episode。"
+                    />
+                  ) : (
+                    <PageState state="filtered-empty" />
+                  )
+                ) : (
+                  <>
+                    <EpisodeTable
+                      items={episodes.data.items}
+                      onInspect={(episode) => applySearch({ episodeId: episode.episodeId })}
+                      onOpenViewer={openViewer}
+                      selectedEpisodeId={selectedEpisode?.episodeId}
+                    />
+                    <DatasetCursorPager
+                      page={episodes.data}
+                      busy={episodes.isFetching}
+                      onChange={(cursor) => applySearch({ ...cursor, episodeId: undefined })}
+                    />
+                    <section className={styles.episodeWindowSummary} aria-label="当前 Episode 数据窗口">
+                      <div>
+                        <span>当前窗口</span>
+                        <strong>{episodes.data.items.length} 条</strong>
+                      </div>
+                      <div>
+                        <span>固定工作快照</span>
+                        <code title={chosenVersionId}>{chosenVersionId}</code>
+                      </div>
+                    </section>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      );
+    if (search.tab === 'schema')
+      return !capabilities.has('data_schema.read') ? (
+        <PageState state="forbidden" description="数据结构摘要需要 data_schema.read 权限。" />
+      ) : !hasChosenVersion ? (
+        <PageState state="empty" />
+      ) : schema.isPending ? (
+        <PageState state="loading" label="数据结构" />
+      ) : schema.isError ? (
+        <PageState
+          state={pageStateForError(schema.error)}
+          requestId={requestId(schema.error)}
+          onRetry={() => void schema.refetch()}
+        />
+      ) : (
+        <section className={styles.section}>
+          <Typography.Title level={2}>数据结构快照</Typography.Title>
+          <div className={styles.metricGrid}>
+            <MetricCard label="Version" value={schema.data.snapshot.version} />
+            <MetricCard
+              label="Channels"
+              value={schema.data.channelCount}
+              state={schema.data.channelCount === null ? 'unknown' : 'ready'}
+            />
+          </div>
+          <Typography.Paragraph>
+            SHA-256 <code>{schema.data.snapshot.sha256}</code>
+          </Typography.Paragraph>
+        </section>
+      );
+    if (search.tab === 'sources')
+      return !hasChosenVersion ? (
+        <PageState state="empty" />
+      ) : sources.isPending ? (
+        <PageState state="loading" label="来源证据" />
+      ) : sources.isError ? (
+        <PageState
+          state={pageStateForError(sources.error)}
+          requestId={requestId(sources.error)}
+          onRetry={() => void sources.refetch()}
+        />
+      ) : (
+        <section className={styles.section}>
+          <Typography.Title level={2}>安全来源证据</Typography.Title>
+          <SourceFilters search={search} onApply={applySearch} />
+          {sources.data.items.length === 0 ? (
+            <PageState state="filtered-empty" />
+          ) : (
+            <>
+              <SourceTable items={sources.data.items} />
+              <DatasetCursorPager page={sources.data} busy={sources.isFetching} onChange={applySearch} />
+            </>
+          )}
+        </section>
+      );
+    return !capabilities.has('storage.overview.read') ? (
+      <PageState state="forbidden" description="容量事实需要 storage.overview.read。" />
+    ) : !hasChosenVersion ? (
+      <PageState state="empty" />
+    ) : capacity.isPending ? (
+      <PageState state="loading" label="容量事实" />
+    ) : capacity.isError ? (
+      <PageState
+        state={pageStateForError(capacity.error)}
+        requestId={requestId(capacity.error)}
+        onRetry={() => void capacity.refetch()}
+      />
+    ) : (
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <Typography.Title level={2}>容量事实</Typography.Title>
+          <StatusTag
+            status={capacity.data.state}
+            tone={capacity.data.state === 'SETTLED' ? 'success' : 'warning'}
+            known
+          />
+        </div>
+        {capacity.data.state === 'PARTIAL' || capacity.data.state === 'FAILED' ? (
+          <PageState
+            state="error"
+            title="容量事实不完整"
+            description="未知值保持为未知，不显示 0。"
+            onRetry={() => void capacity.refetch()}
+          />
+        ) : null}
+        <div className={styles.metricGrid}>
+          <MetricCard
+            label="源数据量"
+            value={formatStorageSize(capacity.data.sourceBytes)}
+            state={capacity.data.sourceBytes === null ? 'unknown' : 'ready'}
+          />
+          <MetricCard
+            label="必需物理容量"
+            value={formatStorageSize(capacity.data.requiredPhysicalBytes)}
+            state={capacity.data.requiredPhysicalBytes === null ? 'unknown' : 'ready'}
+          />
+          <MetricCard
+            label="实际 OSS 容量"
+            value={formatStorageSize(capacity.data.actualOssBytes)}
+            state={capacity.data.actualOssBytes === null ? 'unknown' : 'ready'}
+          />
+        </div>
+        <Typography.Paragraph>
+          Basis <code>{capacity.data.basisRevision}</code> · {new Date(capacity.data.calculatedAt).toLocaleString()}
+        </Typography.Paragraph>
+      </section>
+    );
+  })();
+
+  return (
+    <main className={styles.page} data-page-id="P06">
+      <DetailPageScaffold
+        resourceId={datasetId}
+        header={{
+          title: data.dataset.name,
+          description: data.dataset.description || undefined,
+          breadcrumbs: [
+            { key: 'assets', label: '数据资产', to: routes.datasets.build() },
+            { key: 'datasets', label: '数据集', to: routes.datasets.build() },
+            { key: datasetId, label: data.dataset.name },
+          ],
+          actions: search.returnTo ? (
+            <Button onClick={() => void navigate(search.returnTo!)}>返回列表</Button>
+          ) : undefined,
+        }}
+        tabs={
+          <div className={styles.tabBand}>
+            <div className={styles.summaryBar}>
+              <div>
+                <span>当前已发布版本</span>
+                <strong>{data.currentReadyVersion?.displayVersion ?? '—'}</strong>
+              </div>
+              <div>
+                <span>Episodes</span>
+                <strong>{data.summary.episodeCount}</strong>
+              </div>
+              <div>
+                <span>有效时长</span>
+                <strong>{formatEffectiveDuration(data.summary.effectiveDurationNs)}</strong>
+              </div>
+              <div>
+                <span>源数据量</span>
+                <strong>{formatStorageSize(data.summary.sourceBytes)}</strong>
+              </div>
+              <div>
+                <span>实际 OSS</span>
+                <strong>{formatStorageSize(data.summary.actualOssBytes)}</strong>
+              </div>
+            </div>
+            <Tabs
+              activeKey={search.tab}
+              items={tabs.map((tab) => ({ key: tab.id, label: tab.label }))}
+              more={{
+                icon: (
+                  <>
+                    <span aria-hidden="true">•••</span>
+                    <span className={styles.srOnly}>更多数据集详情标签页</span>
+                  </>
+                ),
+              }}
+              onChange={(key) =>
+                applySearch({
+                  tab: key as DatasetDetailTab,
+                  versionId:
+                    ['episodes', 'schema', 'sources', 'capacity'].includes(key) && hasChosenVersion
+                      ? chosenVersionId
+                      : undefined,
+                })
+              }
+            />
+          </div>
+        }
+        inspector={
+          !compactInspector && search.tab === 'episodes' && selectedEpisode ? (
+            <EpisodeInspector
+              episode={selectedEpisode}
+              onClose={() => applySearch({ episodeId: undefined })}
+              onOpenViewer={openViewer}
+            />
+          ) : undefined
+        }
+        inspectorLabel="选中 Episode"
+      >
+        {tabContent}
+      </DetailPageScaffold>
+      <EntityDrawer
+        open={Boolean(selectedEpisode) && compactInspector}
+        title={<Typography.Title level={2}>Episode 详情</Typography.Title>}
+        width="min(360px, 100vw)"
+        onClose={() => applySearch({ episodeId: undefined })}
+      >
+        {selectedEpisode ? (
+          <EpisodeInspector
+            episode={selectedEpisode}
+            onClose={() => applySearch({ episodeId: undefined })}
+            onOpenViewer={openViewer}
+          />
+        ) : null}
+      </EntityDrawer>
+      <Modal
+        title="手动发布数据集版本"
+        open={publishOpen}
+        okText="发布并定版"
+        cancelText="取消"
+        confirmLoading={publishVersion.isPending}
+        okButtonProps={{ disabled: !publicationVersion.trim() || !baseLanceVersion }}
+        onCancel={() => {
+          if (publishVersion.isPending) return;
+          setPublishOpen(false);
+          publishVersion.reset();
+        }}
+        onOk={() => {
+          if (!baseLanceVersion || !publicationVersion.trim()) return;
+          void publishVersion
+            .mutateAsync({
+              datasetId,
+              datasetVersion: publicationVersion.trim(),
+              baseLanceVersion,
+            })
+            .then(() => {
+              setPublishOpen(false);
+              setPublicationVersion('');
+              publishVersion.reset();
+            })
+            .catch(() => undefined);
+        }}
+      >
+        <Typography.Paragraph>
+          发布会冻结当前工作快照 <code>{workingVersionId ?? '—'}</code> 及其已审核 Episode
+          版本；不会复制底层 Lance 数据，也不以质检结果生成版本号。
+        </Typography.Paragraph>
+        <label className={styles.filterField}>
+          版本名称
+          <Input
+            autoFocus
+            maxLength={64}
+            placeholder="例如 v1.0.0"
+            value={publicationVersion}
+            onChange={(event) => {
+              setPublicationVersion(event.target.value);
+              if (publishVersion.isError) publishVersion.reset();
+            }}
+          />
+        </label>
+        {publishVersion.isError ? (
+          <Alert
+            type="error"
+            showIcon
+            message="发布失败"
+            description={publishVersion.error instanceof Error ? publishVersion.error.message : '请检查发布条件后重试。'}
+          />
+        ) : null}
+      </Modal>
+    </main>
+  );
+}
+
+function EpisodeInspector({
+  episode,
+  onClose,
+  onOpenViewer,
+}: Readonly<{
+  episode: EpisodeListItemVm;
+  onClose: () => void;
+  onOpenViewer: (episode: EpisodeListItemVm) => void;
+}>) {
+  const success = episodeSuccessPresentation(episode.successState);
+  const review = episodeReviewPresentation(episode.reviewStatus, episode.reviewFindingCount);
+  return (
+    <div className={styles.drawerBody}>
+      <header className={styles.inspectorHero}>
+        <span className={styles.episodeOrdinal}>#{episode.ordinal + 1}</span>
+        <div>
+          <span>选中 Episode</span>
+          <Typography.Title level={3}>Episode #{episode.ordinal + 1}</Typography.Title>
+          <code title={episode.episodeId}>{episode.episodeId}</code>
+        </div>
+        <Button
+          className={styles.inspectorCloseButton}
+          type="text"
+          icon={<X aria-hidden="true" size={18} />}
+          aria-label="关闭 Episode 详情"
+          onClick={onClose}
+        />
+      </header>
+      <section className={styles.inspectorStatusGrid} aria-label="Episode 有效性状态">
+        <div>
+          <span>处理结果</span>
+          <StatusTag status={episode.successState} label={success.label} tone={success.tone} known={success.known} />
+        </div>
+        <div>
+          <span>复核结果</span>
+          <StatusTag status={episode.reviewStatus} label={review.label} tone={review.tone} known={review.known} />
+        </div>
+      </section>
+      <dl>
+        <dt>Revision</dt>
+        <dd>
+          <CopyableId value={episode.selectedRevisionId} label="Revision ID" />
+        </dd>
+        <dt>Version</dt>
+        <dd>
+          <CopyableId value={episode.versionId} label="Version ID" />
+        </dd>
+        <dt>任务</dt>
+        <dd title={episode.task ?? undefined}>{episode.task ?? '未关联'}</dd>
+        <dt>机器人</dt>
+        <dd>{episode.robotId ? <CopyableId value={episode.robotId} label="机器人 ID" /> : '未绑定'}</dd>
+        <dt>存储区域</dt>
+        <dd>{episode.storageRegionCode ?? '未知'}</dd>
+        <dt>版本纳入</dt>
+        <dd>{episodeInclusionLabel(episode.included)}</dd>
+      </dl>
+      <div className={styles.drawerActions}>
+        <Button type="primary" icon={<Eye size={16} />} block onClick={() => onOpenViewer(episode)}>
+          打开只读 Viewer
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default DatasetDetailPage;

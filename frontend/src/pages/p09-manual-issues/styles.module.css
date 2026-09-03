@@ -1,0 +1,392 @@
+.page {
+  min-width: 0;
+}
+
+.headerAction {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: var(--hc-space-2, 8px);
+  padding: 0 var(--hc-space-3, 12px);
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-md, 8px);
+  background: var(--hc-color-surface, #fff);
+  color: var(--hc-color-text, #1f2a28);
+  font-weight: 600;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.headerAction:hover {
+  border-color: var(--hc-color-primary, #4f46e5);
+  background: var(--hc-color-primary-soft, #eef2ff);
+  color: var(--hc-color-primary, #4f46e5);
+}
+
+.summaryStack {
+  display: grid;
+  gap: var(--hc-space-3, 12px);
+}
+
+.workViewIcon,
+.evidenceIcon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--hc-radius-md, 8px);
+  background: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 11%, white);
+  color: var(--hc-color-primary, #4f46e5);
+}
+
+.workViews {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--hc-space-2, 8px);
+}
+
+.workView {
+  display: grid;
+  min-height: 72px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--hc-space-2, 8px);
+  align-items: center;
+  padding: var(--hc-space-3, 12px);
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 10px);
+  background: var(--hc-color-surface, #fff);
+  color: var(--hc-color-text, #1f2a28);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.workView:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 55%, white);
+  background: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 3%, white);
+}
+
+.workView:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hc-color-primary, #4f46e5) 32%, transparent);
+  outline-offset: 2px;
+}
+
+.workView[data-active='true'] {
+  border-color: var(--hc-color-primary, #4f46e5);
+  background: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 7%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hc-color-primary, #4f46e5) 18%, transparent);
+}
+
+.workView:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.workViewIcon {
+  width: 34px;
+  height: 34px;
+}
+
+.workViewCopy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workViewCopy strong {
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workViewCopy small {
+  overflow: hidden;
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workView b {
+  min-width: 1.75rem;
+  color: var(--hc-color-primary, #4f46e5);
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.filterField {
+  display: grid;
+  min-width: min(100%, 9.5rem);
+  gap: var(--hc-space-1, 4px);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.filterField:first-child {
+  min-width: min(100%, 18rem);
+}
+
+.filterField :global(.ant-select),
+.filterField :global(.ant-input-affix-wrapper) {
+  width: 100%;
+}
+
+.tableRegion {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 10px);
+  background: var(--hc-color-surface, #fff);
+}
+
+.tableRegion :global(.ant-table-thead > tr > th) {
+  height: 44px;
+  background: var(--hc-color-surface-subtle, #f6f8fb);
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tableRegion :global(.ant-table-tbody > tr > td) {
+  min-height: 60px;
+  padding-block: var(--hc-space-3, 12px);
+  vertical-align: middle;
+}
+
+.tableRegion :global(.ant-table-tbody > tr:hover > td) {
+  background: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 3%, white);
+}
+
+.issueButton {
+  display: grid;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  justify-items: start;
+  gap: 2px;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.issueButton strong {
+  color: var(--hc-color-text, #1f2a28);
+  font-size: 0.9375rem;
+}
+
+.issueButton small,
+.locationCell small,
+.rangeCell small {
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.75rem;
+}
+
+.locationCell,
+.rangeCell {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.locationCell strong,
+.locationCell small {
+  overflow: hidden;
+  max-width: 15rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationCell strong {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.rangeCell strong,
+.rangeCell small,
+.tableRegion time {
+  font-variant-numeric: tabular-nums;
+}
+
+.rangeCell strong {
+  font-size: 0.8125rem;
+}
+
+.stateCell {
+  align-items: flex-start;
+}
+
+.assigneeCell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hc-space-2, 8px);
+}
+
+.assigneeCell :global(.ant-avatar) {
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 14%, white);
+  color: var(--hc-color-primary, #4f46e5);
+  font-weight: 700;
+}
+
+.assigneeCell span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowActions {
+  min-width: 10.25rem;
+}
+
+.rowActions :global(.ant-btn) {
+  min-height: 36px;
+}
+
+.moreButton {
+  width: 40px;
+  min-width: 40px;
+  padding-inline: 0;
+}
+
+.tableInspectorLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
+  gap: var(--hc-space-3, 12px);
+  align-items: start;
+}
+
+.desktopInspector {
+  position: sticky;
+  top: calc(56px + var(--hc-space-4, 16px));
+  min-width: 0;
+  max-height: calc(100vh - 88px);
+  padding: var(--hc-space-4, 16px);
+  overflow: auto;
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 10px);
+  background: var(--hc-color-surface, #fff);
+  box-shadow: var(--hc-shadow-sm, 0 1px 2px rgb(23 33 31 / 8%));
+}
+
+.desktopInspector > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--hc-space-3, 12px);
+  border-bottom: 1px solid var(--hc-color-border, #d7e2df);
+}
+
+.desktopInspector > header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.drawerContent {
+  width: 100%;
+}
+
+.detailSummary {
+  display: grid;
+  gap: var(--hc-space-2, 8px);
+}
+
+.detailSummary h3 {
+  margin: 2px 0 0;
+  font-size: 1.125rem;
+  line-height: 1.45;
+}
+
+.evidenceCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--hc-space-3, 12px);
+  align-items: start;
+  padding: var(--hc-space-4, 16px);
+  border: 1px solid var(--hc-color-border, #d7e2df);
+  border-radius: var(--hc-radius-lg, 10px);
+  background: var(--hc-color-surface-subtle, #f6f8fb);
+}
+
+.evidenceIcon {
+  width: 38px;
+  height: 38px;
+}
+
+.evidenceCard > div:nth-child(2) {
+  display: grid;
+  gap: 4px;
+}
+
+.evidenceCard span,
+.evidenceCard small {
+  display: block;
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.evidenceCard > :global(.ant-btn),
+.evidenceCard > :global(.ant-typography) {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.businessFacts a {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.technicalDetails :global(.ant-collapse-header) {
+  min-height: 44px;
+  align-items: center !important;
+  padding-inline: 0 !important;
+  color: var(--hc-color-text-muted, #64736f) !important;
+}
+
+.technicalDetails :global(.ant-collapse-content-box) {
+  padding-inline: 0 !important;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.operationAlert {
+  margin-top: var(--hc-space-3, 12px);
+}
+
+@media (max-width: 1200px) {
+  .workViews {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .workViews {
+    grid-template-columns: 1fr;
+  }
+
+  .filterField,
+  .filterField:first-child {
+    width: 100%;
+  }
+
+}
+
+@media (max-width: 1199px) {
+  .desktopInspector {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .headerAction,
+  .workView {
+    transition: none;
+  }
+}

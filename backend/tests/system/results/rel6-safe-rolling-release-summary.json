@@ -1,0 +1,57 @@
+{
+  "schema_version": "hc-implementation-evidence/v1",
+  "tasks": ["REL6-01", "REL6-02", "REL6-03", "REL6-04", "REL6-05"],
+  "observed_at": "2026-08-29T05:35:00Z",
+  "status": "IMPLEMENTATION_PASSED_REAL_TARGET_RELEASE_BLOCKED",
+  "implemented": [
+    "pinned Ed25519 monotonic signed release feed",
+    "compatibility and current-platform preflight",
+    "four-eyes approval and durable controller state",
+    "expand and separately approved contract migration phases",
+    "bounded API and frontend canary with exact-source rollback payload",
+    "Temporal compatible-default Worker Build ID routing",
+    "redacted release history and browser approval UI",
+    "signed short-lived DR7 evidence bundle gate"
+  ],
+  "postgres_acceptance": {
+    "database": "dedicated disposable hc_rel6_acceptance_*",
+    "postgres_version": "16.10",
+    "expand_expected": 108,
+    "expand_applied": 108,
+    "contract_expected": 0,
+    "contract_applied": 0,
+    "release_final_state": "COMPLETED",
+    "release_final_state_version": 6,
+    "test_result": "1 passed",
+    "database_removed": true,
+    "default_hc_data_migration_count_after_test": 99
+  },
+  "verification": {
+    "backend_standard_passed": 1190,
+    "backend_explicit_external_skips": 120,
+    "backend_known_xfailed": 2,
+    "ruff_files": 576,
+    "mypy_source_files": 263,
+    "openapi": "PASS",
+    "generated_client": "PASS",
+    "helm_strict_lint_and_render": "PASS",
+    "compose_dev_and_test_config": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "fingerprints": {
+    "migration_manifest_sha256": "1b19ffebd3fd243e51640d2cf5d68b37d66be32145399f3f3200849d2916655f",
+    "migration_phases_sha256": "424cddaf473fbb5bc2b00c2d35f825755b90289d150bc7a315b4ba7aee87e5d6",
+    "release_migration_sha256": "f04f153a126e18fd35c418f7107039948190f617c81bd016e75f9d2ca56ea9c2",
+    "openapi_sha256": "efa8e786cd02f60731a88a64c3272dad898e69a888fcb7199e670c6232a97022",
+    "helm_values_sha256": "512a3f929e7f01833b2d69a5990a993556c4cf6d387d3a03a15e287c47662023",
+    "rolling_upgrade_runbook_sha256": "b6ce2a6c90d32852c58053f270d2d8986388b96b208a140fb56064e33ceda4b1"
+  },
+  "release_blockers": [
+    "TARGET_0_1_1_ARTIFACTS_NOT_BUILT_OR_SIGNED",
+    "PRODUCTION_TEMPORAL_SERVER_VERSION_UNSPECIFIED",
+    "PRODUCTION_CAPACITY_5TB_DAY_PLUS_30_PERCENT_NOT_PASSED",
+    "VERIFIED_BACKUP_AND_RESTORE_DRILL_EVIDENCE_MISSING",
+    "SIGNED_DR7_PRODUCTION_EVIDENCE_BUNDLE_MISSING",
+    "ADJACENT_0_1_0_0_1_1_BIDIRECTIONAL_EXECUTION_NOT_PASSED"
+  ]
+}

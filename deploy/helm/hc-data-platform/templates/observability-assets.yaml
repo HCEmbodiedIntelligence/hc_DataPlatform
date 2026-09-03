@@ -1,0 +1,201 @@
+{{- if .Values.observability.enabled }}
+{{- $name := include "hc-data-platform.observabilityFullname" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-dashboard
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: observability-dashboard
+    {{- with .Values.observability.grafana.dashboardConfigMap.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  hc-data-platform-operations.json: |
+    {{- .Files.Get "files/observability/grafana-dashboard.json" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-prometheus-rules
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus-rules
+data:
+  hc-data-platform-rules.yaml: |
+    {{- .Files.Get "files/observability/prometheus-rules.yaml" | nindent 4 }}
+{{- if .Values.observability.prometheusOperator.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    {{- with .Values.observability.prometheusOperator.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- .Files.Get "files/observability/prometheus-rules.yaml" | nindent 2 }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $name }}-otel-collector
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    {{- with .Values.observability.prometheusOperator.serviceMonitorLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  endpoints:
+    - port: prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+{{- end }}
+{{- if .Values.observability.grafana.managed.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-grafana-provisioning
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    prune: true
+    datasources:
+      - name: HC Prometheus
+        uid: hc-prometheus
+        type: prometheus
+        access: proxy
+        url: {{ .Values.observability.grafana.managed.prometheusUrl }}
+        isDefault: true
+        editable: false
+      - name: HC Loki
+        uid: hc-loki
+        type: loki
+        access: proxy
+        url: {{ ternary (printf "http://%s-loki:3100" $name) (trimSuffix "/otlp" .Values.observability.loki.endpoint) .Values.observability.loki.embedded }}
+        editable: false
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: hc-data-platform
+        folder: HC Data Platform
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-grafana
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      {{- include "hc-data-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grafana
+  template:
+    metadata:
+      annotations:
+        checksum/observability-assets: {{ printf "%s%s" (.Files.Get "files/observability/grafana-dashboard.json") (toJson .Values.observability.grafana) | sha256sum }}
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grafana
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: grafana
+          image: {{ include "hc-data-platform.observabilityImage" .Values.observability.grafana.managed.image | quote }}
+          imagePullPolicy: {{ .Values.observability.grafana.managed.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - {name: GF_AUTH_ANONYMOUS_ENABLED, value: "false"}
+            - {name: GF_USERS_ALLOW_SIGN_UP, value: "false"}
+            - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false"}
+            - {name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES, value: "false"}
+            - {name: GF_PLUGINS_PREINSTALL_DISABLED, value: "true"}
+            - {name: GF_SECURITY_DISABLE_GRAVATAR, value: "true"}
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.observability.grafana.managed.existingAdminSecret.name | quote }}
+                  key: {{ .Values.observability.grafana.managed.existingAdminSecret.userKey | quote }}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.observability.grafana.managed.existingAdminSecret.name | quote }}
+                  key: {{ .Values.observability.grafana.managed.existingAdminSecret.passwordKey | quote }}
+          ports:
+            - {name: http, containerPort: 3000, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /api/health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.observability.grafana.managed.resources | nindent 12 }}
+          volumeMounts:
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/datasources/datasources.yaml, subPath: datasources.yaml, readOnly: true}
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml, subPath: dashboards.yaml, readOnly: true}
+            - {name: dashboard, mountPath: /var/lib/grafana/dashboards, readOnly: true}
+            - {name: data, mountPath: /var/lib/grafana}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: provisioning
+          configMap:
+            name: {{ $name }}-grafana-provisioning
+        - name: dashboard
+          configMap:
+            name: {{ $name }}-dashboard
+        - name: data
+          emptyDir: {sizeLimit: 1Gi}
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+      {{- with .Values.observability.grafana.managed.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observability.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-grafana
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  selector:
+    {{- include "hc-data-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  ports:
+    - {name: http, port: 3000, targetPort: http}
+{{- end }}
+{{- end }}

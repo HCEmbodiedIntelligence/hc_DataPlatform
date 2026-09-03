@@ -21,3 +21,29 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+# Local build output, dependencies, environments, and Python caches
+/node_modules/
+frontend/dist/
+frontend/node_modules/
+frontend/.env.local
+frontend/test-results/
+frontend/playwright-report/
+frontend/coverage/
+frontend/.vite/
+__pycache__/
+*.pyc
+/.ruff_cache/
+
+# Local download and model caches
+.cache/
+
+# Generated unified-release artifacts
+release.yaml
+release-values.yaml
+
+# Patch application leftovers
+*.orig
+*.rej
+# Generated test, visual, and acceptance artifacts.
+/artifacts/

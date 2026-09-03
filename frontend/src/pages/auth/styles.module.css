@@ -1,0 +1,996 @@
+.authPage {
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: 24px;
+  overflow-x: clip;
+  color: var(--hc-color-text);
+  background:
+    radial-gradient(
+      circle at 12% 8%,
+      color-mix(in srgb, var(--hc-color-focus) 16%, transparent),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 92% 12%,
+      color-mix(in srgb, var(--hc-color-accent) 14%, transparent),
+      transparent 28%
+    ),
+    var(--hc-color-page);
+}
+
+.skipLink {
+  position: fixed;
+  z-index: 20;
+  top: 10px;
+  left: 16px;
+  padding: 9px 14px;
+  border-radius: var(--hc-radius-sm);
+  color: var(--hc-color-surface);
+  background: var(--hc-color-primary-active);
+  transform: translateY(calc(-100% - 20px));
+  transition: transform 160ms ease-out;
+}
+
+.skipLink:focus-visible {
+  transform: translateY(0);
+}
+
+.authLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 64fr) minmax(380px, 34fr);
+  gap: 18px;
+  width: min(100%, 1600px);
+  min-height: calc(100dvh - 48px);
+  margin: 0 auto;
+}
+
+.authMain {
+  --auth-grid-line: color-mix(in srgb, var(--hc-color-primary) 8%, transparent);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(270px, 1fr) minmax(360px, 420px);
+  align-items: center;
+  gap: 26px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 108px 44px 62px;
+  overflow: hidden;
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-border) 84%, var(--hc-color-surface));
+  border-radius: var(--hc-radius-lg);
+  background:
+    linear-gradient(var(--auth-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px),
+    linear-gradient(
+      135deg,
+      color-mix(
+        in srgb,
+        var(--hc-color-surface) 96%,
+        var(--hc-color-surface-tint)
+      ),
+      var(--hc-color-surface)
+    );
+  background-size:
+    32px 32px,
+    32px 32px,
+    auto;
+  box-shadow: var(--hc-shadow-sm);
+}
+
+.authMain::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0 47%,
+      color-mix(in srgb, var(--hc-color-primary) 5%, transparent) 47% 47.2%,
+      transparent 47.2%
+    ),
+    radial-gradient(
+      circle at 35% 68%,
+      color-mix(in srgb, var(--hc-color-accent) 10%, transparent),
+      transparent 31%
+    );
+  content: "";
+}
+
+.brandBlock {
+  position: absolute;
+  z-index: 3;
+  top: 46px;
+  left: 54px;
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-5);
+  min-width: 0;
+}
+
+.brandLogo {
+  display: block;
+  width: 106px;
+  height: 62px;
+  object-fit: contain;
+}
+
+.brandName {
+  color: var(--hc-color-text);
+  font-family:
+    "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: clamp(30px, 2.4vw, 42px);
+  font-weight: 680;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.blueprint {
+  position: absolute;
+  z-index: -1;
+  bottom: 105px;
+  left: 7%;
+  width: min(42%, 390px);
+  aspect-ratio: 1 / 0.9;
+  color: color-mix(in srgb, var(--hc-color-primary) 29%, transparent);
+  opacity: 0.72;
+  transform: rotateX(1deg);
+}
+
+.blueprint::before,
+.blueprint::after {
+  position: absolute;
+  content: "";
+}
+
+.blueprint::before {
+  right: 8%;
+  bottom: 3%;
+  left: 5%;
+  height: 34%;
+  border: 1px solid currentColor;
+  background:
+    linear-gradient(
+      30deg,
+      transparent 49.5%,
+      currentColor 50%,
+      transparent 50.5%
+    ),
+    linear-gradient(
+      150deg,
+      transparent 49.5%,
+      currentColor 50%,
+      transparent 50.5%
+    );
+  transform: skewY(-8deg);
+}
+
+.blueprint::after {
+  right: 7%;
+  bottom: 0;
+  width: 36%;
+  height: 55%;
+  border-top: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+  transform: skewY(-16deg);
+}
+
+.blueprint span {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  border-color: currentColor;
+}
+
+.blueprintBase {
+  bottom: 23%;
+  left: 34%;
+  width: 30%;
+  height: 21%;
+  border: 1px solid;
+  border-radius: 50% 50% 18% 18%;
+}
+
+.blueprintArmOne {
+  bottom: 40%;
+  left: 42%;
+  width: 13%;
+  height: 32%;
+  border: 1px solid;
+  border-radius: 999px;
+  transform: rotate(26deg);
+  transform-origin: bottom center;
+}
+
+.blueprintJointOne,
+.blueprintJointTwo {
+  width: 15%;
+  aspect-ratio: 1;
+  border: 1px solid;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 6px
+    color-mix(in srgb, var(--hc-color-surface) 72%, transparent);
+}
+
+.blueprintJointOne {
+  bottom: 61%;
+  left: 35%;
+}
+
+.blueprintArmTwo {
+  bottom: 68%;
+  left: 17%;
+  width: 27%;
+  height: 11%;
+  border: 1px solid;
+  border-radius: 999px;
+  transform: rotate(-23deg);
+  transform-origin: right center;
+}
+
+.blueprintJointTwo {
+  bottom: 72%;
+  left: 10%;
+}
+
+.blueprintTool {
+  bottom: 46%;
+  left: 11%;
+  width: 3%;
+  height: 27%;
+  border-right: 1px solid;
+  border-left: 1px solid;
+  transform: rotate(2deg);
+}
+
+.blueprintPanel {
+  right: 1%;
+  bottom: 33%;
+  width: 22%;
+  height: 30%;
+  border: 1px solid;
+  transform: skewY(-11deg);
+}
+
+.authContent,
+.authContentAnchor {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.authCard {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 420px;
+  padding: 28px;
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-border) 90%, var(--hc-color-surface));
+  border-radius: var(--hc-radius-md);
+  background: color-mix(in srgb, var(--hc-color-surface) 97%, transparent);
+  box-shadow: var(--hc-shadow-md);
+  backdrop-filter: blur(8px);
+}
+
+.formHeading {
+  margin-bottom: var(--hc-space-5);
+  text-align: center;
+}
+
+.formHeading h1 {
+  margin: 3px 0 8px;
+  font-size: 30px;
+  font-weight: 680;
+  line-height: 1.2;
+}
+
+.formHeading p:last-child {
+  max-width: 34em;
+  margin: 0 auto;
+  color: var(--hc-color-text-muted);
+  font-size: 13px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--hc-color-primary-active);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+}
+
+.authCard :global(.ant-form-item) {
+  margin-bottom: 17px;
+}
+
+.authCard :global(.ant-form-item-label) {
+  padding-bottom: 5px;
+}
+
+.authCard :global(.ant-form-item-label > label) {
+  height: auto;
+  font-weight: 600;
+}
+
+.authCard :global(.ant-input),
+.authCard :global(.ant-input-affix-wrapper) {
+  min-height: 44px;
+}
+
+.errorSummary {
+  margin-bottom: var(--hc-space-4);
+  border-radius: var(--hc-radius-sm);
+}
+
+.formUtilities {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hc-space-2);
+  min-height: 36px;
+  margin: -4px 0 var(--hc-space-3);
+}
+
+.inlineAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding-inline: 4px;
+  color: var(--hc-color-primary-active);
+  font-size: 13px;
+}
+
+.inlineAction:hover,
+.authBackLink:hover {
+  color: var(--hc-color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.inlineAction:focus-visible,
+.authBackLink:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+
+.authBackLink {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--hc-space-4);
+  color: var(--hc-color-primary-active);
+  font-size: 13px;
+}
+
+.recoveryNotice,
+.registrationNotice {
+  margin-bottom: var(--hc-space-4);
+}
+
+.challengeSection {
+  display: grid;
+  gap: var(--hc-space-2);
+  margin: 0 0 var(--hc-space-4);
+  padding: var(--hc-space-3);
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-primary) 28%, var(--hc-color-border));
+  border-radius: var(--hc-radius-sm);
+  background: color-mix(in srgb, var(--hc-color-primary) 4%, transparent);
+}
+
+.challengeSection h2,
+.challengeSection p {
+  margin: 0;
+}
+
+.challengeSection h2 {
+  color: var(--hc-color-text);
+  font-size: 14px;
+}
+
+.challengeSection p {
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.challengeWidget {
+  min-height: 65px;
+}
+
+.recoveryNotice :global(.ant-alert-description),
+.registrationNotice :global(.ant-alert-description),
+.statusActions :global(.ant-alert-description) {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.primaryAction {
+  min-height: 44px;
+  margin-top: 2px;
+}
+
+.secondaryAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--hc-color-primary);
+  border-radius: var(--hc-radius-md);
+  color: var(--hc-color-primary-active);
+  font-weight: 600;
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.secondaryAction:hover {
+  border-color: var(--hc-color-primary-hover);
+  color: var(--hc-color-primary-hover);
+  background: color-mix(in srgb, var(--hc-color-primary) 6%, transparent);
+}
+
+.backLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  margin-top: var(--hc-space-2);
+}
+
+.passwordToggle {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px -7px -6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--hc-radius-sm);
+  color: var(--hc-color-text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.passwordToggle:hover:not(:disabled) {
+  color: var(--hc-color-primary-active);
+  background: var(--hc-color-surface-tint);
+}
+
+.passwordToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.passwordStrength {
+  margin: -10px 0 var(--hc-space-4);
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.passwordStrength[data-strength="weak"] {
+  color: var(--hc-color-warning);
+}
+
+.passwordStrength[data-strength="strong"] {
+  color: var(--hc-color-primary-active);
+}
+
+.assuranceList {
+  display: grid;
+  gap: var(--hc-space-2);
+  margin: var(--hc-space-5) 0 0;
+  padding: var(--hc-space-4) 0 0;
+  border-top: 1px solid var(--hc-color-border-subtle);
+  list-style: none;
+}
+
+.assuranceList li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--hc-space-3);
+}
+
+.assuranceList li > svg {
+  box-sizing: content-box;
+  padding: 6px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-sm);
+  color: var(--hc-color-primary);
+}
+
+.assuranceList span {
+  display: grid;
+  min-width: 0;
+}
+
+.assuranceList strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.assuranceList small {
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+}
+
+.authFooter {
+  position: absolute;
+  bottom: 28px;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  gap: var(--hc-space-2);
+  width: 50%;
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+}
+
+.stateRail,
+.fixtureRail {
+  min-width: 0;
+  min-height: 0;
+}
+
+.stateRail {
+  display: flex;
+}
+
+.fixtureRail {
+  display: grid;
+  grid-template-rows: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 18px;
+  width: 100%;
+}
+
+.statusCard {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid
+    color-mix(in srgb, var(--hc-color-border) 88%, var(--hc-color-surface));
+  border-radius: var(--hc-radius-lg);
+  background: var(--hc-color-surface);
+  box-shadow: var(--hc-shadow-sm);
+}
+
+.statusHeader {
+  display: flex;
+  flex: 0 0 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hc-space-3);
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 var(--hc-space-5);
+  border-bottom: 1px solid var(--hc-color-border-subtle);
+}
+
+.statusBrand {
+  display: flex;
+  align-items: center;
+  gap: var(--hc-space-3);
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.statusBrand img {
+  display: block;
+  width: 64px;
+  height: auto;
+  object-fit: contain;
+}
+
+.statusHeader :global(.ant-btn) {
+  min-height: 40px;
+  padding-inline: 8px;
+}
+
+.statusBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 0;
+  padding: 30px 28px;
+  text-align: center;
+}
+
+.statusIcon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--hc-space-4);
+  border-radius: 50%;
+  color: var(--hc-color-primary);
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--hc-color-primary) 18%, transparent) 0 43%,
+      transparent 44%
+    ),
+    color-mix(in srgb, var(--hc-color-primary) 5%, transparent);
+}
+
+.statusBody h1,
+.statusBody h2 {
+  margin: 0 0 var(--hc-space-3);
+  font-size: clamp(23px, 2vw, 29px);
+  font-weight: 660;
+}
+
+.statusDescription {
+  width: 100%;
+  max-width: 34em;
+  color: var(--hc-color-text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.centeredCopy p {
+  margin: 0;
+}
+
+.centeredCopy p + p {
+  margin-top: 5px;
+}
+
+.statusActions {
+  display: grid;
+  gap: var(--hc-space-3);
+  width: min(100%, 360px);
+  margin-top: var(--hc-space-6);
+}
+
+.accountSettingsLink {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--hc-radius-sm);
+  color: var(--hc-color-primary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.accountSettingsLink:hover {
+  background: var(--hc-color-surface-tint);
+  color: var(--hc-color-primary-hover);
+}
+
+.accountSettingsLink:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+
+.statusActions :global(.ant-btn) {
+  min-height: 44px;
+}
+
+.accessSteps {
+  display: grid;
+  gap: var(--hc-space-4);
+  margin: var(--hc-space-5) 0 0;
+  padding: 0;
+  text-align: left;
+  list-style: none;
+  counter-reset: auth-step;
+}
+
+.accessSteps li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-left: 42px;
+  counter-increment: auth-step;
+}
+
+.accessSteps li::before {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 50%;
+  color: var(--hc-color-primary-active);
+  background: var(--hc-color-surface-muted);
+  content: counter(auth-step, decimal-leading-zero);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.accessSteps strong {
+  color: var(--hc-color-text);
+  font-size: 13px;
+}
+
+.accessSteps span {
+  font-size: 12px;
+}
+
+.statusCard[data-compact] .statusHeader {
+  flex-basis: 60px;
+}
+
+.statusCard[data-compact] .statusBody {
+  padding: 18px 24px;
+}
+
+.statusCard[data-compact] .statusIcon {
+  width: 52px;
+  height: 52px;
+  margin-bottom: var(--hc-space-3);
+}
+
+.statusCard[data-compact] .statusBody h1,
+.statusCard[data-compact] .statusBody h2 {
+  margin-bottom: var(--hc-space-2);
+  font-size: 24px;
+}
+
+.statusCard[data-compact] .statusDescription {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.statusCard[data-compact] .statusActions {
+  gap: var(--hc-space-2);
+  margin-top: var(--hc-space-4);
+}
+
+@media (max-width: 1320px) {
+  .authMain {
+    grid-template-columns: minmax(230px, 1fr) minmax(350px, 400px);
+    gap: 18px;
+    padding-right: 28px;
+    padding-left: 28px;
+  }
+
+  .brandBlock {
+    left: 38px;
+    gap: var(--hc-space-3);
+  }
+
+  .brandLogo {
+    width: 92px;
+    height: auto;
+  }
+
+  .brandName {
+    font-size: clamp(27px, 2.35vw, 34px);
+  }
+
+  .statusHeader {
+    padding-inline: var(--hc-space-4);
+  }
+
+  .statusBrand {
+    gap: var(--hc-space-2);
+    font-size: 15px;
+  }
+
+  .statusBrand img {
+    width: 56px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .authLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .authMain {
+    min-height: 760px;
+  }
+
+  .stateRail {
+    min-height: 520px;
+  }
+
+  .fixtureRail {
+    min-height: 820px;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 1041px) {
+  .authMain {
+    padding-top: 92px;
+    padding-bottom: 42px;
+  }
+
+  .brandBlock {
+    top: 26px;
+  }
+
+  .brandLogo {
+    width: 82px;
+    height: auto;
+  }
+
+  .brandName {
+    font-size: 29px;
+  }
+
+  .authCard {
+    padding: 20px 24px;
+  }
+
+  .formHeading {
+    margin-bottom: var(--hc-space-3);
+  }
+
+  .formHeading h1 {
+    margin-bottom: 4px;
+    font-size: 27px;
+  }
+
+  .authCard :global(.ant-form-item) {
+    margin-bottom: 12px;
+  }
+
+  .authCard :global(.ant-divider-horizontal) {
+    margin: 12px 0;
+  }
+
+  .formUtilities {
+    margin-bottom: var(--hc-space-2);
+  }
+
+  .assuranceList {
+    gap: 5px;
+    margin-top: var(--hc-space-3);
+    padding-top: var(--hc-space-3);
+  }
+
+  .assuranceList li > svg {
+    padding: 4px;
+  }
+
+  .authFooter {
+    bottom: 16px;
+  }
+
+  .statusCard[data-compact] .statusBody {
+    padding: 12px 20px;
+  }
+
+  .statusCard[data-compact] .statusIcon {
+    width: 42px;
+    height: 42px;
+    margin-bottom: var(--hc-space-2);
+  }
+
+  .statusCard[data-compact] .statusBody h1,
+  .statusCard[data-compact] .statusBody h2 {
+    margin-bottom: 5px;
+    font-size: 22px;
+  }
+
+  .statusCard[data-compact] .statusActions {
+    gap: 5px;
+    margin-top: var(--hc-space-2);
+  }
+
+  .statusCard[data-compact] .statusActions :global(.ant-btn) {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 700px) {
+  .authPage {
+    padding: 0;
+  }
+
+  .authLayout {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: 100dvh;
+  }
+
+  .authMain {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    padding: 24px 16px 74px;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .brandBlock {
+    position: relative;
+    top: auto;
+    left: auto;
+    align-self: flex-start;
+    margin-bottom: 24px;
+  }
+
+  .brandLogo {
+    width: 78px;
+  }
+
+  .brandName {
+    font-size: 25px;
+  }
+
+  .blueprint {
+    display: none;
+  }
+
+  .authContent {
+    width: 100%;
+    margin: auto 0;
+  }
+
+  .authCard {
+    max-width: 100%;
+    padding: 24px 20px;
+    backdrop-filter: none;
+  }
+
+  .authCard :global(.ant-input.ant-input) {
+    /* Ant Design owns the input declaration; keep mobile form text above the
+       iOS auto-zoom threshold without changing the shared theme. */
+    font-size: 16px !important;
+  }
+
+  .authFooter {
+    right: 16px;
+    bottom: 20px;
+    left: 16px;
+    width: auto;
+  }
+
+  .stateRail,
+  .fixtureRail {
+    min-height: 0;
+  }
+
+  .statusCard {
+    min-height: 560px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .fixtureRail {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .statusHeader :global(.ant-btn),
+  .statusActions :global(.ant-btn),
+  .passwordToggle {
+    min-height: 44px;
+  }
+
+  .passwordToggle {
+    width: 44px;
+    margin: -6px -10px -6px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skipLink,
+  .secondaryAction {
+    transition-duration: 0.01ms;
+  }
+}

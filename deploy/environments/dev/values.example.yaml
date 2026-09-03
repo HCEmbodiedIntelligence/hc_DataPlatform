@@ -1,0 +1,30 @@
+global:
+  releaseId: platform-v0.1.0-dev
+  releaseManifestDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  gitCommit: 1111111111111111111111111111111111111111
+  migrationManifestDigest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+frontend:
+  image:
+    repository: registry.example.com/hc-data-platform/frontend
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  runtimeConfig:
+    releaseEnvironment: dev
+ingress:
+  enabled: true
+  host: data-platform.dev.example.com
+  tls:
+    secretName: hc-data-platform-dev-tls
+backend:
+  api:
+    image:
+      repository: registry.example.com/hc-data-platform/api
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  worker:
+    image:
+      repository: registry.example.com/hc-data-platform/worker
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  config:
+    environment: staging
+    platformEnvironmentId: hc-dev
+    secretBundleRevision: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    workflowActivityFactory: hc_data_platform.runtime:activity_dependencies

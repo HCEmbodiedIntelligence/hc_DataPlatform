@@ -1,0 +1,52 @@
+name: platform-rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      revision:
+        description: Previously verified Helm revision
+        type: number
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hc-data-platform-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: Configure cluster credentials
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          install -d -m 0700 "${RUNNER_TEMP}/kube"
+          printf '%s' "${KUBECONFIG_CONTENT}" > "${RUNNER_TEMP}/kube/config"
+          chmod 0600 "${RUNNER_TEMP}/kube/config"
+          echo "KUBECONFIG=${RUNNER_TEMP}/kube/config" >> "${GITHUB_ENV}"
+      - name: Roll back the complete platform release
+        env:
+          NAMESPACE: ${{ vars.KUBERNETES_NAMESPACE }}
+          REVISION: ${{ inputs.revision }}
+        run: >-
+          helm rollback hc-data-platform "${REVISION}"
+          --namespace "${NAMESPACE}" --wait --timeout 15m
+      - name: Record restored immutable images
+        env:
+          NAMESPACE: ${{ vars.KUBERNETES_NAMESPACE }}
+        run: >-
+          kubectl -n "${NAMESPACE}" get pods
+          -l app.kubernetes.io/instance=hc-data-platform
+          -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].imageID}{"\n"}{end}'
+

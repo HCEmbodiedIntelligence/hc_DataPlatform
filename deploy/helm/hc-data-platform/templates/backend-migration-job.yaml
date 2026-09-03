@@ -1,0 +1,198 @@
+{{- if .Values.backend.migrationJob.enabled }}
+{{- $job := .Values.backend.migrationJob -}}
+{{- $operation := default "advance" $job.operation -}}
+{{- $objectMode := default "reuse_external" $job.objectMigrationMode -}}
+{{- $inputSecret := $job.inputSecret.name -}}
+{{- if not (has $operation (list "plan" "advance" "status")) -}}
+{{- fail "backend.migrationJob.operation must be plan, advance, or status" -}}
+{{- end -}}
+{{- if not (has $objectMode (list "reuse_external" "copy_referenced" "portable")) -}}
+{{- fail "backend.migrationJob.objectMigrationMode must be reuse_external, copy_referenced, or portable" -}}
+{{- end -}}
+{{- $stagingClaim := required "backend.migrationJob.staging.existingClaim is required" $job.staging.existingClaim -}}
+{{- $serviceAccount := required "backend.migrationJob.serviceAccountName is required" $job.serviceAccountName -}}
+{{- if ne $operation "status" -}}
+{{- $_ := required "backend.migrationJob.inputSecret.name is required" $inputSecret -}}
+{{- end -}}
+{{- if eq $operation "plan" -}}
+{{- $_ := required "backend.migrationJob.validatedAt is required for plan" $job.validatedAt -}}
+{{- end -}}
+{{- if eq $operation "advance" -}}
+{{- $_ := required "backend.migrationJob.advancedAt is required for advance" $job.advancedAt -}}
+{{- $_ := required "backend.migrationJob.executionOwnerId is required for advance" $job.executionOwnerId -}}
+{{- $_ := required "backend.migrationJob.environmentConfigMap.name is required for advance" $job.environmentConfigMap.name -}}
+{{- if lt (int $job.fencingToken) 1 -}}
+{{- fail "backend.migrationJob.fencingToken must be positive for advance" -}}
+{{- end -}}
+{{- end -}}
+{{- range $key := list $job.inputSecret.planKey $job.inputSecret.approvalKey $job.inputSecret.approvalSignatureKey $job.inputSecret.observationKey $job.inputSecret.observationSignatureKey -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" $key) -}}
+{{- fail "backend.migrationJob input Secret key is invalid" -}}
+{{- end -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}-migration-{{ $operation }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration-maintenance
+  {{- with $job.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ $job.backoffLimit }}
+  activeDeadlineSeconds: {{ $job.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "hc-data-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration-maintenance
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $serviceAccount | quote }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if ne $operation "status" }}
+      initContainers:
+        - name: private-migration-bootstrap
+          image: {{ include "hc-data-platform.backendImage" $job.image | quote }}
+          imagePullPolicy: {{ $job.image.pullPolicy }}
+          command: ["python", "-c"]
+          args:
+            - |
+              import os
+              from pathlib import Path
+              work = Path("/migration-staging/work")
+              work.mkdir(mode=0o700, exist_ok=True)
+              work.chmod(0o700)
+              copies = [
+                  (Path("/input/migration/{{ $job.inputSecret.planKey }}"), work / "migration-plan.json"),
+              ]
+              {{- if eq $operation "advance" }}
+              copies.extend([
+                  (Path("/input/migration/{{ $job.inputSecret.approvalKey }}"), work / "migration-cutover-approval.json"),
+                  (Path("/input/migration/{{ $job.inputSecret.approvalSignatureKey }}"), work / "migration-cutover-approval.sig"),
+                  (Path("/input/migration/{{ $job.inputSecret.observationKey }}"), work / "migration-observation.json"),
+                  (Path("/input/migration/{{ $job.inputSecret.observationSignatureKey }}"), work / "migration-observation.sig"),
+              ])
+              {{- end }}
+              for source, destination in copies:
+                  payload = source.read_bytes()
+                  if destination.exists():
+                      if destination.read_bytes() != payload:
+                          raise RuntimeError("immutable migration input conflict")
+                  else:
+                      descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                      with os.fdopen(descriptor, "wb", buffering=0) as stream:
+                          stream.write(payload)
+                          stream.flush()
+                          os.fsync(stream.fileno())
+                  destination.chmod(0o600)
+          securityContext:
+            {{- toYaml .Values.backend.backupContainerSecurityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: staging
+              mountPath: /migration-staging
+            - name: migration-input
+              mountPath: /input/migration
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
+      containers:
+        - name: migration-maintenance
+          image: {{ include "hc-data-platform.backendImage" $job.image | quote }}
+          imagePullPolicy: {{ $job.image.pullPolicy }}
+          command: ["hc-platform"]
+          args:
+            - migration
+            - {{ $operation }}
+            {{- if eq $operation "plan" }}
+            - --document
+            - /migration-staging/work/migration-plan.json
+            - --validated-at
+            - {{ $job.validatedAt | quote }}
+            {{- else if eq $operation "advance" }}
+            - --plan
+            - /migration-staging/work/migration-plan.json
+            - --approval
+            - /migration-staging/work/migration-cutover-approval.json
+            - --approval-signature
+            - /migration-staging/work/migration-cutover-approval.sig
+            - --observation
+            - /migration-staging/work/migration-observation.json
+            - --observation-signature
+            - /migration-staging/work/migration-observation.sig
+            - --checkpoint
+            - /migration-staging/work/migration-checkpoint.json
+            - --execution-owner-id
+            - {{ $job.executionOwnerId | quote }}
+            - --fencing-token
+            - {{ $job.fencingToken | quote }}
+            - --advanced-at
+            - {{ $job.advancedAt | quote }}
+            {{- else }}
+            - --checkpoint
+            - /migration-staging/work/migration-checkpoint.json
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.backend.backupContainerSecurityContext | nindent 12 }}
+          env:
+            - name: HC_MIGRATION_EXPECTED_OBJECT_MODE
+              value: {{ $objectMode | quote }}
+          {{- if eq $operation "advance" }}
+          envFrom:
+            - configMapRef:
+                name: {{ $job.environmentConfigMap.name | quote }}
+          {{- end }}
+          resources:
+            {{- toYaml $job.resources | nindent 12 }}
+          volumeMounts:
+            - name: staging
+              mountPath: /migration-staging
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: staging
+          persistentVolumeClaim:
+            claimName: {{ $stagingClaim | quote }}
+        {{- if ne $operation "status" }}
+        - name: migration-input
+          secret:
+            secretName: {{ $inputSecret | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ $job.inputSecret.planKey | quote }}
+                path: {{ $job.inputSecret.planKey | quote }}
+              {{- if eq $operation "advance" }}
+              - key: {{ $job.inputSecret.approvalKey | quote }}
+                path: {{ $job.inputSecret.approvalKey | quote }}
+              - key: {{ $job.inputSecret.approvalSignatureKey | quote }}
+                path: {{ $job.inputSecret.approvalSignatureKey | quote }}
+              - key: {{ $job.inputSecret.observationKey | quote }}
+                path: {{ $job.inputSecret.observationKey | quote }}
+              - key: {{ $job.inputSecret.observationSignatureKey | quote }}
+                path: {{ $job.inputSecret.observationSignatureKey | quote }}
+              {{- end }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+{{- end }}

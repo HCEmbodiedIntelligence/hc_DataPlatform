@@ -1,0 +1,196 @@
+{{- if .Values.observability.enabled }}
+{{- $name := include "hc-data-platform.observabilityFullname" . -}}
+{{- if and .Values.highAvailability.enabled (lt (int .Values.observability.collector.replicaCount) 2) -}}
+{{- fail "highAvailability observability requires at least two Collector replicas" -}}
+{{- end -}}
+{{- if not .Values.observability.frontendLogAgent.enabled -}}
+{{- fail "observability.frontendLogAgent.enabled must be true to collect frontend stdout" -}}
+{{- end -}}
+{{- if and (not .Values.observability.loki.embedded) (not (regexMatch "^https?://[^[:space:]]+/otlp$" .Values.observability.loki.endpoint)) -}}
+{{- fail "external observability.loki.endpoint must be an HTTP(S) native OTLP base ending in /otlp" -}}
+{{- end -}}
+{{- if and .Values.observability.loki.query.existingBearerTokenSecret.name (not .Values.observability.loki.query.enabled) -}}
+{{- fail "observability Loki query bearer token requires loki.query.enabled=true" -}}
+{{- end -}}
+{{- if and (eq .Values.backend.config.environment "production") .Values.observability.loki.embedded -}}
+{{- fail "production observability requires an externally managed Loki endpoint" -}}
+{{- end -}}
+{{- if not (regexMatch "^[1-9][0-9]*h$" .Values.observability.loki.retentionPeriod) -}}
+{{- fail "observability.loki.retentionPeriod must be a positive whole-hour duration" -}}
+{{- end -}}
+{{- if .Values.observability.grafana.managed.enabled -}}
+{{- $_ := required "managed Grafana requires existingAdminSecret.name" .Values.observability.grafana.managed.existingAdminSecret.name -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-collector
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+data:
+  collector.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 2s
+        limit_mib: 384
+        spike_limit_mib: 96
+      filter/runtime_contract:
+        error_mode: propagate
+        logs:
+          log_record:
+            - 'not IsMatch(body, "^\\{\\\"schema_version\\\":\\\"hc-runtime-log/v1\\\",")'
+      batch:
+        send_batch_size: 2048
+        timeout: 5s
+    exporters:
+      otlp_http/loki:
+        endpoint: ${env:HC_LOKI_OTLP_ENDPOINT}
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 300s
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        resource_to_telemetry_conversion:
+          enabled: true
+      nop: {}
+    service:
+      extensions: [health_check]
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/runtime_contract, batch]
+          exporters: [otlp_http/loki]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [nop]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-agent
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-agent
+data:
+  agent.yaml: |
+    extensions:
+      file_storage:
+        directory: /var/lib/hc-otel-agent
+        create_directory: true
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      file_log/frontend:
+        include:
+          - ${env:HC_FRONTEND_LOG_GLOB}
+        include_file_path: true
+        start_at: beginning
+        storage: file_storage
+        operators:
+          - type: container
+    processors:
+      memory_limiter:
+        check_interval: 2s
+        limit_mib: 192
+        spike_limit_mib: 48
+      filter/runtime_contract:
+        error_mode: propagate
+        logs:
+          log_record:
+            - 'not IsMatch(body, "^\\{\\\"schema_version\\\":\\\"hc-runtime-log/v1\\\",")'
+      resource/frontend:
+        attributes:
+          - key: service.name
+            value: hc-data-platform-frontend
+            action: upsert
+      batch:
+        send_batch_size: 1024
+        timeout: 2s
+    exporters:
+      otlp_grpc/gateway:
+        endpoint: ${env:HC_OTEL_GATEWAY_ENDPOINT}
+        tls:
+          insecure: true
+        sending_queue:
+          enabled: true
+          storage: file_storage
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+    service:
+      extensions: [file_storage, health_check]
+      pipelines:
+        logs:
+          receivers: [file_log/frontend]
+          processors: [memory_limiter, filter/runtime_contract, resource/frontend, batch]
+          exporters: [otlp_grpc/gateway]
+{{- if .Values.observability.loki.embedded }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-loki
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+    common:
+      path_prefix: /var/loki
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+      storage:
+        filesystem:
+          chunks_directory: /var/loki/chunks
+          rules_directory: /var/loki/rules
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      allow_structured_metadata: true
+      retention_period: {{ .Values.observability.loki.retentionPeriod }}
+    compactor:
+      working_directory: /var/loki/compactor
+      retention_enabled: true
+      delete_request_store: filesystem
+    analytics:
+      reporting_enabled: false
+{{- end }}
+{{- end }}

@@ -1,0 +1,41 @@
+{{- $components := dict "api" .Values.backend.api "worker" .Values.backend.worker -}}
+{{- range $component, $settings := $components }}
+{{- if $settings.autoscaling.enabled }}
+{{- $minimum := int $settings.autoscaling.minReplicas }}
+{{- $maximum := int $settings.autoscaling.maxReplicas }}
+{{- $target := int $settings.autoscaling.targetCPUUtilizationPercentage }}
+{{- if or (lt $minimum 2) (le $maximum $minimum) }}
+{{- fail (printf "backend.%s.autoscaling requires minReplicas>=2 and maxReplicas>minReplicas" $component) }}
+{{- end }}
+{{- if or (lt $target 1) (gt $target 100) }}
+{{- fail (printf "backend.%s.autoscaling.targetCPUUtilizationPercentage must be between 1 and 100" $component) }}
+{{- end }}
+{{- if not $settings.resources.requests.cpu }}
+{{- fail (printf "backend.%s.autoscaling requires resources.requests.cpu" $component) }}
+{{- end }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" $ }}-{{ $component }}
+  labels:
+    {{- include "hc-data-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "hc-data-platform.backendFullname" $ }}-{{ $component }}
+  minReplicas: {{ $minimum }}
+  maxReplicas: {{ $maximum }}
+  behavior:
+    {{- toYaml $settings.autoscaling.behavior | nindent 4 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $target }}
+---
+{{- end }}
+{{- end }}

@@ -1,0 +1,52 @@
+# Overlay for the explicit real-API development mode.
+# Use together with compose.dev.yaml; this file intentionally does not redefine
+# the browser-Mock development default chosen by the base file.
+services:
+  migration-check:
+    build:
+      context: backend
+      target: api
+    command: [hc-data-migrate, status]
+    environment:
+      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    restart: "no"
+
+  api:
+    environment:
+      # Keep the real-browser overlay on the same isolated JWT contract as the
+      # Wave2 runner.  The browser harness deliberately issues only test JWTs.
+      HC_ENVIRONMENT: test
+      HC_JWT_ISSUER: https://be22.test.invalid/
+      HC_JWT_AUDIENCE: hc-data-platform
+      # Browser multipart URLs are signed directly for the configured OSS endpoint.
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-https://oss-cn-hangzhou.aliyuncs.com}
+    depends_on:
+      migration-check:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      HC_ENVIRONMENT: test
+      # The browser full-chain runner supplies one fresh, exact run id. Keep
+      # the durable outbox worker restricted to that exact organization/project/region;
+      # do not turn the test profile into a cross-project wildcard consumer.
+      HC_OUTBOX_SCOPES: >-
+        ["be22-${HC_REAL_API_E2E_RUN_ID:-unconfigured}-org/be22-${HC_REAL_API_E2E_RUN_ID:-unconfigured}-p1/be22-${HC_REAL_API_E2E_RUN_ID:-unconfigured}-cn"]
+    depends_on:
+      migration-check:
+        condition: service_completed_successfully
+
+  gateway:
+    volumes:
+      # These files are read only in the explicit real-browser profile.
+      # The zone is included by nginx at http level; the .inc is included only
+      # inside the public server before its general /api/ proxy location.
+      - ./deploy/compose/gateway.real-api-rate-limit.conf:/etc/nginx/conf.d/10-real-api-rate-limit.conf:ro
+      - ./deploy/compose/gateway.real-api-auth-rate-limit.inc:/etc/nginx/conf.d/real-api-location-auth-rate-limit.inc:ro
+
+  frontend:
+    environment:
+      VITE_MOCK_MODE: "off"

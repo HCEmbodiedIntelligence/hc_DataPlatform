@@ -1,0 +1,26 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {"id": 1, "title": "API requests by status class", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "sum by (status_class) (rate(hc_platform_http_requests_total[5m]))", "legendFormat": "{{status_class}}"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#api-5xx"}], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}},
+    {"id": 2, "title": "API latency p95 by route template", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "histogram_quantile(0.95, sum by (le, route) (rate(hc_platform_http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{route}}"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#api-5xx"}], "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}},
+    {"id": 3, "title": "Workflow failures by bounded class", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "sum by (workflow_kind, error_code) (rate(hc_data_workflow_failures_total[10m]))", "legendFormat": "{{workflow_kind}} {{error_code}}"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#workflow-failures"}], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}},
+    {"id": 4, "title": "Collector log export failures", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "sum(rate(otelcol_exporter_send_failed_log_records_total[5m]))", "legendFormat": "failed records/s"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#log-export-failure"}], "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}},
+    {"id": 5, "title": "Runtime logs by release/service/event", "type": "logs", "datasource": {"type": "loki", "uid": "hc-loki"}, "targets": [{"expr": "{service_name=~\"$service\"} | json | release_id=~\"$release\" | event_code=~\"$event_code\"", "refId": "A"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-runtime-logging"}], "gridPos": {"h": 10, "w": 24, "x": 0, "y": 16}},
+    {"id": 6, "title": "Runtime config revision spread", "type": "stat", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "max(hc_platform_applied_config_revision) - min(hc_platform_applied_config_revision)", "legendFormat": "revision spread"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#runtime-config-drift"}], "gridPos": {"h": 6, "w": 8, "x": 0, "y": 26}},
+    {"id": 7, "title": "Backup age", "type": "stat", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "time() - max(hc_platform_backup_last_integrity_verified_timestamp_seconds)", "legendFormat": "seconds"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#backup-stale-or-failed"}], "gridPos": {"h": 6, "w": 8, "x": 8, "y": 26}},
+    {"id": 8, "title": "Outbox oldest pending", "type": "stat", "datasource": {"type": "prometheus", "uid": "hc-prometheus"}, "targets": [{"expr": "max(hc_platform_outbox_oldest_pending_seconds)", "legendFormat": "seconds"}], "links": [{"title": "Runbook", "url": "/runbooks/observability-alerts#outbox-lag"}], "gridPos": {"h": 6, "w": 8, "x": 16, "y": 26}}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["hc-data-platform", "operations", "obs5-02"],
+  "templating": {"list": [
+    {"name": "service", "label": "Service", "type": "query", "datasource": {"type": "loki", "uid": "hc-loki"}, "query": "label_values(service_name)", "includeAll": true, "current": {"text": "All", "value": ".*"}},
+    {"name": "release", "label": "Release", "type": "textbox", "query": ".*", "current": {"text": ".*", "value": ".*"}},
+    {"name": "event_code", "label": "Event code", "type": "textbox", "query": ".*", "current": {"text": ".*", "value": ".*"}}
+  ]},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "HC Data Platform Operations",
+  "uid": "hc-data-platform-operations",
+  "version": 1
+}

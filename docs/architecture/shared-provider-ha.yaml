@@ -1,0 +1,143 @@
+api_version: hc-data-platform.io/v1alpha1
+kind: SharedProviderHAContract
+metadata:
+  contract_version: 1
+  effective_date: "2026-08-29"
+  implementation_task: HA4-04
+  evidence_status: REAL_LOCAL_PROTOCOL_FAILOVER_PASSED
+
+application_contract:
+  endpoint_identity_changes_on_failover: false
+  application_restart_required: false
+  credential_rotation_during_provider_failover: false
+  sequential_provider_failure_drill: true
+  correlated_site_failure_claim: false
+
+providers:
+  - id: postgresql
+    production_mode: external_ha_writer_endpoint
+    source_of_truth: synchronous_or_bounded_rpo_replica_set
+    stable_application_endpoint: required
+    acceptance_event: terminate_current_writer_and_promote_caught_up_replica
+    acceptance_result: existing_session_and_new_idempotent_write_succeed_without_dsn_change
+    authority_checks:
+      - promoted_node_is_not_in_recovery
+      - committed_lsn_is_present_on_promoted_node
+      - migration_ledger_remains_current
+      - old_writer_is_fenced_before_rejoin
+  - id: object_store
+    production_mode: external_versioned_ha_s3
+    source_of_truth: erasure_coded_or_provider_replicated_bucket
+    stable_application_endpoint: required
+    acceptance_event: terminate_one_serving_storage_node
+    acceptance_result: existing_object_read_and_new_presigned_multipart_part_succeed
+    authority_checks:
+      - versioning_remains_enabled
+      - exact_object_hash_is_unchanged
+      - incomplete_multipart_identity_is_preserved
+      - quorum_is_healthy_before_and_after_failure
+  - id: temporal
+    production_mode: external_managed
+    source_of_truth: provider_supported_ha_namespace
+    stable_application_endpoint: required
+    acceptance_event: terminate_one_serving_frontend
+    acceptance_result: in_flight_and_new_workflows_reach_one_terminal_result_without_target_change
+    authority_checks:
+      - namespace_identity_is_unchanged
+      - workflow_ids_remain_unique
+      - task_queue_backlog_returns_to_zero
+      - provider_rpo_and_rto_evidence_is_current
+
+secret_consistency:
+  manager_mode: external_versioned_secret_manager
+  public_revision_setting: HC_SECRET_BUNDLE_REVISION
+  revision_format: sha256
+  plaintext_fingerprint_exported: false
+  pod_sources:
+    - postgres_secret_reference
+    - object_store_secret_reference
+    - application_secret_reference
+  rotation_method: create_new_immutable_bundle_then_roll_all_backend_pods
+  forbidden_methods:
+    - in_place_partial_key_update
+    - dynamic_dsn_or_credential_hot_reload
+    - replacement_secret_generation_during_failover
+  rollback: exact_previous_bundle_revision_and_secret_references
+
+acceptance:
+  required_providers:
+    - postgresql
+    - object_store
+    - temporal
+  request_probe_during_each_failure: required
+  secret_revision_equal_across_api_and_workers: required
+  final_application_restarts: 0
+  database_side_effect_duplicates: 0
+  workflow_side_effect_duplicates: 0
+  capacity_claim: NOT_APPLICABLE
+
+evidence:
+  observed_at: "2026-08-29T00:51:27Z"
+  scope: isolated_same_host_multi_process_protocol_drill
+  application:
+    api_replicas: 2
+    worker_replicas: 2
+    stable_endpoints_unchanged: true
+    container_identities_unchanged: true
+    final_restarts: 0
+    final_health: healthy
+    api_image: sha256:2f928ed298848d7b3589a6a49fe0ee7c5074612bf0f813d24642d3d11063c521
+    worker_image: sha256:aa43d0003d3d0652c72590e61b5302be3232642e29c6e7f5fb90d2f055935964
+  secret_bundle:
+    revision: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    equal_across_all_four_backends: true
+    rotated_during_failover: false
+  postgresql:
+    topology: synchronous_streaming_primary_standby
+    initial_sync_state: sync
+    caught_up_commit_lsn: 0/46E78F0
+    old_writer_fenced: stopped
+    promoted_node_in_recovery: false
+    recovery_seconds: 28.186
+    original_session_preserved: true
+    exact_idempotent_response_sha256: b111da4745b68e7740cf1423bca951a34518cf984f5341dfd6801de104385a3d
+    idempotency_rows: 1
+    profile_audit_events: 2
+    final_profile_revision: 3
+    migrations_current: 105
+  object_store:
+    topology: four_node_distributed_erasure_set
+    healthy_nodes_before: 4
+    healthy_nodes_after: 3
+    recovery_seconds: 16.481
+    versioning_enabled: true
+    object_sha256: f8703720dfe7d3b9ffb85a69096b509540619490fac7c678f19128ba2386b310
+    object_hash_preserved: true
+    multipart_parts_before: 1
+    multipart_parts_after_presigned_put: 2
+    new_versioned_write_succeeded: true
+  temporal:
+    topology: two_all_in_one_frontends_shared_postgresql
+    namespace_id: 1e3fccb1-cfe3-43ac-ad4f-d46cd7907c78
+    in_flight_at_failure: 300
+    authoritative_completed: 300
+    authoritative_failed: 0
+    authoritative_running_after: 0
+    unique_reconciled_results: 300
+    authoritative_recovery_seconds: 38.785
+    post_failover_completed: 20
+    packaged_main_worker_probe_completed: 1
+    task_queue_pollers_reconnected: true
+    observer_note: initial result long-poll was canceled; a fresh client reconciled all results
+  side_effects:
+    storage_lifecycle_executions: 0
+    storage_lifecycle_items: 0
+    workflow_jobs: 0
+    database_duplicates: 0
+    workflow_duplicates: 0
+
+excluded_claims:
+  - production_provider_sla
+  - correlated_region_failure
+  - five_tb_capacity
+  - backup_restore_verified

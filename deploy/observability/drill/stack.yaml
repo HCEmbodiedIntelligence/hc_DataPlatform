@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-drill-receiver}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-drill-receiver}}
+  template:
+    metadata: {labels: {app: obs-drill-receiver}}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {hc.platform/drill-role: observability}
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532}
+      containers:
+        - name: receiver
+          image: hc-data-platform-api@sha256:2f928ed298848d7b3589a6a49fe0ee7c5074612bf0f813d24642d3d11063c521
+          imagePullPolicy: IfNotPresent
+          command: [python, /drill/receiver.py]
+          ports: [{name: http, containerPort: 8081}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2}
+          securityContext:
+            {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts: [{name: script, mountPath: /drill, readOnly: true}]
+      volumes: [{name: script, configMap: {name: obs-drill-receiver}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: obs-drill-receiver}
+spec:
+  selector: {app: obs-drill-receiver}
+  ports: [{name: http, port: 8081, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-drill-alertmanager}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-drill-alertmanager}}
+  template:
+    metadata: {labels: {app: obs-drill-alertmanager}}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {hc.platform/drill-role: observability}
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534}
+      containers:
+        - name: alertmanager
+          image: quay.io/prometheus/alertmanager@sha256:82c38dcc97cd0fbf5d5e31ddfb304dbb3a6e411194477de5de82ec71b328bb40
+          imagePullPolicy: IfNotPresent
+          args: [--config.file=/etc/alertmanager/alertmanager.yaml, --storage.path=/alertmanager]
+          ports: [{name: http, containerPort: 9093}]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 2}
+          securityContext:
+            {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/alertmanager, readOnly: true}
+            - {name: data, mountPath: /alertmanager}
+      volumes:
+        - {name: config, configMap: {name: obs-drill-alertmanager}}
+        - {name: data, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: obs-drill-alertmanager}
+spec:
+  selector: {app: obs-drill-alertmanager}
+  ports: [{name: http, port: 9093, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: obs-drill-prometheus}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: obs-drill-prometheus}}
+  template:
+    metadata: {labels: {app: obs-drill-prometheus}}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {hc.platform/drill-role: observability}
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534}
+      containers:
+        - name: prometheus
+          image: quay.io/prometheus/prometheus@sha256:e906cef998316bbe319f98711e1b4d8613ad37e14b08ff831d7036e77b7464f9
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/prometheus/prometheus.yaml
+            - --storage.tsdb.path=/prometheus
+            - --web.enable-lifecycle
+          ports: [{name: http, containerPort: 9090}]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 2}
+          securityContext:
+            {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus, readOnly: true}
+            - {name: rules, mountPath: /etc/prometheus/rules, readOnly: true}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - {name: config, configMap: {name: obs-drill-prometheus}}
+        - {name: rules, configMap: {name: obs-drill-prometheus-rules}}
+        - {name: data, emptyDir: {sizeLimit: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: obs-drill-prometheus}
+spec:
+  selector: {app: obs-drill-prometheus}
+  ports: [{name: http, port: 9090, targetPort: http}]

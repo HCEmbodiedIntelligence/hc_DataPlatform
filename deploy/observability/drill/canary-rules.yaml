@@ -1,0 +1,12 @@
+groups:
+  - name: hc-observability-delivery-drill
+    interval: 2s
+    rules:
+      - alert: HcObservabilityDeliveryCanary
+        expr: hc_observability_alert_canary == 1
+        for: 0m
+        labels: {severity: critical, component: observability, synthetic: "true"}
+        annotations:
+          summary: Synthetic observability delivery canary
+          description: This alert must only fire during the approved end-to-end notification drill.
+          runbook_url: /runbooks/observability-alerts#delivery-canary

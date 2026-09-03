@@ -1,0 +1,87 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hc-data-platform.fullname" . }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.fullname" . }}-public-deny
+                port:
+                  number: 80
+          {{- range $path := list "/docs" "/docs/oauth2-redirect" "/redoc" "/openapi.json" }}
+          - path: {{ $path }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" $ }}-api
+                port:
+                  number: {{ $.Values.backend.api.service.port }}
+          {{- end }}
+          - path: /health/live
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" . }}-api
+                port:
+                  number: {{ .Values.backend.api.service.port }}
+          - path: /health/ready
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" . }}-api
+                port:
+                  number: {{ .Values.backend.api.service.port }}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "hc-data-platform.backendFullname" . }}-api
+                port:
+                  number: {{ .Values.backend.api.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "hc-data-platform.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+---
+# This Service intentionally has no matching Pods. The public Ingress maps /metrics here,
+# so a future frontend catch-all can never make the monitoring endpoint publicly reachable.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hc-data-platform.fullname" . }}-public-deny
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: public-deny
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hc-data-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: public-deny
+  ports:
+    - name: deny
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+{{- end }}

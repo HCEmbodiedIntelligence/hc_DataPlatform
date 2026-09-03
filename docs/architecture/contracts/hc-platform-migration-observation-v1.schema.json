@@ -1,0 +1,431 @@
+{
+  "$defs": {
+    "MigrationCapacityEvidenceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Sha256",
+          "type": "string"
+        },
+        "measured_final_delta_bytes": {
+          "minimum": 0,
+          "title": "Measured Final Delta Bytes",
+          "type": "integer"
+        },
+        "measured_final_sync_seconds": {
+          "maximum": 1800,
+          "minimum": 0,
+          "title": "Measured Final Sync Seconds",
+          "type": "integer"
+        },
+        "measured_precopy_bytes": {
+          "minimum": 0,
+          "title": "Measured Precopy Bytes",
+          "type": "integer"
+        },
+        "measured_precopy_seconds": {
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Measured Precopy Seconds",
+          "type": "integer"
+        },
+        "measurement_completed_at": {
+          "format": "date-time",
+          "title": "Measurement Completed At",
+          "type": "string"
+        },
+        "measurement_started_at": {
+          "format": "date-time",
+          "title": "Measurement Started At",
+          "type": "string"
+        },
+        "production_equivalent_network": {
+          "default": false,
+          "title": "Production Equivalent Network",
+          "type": "boolean"
+        },
+        "production_equivalent_storage": {
+          "default": false,
+          "title": "Production Equivalent Storage",
+          "type": "boolean"
+        },
+        "provider_reference": {
+          "maxLength": 2048,
+          "pattern": "^[a-z][a-z0-9+.-]*://[^\\x00\\r\\n]+$",
+          "title": "Provider Reference",
+          "type": "string"
+        },
+        "synthetic_or_sparse_bytes": {
+          "const": false,
+          "default": false,
+          "title": "Synthetic Or Sparse Bytes",
+          "type": "boolean"
+        },
+        "target_usable_capacity_bytes": {
+          "minimum": 0,
+          "title": "Target Usable Capacity Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_reference",
+        "evidence_sha256",
+        "target_usable_capacity_bytes",
+        "measured_precopy_bytes",
+        "measured_precopy_seconds",
+        "measured_final_delta_bytes",
+        "measured_final_sync_seconds",
+        "measurement_started_at",
+        "measurement_completed_at"
+      ],
+      "title": "MigrationCapacityEvidenceV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-migration-observation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active_source_writer_count": {
+      "minimum": 0,
+      "title": "Active Source Writer Count",
+      "type": "integer"
+    },
+    "capacity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MigrationCapacityEvidenceV1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "evidence_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Sha256",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-migration-observation/v1",
+      "default": "hc-platform-migration-observation/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "migration_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Migration Id",
+      "type": "string"
+    },
+    "object_endpoint_bucket_prefix_verified": {
+      "const": true,
+      "default": true,
+      "title": "Object Endpoint Bucket Prefix Verified",
+      "type": "boolean"
+    },
+    "object_key_version_size_hash_verified": {
+      "const": true,
+      "default": true,
+      "title": "Object Key Version Size Hash Verified",
+      "type": "boolean"
+    },
+    "object_replication_pending_count": {
+      "minimum": 0,
+      "title": "Object Replication Pending Count",
+      "type": "integer"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "observed_dns_ttl_seconds": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Observed Dns Ttl Seconds"
+    },
+    "observer_identity": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Observer Identity",
+      "type": "string"
+    },
+    "observer_key_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Observer Key Sha256",
+      "type": "string"
+    },
+    "plan_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "portable_package_encrypted": {
+      "default": false,
+      "title": "Portable Package Encrypted",
+      "type": "boolean"
+    },
+    "portable_package_inventory_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Portable Package Inventory Sha256"
+    },
+    "portable_package_part_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Portable Package Part Count",
+      "type": "integer"
+    },
+    "postgresql_major": {
+      "maximum": 99,
+      "minimum": 12,
+      "title": "Postgresql Major",
+      "type": "integer"
+    },
+    "source_object_bytes": {
+      "minimum": 0,
+      "title": "Source Object Bytes",
+      "type": "integer"
+    },
+    "source_object_count": {
+      "minimum": 0,
+      "title": "Source Object Count",
+      "type": "integer"
+    },
+    "source_object_inventory_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Object Inventory Sha256",
+      "type": "string"
+    },
+    "source_object_read_permission_verified": {
+      "const": true,
+      "default": true,
+      "title": "Source Object Read Permission Verified",
+      "type": "boolean"
+    },
+    "source_postgresql_lsn": {
+      "pattern": "^[0-9A-F]+/[0-9A-F]+$",
+      "title": "Source Postgresql Lsn",
+      "type": "string"
+    },
+    "source_postgresql_system_identifier": {
+      "exclusiveMinimum": 0,
+      "title": "Source Postgresql System Identifier",
+      "type": "integer"
+    },
+    "source_postgresql_timeline": {
+      "exclusiveMinimum": 0,
+      "title": "Source Postgresql Timeline",
+      "type": "integer"
+    },
+    "source_read_only_fence": {
+      "title": "Source Read Only Fence",
+      "type": "boolean"
+    },
+    "source_release_identity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Release Identity Sha256",
+      "type": "string"
+    },
+    "source_retained_until": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Retained Until"
+    },
+    "source_temporal_inventory_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Temporal Inventory Sha256",
+      "type": "string"
+    },
+    "source_worker_replicas": {
+      "minimum": 0,
+      "title": "Source Worker Replicas",
+      "type": "integer"
+    },
+    "source_writes_enabled": {
+      "title": "Source Writes Enabled",
+      "type": "boolean"
+    },
+    "step": {
+      "enum": [
+        "precopy_verified",
+        "source_fenced",
+        "final_sync_verified",
+        "target_verified",
+        "traffic_switched",
+        "target_writes_enabled",
+        "rollback_window_retained"
+      ],
+      "title": "Step",
+      "type": "string"
+    },
+    "target_object_bytes": {
+      "minimum": 0,
+      "title": "Target Object Bytes",
+      "type": "integer"
+    },
+    "target_object_count": {
+      "minimum": 0,
+      "title": "Target Object Count",
+      "type": "integer"
+    },
+    "target_object_inventory_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Target Object Inventory Sha256",
+      "type": "string"
+    },
+    "target_object_read_permission_verified": {
+      "const": true,
+      "default": true,
+      "title": "Target Object Read Permission Verified",
+      "type": "boolean"
+    },
+    "target_postgresql_in_recovery": {
+      "title": "Target Postgresql In Recovery",
+      "type": "boolean"
+    },
+    "target_postgresql_replay_lsn": {
+      "pattern": "^[0-9A-F]+/[0-9A-F]+$",
+      "title": "Target Postgresql Replay Lsn",
+      "type": "string"
+    },
+    "target_postgresql_system_identifier": {
+      "exclusiveMinimum": 0,
+      "title": "Target Postgresql System Identifier",
+      "type": "integer"
+    },
+    "target_postgresql_timeline": {
+      "exclusiveMinimum": 0,
+      "title": "Target Postgresql Timeline",
+      "type": "integer"
+    },
+    "target_read_only_fence": {
+      "title": "Target Read Only Fence",
+      "type": "boolean"
+    },
+    "target_release_identity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Target Release Identity Sha256",
+      "type": "string"
+    },
+    "target_temporal_inventory_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Target Temporal Inventory Sha256",
+      "type": "string"
+    },
+    "target_verification_passed": {
+      "default": false,
+      "title": "Target Verification Passed",
+      "type": "boolean"
+    },
+    "target_verification_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Verification Sha256"
+    },
+    "target_worker_replicas": {
+      "minimum": 0,
+      "title": "Target Worker Replicas",
+      "type": "integer"
+    },
+    "target_writes_enabled": {
+      "title": "Target Writes Enabled",
+      "type": "boolean"
+    },
+    "traffic_routes_to_target": {
+      "default": false,
+      "title": "Traffic Routes To Target",
+      "type": "boolean"
+    },
+    "unexpired_source_upload_grant_count": {
+      "minimum": 0,
+      "title": "Unexpired Source Upload Grant Count",
+      "type": "integer"
+    },
+    "write_pause_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Write Pause Seconds"
+    }
+  },
+  "required": [
+    "migration_id",
+    "plan_id",
+    "step",
+    "observed_at",
+    "observer_identity",
+    "observer_key_sha256",
+    "source_release_identity_sha256",
+    "target_release_identity_sha256",
+    "postgresql_major",
+    "source_postgresql_system_identifier",
+    "target_postgresql_system_identifier",
+    "source_postgresql_timeline",
+    "target_postgresql_timeline",
+    "source_postgresql_lsn",
+    "target_postgresql_replay_lsn",
+    "target_postgresql_in_recovery",
+    "source_object_count",
+    "target_object_count",
+    "source_object_bytes",
+    "target_object_bytes",
+    "source_object_inventory_sha256",
+    "target_object_inventory_sha256",
+    "object_replication_pending_count",
+    "source_temporal_inventory_sha256",
+    "target_temporal_inventory_sha256",
+    "source_writes_enabled",
+    "target_writes_enabled",
+    "source_worker_replicas",
+    "target_worker_replicas",
+    "active_source_writer_count",
+    "unexpired_source_upload_grant_count",
+    "source_read_only_fence",
+    "target_read_only_fence",
+    "evidence_sha256"
+  ],
+  "title": "hc-platform-migration-observation/v1",
+  "type": "object"
+}

@@ -1,0 +1,292 @@
+{
+  "manifest": {
+    "artifacts": [
+      {
+        "client_side_encryption": "age_x25519_v1",
+        "media_type": "application/octet-stream",
+        "path": "db/platform.dump",
+        "role": "postgresql_dump",
+        "sha256": "3549b0028b75d981cdda2e573e9cb49dedc200185876df299f912b79f69dabd8",
+        "size_bytes": 1024
+      },
+      {
+        "client_side_encryption": "age_x25519_v1",
+        "media_type": "application/octet-stream",
+        "path": "objects/inventory.jsonl.zst",
+        "role": "object_inventory",
+        "sha256": "b11a85b296a90afc460430434a504e7acb04b064575b7277724688af0e59d189",
+        "size_bytes": 1024
+      },
+      {
+        "client_side_encryption": "age_x25519_v1",
+        "media_type": "application/octet-stream",
+        "path": "objects/parts/part-000001.tar.zst.age",
+        "role": "object_part",
+        "sha256": "f60cb19272fd5675123f4381a372ede2bd8ff430a5daa18561cb319a8a3f2ca2",
+        "size_bytes": 1024
+      },
+      {
+        "client_side_encryption": "age_x25519_v1",
+        "media_type": "application/octet-stream",
+        "path": "temporal/policy.json",
+        "role": "temporal_policy",
+        "sha256": "e4540a7c8404b1becfed2f0ca242bec6cfd6096a8d944555145aafe5eab77c69",
+        "size_bytes": 1024
+      },
+      {
+        "client_side_encryption": "public_integrity_metadata",
+        "media_type": "application/octet-stream",
+        "path": "config/public.yaml",
+        "role": "public_config",
+        "sha256": "a751c77ec2d5ce71d6a87bfc4cb6af86f4baf7553065f4aeb3be08be35e2170c",
+        "size_bytes": 1024
+      },
+      {
+        "client_side_encryption": "age_x25519_v1",
+        "media_type": "application/octet-stream",
+        "path": "secrets/envelope.json",
+        "role": "secrets_envelope",
+        "sha256": "c4451ca9bd0fdad615626c886cd71ae9e6e7489dcbf930b4c2b5ff456c341992",
+        "size_bytes": 1024
+      },
+      {
+        "client_side_encryption": "public_integrity_metadata",
+        "media_type": "application/octet-stream",
+        "path": "checksums.sha256",
+        "role": "checksums",
+        "sha256": "d3beb16ca27a9fc332b55f526e1c8da6db0b2f58d50c9d27d59e15e23a4e35a8",
+        "size_bytes": 1024
+      }
+    ],
+    "backup_id": "backup-20260828-001",
+    "backup_repository": {
+      "bucket_reference": "isolated-backups",
+      "catalog_is_only_copy": false,
+      "cross_site_replica_reference": "backup-replica-cn-west",
+      "kms_key_reference": "kms://security/repository/versions/v7",
+      "object_lock": "compliance",
+      "provider": "s3_compatible",
+      "repository_id": "backup-repository-cn",
+      "retention_until": "2027-08-28T00:00:00Z",
+      "server_side_encryption": "kms_aes256_gcm"
+    },
+    "backup_tool": {
+      "git_commit": "1111111111111111111111111111111111111111",
+      "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "name": "hc-platform-backup",
+      "version": "0.1.0"
+    },
+    "compatibility": {
+      "exact_recorded_release_required": true,
+      "forward_upgrade_before_restore_verification_allowed": false,
+      "maximum_backup_tool_major": 1,
+      "minimum_backup_tool_version": "0.1.0",
+      "postgresql_major": 16,
+      "schema_version": 1
+    },
+    "completed_at": "2026-08-28T06:10:00Z",
+    "created_at": "2026-08-28T06:00:00Z",
+    "deployment_configuration": {
+      "endpoint_remapping_policy": "explicit_only",
+      "gitops_repository_reference": "gitops/hc-data-platform@1111111111111111111111111111111111111111",
+      "public_config_path": "config/public.yaml",
+      "public_config_sha256": "a751c77ec2d5ce71d6a87bfc4cb6af86f4baf7553065f4aeb3be08be35e2170c"
+    },
+    "format_version": "hc-platform-backup/v1",
+    "mode": "portable",
+    "object_store": {
+      "bucket_reference": "production-data",
+      "consistency_coordinate": "inventory-20260828T060000Z",
+      "inventory_path": "objects/inventory.jsonl.zst",
+      "inventory_sha256": "b11a85b296a90afc460430434a504e7acb04b064575b7277724688af0e59d189",
+      "object_count": 1,
+      "portable_part_paths": [
+        "objects/parts/part-000001.tar.zst.age"
+      ],
+      "prefix": "platform-cn-prod/",
+      "provider": "s3_compatible",
+      "total_bytes": 1024,
+      "versioning_status": "enabled"
+    },
+    "postgresql": {
+      "database_size_bytes": 16777216,
+      "database_name": "hc_data",
+      "content_evidence": {
+        "aggregate_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "constraint_count": 1,
+        "constraint_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_object_count": 1,
+        "schema_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "sequence_count": 1,
+        "sequence_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "tables": []
+      },
+      "dump_format": "postgresql_custom",
+      "dump_path": "db/platform.dump",
+      "dump_sha256": "3549b0028b75d981cdda2e573e9cb49dedc200185876df299f912b79f69dabd8",
+      "major_version": 16,
+      "migration_count": 97,
+      "migration_manifest_sha256": "be4132902aa1b0825838e0ca6a78434dfd4823a9c1c546bd0a1750e91b0cb508",
+      "physical_recovery": "baseline_plus_wal_pitr",
+      "pitr_coordinate": "timeline=3 lsn=0/5A000000",
+      "server_version": "16.10"
+    },
+    "release": {
+      "chart_name": "hc-data-platform",
+      "chart_version": "0.1.0",
+      "git_commit": "1111111111111111111111111111111111111111",
+      "images": {
+        "api": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "frontend": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "worker": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "migration_manifest_sha256": "be4132902aa1b0825838e0ca6a78434dfd4823a9c1c546bd0a1750e91b0cb508",
+      "release_manifest_sha256": "707a400adad19b9fba18e0645815bf9e8516e3b12823789b387b033e211bbe1e"
+    },
+    "secrets_and_kms": {
+      "dependencies": [
+        {
+          "environment_variable": "HC_POSTGRES_DSN",
+          "fingerprint_sha256": "fc0f921953717ce9778f9da1fa60b8071aaf94d233973a08916ddba171be6c3d",
+          "secret_key_name": "postgres-dsn",
+          "secret_reference": "platform-production",
+          "version": "7"
+        },
+        {
+          "environment_variable": "HC_DATA_SOURCE_CREDENTIAL_KEY",
+          "fingerprint_sha256": "b8e479aeb38edb185fd60e90fa3b0acfafbee1cdcc93d2e6e533508acaaeeecf",
+          "secret_key_name": "credential-master-key",
+          "secret_reference": "platform-production",
+          "version": "4"
+        }
+      ],
+      "envelope_path": "secrets/envelope.json",
+      "envelope_sha256": "c4451ca9bd0fdad615626c886cd71ae9e6e7489dcbf930b4c2b5ff456c341992",
+      "plaintext_export_allowed": false,
+      "portable_recipient_key_references": [
+        "kms://security/portable-age/versions/v4"
+      ],
+      "repository_key_reference": "kms://security/repository/versions/v7",
+      "signing_key_reference": "kms://security/signing-ed25519/versions/v3"
+    },
+    "signature": {
+      "algorithm": "Ed25519",
+      "canonicalization": "hc-json-c14n/v1",
+      "format_version": "hc-platform-signature/v1",
+      "key_reference": "kms://security/signing-ed25519/versions/v3",
+      "public_key_sha256": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+      "signature_path": "signature.sig"
+    },
+    "source_environment_id": "production-cn-east",
+    "source_platform_id": "platform-cn-prod",
+    "state_domains": {
+      "backup_repository": {
+        "disposition": "included",
+        "evidence_artifacts": [
+          "checksums.sha256"
+        ],
+        "owner_role": "platform_sre",
+        "verification_status": "verified"
+      },
+      "deployment_configuration": {
+        "disposition": "included",
+        "evidence_artifacts": [
+          "config/public.yaml"
+        ],
+        "owner_role": "release_engineering",
+        "verification_status": "verified"
+      },
+      "external_dependencies": {
+        "disposition": "external",
+        "evidence_artifacts": [
+          "config/public.yaml"
+        ],
+        "owner_role": "identity_operations",
+        "verification_status": "external_verified"
+      },
+      "object_store": {
+        "disposition": "included",
+        "evidence_artifacts": [
+          "objects/inventory.jsonl.zst"
+        ],
+        "owner_role": "object_storage_operations",
+        "verification_status": "verified"
+      },
+      "postgresql_business": {
+        "disposition": "included",
+        "evidence_artifacts": [
+          "db/platform.dump"
+        ],
+        "owner_role": "database_operations",
+        "verification_status": "verified"
+      },
+      "release_artifacts": {
+        "disposition": "included",
+        "evidence_artifacts": [
+          "checksums.sha256"
+        ],
+        "owner_role": "release_engineering",
+        "verification_status": "verified"
+      },
+      "runtime_logs": {
+        "disposition": "not_applicable",
+        "evidence_artifacts": [
+          "checksums.sha256"
+        ],
+        "owner_role": "observability_operations",
+        "verification_status": "not_applicable"
+      },
+      "secrets_and_kms": {
+        "disposition": "external",
+        "evidence_artifacts": [
+          "secrets/envelope.json"
+        ],
+        "owner_role": "security_kms_operations",
+        "verification_status": "external_verified"
+      },
+      "temporal_workflows": {
+        "disposition": "external",
+        "evidence_artifacts": [
+          "temporal/policy.json"
+        ],
+        "owner_role": "temporal_operations",
+        "verification_status": "external_verified"
+      }
+    },
+    "status": "INTEGRITY_VERIFIED",
+    "temporal": {
+      "cluster_reference": "temporal-production-cn",
+      "deployment_mode": "external_managed",
+      "internal_database_in_business_dump": false,
+      "namespace": "hc-production-cn-east",
+      "open_workflow_inventory_sha256": "e812fc5620af99f29ebd7156e83d84a676b37897c78f921dade2b6cf340cedc6",
+      "policy_path": "temporal/policy.json",
+      "policy_sha256": "e4540a7c8404b1becfed2f0ca242bec6cfd6096a8d944555145aafe5eab77c69",
+      "recovery_policy": "provider_supported_ha_backup",
+      "schedule_inventory_sha256": "a57f169cbe12b45e0739c8882f53cc9f889f0a580f86822a26c776325b32c3b9",
+      "service_version": "1.28.1"
+    },
+    "verification_facts": [
+      {
+        "evidence_artifacts": [
+          "checksums.sha256"
+        ],
+        "kind": "integrity",
+        "operation_id": "integrity-verification-001",
+        "result": "passed",
+        "verified_at": "2026-08-28T06:10:00Z",
+        "verifier_identity": "isolated-verifier/build-001"
+      }
+    ]
+  },
+  "public_key_base64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+  "signature": {
+    "algorithm": "Ed25519",
+    "canonicalization": "hc-json-c14n/v1",
+    "format_version": "hc-platform-signature/v1",
+    "key_reference": "kms://security/signing-ed25519/versions/v3",
+    "manifest_sha256": "0dd52d69fb81c46ca693f7419b1bd8ce51aca99288d40eaf4b4a8734ccd3546c",
+    "public_key_sha256": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+    "signature_base64url": "KSbzg4e9phgmpCwJUbLCWghzPSp_tNjuokji7gbKYGUqmCsMiV1Zn4oEnEbBCRUN9Y4Pv_JyEoQQEazkXTVLAA"
+  }
+}

@@ -1,0 +1,465 @@
+{
+  "api_image_id": "sha256:314a57b4a86943506e03ea3d2306636050e336edef304f8fe47bfa3022bc1cd0",
+  "backup": {
+    "manifest_sha256": "e57883b1bdcf03eab0a7a0795695ad1fa83ac87915c0c6e9c6d3d565647e21f9",
+    "repository_bytes": 1064109,
+    "stored_object_count": 8
+  },
+  "cleanup": {
+    "exact_targets_after": {
+      "hc-migration-dst-live0831u": {
+        "containers": [],
+        "networks": [],
+        "volumes": []
+      },
+      "hc-migration-src-live0831u": {
+        "containers": [],
+        "networks": [],
+        "volumes": []
+      },
+      "hc-migration-vault-live0831u": {
+        "containers": [],
+        "networks": [],
+        "volumes": []
+      }
+    },
+    "exact_targets_before": {
+      "hc-migration-dst-live0831u": {
+        "containers": [
+          "032928433c10",
+          "1293cf444cb5",
+          "53106aa254dc",
+          "68581d344f49",
+          "8bcb257968a6",
+          "a0f86738c8c9",
+          "bd5ae2ebd440",
+          "c88c4818288e",
+          "ccfb03ac7808"
+        ],
+        "networks": [
+          "hc-migration-dst-live0831u_default"
+        ],
+        "volumes": [
+          "hc-migration-dst-live0831u_alignment-cache",
+          "hc-migration-dst-live0831u_media-staging",
+          "hc-migration-dst-live0831u_minio-data",
+          "hc-migration-dst-live0831u_postgres-data"
+        ]
+      },
+      "hc-migration-src-live0831u": {
+        "containers": [
+          "140ebfbd2fbf",
+          "21a025e6ea38",
+          "21e00371c06f",
+          "298b65d7d538",
+          "35d7078d4720",
+          "86df993a8c63",
+          "91fac9449fc3",
+          "97c5859bf152",
+          "a0b850e72518",
+          "ca6b474ef576",
+          "ebb531062929",
+          "f3cce35bb918"
+        ],
+        "networks": [
+          "hc-migration-src-live0831u_default"
+        ],
+        "volumes": [
+          "hc-migration-src-live0831u_alignment-cache",
+          "hc-migration-src-live0831u_media-staging",
+          "hc-migration-src-live0831u_minio-data",
+          "hc-migration-src-live0831u_postgres-data"
+        ]
+      },
+      "hc-migration-vault-live0831u": {
+        "containers": [
+          "99b123036d47"
+        ],
+        "networks": [],
+        "volumes": []
+      }
+    },
+    "status": "PASS",
+    "temporary_work_root_removed": true
+  },
+  "commands": [
+    {
+      "command": "docker run --name hc-migration-vault-live0831u --label hc.migration.run_id=live0831u vault:1.20.3",
+      "result": "PASS"
+    },
+    {
+      "command": "docker compose -p hc-migration-src-live0831u up -d --wait postgres minio minio-init temporal migration runtime-cache-init api worker media-worker frontend gateway",
+      "result": "PASS"
+    },
+    {
+      "command": "docker compose -p hc-migration-dst-live0831u up -d postgres minio minio-init temporal",
+      "result": "PASS"
+    },
+    {
+      "command": "source API registration/login/bootstrap + PostgreSQL/MinIO 100 MB seed verification",
+      "result": "PASS"
+    },
+    {
+      "command": "docker compose -p hc-migration-src-live0831u stop api worker media-worker + maintenance fence",
+      "result": "PASS",
+      "status": "EXECUTING"
+    },
+    {
+      "command": "hc-platform backup create --plan <run-plan> --staging-directory <run-staging> --helm-rendered-manifest <run-render>",
+      "result": "PASS",
+      "status": "created"
+    },
+    {
+      "command": "provider-owned Temporal cluster recovery source -> isolated target",
+      "result": "PASS"
+    },
+    {
+      "command": "hc-platform restore plan <backup-id> --target <target> --dry-run",
+      "result": "PASS",
+      "status": "PREFLIGHT_PASSED"
+    },
+    {
+      "command": "hc-platform restore execute <backup-id> --target <target> --checkpoint <run-checkpoint>",
+      "result": "PASS",
+      "status": "READ_ONLY_READY"
+    },
+    {
+      "command": "hc-platform restore execute <backup-id> --target <target> --checkpoint <same-run-checkpoint> (idempotent replay)",
+      "result": "PASS",
+      "status": "READ_ONLY_READY"
+    },
+    {
+      "command": "hc-platform restore reconcile <backup-id> --target <target> --checkpoint <same-run-checkpoint>",
+      "result": "PASS",
+      "status": "RECONCILIATION_PASSED"
+    },
+    {
+      "command": "target external OSS exact VersionId full-stream size/SHA-256 read",
+      "result": "PASS"
+    },
+    {
+      "command": "docker compose -p hc-migration-dst-live0831u up -d api frontend gateway worker media-worker",
+      "result": "PASS"
+    },
+    {
+      "command": "target restored-session query + controlled registration + Outbox/workflow quiescence check",
+      "result": "PASS"
+    },
+    {
+      "command": "owner-scoped output artifact + Compose container log forbidden-secret scan",
+      "result": "PASS",
+      "status": "ZERO_MATCH"
+    },
+    {
+      "command": "docker compose -p hc-migration-src-live0831u down --volumes --remove-orphans",
+      "result": "PASS"
+    },
+    {
+      "command": "docker compose -p hc-migration-dst-live0831u down --volumes --remove-orphans",
+      "result": "PASS"
+    },
+    {
+      "command": "docker rm --force hc-migration-vault-live0831u",
+      "result": "PASS"
+    }
+  ],
+  "completed_at": "2026-08-31T02:55:55Z",
+  "component_image_ids": {
+    "api": "sha256:314a57b4a86943506e03ea3d2306636050e336edef304f8fe47bfa3022bc1cd0",
+    "frontend": "sha256:06e48e9321e409e41b3d7ca13fbc503d87eb03a5351054c00005a5b6d6a6aa8c",
+    "gateway": "sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e",
+    "media-worker": "sha256:3b0a52eeb3fd32cbc8cdd31f45cc1dc2be5f792925d2e8cabe07f54d5671663b",
+    "worker": "sha256:3b0a52eeb3fd32cbc8cdd31f45cc1dc2be5f792925d2e8cabe07f54d5671663b"
+  },
+  "cutover": {
+    "rpo_zero": true,
+    "write_pause_seconds": 75.131,
+    "write_pause_target_seconds": 1800,
+    "write_pause_within_target": true
+  },
+  "format_version": "hc-compose-server-migration-exercise/v1",
+  "functional_object_bytes": 100000000,
+  "object_inventory": {
+    "bytes": 100000000,
+    "content_sha256": "f091bdf7ce0af0eade06cb2f76da2236f6445c54b27b09f1809fca445595ae5e",
+    "count": 1,
+    "version_id_sha256": "a7ba6ca0ec6a1bce13b6c48a7ba824fa62245ef415fd51a169b2876d2d4192e4"
+  },
+  "object_migration_mode": "reuse_external",
+  "performance_benchmark_claimed": false,
+  "post_cutover_isolation": {
+    "controlled_write_rows_in_source": 0,
+    "controlled_write_rows_in_target": 1,
+    "source_business_unchanged": true,
+    "source_expected_backup_catalog_audit_rows": 1,
+    "source_operational_audit_delta": 1
+  },
+  "reconciliation": {
+    "check_count": 9,
+    "checks": [
+      {
+        "checked_count": 5,
+        "coverage": "FULL",
+        "evidence_sha256": "c84ac86cf107c3b65585cae3eccf8902ffd871fce63a7aaa3e42e43ddf714670",
+        "issue_count": 0,
+        "name": "restore_checkpoint",
+        "status": "PASS",
+        "total_count": 5
+      },
+      {
+        "checked_count": 160,
+        "coverage": "FULL",
+        "evidence_sha256": "8be4703c5aeab0f15eb564cb21a625984b735e36da6fcb32d98b25d635357d41",
+        "issue_count": 0,
+        "name": "database_content",
+        "status": "PASS",
+        "total_count": 160
+      },
+      {
+        "checked_count": 2,
+        "coverage": "FULL",
+        "evidence_sha256": "0fe6de364c5352183d1f948524421c083f15e3a836ee3d47fb86e006aea0c71e",
+        "issue_count": 0,
+        "name": "object_inventory",
+        "status": "PASS",
+        "total_count": 2
+      },
+      {
+        "checked_count": 0,
+        "coverage": "FULL",
+        "evidence_sha256": "a969ab99a3d28fb0a5a3e202613ea6e05a835e848d4e1f1d0853a09d2d4f7cce",
+        "issue_count": 0,
+        "name": "database_object_references",
+        "status": "PASS",
+        "total_count": 0
+      },
+      {
+        "checked_count": 0,
+        "coverage": "FULL",
+        "evidence_sha256": "c3566d3007e874c91e828b99e7ace02ca05f8aa58dd835ffb50c3f119b272c4e",
+        "issue_count": 0,
+        "name": "audit_integrity",
+        "status": "PASS",
+        "total_count": 0
+      },
+      {
+        "checked_count": 0,
+        "coverage": "FULL",
+        "evidence_sha256": "f3dfc45164540c38799e570ee1b9dd5b8a25f78319b88a66eb81100059b56500",
+        "issue_count": 0,
+        "name": "outbox",
+        "status": "PASS",
+        "total_count": 0
+      },
+      {
+        "checked_count": 4,
+        "coverage": "FULL",
+        "evidence_sha256": "8cf755d9626be13f76d7a30704b5415581280c87cdccc8921c4b5bda3c792d5c",
+        "issue_count": 0,
+        "name": "workflow_temporal",
+        "status": "PASS",
+        "total_count": 4
+      },
+      {
+        "checked_count": 132,
+        "coverage": "FULL",
+        "evidence_sha256": "893c6ea2e1a294c6deb85ad7abfcd4ee0a0c37585ac02a9e667a62d83f98e891",
+        "issue_count": 0,
+        "name": "permissions",
+        "status": "PASS",
+        "total_count": 132
+      },
+      {
+        "checked_count": 1,
+        "coverage": "FULL",
+        "evidence_sha256": "fa580293429a9b2163850ca486a70cdb5e4b442ac8e40c0bede3a9974b4d4f5b",
+        "issue_count": 0,
+        "name": "read_only_runtime",
+        "status": "PASS",
+        "total_count": 1
+      }
+    ],
+    "overall_status": "PASS",
+    "report_sha256": "f30e164d9efd10fb54383b897bdb5e3cdd562b0afc0a0853cd4ce0b8ab0cad99"
+  },
+  "release": {
+    "chart_name": "hc-data-platform",
+    "chart_version": "0.1.0",
+    "git_commit": "1111111111111111111111111111111111111111",
+    "images": {
+      "api": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "frontend": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "worker": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "migration_manifest_sha256": "1558a1078c45d19249798c8c45a13fdd8bfde72fb4560c81d6fdd6e856e6c519",
+    "release_manifest_sha256": "707a400adad19b9fba18e0645815bf9e8516e3b12823789b387b033e211bbe1e"
+  },
+  "restore": {
+    "object_capacity_bytes": 0,
+    "plan_id": "restore-plan-f3c910df2d45ce2c2e73a08c",
+    "reconciliation_status": "RECONCILIATION_PASSED",
+    "repeat_status": "READ_ONLY_READY",
+    "status": "READ_ONLY_READY"
+  },
+  "run_id": "live0831u",
+  "runtime_services": {
+    "source": {
+      "api": {
+        "container_id_sha256": "64efe036150b0d314ce08d3966fede88d8467218999312ba1f1c840d2beb4dde",
+        "health": "unhealthy",
+        "image_id": "sha256:314a57b4a86943506e03ea3d2306636050e336edef304f8fe47bfa3022bc1cd0",
+        "running": false,
+        "status": "exited"
+      },
+      "frontend": {
+        "container_id_sha256": "b4f25e076bfaa0b9a987b3c75ca048042a82d4b59088cf59a06a596545068fe0",
+        "health": "healthy",
+        "image_id": "sha256:06e48e9321e409e41b3d7ca13fbc503d87eb03a5351054c00005a5b6d6a6aa8c",
+        "running": true,
+        "status": "running"
+      },
+      "gateway": {
+        "container_id_sha256": "af6d08dc97dddb23ed3e61d3566d18bf259a06bfe87cf8ecba67964d45db6325",
+        "health": null,
+        "image_id": "sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e",
+        "running": true,
+        "status": "running"
+      },
+      "media-worker": {
+        "container_id_sha256": "90f92181fd3e67088b568a41dfcae34729077e2cf7054fa3ea940d729e24a7cd",
+        "health": "unhealthy",
+        "image_id": "sha256:3b0a52eeb3fd32cbc8cdd31f45cc1dc2be5f792925d2e8cabe07f54d5671663b",
+        "running": false,
+        "status": "exited"
+      },
+      "minio": {
+        "container_id_sha256": "f4d22de692e8bdd50175e25e4571baf6337b993b3f4ff5fb53bcd16913c02176",
+        "health": "healthy",
+        "image_id": "sha256:ac591851803a79aee64bc37f66d77c56b0a4b6e12d9e5356380f4105510f2332",
+        "running": true,
+        "status": "running"
+      },
+      "postgres": {
+        "container_id_sha256": "2ff691255ba0aee1e74fe2367403e6d85b2c7985cb2ceec56b5bf2c74952c8ef",
+        "health": "unhealthy",
+        "image_id": "sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+        "running": false,
+        "status": "exited"
+      },
+      "temporal": {
+        "container_id_sha256": "762f6eed5e28f73ee337df1a7d009d36b9950d5334439040c50c309eafcb6841",
+        "health": "unhealthy",
+        "image_id": "sha256:b1edc1e20002d958c8182f2ae08dee877a125083683a627a44917683419ba6a8",
+        "running": false,
+        "status": "exited"
+      },
+      "worker": {
+        "container_id_sha256": "a489e4d7c54a28ae9384895cdf7b2e1667dee53dab73e855aaa0ce162ea9c1c4",
+        "health": "unhealthy",
+        "image_id": "sha256:3b0a52eeb3fd32cbc8cdd31f45cc1dc2be5f792925d2e8cabe07f54d5671663b",
+        "running": false,
+        "status": "exited"
+      }
+    },
+    "target": {
+      "api": {
+        "container_id_sha256": "a76587cbb4f20654c03a34cf160e9ee31ef839183be063b70656647d5ab6db7e",
+        "health": "healthy",
+        "image_id": "sha256:314a57b4a86943506e03ea3d2306636050e336edef304f8fe47bfa3022bc1cd0",
+        "running": true,
+        "status": "running"
+      },
+      "frontend": {
+        "container_id_sha256": "f827615bf97131a84c52a7531a66587da7aaabdb1ee2fcca5606544a28eac7af",
+        "health": "healthy",
+        "image_id": "sha256:06e48e9321e409e41b3d7ca13fbc503d87eb03a5351054c00005a5b6d6a6aa8c",
+        "running": true,
+        "status": "running"
+      },
+      "gateway": {
+        "container_id_sha256": "e2068c6f878853baa54be5e508480fef8a7b536f171b236f93a7e0d2eea7600c",
+        "health": null,
+        "image_id": "sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e",
+        "running": true,
+        "status": "running"
+      },
+      "media-worker": {
+        "container_id_sha256": "ed394a31dabc958b65ae3427616f5b4303049155f36cdd95631ab125dd8c68f3",
+        "health": "healthy",
+        "image_id": "sha256:3b0a52eeb3fd32cbc8cdd31f45cc1dc2be5f792925d2e8cabe07f54d5671663b",
+        "running": true,
+        "status": "running"
+      },
+      "postgres": {
+        "container_id_sha256": "603fd3040a35b224bd6e9ff30a020c10b7ea139c9fc0d6511b819fb28e292ef8",
+        "health": "healthy",
+        "image_id": "sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+        "running": true,
+        "status": "running"
+      },
+      "temporal": {
+        "container_id_sha256": "b71b7c8b01ef08792583e776726787521bda92759025de653f487e7ace897c3b",
+        "health": "healthy",
+        "image_id": "sha256:b1edc1e20002d958c8182f2ae08dee877a125083683a627a44917683419ba6a8",
+        "running": true,
+        "status": "running"
+      },
+      "worker": {
+        "container_id_sha256": "48e9e46b955739182b547d5de106631b1dcbe7d1095811328905ca10c8d5c90f",
+        "health": "healthy",
+        "image_id": "sha256:3b0a52eeb3fd32cbc8cdd31f45cc1dc2be5f792925d2e8cabe07f54d5671663b",
+        "running": true,
+        "status": "running"
+      }
+    }
+  },
+  "secret_artifact_scan": {
+    "artifact_bytes_scanned": 3246434,
+    "artifact_file_count": 38,
+    "artifact_set_sha256": "5f1da54b05a2f0c67cb8593ee93fd93756625630612792001807086746e39552",
+    "container_log_bytes_scanned": 8261190,
+    "container_log_count": 21,
+    "container_log_set_sha256": "30b5096ffd01887a8d28c29f38ecb979df8c7e0e52b322b0d21a42df3ced118c",
+    "excluded_runtime_private_key_files": 1,
+    "forbidden_match_count": 0,
+    "machine_evidence_bytes_scanned": 11128,
+    "status": "PASS",
+    "vault_dependency_log_driver": "none"
+  },
+  "source_database": {
+    "aggregate_sha256": "2dc49d76ce4fb698c956299210f93f86d2073bb4a474ca1308b41c8fdee30b66",
+    "audit_count": 3,
+    "object_bytes": 100000000,
+    "object_key": "migration/live0831u/real-100mb-object.bin",
+    "object_reference_count": 1,
+    "object_sha256": "f091bdf7ce0af0eade06cb2f76da2236f6445c54b27b09f1809fca445595ae5e",
+    "principal_count": 1,
+    "version_id": "1b35c22c-3051-467f-a4d0-af787ca8fc57"
+  },
+  "source_external_oss_retained_until_cleanup": true,
+  "source_login_and_query": "PASS",
+  "source_platform_services_stopped_after_cutover": true,
+  "source_postgresql_stopped_after_cutover": true,
+  "source_project": "hc-migration-src-live0831u",
+  "started_at": "2026-08-31T02:51:14Z",
+  "status": "PASS",
+  "target_database": {
+    "aggregate_sha256": "2dc49d76ce4fb698c956299210f93f86d2073bb4a474ca1308b41c8fdee30b66",
+    "audit_count": 3,
+    "object_bytes": 100000000,
+    "object_key": "migration/live0831u/real-100mb-object.bin",
+    "object_reference_count": 1,
+    "object_sha256": "f091bdf7ce0af0eade06cb2f76da2236f6445c54b27b09f1809fca445595ae5e",
+    "principal_count": 1,
+    "version_id": "1b35c22c-3051-467f-a4d0-af787ca8fc57"
+  },
+  "target_login_and_controlled_write": "PASS",
+  "target_operational_facts": {
+    "dispatched_workflow_trigger_count": 0,
+    "outbox_active_claim_count": 0,
+    "outbox_event_count": 0,
+    "outbox_pending_count": 0,
+    "running_workflow_count": 0
+  },
+  "target_project": "hc-migration-dst-live0831u"
+}

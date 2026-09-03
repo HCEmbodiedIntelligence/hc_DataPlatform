@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hc-data-platform.backendFullname" . }}
+  labels:
+    {{- include "hc-data-platform.labels" . | nindent 4 }}
+data:
+  HC_ENVIRONMENT: {{ .Values.backend.config.environment | quote }}
+  HC_PLATFORM_ENVIRONMENT_ID: {{ required "backend.config.platformEnvironmentId is required" .Values.backend.config.platformEnvironmentId | quote }}
+  HC_SECRET_BUNDLE_REVISION: {{ required "backend.config.secretBundleRevision is required" .Values.backend.config.secretBundleRevision | quote }}
+  HC_RUNTIME_BACKEND: production
+  HC_RELEASE_ID: {{ .Values.global.releaseId | quote }}
+  HC_PLATFORM_VERSION: {{ .Chart.AppVersion | quote }}
+  HC_GIT_COMMIT: {{ .Values.global.gitCommit | quote }}
+  HC_CHART_VERSION: {{ .Chart.Version | quote }}
+  HC_RELEASE_MANIFEST_DIGEST: {{ .Values.global.releaseManifestDigest | quote }}
+  HC_MIGRATION_MANIFEST_DIGEST: {{ .Values.global.migrationManifestDigest | quote }}
+  HC_TEMPORAL_WORKER_BUILD_ID: {{ .Values.global.releaseId | quote }}
+  HC_API_PORT: {{ .Values.backend.api.port | quote }}
+  HC_TEMPORAL_TARGET: {{ .Values.backend.config.temporalTarget | quote }}
+  HC_OUTBOX_SCOPES: {{ .Values.backend.config.outboxScopes | quote }}
+  HC_STORAGE_INVENTORY_SCOPES: {{ .Values.backend.config.storageInventoryScopes | quote }}
+  HC_STORAGE_INVENTORY_INTERVAL_SECONDS: {{ .Values.backend.config.storageInventoryIntervalSeconds | quote }}
+  HC_ARTIFACT_PREFIX: {{ .Values.backend.config.artifactPrefix | quote }}
+  HC_TEMPORAL_TASK_QUEUE: {{ .Values.backend.worker.taskQueue | quote }}
+  HC_MEDIA_TEMPORAL_TASK_QUEUE: {{ .Values.backend.mediaWorker.taskQueue | quote }}
+  HC_ALIGNED_MEDIA_STAGING_ROOT: {{ .Values.backend.config.alignedMediaStagingRoot | quote }}
+  HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: {{ .Values.backend.config.alignedMediaStagingTtlHours | quote }}
+  HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES: {{ .Values.backend.config.alignedMediaPublicationOrphanTtlMinutes | quote }}
+  HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS: {{ .Values.backend.config.mediaMaintenanceIntervalSeconds | quote }}
+  HC_ALIGNED_MEDIA_ALLOWED_PROFILES: {{ .Values.backend.config.alignedMediaAllowedProfiles | quote }}
+  HC_MEDIA_MAX_CONCURRENT_GENERATIONS: {{ .Values.backend.mediaWorker.maxConcurrentGenerations | quote }}
+  HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS: {{ .Values.backend.mediaWorker.globalMaxConcurrentGenerations | quote }}
+  HC_MEDIA_FFMPEG_THREADS: {{ .Values.backend.mediaWorker.ffmpegThreads | quote }}
+  {{- with .Values.backend.config.workflowActivityFactory }}
+  HC_WORKFLOW_ACTIVITY_FACTORY: {{ . | quote }}
+  {{- end }}
+  HC_OBJECT_STORE_PROVIDER: {{ .Values.backend.config.objectStoreProvider | quote }}
+  HC_OBJECT_STORE_ENDPOINT: {{ .Values.backend.config.objectStoreEndpoint | quote }}
+  HC_OBJECT_STORE_PUBLIC_ENDPOINT: {{ required "backend.config.objectStorePublicEndpoint is required" .Values.backend.config.objectStorePublicEndpoint | quote }}
+  HC_OBJECT_STORE_BUCKET: {{ .Values.backend.config.objectStoreBucket | quote }}
+  HC_OBJECT_STORE_REGION: {{ .Values.backend.config.objectStoreRegion | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_NAME: {{ .Values.backend.config.autoAnnotationProviderName | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: {{ .Values.backend.config.autoAnnotationProviderEndpoint | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_MODELS: {{ .Values.backend.config.autoAnnotationProviderModels | quote }}
+  HC_AUTO_ANNOTATION_PROVIDER_TIMEOUT_SECONDS: {{ .Values.backend.config.autoAnnotationProviderTimeoutSeconds | quote }}
+  HC_AUTO_ANNOTATION_MAX_CONCURRENT_JOBS: {{ .Values.backend.config.autoAnnotationMaxConcurrentJobs | quote }}
+  HC_AUTO_ANNOTATION_MAX_JOBS_PER_HOUR: {{ .Values.backend.config.autoAnnotationMaxJobsPerHour | quote }}
+  HC_AUTO_ANNOTATION_DAILY_COST_LIMIT_MICROS: {{ .Values.backend.config.autoAnnotationDailyCostLimitMicros | quote }}
+  HC_INGEST_PART_AUTHORIZATION_TTL_SECONDS: {{ .Values.backend.config.ingestPartAuthorizationTtlSeconds | quote }}
+  HC_JWT_ISSUER: {{ .Values.backend.config.jwtIssuer | quote }}
+  HC_JWT_AUDIENCE: {{ .Values.backend.config.jwtAudience | quote }}
+  HC_JWT_ALGORITHMS: {{ .Values.backend.config.jwtAlgorithms | quote }}
+  HC_JWT_JWKS_URL: {{ required "config.jwtJwksUrl is required" .Values.backend.config.jwtJwksUrl | quote }}
+  HC_READINESS_TIMEOUT_SECONDS: {{ .Values.backend.config.readinessTimeoutSeconds | quote }}
+  HC_PASSWORD_MIN_LENGTH: {{ .Values.backend.config.passwordMinLength | quote }}
+  HC_PASSWORD_MAX_LENGTH: {{ .Values.backend.config.passwordMaxLength | quote }}
+  HC_PASSWORD_SCRYPT_N: {{ .Values.backend.config.passwordScryptN | quote }}
+  HC_PASSWORD_SCRYPT_R: {{ .Values.backend.config.passwordScryptR | quote }}
+  HC_PASSWORD_SCRYPT_P: {{ .Values.backend.config.passwordScryptP | quote }}
+  HC_SESSION_IDLE_TTL_SECONDS: {{ .Values.backend.config.sessionIdleTtlSeconds | quote }}
+  HC_SESSION_ABSOLUTE_TTL_SECONDS: {{ .Values.backend.config.sessionAbsoluteTtlSeconds | quote }}
+  HC_SESSION_TOUCH_INTERVAL_SECONDS: {{ .Values.backend.config.sessionTouchIntervalSeconds | quote }}
+  HC_MAX_ACTIVE_SESSIONS: {{ .Values.backend.config.maxActiveSessions | quote }}
+  HC_AUTH_ABUSE_ENABLED: {{ .Values.backend.config.authAbuseEnabled | quote }}
+  HC_AUTH_CLIENT_IP_MODE: {{ .Values.backend.config.authClientIpMode | quote }}
+  HC_AUTH_TRUSTED_PROXY_CIDRS: {{ required "backend.config.authTrustedProxyCidrs is required" .Values.backend.config.authTrustedProxyCidrs | quote }}
+  HC_AUTH_LOGIN_FAILURE_WINDOW_SECONDS: {{ .Values.backend.config.authLoginFailureWindowSeconds | quote }}
+  HC_AUTH_LOGIN_CHALLENGE_AFTER_FAILURES: {{ .Values.backend.config.authLoginChallengeAfterFailures | quote }}
+  HC_AUTH_LOGIN_DELAY_AFTER_FAILURES: {{ .Values.backend.config.authLoginDelayAfterFailures | quote }}
+  HC_AUTH_LOGIN_DELAY_INITIAL_SECONDS: {{ .Values.backend.config.authLoginDelayInitialSeconds | quote }}
+  HC_AUTH_LOGIN_DELAY_MAX_SECONDS: {{ .Values.backend.config.authLoginDelayMaxSeconds | quote }}
+  HC_AUTH_LOGIN_LOCK_AFTER_FAILURES: {{ .Values.backend.config.authLoginLockAfterFailures | quote }}
+  HC_AUTH_LOGIN_LOCK_SECONDS: {{ .Values.backend.config.authLoginLockSeconds | quote }}
+  HC_AUTH_LOGIN_SOURCE_RATE_LIMIT: {{ .Values.backend.config.authLoginSourceRateLimit | quote }}
+  HC_AUTH_LOGIN_SOURCE_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authLoginSourceRateWindowSeconds | quote }}
+  HC_AUTH_LOGIN_SUBJECT_RATE_LIMIT: {{ .Values.backend.config.authLoginSubjectRateLimit | quote }}
+  HC_AUTH_LOGIN_SUBJECT_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authLoginSubjectRateWindowSeconds | quote }}
+  HC_AUTH_REGISTRATION_SOURCE_RATE_LIMIT: {{ .Values.backend.config.authRegistrationSourceRateLimit | quote }}
+  HC_AUTH_REGISTRATION_SOURCE_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authRegistrationSourceRateWindowSeconds | quote }}
+  HC_AUTH_REGISTRATION_SUBJECT_RATE_LIMIT: {{ .Values.backend.config.authRegistrationSubjectRateLimit | quote }}
+  HC_AUTH_REGISTRATION_SUBJECT_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authRegistrationSubjectRateWindowSeconds | quote }}
+  HC_AUTH_GLOBAL_RATE_LIMIT: {{ .Values.backend.config.authGlobalRateLimit | quote }}
+  HC_AUTH_GLOBAL_RATE_WINDOW_SECONDS: {{ .Values.backend.config.authGlobalRateWindowSeconds | quote }}
+  HC_AUTH_CHALLENGE_PROVIDER: {{ .Values.backend.config.authChallengeProvider | quote }}
+  HC_AUTH_TURNSTILE_SITE_KEY: {{ required "backend.config.authTurnstileSiteKey is required" .Values.backend.config.authTurnstileSiteKey | quote }}
+  HC_AUTH_TURNSTILE_EXPECTED_HOSTNAMES: {{ required "backend.config.authTurnstileExpectedHostnames is required" .Values.backend.config.authTurnstileExpectedHostnames | quote }}
+  HC_AUTH_TURNSTILE_CONNECT_TIMEOUT_SECONDS: {{ .Values.backend.config.authTurnstileConnectTimeoutSeconds | quote }}
+  HC_AUTH_TURNSTILE_READ_TIMEOUT_SECONDS: {{ .Values.backend.config.authTurnstileReadTimeoutSeconds | quote }}
+  HC_AUTH_RECOVERY_ENABLED: {{ .Values.backend.config.authRecoveryEnabled | quote }}
+  HC_AUTH_RECOVERY_EMAIL_VERIFICATION_TTL_SECONDS: {{ .Values.backend.config.authRecoveryEmailVerificationTtlSeconds | quote }}
+  HC_AUTH_RECOVERY_TOKEN_TTL_SECONDS: {{ .Values.backend.config.authRecoveryTokenTtlSeconds | quote }}
+  HC_AUTH_RECOVERY_PUBLIC_BASE_URL: {{ .Values.backend.config.authRecoveryPublicBaseUrl | quote }}
+  HC_AUTH_RECOVERY_EMAIL_FROM: {{ .Values.backend.config.authRecoveryEmailFrom | quote }}
+  HC_AUTH_SMTP_HOST: {{ .Values.backend.config.authSmtpHost | quote }}
+  HC_AUTH_SMTP_PORT: {{ .Values.backend.config.authSmtpPort | quote }}
+  HC_AUTH_SMTP_USERNAME: {{ .Values.backend.config.authSmtpUsername | quote }}
+  HC_AUTH_SMTP_STARTTLS: {{ .Values.backend.config.authSmtpStarttls | quote }}
+  HC_AUTH_SMTP_TIMEOUT_SECONDS: {{ .Values.backend.config.authSmtpTimeoutSeconds | quote }}
+  HC_ENFORCE_SCHEMA_MIGRATIONS: {{ .Values.backend.config.enforceSchemaMigrations | quote }}
+  HC_API_DOCS_ENABLED: {{ .Values.backend.config.apiDocsEnabled | quote }}
+  {{- if .Values.observability.enabled }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ printf "http://%s-otel-collector:4317" (include "hc-data-platform.observabilityFullname" .) | quote }}
+  {{- if .Values.observability.loki.query.enabled }}
+  {{- if .Values.observability.loki.embedded }}
+  HC_OBSERVABILITY_LOG_QUERY_URL: {{ printf "http://%s-loki:3100/loki/api/v1/query_range" (include "hc-data-platform.observabilityFullname" .) | quote }}
+  {{- else }}
+  HC_OBSERVABILITY_LOG_QUERY_URL: {{ printf "%s/loki/api/v1/query_range" (trimSuffix "/otlp" .Values.observability.loki.endpoint) | quote }}
+  {{- end }}
+  {{- end }}
+  {{- else }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.backend.config.otelExporterOtlpEndpoint | quote }}
+  {{- end }}
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_RESOURCE_ATTRIBUTES: {{ printf "deployment.environment.name=%s,service.version=%s,hc.release.manifest.digest=%s" .Values.backend.config.environment .Values.global.releaseId .Values.global.releaseManifestDigest | quote }}
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"

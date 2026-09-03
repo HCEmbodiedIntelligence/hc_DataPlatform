@@ -1,0 +1,62 @@
+{
+  "capacity_target": {
+    "bytes_per_day": 5000000000000,
+    "headroom_ratio": 1.3,
+    "required_bytes_per_second": 75231481.481
+  },
+  "commands": {
+    "probe": "python tests/load/capacity_probe.py --size-bytes 536870912 --samples 7"
+  },
+  "dataset": {
+    "kind": "deterministic synthetic local file",
+    "samples": 7,
+    "sha256": "6360d71ffdb7c8cadc86c813bb15949bf90db20bb6af94092be689fb69f9a77c",
+    "size_bytes": 536870912
+  },
+  "hardware": {
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "filesystem_available_bytes": 1008126263296,
+    "filesystem_block_size": 4096,
+    "hostname": "czy",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "logical_cpus": 24,
+    "memory_bytes": 16573448192,
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "probe_directory": "/tmp"
+  },
+  "latency_seconds": {
+    "durable_local_write": {
+      "max": 0.379577,
+      "mean": 0.379577,
+      "min": 0.379577,
+      "p50": 0.379577,
+      "p95": 0.379577,
+      "p99": 0.379577
+    },
+    "sequential_read_sha256": {
+      "max": 0.383495,
+      "mean": 0.361965,
+      "min": 0.340611,
+      "p50": 0.356526,
+      "p95": 0.383495,
+      "p99": 0.383495
+    }
+  },
+  "measured_at_unix_seconds": 1786698452,
+  "schema_version": 1,
+  "throughput_bytes_per_second": {
+    "sequential_read_sha256": {
+      "max": 1576199131.152855,
+      "mean": 1486075441.093874,
+      "min": 1399943805.206781,
+      "p50": 1505837661.322836,
+      "p95": 1576199131.152855,
+      "p99": 1576199131.152855
+    }
+  },
+  "verdict": {
+    "end_to_end_5tb_per_day": "NOT_MEASURED",
+    "local_sha_stage_p95_meets_target": true,
+    "reason": "No complete OSS/Temporal/PostgreSQL/Lance/FFmpeg/LeRobot workload was exercised."
+  }
+}

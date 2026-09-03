@@ -1,0 +1,54 @@
+paths:
+  /api/v1/platform/version:
+    get:
+      operationId: getPlatformVersion
+      tags: [platform-control]
+      security: []
+      responses:
+        "200":
+          description: Immutable identity of the running API release.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PlatformReleaseIdentityV1"}
+components:
+  schemas:
+    PlatformReleaseIdentityV1:
+      type: object
+      additionalProperties: false
+      required:
+        - release_id
+        - semantic_version
+        - git_commit
+        - chart_version
+        - release_manifest_digest
+        - migration_manifest_digest
+        - component
+        - component_image_digest
+      properties:
+        format_version:
+          type: string
+          const: hc-platform-release-identity/v1
+          default: hc-platform-release-identity/v1
+        release_id:
+          type: string
+          pattern: '^(?:unreleased|platform-v[A-Za-z0-9][A-Za-z0-9._-]{0,119})$'
+        semantic_version:
+          type: string
+          pattern: '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$'
+        git_commit:
+          oneOf:
+            - {type: string, pattern: '^[0-9a-f]{40}$'}
+            - {type: string, const: unknown}
+        chart_version:
+          type: string
+          pattern: '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$'
+        release_manifest_digest: {$ref: "#/components/schemas/ReleaseIdentityDigest"}
+        migration_manifest_digest: {$ref: "#/components/schemas/ReleaseIdentityDigest"}
+        component:
+          type: string
+          enum: [api, worker, media-worker, migration, frontend]
+        component_image_digest: {$ref: "#/components/schemas/ReleaseIdentityDigest"}
+    ReleaseIdentityDigest:
+      oneOf:
+        - {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+        - {type: string, const: unreleased}

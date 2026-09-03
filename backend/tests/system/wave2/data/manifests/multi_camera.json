@@ -1,0 +1,79 @@
+{
+  "actual_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action",
+    "/camera/rear/image"
+  ],
+  "cameras": [
+    {
+      "camera_id": "front",
+      "encoding": "jpeg",
+      "topic": "/camera/front/image"
+    },
+    {
+      "camera_id": "rear",
+      "encoding": "jpeg",
+      "topic": "/camera/rear/image"
+    }
+  ],
+  "collection_job_id": "be22-multi-camera-job",
+  "collection_session_id": "be22-multi-camera-session",
+  "compression": "none",
+  "crc64": "10359670683796157155",
+  "data_package_id": "be22-multi-camera-package",
+  "end_time": "2023-11-14T22:13:21Z",
+  "expected_topics": [
+    "/camera/front/image",
+    "/joint_states",
+    "/action",
+    "/camera/rear/image"
+  ],
+  "file_size": 65932,
+  "files": [
+    {
+      "crc64": "10359670683796157155",
+      "media_type": "application/octet-stream",
+      "path": "recording.mcap",
+      "role": "RAW_MCAP",
+      "sha256": "a5dffd77406f5309afb6f75448fa10e63d54520a1360ef4b658555ab70aa05fe",
+      "size": 65932
+    }
+  ],
+  "project_id": "be22-template-project",
+  "recorder_version": "hc-be22-fixture/1",
+  "recording_request_id": "be22-multi-camera-request",
+  "robot_id": "be22-test-robot",
+  "rollout_id": "be22-multi-camera-rollout",
+  "schema_version": 1,
+  "sequence_no": 1,
+  "sha256": "a5dffd77406f5309afb6f75448fa10e63d54520a1360ef4b658555ab70aa05fe",
+  "start_time": "2023-11-14T22:13:20Z",
+  "task_id": "be22-template-task",
+  "topics": [
+    {
+      "message_encoding": "json",
+      "name": "/camera/front/image",
+      "required": true,
+      "schema_name": "sensor_msgs/Image"
+    },
+    {
+      "message_encoding": "cdr",
+      "name": "/joint_states",
+      "required": true,
+      "schema_name": "sensor_msgs/JointState"
+    },
+    {
+      "message_encoding": "cdr",
+      "name": "/action",
+      "required": true,
+      "schema_name": "hc_msgs/Action"
+    },
+    {
+      "message_encoding": "json",
+      "name": "/camera/rear/image",
+      "required": true,
+      "schema_name": "sensor_msgs/Image"
+    }
+  ]
+}

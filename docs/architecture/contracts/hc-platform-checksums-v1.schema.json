@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "WholeChecksumEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "client_side_encryption": {
+          "enum": [
+            "age_x25519_v1",
+            "repository_kms_only",
+            "public_integrity_metadata"
+          ],
+          "title": "Client Side Encryption",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "role",
+        "size_bytes",
+        "sha256",
+        "client_side_encryption"
+      ],
+      "title": "WholeChecksumEntry",
+      "type": "object"
+    },
+    "WholeVerificationEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "enum": [
+            "postgresql_business",
+            "object_store",
+            "temporal_workflows",
+            "deployment_configuration",
+            "secrets_and_kms",
+            "release_artifacts",
+            "backup_repository",
+            "runtime_logs",
+            "external_dependencies"
+          ],
+          "title": "Domain",
+          "type": "string"
+        },
+        "receipt_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Receipt Sha256",
+          "type": "string"
+        },
+        "result": {
+          "const": "passed",
+          "default": "passed",
+          "title": "Result",
+          "type": "string"
+        },
+        "verification_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Verification Sha256",
+          "type": "string"
+        },
+        "verified_at": {
+          "format": "date-time",
+          "title": "Verified At",
+          "type": "string"
+        },
+        "verifier_identity": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Verifier Identity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "receipt_sha256",
+        "verification_sha256",
+        "verifier_identity",
+        "verified_at"
+      ],
+      "title": "WholeVerificationEvidence",
+      "type": "object"
+    }
+  },
+  "$id": "https://hc-data-platform.invalid/contracts/hc-platform-checksums-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/WholeChecksumEntry"
+      },
+      "minItems": 1,
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "backup_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "title": "Backup Id",
+      "type": "string"
+    },
+    "format_version": {
+      "const": "hc-platform-checksums/v1",
+      "default": "hc-platform-checksums/v1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "snapshot",
+        "portable"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "verification_evidence": {
+      "items": {
+        "$ref": "#/$defs/WholeVerificationEvidence"
+      },
+      "minItems": 9,
+      "title": "Verification Evidence",
+      "type": "array"
+    }
+  },
+  "required": [
+    "backup_id",
+    "operation_id",
+    "mode",
+    "generated_at",
+    "artifacts",
+    "verification_evidence"
+  ],
+  "title": "hc-platform-checksums/v1",
+  "type": "object"
+}
