@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from hc_data_platform.core.app import create_app
@@ -9,11 +10,39 @@ from hc_data_platform.platform_ops.object_store_config import (
     InMemoryObjectStoreConfigurationRepository,
     ObjectStoreConfigurationService,
     ObjectStoreConfigurationUpdate,
+    load_persisted_object_store_settings,
     settings_object_store_configured,
 )
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import CAPABILITY_PLATFORM_ADMIN
 from hc_data_platform.security.http import require_auth_context
+
+
+def test_local_minio_is_complete_and_never_falls_back_to_saved_oss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        environment="local",
+        runtime_backend="production",
+        object_store_provider="s3",
+        object_store_endpoint="http://minio:9000",
+        object_store_public_endpoint="http://127.0.0.1:9000",
+        object_store_bucket="hc-data-local",
+        object_store_access_key="minio",
+        object_store_secret_key="minio-local-only",
+        _env_file=None,
+    )
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("local MinIO must not consult persisted cloud credentials")
+
+    monkeypatch.setattr(
+        "hc_data_platform.platform_ops.object_store_config."
+        "PostgresObjectStoreConfigurationRepository.from_dsn",
+        forbidden,
+    )
+    assert settings_object_store_configured(settings)
+    assert load_persisted_object_store_settings(settings) == (settings, 0)
 
 
 def _unconfigured_settings() -> Settings:

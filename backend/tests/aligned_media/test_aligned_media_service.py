@@ -29,6 +29,7 @@ from hc_data_platform.aligned_media.models import (
     AlignedMediaSelectorV1,
     AlignmentStagingArtifactV1,
     EncodedAlignedMediaV1,
+    OriginalVideoReferenceV1,
 )
 from hc_data_platform.aligned_media.router import configure_aligned_media
 from hc_data_platform.aligned_media.router import router as aligned_media_router
@@ -249,6 +250,62 @@ def test_generation_is_idempotent_and_authorization_is_read_only(tmp_path: Path)
     assert repository.find_calls == 2
 
 
+def test_original_video_is_reused_and_survives_derivative_retirement(tmp_path: Path) -> None:
+    import hashlib
+
+    original_file = tmp_path / "objects/raw/source.mp4"
+    original_file.parent.mkdir(parents=True)
+    original_file.write_bytes(b"immutable-original-video")
+    source = OriginalVideoReferenceV1(
+        object_key="raw/source.mp4",
+        size_bytes=original_file.stat().st_size,
+        content_sha256=hashlib.sha256(original_file.read_bytes()).hexdigest(),
+        start_seconds=31.933333333,
+        end_seconds=91.933333333,
+        width=640,
+        height=480,
+        codec="av1",
+        fps=30,
+    )
+    request = generation_request()
+    request = request.model_copy(
+        update={
+            "profile_id": "original-video-reference-v1",
+            "alignment": request.alignment.model_copy(
+                update={"original_videos": {"front": source}}
+            ),
+        }
+    )
+    repository, reader = CountingRepository(), CountingFrameReader()
+    encoder = CountingEncoder(tmp_path / "encode")
+    store = LocalAlignedMediaArtifactStore(tmp_path / "objects")
+    generation = AlignedMediaGenerationService(
+        frame_reader=reader,
+        encoder=encoder,
+        repository=repository,
+        store=store,
+        heartbeat_interval=timedelta(hours=1),
+        clock=lambda: NOW,
+    )
+    artifact = generation.generate(scope(), request)
+    assert generation.generate(scope(), request) == artifact
+    assert reader.calls == encoder.calls == encoder.cleanup_calls == 0
+    assert artifact.media_object_key == source.object_key
+    assert source.object_key not in {item.key for item in artifact.objects}
+    assert artifact.total_bytes < 10_000
+    repository.mark_dataset_committed(scope=scope(), artifact_ids=(artifact.artifact_id,), now=NOW)
+    grant = AlignedMediaAuthorizationService(repository=repository, store=store).authorize(
+        scope(), selector()
+    )
+    assert grant.timeline.original_source == source
+    AlignedMediaLifecycleService(repository=repository, store=store).retire_dataset_version(
+        scope(),
+        dataset_id="dataset-1",
+        dataset_version=7,
+    )
+    assert original_file.read_bytes() == b"immutable-original-video"
+
+
 def test_missing_media_returns_not_ready_without_creating_work(tmp_path: Path) -> None:
     repository = CountingRepository()
     service = AlignedMediaAuthorizationService(
@@ -263,7 +320,7 @@ def test_missing_media_returns_not_ready_without_creating_work(tmp_path: Path) -
     assert caught.value.problem.status == 425
     assert caught.value.problem.code == "ALIGNED_MEDIA_NOT_READY"
     assert repository.ensure_calls == 0
-    assert repository.find_calls == 1
+    assert repository.find_calls == 2
 
 
 def test_authorize_endpoint_serves_exact_opaque_key_with_http_range(

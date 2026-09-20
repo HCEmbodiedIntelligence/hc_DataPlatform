@@ -37,6 +37,7 @@ from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
 )
 from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1, StepRecord
+from hc_data_platform.lerobot_imports.orchestration import LeRobotEpisodeSourceRefV1
 from hc_data_platform.publishing.models import (
     ExportFormat,
     ExportResultV1,
@@ -245,6 +246,7 @@ class IngestProjectionSourceV1(BaseModel):
     manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     materialization: ProjectionMaterializationV1 | None = None
+    lerobot: LeRobotEpisodeSourceRefV1 | None = None
 
 
 class ProjectionMaterializationActivityInput(BaseModel):

@@ -15,39 +15,6 @@ def _compose(name: str) -> dict[str, object]:
     return yaml.safe_load((ROOT / name).read_text(encoding="utf-8"))
 
 
-def test_development_compose_uses_oss_while_isolated_tests_keep_local_storage() -> None:
-    development = _compose("compose.dev.yaml")["services"]
-    real_api = _compose("compose.real-api.yaml")["services"]
-    test = _compose("compose.test.yaml")["services"]
-
-    dev_api = development["api"]["environment"]
-    dev_worker = development["worker"]["environment"]
-    assert dev_api["HC_OBJECT_STORE_PROVIDER"] == "oss"
-    assert "HC_OBJECT_STORE_ENDPOINT" in dev_api["HC_OBJECT_STORE_ENDPOINT"]
-    assert "HC_OBJECT_STORE_PUBLIC_ENDPOINT" in dev_api["HC_OBJECT_STORE_PUBLIC_ENDPOINT"]
-    assert dev_worker["HC_OBJECT_STORE_PROVIDER"] == "oss"
-    assert "HC_OBJECT_STORE_ENDPOINT" in dev_worker["HC_OBJECT_STORE_ENDPOINT"]
-    assert "HC_OBJECT_STORE_PUBLIC_ENDPOINT" not in dev_worker
-    assert "minio" not in development
-    assert "minio-init" not in development
-    assert "object-store-browser" not in development
-    assert (
-        "HC_OBJECT_STORE_PUBLIC_ENDPOINT"
-        in (real_api["api"]["environment"]["HC_OBJECT_STORE_PUBLIC_ENDPOINT"])
-    )
-
-    test_api = test["api"]["environment"]
-    test_worker = test["worker"]["environment"]
-    assert test_api["HC_OBJECT_STORE_ENDPOINT"] == "http://minio:9000"
-    assert test_api["HC_OBJECT_STORE_PUBLIC_ENDPOINT"] == "http://127.0.0.1:9000"
-    assert test_worker["HC_OBJECT_STORE_ENDPOINT"] == "http://minio:9000"
-    assert "HC_OBJECT_STORE_PUBLIC_ENDPOINT" not in test_worker
-
-    runtime = (ROOT / "backend/src/hc_data_platform/runtime.py").read_text(encoding="utf-8")
-    assert '"oss_endpoint": settings.object_store_endpoint' in runtime
-    assert '"oss_endpoint": settings.object_store_public_endpoint' not in runtime
-
-
 def test_isolated_minio_test_stack_applies_exact_origin_browser_upload_cors() -> None:
     expected_origins = {
         "http://127.0.0.1:8088",

@@ -196,6 +196,11 @@
   flex: 0 1 236px;
 }
 
+.businessRegionField {
+  width: 150px;
+  flex: 0 1 150px;
+}
+
 .scopeField :global(.ant-select) {
   width: 100%;
   padding-inline-start: 36px !important;

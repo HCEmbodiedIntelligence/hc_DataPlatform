@@ -70,7 +70,11 @@ class ObjectStoragePort(Protocol):
 
     def read_chunks(self, key: str, chunk_size: int = 8 * 1024 * 1024) -> Iterable[bytes]: ...
 
-    def presign_read(self, key: str, expires_seconds: int) -> str: ...
+    def read_range(self, key: str, start: int, end: int) -> bytes: ...
+
+    def presign_read(
+        self, key: str, expires_seconds: int, *, download_name: str | None = None
+    ) -> str: ...
 
     def put_json(
         self, key: str, value: dict[str, Any], *, if_none_match: bool
@@ -251,7 +255,9 @@ class InMemoryObjectStorage:
             raise ValueError("invalid object byte range")
         return self.objects[key][start:end]
 
-    def presign_read(self, key: str, expires_seconds: int) -> str:
+    def presign_read(
+        self, key: str, expires_seconds: int, *, download_name: str | None = None
+    ) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
         if self.head(key) is None:

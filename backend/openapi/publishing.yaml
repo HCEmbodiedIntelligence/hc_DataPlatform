@@ -3,6 +3,8 @@ paths:
     post:
       operationId: preflightDatasetPublication
       tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingRegionCode'
       requestBody:
         required: true
         content:
@@ -20,6 +22,8 @@ paths:
     post:
       operationId: publishDatasetVersion
       tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingRegionCode'
       requestBody:
         required: true
         content:
@@ -59,6 +63,7 @@ paths:
         - $ref: '#/components/parameters/PublishingDatasetId'
         - $ref: '#/components/parameters/PublishingDatasetVersion'
         - $ref: '#/components/parameters/PublishingIdempotencyKey'
+        - $ref: '#/components/parameters/PublishingRegionCode'
       requestBody:
         required: true
         content:
@@ -152,6 +157,12 @@ paths:
         '409': {description: Export is not complete or its promoted artifact failed integrity checks.}
 components:
   parameters:
+    PublishingRegionCode:
+      in: header
+      name: X-Region-Code
+      required: false
+      description: Verified region used for exact annotation and publication lineage reads.
+      schema: {type: string}
     PublishingDatasetId:
       in: path
       name: dataset_id

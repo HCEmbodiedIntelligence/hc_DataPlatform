@@ -1,105 +1,238 @@
 security:
-  - bearerAuth: []
+- bearerAuth: []
 paths:
   /api/v1/aligned-media/authorize:
     post:
-      tags: [aligned-media]
+      tags:
+      - aligned-media
       summary: Authorize Aligned Media
       operationId: authorizeAlignedMedia
       parameters:
-        - name: X-Organization-Id
-          in: header
-          required: true
-          schema: {type: string}
-        - name: X-Region-Code
-          in: header
-          required: true
-          schema: {type: string}
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-Region-Code
+        in: header
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/AlignedMediaSelectorV1'}
+            schema:
+              $ref: '#/components/schemas/AlignedMediaSelectorV1'
       responses:
         '200':
           description: READY canonical aligned MP4 authorization
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/AlignedMediaAuthorizationV1'}
+              schema:
+                $ref: '#/components/schemas/AlignedMediaAuthorizationV1'
         '409':
           description: The aligned media artifact failed or is being abandoned.
           content:
             application/problem+json:
-              schema: {$ref: '#/components/schemas/ProblemDetails'}
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '425':
           description: The artifact is absent, generating, or not yet dataset-committed.
           content:
             application/problem+json:
-              schema: {$ref: '#/components/schemas/ProblemDetails'}
-        '422': {$ref: '#/components/responses/ValidationProblem'}
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationProblem'
 components:
   schemas:
     AlignedMediaSelectorV1:
       type: object
-      required: [project_id, dataset_id, rollout_id, dataset_version, camera_id]
+      required:
+      - project_id
+      - dataset_id
+      - rollout_id
+      - dataset_version
+      - camera_id
       properties:
-        project_id: {type: string, minLength: 1}
-        dataset_id: {type: string, minLength: 1}
-        rollout_id: {type: string, minLength: 1}
-        dataset_version: {type: integer, minimum: 1}
-        camera_id: {type: string, minLength: 1}
+        project_id:
+          type: string
+          minLength: 1
+        dataset_id:
+          type: string
+          minLength: 1
+        rollout_id:
+          type: string
+          minLength: 1
+        dataset_version:
+          type: integer
+          minimum: 1
+        camera_id:
+          type: string
+          minLength: 1
     AlignedMediaTimelineV1:
-      type: object
-      description: Exact mapping from step N to frame N and PTS N at time base 1/30.
-      required: [frame_count, start_timestamp_ns]
       properties:
-        fps: {type: integer, const: 30, default: 30}
-        frame_count: {type: integer, minimum: 0}
-        first_step: {type: integer, minimum: 0, default: 0}
-        pts_time_base_numerator: {type: integer, const: 1, default: 1}
-        pts_time_base_denominator: {type: integer, const: 30, default: 30}
-        start_timestamp_ns: {type: string, pattern: '^(0|[1-9][0-9]*)$'}
+        fps:
+          type: integer
+          const: 30
+          title: Fps
+          default: 30
+        frame_count:
+          type: integer
+          minimum: 0.0
+          title: Frame Count
+        first_step:
+          type: integer
+          minimum: 0.0
+          title: First Step
+          default: 0
+        pts_time_base_numerator:
+          type: integer
+          const: 1
+          title: Pts Time Base Numerator
+          default: 1
+        pts_time_base_denominator:
+          type: integer
+          const: 30
+          title: Pts Time Base Denominator
+          default: 30
+        start_timestamp_ns:
+          type: string
+          title: Start Timestamp Ns
+        original_source:
+          anyOf:
+          - $ref: '#/components/schemas/OriginalVideoReferenceV1'
+          - type: 'null'
+      type: object
+      required:
+      - frame_count
+      - start_timestamp_ns
+      title: AlignedMediaTimelineV1
+      description: Aligned logical clock, optionally mapped into an unchanged original
+        video.
     AlignedMediaAuthorizationV1:
       type: object
       required:
-        - artifact_id
-        - artifact_key
-        - project_id
-        - dataset_id
-        - rollout_id
-        - dataset_version
-        - camera_id
-        - media_url
-        - expires_at
-        - frame_count
-        - duration_seconds
-        - width
-        - height
-        - timeline
-        - alignment_version
-        - profile_id
-        - profile_version
+      - artifact_id
+      - artifact_key
+      - project_id
+      - dataset_id
+      - rollout_id
+      - dataset_version
+      - camera_id
+      - media_url
+      - expires_at
+      - frame_count
+      - duration_seconds
+      - width
+      - height
+      - timeline
+      - alignment_version
+      - profile_id
+      - profile_version
       properties:
         schema_version:
           type: string
           const: aligned-media-authorization/v1
           default: aligned-media-authorization/v1
-        artifact_id: {type: string}
-        artifact_key: {type: string}
-        project_id: {type: string}
-        dataset_id: {type: string}
-        rollout_id: {type: string}
-        dataset_version: {type: integer}
-        camera_id: {type: string}
-        media_url: {type: string}
-        content_type: {type: string, const: video/mp4, default: video/mp4}
-        expires_at: {type: string, format: date-time}
-        fps: {type: integer, const: 30, default: 30}
-        frame_count: {type: integer, minimum: 1}
-        duration_seconds: {type: number, exclusiveMinimum: 0}
-        width: {type: integer, minimum: 2}
-        height: {type: integer, minimum: 2}
-        timeline: {$ref: '#/components/schemas/AlignedMediaTimelineV1'}
-        alignment_version: {type: string}
-        profile_id: {type: string}
-        profile_version: {type: string}
+        artifact_id:
+          type: string
+        artifact_key:
+          type: string
+        project_id:
+          type: string
+        dataset_id:
+          type: string
+        rollout_id:
+          type: string
+        dataset_version:
+          type: integer
+        camera_id:
+          type: string
+        media_url:
+          type: string
+        content_type:
+          type: string
+          const: video/mp4
+          default: video/mp4
+        expires_at:
+          type: string
+          format: date-time
+        fps:
+          type: integer
+          const: 30
+          default: 30
+        frame_count:
+          type: integer
+          minimum: 1
+        duration_seconds:
+          type: number
+          exclusiveMinimum: 0
+        width:
+          type: integer
+          minimum: 2
+        height:
+          type: integer
+          minimum: 2
+        timeline:
+          $ref: '#/components/schemas/AlignedMediaTimelineV1'
+        alignment_version:
+          type: string
+        profile_id:
+          type: string
+        profile_version:
+          type: string
+    OriginalVideoReferenceV1:
+      properties:
+        object_key:
+          type: string
+          maxLength: 2048
+          minLength: 1
+          title: Object Key
+        content_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Content Sha256
+        size_bytes:
+          type: integer
+          minimum: 1.0
+          title: Size Bytes
+        start_seconds:
+          type: number
+          minimum: 0.0
+          title: Start Seconds
+        end_seconds:
+          type: number
+          exclusiveMinimum: 0.0
+          title: End Seconds
+        width:
+          type: integer
+          minimum: 2.0
+          title: Width
+        height:
+          type: integer
+          minimum: 2.0
+          title: Height
+        codec:
+          type: string
+          minLength: 1
+          title: Codec
+        fps:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Fps
+      type: object
+      required:
+      - object_key
+      - content_sha256
+      - size_bytes
+      - start_seconds
+      - end_seconds
+      - width
+      - height
+      - codec
+      - fps
+      title: OriginalVideoReferenceV1
+      description: An existing immutable video; derivative cleanup must never own
+        this object.

@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 035ea10b5ca088a48fdf3dd25f75106a56a2666976f394e7bd0dd6a0e96cb020
+// Runtime-OpenAPI-SHA256: e562906f9c1edc137c4572d58c34dd89493576189be5c44cefca702c8cc3f0d0
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -251,11 +251,20 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:test-connection" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/data-sources/page" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/device-capture-facts" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:read" },
   { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/manual-issues" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/manual-issues" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/manual-issues:page" },

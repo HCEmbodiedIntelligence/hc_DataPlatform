@@ -297,8 +297,8 @@ def _seed_manifest(
     with psycopg.connect(dsn) as connection:
         connection.execute(
             """
-            INSERT INTO registry.organization_projects (organization_id, project_id)
-            VALUES (%s, %s) ON CONFLICT DO NOTHING
+            INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+            VALUES (%s, %s, 'Ingest projection integration test') ON CONFLICT DO NOTHING
             """,
             (organization_id, project_id),
         )

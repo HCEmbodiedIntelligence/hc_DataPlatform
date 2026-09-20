@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
@@ -1071,7 +1072,8 @@ def create_app(
             session_write_may_run = opaque_session and not _is_maintenance_control(request)
             if maintenance_fencing_enabled and (command_requires_permit or session_write_may_run):
                 try:
-                    writer_permit = resolved_maintenance_write_gate.issue_writer_permit(
+                    writer_permit = await run_in_threadpool(
+                        resolved_maintenance_write_gate.issue_writer_permit,
                         environment_id=resolved_settings.platform_environment_id,
                         writer_id=request_id,
                         writer_kind="api_command",
@@ -1091,7 +1093,9 @@ def create_app(
                     writer_permit is not None or not maintenance_fencing_enabled
                 )
             try:
-                auth = _authenticate_request(request, verifier, resolved_access_service)
+                auth = await run_in_threadpool(
+                    _authenticate_request, request, verifier, resolved_access_service
+                )
                 context = _request_context(request, request_id=request_id, auth=auth)
             except MaintenanceContractError:
                 return _maintenance_problem_response(request_id=request_id)
@@ -1131,16 +1135,20 @@ def create_app(
             if writer_permit is not None:
                 try:
                     if writer_renewer is not None:
-                        writer_renewer.stop()
+                        await run_in_threadpool(writer_renewer.stop)
                         writer_renewer.raise_if_failed()
                     retention_seconds = current_writer_permit_retention_seconds()
                     if response.status_code < 400 and retention_seconds is not None:
-                        resolved_maintenance_write_gate.retain_writer_permit(
+                        await run_in_threadpool(
+                            resolved_maintenance_write_gate.retain_writer_permit,
                             writer_permit.permit_id,
                             lease_seconds=retention_seconds,
                         )
                         writer_permit_retained = True
-                    resolved_maintenance_write_gate.assert_writer_permit(writer_permit.permit_id)
+                    await run_in_threadpool(
+                        resolved_maintenance_write_gate.assert_writer_permit,
+                        writer_permit.permit_id,
+                    )
                 except MaintenanceContractError:
                     return _maintenance_problem_response(request_id=context.request_id)
             raw_retry_after = response.headers.get("Retry-After")
@@ -1178,7 +1186,7 @@ def create_app(
             return response
         finally:
             if writer_renewer is not None:
-                writer_renewer.stop()
+                await run_in_threadpool(writer_renewer.stop)
             if request_context_token is not None:
                 reset_request_context(request_context_token)
             if session_mutation_token is not None:
@@ -1188,7 +1196,9 @@ def create_app(
             if writer_retention_token is not None:
                 reset_writer_permit_retention(writer_retention_token)
             if writer_permit is not None and not writer_permit_retained:
-                resolved_maintenance_write_gate.release_writer_permit(writer_permit.permit_id)
+                await run_in_threadpool(
+                    resolved_maintenance_write_gate.release_writer_permit, writer_permit.permit_id
+                )
 
     @app.middleware("http")
     async def structured_access_log_middleware(

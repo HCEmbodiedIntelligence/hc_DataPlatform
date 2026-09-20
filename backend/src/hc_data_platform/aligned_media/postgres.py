@@ -310,6 +310,7 @@ class PostgresAlignedMediaRepository:
         timeline = AlignedMediaTimelineV1(
             frame_count=encoded.frame_count,
             start_timestamp_ns=encoded.first_timestamp_ns,
+            original_source=encoded.original_source,
         )
         connection = self._connection_factory()
         cursor = connection.cursor()

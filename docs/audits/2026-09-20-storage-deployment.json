@@ -1,0 +1,56 @@
+[
+  {
+    "name": "hc-data-platform-single-web-1",
+    "image": "hc-data-platform-frontend:storage",
+    "state": "running",
+    "health": "healthy",
+    "memory_limit_bytes": 134217728,
+    "cpu_limit": 0.5,
+    "mounts": [
+      {
+        "type": "bind",
+        "name": null,
+        "destination": "/etc/nginx/conf.d/default.conf"
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-single-api-1",
+    "image": "hc-data-platform-api:storage",
+    "state": "running",
+    "health": "healthy",
+    "memory_limit_bytes": 2147483648,
+    "cpu_limit": 2.0,
+    "mounts": []
+  },
+  {
+    "name": "hc-data-platform-single-postgres-1",
+    "image": "postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+    "state": "running",
+    "health": "healthy",
+    "memory_limit_bytes": 805306368,
+    "cpu_limit": 1.0,
+    "mounts": [
+      {
+        "type": "volume",
+        "name": "hc-data-platform-dev_postgres-data",
+        "destination": "/var/lib/postgresql/data"
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-single-minio-1",
+    "image": "minio/minio:RELEASE.2024-11-07T00-52-20Z",
+    "state": "running",
+    "health": "healthy",
+    "memory_limit_bytes": 1073741824,
+    "cpu_limit": 1.0,
+    "mounts": [
+      {
+        "type": "volume",
+        "name": "hc-data-platform-dev_minio-data",
+        "destination": "/data"
+      }
+    ]
+  }
+]

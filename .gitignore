@@ -27,6 +27,7 @@ TestResults.xml
 frontend/dist/
 frontend/node_modules/
 frontend/.env.local
+.env.single-server
 frontend/test-results/
 frontend/playwright-report/
 frontend/coverage/

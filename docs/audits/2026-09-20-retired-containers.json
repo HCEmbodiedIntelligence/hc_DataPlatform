@@ -1,0 +1,248 @@
+[
+  {
+    "name": "hc-data-platform-dev-media-worker-1",
+    "image": "hc-data-platform-worker:dev",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/backend",
+        "Destination": "/app",
+        "RW": false
+      },
+      {
+        "Type": "volume",
+        "Name": "hc-data-platform-dev_media-staging",
+        "Source": "/var/lib/docker/volumes/hc-data-platform-dev_media-staging/_data",
+        "Destination": "/tmp/hc-data/aligned-media",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-worker-1",
+    "image": "hc-data-platform-worker:dev",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/backend",
+        "Destination": "/app",
+        "RW": false
+      },
+      {
+        "Type": "volume",
+        "Name": "hc-data-platform-dev_alignment-cache",
+        "Source": "/var/lib/docker/volumes/hc-data-platform-dev_alignment-cache/_data",
+        "Destination": "/tmp/hc-data/alignment",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-frontend-1",
+    "image": "hc-data-platform-frontend:dev",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/frontend",
+        "Destination": "/app",
+        "RW": false
+      },
+      {
+        "Type": "volume",
+        "Name": "caff9fabaaebdd43ab62983a98039e97510e44df8dbe471c2ba5d2dce7fc82ef",
+        "Source": "/var/lib/docker/volumes/caff9fabaaebdd43ab62983a98039e97510e44df8dbe471c2ba5d2dce7fc82ef/_data",
+        "Destination": "/app/node_modules",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-api-1",
+    "image": "hc-data-platform-api:dev",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/backend",
+        "Destination": "/app",
+        "RW": false
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-runtime-cache-init-1",
+    "image": "hc-data-platform-api:dev",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "hc-data-platform-dev_alignment-cache",
+        "Source": "/var/lib/docker/volumes/hc-data-platform-dev_alignment-cache/_data",
+        "Destination": "/tmp/hc-data/alignment",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-migration-1",
+    "image": "hc-data-platform-dev-migration",
+    "state": "exited",
+    "mounts": []
+  },
+  {
+    "name": "hc-data-platform-dev-object-store-browser-1",
+    "image": "ghcr.io/nginx/nginx-unprivileged:1.29.4-alpine@sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/deploy/compose/object-store-browser.conf",
+        "Destination": "/etc/nginx/conf.d/default.conf",
+        "RW": false
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-minio-init-1",
+    "image": "minio/mc:RELEASE.2024-11-21T17-21-54Z",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/deploy/compose/minio-browser-upload-cors.xml",
+        "Destination": "/config/browser-upload-cors.xml",
+        "RW": false
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-minio-1",
+    "image": "minio/minio:RELEASE.2024-11-07T00-52-20Z",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "hc-data-platform-dev_minio-data",
+        "Source": "/var/lib/docker/volumes/hc-data-platform-dev_minio-data/_data",
+        "Destination": "/data",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-gateway-1",
+    "image": "ghcr.io/nginx/nginx-unprivileged:1.29.4-alpine@sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/czy/hc_DataPlatform/deploy/compose/gateway.conf",
+        "Destination": "/etc/nginx/conf.d/default.conf",
+        "RW": false
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-dev-temporal-ui-1",
+    "image": "temporalio/ui:2.31.2",
+    "state": "exited",
+    "mounts": []
+  },
+  {
+    "name": "hc-data-platform-dev-temporal-1",
+    "image": "temporalio/auto-setup:1.25.2",
+    "state": "exited",
+    "mounts": []
+  },
+  {
+    "name": "hc-data-platform-dev-postgres-1",
+    "image": "postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "hc-data-platform-dev_postgres-data",
+        "Source": "/var/lib/docker/volumes/hc-data-platform-dev_postgres-data/_data",
+        "Destination": "/var/lib/postgresql/data",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-data-platform-test-gates-postgres-1",
+    "image": "postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+    "state": "exited",
+    "mounts": []
+  },
+  {
+    "name": "hc-be12-minio",
+    "image": "minio/minio:RELEASE.2025-07-23T15-54-02Z",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "8d0f1418dcedef0e60799921ac44e5687a7c0a92dd7fcc58dd95f584b421158c",
+        "Source": "/var/lib/docker/volumes/8d0f1418dcedef0e60799921ac44e5687a7c0a92dd7fcc58dd95f584b421158c/_data",
+        "Destination": "/data",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "hc-be12-postgres",
+    "image": "postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "019676417de5afa2ec54a913badff6f267b49e5e56e5484ca95d0555dd50293c",
+        "Source": "/var/lib/docker/volumes/019676417de5afa2ec54a913badff6f267b49e5e56e5484ca95d0555dd50293c/_data",
+        "Destination": "/var/lib/postgresql/data",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "backend-temporal-1",
+    "image": "temporalio/auto-setup:1.25.2",
+    "state": "exited",
+    "mounts": []
+  },
+  {
+    "name": "backend-minio-init-1",
+    "image": "minio/mc:RELEASE.2024-11-21T17-21-54Z",
+    "state": "created",
+    "mounts": []
+  },
+  {
+    "name": "backend-postgres-1",
+    "image": "postgres:16.6",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "backend_postgres-data",
+        "Source": "/var/lib/docker/volumes/backend_postgres-data/_data",
+        "Destination": "/var/lib/postgresql/data",
+        "RW": true
+      }
+    ]
+  },
+  {
+    "name": "backend-minio-1",
+    "image": "minio/minio:RELEASE.2024-11-07T00-52-20Z",
+    "state": "exited",
+    "mounts": [
+      {
+        "Type": "volume",
+        "Name": "backend_minio-data",
+        "Source": "/var/lib/docker/volumes/backend_minio-data/_data",
+        "Destination": "/data",
+        "RW": true
+      }
+    ]
+  }
+]

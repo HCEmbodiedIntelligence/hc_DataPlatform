@@ -54,6 +54,14 @@ def test_local_and_test_allow_explicit_browser_reachable_http_endpoints() -> Non
     assert test.object_store_public_endpoint == "http://localhost:9000"
 
 
+def test_dynamic_project_discovery_is_explicit_and_local_only() -> None:
+    assert Settings(
+        environment="local", local_scope_discovery=True, _env_file=None
+    ).local_scope_discovery
+    with pytest.raises(ValidationError, match="restricted to HC_ENVIRONMENT=local"):
+        Settings(environment="test", local_scope_discovery=True, _env_file=None)
+
+
 def test_oss_provider_requires_https_native_endpoints() -> None:
     settings = Settings(
         environment="test",

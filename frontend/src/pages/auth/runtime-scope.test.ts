@@ -69,10 +69,11 @@ describe("installSessionBootstrap", () => {
     expect(useShellStore.getState().scope).toEqual({
       organizationId: "organization-first",
       projectId: "project-first",
+      regionCode: "global",
     });
   });
 
-  it("keeps an authorized project-wide persisted scope without requiring a region", () => {
+  it("repairs a persisted project-wide scope that has no business region", () => {
     useShellStore.getState().setScope({
       organizationId: "organization-preferred",
       projectId: "project-preferred",
@@ -83,7 +84,57 @@ describe("installSessionBootstrap", () => {
     expect(useShellStore.getState().scope).toEqual({
       organizationId: "organization-preferred",
       projectId: "project-preferred",
+      regionCode: "global",
     });
+  });
+
+  it("selects the existing project data region on a fresh admin login", () => {
+    installSessionBootstrap({
+      ...bootstrap,
+      platform_capabilities: ["platform.admin"],
+      available_scopes: [
+        { ...bootstrap.available_scopes[0]!, region_codes: ["cn-beijing"] },
+      ],
+    });
+    expect(useShellStore.getState().scope).toEqual({
+      organizationId: "organization-first",
+      projectId: "project-first",
+      regionCode: "cn-beijing",
+    });
+    expect(useShellStore.getState().authorization?.scopeKey).toBe(
+      "organization-first/project-first/cn-beijing",
+    );
+  });
+
+  it("preserves the chosen business region when a deployment default also matches", () => {
+    vi.stubEnv("VITE_DEFAULT_PROJECT_ID", "project-preferred");
+    vi.stubEnv("VITE_DEFAULT_REGION_CODE", "cn-default");
+    useShellStore.getState().setScope({
+      organizationId: "organization-preferred",
+      projectId: "project-preferred",
+      regionCode: "cn-beijing",
+    });
+    installSessionBootstrap(bootstrap);
+    expect(useShellStore.getState().scope?.regionCode).toBe("cn-beijing");
+  });
+
+  it("keeps a restricted grant within its authorized regions", () => {
+    useShellStore.getState().setScope({
+      organizationId: "organization-first",
+      projectId: "project-first",
+      regionCode: "not-granted",
+    });
+    installSessionBootstrap({
+      ...bootstrap,
+      available_scopes: [
+        {
+          ...bootstrap.available_scopes[0]!,
+          project_wide: false,
+          region_codes: ["eu-allowed"],
+        },
+      ],
+    });
+    expect(useShellStore.getState().scope?.regionCode).toBe("eu-allowed");
   });
 
   it("merges the global platform admin marker into every real project snapshot", () => {

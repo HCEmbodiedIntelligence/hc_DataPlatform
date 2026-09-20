@@ -333,6 +333,45 @@ describe("PlatformShell", () => {
     );
   });
 
+  it("keeps the project region when displaying a MinIO signing region", async () => {
+    configureRuntime({
+      apiBaseUrl: "/api/v1",
+      sseBaseUrl: "/api/v1",
+      buildVersion: "test",
+      releaseEnv: "test",
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input) =>
+        new Response(
+          JSON.stringify(
+            String(input).includes("/platform/object-store-location")
+              ? {
+                  format_version: "hc-object-store-location/v1",
+                  configured: true,
+                  provider: "s3",
+                  public_endpoint: "http://127.0.0.1:9000",
+                  region: "us-east-1",
+                }
+              : {},
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    const user = userEvent.setup();
+    renderShell();
+    const selector = screen.getByRole("combobox", { name: "当前存储地址" });
+    await user.click(selector);
+    await waitFor(() =>
+      expect(selector.parentElement).toHaveTextContent(
+        "S3 · us-east-1 · 127.0.0.1:9000",
+      ),
+    );
+    await user.click(
+      document.querySelector(".ant-select-item-option-content")!,
+    );
+    expect(useShellStore.getState().scope).toEqual(scope);
+  });
+
   it("switches duplicate project ids across organizations by their composite identity", async () => {
     const user = userEvent.setup();
     renderShell(undefined, [
@@ -379,6 +418,45 @@ describe("PlatformShell", () => {
     expect(
       screen.queryByText(/stale-private-project/u),
     ).not.toBeInTheDocument();
+  });
+
+  it("lets a multi-region project select its business data independently of storage", async () => {
+    const user = userEvent.setup();
+    renderShell(undefined, [
+      defaultScopeOptions[0],
+      { ...defaultScopeOptions[0], regionCode: "cn-beijing" },
+    ]);
+    await user.click(screen.getByRole("combobox", { name: "当前数据区域" }));
+    await user.click(await screen.findByText("cn-beijing"));
+    await waitFor(() =>
+      expect(useShellStore.getState().scope).toEqual({
+        ...scope,
+        regionCode: "cn-beijing",
+      }),
+    );
+  });
+
+  it("chooses a new project's business region without copying another project's region", async () => {
+    const user = userEvent.setup();
+    renderShell(undefined, [
+      defaultScopeOptions[0],
+      {
+        organizationId: "org-new",
+        organizationName: "新组织",
+        projectId: "project-new",
+        projectName: "本地新项目",
+        projectWide: true,
+      },
+    ]);
+    await user.click(screen.getByRole("combobox", { name: "当前项目" }));
+    await user.click(await screen.findByText("新组织 / 本地新项目"));
+    await waitFor(() =>
+      expect(useShellStore.getState().scope).toEqual({
+        organizationId: "org-new",
+        projectId: "project-new",
+        regionCode: "global",
+      }),
+    );
   });
 
   it("keeps the full personal shell usable without a project scope", async () => {

@@ -417,6 +417,19 @@ def _configured_value(value: str) -> bool:
 
 
 def settings_object_store_configured(settings: Settings) -> bool:
+    # The bundled local MinIO credentials are intentional, usable configuration.
+    # Treating them as placeholders silently redirects the API to a saved OSS account.
+    if settings.environment in {"local", "test"} and settings.object_store_provider == "s3":
+        return all(
+            _configured_value(value) or value in {"hc-data-local", "minio", "minio-local-only"}
+            for value in (
+                settings.object_store_endpoint,
+                settings.object_store_public_endpoint,
+                settings.object_store_bucket,
+                settings.object_store_access_key,
+                settings.object_store_secret_key,
+            )
+        )
     endpoints = (settings.object_store_endpoint, settings.object_store_public_endpoint)
     return (
         all(_configured_value(value) for value in endpoints)
@@ -462,7 +475,12 @@ class ObjectStoreConfigurationService:
         self.active_revision = active_revision
 
     def current(self) -> ObjectStoreConfigurationStatus:
-        stored = self.repository.current(self.environment_id)
+        local_minio = (
+            self.settings.environment in {"local", "test"}
+            and self.settings.object_store_provider == "s3"
+            and settings_object_store_configured(self.settings)
+        )
+        stored = None if local_minio else self.repository.current(self.environment_id)
         if stored is not None:
             return _status_from_stored(stored, active_revision=self.active_revision)
         configured = settings_object_store_configured(self.settings)
@@ -482,11 +500,7 @@ class ObjectStoreConfigurationService:
                 if _configured_value(self.settings.object_store_public_endpoint)
                 else ""
             ),
-            bucket=(
-                self.settings.object_store_bucket
-                if _configured_value(self.settings.object_store_bucket)
-                else ""
-            ),
+            bucket=(self.settings.object_store_bucket if configured else ""),
             region=self.settings.object_store_region,
             access_key_configured=configured,
             access_key_hint=(

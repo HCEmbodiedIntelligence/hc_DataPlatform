@@ -84,7 +84,7 @@ function QueueItemCard(props: {
         </span>
         <div>
           <strong title={item.fileName}>
-            {isLeRobot ? `LeRobot · ${item.fileName}` : item.fileName}
+            {isLeRobot ? `原始数据 · ${item.fileName}` : item.fileName}
           </strong>
           <span title={item.dataPackageId}>
             {isLeRobot ? `Dataset ${item.dataPackageId}` : item.dataPackageId}

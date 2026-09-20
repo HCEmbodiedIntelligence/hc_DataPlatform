@@ -227,25 +227,24 @@ def test_begin_resumes_the_server_session_and_reports_uploaded_parts() -> None:
         part_count=1,
     )
     changed_manifest = manifest.model_copy(update={"files": (changed_file, *manifest.files[1:])})
-    with pytest.raises(ProblemException) as captured:
+    different = service.begin(
+        auth=_auth(),
+        organization_id="org-a",
+        project_id="project-a",
+        region_code="cn-hz",
+        manifest=changed_manifest,
+    )
+    assert different.import_id != first.import_id
+    assert (
         service.begin(
             auth=_auth(),
             organization_id="org-a",
             project_id="project-a",
             region_code="cn-hz",
-            manifest=changed_manifest,
-        )
-    assert captured.value.problem.code == "LEROBOT_IMPORT_MANIFEST_CHANGED"
-
-    with pytest.raises(ProblemException) as changed_binding:
-        service.begin(
-            auth=_auth(),
-            organization_id="org-a",
-            project_id="project-a",
-            region_code="cn-hz",
-            manifest=manifest.model_copy(update={"robot_id": "robot-b"}),
-        )
-    assert changed_binding.value.problem.code == "LEROBOT_IMPORT_MANIFEST_CHANGED"
+            manifest=manifest,
+        ).import_id
+        == first.import_id
+    )
 
 
 def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
@@ -353,12 +352,13 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
         manifest=manifest,
     )
 
-    assert accepted.status == "EPISODES_QUEUED"
+    assert accepted.status == "RAW_COMMITTED"
     assert accepted_again == accepted
     assert resumed_after_commit.import_id == grant.import_id
     assert all(asset.completed for asset in resumed_after_commit.assets)
     assert accepted.source_file_count == len(bodies)
-    assert accepted.episode_task_count == 1
+    assert accepted.episode_task_count == 0
+    assert accepted.episode_plan_key is None
     for relative_path, body in bodies.items():
         key = f"raw/org-a/dataset-a/{grant.import_id}/source/{relative_path}"
         assert storage.objects[key] == body
@@ -366,21 +366,11 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
     raw_manifest_key = f"raw/org-a/dataset-a/{grant.import_id}/manifest.json"
     raw_manifest = json.loads(storage.objects[raw_manifest_key])
     assert raw_manifest["storage_mode"] == "native_objects"
-    assert raw_manifest["source_format"] == "lerobot"
+    assert raw_manifest["source_format"] == "LEROBOT_V3"
     assert len(raw_manifest["content_hash"]) == 64
     assert raw_manifest["file_count"] == len(bodies)
     assert all(item["sha256"] for item in raw_manifest["files"])
-    episode_task = json.loads(
-        storage.objects[
-            f"derived/lerobot-imports/org-a/dataset-a/{grant.import_id}/episodes/000000.json"
-        ]
-    )
-    assert episode_task["source"] == {
-        "source_format": "lerobot_v3",
-        "raw_upload_id": grant.import_id,
-        "raw_manifest_key": raw_manifest_key,
-        "episode_index": 0,
-    }
+    assert not any(key.startswith("derived/") for key in storage.objects)
     assert not any(key.startswith("lerobot-inbox/") for key in storage.objects)
 
     raw_source = service.raw_sources.get_source(
@@ -395,14 +385,14 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
     assert raw_source.manifest_key == raw_manifest_key
     assert raw_source.storage_prefix.endswith(f"/{grant.import_id}/source")
     assert raw_source.content_hash == raw_manifest["content_hash"]
-    assert raw_source.processing_status.value == "PENDING"
+    assert raw_source.processing_status.value == "NOT_REQUESTED"
     episodes = service.raw_sources.list_episodes(
         organization_id="org-a",
         project_id="project-a",
         region_code="cn-hz",
         raw_source_id=grant.import_id,
     )
-    assert [(item.source_episode_index, item.status.value) for item in episodes] == [(0, "PENDING")]
+    assert episodes == ()
     job = service.raw_sources.get_job(
         organization_id="org-a",
         project_id="project-a",
@@ -410,9 +400,10 @@ def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
         raw_source_id=grant.import_id,
     )
     assert job is not None
-    assert job.job_type.value == "LEROBOT_IMPORT"
-    assert job.adapter_name == "lerobot_v3"
-    assert job.status.value == "PENDING"
+    assert job.job_type.value == "RAW_STORAGE"
+    assert job.adapter_name == "raw_storage"
+    assert job.status.value == "SUCCEEDED"
+    assert job.workflow_id is None
 
     changed_manifest = CreateLeRobotImportV1(
         dataset_id=manifest.dataset_id,

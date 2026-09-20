@@ -1819,6 +1819,39 @@ class PostgresAccessRepository:
             cursor.close()
             connection.close()
 
+    def available_scope_regions(self, scope: AvailableScope) -> tuple[str, ...]:
+        """Find business regions for an already authorized project at bootstrap only.
+
+        These are navigation choices, not new grants or S3 bucket regions. The
+        directory read spans regions but is always limited to this exact tenant
+        and project; restricted grants retain their explicit region allowlist.
+        """
+        if not scope.project_wide:
+            return scope.region_codes
+        with self._connection_factory() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT set_config('app.platform_admin', 'true', true)")
+            cursor.execute(
+                """WITH selected_scope(organization_id, project_id) AS (VALUES (%s, %s)),
+                regions AS (
+                    SELECT d.region_code, 0 AS priority FROM dataset_registry.datasets d
+                    JOIN selected_scope s USING (organization_id, project_id)
+                    UNION ALL
+                    SELECT d.region_code, 1 FROM ingest.data_sources d
+                    JOIN selected_scope s USING (organization_id, project_id)
+                    UNION ALL
+                    SELECT d.region_code, 2 FROM ingest.collection_jobs d
+                    JOIN selected_scope s USING (organization_id, project_id)
+                    UNION ALL
+                    SELECT d.upload_region_code, 3 FROM collection_tasks.collection_tasks d
+                    JOIN selected_scope s USING (organization_id, project_id)
+                )
+                SELECT region_code FROM regions WHERE region_code <> ''
+                GROUP BY region_code ORDER BY min(priority), region_code""",
+                (scope.organization_id, scope.project_id),
+            )
+            regions = tuple(str(_row(cursor, row)["region_code"]) for row in cursor.fetchall())
+        return regions or ("global",)
+
     def revoke_session(self, *, token_hash: str, request_id: str) -> None:
         connection = self._connection_factory()
         cursor = connection.cursor()

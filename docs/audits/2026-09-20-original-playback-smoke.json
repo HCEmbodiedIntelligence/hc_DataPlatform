@@ -1,0 +1,42 @@
+{
+  "browser": "headless Chromium (server, not user GPU)",
+  "sample_seconds": 6,
+  "streams": [
+    {
+      "camera": 0,
+      "seconds": 37.938907,
+      "width": 640,
+      "height": 480,
+      "frames": 185,
+      "dropped": 0,
+      "error": null
+    },
+    {
+      "camera": 1,
+      "seconds": 37.938109,
+      "width": 640,
+      "height": 480,
+      "frames": 185,
+      "dropped": 0,
+      "error": null
+    },
+    {
+      "camera": 2,
+      "seconds": 37.939674,
+      "width": 640,
+      "height": 480,
+      "frames": 185,
+      "dropped": 0,
+      "error": null
+    },
+    {
+      "camera": 3,
+      "seconds": 37.937627,
+      "width": 640,
+      "height": 480,
+      "frames": 185,
+      "dropped": 0,
+      "error": null
+    }
+  ]
+}

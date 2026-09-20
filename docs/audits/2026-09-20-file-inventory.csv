@@ -1,0 +1,926 @@
+path,lines,inspection_baseline
+backend/src/hc_data_platform/__init__.py,3,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/artifact_store.py,537,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/audit.py,95,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/capacity.py,198,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/encoder.py,745,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/maintenance.py,324,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/memory.py,633,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/models.py,324,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/ports.py,264,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/postgres.py,956,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/profiles.py,45,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/router.py,133,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/service.py,517,Python AST / imports / definitions
+backend/src/hc_data_platform/aligned_media/staging.py,138,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/__init__.py,35,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/arrow_writer.py,224,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/canonical.py,54,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/engine.py,588,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/models.py,159,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/ports.py,156,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/postgres.py,121,Python AST / imports / definitions
+backend/src/hc_data_platform/alignment/router.py,58,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/__init__.py,203,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/auto_jobs.py,1400,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/automation.py,608,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/frame_selection_lifecycle.py,234,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/models.py,707,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/ports.py,271,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/postgres.py,1273,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/repository.py,423,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/router.py,821,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/service.py,1470,Python AST / imports / definitions
+backend/src/hc_data_platform/annotation/validation.py,310,Python AST / imports / definitions
+backend/src/hc_data_platform/audit_projection/__init__.py,20,Python AST / imports / definitions
+backend/src/hc_data_platform/audit_projection/governance.py,1486,Python AST / imports / definitions
+backend/src/hc_data_platform/audit_projection/models.py,306,Python AST / imports / definitions
+backend/src/hc_data_platform/audit_projection/repository.py,840,Python AST / imports / definitions
+backend/src/hc_data_platform/audit_projection/router.py,621,Python AST / imports / definitions
+backend/src/hc_data_platform/audit_projection/service.py,840,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/__init__.py,467,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/catalog.py,1321,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/contracts.py,858,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/dependencies.py,1625,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/dependency_cli.py,417,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/migration_cli.py,221,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/object_cli.py,414,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/objects.py,2792,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/planned_migration.py,1230,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/postgresql.py,1665,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/postgresql_cli.py,215,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/repository.py,1553,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore.py,832,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore_cli.py,871,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore_execution.py,736,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore_reconciliation.py,425,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore_reconciliation_adapters.py,980,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore_runtime.py,630,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/restore_steps.py,625,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/signing.py,360,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/temporal.py,1430,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/temporal_cli.py,469,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/whole.py,1185,Python AST / imports / definitions
+backend/src/hc_data_platform/backup/whole_cli.py,849,Python AST / imports / definitions
+backend/src/hc_data_platform/calibrations/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/calibrations/models.py,305,Python AST / imports / definitions
+backend/src/hc_data_platform/calibrations/repository.py,1950,Python AST / imports / definitions
+backend/src/hc_data_platform/calibrations/router.py,478,Python AST / imports / definitions
+backend/src/hc_data_platform/calibrations/service.py,1139,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_drafts/__init__.py,5,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_drafts/models.py,379,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_drafts/repository.py,657,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_drafts/router.py,282,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_drafts/service.py,952,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_workbench/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_workbench/calculation.py,325,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_workbench/models.py,710,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_workbench/repository.py,1978,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_workbench/router.py,253,Python AST / imports / definitions
+backend/src/hc_data_platform/cleaning_workbench/service.py,700,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/__init__.py,21,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/models.py,322,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/ports.py,94,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/postgres.py,895,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/repository.py,400,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/router.py,313,Python AST / imports / definitions
+backend/src/hc_data_platform/collection_tasks/service.py,550,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/__init__.py,24,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/asset_models.py,452,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/asset_repository.py,357,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/models.py,278,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/processing.py,1608,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/raw_sensor.py,218,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/repository.py,798,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/router.py,511,Python AST / imports / definitions
+backend/src/hc_data_platform/continuous_recordings/service.py,1312,Python AST / imports / definitions
+backend/src/hc_data_platform/core/__init__.py,23,Python AST / imports / definitions
+backend/src/hc_data_platform/core/app.py,1497,Python AST / imports / definitions
+backend/src/hc_data_platform/core/capacity_evidence.py,450,Python AST / imports / definitions
+backend/src/hc_data_platform/core/capacity_gate.py,88,Python AST / imports / definitions
+backend/src/hc_data_platform/core/config.py,771,Python AST / imports / definitions
+backend/src/hc_data_platform/core/context.py,189,Python AST / imports / definitions
+backend/src/hc_data_platform/core/dbapi.py,129,Python AST / imports / definitions
+backend/src/hc_data_platform/core/discovery.py,65,Python AST / imports / definitions
+backend/src/hc_data_platform/core/errors.py,65,Python AST / imports / definitions
+backend/src/hc_data_platform/core/etag.py,84,Python AST / imports / definitions
+backend/src/hc_data_platform/core/events.py,23,Python AST / imports / definitions
+backend/src/hc_data_platform/core/health.py,189,Python AST / imports / definitions
+backend/src/hc_data_platform/core/migrations.py,634,Python AST / imports / definitions
+backend/src/hc_data_platform/core/observability.py,51,Python AST / imports / definitions
+backend/src/hc_data_platform/core/openapi.py,846,Python AST / imports / definitions
+backend/src/hc_data_platform/core/pagination.py,77,Python AST / imports / definitions
+backend/src/hc_data_platform/core/structured_logging.py,344,Python AST / imports / definitions
+backend/src/hc_data_platform/dashboard/__init__.py,29,Python AST / imports / definitions
+backend/src/hc_data_platform/dashboard/models.py,477,Python AST / imports / definitions
+backend/src/hc_data_platform/dashboard/postgres.py,1008,Python AST / imports / definitions
+backend/src/hc_data_platform/dashboard/repository.py,433,Python AST / imports / definitions
+backend/src/hc_data_platform/dashboard/router.py,183,Python AST / imports / definitions
+backend/src/hc_data_platform/dashboard/service.py,1298,Python AST / imports / definitions
+backend/src/hc_data_platform/data_schemas/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/data_schemas/models.py,283,Python AST / imports / definitions
+backend/src/hc_data_platform/data_schemas/repository.py,2290,Python AST / imports / definitions
+backend/src/hc_data_platform/data_schemas/router.py,479,Python AST / imports / definitions
+backend/src/hc_data_platform/data_schemas/service.py,850,Python AST / imports / definitions
+backend/src/hc_data_platform/data_sources/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/data_sources/models.py,444,Python AST / imports / definitions
+backend/src/hc_data_platform/data_sources/repository.py,893,Python AST / imports / definitions
+backend/src/hc_data_platform/data_sources/router.py,424,Python AST / imports / definitions
+backend/src/hc_data_platform/data_sources/service.py,1462,Python AST / imports / definitions
+backend/src/hc_data_platform/dataset_registry/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/dataset_registry/ingest_projection.py,1575,Python AST / imports / definitions
+backend/src/hc_data_platform/dataset_registry/models.py,988,Python AST / imports / definitions
+backend/src/hc_data_platform/dataset_registry/repository.py,2026,Python AST / imports / definitions
+backend/src/hc_data_platform/dataset_registry/router.py,1116,Python AST / imports / definitions
+backend/src/hc_data_platform/dataset_registry/service.py,3458,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/__init__.py,58,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/adapters.py,532,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/cli.py,650,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/device_facts.py,249,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/manifest.py,220,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/models.py,736,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/persistence.py,584,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/ports.py,343,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/postgres.py,1185,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/processing.py,191,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/raw_sources.py,735,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/router.py,690,Python AST / imports / definitions
+backend/src/hc_data_platform/ingest/service.py,1316,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/__init__.py,79,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/adapters.py,1223,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/audit.py,104,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/models.py,228,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/ports.py,286,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/router.py,178,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/schema.py,323,Python AST / imports / definitions
+backend/src/hc_data_platform/lance_catalog/service.py,678,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/adapter.py,259,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/configuration.py,157,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/discovery.py,59,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/dispatch.py,69,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/models.py,212,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/orchestration.py,95,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/pipeline.py,586,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/processing.py,154,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/router.py,275,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/service.py,779,Python AST / imports / definitions
+backend/src/hc_data_platform/lerobot_imports/source_profile.py,99,Python AST / imports / definitions
+backend/src/hc_data_platform/manual_cleaning/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/manual_cleaning/models.py,439,Python AST / imports / definitions
+backend/src/hc_data_platform/manual_cleaning/repository.py,1000,Python AST / imports / definitions
+backend/src/hc_data_platform/manual_cleaning/router.py,425,Python AST / imports / definitions
+backend/src/hc_data_platform/manual_cleaning/service.py,1249,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/__init__.py,45,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/canary.py,121,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/dr_evidence.py,235,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/maintenance_contract.py,209,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/release_cli.py,81,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/release_contract.py,241,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/release_feed.py,304,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/release_identity.py,79,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/router.py,21,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_control/worker_versioning.py,65,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/audit.py,669,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/frontend_heartbeat.py,96,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/instances.py,545,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/logs.py,392,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/maintenance.py,1204,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/object_store_config.py,556,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/overview.py,280,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/projects.py,351,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/releases.py,810,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/router.py,2205,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/runtime_config.py,875,Python AST / imports / definitions
+backend/src/hc_data_platform/platform_ops/task_leases.py,343,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/__init__.py,35,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/adapters.py,298,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/audit.py,97,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/exporters.py,707,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/memory.py,370,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/models.py,298,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/ports.py,105,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/postgres.py,642,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/router.py,543,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/s3.py,143,Python AST / imports / definitions
+backend/src/hc_data_platform/publishing/service.py,516,Python AST / imports / definitions
+backend/src/hc_data_platform/quality/__init__.py,69,Python AST / imports / definitions
+backend/src/hc_data_platform/quality/engine.py,1148,Python AST / imports / definitions
+backend/src/hc_data_platform/quality/models.py,634,Python AST / imports / definitions
+backend/src/hc_data_platform/quality/ports.py,105,Python AST / imports / definitions
+backend/src/hc_data_platform/quality/postgres.py,249,Python AST / imports / definitions
+backend/src/hc_data_platform/quality/router.py,143,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/filesystem_storage.py,424,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/migrate_asset_content.py,126,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/models.py,389,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/repository.py,2450,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/router.py,658,Python AST / imports / definitions
+backend/src/hc_data_platform/registry/service.py,1589,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_assets/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_assets/models.py,60,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_assets/repository.py,1173,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_assets/router.py,276,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_assets/service.py,345,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_ingest/__init__.py,6,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_ingest/adapters.py,198,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_ingest/models.py,577,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_ingest/repository.py,1740,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_ingest/router.py,585,Python AST / imports / definitions
+backend/src/hc_data_platform/robot_ingest/service.py,1583,Python AST / imports / definitions
+backend/src/hc_data_platform/robotics/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/robotics/models.py,336,Python AST / imports / definitions
+backend/src/hc_data_platform/runtime.py,1304,Python AST / imports / definitions
+backend/src/hc_data_platform/security/__init__.py,76,Python AST / imports / definitions
+backend/src/hc_data_platform/security/abuse.py,1029,Python AST / imports / definitions
+backend/src/hc_data_platform/security/access_models.py,560,Python AST / imports / definitions
+backend/src/hc_data_platform/security/access_postgres.py,4145,Python AST / imports / definitions
+backend/src/hc_data_platform/security/access_repository.py,2894,Python AST / imports / definitions
+backend/src/hc_data_platform/security/access_service.py,938,Python AST / imports / definitions
+backend/src/hc_data_platform/security/admin_accounts.py,409,Python AST / imports / definitions
+backend/src/hc_data_platform/security/audit.py,89,Python AST / imports / definitions
+backend/src/hc_data_platform/security/auth.py,573,Python AST / imports / definitions
+backend/src/hc_data_platform/security/capabilities.py,155,Python AST / imports / definitions
+backend/src/hc_data_platform/security/challenge.py,196,Python AST / imports / definitions
+backend/src/hc_data_platform/security/http.py,79,Python AST / imports / definitions
+backend/src/hc_data_platform/security/idempotency.py,89,Python AST / imports / definitions
+backend/src/hc_data_platform/security/outbox.py,442,Python AST / imports / definitions
+backend/src/hc_data_platform/security/passwords.py,170,Python AST / imports / definitions
+backend/src/hc_data_platform/security/postgres.py,531,Python AST / imports / definitions
+backend/src/hc_data_platform/security/psycopg.py,148,Python AST / imports / definitions
+backend/src/hc_data_platform/security/recovery.py,532,Python AST / imports / definitions
+backend/src/hc_data_platform/security/router.py,1512,Python AST / imports / definitions
+backend/src/hc_data_platform/security/scope.py,177,Python AST / imports / definitions
+backend/src/hc_data_platform/security/uow.py,163,Python AST / imports / definitions
+backend/src/hc_data_platform/security/versioning.py,46,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/__init__.py,35,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/dispatch.py,190,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/errors.py,5,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/executor.py,483,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/inventory.py,530,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/inventory_cli.py,50,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/inventory_worker.py,268,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/models.py,876,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/object_store.py,183,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/oss_client.py,340,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/ports.py,294,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/postgres.py,2643,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/repository.py,909,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/router.py,1010,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/service.py,2393,Python AST / imports / definitions
+backend/src/hc_data_platform/storage/temporal.py,189,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/__init__.py,1,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/hf_droid_to_mcap.py,1318,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/hf_unitree_g1_to_continuous_recording.py,910,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/hf_unitree_g1_to_mcap.py,1515,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/lerobot_platform_upload.py,550,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/native_recording_upload.py,337,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/native_unitree_g1_recording.py,499,Python AST / imports / definitions
+backend/src/hc_data_platform/tools/robot_ingest_upload.py,599,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/__init__.py,53,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/adapters.py,37,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/engine.py,1429,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/models.py,137,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/ports.py,320,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/postgres.py,90,Python AST / imports / definitions
+backend/src/hc_data_platform/verification/router.py,58,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/__init__.py,55,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/activities.py,1848,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/continuous_episode_dispatch.py,89,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/healthcheck.py,114,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/ingest_dispatch.py,106,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/ingest_metrics.py,13,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/ingest_plan.py,1455,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/lerobot_workflow.py,218,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/models.py,871,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/names.py,35,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/outbox_worker.py,130,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/postgres.py,102,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/projection_store.py,295,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/router.py,139,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/service.py,432,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/temporal_workflows.py,1304,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/worker.py,495,Python AST / imports / definitions
+backend/src/hc_data_platform/workflow/workflows.py,107,Python AST / imports / definitions
+frontend/src/app/env.test.ts,80,TypeScript AST / imports / route reachability
+frontend/src/app/env.ts,224,TypeScript AST / imports / route reachability
+frontend/src/app/page-visibility.ts,6,TypeScript AST / imports / route reachability
+frontend/src/app/providers/ErrorBoundary.tsx,37,TypeScript AST / imports / route reachability
+frontend/src/app/providers/ScopeProvider.tsx,36,TypeScript AST / imports / route reachability
+frontend/src/app/providers/ToastProvider.tsx,51,TypeScript AST / imports / route reachability
+frontend/src/app/providers/UiProvider.tsx,22,TypeScript AST / imports / route reachability
+frontend/src/app/providers/index.tsx,50,TypeScript AST / imports / route reachability
+frontend/src/app/router/RouteCapabilityGuard.test.tsx,120,TypeScript AST / imports / route reachability
+frontend/src/app/router/RouteCapabilityGuard.tsx,62,TypeScript AST / imports / route reachability
+frontend/src/app/router/index.tsx,276,TypeScript AST / imports / route reachability
+frontend/src/app/shell/DatasetContextSelector.tsx,87,TypeScript AST / imports / route reachability
+frontend/src/app/shell/PlatformShell.test.tsx,603,TypeScript AST / imports / route reachability
+frontend/src/app/shell/PlatformShell.tsx,1109,TypeScript AST / imports / route reachability
+frontend/src/app/shell/RuntimePlatformShell.test.tsx,306,TypeScript AST / imports / route reachability
+frontend/src/app/shell/RuntimePlatformShell.tsx,140,TypeScript AST / imports / route reachability
+frontend/src/app/shell/ShellLoadingPage.tsx,24,TypeScript AST / imports / route reachability
+frontend/src/app/shell/dataset-context.test.ts,46,TypeScript AST / imports / route reachability
+frontend/src/app/shell/dataset-context.ts,70,TypeScript AST / imports / route reachability
+frontend/src/app/shell/navigation-manifest.test.ts,157,TypeScript AST / imports / route reachability
+frontend/src/app/shell/navigation-manifest.ts,259,TypeScript AST / imports / route reachability
+frontend/src/app/shell/navigation-routes.ts,11,TypeScript AST / imports / route reachability
+frontend/src/app/shell/scope-transaction.ts,64,TypeScript AST / imports / route reachability
+frontend/src/app/theme/component-theme.ts,177,TypeScript AST / imports / route reachability
+frontend/src/app/theme/tokens.ts,85,TypeScript AST / imports / route reachability
+frontend/src/entities/actor.ts,9,TypeScript AST / imports / route reachability
+frontend/src/entities/annotation-draft.ts,75,TypeScript AST / imports / route reachability
+frontend/src/entities/annotation-schema.ts,52,TypeScript AST / imports / route reachability
+frontend/src/entities/annotation-task.ts,107,TypeScript AST / imports / route reachability
+frontend/src/entities/audit-event.ts,189,TypeScript AST / imports / route reachability
+frontend/src/entities/calibration.ts,36,TypeScript AST / imports / route reachability
+frontend/src/entities/capability.ts,168,TypeScript AST / imports / route reachability
+frontend/src/entities/cleaning-draft.ts,86,TypeScript AST / imports / route reachability
+frontend/src/entities/component.ts,26,TypeScript AST / imports / route reachability
+frontend/src/entities/data-schema.ts,27,TypeScript AST / imports / route reachability
+frontend/src/entities/data-source.ts,120,TypeScript AST / imports / route reachability
+frontend/src/entities/dataset-version.ts,100,TypeScript AST / imports / route reachability
+frontend/src/entities/dataset.ts,63,TypeScript AST / imports / route reachability
+frontend/src/entities/edl.ts,81,TypeScript AST / imports / route reachability
+frontend/src/entities/episode.ts,98,TypeScript AST / imports / route reachability
+frontend/src/entities/lifecycle-policy.ts,8,TypeScript AST / imports / route reachability
+frontend/src/entities/manual-issue.ts,179,TypeScript AST / imports / route reachability
+frontend/src/entities/raw-object.ts,47,TypeScript AST / imports / route reachability
+frontend/src/entities/review-finding.ts,98,TypeScript AST / imports / route reachability
+frontend/src/entities/robot-model.ts,52,TypeScript AST / imports / route reachability
+frontend/src/entities/robot.ts,33,TypeScript AST / imports / route reachability
+frontend/src/entities/scope.ts,30,TypeScript AST / imports / route reachability
+frontend/src/entities/storage-inventory.ts,40,TypeScript AST / imports / route reachability
+frontend/src/entities/upload-job.ts,43,TypeScript AST / imports / route reachability
+frontend/src/features/account/access-api.ts,257,TypeScript AST / imports / route reachability
+frontend/src/features/account/api/index.test.ts,180,TypeScript AST / imports / route reachability
+frontend/src/features/account/api/index.ts,212,TypeScript AST / imports / route reachability
+frontend/src/features/aligned-media/authorize-aligned-media.test.ts,71,TypeScript AST / imports / route reachability
+frontend/src/features/aligned-media/authorize-aligned-media.ts,72,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/adapter.ts,289,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/client.ts,254,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/hooks.ts,103,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/index.ts,7,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/query-keys.ts,27,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/transport.ts,46,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/api/wire-schemas.ts,247,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/capabilities.ts,50,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/drafts/local-draft.ts,109,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/forms/SchemaDrivenAnnotationForm.tsx,124,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/handoff/AnnotationEntryAction.tsx,57,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/index.ts,9,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/pending-links.ts,35,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/ui/AnnotationPageState.tsx,60,TypeScript AST / imports / route reachability
+frontend/src/features/annotation/ui/DangerousActionDialog.tsx,59,TypeScript AST / imports / route reachability
+frontend/src/features/audit/api/adapter.ts,307,TypeScript AST / imports / route reachability
+frontend/src/features/audit/api/client.test.ts,451,TypeScript AST / imports / route reachability
+frontend/src/features/audit/api/client.ts,361,TypeScript AST / imports / route reachability
+frontend/src/features/audit/api/queries.ts,233,TypeScript AST / imports / route reachability
+frontend/src/features/audit/api/query-keys.ts,88,TypeScript AST / imports / route reachability
+frontend/src/features/audit/api/schemas.ts,340,TypeScript AST / imports / route reachability
+frontend/src/features/audit/event-catalog.ts,157,TypeScript AST / imports / route reachability
+frontend/src/features/audit/field-visibility.ts,33,TypeScript AST / imports / route reachability
+frontend/src/features/audit/pending-links.ts,20,TypeScript AST / imports / route reachability
+frontend/src/features/audit/routing.ts,77,TypeScript AST / imports / route reachability
+frontend/src/features/audit/types.ts,203,TypeScript AST / imports / route reachability
+frontend/src/features/calibrations/api/index.test.ts,478,TypeScript AST / imports / route reachability
+frontend/src/features/calibrations/api/index.ts,806,TypeScript AST / imports / route reachability
+frontend/src/features/calibrations/publish-rules.ts,61,TypeScript AST / imports / route reachability
+frontend/src/features/calibrations/routing.ts,74,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/auto-quality-problems.queries.ts,95,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/cleaning-drafts.adapter.ts,187,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/cleaning-drafts.queries.ts,139,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/cleaning-drafts.schemas.ts,191,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/edl.adapter.ts,99,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/edl.schemas.ts,146,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/index.ts,18,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/manual-issues.adapter.ts,137,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/manual-issues.commands.test.ts,251,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/manual-issues.commands.ts,332,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/manual-issues.mutations.ts,85,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/manual-issues.queries.ts,181,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/manual-issues.schemas.ts,365,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/query-keys.ts,35,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/wire-common.ts,61,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/workbench.adapter.ts,197,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/workbench.mutations.ts,130,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/workbench.queries.ts,57,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/api/workbench.schemas.ts,259,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/issue-state-machine.ts,35,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/page-state.tsx,81,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/pending-links.ts,26,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/routing.test.ts,25,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/routing.ts,507,TypeScript AST / imports / route reachability
+frontend/src/features/cleaning/time-mapping.ts,127,TypeScript AST / imports / route reachability
+frontend/src/features/dashboard/api/adapter.ts,193,TypeScript AST / imports / route reachability
+frontend/src/features/dashboard/api/client.ts,112,TypeScript AST / imports / route reachability
+frontend/src/features/dashboard/api/queries.ts,81,TypeScript AST / imports / route reachability
+frontend/src/features/dashboard/api/query-keys.ts,35,TypeScript AST / imports / route reachability
+frontend/src/features/dashboard/api/schemas.ts,27,TypeScript AST / imports / route reachability
+frontend/src/features/dashboard/types.ts,160,TypeScript AST / imports / route reachability
+frontend/src/features/data-governance/model.ts,89,TypeScript AST / imports / route reachability
+frontend/src/features/data-schemas/api/index.test.ts,309,TypeScript AST / imports / route reachability
+frontend/src/features/data-schemas/api/index.ts,738,TypeScript AST / imports / route reachability
+frontend/src/features/data-schemas/registry-rules.ts,58,TypeScript AST / imports / route reachability
+frontend/src/features/data-schemas/routing.ts,86,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/adapters.test.ts,25,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/adapters.ts,847,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/hooks.ts,497,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/index.ts,5,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/queries.test.ts,59,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/queries.ts,973,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/wire-schemas.test.ts,108,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/api/wire-schemas.ts,1219,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/components/ConfirmDialog.tsx,103,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/components/RegionState.tsx,104,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/components/error-state.ts,27,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/pending-links.ts,7,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/query-codec.ts,112,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/review-state-machine.ts,70,TypeScript AST / imports / route reachability
+frontend/src/features/datasets/routing.ts,160,TypeScript AST / imports / route reachability
+frontend/src/features/exports/api.ts,158,TypeScript AST / imports / route reachability
+frontend/src/features/global-search/GlobalRobotSearchDialog.test.tsx,552,TypeScript AST / imports / route reachability
+frontend/src/features/global-search/GlobalRobotSearchDialog.tsx,411,TypeScript AST / imports / route reachability
+frontend/src/features/global-search/api.ts,258,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/api/adapters.ts,602,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/api/client.ts,168,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/api/index.ts,6,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/api/mutations.ts,228,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/api/queries.ts,244,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/api/wire-schemas.ts,656,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/connectors/credential-boundary.ts,59,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/connectors/registry.ts,161,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/form-data.ts,9,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/mutation-machine.ts,49,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/routing.test.ts,21,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/routing.ts,82,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/upload/authorization-vault.ts,124,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/upload/model.ts,181,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/use-ephemeral-mutation.ts,102,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/use-ingest-scope.ts,13,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/use-standard-mutation.ts,58,TypeScript AST / imports / route reachability
+frontend/src/features/ingest/validation-pipeline.ts,132,TypeScript AST / imports / route reachability
+frontend/src/features/lifecycle/api/index.test.ts,366,TypeScript AST / imports / route reachability
+frontend/src/features/lifecycle/api/index.ts,816,TypeScript AST / imports / route reachability
+frontend/src/features/lifecycle/pending-links.ts,9,TypeScript AST / imports / route reachability
+frontend/src/features/lifecycle/routing.ts,20,TypeScript AST / imports / route reachability
+frontend/src/features/lifecycle/state-machines.ts,19,TypeScript AST / imports / route reachability
+frontend/src/features/notifications/NotificationInbox.test.tsx,147,TypeScript AST / imports / route reachability
+frontend/src/features/notifications/NotificationInbox.tsx,235,TypeScript AST / imports / route reachability
+frontend/src/features/notifications/api.test.ts,118,TypeScript AST / imports / route reachability
+frontend/src/features/notifications/api.ts,127,TypeScript AST / imports / route reachability
+frontend/src/features/platform-operations/api.ts,625,TypeScript AST / imports / route reachability
+frontend/src/features/robot-ingest/api.ts,454,TypeScript AST / imports / route reachability
+frontend/src/features/robot-ingest/model.ts,181,TypeScript AST / imports / route reachability
+frontend/src/features/robot-models/api/index.test.ts,558,TypeScript AST / imports / route reachability
+frontend/src/features/robot-models/api/index.ts,1052,TypeScript AST / imports / route reachability
+frontend/src/features/robot-models/routing.ts,27,TypeScript AST / imports / route reachability
+frontend/src/features/robots/api/index.test.ts,143,TypeScript AST / imports / route reachability
+frontend/src/features/robots/api/index.ts,362,TypeScript AST / imports / route reachability
+frontend/src/features/robots/constraints.ts,129,TypeScript AST / imports / route reachability
+frontend/src/features/robots/routing.ts,14,TypeScript AST / imports / route reachability
+frontend/src/features/storage-overview/api/adapter.ts,217,TypeScript AST / imports / route reachability
+frontend/src/features/storage-overview/api/schemas.ts,236,TypeScript AST / imports / route reachability
+frontend/src/features/storage-overview/capacity-api.test.ts,341,TypeScript AST / imports / route reachability
+frontend/src/features/storage-overview/capacity-api.ts,796,TypeScript AST / imports / route reachability
+frontend/src/features/storage-overview/metrics-contract.ts,85,TypeScript AST / imports / route reachability
+frontend/src/features/storage-overview/types.ts,113,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/DataVisualizationWorkbench.test.tsx,615,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/DataVisualizationWorkbench.tsx,397,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/EpisodeWorkbenchCore.test.tsx,285,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/EpisodeWorkbenchCore.tsx,2036,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/PlaybackClock.ts,172,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/RawDiagnosticWorkbench.tsx,17,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/RobotSceneCore.tsx,158,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/ViewerCompositionResolver.test.ts,95,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/ViewerCompositionResolver.ts,116,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/index.ts,14,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/joint-frame-source.ts,157,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/lazy-three-loader.ts,52,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/raw-diagnostic-adapter.ts,196,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/runtime/ViewerResourceRegistry.ts,55,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/runtime/authorized-media.test.ts,31,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/runtime/authorized-media.ts,35,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/runtime/signed-resource.ts,23,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/runtime/threeRobotSceneRuntime.test.ts,168,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/runtime/threeRobotSceneRuntime.ts,533,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/testing/RawDiagnosticVisualFixture.tsx,259,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/types.ts,167,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/viewer-window-canvas.test.ts,99,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/viewer-window-canvas.ts,198,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/visual/RawDiagnosticVisual.pw.ts,218,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/visual/playwright.config.ts,31,TypeScript AST / imports / route reachability
+frontend/src/features/viewer/workbench-contract.ts,137,TypeScript AST / imports / route reachability
+frontend/src/main.tsx,49,TypeScript AST / imports / route reachability
+frontend/src/mocks/browser.ts,9,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/annotation/index.ts,207,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/audit/index.ts,101,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/cleaning/index.ts,859,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/common/actors.ts,20,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/common/async-jobs.ts,46,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/common/audit-event.ts,23,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/common/capabilities.ts,29,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/common/index.ts,6,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/common/scope.ts,12,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/dashboard/index.ts,506,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/datasets/core.ts,704,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/datasets/p05.ts,9,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/datasets/p06.ts,9,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/datasets/p07.ts,11,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/ingest/index.ts,610,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/management/index.ts,118,TypeScript AST / imports / route reachability
+frontend/src/mocks/fixtures/storage-overview/index.ts,108,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/access.handlers.ts,158,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/annotation.handlers.ts,379,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/audit.handlers.ts,433,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/browser-runtime.handlers.test.ts,86,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/cleaning.handlers.test.ts,76,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/cleaning.handlers.ts,238,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/collection-tasks.handlers.ts,284,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/continuous-recordings.handlers.ts,186,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/dashboard.handlers.ts,163,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/datasets.handlers.test.ts,156,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/datasets.handlers.ts,1072,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/index.ts,15,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/ingest.handlers.test.ts,63,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/ingest.handlers.ts,264,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/lifecycle.handlers.ts,70,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/robotics.handlers.ts,25,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/storage-overview.handlers.ts,134,TypeScript AST / imports / route reachability
+frontend/src/mocks/handlers/zz-api-boundary.handlers.ts,27,TypeScript AST / imports / route reachability
+frontend/src/mocks/index.ts,50,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/annotation.ts,50,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/audit.ts,66,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/cleaning.ts,56,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/dashboard.ts,53,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/datasets.ts,109,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/ingest.ts,41,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/management.ts,33,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/registry.ts,58,TypeScript AST / imports / route reachability
+frontend/src/mocks/scenarios/storage-overview.ts,51,TypeScript AST / imports / route reachability
+frontend/src/mocks/server.ts,5,TypeScript AST / imports / route reachability
+frontend/src/pages/account/AccountPage.test.tsx,221,TypeScript AST / imports / route reachability
+frontend/src/pages/account/page.tsx,237,TypeScript AST / imports / route reachability
+frontend/src/pages/account-settings/AccountSettingsPage.test.tsx,444,TypeScript AST / imports / route reachability
+frontend/src/pages/account-settings/components/AccountAccessPanels.tsx,391,TypeScript AST / imports / route reachability
+frontend/src/pages/account-settings/components/ControlledPasswordField.tsx,84,TypeScript AST / imports / route reachability
+frontend/src/pages/account-settings/components/RecoveryEmailForm.tsx,252,TypeScript AST / imports / route reachability
+frontend/src/pages/account-settings/page.tsx,829,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/AccessGuideStatus.tsx,29,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/AuthLayout.tsx,67,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/AuthPages.test.tsx,1273,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/AuthStatusCard.tsx,45,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/LoginPanel.tsx,188,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/LoginRoute.tsx,56,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/PasswordField.tsx,65,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/PasswordRecoveryRoutes.tsx,525,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/RegisterPanel.tsx,177,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/RegisterRoute.tsx,71,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/RegisteredRoute.tsx,29,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/RegistrationSuccessStatus.tsx,26,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/SessionExpiredRoute.tsx,18,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/SessionExpiredStatus.tsx,21,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/TurnstileChallenge.tsx,185,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/VisualFixtureRoute.tsx,30,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/api.ts,281,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/error-messages.ts,86,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/routes.tsx,54,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/runtime-scope.test.ts,152,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/runtime-scope.ts,163,TypeScript AST / imports / route reachability
+frontend/src/pages/auth/use-login-flow.ts,156,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/DashboardPage.network.test.tsx,271,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/AssetCapacityBoard.test.tsx,147,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/AssetCapacityBoard.tsx,313,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/DashboardActivityList.tsx,129,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/DashboardPendingDrawer.tsx,70,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/DashboardPendingList.tsx,132,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/DashboardSectionNotice.tsx,72,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/components/DashboardStateContracts.test.tsx,200,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/page.tsx,504,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/query-codec.test.ts,53,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/query-codec.ts,74,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/routes.tsx,17,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/visual/DashboardVisual.pw.ts,274,TypeScript AST / imports / route reachability
+frontend/src/pages/p01-dashboard/visual/playwright.config.ts,32,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/components/DataSourceTable.tsx,116,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx,231,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/components/RobotIdentityConsole.tsx,1099,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/components/SourceActionDialogs.tsx,161,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/components/SourceEditorDialog.test.tsx,166,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/components/SourceEditorDialog.tsx,760,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/page.test.tsx,300,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/page.tsx,1297,TypeScript AST / imports / route reachability
+frontend/src/pages/p02-data-sources/query-codec.ts,108,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/FolderBatchPreflightPanel.tsx,126,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/LeRobotConfiguration.tsx,101,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/LeRobotProcessingRecords.tsx,160,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/ManifestPreflightPanel.tsx,299,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/RobotUploadRecordsPanel.test.tsx,108,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/RobotUploadRecordsPanel.tsx,213,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/UploadConfirmationDialog.test.tsx,212,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/UploadConfirmationDialog.tsx,412,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/UploadMethodPanel.tsx,108,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/UploadPrecheckPanel.tsx,148,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/UploadQueuePanel.tsx,493,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/components/UploadRecordsPanel.tsx,210,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/formal-client.ts,217,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/lerobot-client.test.ts,516,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/lerobot-client.ts,607,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/lerobot-processing.ts,52,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/lerobot-targets.ts,43,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/page.test.tsx,1082,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/page.tsx,681,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/testing/UploadVisualFixture.tsx,173,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/upload-contract.test.ts,312,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/upload-contract.ts,817,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/upload-flow.test.ts,348,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/upload-flow.ts,344,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/upload-queue-store.test.ts,1304,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/upload-queue-store.ts,1854,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/visual/UploadVisual.pw.ts,632,TypeScript AST / imports / route reachability
+frontend/src/pages/p03-upload-jobs/visual/playwright.config.ts,31,TypeScript AST / imports / route reachability
+frontend/src/pages/p04-upload-detail/formal-detail-client.test.ts,365,TypeScript AST / imports / route reachability
+frontend/src/pages/p04-upload-detail/formal-detail-client.ts,345,TypeScript AST / imports / route reachability
+frontend/src/pages/p04-upload-detail/formal-page.test.tsx,512,TypeScript AST / imports / route reachability
+frontend/src/pages/p04-upload-detail/formal-page.tsx,1006,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/collection-task-navigation.test.tsx,264,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/components/CreateDatasetDialog.tsx,217,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/components/DatasetFilterPanel.test.tsx,142,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/components/DatasetFilterPanel.tsx,301,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/components/DatasetTable.tsx,148,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/components/SelectedDatasetSummary.tsx,174,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/page.test.tsx,217,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/page.tsx,867,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/query-codec.test.ts,78,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/query-codec.ts,134,TypeScript AST / imports / route reachability
+frontend/src/pages/p05-datasets/routes.tsx,11,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/ViewerShell.tsx,506,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/aligned-media-source.test.ts,91,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/aligned-media-source.ts,68,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/components/DatasetDetailTables.tsx,303,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/episode-presentation.test.ts,24,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/episode-presentation.ts,35,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/lance-window-source.test.ts,241,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/lance-window-source.ts,337,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/page.tsx,997,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/query-codec.ts,272,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/routes.tsx,32,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts,190,TypeScript AST / imports / route reachability
+frontend/src/pages/p06-dataset-detail/viewer-stream-adapter.ts,105,TypeScript AST / imports / route reachability
+frontend/src/pages/p07-version-detail/components/VersionDetailTables.tsx,447,TypeScript AST / imports / route reachability
+frontend/src/pages/p07-version-detail/export-api.test.ts,231,TypeScript AST / imports / route reachability
+frontend/src/pages/p07-version-detail/export-api.ts,2,TypeScript AST / imports / route reachability
+frontend/src/pages/p07-version-detail/page.tsx,1824,TypeScript AST / imports / route reachability
+frontend/src/pages/p07-version-detail/query-codec.ts,203,TypeScript AST / imports / route reachability
+frontend/src/pages/p07-version-detail/routes.tsx,14,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx,309,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationQueuePage.tsx,533,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationRevisionPage.test.tsx,167,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationRevisionPage.tsx,328,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationTaskPage.tsx,763,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx,1171,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/AnnotationWorkbenchView.tsx,2686,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/RuntimeAutoAnnotationPanel.test.tsx,197,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/RuntimeAutoAnnotationPanel.tsx,448,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/joint-angle-stream.test.ts,274,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/joint-angle-stream.ts,357,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/query-codec.ts,239,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/routes.tsx,107,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts,710,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/runtime-annotation-adapter.ts,1245,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/tag-draft-recovery.test.ts,40,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/tag-draft-recovery.ts,152,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/tag-validation.test.ts,139,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/tag-validation.ts,378,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/testing/AnnotationQueueVisualFixture.tsx,70,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/testing/AnnotationVisualFixture.tsx,309,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/testing/annotation-fixture.ts,384,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/visual/AnnotationWorkbenchVisual.pw.ts,782,TypeScript AST / imports / route reachability
+frontend/src/pages/p08-data-annotation/visual/playwright.config.ts,37,TypeScript AST / imports / route reachability
+frontend/src/pages/p09-manual-issues/page.tsx,1580,TypeScript AST / imports / route reachability
+frontend/src/pages/p09-manual-issues/routes.tsx,34,TypeScript AST / imports / route reachability
+frontend/src/pages/p10-cleaning-drafts/page.tsx,756,TypeScript AST / imports / route reachability
+frontend/src/pages/p10-cleaning-drafts/query-codec.test.ts,18,TypeScript AST / imports / route reachability
+frontend/src/pages/p10-cleaning-drafts/query-codec.ts,148,TypeScript AST / imports / route reachability
+frontend/src/pages/p10-cleaning-drafts/routes.tsx,26,TypeScript AST / imports / route reachability
+frontend/src/pages/p11-manual-cleaning/page.tsx,854,TypeScript AST / imports / route reachability
+frontend/src/pages/p11-manual-cleaning/query-codec.ts,71,TypeScript AST / imports / route reachability
+frontend/src/pages/p11-manual-cleaning/routes.tsx,26,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/CapacityInventoryPanel.tsx,158,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/ManagedStorageObjectsPanel.tsx,362,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.test.tsx,122,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx,83,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.test.tsx,21,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx,47,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.test.tsx,38,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx,152,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx,178,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/display-labels.ts,113,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/page.tsx,785,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/routes.tsx,14,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/storage-governance.visual.test.tsx,352,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/storage-routes.test.ts,47,TypeScript AST / imports / route reachability
+frontend/src/pages/p12-storage-overview/testing/StorageObjectDrawerVisualFixture.tsx,59,TypeScript AST / imports / route reachability
+frontend/src/pages/p13-storage-lifecycle/LifecycleExecutionPanel.tsx,656,TypeScript AST / imports / route reachability
+frontend/src/pages/p13-storage-lifecycle/page.tsx,1021,TypeScript AST / imports / route reachability
+frontend/src/pages/p13-storage-lifecycle/query-codec.ts,107,TypeScript AST / imports / route reachability
+frontend/src/pages/p13-storage-lifecycle/routes.tsx,16,TypeScript AST / imports / route reachability
+frontend/src/pages/p14-robot-models/page.navigation.test.tsx,207,TypeScript AST / imports / route reachability
+frontend/src/pages/p14-robot-models/page.tsx,1181,TypeScript AST / imports / route reachability
+frontend/src/pages/p14-robot-models/query-codec.ts,96,TypeScript AST / imports / route reachability
+frontend/src/pages/p14-robot-models/routes.tsx,10,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/instances-page.tsx,933,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/model-file-selection.test.ts,97,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/model-file-selection.ts,195,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/page.test.tsx,411,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/page.tsx,1565,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/query-codec.test.ts,29,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/query-codec.ts,39,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/routes.tsx,10,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/urdf-import.test.ts,140,TypeScript AST / imports / route reachability
+frontend/src/pages/p15-robots/urdf-import.ts,379,TypeScript AST / imports / route reachability
+frontend/src/pages/p16-calibrations/components/CalibrationThreePreview.test.tsx,115,TypeScript AST / imports / route reachability
+frontend/src/pages/p16-calibrations/components/CalibrationThreePreview.tsx,145,TypeScript AST / imports / route reachability
+frontend/src/pages/p16-calibrations/page.test.tsx,389,TypeScript AST / imports / route reachability
+frontend/src/pages/p16-calibrations/page.tsx,1191,TypeScript AST / imports / route reachability
+frontend/src/pages/p16-calibrations/query-codec.ts,95,TypeScript AST / imports / route reachability
+frontend/src/pages/p16-calibrations/routes.tsx,10,TypeScript AST / imports / route reachability
+frontend/src/pages/p17-data-schemas/page.test.tsx,292,TypeScript AST / imports / route reachability
+frontend/src/pages/p17-data-schemas/page.tsx,1284,TypeScript AST / imports / route reachability
+frontend/src/pages/p17-data-schemas/query-codec.test.ts,36,TypeScript AST / imports / route reachability
+frontend/src/pages/p17-data-schemas/query-codec.ts,96,TypeScript AST / imports / route reachability
+frontend/src/pages/p17-data-schemas/routes.test.ts,9,TypeScript AST / imports / route reachability
+frontend/src/pages/p17-data-schemas/routes.tsx,10,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/AccessApprovalView.test.tsx,601,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/AccessApprovalView.tsx,506,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/UserManagementContainer.tsx,123,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/UserManagementPanel.test.tsx,243,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/UserManagementPanel.tsx,817,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/access-api.test.ts,137,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/access-api.ts,191,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/components/AccessRequestDetails.tsx,126,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/components/AccessRequestList.tsx,90,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/components/ApprovalDrawer.tsx,282,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/contracts.ts,78,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/page.test.tsx,372,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/page.tsx,188,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/presentation.ts,109,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/query-codec.test.ts,77,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/query-codec.ts,111,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/routes.tsx,20,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/testing/AccessApprovalVisualFixture.tsx,261,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/user-api.test.ts,161,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/user-api.ts,192,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/visual/AccessApprovalVisual.pw.ts,412,TypeScript AST / imports / route reachability
+frontend/src/pages/p18-access/visual/playwright.config.ts,31,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/components/AuditEventTable.tsx,91,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/components/AuditFilterPanel.tsx,120,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/components/AuditGovernancePanel.tsx,341,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/components/AuditInspectorDrawer.tsx,119,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/components/AuditSummaryStrip.tsx,41,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/page.tsx,535,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/query-codec.ts,54,TypeScript AST / imports / route reachability
+frontend/src/pages/p19-audit/routes.tsx,14,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/api.test.ts,228,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/api.ts,409,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/components/CollectionTaskDrawer.tsx,710,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/components/CollectionTaskTable.tsx,722,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/page.test.tsx,776,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/page.tsx,878,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/query-codec.ts,69,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/routes.tsx,16,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/visual/CollectionTaskVisual.pw.ts,673,TypeScript AST / imports / route reachability
+frontend/src/pages/p20-collection-tasks/visual/playwright.config.ts,31,TypeScript AST / imports / route reachability
+frontend/src/pages/p21-data-export/page.test.tsx,209,TypeScript AST / imports / route reachability
+frontend/src/pages/p21-data-export/page.tsx,1281,TypeScript AST / imports / route reachability
+frontend/src/pages/p21-data-export/routes.tsx,26,TypeScript AST / imports / route reachability
+frontend/src/pages/p22-platform-operations/page.network.test.tsx,599,TypeScript AST / imports / route reachability
+frontend/src/pages/p22-platform-operations/page.tsx,1611,TypeScript AST / imports / route reachability
+frontend/src/pages/p22-platform-operations/routes.tsx,24,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/api.ts,149,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/model.test.ts,89,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/model.ts,185,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/page.test.tsx,314,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/page.tsx,1576,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts,86,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/raw-joint-angle-stream.ts,173,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/routes.tsx,21,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/workbench-adapter.test.ts,81,TypeScript AST / imports / route reachability
+frontend/src/pages/p23-recording-segmentation/workbench-adapter.ts,65,TypeScript AST / imports / route reachability
+frontend/src/shared/api/domain-error.ts,129,TypeScript AST / imports / route reachability
+frontend/src/shared/api/generated/platform-operations.ts,355,TypeScript AST / imports / route reachability
+frontend/src/shared/api/generated/platform.ts,41297,TypeScript AST / imports / route reachability
+frontend/src/shared/api/http-client.test.ts,911,TypeScript AST / imports / route reachability
+frontend/src/shared/api/http-client.ts,495,TypeScript AST / imports / route reachability
+frontend/src/shared/api/query-keys.ts,87,TypeScript AST / imports / route reachability
+frontend/src/shared/api/transport-lifecycle.ts,72,TypeScript AST / imports / route reachability
+frontend/src/shared/api/validate.ts,62,TypeScript AST / imports / route reachability
+frontend/src/shared/auth/use-capabilities.test.ts,24,TypeScript AST / imports / route reachability
+frontend/src/shared/auth/use-capabilities.ts,175,TypeScript AST / imports / route reachability
+frontend/src/shared/config/release-identity.ts,36,TypeScript AST / imports / route reachability
+frontend/src/shared/config/runtime.ts,22,TypeScript AST / imports / route reachability
+frontend/src/shared/jobs/job-center-store.ts,17,TypeScript AST / imports / route reachability
+frontend/src/shared/jobs/types.ts,22,TypeScript AST / imports / route reachability
+frontend/src/shared/jobs/use-async-job.ts,252,TypeScript AST / imports / route reachability
+frontend/src/shared/lib/bigint-string.ts,41,TypeScript AST / imports / route reachability
+frontend/src/shared/lib/case-convert.ts,33,TypeScript AST / imports / route reachability
+frontend/src/shared/lib/metric-presentation.test.ts,39,TypeScript AST / imports / route reachability
+frontend/src/shared/lib/metric-presentation.ts,106,TypeScript AST / imports / route reachability
+frontend/src/shared/routing/route-registry.test.ts,29,TypeScript AST / imports / route reachability
+frontend/src/shared/routing/route-registry.ts,336,TypeScript AST / imports / route reachability
+frontend/src/shared/scope/session-storage.test.ts,51,TypeScript AST / imports / route reachability
+frontend/src/shared/scope/session-storage.ts,112,TypeScript AST / imports / route reachability
+frontend/src/shared/scope/shell-store.test.ts,117,TypeScript AST / imports / route reachability
+frontend/src/shared/scope/shell-store.ts,190,TypeScript AST / imports / route reachability
+frontend/src/shared/telemetry/index.ts,2,TypeScript AST / imports / route reachability
+frontend/src/shared/telemetry/track.ts,107,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/BreadcrumbNavigation.test.tsx,41,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/ConfirmDialog.tsx,46,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/CopyableId.tsx,39,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/DetailTabs.test.tsx,46,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/DetailTabs.tsx,78,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/EmptyState.tsx,24,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/ErrorPanel.tsx,13,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/FilterBar.tsx,22,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/ForbiddenPanel.tsx,18,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/RelativeTime.tsx,21,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/SideDrawer.tsx,41,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/SkeletonBlock.tsx,14,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/StandardTable.tsx,83,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/StatusBadge.tsx,25,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/actions/DangerConfirmModal.tsx,265,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/actions/index.ts,9,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/data/CursorPager.tsx,63,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/data/DataTable.test.tsx,150,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/data/DataTable.tsx,256,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/data/index.ts,3,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/data/row-contract.ts,18,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/focus-trap.ts,23,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/forms/SecureUploadPicker.tsx,152,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/forms/controlled-fields.tsx,201,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/forms/createZodResolver.ts,38,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/forms/index.ts,14,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/index.ts,51,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/DetailPageScaffold.test.tsx,39,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/DetailPageScaffold.tsx,56,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/EntityDrawer.tsx,69,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/FilterToolbar.test.tsx,76,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/FilterToolbar.tsx,145,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/PageHeader.tsx,75,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/StandardPageScaffold.tsx,45,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/WorkbenchScaffold.tsx,58,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/index.ts,7,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/layout/responsive.ts,21,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/MetricCard.tsx,86,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/PageState.test.tsx,63,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/PageState.tsx,368,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/StatusTag.test.tsx,19,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/StatusTag.tsx,56,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/contracts.ts,29,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/state/index.ts,5,TypeScript AST / imports / route reachability
+frontend/src/shared/ui/workflow/WorkflowQueuePage.tsx,191,TypeScript AST / imports / route reachability
+frontend/src/app/shell/DatasetContextSelector.module.css,63,Stylesheet inventory
+frontend/src/app/shell/PlatformShell.module.css,819,Stylesheet inventory
+frontend/src/app/theme/global.css,260,Stylesheet inventory
+frontend/src/features/cleaning/cleaning.css,61,Stylesheet inventory
+frontend/src/features/global-search/GlobalRobotSearchDialog.module.css,189,Stylesheet inventory
+frontend/src/features/notifications/NotificationInbox.module.css,89,Stylesheet inventory
+frontend/src/features/viewer/DataVisualizationWorkbench.module.css,923,Stylesheet inventory
+frontend/src/features/viewer/EpisodeWorkbenchCore.css,1270,Stylesheet inventory
+frontend/src/features/viewer/RobotSceneCore.css,27,Stylesheet inventory
+frontend/src/features/viewer/testing/RawDiagnosticVisualFixture.module.css,62,Stylesheet inventory
+frontend/src/pages/account/styles.module.css,152,Stylesheet inventory
+frontend/src/pages/account-settings/styles.module.css,337,Stylesheet inventory
+frontend/src/pages/auth/styles.module.css,996,Stylesheet inventory
+frontend/src/pages/p01-dashboard/components/AssetCapacityBoard.module.css,344,Stylesheet inventory
+frontend/src/pages/p01-dashboard/styles.module.css,423,Stylesheet inventory
+frontend/src/pages/p02-data-sources/styles.module.css,880,Stylesheet inventory
+frontend/src/pages/p03-upload-jobs/styles.module.css,1933,Stylesheet inventory
+frontend/src/pages/p04-upload-detail/formal-page.module.css,374,Stylesheet inventory
+frontend/src/pages/p05-datasets/styles.module.css,734,Stylesheet inventory
+frontend/src/pages/p06-dataset-detail/styles.module.css,503,Stylesheet inventory
+frontend/src/pages/p07-version-detail/styles.module.css,314,Stylesheet inventory
+frontend/src/pages/p08-data-annotation/p08.css,804,Stylesheet inventory
+frontend/src/pages/p08-data-annotation/testing/AnnotationVisualFixture.module.css,54,Stylesheet inventory
+frontend/src/pages/p08-data-annotation/workbench.module.css,2328,Stylesheet inventory
+frontend/src/pages/p09-manual-issues/styles.module.css,392,Stylesheet inventory
+frontend/src/pages/p10-cleaning-drafts/styles.module.css,159,Stylesheet inventory
+frontend/src/pages/p11-manual-cleaning/workbench.module.css,522,Stylesheet inventory
+frontend/src/pages/p12-storage-overview/styles.module.css,1234,Stylesheet inventory
+frontend/src/pages/p13-storage-lifecycle/styles.module.css,423,Stylesheet inventory
+frontend/src/pages/p15-robots/instances-styles.module.css,449,Stylesheet inventory
+frontend/src/pages/p15-robots/model-upload.module.css,149,Stylesheet inventory
+frontend/src/pages/p15-robots/robot-assets.module.css,571,Stylesheet inventory
+frontend/src/pages/p18-access/styles.module.css,847,Stylesheet inventory
+frontend/src/pages/p19-audit/styles.module.css,484,Stylesheet inventory
+frontend/src/pages/p20-collection-tasks/styles.module.css,800,Stylesheet inventory
+frontend/src/pages/p21-data-export/styles.module.css,692,Stylesheet inventory
+frontend/src/pages/p22-platform-operations/styles.module.css,804,Stylesheet inventory
+frontend/src/pages/p23-recording-segmentation/styles.module.css,893,Stylesheet inventory
+frontend/src/pages/ui-011e/workspace.module.css,771,Stylesheet inventory
+frontend/src/shared/ui/data/CursorPager.module.css,35,Stylesheet inventory
+frontend/src/shared/ui/layout/layout.module.css,375,Stylesheet inventory
+frontend/src/shared/ui/state/state.module.css,606,Stylesheet inventory
+frontend/src/shared/ui/styles.css,573,Stylesheet inventory
+frontend/src/shared/ui/workflow/WorkflowQueuePage.module.css,528,Stylesheet inventory

@@ -79,6 +79,57 @@ describe("native LeRobot upload contract", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("uses only the platform proxy when the local transport is configured", async () => {
+    vi.stubEnv("VITE_LEROBOT_UPLOAD_TRANSPORT", "proxy");
+    const direct = vi.fn(() => {
+      throw new Error("direct object upload must not be used");
+    });
+    vi.stubGlobal("XMLHttpRequest", direct);
+    requestMock.mockImplementation(
+      async (options: { method: string; path: string }) => {
+        if (options.path === root)
+          return {
+            import_id: importId,
+            assets: [
+              {
+                path: "meta/info.json",
+                multipart_upload_id: "upload-a",
+                parts: [],
+                completed: false,
+              },
+            ],
+          };
+        if (options.path.endsWith(":commit")) return accepted();
+        if (options.path.endsWith("assets:authorize-parts"))
+          return {
+            path: "meta/info.json",
+            completed: false,
+            parts: [
+              {
+                part_number: 1,
+                url: "http://127.0.0.1:9000/unused",
+                expires_at: "2026-09-17T10:00:00Z",
+              },
+            ],
+          };
+        if (
+          options.path.endsWith("assets:complete") ||
+          options.method === "PUT"
+        )
+          return undefined;
+        throw new Error(`Unexpected request ${options.path}`);
+      },
+    );
+    await expect(
+      uploadNativeLeRobot(scope, oneFileSelection(), binding, () => {}),
+    ).resolves.toEqual(accepted());
+    expect(direct).not.toHaveBeenCalled();
+    expect(
+      requestMock.mock.calls.some(([options]) => options.method === "PUT"),
+    ).toBe(true);
   });
 
   it("declares original files and never invents an MCAP Raw", () => {

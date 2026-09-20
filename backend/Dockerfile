@@ -107,7 +107,8 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     && rm -rf /var/lib/apt/lists/*
 RUN install -d -o 65532 -g 65532 -m 0750 \
     /tmp/hc-data/alignment \
-    /tmp/hc-data/aligned-media
+    /tmp/hc-data/aligned-media \
+    /tmp/hc-data/robot-model-upload-staging
 RUN ffmpeg -hide_banner -encoders 2>&1 | grep --quiet libx264 \
     && ffmpeg -hide_banner -encoders 2>&1 | grep --quiet libvpx-vp9 \
     && ffmpeg -hide_banner -muxers 2>&1 | grep --quiet hls \

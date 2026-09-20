@@ -190,6 +190,46 @@ describe("EpisodeWorkbenchCore immutable window data", () => {
 });
 
 describe("ViewerJointAngleCurvePanel recovery", () => {
+  it("renders all 29 G1 joints including the right wrist", async () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "3000000000" });
+    const names = Array.from({ length: 29 }, (_, i) =>
+      i === 28 ? "right_wrist_yaw_joint" : `joint_${i}`,
+    );
+    render(
+      <ViewerJointAngleCurvePanel
+        clock={clock}
+        stream={{
+          id: "g1-joints",
+          canonicalPath: "/robot/joint_states",
+          displayName: "G1",
+          modality: "joint_state",
+          schema: { id: "joint-state", version: "1", unit: "rad" },
+          rateHz: 30,
+          startNs: "0",
+          endNs: "3000000000",
+          availability: "ready",
+          windowSource: {
+            loadWindow: async () => ({
+              generation: 0,
+              timestampsNs: ["0"],
+              values: [names.map((_, i) => i / 100)],
+              series: names.map((name) => ({
+                id: name,
+                displayName: name,
+                unit: "rad",
+              })),
+            }),
+          },
+        }}
+      />,
+    );
+    expect(
+      await screen.findByRole("img", { name: /共 29 个关节/ }),
+    ).toBeVisible();
+    expect(screen.getByText("right_wrist_yaw_joint")).toBeVisible();
+    clock.dispose();
+  });
+
   it("keeps the last successful chart visible when a window refresh is transiently rejected", async () => {
     const clock = createPlaybackClock({ startNs: "0", endNs: "20000000000" });
     const loadWindow = vi

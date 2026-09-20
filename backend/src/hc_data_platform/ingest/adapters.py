@@ -4,7 +4,7 @@ import importlib
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, BinaryIO
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from hc_data_platform.core.context import retain_current_writer_permit
 
@@ -188,7 +188,9 @@ class S3ObjectStorage:
         finally:
             body.close()
 
-    def presign_read(self, key: str, expires_seconds: int) -> str:
+    def presign_read(
+        self, key: str, expires_seconds: int, *, download_name: str | None = None
+    ) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
         return str(
@@ -200,6 +202,14 @@ class S3ObjectStorage:
                     # The source URL is credential-like evidence. Keep a browser
                     # or intermediary from retaining its successful response.
                     "ResponseCacheControl": "no-store",
+                    **(
+                        {
+                            "ResponseContentDisposition": "attachment; filename*=UTF-8''"
+                            + quote(download_name, safe="")
+                        }
+                        if download_name
+                        else {}
+                    ),
                 },
                 ExpiresIn=expires_seconds,
                 HttpMethod="GET",
@@ -408,7 +418,9 @@ class OssObjectStorage:
             if close is not None:
                 close()
 
-    def presign_read(self, key: str, expires_seconds: int) -> str:
+    def presign_read(
+        self, key: str, expires_seconds: int, *, download_name: str | None = None
+    ) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
         return str(
@@ -416,7 +428,17 @@ class OssObjectStorage:
                 "GET",
                 key,
                 expires_seconds,
-                params={"response-cache-control": "no-store"},
+                params={
+                    "response-cache-control": "no-store",
+                    **(
+                        {
+                            "response-content-disposition": "attachment; filename*=UTF-8''"
+                            + quote(download_name, safe="")
+                        }
+                        if download_name
+                        else {}
+                    ),
+                },
                 slash_safe=True,
             )
         )

@@ -1,0 +1,106 @@
+{
+  "since_git_head": [
+    {
+      "path": "backend/src/hc_data_platform/preview/README.md",
+      "deleted_lines": 7
+    },
+    {
+      "path": "backend/src/hc_data_platform/preview/__init__.py",
+      "deleted_lines": 1
+    },
+    {
+      "path": "frontend/src/pages/p01-dashboard/visual/DashboardVisual.pw.ts",
+      "deleted_lines": 273
+    },
+    {
+      "path": "frontend/src/pages/p01-dashboard/visual/playwright.config.ts",
+      "deleted_lines": 31
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/components/FolderBatchPreflightPanel.tsx",
+      "deleted_lines": 125
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/components/ManifestPreflightPanel.tsx",
+      "deleted_lines": 298
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/testing/UploadVisualFixture.tsx",
+      "deleted_lines": 172
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/visual/UploadVisual.pw.ts",
+      "deleted_lines": 631
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/visual/playwright.config.ts",
+      "deleted_lines": 30
+    },
+    {
+      "path": "frontend/src/pages/p18-access/testing/AccessApprovalVisualFixture.tsx",
+      "deleted_lines": 260
+    },
+    {
+      "path": "frontend/src/pages/p18-access/visual/AccessApprovalVisual.pw.ts",
+      "deleted_lines": 411
+    },
+    {
+      "path": "frontend/src/pages/p18-access/visual/playwright.config.ts",
+      "deleted_lines": 30
+    },
+    {
+      "path": "frontend/src/pages/p20-collection-tasks/visual/CollectionTaskVisual.pw.ts",
+      "deleted_lines": 672
+    },
+    {
+      "path": "frontend/src/pages/p20-collection-tasks/visual/playwright.config.ts",
+      "deleted_lines": 30
+    }
+  ],
+  "this_cleanup_since_checkpoint": [
+    {
+      "path": "backend/tests/core/test_storage_only_runtime.py",
+      "deleted_lines": 41
+    },
+    {
+      "path": "frontend/src/pages/p01-dashboard/visual/DashboardVisual.pw.ts",
+      "deleted_lines": 273
+    },
+    {
+      "path": "frontend/src/pages/p01-dashboard/visual/playwright.config.ts",
+      "deleted_lines": 31
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/testing/UploadVisualFixture.tsx",
+      "deleted_lines": 172
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/visual/UploadVisual.pw.ts",
+      "deleted_lines": 631
+    },
+    {
+      "path": "frontend/src/pages/p03-upload-jobs/visual/playwright.config.ts",
+      "deleted_lines": 30
+    },
+    {
+      "path": "frontend/src/pages/p18-access/testing/AccessApprovalVisualFixture.tsx",
+      "deleted_lines": 260
+    },
+    {
+      "path": "frontend/src/pages/p18-access/visual/AccessApprovalVisual.pw.ts",
+      "deleted_lines": 411
+    },
+    {
+      "path": "frontend/src/pages/p18-access/visual/playwright.config.ts",
+      "deleted_lines": 30
+    },
+    {
+      "path": "frontend/src/pages/p20-collection-tasks/visual/CollectionTaskVisual.pw.ts",
+      "deleted_lines": 672
+    },
+    {
+      "path": "frontend/src/pages/p20-collection-tasks/visual/playwright.config.ts",
+      "deleted_lines": 30
+    }
+  ]
+}

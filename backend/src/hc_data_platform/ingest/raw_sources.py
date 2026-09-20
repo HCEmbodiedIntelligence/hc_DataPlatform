@@ -11,10 +11,12 @@ from datetime import datetime
 from enum import Enum
 from threading import RLock
 from typing import Any, Protocol, cast
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.core.events import DomainEventEnvelope
 
 from .models import Identifier, Sha256, utc_now
 
@@ -23,6 +25,7 @@ class RawSourceFormat(str, Enum):
     MCAP = "MCAP"
     CAPTURE_BUNDLE = "CAPTURE_BUNDLE"
     LEROBOT_V3 = "LEROBOT_V3"
+    ROSBAG = "ROSBAG"
 
 
 class RawSourceStatus(str, Enum):
@@ -33,6 +36,7 @@ class RawSourceStatus(str, Enum):
 
 
 class RawSourceProcessingStatus(str, Enum):
+    NOT_REQUESTED = "NOT_REQUESTED"
     PENDING = "PENDING"
     DISCOVERING_EPISODES = "DISCOVERING_EPISODES"
     PROCESSING = "PROCESSING"
@@ -49,6 +53,7 @@ class RawSourceEpisodeStatus(str, Enum):
 
 
 class RawIngestJobType(str, Enum):
+    RAW_STORAGE = "RAW_STORAGE"
     DIRECT_EPISODE_INGEST = "DIRECT_EPISODE_INGEST"
     CONTINUOUS_RECORDING_DISCOVERY = "CONTINUOUS_RECORDING_DISCOVERY"
     LEROBOT_IMPORT = "LEROBOT_IMPORT"
@@ -503,6 +508,41 @@ class PostgresRawSourceRepository:
                         raise _identity_conflict("Episode")
                 if len(persisted_episodes) != len(graph.episodes):
                     raise _identity_conflict("Episode set")
+                if job.job_type is RawIngestJobType.LEROBOT_IMPORT and job.workflow_id:
+                    event = DomainEventEnvelope(
+                        event_id=str(
+                            uuid5(
+                                NAMESPACE_URL,
+                                f"lerobot-dispatch:{source.organization_id}:{job.workflow_id}",
+                            )
+                        ),
+                        event_type="lerobot.import.requested.v1",
+                        aggregate_type="raw_source",
+                        aggregate_id=source.raw_source_id,
+                        organization_id=source.organization_id,
+                        project_id=source.project_id,
+                        region_code=source.region_code,
+                        payload={
+                            "raw_source_id": source.raw_source_id,
+                            "workflow_id": job.workflow_id,
+                        },
+                    )
+                    cursor.execute(
+                        """INSERT INTO core.outbox_events (
+                        event_id, organization_id, project_id, region_code, event_type, envelope,
+                        occurred_at, available_at)
+                        VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,clock_timestamp())
+                        ON CONFLICT (event_id) DO NOTHING""",
+                        (
+                            event.event_id,
+                            event.organization_id,
+                            event.project_id,
+                            event.region_code,
+                            event.event_type,
+                            event.model_dump_json(),
+                            event.occurred_at,
+                        ),
+                    )
             connection.commit()
             return CommittedRawSourceGraph(
                 source=persisted_source,

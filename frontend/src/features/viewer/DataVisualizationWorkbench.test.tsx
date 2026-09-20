@@ -279,7 +279,7 @@ describe("DataVisualizationWorkbench camera composition", () => {
     );
   });
 
-  it("uses native video playback and only corrects material running drift", async () => {
+  it("follows the video playback clock without seeking it on every animation frame", async () => {
     let animationFrame: FrameRequestCallback | undefined;
     let mediaPlaying = false;
     vi.stubGlobal("IntersectionObserver", undefined);
@@ -343,6 +343,10 @@ describe("DataVisualizationWorkbench camera composition", () => {
     act(() => props.clock.seek("1000000000"));
     expect(seek).toHaveBeenLastCalledWith(1);
 
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: 4,
+    });
     video.currentTime = 0.916;
     seek.mockClear();
     act(() => animationFrame?.(16));
@@ -351,7 +355,8 @@ describe("DataVisualizationWorkbench camera composition", () => {
     video.currentTime = 0.5;
     seek.mockClear();
     act(() => animationFrame?.(32));
-    expect(seek).toHaveBeenLastCalledWith(1.032);
+    expect(seek).not.toHaveBeenCalled();
+    expect(props.clock.currentNs()).toBe("500000000");
 
     act(() => props.clock.setRate(2));
     expect(video.playbackRate).toBe(2);

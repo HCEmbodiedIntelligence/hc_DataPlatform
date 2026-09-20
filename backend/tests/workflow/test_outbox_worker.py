@@ -47,8 +47,10 @@ def test_parse_scope_fails_closed_for_legacy_or_ambiguous_values() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("discover_local", [False, True])
 async def test_worker_binds_exact_organization_scope_and_resets_context(
     monkeypatch: pytest.MonkeyPatch,
+    discover_local: bool,
 ) -> None:
     dispatcher = _RecordingDispatcher()
 
@@ -60,7 +62,10 @@ async def test_worker_binds_exact_organization_scope_and_resets_context(
     with pytest.raises(_StopOutboxLoop):
         await outbox_worker.serve_outbox(
             dispatcher,  # type: ignore[arg-type]
-            scopes=("organization-a/project-a/cn-east",),
+            scopes=() if discover_local else ("organization-a/project-a/cn-east",),
+            scope_provider=(lambda: ("organization-a/project-a/cn-east",))
+            if discover_local
+            else None,
             poll_interval_seconds=0.01,
             batch_size=2,
         )

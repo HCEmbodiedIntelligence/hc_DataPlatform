@@ -111,6 +111,13 @@ class UploadSessionService:
         self._lock = RLock()
 
     def preflight_upload_manifest(self, manifest: RolloutManifestV1) -> ManifestPreflightResultV1:
+        if manifest.processing_mode is IngestProcessingMode.NATIVE_LEROBOT:
+            raise problem(
+                status=422,
+                code="LEROBOT_NATIVE_ENDPOINT_REQUIRED",
+                title="Use the native LeRobot importer",
+                detail="Native LeRobot manifests are derived by the LeRobot import workflow.",
+            )
         result = preflight_manifest(manifest)
         self._assert_source_recording_available(manifest, result)
         return result

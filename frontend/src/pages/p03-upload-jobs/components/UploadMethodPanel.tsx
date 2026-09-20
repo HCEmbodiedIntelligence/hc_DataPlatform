@@ -1,7 +1,7 @@
 import { FileJson2, FolderOpen, LoaderCircle } from "lucide-react";
 import styles from "../styles.module.css";
 
-export type BrowserSelectionMode = "package" | "folder";
+export type BrowserSelectionMode = "package" | "folder" | "raw";
 
 export function UploadMethodPanel(props: {
   readonly disabled: boolean;
@@ -32,8 +32,8 @@ export function UploadMethodPanel(props: {
         <div>
           <h2 id="upload-method-heading">选择采集文件夹</h2>
           <p>
-            支持平台 Manifest + MCAP，也支持原生 Unitree G1 LeRobot
-            v3（Parquet、MP4、meta）；确认前不会上传文件。
+            支持 MCAP、LeRobot v3 和 ROS
+            bag。原始视频与数据原样保存，确认前不会上传文件。
           </p>
         </div>
       </header>
@@ -63,8 +63,8 @@ export function UploadMethodPanel(props: {
             <FolderOpen size={30} />
           </span>
           <strong>选择采集文件夹</strong>
-          <span>支持包含多个独立数据清单的数据包多级目录</span>
-          <small>也支持一个原始 LeRobot v3 数据集目录</small>
+          <span>保留原目录结构和文件内容</span>
+          <small>保留原始文件，按配置自动质检、对齐并进入标注</small>
           <small>文件只在确认上传后开始提交</small>
         </label>
 
@@ -76,19 +76,19 @@ export function UploadMethodPanel(props: {
         ) : null}
 
         <details className={styles.alternativeMethods}>
-          <summary>选择单个数据包</summary>
+          <summary>选择 MCAP、ROS bag 或带清单的数据包</summary>
           <input
             id="browser-upload-package"
             name="browser-upload-package"
             className={styles.visuallyHidden}
             type="file"
-            accept=".json,.mcap,application/json,application/octet-stream"
+            accept=".bag,.db3,.yaml,.json,.mcap,application/octet-stream"
             multiple
             disabled={props.disabled}
             onChange={(event) =>
               props.onFilesChange(
                 Array.from(event.target.files ?? []),
-                "package",
+                "folder",
               )
             }
           />
@@ -98,7 +98,7 @@ export function UploadMethodPanel(props: {
             aria-disabled={props.disabled}
           >
             <FileJson2 size={15} aria-hidden="true" />
-            选择一个数据清单与 RAW/MCAP 文件
+            选择原始文件（ROS2 bag 请选择包含 metadata.yaml 的完整目录）
           </label>
         </details>
       </div>

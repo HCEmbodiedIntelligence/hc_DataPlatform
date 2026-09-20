@@ -2,14 +2,25 @@
 
 具身智能数据治理平台，包含 React 前端、FastAPI API、Temporal Worker、PostgreSQL、对象存储、迁移和部署资产，页面范围为 P01–P20。
 
+## 单机完整平台部署
+
+使用 [单机部署与迁移](docs/single-server-storage.md)。原始 MCAP、LeRobot v3、ROS bag 文件原样保存，
+保留自动质检、时间对齐、可视化、标注、审核、发布和导出能力。原生 G1 LeRobot 处理直接引用原视频，
+不再全量抽 JPEG 后重编码。六个常驻服务：Web、API、PostgreSQL、MinIO、Temporal、合并 Worker。
+API 和 Worker 复用同一个后端镜像；开发热更新仍使用 `compose.dev.yaml`。
+
+本次删除清单、实测结果和功能边界见 [完整流程修复报告](docs/audits/2026-09-20-full-pipeline-fixes.md)。
+
 ## 当前分支目标：本地服务器验证
 
 `codex/local-server-validation` 分支用于实现 GitHub 里程碑“本地服务器验证”。目标是让网页、
 脚本和自动化验收只连接本地平台入口；浏览器、API 和 Worker 都不访问 OSS，上传、持久化、
 处理和结果读取全部在本机完成。
 
-**该目标尚未完成。** 当前 Compose 仍配置为 OSS provider，LeRobot 网页客户端仍保留对象存储
-直传路径，因此现阶段不能把单元测试通过等同于里程碑完成。范围、问题清单和完成标准见
+开发 Compose 默认使用本机 MinIO；原始存储与后台处理组成完整链路。
+具体操作见
+[本地 G1 页面流程](docs/lerobot-platform-upload.md)。整个里程碑还包含其他格式、网络隔离和全量 CI，
+本次 G1 流程验收不等于整个里程碑完成。范围与完成标准见
 [“本地服务器验证”里程碑](plan/LOCAL-SERVER-VALIDATION-MILESTONE.md)。生产对象存储、备份、发布
 和灾备能力不属于本次清理范围。
 
@@ -20,7 +31,7 @@ Mock 模式会加载演示账号、项目、权限和示例数据，适合直接
 ```bash
 cd /home/czy/hc_DataPlatform
 
-# 当前基线仍读取对象存储配置；本地无云凭据目标尚在实现中
+# 可选环境文件；开发 Compose 自带 MinIO，无需填写 OSS 凭据
 cp .env.example .env
 
 # 首次启动或依赖有变化
@@ -50,25 +61,17 @@ http://localhost:8088/settings/audit
 http://localhost:8088/collection-tasks
 ```
 
-## 查看真实后端模式（当前基线）
+## 本机真实后端模式
 
-完整重建并启动真实 API 环境：
+默认启动真实 API、Worker 和 MinIO：
 
 ```bash
 cd /home/czy/hc_DataPlatform
-
-# 里程碑完成前，当前基线仍需要 .env 中的对象存储配置
-
-docker compose \
-  -f compose.dev.yaml \
-  -f compose.real-api.yaml \
-  up --build -d
-
-docker compose \
-  -f compose.dev.yaml \
-  -f compose.real-api.yaml \
-  ps
+docker compose -f compose.dev.yaml up --build -d
+docker compose -f compose.dev.yaml ps
 ```
+
+`compose.real-api.yaml` 是隔离自动化验收使用的权限配置；日常页面操作只需基础文件。
 
 如果完整环境已经启动，只切换前端即可：
 
@@ -86,7 +89,7 @@ docker compose -f compose.dev.yaml up -d \
 
 ## Unitree G1 LeRobot 上传
 
-里程碑目标要求机器端脚本和网页只连接本地平台 API：
+开发环境的原生上传流程：
 
 ```text
 本地 LeRobot（Parquet + MP4）
@@ -94,11 +97,12 @@ docker compose -f compose.dev.yaml up -d \
   -> 将文件正文上传到本地平台 API
   -> 向平台提交完成
   -> 平台登记 Raw Source、Episode 和处理任务
-  -> 自动质检、对齐、可视化和标注
+  -> 自动质检、对齐、生成可视化与人工标注任务
+  -> 人工标注 → 另一账号审核 → 数据集手动发布
 ```
 
-上述流程是目标状态，不是当前已完成能力。当前客户端仍可能先尝试对象存储直传，再回退到
-平台 API 代理上传；在里程碑完成前，不应把这条链路作为“全本地验证已通过”的证据。
+网页开发环境固定使用平台 API 代理上传；视频从本机 MinIO 读取。选择文件夹时，先选择
+数据集、有效采集任务和机器人，再在确认窗口发布人工标注规则。原始文件保留，不转换成 MCAP。
 
 先启动上面的真实后端模式，然后在仓库根目录运行交互式脚本：
 
@@ -171,7 +175,8 @@ docker compose -f compose.dev.yaml logs -f api
 
 - API 文档：<http://localhost:8000/docs>
 - Temporal UI：<http://localhost:8080>
-- 存储：当前基线仍使用 `.env` 中的对象存储配置；里程碑目标是提供不依赖云凭据的本地存储
+- MinIO 控制台：<http://localhost:9001>（本机开发账号 `minio` / `minio-local-only`）
+- 浏览器媒体入口：<http://127.0.0.1:9000>；数据持久化在 `minio-data` Docker 卷
 
 ## 重启与重新构建
 

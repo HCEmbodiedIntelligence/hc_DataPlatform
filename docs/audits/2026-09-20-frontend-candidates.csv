@@ -1,0 +1,42 @@
+path,lines,status
+frontend/src/entities/audit-event.ts,189,No path from active UI entry graph; review test imports before deletion
+frontend/src/entities/calibration.ts,36,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/entities/component.ts,26,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/entities/data-schema.ts,27,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/entities/lifecycle-policy.ts,8,No path from active UI entry graph; review test imports before deletion
+frontend/src/entities/storage-inventory.ts,40,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/calibrations/api/index.ts,806,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/features/calibrations/publish-rules.ts,61,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/features/calibrations/routing.ts,74,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/features/cleaning/issue-state-machine.ts,35,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/cleaning/pending-links.ts,26,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/data-governance/model.ts,89,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/data-schemas/api/index.ts,738,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/features/data-schemas/registry-rules.ts,58,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/features/data-schemas/routing.ts,86,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/features/lifecycle/pending-links.ts,9,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/lifecycle/routing.ts,20,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/lifecycle/state-machines.ts,19,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/robot-models/routing.ts,27,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/robots/constraints.ts,129,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/robots/routing.ts,14,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/storage-overview/api/adapter.ts,217,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/storage-overview/api/schemas.ts,236,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/storage-overview/metrics-contract.ts,85,No path from active UI entry graph; review test imports before deletion
+frontend/src/features/storage-overview/types.ts,113,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p03-upload-jobs/components/FolderBatchPreflightPanel.tsx,126,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p03-upload-jobs/components/ManifestPreflightPanel.tsx,299,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p12-storage-overview/components/StorageObjectDrawer.tsx,83,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p12-storage-overview/components/StorageOverviewPanel.tsx,47,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p12-storage-overview/components/StorageSummaryStrip.tsx,152,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p12-storage-overview/components/StorageVisualCharts.tsx,178,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p12-storage-overview/display-labels.ts,113,No path from active UI entry graph; review test imports before deletion
+frontend/src/pages/p16-calibrations/components/CalibrationThreePreview.tsx,145,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/pages/p16-calibrations/page.tsx,1191,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/pages/p16-calibrations/query-codec.ts,95,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/pages/p16-calibrations/routes.tsx,10,Hidden P16 UI; conditional retirement; backend calibration remains in use
+frontend/src/pages/p17-data-schemas/page.tsx,1284,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/pages/p17-data-schemas/query-codec.ts,96,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/pages/p17-data-schemas/routes.tsx,10,P17 has empty routes; retire former UI only; keep backend schema contracts
+frontend/src/shared/telemetry/index.ts,2,No path from active UI entry graph; review test imports before deletion
+frontend/src/shared/telemetry/track.ts,107,No path from active UI entry graph; review test imports before deletion

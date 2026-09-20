@@ -21,8 +21,6 @@ services:
       HC_ENVIRONMENT: test
       HC_JWT_ISSUER: https://be22.test.invalid/
       HC_JWT_AUDIENCE: hc-data-platform
-      # Browser multipart URLs are signed directly for the configured OSS endpoint.
-      HC_OBJECT_STORE_PUBLIC_ENDPOINT: ${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-https://oss-cn-hangzhou.aliyuncs.com}
     depends_on:
       migration-check:
         condition: service_completed_successfully
@@ -30,6 +28,7 @@ services:
   worker:
     environment:
       HC_ENVIRONMENT: test
+      HC_LOCAL_SCOPE_DISCOVERY: "false"
       # The browser full-chain runner supplies one fresh, exact run id. Keep
       # the durable outbox worker restricted to that exact organization/project/region;
       # do not turn the test profile into a cross-project wildcard consumer.

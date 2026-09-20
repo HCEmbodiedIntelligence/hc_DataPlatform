@@ -32,9 +32,7 @@ def is_canonical_lerobot_object(relative_path: str) -> bool:
     if _CANONICAL_DATA.fullmatch(normalized):
         return True
     video_match = _CANONICAL_VIDEO.fullmatch(normalized)
-    if video_match is None:
-        return False
-    return video_match.group(1) in {camera.feature_key for camera in converter.CAMERAS}
+    return video_match is not None
 
 
 def find_local_source_root(value: Path) -> Path:
@@ -70,6 +68,26 @@ def validate_source_profile(source_root: Path) -> dict[str, Any]:
 
 
 def validate_source_info(info: object) -> dict[str, Any]:
+    """Validate storage metadata without imposing a robot or training schema."""
+    if not isinstance(info, dict) or info.get("codebase_version") != "v3.0":
+        raise ValueError("LeRobot storage currently requires meta/info.json v3.0")
+    fps = info.get("fps")
+    if not isinstance(fps, (int, float)) or isinstance(fps, bool) or not 0 < float(fps) <= 240:
+        raise ValueError("LeRobot metadata has an invalid fps")
+    if not isinstance(info.get("data_path"), str) or not isinstance(info.get("features"), dict):
+        raise ValueError("LeRobot metadata requires data_path and features")
+    video_features = [
+        key
+        for key, feature in info["features"].items()
+        if isinstance(feature, dict) and feature.get("dtype") == "video"
+    ]
+    if video_features and not isinstance(info.get("video_path"), str):
+        raise ValueError("LeRobot video features require a video_path template")
+    return info
+
+
+def validate_processing_info(info: object) -> dict[str, Any]:
+    """The optional legacy training pipeline still requires the G1 profile."""
     if not isinstance(info, dict):
         raise ValueError("LeRobot meta/info.json must contain an object")
     if info.get("codebase_version") != "v3.0":

@@ -104,6 +104,12 @@ class AlignedMediaAuthorizationService:
             selector,
             profile_id=self._profile_id,
         )
+        if artifact is None:
+            artifact = self._repository.find_by_selector(
+                scope,
+                selector,
+                profile_id="original-video-reference-v1",
+            )
         if artifact is not None and artifact.retired_at is not None:
             raise problem(
                 status=410,
@@ -329,12 +335,27 @@ class AlignedMediaGenerationService:
                     publication = None
                     encoded = None
             if publication is None:
-                encoded = self._encoder.encode(
-                    artifact_key=artifact_key,
-                    request=request,
-                    frames=self._reader.read_camera_frames(request),
-                    cancelled=lambda: self._cancelled(cancelled, heartbeat_failed),
-                )
+                original = request.alignment.original_videos.get(request.camera_id)
+                if request.profile_id == "original-video-reference-v1":
+                    if original is None:
+                        raise ValueError("original video profile requires a source reference")
+                    encoded = EncodedAlignedMediaV1(
+                        file_uri="source://original",
+                        frame_count=request.alignment.row_count,
+                        duration_seconds=request.alignment.row_count / 30,
+                        width=original.width,
+                        height=original.height,
+                        placeholder_count=0,
+                        first_timestamp_ns=0,
+                        original_source=original,
+                    )
+                else:
+                    encoded = self._encoder.encode(
+                        artifact_key=artifact_key,
+                        request=request,
+                        frames=self._reader.read_camera_frames(request),
+                        cancelled=lambda: self._cancelled(cancelled, heartbeat_failed),
+                    )
                 publication = self._store.publish(
                     scope=scope,
                     request=request,
@@ -401,7 +422,7 @@ class AlignedMediaGenerationService:
                     owner_id=owner_id,
                     attempt_token=attempt_token,
                 )
-            if encoded is not None:
+            if encoded is not None and encoded.original_source is None:
                 self._encoder.cleanup(encoded)
 
     def _acquire_capacity(
@@ -509,6 +530,7 @@ class AlignedMediaGenerationService:
             height=artifact.height,
             placeholder_count=artifact.placeholder_count,
             first_timestamp_ns=artifact.timeline.start_timestamp_ns,
+            original_source=artifact.timeline.original_source,
         )
         return publication, encoded
 

@@ -22,7 +22,7 @@ class AlignedMediaEncodingProfileV1(BaseModel):
 
     profile_id: str = Field(default="canonical-h264-crf20-v1", min_length=1)
     profile_version: str = Field(default="1", min_length=1)
-    codec: Literal["h264"] = "h264"
+    codec: Literal["h264", "source"] = "h264"
     pixel_format: Literal["yuv420p"] = "yuv420p"
     fps: Literal[30] = 30
     crf: int = Field(default=20, ge=18, le=22)
@@ -54,6 +54,28 @@ class AlignmentCameraStagingArtifactV1(BaseModel):
     row_count: int = Field(ge=1)
 
 
+class OriginalVideoReferenceV1(BaseModel):
+    """An existing immutable video; derivative cleanup must never own this object."""
+
+    model_config = ConfigDict(frozen=True)
+
+    object_key: str = Field(min_length=1, max_length=2048)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
+    width: int = Field(ge=2)
+    height: int = Field(ge=2)
+    codec: str = Field(min_length=1)
+    fps: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_window(self) -> OriginalVideoReferenceV1:
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError("original video requires a non-empty episode window")
+        return self
+
+
 class AlignmentStagingArtifactV1(BaseModel):
     """Short-lived, immutable Arrow fragment shared across worker pods."""
 
@@ -65,6 +87,7 @@ class AlignmentStagingArtifactV1(BaseModel):
     row_count: int = Field(ge=1)
     alignment_version: str = Field(min_length=1, max_length=256)
     camera_shards: dict[str, AlignmentCameraStagingArtifactV1] = Field(default_factory=dict)
+    original_videos: dict[str, OriginalVideoReferenceV1] = Field(default_factory=dict)
     created_at: datetime
     expires_at: datetime
 
@@ -155,7 +178,7 @@ class AlignedMediaObjectV1(BaseModel):
 
 
 class AlignedMediaTimelineV1(BaseModel):
-    """Compact exact mapping: step N -> frame N -> PTS N at time base 1/30."""
+    """Aligned logical clock, optionally mapped into an unchanged original video."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -165,6 +188,7 @@ class AlignedMediaTimelineV1(BaseModel):
     pts_time_base_numerator: Literal[1] = 1
     pts_time_base_denominator: Literal[30] = 30
     start_timestamp_ns: int = Field(ge=0)
+    original_source: OriginalVideoReferenceV1 | None = None
 
     @field_serializer("start_timestamp_ns", when_used="json")
     def serialize_start_timestamp_ns(self, value: int) -> str:
@@ -185,6 +209,7 @@ class EncodedAlignedMediaV1(BaseModel):
     fps: Literal[30] = 30
     placeholder_count: int = Field(ge=0)
     first_timestamp_ns: int = Field(ge=0)
+    original_source: OriginalVideoReferenceV1 | None = None
 
 
 class PublishedAlignedMediaV1(BaseModel):
@@ -305,8 +330,8 @@ class AlignedMediaFrameReferenceV1(BaseModel):
     object_key: str
     frame_index: int = Field(ge=0)
     pts: int = Field(ge=0)
-    pts_time_base_numerator: Literal[1] = 1
-    pts_time_base_denominator: Literal[30] = 30
+    pts_time_base_numerator: int = Field(default=1, ge=1)
+    pts_time_base_denominator: int = Field(default=30, ge=1)
     timestamp_ns: int = Field(ge=0)
     valid: bool
     placeholder: bool

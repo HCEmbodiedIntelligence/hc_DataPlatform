@@ -5,13 +5,13 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from hc_data_platform.ingest.models import CompletedPart, Identifier, PartAuthorization
-from hc_data_platform.tools import hf_unitree_g1_to_mcap as converter
 
 from .source_profile import (
     MAX_LEROBOT_IMPORT_EPISODES,
     is_canonical_lerobot_object,
     is_lerobot_local_cache_path,
     is_lerobot_transient_path,
+    validate_processing_info,
     validate_source_info,
 )
 
@@ -72,17 +72,39 @@ class CreateLeRobotImportV1(BaseModel):
 
     schema_version: Literal["lerobot-web-import/v1"] = "lerobot-web-import/v1"
     dataset_id: Identifier
-    collection_task_id: Identifier
-    robot_id: Identifier
-    info: dict[str, Any]
+    collection_task_id: Identifier | None = None
+    robot_id: Identifier | None = None
+    source_format: Literal["LEROBOT_V3", "MCAP", "ROSBAG"] = "LEROBOT_V3"
+    processing_mode: Literal["STORE_ONLY", "PROCESS"] = "STORE_ONLY"
+    info: dict[str, Any] = Field(default_factory=dict)
     files: tuple[LeRobotSourceFileV1, ...] = Field(min_length=1, max_length=10_000)
 
     @model_validator(mode="after")
     def validate_revision(self) -> CreateLeRobotImportV1:
-        info = validate_source_info(self.info)
         paths = [item.path for item in self.files]
         if len(paths) != len(set(paths)):
             raise ValueError("LeRobot source file paths must be unique")
+        if self.processing_mode == "PROCESS":
+            if (
+                self.source_format != "LEROBOT_V3"
+                or not self.collection_task_id
+                or not self.robot_id
+            ):
+                raise ValueError("processing requires a LeRobot source, collection task and robot")
+            validate_processing_info(self.info)
+        if self.source_format != "LEROBOT_V3":
+            if self.source_format == "MCAP" and not any(p.lower().endswith(".mcap") for p in paths):
+                raise ValueError("MCAP storage requires an original .mcap file")
+            if self.source_format == "ROSBAG" and not (
+                any(p.lower().endswith(".bag") for p in paths)
+                or (
+                    any(p.endswith("metadata.yaml") for p in paths)
+                    and any(p.lower().endswith((".db3", ".mcap")) for p in paths)
+                )
+            ):
+                raise ValueError("ROS bag requires .bag or metadata.yaml and .db3/.mcap files")
+            return self
+        info = validate_source_info(self.info)
         local_artifacts = [
             path
             for path in paths
@@ -106,9 +128,13 @@ class CreateLeRobotImportV1(BaseModel):
             for path in canonical_paths
             if path.startswith("videos/") and path.endswith(".mp4")
         }
-        expected_cameras = {camera.feature_key for camera in converter.CAMERAS}
-        if camera_features != expected_cameras:
-            raise ValueError("LeRobot source must contain every supported Unitree G1 camera")
+        expected_cameras = {
+            key
+            for key, feature in info["features"].items()
+            if isinstance(feature, dict) and feature.get("dtype") == "video"
+        }
+        if not expected_cameras.issubset(camera_features):
+            raise ValueError("LeRobot source must contain every declared video feature")
         total_episodes = info.get("total_episodes")
         if not isinstance(total_episodes, int) or isinstance(total_episodes, bool):
             raise ValueError("LeRobot metadata must declare total_episodes")
@@ -121,7 +147,7 @@ class CreateLeRobotImportV1(BaseModel):
 
     @property
     def episode_count(self) -> int:
-        return int(self.info["total_episodes"])
+        return int(self.info["total_episodes"]) if self.source_format == "LEROBOT_V3" else 0
 
 
 class LeRobotAssetUploadGrantV1(BaseModel):
@@ -205,8 +231,8 @@ class LeRobotImportAcceptedV1(BaseModel):
 
     schema_version: Literal["lerobot-web-import-accepted/v1"] = "lerobot-web-import-accepted/v1"
     import_id: str
-    status: Literal["EPISODES_QUEUED"] = "EPISODES_QUEUED"
-    episode_count: int = Field(ge=1, le=MAX_LEROBOT_IMPORT_EPISODES)
+    status: Literal["RAW_COMMITTED", "EPISODES_QUEUED"] = "RAW_COMMITTED"
+    episode_count: int = Field(ge=0, le=MAX_LEROBOT_IMPORT_EPISODES)
     source_file_count: int = Field(ge=1, le=10_000)
-    episode_task_count: int = Field(ge=1, le=MAX_LEROBOT_IMPORT_EPISODES)
-    episode_plan_key: str = Field(min_length=1, max_length=2048)
+    episode_task_count: int = Field(default=0, ge=0, le=MAX_LEROBOT_IMPORT_EPISODES)
+    episode_plan_key: str | None = Field(default=None, min_length=1, max_length=2048)

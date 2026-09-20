@@ -115,14 +115,14 @@ export function installSessionBootstrap(bootstrap: SessionBootstrap): void {
   const grant = currentGrant ?? preferred?.grant ?? grants[0];
   if (!grant) return;
   const currentRegion =
-    preferred?.grant === grant
-      ? preferred.regionCode
-      : current?.organizationId === grant.organizationId &&
-          current.projectId === grant.projectId &&
-          current.regionCode &&
-          (grant.projectWide || grant.regionCodes.includes(current.regionCode))
-        ? current.regionCode
-        : grant.regionCodes[0];
+    current?.organizationId === grant.organizationId &&
+    current.projectId === grant.projectId &&
+    current.regionCode &&
+    (grant.projectWide || grant.regionCodes.includes(current.regionCode))
+      ? current.regionCode
+      : preferred?.grant === grant
+        ? preferred.regionCode
+        : (grant.regionCodes[0] ?? (grant.projectWide ? "global" : undefined));
   const nextScope: Scope = {
     organizationId: grant.organizationId,
     projectId: grant.projectId,

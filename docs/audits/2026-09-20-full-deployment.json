@@ -1,0 +1,204 @@
+[
+  {
+    "Command": "\"uvicorn hc_data_pla\u2026\"",
+    "CreatedAt": "2026-09-20 14:57:32 +0800 CST",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "55bdfcae8143",
+    "Image": "hc-data-platform-backend:full",
+    "Labels": "com.docker.compose.depends_on=temporal:service_healthy:false,migration:service_completed_successfully:false,minio-init:service_completed_successfully:false,com.docker.compose.project=hc-data-platform-single,com.docker.compose.project.config_files=/home/czy/hc_DataPlatform/compose.single-server.yaml,com.docker.compose.service=api,com.docker.compose.version=5.4.0,org.opencontainers.image.revision=unknown,com.docker.compose.config-hash=11bce11c1728756f1e0f367d50f638cd919977a2b049679620d1060a9fc8fa79,com.docker.compose.project.working_dir=/home/czy/hc_DataPlatform,com.docker.compose.oneoff=False,com.docker.compose.replace=api-1,org.opencontainers.image.created=unknown,org.opencontainers.image.title=HC Data Platform Backend,org.opencontainers.image.version=dev,com.docker.compose.image=sha256:ffc2d4fa43c5efad6ee9415eff1292eca0671bebb316f8b4c9ad40822ddb604e,com.docker.compose.project.environment_file=/home/czy/hc_DataPlatform/.env.single-server,org.opencontainers.image.component=worker,org.opencontainers.image.source=https://example.invalid/hc-data-platform,com.docker.compose.container-number=1",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Name": "hc-data-platform-single-api-1",
+    "Names": "hc-data-platform-single-api-1",
+    "Networks": "hc-data-platform-single_default",
+    "Ports": "",
+    "Project": "hc-data-platform-single",
+    "Publishers": [],
+    "RunningFor": "14 minutes ago",
+    "Service": "api",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 14 minutes (healthy)"
+  },
+  {
+    "Command": "\"/usr/bin/docker-ent\u2026\"",
+    "CreatedAt": "2026-09-20 14:00:12 +0800 CST",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "2ccbb73b9b99",
+    "Image": "minio/minio:RELEASE.2024-11-07T00-52-20Z",
+    "Labels": "summary=MinIO is a High Performance Object Storage, API compatible with Amazon S3 cloud storage service.,com.docker.compose.oneoff=False,com.docker.compose.project=hc-data-platform-single,vcs-ref=cd5996c9b8b99b546584696465f8f39ec682078c,vendor=MinIO Inc <dev@min.io>,architecture=x86_64,com.docker.compose.project.working_dir=/home/czy/hc_DataPlatform,com.redhat.license_terms=https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI,distribution-scope=public,name=MinIO,com.docker.compose.depends_on=,io.buildah.version=1.29.0,io.k8s.description=Very small image which doesn't install the package manager.,vcs-type=git,com.docker.compose.service=minio,description=MinIO object storage is fundamentally different. Designed for performance and the S3 API, it is 100% open-source. MinIO is ideal for large, private cloud environments with stringent security requirements and delivers mission-critical availability across a diverse range of workloads.,io.openshift.expose-services=,maintainer=MinIO Inc <dev@min.io>,com.redhat.component=ubi9-micro-container,io.k8s.display-name=Ubi9-micro,url=https://access.redhat.com/containers/#/registry.access.redhat.com/ubi9/ubi-micro/images/9.4-15,com.docker.compose.container-number=1,com.docker.compose.project.config_files=/home/czy/hc_DataPlatform/compose.single-server.yaml,com.docker.compose.version=5.4.0,version=RELEASE.2024-11-07T00-52-20Z,build-date=2024-08-27T19:24:54,com.docker.compose.config-hash=4c223822529c56c4970ff601a78bc8cc7df62af11673df58c106e83ca33591e7,com.docker.compose.image=sha256:d051d800a3025588f37f69f132bb5ef718547a9a4ee95ddee44e04ad952a0a96,release=RELEASE.2024-11-07T00-52-20Z,com.docker.compose.project.environment_file=/home/czy/hc_DataPlatform/.env.single-server",
+    "LocalVolumes": "1",
+    "Mounts": "hc-data-platfo\u2026",
+    "Name": "hc-data-platform-single-minio-1",
+    "Names": "hc-data-platform-single-minio-1",
+    "Networks": "hc-data-platform-single_default",
+    "Ports": "9000/tcp",
+    "Project": "hc-data-platform-single",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 9000,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "About an hour ago",
+    "Service": "minio",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up About an hour (healthy)"
+  },
+  {
+    "Command": "\"docker-entrypoint.s\u2026\"",
+    "CreatedAt": "2026-09-20 14:00:12 +0800 CST",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "c35337c101dd",
+    "Image": "postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+    "Labels": "com.docker.compose.config-hash=08cfff183d2f07096e549e3738039eede494b6da724341605f8d47e300356f1d,com.docker.compose.project=hc-data-platform-single,com.docker.compose.project.working_dir=/home/czy/hc_DataPlatform,com.docker.compose.container-number=1,com.docker.compose.depends_on=,com.docker.compose.image=sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/home/czy/hc_DataPlatform/compose.single-server.yaml,com.docker.compose.project.environment_file=/home/czy/hc_DataPlatform/.env.single-server,com.docker.compose.service=postgres,com.docker.compose.version=5.4.0",
+    "LocalVolumes": "1",
+    "Mounts": "hc-data-platfo\u2026",
+    "Name": "hc-data-platform-single-postgres-1",
+    "Names": "hc-data-platform-single-postgres-1",
+    "Networks": "hc-data-platform-single_default",
+    "Ports": "5432/tcp",
+    "Project": "hc-data-platform-single",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 5432,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "About an hour ago",
+    "Service": "postgres",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up About an hour (healthy)"
+  },
+  {
+    "Command": "\"/etc/temporal/entry\u2026\"",
+    "CreatedAt": "2026-09-20 15:01:17 +0800 CST",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "8493adcb795e",
+    "Image": "temporalio/auto-setup:1.25.2",
+    "Labels": "com.docker.compose.container-number=1,com.docker.compose.oneoff=False,com.docker.compose.project=hc-data-platform-single,com.docker.compose.project.config_files=/home/czy/hc_DataPlatform/compose.single-server.yaml,org.opencontainers.image.description=Workflow as Code (TM) to build and operate resilient applications,org.opencontainers.image.title=auto-setup,com.docker.compose.project.environment_file=/home/czy/hc_DataPlatform/.env.single-server,com.docker.compose.project.working_dir=/home/czy/hc_DataPlatform,com.docker.compose.replace=temporal-1,org.opencontainers.image.created=2024-03-22T16:12:34.701Z,org.opencontainers.image.licenses=MIT,org.opencontainers.image.revision=68dd3c0f3a4faae24f03b67121fedf7580c406d4,org.opencontainers.image.source=https://github.com/temporalio/docker-builds,com.docker.compose.depends_on=,com.docker.compose.image=sha256:9ce78f5a7ba7169acb659a8bb7a174a64251c3bfe1553d1fefdd669a59d41df5,com.docker.compose.version=5.4.0,org.opencontainers.image.url=https://github.com/temporalio/docker-builds,org.opencontainers.image.version=1.15.7,com.docker.compose.service=temporal,com.docker.compose.config-hash=8f424dc77a8a14e9f0d07732b1b9fd0bc9d0e8c7f32044c3c60a3456922bb27e",
+    "LocalVolumes": "0",
+    "Mounts": "",
+    "Name": "hc-data-platform-single-temporal-1",
+    "Names": "hc-data-platform-single-temporal-1",
+    "Networks": "hc-data-platform-single_default",
+    "Ports": "6933-6935/tcp, 6939/tcp, 7233-7235/tcp, 7239/tcp",
+    "Project": "hc-data-platform-single",
+    "Publishers": [
+      {
+        "URL": "",
+        "TargetPort": 6933,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 6934,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 6935,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 6939,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7233,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7234,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7235,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      },
+      {
+        "URL": "",
+        "TargetPort": 7239,
+        "PublishedPort": 0,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "10 minutes ago",
+    "Service": "temporal",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 10 minutes (healthy)"
+  },
+  {
+    "Command": "\"/bin/sh /opt/hc/bin\u2026\"",
+    "CreatedAt": "2026-09-20 15:11:29 +0800 CST",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "d0cc1d1ef676",
+    "Image": "hc-data-platform-frontend:full",
+    "Labels": "org.opencontainers.image.title=HC Data Platform Frontend,com.docker.compose.depends_on=,com.docker.compose.project=hc-data-platform-single,org.opencontainers.image.created=unknown,com.docker.compose.image=sha256:1e40061aa683c30069492fb481df7401410f9d31c88b8cc69e6b95081b3d668d,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/home/czy/hc_DataPlatform/compose.single-server.yaml,com.docker.compose.project.working_dir=/home/czy/hc_DataPlatform,com.docker.compose.replace=web-1,com.docker.compose.version=5.4.0,org.opencontainers.image.description=Unprivileged NGINX Dockerfiles,org.opencontainers.image.url=https://github.com/nginx/docker-nginx-unprivileged,com.docker.compose.project.environment_file=/home/czy/hc_DataPlatform/.env.single-server,com.docker.compose.service=web,org.opencontainers.image.licenses=Apache-2.0,org.opencontainers.image.version=dev,maintainer=NGINX Docker Maintainers <docker-maint@nginx.com>,com.docker.compose.config-hash=51979e79963594aef3a294ef382888b94ae83a50c3306b62f70ba7294b397ebb,com.docker.compose.container-number=1,org.opencontainers.image.revision=unknown,org.opencontainers.image.source=https://example.invalid/hc-data-platform",
+    "LocalVolumes": "0",
+    "Mounts": "/home/czy/hc_D\u2026",
+    "Name": "hc-data-platform-single-web-1",
+    "Names": "hc-data-platform-single-web-1",
+    "Networks": "hc-data-platform-single_default",
+    "Ports": "127.0.0.1:8088->8080/tcp",
+    "Project": "hc-data-platform-single",
+    "Publishers": [
+      {
+        "URL": "127.0.0.1",
+        "TargetPort": 8080,
+        "PublishedPort": 8088,
+        "Protocol": "tcp"
+      }
+    ],
+    "RunningFor": "43 seconds ago",
+    "Service": "web",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 42 seconds (healthy)"
+  },
+  {
+    "Command": "\"hc-data-worker\"",
+    "CreatedAt": "2026-09-20 14:59:44 +0800 CST",
+    "ExitCode": 0,
+    "Health": "healthy",
+    "ID": "7407d3c971b2",
+    "Image": "hc-data-platform-backend:full",
+    "Labels": "com.docker.compose.project=hc-data-platform-single,org.opencontainers.image.title=HC Data Platform Backend,com.docker.compose.config-hash=983e78e1cb6c3b6591b636c43a1961ea6d5130115fac81368a6cceb94da37767,com.docker.compose.image=sha256:ffc2d4fa43c5efad6ee9415eff1292eca0671bebb316f8b4c9ad40822ddb604e,com.docker.compose.project.working_dir=/home/czy/hc_DataPlatform,org.opencontainers.image.component=worker,org.opencontainers.image.created=unknown,com.docker.compose.depends_on=,com.docker.compose.oneoff=False,com.docker.compose.project.config_files=/home/czy/hc_DataPlatform/compose.single-server.yaml,com.docker.compose.project.environment_file=/home/czy/hc_DataPlatform/.env.single-server,com.docker.compose.replace=worker-1,com.docker.compose.service=worker,com.docker.compose.container-number=1,com.docker.compose.version=5.4.0,org.opencontainers.image.revision=unknown,org.opencontainers.image.source=https://example.invalid/hc-data-platform,org.opencontainers.image.version=dev",
+    "LocalVolumes": "1",
+    "Mounts": "hc-data-platfo\u2026",
+    "Name": "hc-data-platform-single-worker-1",
+    "Names": "hc-data-platform-single-worker-1",
+    "Networks": "hc-data-platform-single_default",
+    "Ports": "",
+    "Project": "hc-data-platform-single",
+    "Publishers": [],
+    "RunningFor": "12 minutes ago",
+    "Service": "worker",
+    "Size": "0B",
+    "State": "running",
+    "Status": "Up 12 minutes (healthy)"
+  }
+]

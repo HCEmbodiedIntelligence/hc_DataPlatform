@@ -264,7 +264,6 @@ function StreamPanel({
   const videoRef = useRef<HTMLVideoElement>(null);
   const visible = usePanelVisibility(hostRef);
   const [error, setError] = useState<DomainError | null>(null);
-  const [mediaPreparing, setMediaPreparing] = useState(false);
   const [windowSummary, setWindowSummary] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const onResourceErrorRef = useRef(onResourceError);
@@ -277,7 +276,6 @@ function StreamPanel({
     if (!visible || panel.state === "missing" || panel.state === "unsupported")
       return;
     setError(null);
-    setMediaPreparing(false);
     setWindowSummary(null);
     const controller = new AbortController();
     const resources = new ViewerResourceRegistry();
@@ -302,23 +300,60 @@ function StreamPanel({
       let detachMedia: (() => void) | undefined;
       let revokeDescriptor: (() => void) | undefined;
       let expiryRefreshTimer: number | undefined;
+      let initialPositionPending = true;
+      let lastHardSeekAt = Number.NEGATIVE_INFINITY;
+      let lastPlayAttemptAt = Number.NEGATIVE_INFINITY;
+      let waiting = false;
+      let sourceStartSeconds = stream.mediaStartSeconds ?? 0;
+      let sourceEndSeconds = stream.mediaEndSeconds ?? Number.POSITIVE_INFINITY;
+      const detachClock = clock.attachMediaClock?.(() => {
+        if (!mediaAttached || video.readyState < 2 || video.seeking || waiting)
+          return null;
+        const elapsed = Math.max(0, video.currentTime - sourceStartSeconds);
+        return (
+          BigInt(clock.startNs) + BigInt(Math.round(elapsed * 1_000_000_000))
+        ).toString();
+      });
+      if (detachClock) resources.add(detachClock);
+      const onWaiting = () => {
+        waiting = true;
+      };
+      const onPlaying = () => {
+        waiting = false;
+      };
+      video.addEventListener("waiting", onWaiting);
+      video.addEventListener("stalled", onWaiting);
+      video.addEventListener("playing", onPlaying);
+      resources.add(() => {
+        video.removeEventListener("waiting", onWaiting);
+        video.removeEventListener("stalled", onWaiting);
+        video.removeEventListener("playing", onPlaying);
+      });
       const streamRateHz = Math.max(stream.rateHz ?? 30, 1);
       const playbackDriftToleranceSeconds = Math.max(0.25, 4 / streamRateHz);
       const pausedDriftToleranceSeconds = 0.5 / streamRateHz;
       const clockUpdate = () => ({
-        reason: "subscribe" as const,
+        reason: "tick" as const,
         playing: clock.isPlaying(),
         rate: clock.playbackRate(),
       });
       const requestPlayback = () => {
-        if (playRequested || !video.paused) return;
+        if (
+          playRequested ||
+          !video.paused ||
+          performance.now() - lastPlayAttemptAt < 500
+        )
+          return;
+        lastPlayAttemptAt = performance.now();
         playRequested = true;
         try {
           void video.play().catch(() => {
+            playRequested = false;
             // Refreshing an expiring direct MP4 URL can interrupt play(). The
             // next media-ready event retries without surfacing a false failure.
           });
         } catch {
+          playRequested = false;
           // Media implementations may throw synchronously. A later
           // loadedmetadata/canplay event is the safe retry boundary.
         }
@@ -328,12 +363,15 @@ function StreamPanel({
         update: PlaybackClockUpdate,
         forceSeek = false,
       ) => {
+        const restarted =
+          update.reason === "play" && BigInt(ns) < BigInt(latestClockNs);
         latestClockNs = ns;
         if (!mediaAttached) return;
         const clockSeconds =
+          sourceStartSeconds +
           Number(BigInt(ns) - BigInt(clock.startNs)) / 1_000_000_000;
         if (!Number.isFinite(clockSeconds)) return;
-        const duration = video.duration;
+        const duration = Math.min(video.duration, sourceEndSeconds);
         const seconds =
           Number.isFinite(duration) &&
           clockSeconds >= duration - 0.5 / streamRateHz
@@ -349,28 +387,53 @@ function StreamPanel({
           : Number.POSITIVE_INFINITY;
         const directClockMove =
           forceSeek ||
+          restarted ||
           update.reason === "subscribe" ||
           update.reason === "seek";
         const driftTolerance = update.playing
           ? playbackDriftToleranceSeconds
           : pausedDriftToleranceSeconds;
-        if (drift > (directClockMove ? 0.001 : driftTolerance)) {
+        const mayCorrect =
+          directClockMove ||
+          (!video.seeking && !waiting && video.readyState >= 2);
+        const hardDrift = update.playing
+          ? Math.max(0.75, driftTolerance)
+          : driftTolerance;
+        if (
+          mayCorrect &&
+          drift > (directClockMove ? 0.001 : hardDrift) &&
+          (directClockMove || performance.now() - lastHardSeekAt >= 1_000)
+        ) {
           try {
             video.currentTime = seconds;
+            lastHardSeekAt = performance.now();
           } catch {
             // Metadata may not be available yet; the media-ready event retries.
           }
+        } else if (
+          mayCorrect &&
+          update.playing &&
+          drift > driftTolerance &&
+          !directClockMove
+        ) {
+          video.playbackRate = Math.max(
+            0.1,
+            update.rate * (currentTime < seconds ? 1.05 : 0.95),
+          );
         }
 
         if (update.playing) requestPlayback();
         else {
           playRequested = false;
+          lastPlayAttemptAt = Number.NEGATIVE_INFINITY;
           if (!video.paused) video.pause();
         }
       };
       const synchronizeWhenReady = () => {
         playRequested = false;
-        synchronizeVideo(latestClockNs, clockUpdate(), true);
+        waiting = false;
+        synchronizeVideo(latestClockNs, clockUpdate(), initialPositionPending);
+        if (mediaAttached) initialPositionPending = false;
       };
       video.addEventListener("loadedmetadata", synchronizeWhenReady);
       video.addEventListener("canplay", synchronizeWhenReady);
@@ -389,16 +452,14 @@ function StreamPanel({
         let descriptor;
         try {
           descriptor = await (refresh
-            ? stream.mediaSource!.refresh(controller.signal, (status) => {
-                if (!controller.signal.aborted)
-                  setMediaPreparing(status === "preparing");
-              })
-            : stream.mediaSource!.authorize(controller.signal, (status) => {
-                if (!controller.signal.aborted)
-                  setMediaPreparing(status === "preparing");
-              }));
+            ? stream.mediaSource!.refresh(controller.signal)
+            : stream.mediaSource!.authorize(controller.signal));
         } catch (cause) {
-          if (!refresh && !mediaErrorRefreshUsed && isSignedResourceExpired(cause)) {
+          if (
+            !refresh &&
+            !mediaErrorRefreshUsed &&
+            isSignedResourceExpired(cause)
+          ) {
             mediaErrorRefreshUsed = true;
             return installMedia(true, "error");
           }
@@ -409,6 +470,13 @@ function StreamPanel({
           return;
         }
         mediaAttached = false;
+        sourceStartSeconds =
+          descriptor.mediaStartSeconds ?? stream.mediaStartSeconds ?? 0;
+        sourceEndSeconds =
+          descriptor.mediaEndSeconds ??
+          stream.mediaEndSeconds ??
+          Number.POSITIVE_INFINITY;
+        initialPositionPending = true;
         playRequested = false;
         detachMedia?.();
         revokeDescriptor?.();
@@ -439,11 +507,14 @@ function StreamPanel({
         const expiresAt = Date.parse(descriptor.expiresAt);
         if (Number.isFinite(expiresAt)) {
           const refreshDelay = Math.max(0, expiresAt - Date.now() - 30_000);
-          expiryRefreshTimer = window.setTimeout(() => {
-            expiryRefreshTimer = undefined;
-            if (!controller.signal.aborted)
-              void installMedia(true, "expiry").catch(fail);
-          }, Math.min(refreshDelay, 2_147_483_647));
+          expiryRefreshTimer = window.setTimeout(
+            () => {
+              expiryRefreshTimer = undefined;
+              if (!controller.signal.aborted)
+                void installMedia(true, "expiry").catch(fail);
+            },
+            Math.min(refreshDelay, 2_147_483_647),
+          );
         }
       };
       // Defer the first authorization past React StrictMode's synchronous
@@ -489,8 +560,11 @@ function StreamPanel({
       const guardBand = 2_000_000_000n;
       let loadedStart: bigint | null = null;
       let loadedEnd: bigint | null = null;
+      let retryAfter = 0;
+      let failures = 0;
       let inFlight: AbortController | null = null;
       const loadAround = (ns: string) => {
+        if (performance.now() < retryAfter) return;
         const current = BigInt(ns);
         if (loadedStart !== null && loadedEnd !== null) {
           const safeStart =
@@ -529,6 +603,8 @@ function StreamPanel({
               payload.dispose?.();
               return;
             }
+            failures = 0;
+            retryAfter = 0;
             latestPayloadDispose?.();
             latestPayloadDispose = payload.dispose;
             latestPayload = payload;
@@ -539,6 +615,10 @@ function StreamPanel({
             if (requestGeneration === generation) {
               loadedStart = null;
               loadedEnd = null;
+              failures += 1;
+              retryAfter =
+                performance.now() +
+                Math.min(30_000, 500 * 2 ** Math.min(failures - 1, 6));
             }
             if (!controller.signal.aborted && !windowController.signal.aborted)
               fail(cause);
@@ -597,9 +677,6 @@ function StreamPanel({
       ) : null}
       {pending ? (
         <div role="status">Preview 生成中，其他面板可继续使用。</div>
-      ) : null}
-      {mediaPreparing && !pending ? (
-        <div role="status">预览准备中，完成后将自动播放。</div>
       ) : null}
       {unavailable ? (
         cameraSlotPlaceholder ? (
@@ -785,7 +862,7 @@ export function ViewerJointAngleCurvePanel({
   readonly onResourceError?: (error: DomainError) => void;
 }): JSX.Element {
   const [retryKey, setRetryKey] = useState(0);
-  const [cursorNs, setCursorNs] = useState(clock.currentNs());
+  const cursorNs = useClockText(clock, 10);
   const [windowState, setWindowState] = useState<JointCurveWindowState>({
     status: "idle",
     payload: null,
@@ -934,7 +1011,6 @@ export function ViewerJointAngleCurvePanel({
     };
 
     const loadAround = (ns: string) => {
-      setCursorNs(ns);
       const current = BigInt(ns);
       if (
         loadedStart !== null &&
@@ -975,7 +1051,7 @@ export function ViewerJointAngleCurvePanel({
     const values = payload?.values ?? [];
     if (!values.length) return null;
     const dimension = Math.min(
-      16,
+      64,
       values.reduce((largest, sample) => Math.max(largest, sample.length), 0),
     );
     const finiteValues = values.flatMap((sample) =>
@@ -984,8 +1060,14 @@ export function ViewerJointAngleCurvePanel({
         .filter((value) => typeof value === "number" && Number.isFinite(value)),
     );
     if (!dimension || !finiteValues.length) return null;
-    const rawLow = Math.min(...finiteValues);
-    const rawHigh = Math.max(...finiteValues);
+    const rawLow = finiteValues.reduce(
+      (low, value) => Math.min(low, value),
+      Infinity,
+    );
+    const rawHigh = finiteValues.reduce(
+      (high, value) => Math.max(high, value),
+      -Infinity,
+    );
     const padding = Math.max(0.08, (rawHigh - rawLow) * 0.08);
     const low = rawLow - padding;
     const high = rawHigh + padding;
@@ -1017,26 +1099,27 @@ export function ViewerJointAngleCurvePanel({
     return { dimension, high, low, paths, plot };
   }, [windowState.endNs, windowState.payload, windowState.startNs]);
 
+  const sampleTimes = useMemo(
+    () =>
+      (windowState.payload?.timestampsNs ?? []).map((value) => BigInt(value)),
+    [windowState.payload],
+  );
   const nearestSampleIndex = useMemo(() => {
-    const timestamps = windowState.payload?.timestampsNs ?? [];
-    if (!timestamps.length) return -1;
+    if (!sampleTimes.length) return -1;
     const current = BigInt(cursorNs);
-    let nearestIndex = 0;
-    let nearestDistance =
-      BigInt(timestamps[0]!) > current
-        ? BigInt(timestamps[0]!) - current
-        : current - BigInt(timestamps[0]!);
-    for (let index = 1; index < timestamps.length; index += 1) {
-      const timestamp = BigInt(timestamps[index]!);
-      const distance =
-        timestamp > current ? timestamp - current : current - timestamp;
-      if (distance < nearestDistance) {
-        nearestIndex = index;
-        nearestDistance = distance;
-      }
+    let low = 0;
+    let high = sampleTimes.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (sampleTimes[middle]! < current) low = middle + 1;
+      else high = middle;
     }
-    return nearestIndex;
-  }, [cursorNs, windowState.payload]);
+    if (low === 0) return 0;
+    if (low === sampleTimes.length) return low - 1;
+    return current - sampleTimes[low - 1]! <= sampleTimes[low]! - current
+      ? low - 1
+      : low;
+  }, [cursorNs, sampleTimes]);
 
   const series = windowState.payload?.series ?? [];
   const currentValues =
@@ -1188,7 +1271,9 @@ export function ViewerJointAngleCurvePanel({
                       jointCurveColors[index % jointCurveColors.length],
                   }}
                 />
-                <b>{series[index]?.displayName ?? `J${index + 1}`}</b>
+                <b title={series[index]?.displayName ?? `J${index + 1}`}>
+                  {series[index]?.displayName ?? `J${index + 1}`}
+                </b>
                 <code>
                   {typeof currentValues[index] === "number"
                     ? `${currentValues[index]!.toFixed(2)} ${series[index]?.unit ?? "rad"}`

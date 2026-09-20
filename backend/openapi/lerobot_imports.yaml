@@ -1,236 +1,1337 @@
 security:
-  - bearerAuth: []
+- bearerAuth: []
 paths:
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports:
-    post:
-      operationId: beginLerobotImport
-      tags: [lerobot-imports]
+    get:
+      tags:
+      - lerobot-imports
+      summary: List Native Imports
+      operationId: list_native_imports_api_v1_projects__project_id__regions__region_code__lerobot_imports_get
+      security:
+      - bearerAuth: []
       parameters:
-        - &project_parameter {name: project_id, in: path, required: true, schema: {type: string}}
-        - &region_parameter {name: region_code, in: path, required: true, schema: {type: string}}
-        - &organization_parameter {name: X-Organization-Id, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
-      requestBody:
+      - name: project_id
+        in: path
         required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/CreateLeRobotImportV1"}
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: dataset_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Dataset Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
       responses:
-        "201":
-          description: Native LeRobot Raw multipart grants. Repeating the same scoped upload identity resumes the existing server-side session.
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/LeRobotImportGrantV1"}
-        "422": &validation_response
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NativeImportProgress'
+                title: Response List Native Imports Api V1 Projects  Project Id  Regions  Region
+                  Code  Lerobot Imports Get
+        '422':
           description: Validation Error
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
-  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     post:
-      operationId: authorizeLerobotAssetParts
-      tags: [lerobot-imports]
+      tags:
+      - lerobot-imports
+      summary: Begin Lerobot Import
+      operationId: beginLerobotImport
+      security:
+      - bearerAuth: []
       parameters:
-        - *project_parameter
-        - *region_parameter
-        - &import_parameter {name: import_id, in: path, required: true, schema: {type: string}}
-        - *organization_parameter
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/AuthorizeLeRobotPartsV1"}
+            schema:
+              $ref: '#/components/schemas/CreateLeRobotImportV1'
       responses:
-        "200":
-          description: Renewed short-lived direct PUT grants.
+        '201':
+          description: Successful Response
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/LeRobotPartGrantV1"}
-        "422": *validation_response
+              schema:
+                $ref: '#/components/schemas/LeRobotImportGrantV1'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files:
+    get:
+      tags:
+      - lerobot-imports
+      summary: List Original Files
+      operationId: list_original_files_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__files_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OriginalFilePage'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:read:
+    get:
+      tags:
+      - lerobot-imports
+      summary: Authorize Original File
+      operationId: authorize_original_file_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__assets_read_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          title: Path
+      - name: download
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Download
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OriginalFileGrant'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}:
+    get:
+      tags:
+      - lerobot-imports
+      summary: Get Original Episode
+      operationId: get_original_episode_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__episodes__episode_index__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: episode_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Episode Index
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OriginalEpisode'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing:
+    get:
+      tags:
+      - lerobot-imports
+      summary: Get Native Processing
+      operationId: get_native_processing_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__processing_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeImportProgress'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry:
+    post:
+      tags:
+      - lerobot-imports
+      summary: Retry Native Processing
+      operationId: retry_native_processing_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__retry_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeImportProgress'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration:
+    get:
+      tags:
+      - lerobot-imports
+      summary: Get Native Configuration
+      operationId: get_native_configuration_api_v1_projects__project_id__regions__region_code__lerobot_imports_configuration_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: dataset_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Dataset Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeConfiguration'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags:
+      - lerobot-imports
+      summary: Configure Native Labels
+      operationId: configure_native_labels_api_v1_projects__project_id__regions__region_code__lerobot_imports_configuration_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NativeLabelsRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeConfiguration'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts:
+    post:
+      tags:
+      - lerobot-imports
+      summary: Authorize Lerobot Asset Parts
+      operationId: authorizeLerobotAssetParts
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeLeRobotPartsV1'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeRobotPartGrantV1'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part:
     put:
+      tags:
+      - lerobot-imports
+      summary: Upload Lerobot Asset Part
       operationId: uploadLerobotAssetPart
-      tags: [lerobot-imports]
+      security:
+      - bearerAuth: []
       parameters:
-        - *project_parameter
-        - *region_parameter
-        - *import_parameter
-        - *organization_parameter
-        - {name: dataset_id, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
-        - {name: path, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 1024}}
-        - {name: multipart_upload_id, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 2048}}
-        - {name: part_number, in: query, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: dataset_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: Dataset Id
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          title: Path
+      - name: multipart_upload_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          title: Multipart Upload Id
+      - name: part_number
+        in: query
+        required: true
+        schema:
+          type: integer
+          maximum: 10000
+          minimum: 1
+          title: Part Number
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Part accepted through the same-origin API fallback.
+          headers:
+            ETag:
+              schema:
+                type: string
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '413':
+          description: Multipart body exceeds the platform transfer limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       requestBody:
         required: true
         content:
           application/octet-stream:
-            schema: {type: string, format: binary}
-      responses:
-        "200":
-          description: Part accepted through the same-origin API fallback.
-          headers:
-            ETag:
-              schema: {type: string}
-        "413":
-          description: Multipart body exceeds the platform transfer limit.
-          content:
-            application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
-        "422": *validation_response
+            schema:
+              type: string
+              format: binary
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete:
     post:
+      tags:
+      - lerobot-imports
+      summary: Complete Lerobot Asset
       operationId: completeLerobotAsset
-      tags: [lerobot-imports]
+      security:
+      - bearerAuth: []
       parameters:
-        - *project_parameter
-        - *region_parameter
-        - *import_parameter
-        - *organization_parameter
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/CompleteLeRobotAssetV1"}
+            schema:
+              $ref: '#/components/schemas/CompleteLeRobotAssetV1'
       responses:
-        "200":
-          description: Completed byte-identical Raw source object.
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/LeRobotAssetCompletedV1"}
-        "422": *validation_response
+              schema:
+                $ref: '#/components/schemas/LeRobotAssetCompletedV1'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit:
     post:
+      tags:
+      - lerobot-imports
+      summary: Commit Lerobot Import
       operationId: commitLerobotImport
-      tags: [lerobot-imports]
+      security:
+      - bearerAuth: []
       parameters:
-        - *project_parameter
-        - *region_parameter
-        - *import_parameter
-        - *organization_parameter
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/CommitLeRobotImportV1"}
+            schema:
+              $ref: '#/components/schemas/CommitLeRobotImportV1'
       responses:
-        "200":
-          description: Raw manifest is verified and queued for discovery.
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/LeRobotImportAcceptedV1"}
-        "422": *validation_response
+              schema:
+                $ref: '#/components/schemas/LeRobotImportAcceptedV1'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process:
+    post:
+      tags:
+      - lerobot-imports
+      summary: Process Stored Source
+      operationId: processStoredSource
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartStoredProcessing'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeImportProgress'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    NativeConfiguration:
+      properties:
+        configured:
+          type: boolean
+          title: Configured
+        schema_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Schema Id
+        schema_snapshot_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Schema Snapshot Id
+      type: object
+      required:
+      - configured
+      title: NativeConfiguration
+    NativeImportProgress:
+      properties:
+        import_id:
+          title: Import Id
+          type: string
+        dataset_id:
+          title: Dataset Id
+          type: string
+        status:
+          title: Status
+          type: string
+        episode_count:
+          title: Episode Count
+          type: integer
+        ready:
+          title: Ready
+          type: integer
+        failed:
+          title: Failed
+          type: integer
+        last_error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Error Code
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        source_format:
+          default: LEROBOT_V3
+          title: Source Format
+          type: string
+        file_count:
+          default: 0
+          title: File Count
+          type: integer
+        total_bytes:
+          default: 0
+          title: Total Bytes
+          type: integer
+      required:
+      - import_id
+      - dataset_id
+      - status
+      - episode_count
+      - ready
+      - failed
+      - last_error_code
+      - updated_at
+      title: NativeImportProgress
+      type: object
+    NativeLabelsRequest:
+      properties:
+        dataset_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Dataset Id
+        labels:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          minItems: 1
+          title: Labels
+      type: object
+      required:
+      - dataset_id
+      - labels
+      title: NativeLabelsRequest
     LeRobotSourceFileV1:
-      type: object
-      additionalProperties: false
-      required: [path, size, part_count]
       properties:
-        path: {type: string, minLength: 1, maxLength: 1024}
-        size: {type: integer, exclusiveMinimum: 0, maximum: 5497558138880}
-        part_count: {type: integer, minimum: 1, maximum: 10000}
+        path:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Path
+        size:
+          type: integer
+          maximum: 5497558138880.0
+          exclusiveMinimum: 0.0
+          title: Size
+        part_count:
+          type: integer
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Count
         last_modified_ms:
-          anyOf: [{type: integer, minimum: 0, maximum: 9007199254740991}, {type: "null"}]
-          default: null
+          anyOf:
+          - type: integer
+            maximum: 9007199254740991.0
+            minimum: 0.0
+          - type: 'null'
+          title: Last Modified Ms
+      additionalProperties: false
+      type: object
+      required:
+      - path
+      - size
+      - part_count
+      title: LeRobotSourceFileV1
     CreateLeRobotImportV1:
-      type: object
-      additionalProperties: false
-      required: [dataset_id, collection_task_id, robot_id, info, files]
       properties:
-        schema_version: {type: string, const: lerobot-web-import/v1, default: lerobot-web-import/v1}
-        dataset_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
-        collection_task_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
-        robot_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
-        info: {type: object, additionalProperties: true}
+        schema_version:
+          type: string
+          const: lerobot-web-import/v1
+          title: Schema Version
+          default: lerobot-web-import/v1
+        dataset_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+        collection_task_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+          - type: 'null'
+          title: Collection Task Id
+        robot_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+          - type: 'null'
+          title: Robot Id
+        source_format:
+          type: string
+          enum:
+          - LEROBOT_V3
+          - MCAP
+          - ROSBAG
+          title: Source Format
+          default: LEROBOT_V3
+        processing_mode:
+          type: string
+          enum:
+          - STORE_ONLY
+          - PROCESS
+          title: Processing Mode
+          default: STORE_ONLY
+        info:
+          additionalProperties: true
+          type: object
+          title: Info
         files:
+          items:
+            $ref: '#/components/schemas/LeRobotSourceFileV1'
           type: array
-          minItems: 1
           maxItems: 10000
-          items: {$ref: "#/components/schemas/LeRobotSourceFileV1"}
-    LeRobotAssetUploadGrantV1:
-      type: object
-      additionalProperties: false
-      required: [path]
-      properties:
-        path: {type: string}
-        multipart_upload_id:
-          anyOf: [{type: string}, {type: "null"}]
-        parts:
-          type: array
-          items: {$ref: "#/components/schemas/PartAuthorization"}
-          default: []
-        completed: {type: boolean, default: false}
-    LeRobotImportGrantV1:
-      type: object
-      additionalProperties: false
-      required: [import_id, assets]
-      properties:
-        schema_version: {type: string, const: lerobot-web-import-grant/v1, default: lerobot-web-import-grant/v1}
-        import_id: {type: string, pattern: "^[a-f0-9]{32}$"}
-        assets:
-          type: array
-          items: {$ref: "#/components/schemas/LeRobotAssetUploadGrantV1"}
-    AuthorizeLeRobotPartsV1:
-      type: object
-      additionalProperties: false
-      required: [dataset_id, path, multipart_upload_id, part_numbers]
-      properties:
-        dataset_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
-        path: {type: string, minLength: 1, maxLength: 1024}
-        multipart_upload_id: {type: string, minLength: 1, maxLength: 2048}
-        part_numbers:
-          type: array
           minItems: 1
-          maxItems: 256
-          items: {type: integer}
-    LeRobotPartGrantV1:
-      type: object
+          title: Files
       additionalProperties: false
-      required: [path, parts]
+      type: object
+      required:
+      - dataset_id
+      - files
+      title: CreateLeRobotImportV1
+    LeRobotAssetUploadGrantV1:
       properties:
-        path: {type: string}
+        path:
+          type: string
+          title: Path
+        multipart_upload_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Multipart Upload Id
         parts:
+          items:
+            $ref: '#/components/schemas/PartAuthorization'
           type: array
-          items: {$ref: "#/components/schemas/PartAuthorization"}
-        uploaded_part_numbers:
-          type: array
-          items: {type: integer, minimum: 1, maximum: 10000}
+          title: Parts
           default: []
-        completed: {type: boolean, default: false}
-    CompleteLeRobotAssetV1:
-      type: object
+        completed:
+          type: boolean
+          title: Completed
+          default: false
       additionalProperties: false
-      required: [dataset_id, path, multipart_upload_id, size, part_count]
-      properties:
-        dataset_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._-]+$"}
-        path: {type: string, minLength: 1, maxLength: 1024}
-        multipart_upload_id: {type: string, minLength: 1, maxLength: 2048}
-        size: {type: integer, exclusiveMinimum: 0, maximum: 5497558138880}
-        part_count: {type: integer, minimum: 1, maximum: 10000}
-    LeRobotAssetCompletedV1:
       type: object
-      additionalProperties: false
-      required: [path, size, parts]
+      required:
+      - path
+      title: LeRobotAssetUploadGrantV1
+    LeRobotImportGrantV1:
       properties:
-        path: {type: string}
-        size: {type: integer}
-        parts:
+        schema_version:
+          type: string
+          const: lerobot-web-import-grant/v1
+          title: Schema Version
+          default: lerobot-web-import-grant/v1
+        import_id:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+          title: Import Id
+        assets:
+          items:
+            $ref: '#/components/schemas/LeRobotAssetUploadGrantV1'
           type: array
-          items: {$ref: "#/components/schemas/CompletedPart"}
+          title: Assets
+      additionalProperties: false
+      type: object
+      required:
+      - import_id
+      - assets
+      title: LeRobotImportGrantV1
+    AuthorizeLeRobotPartsV1:
+      properties:
+        dataset_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+        path:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Path
+        multipart_upload_id:
+          type: string
+          maxLength: 2048
+          minLength: 1
+          title: Multipart Upload Id
+        part_numbers:
+          items:
+            type: integer
+          type: array
+          maxItems: 256
+          minItems: 1
+          title: Part Numbers
+      additionalProperties: false
+      type: object
+      required:
+      - dataset_id
+      - path
+      - multipart_upload_id
+      - part_numbers
+      title: AuthorizeLeRobotPartsV1
+    LeRobotPartGrantV1:
+      properties:
+        path:
+          type: string
+          title: Path
+        parts:
+          items:
+            $ref: '#/components/schemas/PartAuthorization'
+          type: array
+          title: Parts
+        uploaded_part_numbers:
+          items:
+            type: integer
+            maximum: 10000.0
+            minimum: 1.0
+          type: array
+          title: Uploaded Part Numbers
+          default: []
+        completed:
+          type: boolean
+          title: Completed
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - path
+      - parts
+      title: LeRobotPartGrantV1
+    CompleteLeRobotAssetV1:
+      properties:
+        dataset_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+        path:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Path
+        multipart_upload_id:
+          type: string
+          maxLength: 2048
+          minLength: 1
+          title: Multipart Upload Id
+        size:
+          type: integer
+          maximum: 5497558138880.0
+          exclusiveMinimum: 0.0
+          title: Size
+        part_count:
+          type: integer
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Count
+      additionalProperties: false
+      type: object
+      required:
+      - dataset_id
+      - path
+      - multipart_upload_id
+      - size
+      - part_count
+      title: CompleteLeRobotAssetV1
+    LeRobotAssetCompletedV1:
+      properties:
+        path:
+          type: string
+          title: Path
+        size:
+          type: integer
+          title: Size
+        parts:
+          items:
+            $ref: '#/components/schemas/CompletedPart'
+          type: array
+          title: Parts
+      additionalProperties: false
+      type: object
+      required:
+      - path
+      - size
+      - parts
+      title: LeRobotAssetCompletedV1
     CommitLeRobotImportV1:
-      type: object
-      additionalProperties: false
-      required: [manifest]
       properties:
-        manifest: {$ref: "#/components/schemas/CreateLeRobotImportV1"}
+        manifest:
+          $ref: '#/components/schemas/CreateLeRobotImportV1'
+      additionalProperties: false
+      type: object
+      required:
+      - manifest
+      title: CommitLeRobotImportV1
     LeRobotImportAcceptedV1:
-      type: object
-      additionalProperties: false
-      required: [import_id, episode_count, source_file_count, episode_task_count, episode_plan_key]
       properties:
-        schema_version: {type: string, const: lerobot-web-import-accepted/v1, default: lerobot-web-import-accepted/v1}
-        import_id: {type: string}
-        status: {type: string, const: EPISODES_QUEUED, default: EPISODES_QUEUED}
-        episode_count: {type: integer, minimum: 1, maximum: 10000}
-        source_file_count: {type: integer, minimum: 1, maximum: 10000}
-        episode_task_count: {type: integer, minimum: 1, maximum: 10000}
-        episode_plan_key: {type: string, minLength: 1, maxLength: 2048}
+        schema_version:
+          type: string
+          const: lerobot-web-import-accepted/v1
+          title: Schema Version
+          default: lerobot-web-import-accepted/v1
+        import_id:
+          type: string
+          title: Import Id
+        status:
+          type: string
+          enum:
+          - RAW_COMMITTED
+          - EPISODES_QUEUED
+          title: Status
+          default: RAW_COMMITTED
+        episode_count:
+          type: integer
+          maximum: 10000.0
+          minimum: 0.0
+          title: Episode Count
+        source_file_count:
+          type: integer
+          maximum: 10000.0
+          minimum: 1.0
+          title: Source File Count
+        episode_task_count:
+          type: integer
+          maximum: 10000.0
+          minimum: 0.0
+          title: Episode Task Count
+          default: 0
+        episode_plan_key:
+          anyOf:
+          - type: string
+            maxLength: 2048
+            minLength: 1
+          - type: 'null'
+          title: Episode Plan Key
+      additionalProperties: false
+      type: object
+      required:
+      - import_id
+      - episode_count
+      - source_file_count
+      title: LeRobotImportAcceptedV1
+    OriginalEpisode:
+      properties:
+        episode_index:
+          type: integer
+          title: Episode Index
+        frame_count:
+          type: integer
+          title: Frame Count
+        fps:
+          type: number
+          title: Fps
+        duration_ns:
+          type: string
+          title: Duration Ns
+        videos:
+          items:
+            $ref: '#/components/schemas/OriginalVideo'
+          type: array
+          title: Videos
+      type: object
+      required:
+      - episode_index
+      - frame_count
+      - fps
+      - duration_ns
+      - videos
+      title: OriginalEpisode
+    OriginalFile:
+      properties:
+        path:
+          type: string
+          title: Path
+        size:
+          type: integer
+          title: Size
+        sha256:
+          type: string
+          title: Sha256
+      type: object
+      required:
+      - path
+      - size
+      - sha256
+      title: OriginalFile
+    OriginalFileGrant:
+      properties:
+        path:
+          type: string
+          title: Path
+        url:
+          type: string
+          title: Url
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      type: object
+      required:
+      - path
+      - url
+      - expires_at
+      title: OriginalFileGrant
+    OriginalFilePage:
+      properties:
+        import_id:
+          type: string
+          title: Import Id
+        source_format:
+          type: string
+          title: Source Format
+        episode_count:
+          type: integer
+          title: Episode Count
+        files:
+          items:
+            $ref: '#/components/schemas/OriginalFile'
+          type: array
+          title: Files
+        total:
+          type: integer
+          title: Total
+        offset:
+          type: integer
+          title: Offset
+      type: object
+      required:
+      - import_id
+      - source_format
+      - episode_count
+      - files
+      - total
+      - offset
+      title: OriginalFilePage
+    OriginalVideo:
+      properties:
+        camera_id:
+          type: string
+          title: Camera Id
+        path:
+          type: string
+          title: Path
+        start_seconds:
+          type: number
+          title: Start Seconds
+        end_seconds:
+          type: number
+          title: End Seconds
+      type: object
+      required:
+      - camera_id
+      - path
+      - start_seconds
+      - end_seconds
+      title: OriginalVideo
+    StartStoredProcessing:
+      properties:
+        collection_task_id:
+          type: string
+          title: Collection Task Id
+        robot_id:
+          type: string
+          title: Robot Id
+      additionalProperties: false
+      type: object
+      required:
+      - collection_task_id
+      - robot_id
+      title: StartStoredProcessing

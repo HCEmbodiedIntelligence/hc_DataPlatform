@@ -9,7 +9,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager, suppress
+from contextlib import AbstractContextManager, ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -395,6 +395,7 @@ class ActivityDependencies:
     storage_lifecycle: LifecycleBatchExecutor | None = None
     workflow_jobs: WorkflowJobPersistencePort | None = None
     continuous_episode_processing: ContinuousEpisodeProcessingPort | None = None
+    lerobot_pipeline: Any | None = None
 
 
 class WorkflowPortNotConfigured(RuntimeError):
@@ -797,15 +798,22 @@ async def process_ingest_source(
             raise WorkflowPortNotConfigured(
                 "combined ingest processing requires verification.RawStreamVerificationPort"
             )
-        with projection.open_local_session(source) as session:
-            verification_report = verifier.verify_stream(
-                rollout_id=request.verification.rollout_id,
-                object_key=request.verification.object_key,
-                source_sha256=request.verification.source_sha256,
-                required_topics=set(request.verification.required_topics),
-                known_optional_topics=set(request.verification.known_optional_topics),
-                stream=session.open_reader(),
-            )
+        with ExitStack() as sessions:
+            if source.lerobot is not None:
+                pipeline = _require(_dependencies.lerobot_pipeline, "lerobot_pipeline")
+                native_session = sessions.enter_context(pipeline.open_session(source))
+                verification_report = native_session.verification_report
+                session = native_session
+            else:
+                session = sessions.enter_context(projection.open_local_session(source))
+                verification_report = verifier.verify_stream(
+                    rollout_id=request.verification.rollout_id,
+                    object_key=request.verification.object_key,
+                    source_sha256=request.verification.source_sha256,
+                    required_topics=set(request.verification.required_topics),
+                    known_optional_topics=set(request.verification.known_optional_topics),
+                    stream=session.open_reader(),
+                )
             stop_if_cancelled()
             if (
                 verification_report.rollout_id != request.verification.rollout_id
@@ -897,15 +905,18 @@ async def process_ingest_source(
                     region_code=request.alignment.region_code,
                     manifest=staged_manifest,
                 )
+            original_videos = getattr(session, "original_videos", {})
             staging = _publish_alignment_staging(
                 request.alignment,
                 staged_manifest,
                 camera_ids=tuple(
                     name
                     for name, stream in alignment_data.streams.items()
-                    if stream.kind is ModalityKind.IMAGE
+                    if stream.kind is ModalityKind.IMAGE and name not in original_videos
                 ),
             )
+            if original_videos:
+                staging = staging.model_copy(update={"original_videos": original_videos})
             catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
             current = catalog.current_version(
                 request.alignment.dataset_id,
@@ -1463,7 +1474,15 @@ async def commit_aligned_bundle(
             _dependencies.ingest_projection,
             "workflow.IngestProjectionPort",
         )
-        alignment = projection.project_alignment_metadata(source)
+        alignment = (
+            _require(_dependencies.lerobot_pipeline, "lerobot_pipeline").alignment_metadata(
+                source,
+                dataset_id=ready.dataset_id,
+                dataset_version=ready.dataset_version,
+            )
+            if source.lerobot is not None
+            else projection.project_alignment_metadata(source)
+        )
         viewer_target = _require(
             _dependencies.dataset_ingest_projection,
             "workflow.DatasetIngestProjectionPort",

@@ -74,17 +74,13 @@ export interface AuthorizedMediaDescriptor {
   readonly expiresAt: string;
   readonly kind: "rgb-video" | "depth-preview";
   readonly revoke?: () => void;
+  readonly mediaStartSeconds?: number;
+  readonly mediaEndSeconds?: number;
 }
 
 export interface ViewerMediaSource {
-  authorize(
-    signal: AbortSignal,
-    onStatus?: (status: "preparing" | "ready" | "failed") => void,
-  ): Promise<AuthorizedMediaDescriptor>;
-  refresh(
-    signal: AbortSignal,
-    onStatus?: (status: "preparing" | "ready" | "failed") => void,
-  ): Promise<AuthorizedMediaDescriptor>;
+  authorize(signal: AbortSignal): Promise<AuthorizedMediaDescriptor>;
+  refresh(signal: AbortSignal): Promise<AuthorizedMediaDescriptor>;
 }
 
 export interface StreamDescriptor {
@@ -118,6 +114,9 @@ export interface StreamDescriptor {
   /** A concise non-visual summary for Canvas/3D alternatives. */
   readonly accessibleSummary?: string;
   readonly mediaSource?: ViewerMediaSource;
+  /** Offset of this episode inside the unchanged original video shard. */
+  readonly mediaStartSeconds?: number;
+  readonly mediaEndSeconds?: number;
   readonly windowSource?: ViewerWindowSource;
 }
 

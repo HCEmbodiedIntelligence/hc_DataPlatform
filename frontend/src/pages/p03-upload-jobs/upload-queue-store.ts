@@ -1264,8 +1264,8 @@ function leRobotQueueItem(input: {
     failureMessage: null,
     requestId: null,
     createdAt: new Date().toISOString(),
-    robotId: input.binding.robotId,
-    collectionTaskId: input.binding.collectionTaskId,
+    robotId: input.binding.robotId ?? undefined,
+    collectionTaskId: input.binding.collectionTaskId ?? undefined,
   };
 }
 

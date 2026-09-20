@@ -1,8 +1,5 @@
 import type { Scope } from "../../entities/scope";
-import {
-  authorizeAlignedMedia,
-  type MediaAuthorizationStatus,
-} from "../../features/aligned-media/authorize-aligned-media";
+import { authorizeAlignedMedia } from "../../features/aligned-media/authorize-aligned-media";
 import type { ViewerMediaSource } from "../../features/viewer";
 import { getRuntimeConfig } from "../../shared/config/runtime";
 
@@ -32,10 +29,7 @@ export function createDatasetAlignedMediaSource(input: {
   readonly binding: EpisodeAlignedMediaBinding;
   readonly modality: "rgb" | "depth";
 }): ViewerMediaSource {
-  const authorize = async (
-    signal: AbortSignal,
-    onStatus?: (status: MediaAuthorizationStatus) => void,
-  ) => {
+  const authorize = async (signal: AbortSignal) => {
     const projectId = input.scope.projectId;
     if (!projectId) throw new Error("当前作用域缺少项目，无法授权媒体。");
     const descriptor = await authorizeAlignedMedia(
@@ -48,7 +42,6 @@ export function createDatasetAlignedMediaSource(input: {
         camera_id: input.binding.camera_id,
       },
       signal,
-      onStatus,
     );
     if (
       descriptor.project_id !== projectId ||
@@ -67,6 +60,8 @@ export function createDatasetAlignedMediaSource(input: {
     return {
       url: resolveAlignedMediaUrl(descriptor.media_url),
       expiresAt: descriptor.expires_at,
+      mediaStartSeconds: descriptor.timeline.original_source?.start_seconds,
+      mediaEndSeconds: descriptor.timeline.original_source?.end_seconds,
       kind,
     };
   };

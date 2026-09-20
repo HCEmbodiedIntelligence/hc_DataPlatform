@@ -388,7 +388,9 @@ export async function fetchDatasetVersions(
   return adaptVersionPage(parsed);
 }
 
-export async function publishDatasetVersion(command: PublishDatasetVersionCommand) {
+export async function publishDatasetVersion(
+  command: PublishDatasetVersionCommand,
+) {
   const endpoint = "/datasets/publications";
   const raw = await request<unknown>({
     method: "POST",
@@ -915,13 +917,28 @@ export async function resolveViewerEpisode(
   signal?: AbortSignal,
 ) {
   const bootstrap = await fetchVersionBootstrap(datasetId, versionId, signal);
-  const episodes = await fetchVersionEpisodes(
+  let episodes = await fetchVersionEpisodes(
     datasetId,
     versionId,
     { snapshotToken: bootstrap.snapshotToken, limit: 100 },
     signal,
   );
-  const episode = episodes.items.find((item) => item.episodeId === episodeId);
+  let episode = episodes.items.find((item) => item.episodeId === episodeId);
+  const visitedCursors = new Set<string>();
+  while (!episode && episodes.pageInfo.hasNextPage) {
+    const after = episodes.pageInfo.after;
+    if (!after || visitedCursors.has(after)) {
+      contractMismatch("Episode 分页未返回可继续读取的游标");
+    }
+    visitedCursors.add(after);
+    episodes = await fetchVersionEpisodes(
+      datasetId,
+      versionId,
+      { snapshotToken: bootstrap.snapshotToken, limit: 100, after },
+      signal,
+    );
+    episode = episodes.items.find((item) => item.episodeId === episodeId);
+  }
   if (!episode)
     throw createDomainError({
       code: "NOT_FOUND",

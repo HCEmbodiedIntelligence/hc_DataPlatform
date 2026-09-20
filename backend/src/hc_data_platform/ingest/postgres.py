@@ -36,6 +36,15 @@ class PostgresIngestPersistence:
             response_decoder=UploadSession.model_validate,
         )
 
+    def register_source_rollout(self, job: CollectionJob, rollout: Rollout) -> None:
+        """Register canonical lineage for an already committed native Raw source."""
+
+        def register(cursor: Any) -> None:
+            self._upsert_job(cursor, job)
+            self._upsert_rollout(cursor, rollout)
+
+        self._write(register)
+
     def register_upload(
         self,
         job: CollectionJob,

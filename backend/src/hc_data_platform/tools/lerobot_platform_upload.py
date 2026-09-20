@@ -1,4 +1,4 @@
-"""Upload a native Unitree G1 LeRobot v3 directory through the platform API."""
+"""Store an original LeRobot v3 directory through the platform API."""
 
 from __future__ import annotations
 
@@ -42,10 +42,6 @@ from .robot_ingest_upload import (
     upload_robot_ingest,
 )
 
-PROJECT_ID = "be22-hf-g1-video-20260819-02-p1"
-COLLECTION_TASK_ID = "14d16ba1-d95a-5ee3-aaa7-7b7d78091b52"
-ROBOT_ID = "robot-d1a17126-b495-59b8-bf48-0ccce0a6ffe7"
-PLATFORM_REGION_CODE = "be22-hf-g1-video-20260819-02-cn"
 TOKEN_ENV = "HC_DATA_ACCESS_TOKEN"
 ROBOT_TOKEN_ENV = "HC_ROBOT_INGEST_TOKEN"
 ORGANIZATION_ENV = "HC_ORGANIZATION_ID"
@@ -146,8 +142,8 @@ def build_native_source(
     source_dir: Path,
     *,
     dataset_id: str,
-    collection_task_id: str,
-    robot_id: str,
+    collection_task_id: str | None = None,
+    robot_id: str | None = None,
 ) -> NativeLeRobotSource:
     """Inspect one LeRobot tree while preserving every original source object."""
 
@@ -196,6 +192,7 @@ def build_native_source(
         for relative, path in files.items()
     )
     manifest = CreateLeRobotImportV1(
+        processing_mode="PROCESS" if collection_task_id and robot_id else "STORE_ONLY",
         dataset_id=dataset_id,
         collection_task_id=collection_task_id,
         robot_id=robot_id,
@@ -212,8 +209,8 @@ def upload_native_lerobot(
     project_id: str | None,
     region_code: str | None,
     dataset_id: str | None,
-    collection_task_id: str,
-    robot_id: str,
+    collection_task_id: str | None = None,
+    robot_id: str | None = None,
     api_base_url: str,
     access_token: str | None,
     robot_credential: str | None = None,
@@ -229,7 +226,7 @@ def upload_native_lerobot(
         not organization_id or not project_id or not region_code or not dataset_id
     ):
         raise ValueError(
-            "legacy LeRobot upload requires organization_id, project_id, region_code, "
+            "original LeRobot upload requires organization_id, project_id, region_code, "
             "and dataset_id"
         )
     source = build_native_source(
@@ -241,6 +238,8 @@ def upload_native_lerobot(
         robot_id=robot_id,
     )
     if robot_credential:
+        if not collection_task_id or not robot_id:
+            raise ValueError("robot-authenticated uploads require explicit task and robot IDs")
         if not capture_started_at or not capture_ended_at:
             raise ValueError(
                 "robot-authenticated LeRobot uploads require capture_started_at "
@@ -275,7 +274,7 @@ def upload_native_lerobot(
             http=http,
         )
     if not access_token:
-        raise ValueError("legacy LeRobot upload requires a user access token")
+        raise ValueError("original LeRobot upload requires a user access token")
     assert organization_id and project_id and region_code and dataset_id
     client = http or UrllibUploadHttpClient()
     root = (
@@ -454,8 +453,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-id")
     parser.add_argument("--region-code")
     parser.add_argument("--dataset-id")
-    parser.add_argument("--collection-task-id", default=COLLECTION_TASK_ID)
-    parser.add_argument("--robot-id", default=ROBOT_ID)
+    parser.add_argument("--collection-task-id", default=None)
+    parser.add_argument("--robot-id", default=None)
     parser.add_argument("--access-token-env", default=TOKEN_ENV)
     parser.add_argument("--robot-credential-env", default=ROBOT_TOKEN_ENV)
     parser.add_argument("--capture-started-at")
@@ -483,9 +482,9 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
     dataset_id = cast(str | None, args.dataset_id)
     if not robot_token:
         organization_id = organization_id or _prompt("请输入 Organization ID")
-        project_id = project_id or _prompt("请输入 Project ID", default=PROJECT_ID)
-        region_code = region_code or _prompt("请输入 Region Code", default=PLATFORM_REGION_CODE)
-        dataset_id = dataset_id or _prompt("请输入 Dataset ID", default=PROJECT_ID)
+        project_id = project_id or _prompt("请输入 Project ID")
+        region_code = region_code or _prompt("请输入 Region Code")
+        dataset_id = dataset_id or _prompt("请输入 Dataset ID")
     if not robot_token and not token:
         username = cast(str | None, args.username) or _prompt("请输入平台用户名")
         password = getpass("请输入平台密码（输入不显示）: ")
@@ -500,15 +499,18 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
     source = build_native_source(
         source_dir,
         dataset_id=dataset_id or "robot-task-resolved",
-        collection_task_id=cast(str, args.collection_task_id),
-        robot_id=cast(str, args.robot_id),
+        collection_task_id=cast(str | None, args.collection_task_id),
+        robot_id=cast(str | None, args.robot_id),
     )
     print("\n将通过平台原样上传 LeRobot Raw（不会生成 MCAP）：")
     print(f"  Project : {project_id or '由 Task 解析'}")
     print(f"  Region  : {region_code or '由 Task 解析'}")
     print(f"  Dataset : {dataset_id or '由 Task 解析'}")
-    print(f"  Task    : {args.collection_task_id}")
-    print(f"  Robot   : {args.robot_id}")
+    if robot_token:
+        print(f"  Task    : {args.collection_task_id}")
+        print(f"  Robot   : {args.robot_id}")
+    else:
+        print("  Mode    : STORE_ONLY（不自动转码、质检或标注）")
     print(f"  Episodes: {source.manifest.episode_count}")
     print(f"  Files   : {len(source.files)}")
     if robot_token:
@@ -519,8 +521,8 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
         project_id=project_id,
         region_code=region_code,
         dataset_id=dataset_id,
-        collection_task_id=cast(str, args.collection_task_id),
-        robot_id=cast(str, args.robot_id),
+        collection_task_id=cast(str | None, args.collection_task_id),
+        robot_id=cast(str | None, args.robot_id),
         api_base_url=api_base_url,
         access_token=token or None,
         robot_credential=robot_token or None,

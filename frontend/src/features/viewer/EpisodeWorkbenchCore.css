@@ -502,9 +502,11 @@
 }
 
 .viewer-joint-curves__legend {
-  display: flex;
+  display: grid;
   flex: 0 0 auto;
-  flex-wrap: wrap;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  max-height: 180px;
+  overflow: auto;
   gap: 4px 7px;
   padding: 5px 2px 3px;
   border-top: 1px solid var(--hc-color-border-subtle);
@@ -512,12 +514,11 @@
 
 .viewer-joint-curves__legend > span {
   display: grid;
-  min-width: 72px;
-  flex: 1 1 76px;
-  grid-template-columns: 11px minmax(18px, auto) minmax(0, 1fr);
+  min-width: 0;
+  grid-template-columns: 11px minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .viewer-joint-curves__legend i {
@@ -546,7 +547,7 @@
 
 .viewer-joint-curves__legend b {
   overflow: hidden;
-  font-size: 8px;
+  font-size: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -554,7 +555,7 @@
 .viewer-joint-curves__legend code {
   justify-self: end;
   color: var(--hc-color-text-muted);
-  font-size: 7px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

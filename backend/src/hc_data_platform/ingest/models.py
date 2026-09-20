@@ -159,6 +159,7 @@ class IngestProcessingMode(str, Enum):
 
     DIRECT_EPISODE = "DIRECT_EPISODE"
     CONTINUOUS_RECORDING = "CONTINUOUS_RECORDING"
+    NATIVE_LEROBOT = "NATIVE_LEROBOT"
 
 
 class DeviceCaptureEventType(str, Enum):
@@ -251,7 +252,7 @@ class ManifestFileV1(BaseModel):
     sha256: Sha256
     crc64: Crc64
     media_type: str = Field(default="application/octet-stream", min_length=1, max_length=128)
-    role: Literal["RAW_MCAP", "CAPTURE_BUNDLE", "AUXILIARY"] = "RAW_MCAP"
+    role: Literal["RAW_MCAP", "CAPTURE_BUNDLE", "RAW_LEROBOT", "AUXILIARY"] = "RAW_MCAP"
 
     @field_validator("path")
     @classmethod
@@ -377,7 +378,12 @@ class RolloutManifestV1(BaseModel):
             raise ValueError("files must not contain duplicate paths")
         raw_files = [item for item in self.files if item.role == "RAW_MCAP"]
         capture_bundles = [item for item in self.files if item.role == "CAPTURE_BUNDLE"]
-        if self.processing_mode is IngestProcessingMode.DIRECT_EPISODE:
+        if self.processing_mode is IngestProcessingMode.NATIVE_LEROBOT:
+            native_files = [item for item in self.files if item.role == "RAW_LEROBOT"]
+            if len(native_files) != 1 or raw_files or capture_bundles:
+                raise ValueError("native LeRobot requires exactly one Raw source manifest")
+            primary = native_files[0]
+        elif self.processing_mode is IngestProcessingMode.DIRECT_EPISODE:
             if len(raw_files) != 1 or capture_bundles:
                 raise ValueError("direct episode ingest requires exactly one RAW_MCAP file")
             if isinstance(self.source_recording, ContinuousCaptureSourceV1):

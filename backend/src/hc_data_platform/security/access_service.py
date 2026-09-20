@@ -8,6 +8,7 @@ import json
 import secrets
 import unicodedata
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import NoReturn, Protocol
 
@@ -28,6 +29,7 @@ from .access_models import (
     AccountProfileUpdate,
     AccountSettings,
     AvailableOrganization,
+    AvailableScope,
     CapabilityRequest,
     CapabilityRequestCreate,
     CapabilityRequestList,
@@ -82,8 +84,10 @@ class AccessService:
         abuse_protection: AbuseProtection | None = None,
         challenge_verifier: PublicAuthChallengeVerifier | None = None,
         capability_request_admission: CapabilityRequestAdmissionPolicy | None = None,
+        scope_region_resolver: Callable[[AvailableScope], tuple[str, ...]] | None = None,
     ) -> None:
         self._repository = repository
+        self._scope_region_resolver = scope_region_resolver
         self._password_hasher = password_hasher or PasswordHasher()
         self._password_policy = password_policy or PasswordPolicy()
         self._abuse_protection = abuse_protection or UnconfiguredAbuseProtection()
@@ -372,7 +376,12 @@ class AccessService:
                     principal_id=resolved.principal.principal_id
                 )
             ),
-            available_scopes=resolved.scopes,
+            available_scopes=tuple(
+                scope.model_copy(update={"region_codes": self._scope_region_resolver(scope)})
+                if self._scope_region_resolver is not None and scope.project_wide
+                else scope
+                for scope in resolved.scopes
+            ),
             platform_capabilities=resolved.platform_capabilities,
             capability_revision=resolved.capability_revision,
         )

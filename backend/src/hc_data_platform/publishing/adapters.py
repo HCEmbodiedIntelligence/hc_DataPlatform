@@ -224,8 +224,10 @@ class ApprovedAnnotationSnapshotAdapter:
         self,
         *,
         annotations: ApprovedAnnotationReadPort,
+        catalog: LanceCatalogPort | None = None,
     ) -> None:
         self._annotations = annotations
+        self._catalog = catalog
 
     def get_approved_revision(
         self,
@@ -245,7 +247,6 @@ class ApprovedAnnotationSnapshotAdapter:
         if (
             approval.project_id != project_id
             or approval.dataset_id != dataset_id
-            or approval.dataset_version != dataset_version
             or approval.rollout_id != rollout_id
         ):
             raise problem(
@@ -254,6 +255,37 @@ class ApprovedAnnotationSnapshotAdapter:
                 title="Annotation snapshot scope mismatch",
                 detail="The located annotation task belongs to another catalog target.",
             )
+        if approval.dataset_version != dataset_version:
+            # Appending another Episode advances the dataset snapshot without
+            # changing earlier Episodes. Reuse approval only for identical data.
+            unchanged = False
+            if self._catalog is not None and approval.dataset_version < dataset_version:
+                try:
+                    original = self._catalog.lineage(
+                        dataset_id,
+                        rollout_id,
+                        project_id=project_id,
+                        version=approval.dataset_version,
+                    )
+                    selected = self._catalog.lineage(
+                        dataset_id,
+                        rollout_id,
+                        project_id=project_id,
+                        version=dataset_version,
+                    )
+                    physical = {"dataset_version", "lance_version", "fragment_uri", "dataset_uri"}
+                    unchanged = original.model_dump(exclude=physical) == selected.model_dump(
+                        exclude=physical
+                    )
+                except KeyError:
+                    pass
+            if not unchanged:
+                raise problem(
+                    status=409,
+                    code="ANNOTATION_SNAPSHOT_SCOPE_MISMATCH",
+                    title="Annotation snapshot scope mismatch",
+                    detail="The approved Episode differs from the selected catalog snapshot.",
+                )
         return ApprovedAnnotationSnapshotV1(
             rollout_id=rollout_id,
             annotation_revision=approval.annotation_revision,

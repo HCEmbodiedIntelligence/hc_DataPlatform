@@ -64,11 +64,11 @@ export function adaptP06ViewerStreams(
       endNs: stream.t_end_ns,
       availability: mediaReady || dataReady ? "ready" : "missing",
       accessibleSummary: mediaReady
-        ? `${stream.channel_path} 是该 Dataset 版本的 canonical MP4；面板可见时只签发短期读取权限。`
+        ? `${stream.channel_path} 是该 Dataset 版本的就绪视频；面板可见时只签发短期读取权限。`
         : dataReady
           ? `${stream.channel_path} 是固定 Lance 版本中的受权数据流；可视化数据会在面板可见时按需读取。`
           : mediaModality
-            ? `${stream.channel_path} 尚无 READY canonical MP4，因此不会在页面打开时创建媒体任务。`
+            ? `${stream.channel_path} 尚无就绪视频，因此不会在页面打开时创建媒体任务。`
             : `${stream.channel_path} 尚未提供与固定 Lance 数据对应的可视化绑定。`,
       ...(mediaReady
         ? {

@@ -51,22 +51,30 @@ async def check_worker_pollers(
         raise RuntimeError("Temporal health service reported not serving")
 
     poller_counts: dict[str, int] = {}
-    queue_types = {
-        "workflow": TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW,
-        "activity": TaskQueueType.TASK_QUEUE_TYPE_ACTIVITY,
-    }
-    for label, queue_type in queue_types.items():
+    queues = [("activity", task_queue, TaskQueueType.TASK_QUEUE_TYPE_ACTIVITY)]
+    role = os.getenv("HC_WORKER_ROLE", "main")
+    if role != "media":
+        queues.append(("workflow", task_queue, TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW))
+    if role == "combined":
+        queues.append(
+            (
+                "media_activity",
+                os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline"),
+                TaskQueueType.TASK_QUEUE_TYPE_ACTIVITY,
+            )
+        )
+    for label, queue_name, queue_type in queues:
         response: Any = await client.workflow_service.describe_task_queue(
             DescribeTaskQueueRequest(
                 namespace=namespace,
-                task_queue=TaskQueue(name=task_queue),
+                task_queue=TaskQueue(name=queue_name),
                 task_queue_type=queue_type,
                 report_pollers=True,
             )
         )
         poller_counts[label] = len(response.pollers)
         if not response.pollers:
-            raise RuntimeError(f"Temporal task queue has no {label} poller")
+            raise RuntimeError(f"Temporal task queue {queue_name} has no {label} poller")
 
     return {
         "status": "ready",

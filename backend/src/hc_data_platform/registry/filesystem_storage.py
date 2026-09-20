@@ -278,7 +278,18 @@ class FilesystemRobotModelStorage:
             while chunk := source.read(chunk_size):
                 yield chunk
 
-    def presign_read(self, key: str, expires_seconds: int) -> str:
+    def read_range(self, key: str, start: int, end: int) -> bytes:
+        if start < 0 or end < start:
+            raise ValueError("invalid object byte range")
+        with self._object_path(key).open("rb") as source:
+            source.seek(start)
+            return source.read(end - start)
+
+    def presign_read(
+        self, key: str, expires_seconds: int, *, download_name: str | None = None
+    ) -> str:
+        # The registry content route owns attachment names from asset metadata.
+        del download_name
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
         if self.head(key) is None:

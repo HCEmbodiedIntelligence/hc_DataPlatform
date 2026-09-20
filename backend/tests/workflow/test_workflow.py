@@ -171,6 +171,7 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "PublishReconciliationWorkflow",
         "AnnotationReviewPreparationWorkflow",
         "ContinuousRecordingEpisodeWorkflow",
+        "LeRobotImportWorkflow",
         "StorageLifecycleExecutionWorkflow",
     }
     assert {item.__name__ for item in activities} == {
@@ -198,6 +199,8 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "commit_continuous_episode_bundle",
         "qc_continuous_episode",
         "update_continuous_episode_state",
+        "prepare_lerobot_episode",
+        "update_lerobot_state",
     }
     media_workflows, media_activities = discover_temporal_registrations("media")
     assert media_workflows == []

@@ -1,31 +1,29 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageStat
 
+from hc_data_platform.aligned_media.models import OriginalVideoReferenceV1
 from hc_data_platform.alignment.models import (
-    AlignedFragmentManifestV1,
     AlignmentInputV1,
-    AlignmentProfileV1,
     ModalityKind,
     ModalityStreamV1,
     TimedSampleV1,
 )
-from hc_data_platform.alignment.ports import AlignmentPort, FragmentWriterPort
 from hc_data_platform.quality.models import (
-    QcReportV1,
+    ActionObservation,
+    JointObservation,
     QualityInputV1,
-    QualityProfileV1,
-    QualityStatus,
     QualityStreamObservationV1,
 )
-from hc_data_platform.quality.ports import QualityEvaluationPort
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as source_reader
 
 from .orchestration import LeRobotEpisodeSourceRefV1
@@ -39,7 +37,9 @@ class EpisodeStream:
     source_sha256: str
     rollout_id: str
     episode: source_reader.EpisodeData
-    camera_frames: dict[str, tuple[Path, ...]]
+    layout: source_reader.SourceLayout
+    original_videos: dict[str, OriginalVideoReferenceV1]
+    camera_luma: dict[tuple[str, int], float] = field(default_factory=dict)
 
     @property
     def start_ns(self) -> int:
@@ -48,7 +48,11 @@ class EpisodeStream:
     @property
     def end_ns(self) -> int:
         period_ns = round(1_000_000_000 / self.episode.fps)
-        return self.episode.relative_timestamps_ns[-1] + period_ns
+        # Parquet float timestamps have sub-microsecond rounding noise. Preserve
+        # genuine gaps, but don't manufacture an extra aligned frame for that noise.
+        observed = self.episode.relative_timestamps_ns[-1] + period_ns
+        nominal = int(self.episode.frame_count * 1_000_000_000 / self.episode.fps)
+        return nominal if abs(observed - nominal) <= 1_000 else observed
 
     @property
     def quality_input(self) -> QualityInputV1:
@@ -58,6 +62,21 @@ class EpisodeStream:
             start_ns=self.start_ns,
             end_ns=self.end_ns,
             topic_timestamps_ns={},
+            actions=tuple(
+                ActionObservation(timestamp_ns=timestamp, values=values)
+                for timestamp, values in zip(
+                    self.episode.relative_timestamps_ns, self.episode.target_joints, strict=True
+                )
+            ),
+            joints=tuple(
+                JointObservation(
+                    timestamp_ns=timestamp,
+                    positions=dict(zip(source_reader.G1_JOINT_NAMES, values, strict=True)),
+                )
+                for timestamp, values in zip(
+                    self.episode.relative_timestamps_ns, self.episode.joints, strict=True
+                )
+            ),
         )
 
     @property
@@ -86,41 +105,83 @@ class EpisodeStream:
             },
         )
 
-    def quality_observations(self) -> Iterator[QualityStreamObservationV1]:
-        for topic, timestamp_ns, value in self._samples():
-            if topic in {camera.topic for camera in source_reader.CAMERAS}:
-                if not isinstance(value, (bytes, bytearray, memoryview)):
-                    yield QualityStreamObservationV1(
-                        topic=topic,
-                        timestamp_ns=timestamp_ns,
-                        is_camera=True,
-                        corrupt=True,
-                    )
-                    continue
-                encoded = bytes(value)
-                try:
-                    with _InMemoryImage(encoded) as image:
-                        luma = float(ImageStat.Stat(image.convert("L")).mean[0])
-                    yield QualityStreamObservationV1(
-                        topic=topic,
-                        timestamp_ns=timestamp_ns,
-                        is_camera=True,
-                        luma_mean=luma,
-                        fingerprint=hashlib.sha256(encoded).hexdigest(),
-                    )
-                except Exception:
-                    yield QualityStreamObservationV1(
-                        topic=topic,
-                        timestamp_ns=timestamp_ns,
-                        is_camera=True,
-                        corrupt=True,
-                    )
-            else:
-                yield QualityStreamObservationV1(topic=topic, timestamp_ns=timestamp_ns)
-
     def alignment_samples(self) -> Iterator[tuple[str, TimedSampleV1]]:
         for topic, timestamp_ns, value in self._samples():
             yield topic, TimedSampleV1(timestamp_ns=timestamp_ns, value=value)
+
+    def quality_observations(self) -> Iterator[QualityStreamObservationV1]:
+        """Decode one bounded gray frame at a time; never encode or save images."""
+        for camera in source_reader.CAMERAS:
+            video = self.layout.videos[camera.feature_key]
+            original = self.original_videos[camera.topic]
+            command = [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-threads",
+                "1",
+                "-ss",
+                f"{video.from_timestamp:.9f}",
+                "-i",
+                str(video.file),
+                "-map",
+                "0:v:0",
+                "-an",
+                "-sn",
+                "-threads",
+                "1",
+                "-frames:v",
+                str(self.episode.frame_count),
+                "-fps_mode",
+                "passthrough",
+                "-pix_fmt",
+                "gray",
+                "-f",
+                "rawvideo",
+                "pipe:1",
+            ]
+            with tempfile.TemporaryFile() as errors:
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
+                try:
+                    assert process.stdout is not None
+                    size = original.width * original.height
+                    if size > 32 * 1024**2:
+                        raise ValueError("video frame exceeds bounded QC decode size")
+                    for timestamp in self.episode.relative_timestamps_ns:
+                        frame = process.stdout.read(size)
+                        if len(frame) != size:
+                            yield QualityStreamObservationV1(
+                                topic=camera.topic,
+                                timestamp_ns=timestamp,
+                                is_camera=True,
+                                corrupt=True,
+                            )
+                            continue
+                        with Image.frombytes(
+                            "L", (original.width, original.height), frame
+                        ) as image:
+                            luma = float(ImageStat.Stat(image).mean[0])
+                        self.camera_luma[(camera.topic, timestamp)] = luma
+                        yield QualityStreamObservationV1(
+                            topic=camera.topic,
+                            timestamp_ns=timestamp,
+                            is_camera=True,
+                            luma_mean=luma,
+                            fingerprint=hashlib.sha256(frame).hexdigest(),
+                        )
+                    if process.wait(timeout=30) != 0:
+                        raise RuntimeError("original video decoding failed during quality checks")
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=5)
+                    if process.stdout is not None:
+                        process.stdout.close()
+        camera_topics = set(self.original_videos)
+        for topic, timestamp, _value in self._samples():
+            if topic not in camera_topics:
+                yield QualityStreamObservationV1(topic=topic, timestamp_ns=timestamp)
 
     def _samples(self) -> Iterator[tuple[str, int, object]]:
         source = {
@@ -133,8 +194,16 @@ class EpisodeStream:
         }
         for index, timestamp_ns in enumerate(self.episode.relative_timestamps_ns):
             for camera in source_reader.CAMERAS:
-                frame = self.camera_frames[camera.feature_key][index]
-                yield camera.topic, timestamp_ns, frame.read_bytes()
+                original = self.original_videos[camera.topic]
+                source_pts_ns = round(original.start_seconds * 1_000_000_000) + timestamp_ns
+                yield (
+                    camera.topic,
+                    timestamp_ns,
+                    {
+                        "source_frame_index": round(source_pts_ns * original.fps / 1_000_000_000),
+                        "source_pts_ns": source_pts_ns,
+                    },
+                )
             joint_value = {
                 "names": source_reader.G1_JOINT_NAMES,
                 "positions": self.episode.joints[index],
@@ -184,24 +253,6 @@ class EpisodeStream:
             yield source_reader.SOURCE_TOPIC, timestamp_ns, source
 
 
-class _InMemoryImage:
-    """Pillow context wrapper for in-memory JPEG bytes."""
-
-    def __init__(self, encoded: bytes) -> None:
-        from io import BytesIO
-
-        self._stream = BytesIO(encoded)
-        self._image = Image.open(self._stream)
-
-    def __enter__(self) -> Image.Image:
-        self._image.load()
-        return self._image
-
-    def __exit__(self, *_args: object) -> None:
-        self._image.close()
-        self._stream.close()
-
-
 class LeRobotAdapter:
     """Read native LeRobot Raw and expose an EpisodeStream without writing MCAP."""
 
@@ -212,6 +263,7 @@ class LeRobotAdapter:
         source: LeRobotEpisodeSourceRefV1,
         *,
         raw_manifest_sha256: str,
+        original_files: dict[str, tuple[str, int, str]],
     ) -> Iterator[EpisodeStream]:
         if len(raw_manifest_sha256) != 64 or any(
             char not in "0123456789abcdef" for char in raw_manifest_sha256
@@ -234,55 +286,44 @@ class LeRobotAdapter:
         )
         if layout.episode_metadata.get("length") != episode.frame_count:
             raise RuntimeError("LeRobot episode metadata length differs from Parquet rows")
-        with tempfile.TemporaryDirectory(prefix="hc-lerobot-adapter-") as temporary:
-            frames = source_reader.extract_camera_frames(layout, episode, Path(temporary))
-            yield EpisodeStream(
-                source=source,
-                source_sha256=raw_manifest_sha256,
-                rollout_id=(f"lerobot-{source.raw_upload_id[:16]}-ep-{source.episode_index:06d}"),
-                episode=episode,
-                camera_frames=frames,
+        originals: dict[str, OriginalVideoReferenceV1] = {}
+        for camera in source_reader.CAMERAS:
+            video = layout.videos[camera.feature_key]
+            probe = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height,codec_name,avg_frame_rate",
+                    "-of",
+                    "json",
+                    str(video.file),
+                ],
+                capture_output=True,
+                check=True,
+                timeout=30,
             )
-
-
-@dataclass(frozen=True, slots=True)
-class LeRobotEpisodeProcessingResult:
-    quality: QcReportV1
-    alignment: AlignedFragmentManifestV1 | None
-
-
-class LeRobotEpisodeProcessor:
-    """Connect a LeRobot EpisodeStream to the common QC/alignment engines."""
-
-    def __init__(self, quality: QualityEvaluationPort, alignment: AlignmentPort) -> None:
-        self._quality = quality
-        self._alignment = alignment
-
-    def process(
-        self,
-        stream: EpisodeStream,
-        *,
-        quality_profile: QualityProfileV1,
-        alignment_profile: AlignmentProfileV1,
-        writer: FragmentWriterPort,
-    ) -> LeRobotEpisodeProcessingResult:
-        quality = self._quality.evaluate_stream(
-            stream.quality_input,
-            stream.quality_observations(),
-            quality_profile,
+            info = json.loads(probe.stdout)["streams"][0]
+            key, size, sha = original_files[video.source_relative_path]
+            originals[camera.topic] = OriginalVideoReferenceV1(
+                object_key=key,
+                size_bytes=size,
+                content_sha256=sha,
+                start_seconds=video.from_timestamp,
+                end_seconds=video.to_timestamp,
+                width=info["width"],
+                height=info["height"],
+                codec=info["codec_name"],
+                fps=episode.fps,
+            )
+        yield EpisodeStream(
+            source=source,
+            source_sha256=raw_manifest_sha256,
+            rollout_id=f"lerobot-{source.raw_upload_id[:16]}-ep-{source.episode_index:06d}",
+            episode=episode,
+            layout=layout,
+            original_videos=originals,
         )
-        if quality.status is not QualityStatus.PASS:
-            return LeRobotEpisodeProcessingResult(quality=quality, alignment=None)
-        metadata = stream.alignment_input
-        aligned = self._alignment.align_stream_to_writer(
-            rollout_id=metadata.rollout_id,
-            source_sha256=metadata.source_sha256,
-            attempt_id=metadata.attempt_id,
-            start_ns=metadata.start_ns,
-            end_ns=metadata.end_ns,
-            stream_kinds={name: item.kind for name, item in metadata.streams.items()},
-            samples=stream.alignment_samples(),
-            profile=alignment_profile,
-            writer=writer,
-        )
-        return LeRobotEpisodeProcessingResult(quality=quality, alignment=aligned)

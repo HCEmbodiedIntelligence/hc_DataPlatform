@@ -54,6 +54,26 @@ DEFAULT_WORKER_READINESS_FILE = Path("/tmp/hc-runtime/worker-ready")
 logger = logging.getLogger(__name__)
 
 
+class WorkerGroup:
+    """Two task queues in one process, with independent activity concurrency."""
+
+    def __init__(self, *workers: Any) -> None:
+        self.workers = workers
+
+    async def run(self) -> None:
+        tasks = [asyncio.create_task(worker.run()) for worker in self.workers]
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def shutdown(self) -> None:
+        await asyncio.gather(*(worker.shutdown() for worker in self.workers))
+
+
 async def _worker_readiness(shutdown_requested: asyncio.Event) -> InstanceReadinessSummary:
     return InstanceReadinessSummary(status="draining" if shutdown_requested.is_set() else "ready")
 
@@ -147,7 +167,7 @@ def _load_dependency_factory(*, role: str) -> None:
 
     default_factory = (
         "hc_data_platform.runtime:media_activity_dependencies"
-        if role == "media"
+        if role in {"media", "combined"}
         else "hc_data_platform.runtime:activity_dependencies"
     )
     factory_path = os.getenv("HC_WORKFLOW_ACTIVITY_FACTORY", default_factory)
@@ -178,15 +198,23 @@ def discover_temporal_registrations(
     )
 
     from .activities import ALL_ACTIVITIES, create_aligned_media
+    from .lerobot_workflow import (
+        LeRobotImportWorkflow,
+        prepare_lerobot_episode,
+        update_lerobot_state,
+    )
     from .temporal_workflows import ALL_WORKFLOWS
 
     if role == "media":
         return [], [create_aligned_media]
 
     return [
+        LeRobotImportWorkflow,
         *ALL_WORKFLOWS,
         *ALL_STORAGE_WORKFLOWS,
     ], [
+        prepare_lerobot_episode,
+        update_lerobot_state,
         *(registered for registered in ALL_ACTIVITIES if registered is not create_aligned_media),
         *ALL_STORAGE_ACTIVITIES,
     ]
@@ -201,8 +229,8 @@ async def serve() -> None:
         raise RuntimeError("install the 'workflow' extra to run a Temporal worker") from exc
 
     role = os.getenv("HC_WORKER_ROLE", "main").strip().lower()
-    if role not in {"main", "media"}:
-        raise RuntimeError("HC_WORKER_ROLE must be main or media")
+    if role not in {"main", "media", "combined"}:
+        raise RuntimeError("HC_WORKER_ROLE must be main, media or combined")
     settings, _object_store_config_revision = load_persisted_object_store_settings(get_settings())
     object_store_configured = settings_object_store_configured(settings)
     require_durable_runtime(settings)
@@ -266,7 +294,7 @@ async def serve() -> None:
         else os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)
     )
     build_id = worker_runtime_build_id(settings)
-    worker = Worker(
+    worker: Any = Worker(
         client,
         task_queue=task_queue,
         workflows=workflows,
@@ -282,6 +310,25 @@ async def serve() -> None:
         build_id=build_id,
         use_worker_versioning=build_id is not None,
     )
+    if role == "combined":
+        media_queue = os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline")
+        if media_queue == task_queue:
+            raise RuntimeError("combined worker requires distinct main and media task queues")
+        _, media_activities = discover_temporal_registrations("media")
+        worker = WorkerGroup(
+            worker,
+            Worker(
+                client,
+                task_queue=media_queue,
+                activities=media_activities,
+                max_concurrent_activities=settings.media_max_concurrent_generations,
+                graceful_shutdown_timeout=timedelta(
+                    seconds=settings.worker_graceful_shutdown_seconds
+                ),
+                build_id=build_id,
+                use_worker_versioning=build_id is not None,
+            ),
+        )
     from hc_data_platform.aligned_media.maintenance import (
         MediaStagingSweeper,
         serve_media_maintenance,
@@ -312,24 +359,31 @@ async def serve() -> None:
         if role != "media" and object_store_configured and settings.storage_inventory_scopes
         else None
     )
+    from hc_data_platform.lerobot_imports.cache import SourceCache
+
+    source_cache_sweeper = SourceCache(
+        Path(settings.alignment_staging_root) / "lerobot-cache",
+        max_bytes=settings.lerobot_cache_max_bytes,
+        ttl_seconds=settings.lerobot_cache_ttl_hours * 3600,
+    )
     projection_staging_sweeper = (
         build_projection_staging_sweeper(settings)
-        if role == "main" and object_store_configured
+        if role != "media" and object_store_configured
         else None
     )
     aligned_media_orphan_reconciler = (
         build_aligned_media_orphan_reconciler(settings)
-        if role == "main" and object_store_configured
+        if role != "media" and object_store_configured
         else None
     )
     frame_selection_collector = (
         build_frame_selection_lifecycle_collector(settings)
-        if role == "main" and object_store_configured and settings.outbox_scopes
+        if role != "media" and object_store_configured and settings.outbox_scopes
         else None
     )
     aligned_media_version_retirement = (
         build_aligned_media_version_retirement_collector(settings)
-        if role == "main" and object_store_configured and settings.outbox_scopes
+        if role != "media" and object_store_configured and settings.outbox_scopes
         else None
     )
     staging_roots = (
@@ -410,7 +464,7 @@ async def serve() -> None:
         try:
             services: dict[str, Coroutine[Any, Any, None]] = {
                 "media-maintenance": serve_media_maintenance(
-                    scopes=settings.outbox_scopes if role == "main" else (),
+                    scopes=settings.outbox_scopes if role != "media" else (),
                     staging_sweeper=media_staging,
                     interval_seconds=settings.media_maintenance_interval_seconds,
                     interval_seconds_provider=lambda: float(
@@ -420,6 +474,7 @@ async def serve() -> None:
                         tuple(
                             sweeper.run_once
                             for sweeper in (
+                                source_cache_sweeper,
                                 projection_staging_sweeper,
                                 aligned_media_orphan_reconciler,
                             )
@@ -451,6 +506,7 @@ async def serve() -> None:
                     maintenance_gate=maintenance_gate,
                     environment_id=outbox.environment_id,
                     writer_id=outbox.writer_id,
+                    scope_provider=outbox.scope_provider,
                 )
             if inventory is not None:
                 services["storage-inventory"] = serve_inventory(

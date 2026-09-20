@@ -17,6 +17,11 @@
 `data` 扩展依赖，因为生产环境中的预览、目录和导出路由读取真实的 Lance/Arrow 数据，
 而不是使用内存中的契约替身。
 
+单机部署的 API 与 Worker 复用 `worker` 生产镜像。`HC_WORKER_ROLE=combined` 在一个进程中
+监听主任务与媒体两条队列，并分别限制并发；不启动开发热更新或测试服务。
+原始 LeRobot 视频由浏览器通过 HTTP Range 读取，质检流式解码，对齐保存原视频引用。
+部署与迁移见 [单机部署](../docs/single-server-storage.md)。
+
 BE-12 所需的 OpenTelemetry 发行包、OTLP gRPC 导出器、FastAPI/日志插桩组件和
 Prometheus 客户端均从同一个锁文件安装；领域专用的指标发送器仍归各自模块所有。
 BE-03 使用的阿里云 OSS V1 官方 SDK 固定在 `storage` 扩展依赖中，并安装到共享镜像。
@@ -34,8 +39,9 @@ uv sync --frozen --extra dev --extra database --extra workflow --extra storage -
 uv run uvicorn hc_data_platform.core.app:create_app --factory --reload
 ```
 
-当前基线的本地 Compose 不启动 MinIO；API、Worker 和 Lance 仍访问配置的阿里云 OSS Bucket。
-这正是本地服务器验证里程碑需要消除的本地验收依赖，不代表目标状态。
+开发 Compose 默认启动 MinIO；API、Worker、Lance 和视频产物均使用本机 S3 存储。
+本地显式 S3 配置优先于数据库中旧的 OSS 配置，不要求配置云凭据。
+G1 LeRobot 页面流程见 [上传指南](../docs/lerobot-platform-upload.md)。
 先在 `backend` 目录执行以下命令，把仓库根目录配置样例复制为 Compose 会读取的 `.env`，
 填入该 Bucket 的真实值后再启动本地依赖：
 
@@ -59,7 +65,7 @@ API 启动前，Compose 会在 PostgreSQL 咨询锁保护下，按顺序且仅�
 Compose 使用一个明确仅限本地的 HS256 签名密钥，以便在没有外部身份提供方时测试受保护路由。
 在所有共享环境中，都必须改用 HTTPS JWKS 端点和 RS256；该签名密钥绝不能在本地开发以外复用。
 
-### 生产对象存储与当前浏览器直传基线
+### 生产对象存储配置
 
 `HC_OBJECT_STORE_ENDPOINT` 是 API、Worker、Lance、readiness 以及所有对象读写使用的服务端
 端点；阿里云内网部署可使用与 Bucket 地域一致的 internal endpoint。
@@ -73,7 +79,7 @@ Bucket 必须预先创建。还需在 OSS 控制台为实际前端来源配置�
 开启 credentials。开发时通常需要加入 `http://127.0.0.1:8088`、`http://localhost:8088`、
 `http://127.0.0.1:5174` 和 `http://localhost:5174`。
 
-这些 OSS/CORS 要求只描述当前基线和生产部署能力，不再作为“本地服务器验证”里程碑的验收
+这些 OSS/CORS 要求只描述生产部署能力，不再作为“本地服务器验证”里程碑的验收
 条件。里程碑模式下，浏览器、API 和 Worker 都不得向 OSS 发送请求。
 
 staging/production 必须显式配置浏览器端点为 HTTPS 公网 FQDN，不能使用 localhost、loopback、

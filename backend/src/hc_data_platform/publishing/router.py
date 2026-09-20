@@ -299,8 +299,14 @@ async def _launch_export(
 def publication_preflight(
     request: PublishDatasetRequestV1,
     auth: VerifiedAuth,
+    region_code: str | None = Header(default=None, alias="X-Region-Code"),
 ) -> PublishPreflightReportV1:
-    authorize_scope(auth, request.project_id, "dataset_version.publish")
+    authorize_scope(
+        auth,
+        request.project_id,
+        "dataset_version.publish",
+        region_code=region_code,
+    )
     return _publisher.preflight(request)
 
 
@@ -308,8 +314,14 @@ def publication_preflight(
 def publish_dataset(
     request: PublishDatasetRequestV1,
     auth: VerifiedAuth,
+    region_code: str | None = Header(default=None, alias="X-Region-Code"),
 ) -> PublishedDatasetManifestV1:
-    authorize_scope(auth, request.project_id, "dataset_version.publish")
+    authorize_scope(
+        auth,
+        request.project_id,
+        "dataset_version.publish",
+        region_code=region_code,
+    )
     return _publisher.publish(request)
 
 
@@ -354,8 +366,14 @@ async def export_dataset_version(
     auth: VerifiedAuth,
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
+    region_code: str | None = Header(default=None, alias="X-Region-Code"),
 ) -> ExportJobV1:
-    authorize_scope(auth, request.project_id, "dataset_version.publish")
+    authorize_scope(
+        auth,
+        request.project_id,
+        "dataset_version.publish",
+        region_code=region_code,
+    )
     manifest = _resolve_export_manifest(
         project_id=request.project_id,
         dataset_id=dataset_id,

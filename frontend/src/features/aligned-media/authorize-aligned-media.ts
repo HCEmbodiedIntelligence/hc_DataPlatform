@@ -19,6 +19,20 @@ const timelineSchema = z
     pts_time_base_numerator: z.literal(1),
     pts_time_base_denominator: z.literal(30),
     start_timestamp_ns: z.string().regex(/^(0|[1-9][0-9]*)$/u),
+    original_source: z
+      .object({
+        object_key: z.string().min(1),
+        content_sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+        size_bytes: z.number().positive(),
+        start_seconds: z.number().nonnegative(),
+        end_seconds: z.number().positive(),
+        width: z.number().int().min(2),
+        height: z.number().int().min(2),
+        codec: z.string().min(1),
+        fps: z.number().positive(),
+      })
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -48,33 +62,24 @@ const authorizationSchema = z
   .strict();
 
 export type AlignedMediaAuthorization = z.infer<typeof authorizationSchema>;
-export type MediaAuthorizationStatus = "preparing" | "ready" | "failed";
 
 /** Authorize one ingest-created READY MP4. This operation never creates or polls a job. */
 export async function authorizeAlignedMedia(
   scope: Scope,
   selector: AlignedMediaSelector,
   signal: AbortSignal,
-  onStatus?: (status: MediaAuthorizationStatus) => void,
 ): Promise<AlignedMediaAuthorization> {
-  try {
-    const endpoint = "/aligned-media/authorize";
-    const authorization = parseWire(
-      authorizationSchema,
-      await request<unknown>({
-        method: "POST",
-        path: endpoint,
-        scope,
-        cache: "no-store",
-        signal,
-        body: selector,
-      }),
-      { endpoint },
-    );
-    onStatus?.("ready");
-    return authorization;
-  } catch (error) {
-    onStatus?.("failed");
-    throw error;
-  }
+  const endpoint = "/aligned-media/authorize";
+  return parseWire(
+    authorizationSchema,
+    await request<unknown>({
+      method: "POST",
+      path: endpoint,
+      scope,
+      cache: "no-store",
+      signal,
+      body: selector,
+    }),
+    { endpoint },
+  );
 }

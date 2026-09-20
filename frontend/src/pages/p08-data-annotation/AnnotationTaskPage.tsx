@@ -502,7 +502,7 @@ function RuntimeAnnotationTaskPage({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  if (capabilities.loading || query.isLoading)
+  if (capabilities.loading)
     return <WorkbenchState kind="first-loading" />;
   if (capabilities.failed || !canRead) {
     return (
@@ -541,6 +541,7 @@ function RuntimeAnnotationTaskPage({
       />
     );
   }
+  if (query.isPending) return <WorkbenchState kind="first-loading" />;
   if (!bundle) {
     return (
       <WorkbenchState

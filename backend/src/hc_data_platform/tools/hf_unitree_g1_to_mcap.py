@@ -424,7 +424,15 @@ def acquire_source(
         local_source=local_source,
     )
     info = cast(dict[str, Any], json.loads(info_path.read_text(encoding="utf-8")))
-    episode_rows = _parquet_rows(episode_meta_path)
+    episode_rows = (
+        [
+            row
+            for path in sorted((root / "meta/episodes").glob("chunk-*/*.parquet"))
+            for row in _parquet_rows(path)
+        ]
+        if local_source
+        else _parquet_rows(episode_meta_path)
+    )
     matches = [row for row in episode_rows if int(row["episode_index"]) == episode_index]
     if len(matches) != 1:
         raise RuntimeError(f"episode {episode_index} is not uniquely declared in metadata")
@@ -529,7 +537,6 @@ def _finite_vector(value: object, *, field: str, width: int) -> tuple[float, ...
 
 def load_episode_data(data_file: Path, episode_index: int, fps: float) -> EpisodeData:
     try:
-        import pyarrow.compute as pc
         import pyarrow.parquet as pq
     except ImportError as exc:
         raise RuntimeError("install the backend data extra for Parquet support") from exc
@@ -545,8 +552,12 @@ def load_episode_data(data_file: Path, episode_index: int, fps: float) -> Episod
         "action.hand_cmd",
         "action.robot_q_desired",
     ]
-    table = pq.read_table(data_file, columns=columns)
-    table = table.filter(pc.equal(table["episode_index"], episode_index))
+    table = pq.read_table(
+        data_file,
+        columns=columns,
+        filters=[("episode_index", "=", episode_index)],
+        use_threads=False,
+    )
     rows = cast(list[dict[str, Any]], table.to_pylist())
     rows.sort(key=lambda row: int(row["frame_index"]))
     if not rows:
@@ -633,6 +644,8 @@ def _extract_frames(video: VideoSlice, *, frame_count: int, destination: Path) -
         "-an",
         "-frames:v",
         str(frame_count),
+        "-threads",
+        "2",
         "-fps_mode",
         "passthrough",
         "-q:v",

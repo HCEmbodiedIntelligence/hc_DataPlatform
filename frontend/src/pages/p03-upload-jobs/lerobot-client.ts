@@ -16,9 +16,10 @@ export const LEROBOT_PROXY_RETRY_BASE_DELAY_MS = 500;
 const LEROBOT_PROXY_RETRY_MAX_DELAY_MS = 30_000;
 
 export interface LeRobotTargetBinding {
+  readonly processingMode?: "STORE_ONLY" | "PROCESS";
   readonly datasetId: string;
-  readonly collectionTaskId: string;
-  readonly robotId: string;
+  readonly collectionTaskId: string | null;
+  readonly robotId: string | null;
 }
 
 interface LeRobotSourceDeclaration {
@@ -31,8 +32,10 @@ interface LeRobotSourceDeclaration {
 export interface LeRobotImportManifest {
   readonly schema_version: "lerobot-web-import/v1";
   readonly dataset_id: string;
-  readonly collection_task_id: string;
-  readonly robot_id: string;
+  readonly collection_task_id: string | null;
+  readonly robot_id: string | null;
+  readonly source_format: "LEROBOT_V3" | "MCAP" | "ROSBAG";
+  readonly processing_mode: "STORE_ONLY" | "PROCESS";
   readonly info: Readonly<Record<string, unknown>>;
   readonly files: readonly LeRobotSourceDeclaration[];
 }
@@ -59,11 +62,11 @@ interface ImportGrant {
 export interface LeRobotImportAccepted {
   readonly schema_version: "lerobot-web-import-accepted/v1";
   readonly import_id: string;
-  readonly status: "EPISODES_QUEUED";
+  readonly status: "RAW_COMMITTED" | "EPISODES_QUEUED";
   readonly episode_count: number;
   readonly source_file_count: number;
   readonly episode_task_count: number;
-  readonly episode_plan_key: string;
+  readonly episode_plan_key: string | null;
 }
 
 export interface LeRobotUploadProgress {
@@ -119,6 +122,19 @@ export function buildLeRobotImportManifest(
     dataset_id: binding.datasetId,
     collection_task_id: binding.collectionTaskId,
     robot_id: binding.robotId,
+    source_format:
+      selection.format === "lerobot"
+        ? "LEROBOT_V3"
+        : selection.format === "mcap"
+          ? "MCAP"
+          : "ROSBAG",
+    processing_mode:
+      binding.processingMode ??
+      (binding.collectionTaskId &&
+      binding.robotId &&
+      selection.format === "lerobot"
+        ? "PROCESS"
+        : "STORE_ONLY"),
     info: selection.info,
     files: selection.sourceFiles.map(({ file, path }) => ({
       path,
@@ -364,7 +380,10 @@ export async function uploadNativeLeRobot(
         cache: "no-store",
         signal: options.signal,
       });
-  let transferMode = resume?.transferMode ?? "direct";
+  let transferMode: "direct" | "proxy" =
+    import.meta.env.VITE_LEROBOT_UPLOAD_TRANSPORT === "proxy"
+      ? "proxy"
+      : (resume?.transferMode ?? "direct");
   const uploadResume = (): LeRobotUploadResume => ({
     importId: grant.import_id,
     assets: grant.assets,

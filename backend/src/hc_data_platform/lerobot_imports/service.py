@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import timedelta
 from typing import BinaryIO, cast
 
@@ -13,14 +14,17 @@ from hc_data_platform.ingest.raw_sources import (
     CommittedRawSourceGraph,
     InMemoryRawSourceRepository,
     RawIngestJob,
+    RawIngestJobStatus,
     RawIngestJobType,
     RawSource,
     RawSourceEpisode,
     RawSourceFormat,
+    RawSourceProcessingStatus,
     RawSourceRepositoryPort,
 )
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
+from hc_data_platform.workflow.models import workflow_id
 
 from .models import (
     AuthorizeLeRobotPartsV1,
@@ -44,12 +48,18 @@ class LeRobotWebUploadService:
         *,
         raw_sources: RawSourceRepositoryPort | None = None,
         authorization_ttl_seconds: int = 900,
+        target_validator: Callable[[str, str, str, CreateLeRobotImportV1], None] | None = None,
     ) -> None:
         if not 1 <= authorization_ttl_seconds <= 3600:
             raise ValueError("authorization TTL must be between 1 and 3600 seconds")
         self._storage = storage
         self.raw_sources = raw_sources or InMemoryRawSourceRepository()
         self._authorization_ttl = authorization_ttl_seconds
+        self._target_validator = target_validator
+
+    @property
+    def storage(self) -> ObjectStoragePort:
+        return self._storage
 
     def begin(
         self,
@@ -66,6 +76,8 @@ class LeRobotWebUploadService:
             project_id=project_id,
             region_code=region_code,
         )
+        if self._target_validator is not None:
+            self._target_validator(organization_id, project_id, region_code, manifest)
         manifest_document = _canonical_manifest(manifest)
         import_id = _stable_import_id(
             organization_id=organization_id,
@@ -469,7 +481,11 @@ class LeRobotWebUploadService:
             )
             total_size += source.size
 
-        info_body = b"".join(self._storage.read_chunks(f"{root}/source/meta/info.json"))
+        info_body = (
+            read_bounded(self._storage, f"{root}/source/meta/info.json", 1024 * 1024)
+            if command.manifest.source_format == "LEROBOT_V3"
+            else b"{}"
+        )
         if len(info_body) > 1024 * 1024:
             raise problem(
                 status=422,
@@ -496,7 +512,8 @@ class LeRobotWebUploadService:
                     "inspected metadata."
                 ),
             )
-        dataset_digest = _raw_content_digest(raw_files)
+        dataset_digest = _raw_content_digest(raw_files, command.manifest.source_format)
+        source_version = str(command.manifest.info.get("codebase_version", "native"))
         raw_manifest = {
             "schema_version": "raw-upload-manifest/v1",
             "upload_id": import_id,
@@ -506,8 +523,9 @@ class LeRobotWebUploadService:
             "dataset_id": command.manifest.dataset_id,
             "collection_task_id": command.manifest.collection_task_id,
             "robot_id": command.manifest.robot_id,
-            "source_format": "lerobot",
-            "source_format_version": "v3.0",
+            "source_format": command.manifest.source_format,
+            "source_format_version": source_version,
+            "processing_mode": command.manifest.processing_mode,
             "content_hash": dataset_digest,
             "storage_mode": "native_objects",
             "source_prefix": f"{root}/source",
@@ -521,6 +539,46 @@ class LeRobotWebUploadService:
         # Raw source objects are immutable and byte-identical to the browser files.
         # Platform metadata is stored beside, never inside, the original source tree.
         self._storage.put_json(f"{root}/manifest.json", raw_manifest, if_none_match=False)
+        if command.manifest.processing_mode == "STORE_ONLY":
+            self.raw_sources.register_committed(
+                CommittedRawSourceGraph(
+                    source=RawSource(
+                        raw_source_id=import_id,
+                        organization_id=organization_id,
+                        project_id=project_id,
+                        region_code=region_code,
+                        upload_id=import_id,
+                        dataset_id=command.manifest.dataset_id,
+                        collection_task_id=command.manifest.collection_task_id,
+                        robot_id=command.manifest.robot_id,
+                        source_format=RawSourceFormat(command.manifest.source_format),
+                        source_format_version=source_version,
+                        manifest_key=f"{root}/manifest.json",
+                        storage_prefix=f"{root}/source",
+                        content_hash=dataset_digest,
+                        file_count=len(raw_files),
+                        total_bytes=total_size,
+                        processing_status=RawSourceProcessingStatus.NOT_REQUESTED,
+                    ),
+                    job=RawIngestJob(
+                        organization_id=organization_id,
+                        project_id=project_id,
+                        region_code=region_code,
+                        raw_source_id=import_id,
+                        job_id=f"raw-storage-{import_id}",
+                        job_type=RawIngestJobType.RAW_STORAGE,
+                        adapter_name="raw_storage",
+                        status=RawIngestJobStatus.SUCCEEDED,
+                    ),
+                )
+            )
+            return LeRobotImportAcceptedV1(
+                import_id=import_id,
+                episode_count=command.manifest.episode_count,
+                source_file_count=len(raw_files),
+            )
+        assert command.manifest.collection_task_id is not None
+        assert command.manifest.robot_id is not None
         episode_plan = build_import_plan(
             organization_id=organization_id,
             project_id=project_id,
@@ -588,6 +646,9 @@ class LeRobotWebUploadService:
                     project_id=project_id,
                     region_code=region_code,
                     job_id=f"lerobot-import-{import_id}",
+                    workflow_id=workflow_id(
+                        "lerobot-import", project_id, f"{region_code}/{import_id}"
+                    ),
                     raw_source_id=import_id,
                     job_type=RawIngestJobType.LEROBOT_IMPORT,
                     adapter_name="lerobot_v3",
@@ -598,6 +659,7 @@ class LeRobotWebUploadService:
         )
         return LeRobotImportAcceptedV1(
             import_id=import_id,
+            status="EPISODES_QUEUED",
             episode_count=command.manifest.episode_count,
             source_file_count=len(command.manifest.files),
             episode_task_count=len(episode_plan.episode_tasks),
@@ -622,7 +684,7 @@ class LeRobotWebUploadService:
                 detail="No upload session exists for this project and dataset scope.",
             )
         try:
-            value = json.loads(b"".join(self._storage.read_chunks(key)))
+            value = json.loads(read_bounded(self._storage, key, limit=8 * 1024**2))
         except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RuntimeError("stored LeRobot upload session is unreadable") from exc
         if not isinstance(value, dict) or any(
@@ -729,12 +791,12 @@ class LeRobotWebUploadService:
             )
 
 
-def _raw_content_digest(files: list[dict[str, object]]) -> str:
+def _raw_content_digest(files: list[dict[str, object]], source_format: str = "LEROBOT_V3") -> str:
     """Hash the verified file inventory, including each object's SHA-256."""
 
     payload = {
-        "source_format": "lerobot_v3",
-        "source_format_version": "v3.0",
+        "source_format": source_format.lower(),
+        "source_format_version": "v3.0" if source_format == "LEROBOT_V3" else "native",
         "files": sorted(files, key=lambda item: str(item["path"])),
     }
     body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -759,12 +821,46 @@ def _stable_import_id(
 ) -> str:
     """Bind one immutable browser import to one scoped Dataset on the server."""
 
-    identity = {
+    identity: dict[str, object] = {
         "schema_version": "lerobot-web-upload-identity/v1",
         "organization_id": organization_id,
         "project_id": project_id,
         "region_code": region_code,
         "dataset_id": manifest.dataset_id,
     }
+    if manifest.processing_mode == "STORE_ONLY":
+        # Multiple sources may belong to one dataset. Identical selections still
+        # resume the same upload; unrelated files never collide with its session.
+        identity["manifest"] = _canonical_manifest(manifest)
     body = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(body).hexdigest()[:32]
+
+
+def read_bounded(storage: ObjectStoragePort, key: str, limit: int) -> bytes:
+    """Reject oversized metadata before allocating its complete contents."""
+    metadata = storage.head(key)
+    if metadata is None:
+        raise problem(
+            status=404,
+            code="RAW_OBJECT_NOT_FOUND",
+            title="原文件不存在",
+            detail="当前原始数据中没有该对象。",
+        )
+    if metadata.size > limit:
+        raise problem(
+            status=413,
+            code="RAW_METADATA_TOO_LARGE",
+            title="元数据超过读取上限",
+            detail="请下载原文件查看；平台不会全量载入此元数据。",
+        )
+    output = bytearray()
+    for chunk in storage.read_chunks(key, chunk_size=min(limit + 1, 1024 * 1024)):
+        if len(output) + len(chunk) > limit:
+            raise problem(
+                status=413,
+                code="RAW_METADATA_TOO_LARGE",
+                title="元数据超过读取上限",
+                detail="请下载原文件查看；平台不会全量载入此元数据。",
+            )
+        output.extend(chunk)
+    return bytes(output)

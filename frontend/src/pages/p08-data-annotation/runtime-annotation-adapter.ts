@@ -1,9 +1,6 @@
 import type { Scope } from "../../entities/scope";
 import { z } from "zod";
-import {
-  authorizeAlignedMedia,
-  type MediaAuthorizationStatus,
-} from "../../features/aligned-media/authorize-aligned-media";
+import { authorizeAlignedMedia } from "../../features/aligned-media/authorize-aligned-media";
 import {
   createDomainError,
   isDomainError,
@@ -56,10 +53,7 @@ const annotationStatusWireSchema = z.enum([
   "NEEDS_REVISION",
   "REJECTED",
 ]);
-const revisionOriginWireSchema = z.enum([
-  "ANNOTATION",
-  "ANNOTATION_RESTORE",
-]);
+const revisionOriginWireSchema = z.enum(["ANNOTATION", "ANNOTATION_RESTORE"]);
 const annotationRevisionThreadWireSchema = z
   .object({
     task_id: z.string().min(1),
@@ -830,10 +824,7 @@ function createAlignedMediaSource(
   task: RuntimeAnnotationTask,
   cameraId: string,
 ): ViewerMediaSource {
-  const authorize = async (
-    signal: AbortSignal,
-    onStatus?: (status: MediaAuthorizationStatus) => void,
-  ) => {
+  const authorize = async (signal: AbortSignal) => {
     const selector = {
       camera_id: cameraId,
       dataset_id: task.dataset_id,
@@ -845,7 +836,6 @@ function createAlignedMediaSource(
       scopeForRequest(scope),
       selector,
       signal,
-      onStatus,
     );
     if (
       descriptor.project_id !== task.project_id ||
@@ -859,6 +849,8 @@ function createAlignedMediaSource(
     return {
       url: resolveAlignedMediaUrl(descriptor.media_url),
       expiresAt: descriptor.expires_at,
+      mediaStartSeconds: descriptor.timeline.original_source?.start_seconds,
+      mediaEndSeconds: descriptor.timeline.original_source?.end_seconds,
       kind: "rgb-video" as const,
     };
   };

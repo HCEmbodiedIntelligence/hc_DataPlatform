@@ -24,6 +24,7 @@ import {
   House,
   ListChecks,
   LogOut,
+  MapPin,
   Menu as MenuIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -400,12 +401,12 @@ interface ScopeSelectorsProps {
 const joinProjectOption = "__join_project__";
 
 function toScope(option: ScopeOption): Scope {
+  const regionCode =
+    option.regionCode ?? (option.projectWide ? "global" : undefined);
   return {
     organizationId: option.organizationId,
     ...(option.projectId === undefined ? {} : { projectId: option.projectId }),
-    ...(option.regionCode === undefined
-      ? {}
-      : { regionCode: option.regionCode }),
+    ...(regionCode === undefined ? {} : { regionCode }),
   };
 }
 
@@ -465,6 +466,17 @@ function ScopeSelectors({
       option.organizationId === scope?.organizationId &&
       option.projectId === scope?.projectId,
   );
+  const businessRegions = [
+    ...new Set(
+      scopeOptions.flatMap((option) =>
+        option.organizationId === scope?.organizationId &&
+        option.projectId === scope?.projectId &&
+        option.regionCode
+          ? [option.regionCode]
+          : [],
+      ),
+    ),
+  ];
   const storageOptions =
     storageLocation?.configured === true
       ? [
@@ -515,16 +527,38 @@ function ScopeSelectors({
                 (option) => projectOptionKey(option) === selectedProjectKey,
               );
             if (candidate !== undefined) {
-              const next = toScope(candidate);
-              onSelect(
-                next.regionCode === undefined && scope?.regionCode
-                  ? { ...next, regionCode: scope.regionCode }
-                  : next,
-              );
+              onSelect(toScope(candidate));
             }
           }}
         />
       </label>
+      {businessRegions.length > 1 && scope ? (
+        <label
+          className={`${styles.scopeField} ${styles.businessRegionField}`}
+          data-scope-slot="business-region"
+        >
+          <MapPin
+            aria-hidden="true"
+            className={styles.scopeIcon}
+            size={17}
+            strokeWidth={1.8}
+          />
+          <span className={styles.srOnly}>当前数据区域</span>
+          <Select
+            aria-label="当前数据区域"
+            disabled={disabled}
+            virtual={false}
+            value={scope.regionCode}
+            options={businessRegions.map((region) => ({
+              value: region,
+              label: region,
+            }))}
+            onChange={(regionCode: string) =>
+              onSelect({ ...scope, regionCode })
+            }
+          />
+        </label>
+      ) : null}
       <label
         className={`${styles.scopeField} ${styles.regionField}`}
         data-scope-slot="storage"
@@ -551,16 +585,10 @@ function ScopeSelectors({
           }
           showSearch
           value={
-            storageLocation?.configured === true &&
-            scope?.regionCode === storageLocation.region
+            storageLocation?.configured === true
               ? storageLocationKey(storageLocation)
               : undefined
           }
-          onChange={() => {
-            if (scope && storageLocation?.configured === true) {
-              onSelect({ ...scope, regionCode: storageLocation.region });
-            }
-          }}
           onOpenChange={(open) => {
             if (open) onStorageOpen();
           }}

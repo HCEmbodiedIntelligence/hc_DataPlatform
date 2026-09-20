@@ -115,6 +115,27 @@ class S3AlignedMediaArtifactStore:
         publication_token: str,
         encoded: EncodedAlignedMediaV1,
     ) -> PublishedAlignedMediaV1:
+        if encoded.original_source is not None:
+            original = encoded.original_source
+            head = self._client.head_object(Bucket=self._bucket, Key=original.object_key)
+            if head.get("ContentLength") != original.size_bytes:
+                raise RuntimeError("original video is missing or its size changed")
+            publication, bodies = _reference_publication(
+                self._prefix,
+                scope,
+                request,
+                artifact_key,
+                publication_token,
+                encoded,
+            )
+            for item in publication.objects:
+                self._put_bytes_immutable(
+                    item.key,
+                    bodies[item.key],
+                    sha256=item.sha256,
+                    media_type=item.media_type,
+                )
+            return publication
         source = _source_file(encoded)
         object_prefix = _prefix(self._prefix, scope, request, artifact_key)
         media_key = f"{object_prefix}/media.mp4"
@@ -292,6 +313,28 @@ class LocalAlignedMediaArtifactStore:
         publication_token: str,
         encoded: EncodedAlignedMediaV1,
     ) -> PublishedAlignedMediaV1:
+        if encoded.original_source is not None:
+            original = encoded.original_source
+            if self._path(original.object_key).stat().st_size != original.size_bytes:
+                raise RuntimeError("original video size changed")
+            publication, bodies = _reference_publication(
+                "aligned-media",
+                scope,
+                request,
+                artifact_key,
+                publication_token,
+                encoded,
+            )
+            for item in publication.objects:
+                target = self._path(item.key)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    if target.read_bytes() != bodies[item.key]:
+                        raise RuntimeError("immutable original-video reference collision")
+                else:
+                    with target.open("xb") as output:
+                        output.write(bodies[item.key])
+            return publication
         source = _source_file(encoded)
         object_prefix = _prefix("aligned-media", scope, request, artifact_key)
         target_dir = self._path(object_prefix)
@@ -392,6 +435,53 @@ class LocalAlignedMediaArtifactStore:
         if self._root not in candidate.parents and candidate != self._root:
             raise FileNotFoundError
         return candidate
+
+
+def _reference_publication(
+    prefix: str,
+    scope: AlignedMediaScopeV1,
+    request: AlignedMediaGenerationRequestV1,
+    artifact_key: str,
+    publication_token: str,
+    encoded: EncodedAlignedMediaV1,
+) -> tuple[PublishedAlignedMediaV1, dict[str, bytes]]:
+    original = encoded.original_source
+    assert original is not None
+    object_prefix = _prefix(prefix, scope, request, artifact_key)
+    reference_key = f"{object_prefix}/source-reference.json"
+    body = original.model_dump_json().encode()
+    reference = AlignedMediaObjectV1(
+        key=reference_key,
+        size=len(body),
+        sha256=hashlib.sha256(body).hexdigest(),
+        media_type="application/vnd.hc.original-video-reference+json",
+    )
+    intent_key = f"{object_prefix}/{_INTENT_NAME}"
+    intent = _intent_body(
+        scope=scope,
+        request=request,
+        artifact_key=artifact_key,
+        publication_token=publication_token,
+        object_prefix=object_prefix,
+        media=reference,
+    )
+    # Only these small derivative objects belong to this publication. Including
+    # Raw here would allow rollback, retirement or orphan cleanup to delete it.
+    intent_object = AlignedMediaObjectV1(
+        key=intent_key,
+        size=len(intent),
+        sha256=hashlib.sha256(intent).hexdigest(),
+        media_type="application/json",
+    )
+    return PublishedAlignedMediaV1(
+        object_prefix=object_prefix,
+        media_object_key=original.object_key,
+        objects=(intent_object, reference),
+        total_bytes=len(body) + len(intent),
+        content_sha256=original.content_sha256,
+        publication_token=publication_token,
+        intent_key=intent_key,
+    ), {intent_key: intent, reference_key: body}
 
 
 def _intent_body(

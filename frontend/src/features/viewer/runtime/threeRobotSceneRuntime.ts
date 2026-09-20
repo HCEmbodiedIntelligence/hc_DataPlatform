@@ -24,7 +24,7 @@ import type { RobotSceneRuntime } from '../RobotSceneCore';
 import type { RobotSceneAssets } from '../lazy-three-loader';
 
 type JointDrivenRobot = Object3D & {
-  setJointValue(name: string, value: number): void;
+  setJointValue(name: string, value: number): boolean;
 };
 
 function normalizedAssetPath(value: string): string {
@@ -90,11 +90,13 @@ export function applyRobotJointFrame(
   robot: Pick<JointDrivenRobot, 'setJointValue'>,
   jointFrame: Readonly<Record<string, number>>,
   jointMapping: Readonly<Record<string, string>> = {},
-): void {
+): boolean {
+  let changed = false;
   for (const [sourceJoint, value] of Object.entries(jointFrame)) {
     if (!Number.isFinite(value)) continue;
-    robot.setJointValue(jointMapping[sourceJoint] ?? sourceJoint, value);
+    changed = robot.setJointValue(jointMapping[sourceJoint] ?? sourceJoint, value) || changed;
   }
+  return changed;
 }
 
 export interface RobotGroundPlacement {
@@ -476,7 +478,8 @@ export async function createThreeRobotSceneRuntime(
           .then((jointFrame) => {
             if (disposed || request.signal.aborted || generation !== jointRequestGeneration)
               return;
-            applyRobotJointFrame(robot, jointFrame, assets.jointMapping);
+            canvas.dataset.jointFrameNs = ns;
+            if (!applyRobotJointFrame(robot, jointFrame, assets.jointMapping)) return;
             const stabilization = stabilizeRobotOnGroundPlane(
               robot,
               groundPlaneAnchors,
@@ -495,12 +498,10 @@ export async function createThreeRobotSceneRuntime(
             );
             if (stabilization)
               canvas.dataset.groundContactAnchor = stabilization.anchorName;
-            canvas.dataset.jointFrameNs = ns;
             scheduleRender();
           })
           .catch(() => undefined);
       }
-      scheduleRender();
     },
     restoreContext() {
       if (disposed) return Promise.resolve(false);

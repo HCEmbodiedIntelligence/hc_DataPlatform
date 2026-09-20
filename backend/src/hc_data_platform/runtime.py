@@ -6,7 +6,7 @@ import importlib
 import json
 import os
 import socket
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from itertools import islice
@@ -155,6 +155,7 @@ from hc_data_platform.lance_catalog.router import (
     configure_lance_catalog_audit_recorder,
 )
 from hc_data_platform.lance_catalog.service import LanceCatalogService, compute_fragment_hash
+from hc_data_platform.lerobot_imports.discovery import NativeManifestDiscovery
 from hc_data_platform.manual_cleaning.models import (
     ManualIssueDraftMutationRecord,
     ManualIssueMutationRecord,
@@ -255,6 +256,7 @@ from hc_data_platform.workflow.models import (
     AlignmentActivityInput,
     CatalogFragmentPayloadV1,
 )
+from hc_data_platform.workflow.outbox_worker import local_project_scopes
 from hc_data_platform.workflow.postgres import PostgresWorkflowJobRepository
 from hc_data_platform.workflow.projection_store import (
     S3ProjectionArtifactStore,
@@ -394,12 +396,23 @@ class _ArrowStepSequence(Sequence[StepRecord]):
                             and isinstance(value.value.get("source_pts_ns"), int)
                         )
                         reference_valid = value.valid and frame_source
+                        original = artifact.timeline.original_source if artifact.timeline else None
+                        source_frame = value.value if isinstance(value.value, dict) else {}
                         values[name] = AlignedMediaFrameReferenceV1(
                             camera_id=name,
                             artifact_id=artifact.artifact_id,
                             object_key=artifact.media_object_key,
-                            frame_index=int(indexes[row_index].as_py()),
-                            pts=int(indexes[row_index].as_py()),
+                            frame_index=(
+                                int(source_frame.get("source_frame_index", 0))
+                                if original
+                                else int(indexes[row_index].as_py())
+                            ),
+                            pts=(
+                                int(source_frame.get("source_pts_ns", 0))
+                                if original
+                                else int(indexes[row_index].as_py())
+                            ),
+                            pts_time_base_denominator=1_000_000_000 if original else 30,
                             timestamp_ns=int(timestamps[row_index].as_py()),
                             valid=reference_valid,
                             placeholder=not reference_valid,
@@ -497,6 +510,7 @@ class WorkerOutboxRuntime:
     maintenance_gate: MaintenanceWriteGate
     environment_id: str
     writer_id: str
+    scope_provider: Callable[[], tuple[str, ...]] | None = None
 
 
 def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
@@ -641,6 +655,7 @@ def build_runtime(
     challenge_verifier = challenge_verifier_from_settings(resolved)
     access = AccessService(
         access_repository,
+        scope_region_resolver=access_repository.available_scope_regions,
         password_hasher=password_hasher,
         password_policy=password_policy,
         abuse_protection=abuse_protection,
@@ -691,7 +706,11 @@ def build_runtime(
         raw_sources=PostgresRawSourceRepository(connection_factory),
         authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
         cursor_secret=resolved.cursor_secret,
-        alternate_manifest_discovery=PostgresContinuousEpisodeManifestDiscovery(connection_factory),
+        alternate_manifest_discovery=NativeManifestDiscovery(
+            connection_factory,
+            object_storage,
+            PostgresContinuousEpisodeManifestDiscovery(connection_factory),
+        ),
     )
     continuous_recording_repository = PostgresContinuousRecordingRepository(connection_factory)
     continuous_recordings = ContinuousRecordingService(
@@ -886,6 +905,7 @@ def build_runtime(
         ),
         annotations=ApprovedAnnotationSnapshotAdapter(
             annotations=annotation,
+            catalog=catalog,
         ),
         repository=PostgresPublishedManifestRepository(connection_factory),
         artifact_sink=artifact_sink,
@@ -896,7 +916,20 @@ def build_runtime(
         exporters=(LanceSnapshotExporter(), LeRobotV3Exporter()),
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
-    dataset_ingest_projection = PostgresDatasetIngestProjector(connection_factory)
+    dataset_ingest_projection = PostgresDatasetIngestProjector(
+        connection_factory, native_manifest_parser=ObjectStorageManifestParser(object_storage)
+    )
+    from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
+
+    lerobot_pipeline = LeRobotPipeline(
+        connection_factory,
+        object_storage,
+        catalog,
+        shared_staging_store,
+        Path(resolved.alignment_staging_root) / "lerobot-cache",
+        cache_max_bytes=resolved.lerobot_cache_max_bytes,
+        cache_ttl_hours=resolved.lerobot_cache_ttl_hours,
+    )
     continuous_episode_processing = ContinuousEpisodeProcessingService(
         connection_factory=connection_factory,
         repository=continuous_recording_repository,
@@ -952,6 +985,7 @@ def build_runtime(
         ),
         workflow_jobs=PostgresWorkflowJobRepository(connection_factory),
         continuous_episode_processing=continuous_episode_processing,
+        lerobot_pipeline=lerobot_pipeline,
     )
     return RuntimeComponents(
         access=access,
@@ -1156,7 +1190,7 @@ def build_worker_outbox(
     """Compose durable upload-event delivery for explicitly authorized scopes."""
 
     resolved = settings or get_settings()
-    if not resolved.outbox_scopes:
+    if not resolved.outbox_scopes and not resolved.local_scope_discovery:
         return None
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
     s3_client, s3_presign_client, object_storage = _object_store_clients(resolved)
@@ -1249,9 +1283,14 @@ def build_worker_outbox(
         sampling_repository=PostgresAutoAnnotationSamplingRepository(connection_factory),
         require_sampling_manifest=True,
     )
+    from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
+
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
+            LeRobotImportOutboxHandler.EVENT_TYPE: LeRobotImportOutboxHandler(
+                launcher, PostgresRawSourceRepository(connection_factory)
+            ),
             handler.EVENT_TYPE: handler,
             continuous_episode_handler.EVENT_TYPE: continuous_episode_handler,
             storage_handler.EVENT_TYPE: storage_handler,
@@ -1272,4 +1311,7 @@ def build_worker_outbox(
         maintenance_gate=PostgresMaintenanceRepository.from_dsn(resolved.postgres_dsn),
         environment_id=resolved.platform_environment_id,
         writer_id=f"outbox:{worker_instance_id or resolved.instance_id or socket.gethostname()}",
+        scope_provider=(lambda: local_project_scopes(resolved.postgres_dsn))
+        if resolved.local_scope_discovery
+        else None,
     )

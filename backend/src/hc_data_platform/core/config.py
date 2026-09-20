@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     worker_max_concurrent_activities: int = Field(default=2, ge=1, le=128)
     worker_max_cached_workflows: int = Field(default=16, ge=1, le=10_000)
     outbox_scopes: tuple[str, ...] = ()
+    local_scope_discovery: bool = False
     outbox_poll_interval_seconds: float = Field(default=0.5, gt=0, le=60)
     outbox_batch_size: int = Field(default=32, ge=1, le=1000)
     storage_inventory_scopes: tuple[str, ...] = ()
@@ -73,6 +74,8 @@ class Settings(BaseSettings):
     ingest_part_authorization_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
+    lerobot_cache_max_bytes: int = Field(default=5 * 1024**3, ge=1024**2)
+    lerobot_cache_ttl_hours: int = Field(default=24, ge=1, le=168)
     aligned_media_staging_root: str = "/tmp/hc-data/aligned-media"
     robot_model_asset_root: str = "/tmp/hc-data/robot-model-upload-staging"
     media_temporal_task_queue: str = Field(default="hc-media-pipeline", min_length=1)
@@ -576,6 +579,8 @@ class Settings(BaseSettings):
                 )
             if self.environment in {"staging", "production"} and not self.auth_smtp_starttls:
                 raise ValueError("HC_AUTH_SMTP_STARTTLS must be enabled outside local/test")
+        if self.local_scope_discovery and self.environment != "local":
+            raise ValueError("HC_LOCAL_SCOPE_DISCOVERY is restricted to HC_ENVIRONMENT=local")
         if self.object_store_provider == "oss":
             # An OSS deployment may be configured after boot from the platform page.
             # Canonical non-secret sentinels keep dependency composition lazy while

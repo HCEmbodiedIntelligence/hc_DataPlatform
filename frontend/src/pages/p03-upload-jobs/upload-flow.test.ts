@@ -231,21 +231,20 @@ describe("P03 local upload selection", () => {
     );
   });
 
-  it("rejects an unsupported LeRobot profile instead of asking for a platform Manifest", async () => {
+  it("accepts other robots without requiring the G1 processing profile", async () => {
     const selection = await inspectLocalUploadSelection({
       ...baseInput,
       files: lerobotFiles(lerobotInfo({ robot_type: "unknown_robot" })),
     });
 
-    expect(selection.problems).toContainEqual(
-      expect.objectContaining({ code: "LEROBOT_PROFILE_UNSUPPORTED" }),
-    );
+    expect(selection.problems).toEqual([]);
+    expect(selection.lerobot?.format).toBe("lerobot");
     expect(selection.problems).not.toContainEqual(
       expect.objectContaining({ code: "MANIFEST_FILE_MISSING" }),
     );
   });
 
-  it("labels enumeration failures as local problems without contacting a server", async () => {
+  it("recognizes standalone MCAP as original storage without a manifest", async () => {
     const selection = await inspectLocalUploadSelection({
       ...baseInput,
       files: [
@@ -258,9 +257,8 @@ describe("P03 local upload selection", () => {
     });
 
     expect(selection.units).toEqual([]);
-    expect(selection.problems).toContainEqual(
-      expect.objectContaining({ code: "MANIFEST_FILE_MISSING" }),
-    );
+    expect(selection.problems).toEqual([]);
+    expect(selection.lerobot?.format).toBe("mcap");
   });
 
   it("rejects malformed Manifest JSON during the browser-local check", async () => {

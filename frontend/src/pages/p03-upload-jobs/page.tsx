@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Modal } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -16,6 +16,7 @@ import {
 import { UploadPrecheckPanel } from "./components/UploadPrecheckPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
 import { UploadRecordsPanel } from "./components/UploadRecordsPanel";
+import { LeRobotProcessingRecords } from "./components/LeRobotProcessingRecords";
 import { RobotUploadRecordsPanel } from "./components/RobotUploadRecordsPanel";
 import {
   listFormalUploadSessions,
@@ -77,6 +78,7 @@ function folderNameFromFiles(files: readonly File[]): string {
 }
 
 export default function UploadJobsPage() {
+  const queryClient = useQueryClient();
   const scopeSnapshot = useIngestScope();
   const scope = useMemo(
     () => (scopeSnapshot ? { ...scopeSnapshot } : null),
@@ -289,7 +291,9 @@ export default function UploadJobsPage() {
           scope,
           selection: confirmedSelection.lerobot,
           binding: lerobotBinding,
-        });
+        }).then(() =>
+          queryClient.invalidateQueries({ queryKey: ["native-processing"] }),
+        );
         return;
       }
       if (
@@ -376,6 +380,7 @@ export default function UploadJobsPage() {
       }
     },
     [
+      queryClient,
       beginPreparedUpload,
       canManage,
       online,
@@ -655,6 +660,13 @@ export default function UploadJobsPage() {
         </section>
       )}
 
+      {scope && canRead ? (
+        <LeRobotProcessingRecords
+          key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}
+          scope={scope}
+          canManage={canManage}
+        />
+      ) : null}
       <Modal
         cancelText="暂不上传"
         okText="前往账户设置"

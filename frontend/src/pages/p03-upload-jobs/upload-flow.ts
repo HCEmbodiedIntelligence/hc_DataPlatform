@@ -4,6 +4,7 @@ import type { BrowserSelectionMode } from "./components/UploadMethodPanel";
 import {
   discoverFolderUploadBundles,
   detectLeRobotFolder,
+  detectOriginalCapture,
   findManifestFiles,
   findRawPackageFile,
   LocalManifestError,
@@ -185,10 +186,13 @@ export async function inspectLocalUploadSelection(
 
   if (
     input.sourceType === "BROWSER_MULTIPART" &&
-    input.browserSelectionMode === "folder"
+    input.browserSelectionMode !== "package"
   ) {
     try {
       lerobot = await detectLeRobotFolder(input.files);
+      if (!lerobot && manifestFiles.length === 0) {
+        lerobot = detectOriginalCapture(input.files);
+      }
     } catch (error) {
       lerobotInspectionFailed = true;
       problems.push(
@@ -202,6 +206,20 @@ export async function inspectLocalUploadSelection(
         ),
       );
     }
+  }
+
+  if (
+    input.browserSelectionMode === "raw" &&
+    manifestFiles.length === 0 &&
+    !lerobot &&
+    !lerobotInspectionFailed
+  ) {
+    problems.push(
+      problem(
+        "RAW_FORMAT_UNSUPPORTED",
+        "请选择 MCAP、ROS bag 或包含 meta/info.json 的 LeRobot v3 数据目录。",
+      ),
+    );
   }
 
   if (manifestFiles.length === 0 && !lerobot && !lerobotInspectionFailed) {

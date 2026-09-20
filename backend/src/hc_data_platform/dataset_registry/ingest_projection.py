@@ -156,8 +156,11 @@ class _ProjectionFacts:
 class PostgresDatasetIngestProjector:
     """Publish one all-or-nothing, idempotent Dataset/Version/Episode view."""
 
-    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+    def __init__(
+        self, connection_factory: Callable[[], Any], *, native_manifest_parser: Any = None
+    ) -> None:
         self._connection_factory = connection_factory
+        self._native_manifest_parser = native_manifest_parser
 
     def project(
         self,
@@ -232,13 +235,43 @@ class PostgresDatasetIngestProjector:
                 if existing is not None:
                     connection.commit()
                     return existing
-                preflight = self._preflight(cursor, source)
+                preflight = (
+                    self._native_manifest_parser.parse(source.manifest_key)
+                    if source.lerobot is not None and self._native_manifest_parser is not None
+                    else self._preflight(cursor, source)
+                )
+                if (
+                    preflight.manifest.project_id != source.project_id
+                    or preflight.manifest.rollout_id != source.rollout_id
+                    or preflight.manifest.data_package_id != source.data_package_id
+                    or preflight.manifest.sha256 != source.source_sha256
+                    or preflight.manifest_fingerprint != source.manifest_fingerprint
+                ):
+                    raise DatasetIngestProjectionConflict("manifest lineage differs from source")
+                source_size = preflight.total_file_size
+                if source.lerobot is not None:
+                    cursor.execute(
+                        """SELECT total_bytes FROM ingest.raw_sources
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND raw_source_id=%s AND manifest_key=%s""",
+                        (
+                            source.organization_id,
+                            source.project_id,
+                            source.region_code,
+                            source.lerobot.raw_upload_id,
+                            source.object_key,
+                        ),
+                    )
+                    raw_size = cursor.fetchone()
+                    if raw_size is None:
+                        raise DatasetIngestProjectionConflict("native Raw source is missing")
+                    source_size = int(raw_size[0])
                 facts = _ProjectionFacts(
                     collection_task_id=preflight.manifest.task_id,
                     robot_id=preflight.manifest.robot_id,
                     started_at=preflight.manifest.start_time,
                     camera_topics=frozenset(camera.topic for camera in preflight.manifest.cameras),
-                    source_size_bytes=preflight.total_file_size,
+                    source_size_bytes=source_size,
                     upload_id=source.session_id,
                 )
                 self._assert_task_dataset(
@@ -758,14 +791,22 @@ class PostgresDatasetIngestProjector:
             verified_object_set_hash=source.source_sha256,
             registered_at=version.created_at,
         )
-        for item in self._source_provenance(
+        provenance_items = self._source_provenance(
             cursor,
             scope=scope,
             dataset_id=target.dataset_id,
             dataset_version=ready.dataset_version,
             current=provenance,
-        ):
+        )
+        for item in provenance_items:
             self._put_provenance(cursor, item)
+        source_increment = facts.source_size_bytes
+        if (
+            isinstance(source, IngestProjectionSourceV1)
+            and source.lerobot is not None
+            and sum(item.upload_id == facts.upload_id for item in provenance_items) > 1
+        ):
+            source_increment = 0  # All Episodes reference the same immutable Raw folder.
         source_bytes = (
             self._source_bytes(
                 cursor,
@@ -773,7 +814,7 @@ class PostgresDatasetIngestProjector:
                 target.dataset_id,
                 ready.dataset_version,
             )
-            + facts.source_size_bytes
+            + source_increment
         )
         capacity = DatasetPageVersionCapacityFacts(
             scope=scope,

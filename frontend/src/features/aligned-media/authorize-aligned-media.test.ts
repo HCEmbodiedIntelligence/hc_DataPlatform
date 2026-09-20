@@ -52,18 +52,11 @@ afterEach(() => vi.clearAllMocks());
 describe("aligned media authorization", () => {
   it("performs exactly one stateless authorization request and never polls", async () => {
     requestMock.mockResolvedValue(authorization() as never);
-    const statuses: string[] = [];
 
     await expect(
-      authorizeAlignedMedia(
-        scope,
-        selector,
-        new AbortController().signal,
-        (status) => statuses.push(status),
-      ),
+      authorizeAlignedMedia(scope, selector, new AbortController().signal),
     ).resolves.toMatchObject({ media_url: expect.stringContaining(".mp4") });
 
-    expect(statuses).toEqual(["ready"]);
     expect(requestMock).toHaveBeenCalledTimes(1);
     expect(requestMock).toHaveBeenCalledWith(
       expect.objectContaining({

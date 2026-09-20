@@ -1,0 +1,448 @@
+{
+  "job": [
+    "SUCCEEDED",
+    null
+  ],
+  "episodes": [
+    [
+      0,
+      "READY",
+      90,
+      3
+    ],
+    [
+      1,
+      "READY",
+      90,
+      4
+    ]
+  ],
+  "quality": [
+    [
+      "lerobot-1d91264e1e9ea5c3-ep-000000",
+      "PASS"
+    ],
+    [
+      "lerobot-1d91264e1e9ea5c3-ep-000001",
+      "PASS"
+    ]
+  ],
+  "media": [
+    {
+      "artifact_id": "df23f100-0b46-40d4-ab45-3fbf203f0fb7",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-000.mp4",
+      "index_bytes": 4407,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fhead_stereo_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/27585f10c3502ff40d70a626e343dc7640fba3ed57405d6e904fb6ff6c07c138/publication-intent.json",
+          "etag": null,
+          "size": 4018,
+          "sha256": "7a64a8a1e6d1af7b18a3c420714e8f87cbdbafae336ba478ce9e8c83c8dd0a64",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fhead_stereo_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/27585f10c3502ff40d70a626e343dc7640fba3ed57405d6e904fb6ff6c07c138/source-reference.json",
+          "etag": null,
+          "size": 389,
+          "sha256": "0e454ab91b472fee829484ecaabdf5aeff0376344a8f250d31ab8e612219fd96",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-000.mp4",
+          "size_bytes": 1562367,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "5b8da6a98545381f412019ddc320e494e25f301d708d9ec3dd13ff768600b46e"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "20a7bde3-4e6e-428f-97d3-b188ae71f5a9",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-000.mp4",
+      "index_bytes": 4411,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fhead_stereo_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/4c1b174ba11d9dabc4c000778a14df24fcea2739ae9066ac6057eaf98ca1c4b1/publication-intent.json",
+          "etag": null,
+          "size": 4021,
+          "sha256": "c46d782745ce496073d5364946ea2c07d2399a317841721f4410fff6eee29b63",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fhead_stereo_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/4c1b174ba11d9dabc4c000778a14df24fcea2739ae9066ac6057eaf98ca1c4b1/source-reference.json",
+          "etag": null,
+          "size": 390,
+          "sha256": "3d02f4cbb70670c777b3059b63b6cf667eba0d2e0c310eb4f586481c79153a4d",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-000.mp4",
+          "size_bytes": 2076055,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "ae5f953d7cd23a99adb4704016cf2386ac3247ac13ae704d465a039641a86271"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "d29c22ba-ccdd-4121-aa15-0281cc527962",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-000.mp4",
+      "index_bytes": 4383,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fwrist_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/f0ce35b755c8a31c74b7bafaf4f1fcaa9c5d24a66127b4ae82ce1383e26ef0ca/publication-intent.json",
+          "etag": null,
+          "size": 4000,
+          "sha256": "06fd7866d05f8423a2b96f5e3e1799f02707919db424935d200a937fe09008aa",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fwrist_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/f0ce35b755c8a31c74b7bafaf4f1fcaa9c5d24a66127b4ae82ce1383e26ef0ca/source-reference.json",
+          "etag": null,
+          "size": 383,
+          "sha256": "f499582f998af4973c342cc80b92c821a27afec84b493a718f0c63eda5a9ca66",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-000.mp4",
+          "size_bytes": 1218219,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "510ce3c9ba0fe4d53309eff823708d9a715dc299dd3a44c4ac000c587d77925d"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "0d619682-e5ff-41f5-961f-ea5432c08549",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-000.mp4",
+      "index_bytes": 4387,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fwrist_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/0cfbbfde1e197807bd980cd2f318e10bc7eebbf25291be4a4c143be0bd4f03d9/publication-intent.json",
+          "etag": null,
+          "size": 4003,
+          "sha256": "d70b6d351f4aca4aeaf0247a1cb630ebb2b1974f9cad6484e28478e29dcf3b7d",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/3/rollouts/lerobot-1d91264e1e9ea5c3-ep-000000/cameras/%2Fcamera%2Fwrist_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/0cfbbfde1e197807bd980cd2f318e10bc7eebbf25291be4a4c143be0bd4f03d9/source-reference.json",
+          "etag": null,
+          "size": 384,
+          "sha256": "d6eeb2254101143a40b87b72e67eb49921394b7f5567a84199f0fb4492421500",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-000.mp4",
+          "size_bytes": 1303199,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "e70dd65ec2320fac73c730373993a09693262acc0e608a4c4420c367a3892c94"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "b9c246b2-b685-4fe8-a356-a5d88e253989",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-001.mp4",
+      "index_bytes": 4407,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fhead_stereo_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/d59a1f974d453ac6818423fb35dc5049355a4d821ca1ebf862b0a9c375ec0e86/publication-intent.json",
+          "etag": null,
+          "size": 4018,
+          "sha256": "4b62fdaeb35d4f45fc0e9117ee48cd2eae3c1479a1ec507f7ac34c52dac5f351",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fhead_stereo_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/d59a1f974d453ac6818423fb35dc5049355a4d821ca1ebf862b0a9c375ec0e86/source-reference.json",
+          "etag": null,
+          "size": 389,
+          "sha256": "2af24598b931aadbcd0197293b01193509aac36d09e1e6c8e5007da0d661914d",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-001.mp4",
+          "size_bytes": 1632789,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "2388324445f2fc835f7aac3bd14e952202ffff2d4cbeffef2f99e226251d6269"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "ac7727dc-05e1-4482-8828-fa344866dd83",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-001.mp4",
+      "index_bytes": 4411,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fhead_stereo_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/a235195253e80ff529a7cbaa387b7e25024bd5888217fc43bf32c82bfa2e7af8/publication-intent.json",
+          "etag": null,
+          "size": 4021,
+          "sha256": "97422a336ffbd225094befc00754e592a2d08329b4b96774212d78cb15dd01e9",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fhead_stereo_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/a235195253e80ff529a7cbaa387b7e25024bd5888217fc43bf32c82bfa2e7af8/source-reference.json",
+          "etag": null,
+          "size": 390,
+          "sha256": "dbfdbb46f5399b7ca534522eba720015633b399f9facb17ab0056b19782719e6",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-001.mp4",
+          "size_bytes": 2099997,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "4fba1a6705592c0b6d98a45be288018c73c998ba4082efe46dfd87ecbc416a8e"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "d6824a10-5c67-424a-ae9a-c84df6845794",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-001.mp4",
+      "index_bytes": 4383,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fwrist_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/302c9dc9e48b269eb2a04f7d56a6012dac7e342d23b650de82cab549e1553699/publication-intent.json",
+          "etag": null,
+          "size": 4000,
+          "sha256": "3e2409837e43e586c8ef2558b0b6b4a4fba42aad587ba42497136eb335edea26",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fwrist_left%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/302c9dc9e48b269eb2a04f7d56a6012dac7e342d23b650de82cab549e1553699/source-reference.json",
+          "etag": null,
+          "size": 383,
+          "sha256": "67bcda1ce06f4312a828951242c7e2c9abc02599b211ceb0476dffa12cbaab9a",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-001.mp4",
+          "size_bytes": 1415412,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "e2b5acf8e9e36ed2f7f00d9c46edb1bfa0774019d64d7cc0d0e74c193e58fb37"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    },
+    {
+      "artifact_id": "90665dc3-47c7-4125-86fc-94e1f6dbd20c",
+      "profile": "original-video-reference-v1",
+      "raw_video_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-001.mp4",
+      "index_bytes": 4387,
+      "owned_objects": [
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fwrist_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/7c35318f4c272182f79d89d9c8530c6645e6aded051f99185b9359ac2c5aa3c2/publication-intent.json",
+          "etag": null,
+          "size": 4003,
+          "sha256": "e9f981961d08e0de114b99199b8c93c6133b4d83c6def534b739a22738ae1ff8",
+          "media_type": "application/json"
+        },
+        {
+          "key": "aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/4/rollouts/lerobot-1d91264e1e9ea5c3-ep-000001/cameras/%2Fcamera%2Fwrist_right%2Fimage/alignment/native-lerobot-v3%2F1%3Anative-g1-v3-30hz-v1/profiles/original-video-reference-v1/7c35318f4c272182f79d89d9c8530c6645e6aded051f99185b9359ac2c5aa3c2/source-reference.json",
+          "etag": null,
+          "size": 384,
+          "sha256": "1ab54b824774f87ed260056ae672f9a8b7cd70653f86f600b409070690f3eb8c",
+          "media_type": "application/vnd.hc.original-video-reference+json"
+        }
+      ],
+      "timeline": {
+        "fps": 30,
+        "first_step": 0,
+        "frame_count": 90,
+        "original_source": {
+          "fps": 30.0,
+          "codec": "h264",
+          "width": 640,
+          "height": 480,
+          "object_key": "raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-001.mp4",
+          "size_bytes": 1440877,
+          "end_seconds": 3.0,
+          "start_seconds": 0.0,
+          "content_sha256": "6684e927c5ca2a5615a3aa90c49cc9cdf99439aab273903e60b98e0743dd44d9"
+        },
+        "start_timestamp_ns": "0",
+        "pts_time_base_numerator": 1,
+        "pts_time_base_denominator": 30
+      }
+    }
+  ],
+  "annotation_tasks": [
+    [
+      "397af8f8-ee8b-5113-bec2-007a1e887b3d",
+      "DRAFT",
+      "lerobot-1d91264e1e9ea5c3-ep-000000"
+    ],
+    [
+      "6a6cebe8-f5e6-5b55-b91d-49e3b8100539",
+      "DRAFT",
+      "lerobot-1d91264e1e9ea5c3-ep-000001"
+    ]
+  ],
+  "dispatch_events": 1,
+  "reject_change_content_hash": true,
+  "reject_change_robot_id": true,
+  "raw_manifest_still_unbound": true,
+  "original_file_count": 12,
+  "original_bytes": 12873766,
+  "import_id": "1d91264e1e9ea5c3957911bbacac7635",
+  "actual_g1_second_episode_qc": {
+    "episode_index": 1,
+    "frames": 994,
+    "originals": {
+      "/camera/head_stereo_left/image": {
+        "object_key": "raw/1/dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31/111653fda01a001e19f47693b33ef947/source/videos/observation.images.head_stereo_left/chunk-000/file-000.mp4",
+        "content_sha256": "78f1a56cc7e88d5a5a614227600e03a46635009ac778de4f5038c28eaeebd981",
+        "size_bytes": 203295861,
+        "start_seconds": 31.933333333333334,
+        "end_seconds": 65.06666666666666,
+        "width": 640,
+        "height": 480,
+        "codec": "av1",
+        "fps": 30.0
+      },
+      "/camera/head_stereo_right/image": {
+        "object_key": "raw/1/dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31/111653fda01a001e19f47693b33ef947/source/videos/observation.images.head_stereo_right/chunk-000/file-000.mp4",
+        "content_sha256": "9d5ee72846e5faf86dca17d414d95d1f46665afd03f0dfc28edd96a08512d2f1",
+        "size_bytes": 205509915,
+        "start_seconds": 31.933333333333334,
+        "end_seconds": 65.06666666666666,
+        "width": 640,
+        "height": 480,
+        "codec": "av1",
+        "fps": 30.0
+      },
+      "/camera/wrist_left/image": {
+        "object_key": "raw/1/dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31/111653fda01a001e19f47693b33ef947/source/videos/observation.images.wrist_left/chunk-000/file-000.mp4",
+        "content_sha256": "1b693e42f95272d1a8690a3beea3af1fccbea209a486a02a179d0cde6034699f",
+        "size_bytes": 197909129,
+        "start_seconds": 31.933333333333334,
+        "end_seconds": 65.06666666666666,
+        "width": 640,
+        "height": 480,
+        "codec": "av1",
+        "fps": 30.0
+      },
+      "/camera/wrist_right/image": {
+        "object_key": "raw/1/dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31/111653fda01a001e19f47693b33ef947/source/videos/observation.images.wrist_right/chunk-000/file-000.mp4",
+        "content_sha256": "a897dfd98b816de3a87c4fae6be268bc18293631897b2ad55705b2a05e547fa8",
+        "size_bytes": 200000508,
+        "start_seconds": 31.933333333333334,
+        "end_seconds": 65.06666666666666,
+        "width": 640,
+        "height": 480,
+        "codec": "av1",
+        "fps": 30.0
+      }
+    },
+    "quality_observations": {
+      "/camera/head_stereo_left/image": 994,
+      "/camera/head_stereo_right/image": 994,
+      "/camera/wrist_left/image": 994,
+      "/camera/wrist_right/image": 994,
+      "/humanoid/observation/state": 994,
+      "/robot/joint_states": 994,
+      "/humanoid/action": 994,
+      "/robot/end_effector/state": 994,
+      "/robot/end_effector/action": 994,
+      "/robot/dex1/raw_state": 994,
+      "/robot/dex1/raw_command": 994,
+      "/robot/base_pose": 994,
+      "/robot/action/base_target": 994,
+      "/metadata/source": 994
+    },
+    "corrupt_observations": 0,
+    "elapsed_seconds": 6.577,
+    "jpeg_files_created": 0
+  }
+}

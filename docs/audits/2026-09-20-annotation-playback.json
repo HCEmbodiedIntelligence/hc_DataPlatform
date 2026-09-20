@@ -1,0 +1,392 @@
+{
+  "page": "new annotation task",
+  "url": "http://127.0.0.1:8088/annotations/tasks/397af8f8-ee8b-5113-bec2-007a1e887b3d",
+  "api_errors": [],
+  "video_count": 4,
+  "playback": {
+    "before": [
+      {
+        "time": 0,
+        "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-000.mp4",
+        "ready": 4
+      },
+      {
+        "time": 0,
+        "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-000.mp4",
+        "ready": 4
+      },
+      {
+        "time": 0,
+        "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-000.mp4",
+        "ready": 4
+      },
+      {
+        "time": 0,
+        "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-000.mp4",
+        "ready": 4
+      }
+    ],
+    "after": [
+      {
+        "time": 2.434122,
+        "paused": false,
+        "ready": 4,
+        "total": 80,
+        "dropped": 10
+      },
+      {
+        "time": 2.434079,
+        "paused": false,
+        "ready": 4,
+        "total": 80,
+        "dropped": 10
+      },
+      {
+        "time": 2.434024,
+        "paused": false,
+        "ready": 4,
+        "total": 79,
+        "dropped": 9
+      },
+      {
+        "time": 2.434354,
+        "paused": false,
+        "ready": 4,
+        "total": 79,
+        "dropped": 8
+      }
+    ]
+  },
+  "has_90_step_baseline": true,
+  "has_robot_urdf": true,
+  "historical_annotation": {
+    "url": "http://127.0.0.1:8088/annotations/tasks/3c095c3c-baab-5f0a-b266-f7389961d351",
+    "errors": [],
+    "video_count": 4,
+    "playback": {
+      "before": [
+        {
+          "time": 0,
+          "src": "/hc-data-local/aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/1/rollouts/lerobot-9d8bc5c5de15de3c-ep-000000/cameras/%252Fcamera%252Fhead_stereo_left%252Fimage/alignment/native-lerobot-v3%252F1%253Anative-g1-v3-30hz-v1/profiles/canonical-h264-crf20-v1/67c3aa44954d20bc03d38d01a008237b8b11357a2b8559136343a3bc2e38944b/media.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "src": "/hc-data-local/aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/1/rollouts/lerobot-9d8bc5c5de15de3c-ep-000000/cameras/%252Fcamera%252Fhead_stereo_right%252Fimage/alignment/native-lerobot-v3%252F1%253Anative-g1-v3-30hz-v1/profiles/canonical-h264-crf20-v1/da025a499f9ec69dbd930b95679b093d03423844bf9bc8643cde7e484b66d576/media.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "src": "/hc-data-local/aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/1/rollouts/lerobot-9d8bc5c5de15de3c-ep-000000/cameras/%252Fcamera%252Fwrist_left%252Fimage/alignment/native-lerobot-v3%252F1%253Anative-g1-v3-30hz-v1/profiles/canonical-h264-crf20-v1/ffb6ffb72616894596de56afed01c416a076df5706f4112f4f8b529f48c1f65b/media.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "src": "/hc-data-local/aligned-media/organizations/local-g1-check-a100a021/projects/local-g1-check-a100a021/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/1/rollouts/lerobot-9d8bc5c5de15de3c-ep-000000/cameras/%252Fcamera%252Fwrist_right%252Fimage/alignment/native-lerobot-v3%252F1%253Anative-g1-v3-30hz-v1/profiles/canonical-h264-crf20-v1/b5cffc0df3d9df2a6fac84c0ea50e7174eeabbec8438911ba5acd17c7fe379d5/media.mp4",
+          "ready": 4
+        }
+      ],
+      "after": [
+        {
+          "time": 2.444793,
+          "paused": false,
+          "ready": 4,
+          "total": 80,
+          "dropped": 9
+        },
+        {
+          "time": 2.44471,
+          "paused": false,
+          "ready": 4,
+          "total": 80,
+          "dropped": 9
+        },
+        {
+          "time": 2.44468,
+          "paused": false,
+          "ready": 4,
+          "total": 80,
+          "dropped": 9
+        },
+        {
+          "time": 2.445127,
+          "paused": false,
+          "ready": 4,
+          "total": 80,
+          "dropped": 9
+        }
+      ]
+    }
+  },
+  "warm_second_episode": {
+    "url": "http://127.0.0.1:8088/annotations/tasks/6a6cebe8-f5e6-5b55-b91d-49e3b8100539",
+    "errors": [],
+    "video_count": 4,
+    "playback": {
+      "before": [
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-001.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-001.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-001.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-001.mp4",
+          "ready": 4
+        }
+      ],
+      "after": [
+        {
+          "time": 2.376128,
+          "paused": false,
+          "ready": 4,
+          "total": 77,
+          "dropped": 5
+        },
+        {
+          "time": 2.376014,
+          "paused": false,
+          "ready": 4,
+          "total": 77,
+          "dropped": 5
+        },
+        {
+          "time": 2.375962,
+          "paused": false,
+          "ready": 4,
+          "total": 77,
+          "dropped": 5
+        },
+        {
+          "time": 2.376191,
+          "paused": false,
+          "ready": 4,
+          "total": 77,
+          "dropped": 5
+        }
+      ]
+    }
+  },
+  "readonly_viewer_before_render_cleanup": {
+    "url": "http://127.0.0.1:8088/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/version_lance_3/episodes/episode_f292b284a15a4bd56c871adfd24104c6/view",
+    "errors": [],
+    "video_count": 4,
+    "playback": {
+      "before": [
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-000.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-000.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-000.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-000.mp4",
+          "ready": 4
+        }
+      ],
+      "after": [
+        {
+          "time": 0,
+          "paused": true,
+          "ready": 0,
+          "total": 0,
+          "dropped": 0
+        },
+        {
+          "time": 0,
+          "paused": true,
+          "ready": 0,
+          "total": 0,
+          "dropped": 0
+        },
+        {
+          "time": 0,
+          "paused": true,
+          "ready": 0,
+          "total": 0,
+          "dropped": 0
+        },
+        {
+          "time": 0,
+          "paused": true,
+          "ready": 0,
+          "total": 0,
+          "dropped": 0
+        }
+      ]
+    },
+    "note": "Playwright scrolled the offscreen playback control into view; the visibility observer released the video resources. The final readonly_viewer sample keeps video panels in view."
+  },
+  "after_render_cleanup": {
+    "url": "http://127.0.0.1:8088/annotations/tasks/6a6cebe8-f5e6-5b55-b91d-49e3b8100539",
+    "errors": [],
+    "video_count": 4,
+    "playback": {
+      "before": [
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-001.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-001.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-001.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-001.mp4",
+          "ready": 4
+        }
+      ],
+      "after": [
+        {
+          "time": 2.254462,
+          "paused": false,
+          "ready": 4,
+          "total": 74,
+          "dropped": 3
+        },
+        {
+          "time": 2.254464,
+          "paused": false,
+          "ready": 4,
+          "total": 74,
+          "dropped": 3
+        },
+        {
+          "time": 2.255024,
+          "paused": false,
+          "ready": 4,
+          "total": 74,
+          "dropped": 3
+        },
+        {
+          "time": 2.254197,
+          "paused": false,
+          "ready": 4,
+          "total": 74,
+          "dropped": 3
+        }
+      ]
+    }
+  },
+  "readonly_viewer": {
+    "url": "http://127.0.0.1:8088/datasets/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/versions/version_lance_3/episodes/episode_f292b284a15a4bd56c871adfd24104c6/view",
+    "errors": [],
+    "video_count": 4,
+    "playback": {
+      "before": [
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_left/chunk-000/file-000.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.head_stereo_right/chunk-000/file-000.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_left/chunk-000/file-000.mp4",
+          "ready": 4
+        },
+        {
+          "time": 0,
+          "total": 4,
+          "dropped": 0,
+          "src": "/hc-data-local/raw/local-g1-check-a100a021/dataset_dcabd302-9618-5a9f-93ed-f8cb32eb3a14/1d91264e1e9ea5c3957911bbacac7635/source/videos/observation.images.wrist_right/chunk-000/file-000.mp4",
+          "ready": 4
+        }
+      ],
+      "after": [
+        {
+          "time": 2.203348,
+          "paused": false,
+          "ready": 4,
+          "total": 70,
+          "dropped": 0
+        },
+        {
+          "time": 2.203259,
+          "paused": false,
+          "ready": 4,
+          "total": 70,
+          "dropped": 0
+        },
+        {
+          "time": 2.203161,
+          "paused": false,
+          "ready": 4,
+          "total": 70,
+          "dropped": 0
+        },
+        {
+          "time": 2.203097,
+          "paused": false,
+          "ready": 4,
+          "total": 70,
+          "dropped": 0
+        }
+      ]
+    }
+  },
+  "browser": "Chromium 151 headless, server environment, not user GPU",
+  "measurement_note": "Short smoke samples; readonly controls triggered without scrolling video panels out of view. Dropped frames recorded, not a guarantee of client smoothness."
+}

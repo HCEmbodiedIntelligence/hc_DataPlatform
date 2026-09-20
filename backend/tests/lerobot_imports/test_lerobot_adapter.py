@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
+import hashlib
+import subprocess
+
+from hc_data_platform.aligned_media.models import OriginalVideoReferenceV1
 
 from hc_data_platform.lerobot_imports.adapter import EpisodeStream
 from hc_data_platform.lerobot_imports.orchestration import LeRobotEpisodeSourceRefV1
@@ -33,14 +36,57 @@ def _episode() -> source_reader.EpisodeData:
 
 
 def test_episode_stream_feeds_quality_and_alignment_without_mcap(tmp_path: Path) -> None:
-    frames: dict[str, tuple[Path, ...]] = {}
-    for camera in source_reader.CAMERAS:
-        camera_frames: list[Path] = []
-        for index in range(2):
-            path = tmp_path / f"{camera.camera_id}-{index}.jpg"
-            Image.new("RGB", (4, 3), color=(20 + index, 30, 40)).save(path, "JPEG")
-            camera_frames.append(path)
-        frames[camera.feature_key] = tuple(camera_frames)
+    video = tmp_path / "original.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pixel_format",
+            "rgb24",
+            "-video_size",
+            "16x16",
+            "-framerate",
+            "30",
+            "-i",
+            "pipe:0",
+            "-frames:v",
+            "2",
+            "-threads",
+            "1",
+            "-c:v",
+            "libx264",
+            str(video),
+        ],
+        input=bytes([40]) * (16 * 16 * 3) + bytes([140]) * (16 * 16 * 3),
+        check=True,
+    )
+    originals = {
+        camera.topic: OriginalVideoReferenceV1(
+            object_key="raw/original.mp4",
+            size_bytes=video.stat().st_size,
+            content_sha256=hashlib.sha256(video.read_bytes()).hexdigest(),
+            start_seconds=0,
+            end_seconds=2 / 30,
+            width=16,
+            height=16,
+            codec="h264",
+            fps=30,
+        )
+        for camera in source_reader.CAMERAS
+    }
+    layout = source_reader.SourceLayout(
+        info={},
+        episode_metadata={},
+        data_file=tmp_path / "data.parquet",
+        data_relative_path="data.parquet",
+        videos={
+            c.feature_key: source_reader.VideoSlice(video, "original.mp4", 0, 2 / 30)
+            for c in source_reader.CAMERAS
+        },
+    )
     stream = EpisodeStream(
         source=LeRobotEpisodeSourceRefV1(
             raw_upload_id="a" * 32,
@@ -50,7 +96,8 @@ def test_episode_stream_feeds_quality_and_alignment_without_mcap(tmp_path: Path)
         source_sha256="b" * 64,
         rollout_id="lerobot-rollout-0",
         episode=_episode(),
-        camera_frames=frames,
+        layout=layout,
+        original_videos=originals,
     )
 
     quality = tuple(stream.quality_observations())
@@ -63,3 +110,22 @@ def test_episode_stream_feeds_quality_and_alignment_without_mcap(tmp_path: Path)
     camera_quality = [item for item in quality if item.is_camera]
     assert camera_quality and all(not item.corrupt and item.fingerprint for item in camera_quality)
     assert not tuple(tmp_path.glob("*.mcap"))
+    assert not tuple(tmp_path.rglob("*.jpg"))
+    assert all(isinstance(sample.value, dict) for topic, sample in aligned if topic in originals)
+    # Native actions exist in Parquet and must reach QC's decoded action rules.
+    # An empty QualityInput used to mark every valid import QC_ACTION_MISSING.
+    from hc_data_platform.quality.engine import QualityEngine
+    from hc_data_platform.quality.models import QualityProfileV1, QualityStatus
+
+    assert len(stream.quality_input.actions) == 2
+    assert len(stream.quality_input.joints) == 2
+    report = QualityEngine().evaluate_stream(
+        stream.quality_input,
+        stream.quality_observations(),
+        QualityProfileV1(
+            profile_id="native-test",
+            required_topics=frozenset(source_reader.ACTUAL_TOPICS),
+            action={"topic": source_reader.ACTION_TOPIC},
+        ),
+    )
+    assert report.status is QualityStatus.PASS, report.findings

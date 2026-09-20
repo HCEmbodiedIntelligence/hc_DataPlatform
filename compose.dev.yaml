@@ -1,6 +1,69 @@
 name: ${HC_COMPOSE_PROJECT_NAME:-hc-data-platform-dev}
 
 services:
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-local-only
+      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:8088,http://localhost:8088,http://127.0.0.1:5174,http://localhost:5174
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "${HC_MINIO_API_BIND_ADDRESS:-127.0.0.1}:${HC_MINIO_API_HOST_PORT:-19000}:9000"
+      - "127.0.0.1:${HC_MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes: [minio-data:/data]
+
+  object-store-browser:
+    image: ghcr.io/nginx/nginx-unprivileged:1.29.4-alpine@sha256:a6c4f61f456b85b8fdf7ec7ab28cc3e299440e6fb4a9dea520e5fd8fd440025e
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m
+      - /var/run:rw,noexec,nosuid,size=1m
+    volumes:
+      - ./deploy/compose/object-store-browser.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    ports: ["127.0.0.1:${HC_OBJECT_EDGE_HOST_PORT:-9000}:9000"]
+    healthcheck:
+      test: [CMD, wget, --quiet, --output-document=-, http://127.0.0.1:9000/healthz]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |-
+        mc alias set local http://minio:9000 minio minio-local-only
+        mc mb --ignore-existing local/hc-data-local
+        if cors_error=$(mc cors set local/hc-data-local /config/browser-upload-cors.xml 2>&1); then
+          echo "Bucket CORS configuration applied."
+        else
+          case "$$cors_error" in
+            *"functionality that is not implemented"*)
+              echo "Bucket CORS API unavailable; using the exact MINIO_API_CORS_ALLOW_ORIGIN fallback."
+              ;;
+            *)
+              echo "Bucket CORS configuration failed."
+              exit 1
+              ;;
+          esac
+        fi
+    volumes:
+      - ./deploy/compose/minio-browser-upload-cors.xml:/config/browser-upload-cors.xml:ro
+
   postgres:
     image: postgres:16.10-bookworm@sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d
     environment:
@@ -92,13 +155,13 @@ services:
       HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
       HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
       HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
-      HC_OBJECT_STORE_PROVIDER: oss
-      HC_OBJECT_STORE_ENDPOINT: "${HC_OBJECT_STORE_ENDPOINT:-}"
-      HC_OBJECT_STORE_PUBLIC_ENDPOINT: "${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-}"
-      HC_OBJECT_STORE_BUCKET: "${HC_OBJECT_STORE_BUCKET:-}"
-      HC_OBJECT_STORE_ACCESS_KEY: "${HC_OBJECT_STORE_ACCESS_KEY:-}"
-      HC_OBJECT_STORE_SECRET_KEY: "${HC_OBJECT_STORE_SECRET_KEY:-}"
-      HC_OBJECT_STORE_REGION: "${HC_OBJECT_STORE_REGION:-}"
+      HC_OBJECT_STORE_PROVIDER: s3
+      HC_OBJECT_STORE_ENDPOINT: http://minio:9000
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      HC_OBJECT_STORE_BUCKET: hc-data-local
+      HC_OBJECT_STORE_ACCESS_KEY: minio
+      HC_OBJECT_STORE_SECRET_KEY: minio-local-only
+      HC_OBJECT_STORE_REGION: us-east-1
       HC_ARTIFACT_PREFIX: ${HC_ARTIFACT_PREFIX:-artifacts}
       HC_AUTO_ANNOTATION_PROVIDER_NAME: ${HC_AUTO_ANNOTATION_PROVIDER_NAME:-vlm}
       HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: ${HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT:-}
@@ -155,6 +218,10 @@ services:
       HC_READINESS_TIMEOUT_SECONDS: ${HC_READINESS_TIMEOUT_SECONDS:-3}
       HC_ENFORCE_SCHEMA_MIGRATIONS: "true"
     depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      object-store-browser:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       temporal:
@@ -177,6 +244,7 @@ services:
       - host.docker.internal:host-gateway
     tmpfs:
       - /tmp/hc-runtime:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0750
+      - /tmp/hc-data/robot-model-upload-staging:rw,nosuid,size=512m,uid=65532,gid=65532,mode=0750
     environment:
       HC_ENVIRONMENT: ${HC_ENVIRONMENT:-local}
       HC_PLATFORM_ENVIRONMENT_ID: ${HC_PLATFORM_ENVIRONMENT_ID:-hc-local}
@@ -196,17 +264,19 @@ services:
       HC_WORKER_ROLE: main
       HC_WORKER_MAX_CONCURRENT_ACTIVITIES: ${HC_WORKER_MAX_CONCURRENT_ACTIVITIES:-2}
       HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:activity_dependencies
-      HC_OBJECT_STORE_PROVIDER: oss
-      HC_OBJECT_STORE_ENDPOINT: "${HC_OBJECT_STORE_ENDPOINT:-}"
-      HC_OBJECT_STORE_BUCKET: "${HC_OBJECT_STORE_BUCKET:-}"
-      HC_OBJECT_STORE_ACCESS_KEY: "${HC_OBJECT_STORE_ACCESS_KEY:-}"
-      HC_OBJECT_STORE_SECRET_KEY: "${HC_OBJECT_STORE_SECRET_KEY:-}"
-      HC_OBJECT_STORE_REGION: "${HC_OBJECT_STORE_REGION:-}"
+      HC_OBJECT_STORE_PROVIDER: s3
+      HC_OBJECT_STORE_ENDPOINT: http://minio:9000
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      HC_OBJECT_STORE_BUCKET: hc-data-local
+      HC_OBJECT_STORE_ACCESS_KEY: minio
+      HC_OBJECT_STORE_SECRET_KEY: minio-local-only
+      HC_OBJECT_STORE_REGION: us-east-1
       HC_ARTIFACT_PREFIX: ${HC_ARTIFACT_PREFIX:-artifacts}
-      HC_OUTBOX_SCOPES: ${HC_OUTBOX_SCOPES:-["legacy-real-api-e2e/be22-hf-g1-video-20260819-02-p1/be22-hf-g1-video-20260819-02-cn"]}
+      HC_LOCAL_SCOPE_DISCOVERY: "true"
+      HC_OUTBOX_SCOPES: ${HC_OUTBOX_SCOPES:-[]}
       HC_OUTBOX_POLL_INTERVAL_SECONDS: ${HC_OUTBOX_POLL_INTERVAL_SECONDS:-0.5}
       HC_OUTBOX_BATCH_SIZE: ${HC_OUTBOX_BATCH_SIZE:-32}
-      HC_STORAGE_INVENTORY_SCOPES: ${HC_STORAGE_INVENTORY_SCOPES:-["legacy-real-api-e2e/be22-hf-g1-video-20260819-02-p1/be22-hf-g1-video-20260819-02-cn"]}
+      HC_STORAGE_INVENTORY_SCOPES: ${HC_STORAGE_INVENTORY_SCOPES:-[]}
       HC_STORAGE_INVENTORY_INTERVAL_SECONDS: ${HC_STORAGE_INVENTORY_INTERVAL_SECONDS:-3600}
       HC_ALIGNED_MEDIA_STAGING_ROOT: ${HC_ALIGNED_MEDIA_STAGING_ROOT:-/tmp/hc-data/aligned-media}
       HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: ${HC_ALIGNED_MEDIA_STAGING_TTL_HOURS:-24}
@@ -231,6 +301,10 @@ services:
       HC_AUTH_TURNSTILE_CONNECT_TIMEOUT_SECONDS: ${HC_AUTH_TURNSTILE_CONNECT_TIMEOUT_SECONDS:-3}
       HC_AUTH_TURNSTILE_READ_TIMEOUT_SECONDS: ${HC_AUTH_TURNSTILE_READ_TIMEOUT_SECONDS:-5}
     depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      object-store-browser:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       temporal:
@@ -253,6 +327,7 @@ services:
       - host.docker.internal:host-gateway
     tmpfs:
       - /tmp/hc-runtime:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0750
+      - /tmp/hc-data/robot-model-upload-staging:rw,nosuid,size=512m,uid=65532,gid=65532,mode=0750
     environment:
       HC_ENVIRONMENT: ${HC_ENVIRONMENT:-local}
       HC_PLATFORM_ENVIRONMENT_ID: ${HC_PLATFORM_ENVIRONMENT_ID:-hc-local}
@@ -271,13 +346,13 @@ services:
       HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
       HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
       HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
-      HC_OBJECT_STORE_PROVIDER: oss
-      HC_OBJECT_STORE_ENDPOINT: "${HC_OBJECT_STORE_ENDPOINT:-}"
-      HC_OBJECT_STORE_PUBLIC_ENDPOINT: "${HC_OBJECT_STORE_PUBLIC_ENDPOINT:-}"
-      HC_OBJECT_STORE_BUCKET: "${HC_OBJECT_STORE_BUCKET:-}"
-      HC_OBJECT_STORE_ACCESS_KEY: "${HC_OBJECT_STORE_ACCESS_KEY:-}"
-      HC_OBJECT_STORE_SECRET_KEY: "${HC_OBJECT_STORE_SECRET_KEY:-}"
-      HC_OBJECT_STORE_REGION: "${HC_OBJECT_STORE_REGION:-}"
+      HC_OBJECT_STORE_PROVIDER: s3
+      HC_OBJECT_STORE_ENDPOINT: http://minio:9000
+      HC_OBJECT_STORE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      HC_OBJECT_STORE_BUCKET: hc-data-local
+      HC_OBJECT_STORE_ACCESS_KEY: minio
+      HC_OBJECT_STORE_SECRET_KEY: minio-local-only
+      HC_OBJECT_STORE_REGION: us-east-1
       HC_ALIGNED_MEDIA_STAGING_ROOT: ${HC_ALIGNED_MEDIA_STAGING_ROOT:-/tmp/hc-data/aligned-media}
       HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: ${HC_ALIGNED_MEDIA_STAGING_TTL_HOURS:-24}
       HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES: ${HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES:-30}
@@ -290,6 +365,10 @@ services:
       HC_DATA_SOURCE_CREDENTIAL_KEY: ${HC_DATA_SOURCE_CREDENTIAL_KEY:-local-data-source-credential-key-change-me}
       HC_AUTH_ABUSE_ENABLED: ${HC_AUTH_ABUSE_ENABLED:-false}
     depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      object-store-browser:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       temporal:
@@ -307,6 +386,7 @@ services:
       target: frontend-dev
     environment:
       VITE_API_BASE_URL: /api/v1
+      VITE_LEROBOT_UPLOAD_TRANSPORT: proxy
       VITE_SSE_BASE_URL: /api/v1/events
       VITE_MOCK_MODE: ${HC_FRONTEND_MOCK_MODE:-off}
       VITE_DEFAULT_PROJECT_ID: ${HC_FRONTEND_DEFAULT_PROJECT_ID:-be22-hf-g1-video-20260819-02-p1}
@@ -343,6 +423,7 @@ services:
     ports: ["127.0.0.1:${HC_GATEWAY_HOST_PORT:-8088}:8080"]
 
 volumes:
+  minio-data:
   postgres-data:
   alignment-cache:
   media-staging:

@@ -12,10 +12,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { createDomainError } from "../../shared/api/domain-error";
 import { makeScopeKey } from "../../entities/scope";
 import { useShellStore } from "../../shared/scope/shell-store";
-import type { ManifestPreflight } from "./formal-client";
 import UploadJobsPage from "./page";
 import {
   resetUploadQueueStoreForTests,
@@ -26,12 +24,14 @@ import { UploadMethodPanel } from "./components/UploadMethodPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
 
 const {
+  nativeUploadMock,
   createSessionMock,
   grantedCapabilities,
   ingestScopeState,
   listSessionsMock,
   preflightMock,
 } = vi.hoisted(() => ({
+  nativeUploadMock: vi.fn(),
   createSessionMock: vi.fn(),
   grantedCapabilities: new Set<string>(["upload.read", "upload.manage"]),
   ingestScopeState: {
@@ -73,106 +73,17 @@ vi.mock("./formal-client", async (importOriginal) => {
   };
 });
 
-const manifest = {
-  schema_version: 1,
-  project_id: "project-e05",
-  task_id: "task-e05",
-  collection_job_id: "job-e05",
-  rollout_id: "rollout-e05",
-  collection_session_id: "session-e05",
-  recording_request_id: "request-e05",
-  data_package_id: "package-e05",
-  sequence_no: 1,
-  robot_id: "robot-e05",
-  start_time: "2026-08-18T01:00:00Z",
-  end_time: "2026-08-18T01:00:10Z",
-  cameras: [
-    {
-      camera_id: "front",
-      topic: "/camera/front",
-      frame_id: "front_link",
-      encoding: "h264",
-    },
-  ],
-  topics: [
-    {
-      name: "/camera/front",
-      required: true,
-      message_encoding: "cdr",
-      schema_name: "sensor_msgs/Image",
-    },
-  ],
-  expected_topics: ["/camera/front"],
-  actual_topics: ["/camera/front"],
-  processing_mode: "DIRECT_EPISODE",
-  files: [
-    {
-      path: "recording.mcap",
-      size: 8,
-      sha256: "a".repeat(64),
-      crc64: "1",
-      media_type: "application/octet-stream",
-      role: "RAW_MCAP",
-    },
-  ],
-  file_size: 8,
-  sha256: "a".repeat(64),
-  crc64: "1",
-  compression: "none",
-  recorder_version: "recorder/1.0",
-} as const;
-
-const preflight: ManifestPreflight = {
-  schema_version: "manifest-preflight/v1",
-  manifest_fingerprint: "b".repeat(64),
-  identifiers: {
-    collection_session_id: manifest.collection_session_id,
-    recording_request_id: manifest.recording_request_id,
-    data_package_id: manifest.data_package_id,
-    robot_id: manifest.robot_id,
-    pico_instance_id: null,
-  },
-  time_range: { start_time: manifest.start_time, end_time: manifest.end_time },
-  files: [...manifest.files],
-  total_file_size: 8,
-  discovery: {
-    source: "MANIFEST",
-    read_only: true,
-    cameras: [...manifest.cameras],
-    topics: [...manifest.topics],
-    missing_expected_topics: [],
-  },
-  manifest: {
-    ...manifest,
-    cameras: [...manifest.cameras],
-    topics: [...manifest.topics],
-    expected_topics: [...manifest.expected_topics],
-    actual_topics: [...manifest.actual_topics],
-    files: [...manifest.files],
-  },
-};
-
-const uploadGrant = {
-  session: {
-    session_id: "upload-session-e05",
-    project_id: manifest.project_id,
-    region_code: "cn-shanghai",
-    data_package_id: manifest.data_package_id,
-    rollout_id: manifest.rollout_id,
-    source_type: "BROWSER_MULTIPART" as const,
-    status: "RAW_COMMITTED" as const,
-    manifest_fingerprint: preflight.manifest_fingerprint,
-    object_key: "raw/recording.mcap",
-    multipart_upload_id: "multipart-e05",
-    expected_size: manifest.file_size,
-    expected_sha256: manifest.sha256,
-    expected_crc64: manifest.crc64,
-    failure_code: null,
-    etag: "etag-e05",
-    completed_at: "2026-08-18T01:00:20Z",
-  },
-  parts: [],
-};
+vi.mock("../../features/datasets/api/hooks", () => ({
+  useDatasetsQuery: () => ({
+    data: { items: [{ datasetId: "dataset_alpha", name: "原始数据集" }] },
+    isPending: false,
+    isError: false,
+  }),
+}));
+vi.mock("./lerobot-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./lerobot-client")>()),
+  uploadNativeLeRobot: nativeUploadMock,
+}));
 
 function renderPage(path = "/ingest/uploads/new") {
   const client = new QueryClient({
@@ -231,8 +142,7 @@ beforeEach(() => {
     computedStyle(element),
   );
   listSessionsMock.mockResolvedValue({ items: [], total: 0 });
-  preflightMock.mockResolvedValue(preflight);
-  createSessionMock.mockResolvedValue(uploadGrant);
+  nativeUploadMock.mockReset().mockResolvedValue({ status: "RAW_COMMITTED" });
   grantedCapabilities.clear();
   grantedCapabilities.add("upload.read");
   grantedCapabilities.add("upload.manage");
@@ -267,19 +177,18 @@ describe("P03 serial data upload page", () => {
     expect(folder).not.toBeNull();
     await user.upload(folder!, [
       nestedFolderFile(
-        [JSON.stringify(manifest)],
-        "rollout_manifest.json",
-        "factory/episode-e05/rollout_manifest.json",
-        { type: "application/json" },
-      ),
-      nestedFolderFile(
         [new Uint8Array(8)],
         "recording.mcap",
         "factory/episode-e05/recording.mcap",
         { type: "application/octet-stream" },
       ),
     ]);
-    return screen.findByRole("dialog", { name: "确认上传" });
+    const dialog = await screen.findByRole("dialog", { name: "确认上传" });
+    await user.click(
+      within(dialog).getByRole("combobox", { name: "目标数据集 ID" }),
+    );
+    await user.click(await screen.findByText("原始数据集"));
+    return dialog;
   }
 
   it("explains the missing storage scope instead of reporting a permission error", async () => {
@@ -364,8 +273,8 @@ describe("P03 serial data upload page", () => {
     expect(within(dialog).getByText("factory")).toBeInTheDocument();
     expect(within(dialog).getByText("project-e05")).toBeInTheDocument();
     expect(within(dialog).getByText("cn-shanghai")).toBeInTheDocument();
-    expect(within(dialog).getByText("task-e05")).toBeInTheDocument();
-    expect(within(dialog).getByText("robot-e05")).toBeInTheDocument();
+    expect(within(dialog).queryByText("task-e05")).toBeNull();
+    expect(within(dialog).queryByText("robot-e05")).toBeNull();
     expect(preflightMock).not.toHaveBeenCalled();
     expect(createSessionMock).not.toHaveBeenCalled();
     expect(
@@ -386,235 +295,29 @@ describe("P03 serial data upload page", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
-  it("hides confirmation and shows server precheck only after confirmation", async () => {
-    let resolvePreflight!: (value: ManifestPreflight) => void;
-    preflightMock.mockReturnValueOnce(
-      new Promise<ManifestPreflight>((resolve) => {
-        resolvePreflight = resolve;
-      }),
-    );
+  it("stores the original folder without invoking the legacy processing precheck", async () => {
     const user = userEvent.setup();
     const { container } = renderPage();
     const dialog = await chooseValidFolder(user, container);
     await user.click(within(dialog).getByRole("button", { name: "确认上传" }));
-
     expect(
-      await screen.findByRole("heading", { name: "上传前预检" }),
+      await screen.findByRole("heading", { name: "上传已完成" }),
     ).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "确认上传" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("上传队列为空")).not.toBeInTheDocument();
-    expect(preflightMock).toHaveBeenCalledTimes(1);
+    expect(nativeUploadMock).toHaveBeenCalledTimes(1);
+    const [, source, binding] = nativeUploadMock.mock.calls[0]!;
+    expect(source.format).toBe("mcap");
+    expect(source.sourceFiles).toHaveLength(1);
+    expect(binding).toEqual({
+      datasetId: "dataset_alpha",
+      collectionTaskId: null,
+      robotId: null,
+      processingMode: "STORE_ONLY",
+    });
+    expect(preflightMock).not.toHaveBeenCalled();
     expect(createSessionMock).not.toHaveBeenCalled();
-
-    resolvePreflight(preflight);
-    expect(
-      await screen.findByRole("heading", { name: "上传已完成" }),
-    ).toBeVisible();
-    expect(screen.getByText("已上传 1 / 1")).toBeVisible();
-    expect(screen.queryByText("清除已完成")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "继续上传" }));
-    expect(
-      await screen.findByRole("heading", { name: "选择采集文件夹" }),
-    ).toBeVisible();
   });
 
-  it("reflects queue creation from the real pending request without fake percentages", async () => {
-    let resolveCreate!: (value: typeof uploadGrant) => void;
-    createSessionMock.mockReturnValueOnce(
-      new Promise<typeof uploadGrant>((resolve) => {
-        resolveCreate = resolve;
-      }),
-    );
-    const user = userEvent.setup();
-    const { container } = renderPage();
-    const dialog = await chooseValidFolder(user, container);
-    await user.click(within(dialog).getByRole("button", { name: "确认上传" }));
 
-    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
-    expect(
-      screen.getByText("创建上传任务与分片队列").closest("li"),
-    ).toHaveAttribute("data-state", "current");
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-
-    resolveCreate(uploadGrant);
-    expect(
-      await screen.findByRole("heading", { name: "上传已完成" }),
-    ).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "查看上传记录" }));
-    expect(screen.getByRole("tab", { name: "上传记录" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-  });
-
-  it("stays on the error result and never enters the queue after precheck failure", async () => {
-    preflightMock.mockRejectedValueOnce(
-      createDomainError({
-        code: "VALIDATION_ERROR",
-        problemCode: "MANIFEST_PATH_TRAVERSAL",
-        message: "files/0/path 包含路径穿越，数据包已拒绝。",
-        fieldErrors: [],
-        operationErrors: [],
-        blockedReasons: [],
-        requestId: "req-e05-422",
-        retryable: false,
-        httpStatus: 422,
-      }),
-    );
-    const user = userEvent.setup();
-    const { container } = renderPage();
-    const dialog = await chooseValidFolder(user, container);
-    await user.click(within(dialog).getByRole("button", { name: "确认上传" }));
-
-    expect(await screen.findByText("数据清单预检失败")).toBeVisible();
-    expect(screen.getByText("MANIFEST_PATH_TRAVERSAL")).toBeVisible();
-    expect(screen.getByRole("button", { name: "重新检查" })).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: "返回重新选择文件夹" }),
-    ).toBeEnabled();
-    expect(createSessionMock).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole("heading", { name: /上传队列/ }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps task-creation failures out of the formal upload queue", async () => {
-    createSessionMock.mockRejectedValueOnce(
-      createDomainError({
-        code: "SERVER_ERROR",
-        problemCode: "UPLOAD_SESSION_CREATE_FAILED",
-        message: "上传任务创建失败，请稍后重试。",
-        fieldErrors: [],
-        operationErrors: [],
-        blockedReasons: [],
-        requestId: "req-create-e05",
-        retryable: true,
-        httpStatus: 503,
-      }),
-    );
-    const user = userEvent.setup();
-    const { container } = renderPage();
-    const dialog = await chooseValidFolder(user, container);
-    await user.click(within(dialog).getByRole("button", { name: "确认上传" }));
-
-    expect(await screen.findByText("上传操作未完成")).toBeVisible();
-    expect(screen.getByText("UPLOAD_SESSION_CREATE_FAILED")).toBeVisible();
-    expect(screen.getByText("req-create-e05")).toBeVisible();
-    expect(
-      screen.queryByRole("heading", { name: /上传队列/ }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("reuses already-created batch tasks when queue creation is retried", async () => {
-    const secondManifest = {
-      ...preflight.manifest,
-      rollout_id: "rollout-e05-2",
-      data_package_id: "package-e05-2",
-      sequence_no: 2,
-      files: [
-        {
-          ...manifest.files[0],
-          path: "recording-2.mcap",
-          sha256: "c".repeat(64),
-        },
-      ],
-      sha256: "c".repeat(64),
-    };
-    const secondPreflight: ManifestPreflight = {
-      ...preflight,
-      manifest_fingerprint: "d".repeat(64),
-      identifiers: {
-        ...preflight.identifiers,
-        data_package_id: secondManifest.data_package_id,
-      },
-      files: [...secondManifest.files],
-      manifest: secondManifest,
-    };
-    const secondGrant = {
-      ...uploadGrant,
-      session: {
-        ...uploadGrant.session,
-        session_id: "upload-session-e05-2",
-        data_package_id: secondManifest.data_package_id,
-        rollout_id: secondManifest.rollout_id,
-        manifest_fingerprint: secondPreflight.manifest_fingerprint,
-      },
-    };
-    preflightMock.mockImplementation(
-      (_scope, submitted: typeof manifest | typeof secondManifest) =>
-        Promise.resolve(
-          submitted.data_package_id === secondManifest.data_package_id
-            ? secondPreflight
-            : preflight,
-        ),
-    );
-    createSessionMock
-      .mockResolvedValueOnce(uploadGrant)
-      .mockRejectedValueOnce(
-        createDomainError({
-          code: "SERVER_ERROR",
-          problemCode: "UPLOAD_SESSION_CREATE_FAILED",
-          message: "第二个任务创建失败。",
-          fieldErrors: [],
-          operationErrors: [],
-          blockedReasons: [],
-          requestId: "req-create-batch",
-          retryable: true,
-          httpStatus: 503,
-        }),
-      )
-      .mockResolvedValueOnce(secondGrant);
-
-    const user = userEvent.setup();
-    const { container } = renderPage();
-    const folder = container.querySelector<HTMLInputElement>(
-      "#browser-upload-folder",
-    );
-    await user.upload(folder!, [
-      nestedFolderFile(
-        [JSON.stringify(manifest)],
-        "rollout_manifest.json",
-        "factory/episode-e05/rollout_manifest.json",
-        { type: "application/json" },
-      ),
-      nestedFolderFile(
-        [new Uint8Array(8)],
-        "recording.mcap",
-        "factory/episode-e05/recording.mcap",
-      ),
-      nestedFolderFile(
-        [JSON.stringify(secondManifest)],
-        "rollout_manifest.json",
-        "factory/episode-e05-2/rollout_manifest.json",
-        { type: "application/json" },
-      ),
-      nestedFolderFile(
-        [new Uint8Array(8)],
-        "recording-2.mcap",
-        "factory/episode-e05-2/recording-2.mcap",
-      ),
-    ]);
-    const dialog = await screen.findByRole("dialog", { name: "确认上传" });
-    await user.click(within(dialog).getByRole("button", { name: "确认上传" }));
-
-    expect(await screen.findByText(/已有 1 个任务完成创建/u)).toBeVisible();
-    expect(
-      screen.queryByRole("heading", { name: /上传队列/ }),
-    ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "重新检查" }));
-
-    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(3));
-    expect(
-      await screen.findByRole("heading", { name: /上传队列/u }),
-    ).toBeVisible();
-    expect(
-      await screen.findByRole("heading", { name: "上传已完成" }),
-    ).toBeVisible();
-    expect(screen.getByText("已上传 2 / 2")).toBeVisible();
-  });
 
   it("disables confirmation without upload.manage but allows local inspection", async () => {
     grantedCapabilities.delete("upload.manage");
@@ -630,21 +333,8 @@ describe("P03 serial data upload page", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
-  it("allows a project admin with the current upload capability to confirm", async () => {
-    grantedCapabilities.delete("upload.read");
-    grantedCapabilities.delete("upload.manage");
-    grantedCapabilities.add("upload.read");
-    grantedCapabilities.add("upload.manage");
-    const user = userEvent.setup();
-    const { container } = renderPage();
-    const dialog = await chooseValidFolder(user, container);
 
-    expect(
-      within(dialog).getByRole("button", { name: "确认上传" }),
-    ).toBeEnabled();
-  });
-
-  it("blocks confirmation when the local folder has no Manifest", async () => {
+  it("accepts an MCAP without a platform Manifest", async () => {
     const user = userEvent.setup();
     const { container } = renderPage();
     const folder = container.querySelector<HTMLInputElement>(
@@ -659,12 +349,14 @@ describe("P03 serial data upload page", () => {
     ]);
 
     const dialog = await screen.findByRole("dialog", { name: "确认上传" });
-    expect(
-      within(dialog).getByText("MANIFEST_FILE_MISSING"),
-    ).toBeInTheDocument();
+    expect(within(dialog).queryByText("MANIFEST_FILE_MISSING")).toBeNull();
+    await user.click(
+      within(dialog).getByRole("combobox", { name: "目标数据集 ID" }),
+    );
+    await user.click(await screen.findByText("原始数据集"));
     expect(
       within(dialog).getByRole("button", { name: "确认上传" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(preflightMock).not.toHaveBeenCalled();
   });
 
@@ -716,7 +408,7 @@ describe("P03 serial data upload page", () => {
 
     renderPage("/ingest/uploads/records");
 
-    expect(await screen.findByText("LeRobot · factory-run")).toBeVisible();
+    expect(await screen.findByText("原始数据 · factory-run")).toBeVisible();
     expect(screen.getByText("Dataset dataset-a")).toBeVisible();
     expect(screen.getByText("传输失败")).toBeVisible();
     expect(
@@ -1065,9 +757,7 @@ describe("P03 upload method form semantics", () => {
       "webkitdirectory",
       "",
     );
-    expect(
-      screen.getByText("支持包含多个独立数据清单的数据包多级目录"),
-    ).toBeVisible();
+    expect(screen.getByText("保留原目录结构和文件内容")).toBeVisible();
   });
 
   it("does not expose a manual object-storage address", () => {

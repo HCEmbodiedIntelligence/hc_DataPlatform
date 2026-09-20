@@ -51,9 +51,9 @@ export interface LeRobotSourceFile {
 }
 
 export interface LeRobotFolderSelection {
-  readonly format: "lerobot";
-  readonly version: "v3.0";
-  readonly robotType: "unitree_g1";
+  readonly format: "lerobot" | "mcap" | "rosbag";
+  readonly version: string;
+  readonly robotType: string;
   readonly rootDirectory: string;
   readonly info: Readonly<Record<string, unknown>>;
   readonly episodeCount: number;
@@ -240,21 +240,6 @@ export function selectedRelativePath(file: File): string | null {
   );
 }
 
-const LEROBOT_CAMERAS = [
-  "observation.images.head_stereo_left",
-  "observation.images.head_stereo_right",
-  "observation.images.wrist_left",
-  "observation.images.wrist_right",
-] as const;
-const LEROBOT_REQUIRED_FEATURES = [
-  "observation.state.ee_state",
-  "observation.state.hand_state",
-  "observation.state.robot_q_current",
-  "action.ee_action",
-  "action.hand_cmd",
-  "action.robot_q_desired",
-  ...LEROBOT_CAMERAS,
-] as const;
 const LEROBOT_DATA_PATH = /^data\/chunk-\d{3}\/file-\d{3}\.parquet$/u;
 const LEROBOT_EPISODE_PATH =
   /^meta\/episodes\/chunk-\d{3}\/file-\d{3}\.parquet$/u;
@@ -355,7 +340,7 @@ async function readBrowserText(file: File): Promise<string> {
   });
 }
 
-/** Detect one native Unitree G1 LeRobot v3 tree without rewriting any source file. */
+/** Detect one native LeRobot v3 tree without rewriting any source file. */
 export async function detectLeRobotFolder(
   files: readonly File[],
 ): Promise<LeRobotFolderSelection | null> {
@@ -465,59 +450,115 @@ export async function detectLeRobotFolder(
   const episodeCount = metadata.total_episodes;
   if (
     metadata.codebase_version !== "v3.0" ||
-    metadata.robot_type !== "unitree_g1" ||
     typeof metadata.fps !== "number" ||
     !Number.isFinite(metadata.fps) ||
     metadata.fps <= 0 ||
     metadata.fps > 240 ||
     typeof metadata.data_path !== "string" ||
-    typeof metadata.video_path !== "string" ||
     typeof features !== "object" ||
     features === null ||
     Array.isArray(features) ||
     !Number.isInteger(episodeCount) ||
     typeof episodeCount !== "number" ||
     episodeCount < 1 ||
-    episodeCount > MAX_LEROBOT_EPISODES ||
-    LEROBOT_REQUIRED_FEATURES.some(
-      (feature) => !(feature in (features as Record<string, unknown>)),
-    )
+    episodeCount > MAX_LEROBOT_EPISODES
   ) {
     throw new LocalLeRobotError(
       "LEROBOT_PROFILE_UNSUPPORTED",
-      `当前页面支持 Unitree G1 的 LeRobot v3.0 原始目录（1–${MAX_LEROBOT_EPISODES} 个 episode，并包含完整状态、动作和四路相机特征）。`,
+      `请选择包含有效 fps、features 和 episode 数量的 LeRobot v3.0 原始目录（1–${MAX_LEROBOT_EPISODES} 个 episode）。`,
     );
   }
   const paths = new Set(sourceFiles.map(({ path }) => path));
   const cameraFeatures = new Set(
     sourceFiles.flatMap(({ path }) => {
       const match = LEROBOT_VIDEO_PATH.exec(path);
-      return match?.[1] &&
-        LEROBOT_CAMERAS.includes(match[1] as (typeof LEROBOT_CAMERAS)[number])
-        ? [match[1]]
-        : [];
+      return match?.[1] ? [match[1]] : [];
     }),
   );
+  const declaredCameras = Object.entries(features as Record<string, unknown>)
+    .filter(
+      ([, value]) =>
+        typeof value === "object" &&
+        value !== null &&
+        "dtype" in value &&
+        value.dtype === "video",
+    )
+    .map(([key]) => key);
   if (
+    (declaredCameras.length > 0 && typeof metadata.video_path !== "string") ||
     !paths.has("meta/info.json") ||
     !sourceFiles.some(({ path }) => LEROBOT_EPISODE_PATH.test(path)) ||
     !sourceFiles.some(({ path }) => LEROBOT_DATA_PATH.test(path)) ||
-    LEROBOT_CAMERAS.some((camera) => !cameraFeatures.has(camera))
+    declaredCameras.some((camera) => !cameraFeatures.has(camera))
   ) {
     throw new LocalLeRobotError(
       "LEROBOT_LAYOUT_INCOMPLETE",
-      "LeRobot 原始目录缺少 episode 元数据、数据 Parquet 或 Unitree G1 四路相机 MP4。",
+      "LeRobot 原始目录缺少 episode 元数据、数据 Parquet 或元信息声明的相机 MP4。",
     );
   }
   return {
     format: "lerobot",
     version: "v3.0",
-    robotType: "unitree_g1",
+    robotType:
+      typeof metadata.robot_type === "string" ? metadata.robot_type : "unknown",
     rootDirectory,
     info: metadata,
     episodeCount,
     sourceFiles,
     sourceBytes: sourceFiles.reduce((total, item) => total + item.file.size, 0),
+  };
+}
+
+/** Select original capture files without requiring a platform processing manifest. */
+export function detectOriginalCapture(
+  files: readonly File[],
+): LeRobotFolderSelection | null {
+  const paths = files.map((file) => ({
+    file,
+    path: selectedRelativePath(file),
+  }));
+  const bag = paths.some(({ path }) => path?.toLowerCase().endsWith(".bag"));
+  const ros2 =
+    paths.some(({ path }) => path?.endsWith("metadata.yaml")) &&
+    paths.some(({ path }) => /\.(db3|mcap)$/iu.test(path ?? ""));
+  const mcap = paths.some(({ path }) => path?.toLowerCase().endsWith(".mcap"));
+  if (!bag && !ros2 && !mcap) return null;
+  if (
+    paths.length > 10_000 ||
+    paths.some(
+      ({ file, path }) =>
+        !path || file.size <= 0 || file.size > MAX_PACKAGE_BYTES,
+    )
+  ) {
+    throw new LocalLeRobotError(
+      "LEROBOT_SOURCE_INVALID",
+      "请选择非空原始文件，单文件不超过 5 TiB，总文件数不超过 10000。",
+    );
+  }
+  const first = paths[0]!.path!;
+  const directory = first.includes("/")
+    ? first.slice(0, first.indexOf("/"))
+    : "";
+  const sharedRoot =
+    directory && paths.every(({ path }) => path!.startsWith(`${directory}/`));
+  const sourceFiles = paths.map(({ file, path }) => ({
+    file,
+    path: sharedRoot ? path!.slice(directory.length + 1) : path!,
+  }));
+  if (new Set(sourceFiles.map((item) => item.path)).size !== sourceFiles.length)
+    throw new LocalLeRobotError(
+      "LEROBOT_SOURCE_INVALID",
+      "文件路径重复，请选择完整目录。",
+    );
+  return {
+    format: bag || ros2 ? "rosbag" : "mcap",
+    version: "native",
+    robotType: "unknown",
+    rootDirectory: directory || files[0]!.name,
+    info: {},
+    episodeCount: 0,
+    sourceFiles,
+    sourceBytes: files.reduce((sum, file) => sum + file.size, 0),
   };
 }
 

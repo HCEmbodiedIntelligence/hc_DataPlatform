@@ -213,6 +213,7 @@ class InMemoryAlignedMediaRepository:
             timeline = AlignedMediaTimelineV1(
                 frame_count=encoded.frame_count,
                 start_timestamp_ns=encoded.first_timestamp_ns,
+                original_source=encoded.original_source,
             )
             self._artifacts[artifact_key_tuple] = artifact.model_copy(
                 update={
