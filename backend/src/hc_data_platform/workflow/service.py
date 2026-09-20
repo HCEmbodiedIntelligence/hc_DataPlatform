@@ -63,6 +63,7 @@ class InMemoryWorkflowLauncher:
         project_id: str,
         resource_id: str,
         runner: Callable[[], dict[str, Any]],
+        initial_result: dict[str, Any] | None = None,
     ) -> JobRecord:
         with self._lock:
             existing_id = self._by_workflow.get(workflow_id)
@@ -74,6 +75,7 @@ class InMemoryWorkflowLauncher:
                 job_type=job_type,
                 project_id=project_id,
                 resource_id=resource_id,
+                result=initial_result,
                 status=JobStatus.RUNNING,
                 stage="running",
                 attempt=1,
@@ -89,7 +91,7 @@ class InMemoryWorkflowLauncher:
                 update={
                     "status": JobStatus(status_value),
                     "stage": "completed",
-                    "result": runner_result,
+                    "result": {**(initial_result or {}), **runner_result},
                     "updated_at": datetime.now(timezone.utc),
                 }
             )

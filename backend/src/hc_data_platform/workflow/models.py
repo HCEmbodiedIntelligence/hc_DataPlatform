@@ -828,6 +828,7 @@ class ExportWorkflowInput(BaseModel):
     manifest: PublishedDatasetManifestV1
     format: ExportFormat
     attempt_id: str = Field(min_length=1)
+    selection: dict[str, Any] | None = None
 
 
 class CatalogReconciliationWorkflowInput(BaseModel):

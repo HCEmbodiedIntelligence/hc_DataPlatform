@@ -86,13 +86,21 @@ function parseJob(raw: unknown, endpoint: string): PublishedExportJob {
 
 export async function createPublishedExport(
   target: ExportTarget &
-    Readonly<{ format: PublishedExportFormat; idempotencyKey: string }>,
+    Readonly<{
+      format: PublishedExportFormat;
+      idempotencyKey: string;
+      episodeIds?: readonly string[];
+    }>,
 ): Promise<PublishedExportJob> {
   const path = basePath(target);
   const raw = await request<unknown>({
     method: "POST",
     path,
-    body: { project_id: target.projectId, format: target.format },
+    body: {
+      project_id: target.projectId,
+      format: target.format,
+      ...(target.episodeIds ? { episode_ids: target.episodeIds } : {}),
+    },
     idempotencyKey: target.idempotencyKey,
     cache: "no-store",
   });

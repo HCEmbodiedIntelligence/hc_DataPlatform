@@ -120,9 +120,28 @@ class PostgresPublishedManifestRepository:
                     (project_id, dataset_id, dataset_version),
                 )
                 row = cursor.fetchone()
+                if row is None and dataset_version.startswith("version_release_"):
+                    # P05/P06 use a stable ID derived from the publication name.
+                    # Resolve the same immutable publication without creating a second one.
+                    cursor.execute(
+                        """
+                        SELECT manifest_json FROM publishing.dataset_versions
+                        WHERE project_id = %s AND dataset_id = %s
+                          AND 'version_release_' || substring(
+                            encode(sha256(convert_to(dataset_version, 'UTF8')), 'hex'), 1, 32
+                          ) = %s
+                        """,
+                        (project_id, dataset_id, dataset_version),
+                    )
+                    row = cursor.fetchone()
         finally:
             connection.close()
-        return None if row is None else self._model(row[0])
+        if row is None:
+            return None
+        manifest = self._model(row[0])
+        # Keep the requested public identity for export job URLs; the frozen hash,
+        # source snapshot and publication assets still identify the original release.
+        return manifest.model_copy(update={"dataset_version": dataset_version})
 
     @staticmethod
     def _model(value: object) -> PublishedDatasetManifestV1:

@@ -42,6 +42,35 @@ def canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def select_export_rollouts(
+    manifest: PublishedDatasetManifestV1, rollout_ids: tuple[str, ...]
+) -> PublishedDatasetManifestV1:
+    selected = set(rollout_ids)
+    rollouts = tuple(item for item in manifest.rollouts if item.rollout_id in selected)
+    if not selected or len(rollouts) != len(selected):
+        raise problem(
+            status=422,
+            code="EXPORT_EPISODE_NOT_ELIGIBLE",
+            title="Selected Episodes are not eligible for export",
+            detail="Every selected Episode must pass quality checks and annotation review.",
+        )
+    content_hash = hashlib.sha256(
+        canonical_json_bytes(
+            {
+                "publication_content_hash": manifest.content_hash,
+                "rollout_ids": sorted(selected),
+            }
+        )
+    ).hexdigest()
+    return manifest.model_copy(
+        update={
+            "rollouts": rollouts,
+            "excluded_rollouts": (),
+            "content_hash": content_hash,
+        }
+    )
+
+
 def normalize_exclusions(
     ranges: Sequence[StepRangeV1], *, total_steps: int
 ) -> tuple[StepRangeV1, ...]:

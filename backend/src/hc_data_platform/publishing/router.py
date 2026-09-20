@@ -5,7 +5,7 @@ import inspect
 import re
 from collections.abc import Awaitable
 from datetime import datetime, timedelta, timezone
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, Header, Response
 
@@ -44,7 +44,7 @@ from .models import (
     PublishedDatasetManifestV1,
     PublishPreflightReportV1,
 )
-from .service import DatasetPublisher, ExportCoordinator
+from .service import DatasetPublisher, ExportCoordinator, select_export_rollouts
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["publishing"])
 
@@ -261,6 +261,7 @@ async def _launch_export(
     *,
     export_format: ExportFormat,
     attempt_id: str,
+    selection: dict[str, Any] | None = None,
 ) -> JobRecord:
     resource_id = _resource_id(manifest, export_format, attempt_id)
     identifier = workflow_id(WorkflowKind.EXPORT, manifest.project_id, resource_id)
@@ -272,6 +273,7 @@ async def _launch_export(
                 manifest=manifest,
                 format=export_format,
                 attempt_id=attempt_id,
+                selection=selection,
             ),
             workflow_id=identifier,
             job_type=EXPORT_WORKFLOW,
@@ -285,6 +287,7 @@ async def _launch_export(
         job_type=EXPORT_WORKFLOW,
         project_id=manifest.project_id,
         resource_id=resource_id,
+        **({"initial_result": {"export_selection": selection}} if selection else {}),
         runner=lambda: {
             "export": _export_coordinator.export(
                 manifest,
@@ -374,13 +377,39 @@ async def export_dataset_version(
         "dataset_version.publish",
         region_code=region_code,
     )
+    rollout_ids = None
+    selection = None
+    if request.episode_ids is not None:
+        from hc_data_platform.dataset_registry.router import get_dataset_page_service
+
+        context = current_request_context()
+        rollout_ids = get_dataset_page_service().export_rollout_ids(
+            auth=auth,
+            organization_id=context.organization_id or "",
+            project_id=request.project_id,
+            region_code=context.region_code or "",
+            dataset_id=dataset_id,
+            version_id=dataset_version,
+            episode_ids=request.episode_ids,
+        )
     manifest = _resolve_export_manifest(
         project_id=request.project_id,
         dataset_id=dataset_id,
         dataset_version=dataset_version,
     )
+    if rollout_ids is not None and request.episode_ids is not None:
+        manifest = select_export_rollouts(manifest, rollout_ids)
+        selection = {
+            "episode_ids": sorted(set(request.episode_ids)),
+            "rollout_ids": list(rollout_ids),
+            "content_hash": manifest.content_hash,
+        }
     attempt_id = _selected_attempt(manifest, request.format, idempotency_key)
-    job = await _launch_export(manifest, export_format=request.format, attempt_id=attempt_id)
+    if selection is not None:
+        attempt_id = f"episodes-{attempt_id}"
+    job = await _launch_export(
+        manifest, export_format=request.format, attempt_id=attempt_id, selection=selection
+    )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Location"] = (
         f"/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job.job_id}"
@@ -464,13 +493,33 @@ async def retry_export_job(
         dataset_id=dataset_id,
         dataset_version=dataset_version,
     )
+    selection = (existing.result or {}).get("export_selection")
+    if previous.attempt_id.startswith("episodes-") and selection is None:
+        raise problem(
+            status=409,
+            code="EXPORT_SELECTION_UNAVAILABLE",
+            title="Export selection is unavailable",
+            detail="Reload the original job before retrying its Episode selection.",
+        )
+    if selection is not None:
+        manifest = select_export_rollouts(manifest, tuple(selection["rollout_ids"]))
+        if manifest.content_hash != selection["content_hash"]:
+            raise problem(
+                status=409,
+                code="EXPORT_SELECTION_CHANGED",
+                title="Export selection changed",
+                detail="The frozen export selection is invalid.",
+            )
     retry_attempt = hashlib.sha256(
         f"{manifest.content_hash}:{previous.format.value}:retry:{idempotency_key}".encode()
     ).hexdigest()[:32]
+    if selection is not None:
+        retry_attempt = f"episodes-{retry_attempt}"
     job = await _launch_export(
         manifest,
         export_format=previous.format,
         attempt_id=retry_attempt,
+        selection=selection,
     )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Location"] = (

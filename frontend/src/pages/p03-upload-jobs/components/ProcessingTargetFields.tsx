@@ -15,6 +15,7 @@ function queryError(error: unknown, fallback: string): string {
 export function ProcessingTargetFields(props: {
   readonly scope: IngestScope;
   readonly datasetId: string;
+  readonly fixedDatasetId?: string;
   readonly collectionTaskId: string;
   readonly robotId: string;
   readonly onDatasetIdChange: (value: string) => void;
@@ -39,30 +40,18 @@ export function ProcessingTargetFields(props: {
     limit: 50,
   });
 
-  const datasetOptions = useMemo(() => {
-    const taskCountByDataset = new Map<string, number>();
-    for (const task of tasks.data ?? []) {
-      taskCountByDataset.set(
-        task.dataset_id,
-        (taskCountByDataset.get(task.dataset_id) ?? 0) + 1,
-      );
-    }
-    return [...taskCountByDataset.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([datasetId, taskCount]) => ({
-        value: datasetId,
-        label: `${datasetId} · ${taskCount} 个可用任务`,
-      }));
-  }, [tasks.data]);
   const taskOptions = useMemo(
     () =>
       (tasks.data ?? [])
-        .filter((task) => task.dataset_id === props.datasetId)
+        .filter(
+          (task) =>
+            !props.fixedDatasetId || task.dataset_id === props.fixedDatasetId,
+        )
         .map((task) => ({
           value: task.collection_task_id,
           label: `${task.name} · ${task.collection_task_id}`,
         })),
-    [props.datasetId, tasks.data],
+    [tasks.data, props.fixedDatasetId],
   );
   const robotOptions = useMemo(() => {
     const options = new Map<string, { value: string; label: string }>();
@@ -80,28 +69,26 @@ export function ProcessingTargetFields(props: {
   return (
     <>
       <div>
-        <dt>目标数据集 ID</dt>
+        <dt>采集任务</dt>
         <dd>
           <Select<string>
-            aria-label="目标数据集 ID"
+            aria-label="采集任务 ID"
             className={styles.confirmTargetSelect}
             disabled={tasks.isError}
             loading={tasks.isPending}
             showSearch
             optionFilterProp="label"
-            options={datasetOptions}
-            placeholder="请选择目标数据集"
-            value={props.datasetId || undefined}
-            notFoundContent={
-              tasks.isPending
-                ? "正在加载目标数据集…"
-                : tasks.isError
-                  ? "目标数据集加载失败"
-                  : "暂无关联 ACTIVE 采集任务的数据集"
-            }
+            options={taskOptions}
+            placeholder="请选择采集任务"
+            value={props.collectionTaskId || undefined}
+            notFoundContent="当前项目暂无可用采集任务，请先创建任务并绑定数据集"
             onChange={(value) => {
-              props.onDatasetIdChange(value);
-              props.onCollectionTaskIdChange("");
+              const task = tasks.data?.find(
+                (item) => item.collection_task_id === value,
+              );
+              if (!task) return;
+              props.onCollectionTaskIdChange(value);
+              props.onDatasetIdChange(task.dataset_id);
             }}
           />
           {tasks.isError ? (
@@ -117,30 +104,18 @@ export function ProcessingTargetFields(props: {
                 重新加载
               </Button>
             </span>
-          ) : (
-            <small className={styles.confirmTargetHint}>
-              仅显示当前项目 ACTIVE 采集任务关联的数据集
-            </small>
-          )}
+          ) : null}
         </dd>
       </div>
       <div>
-        <dt>采集任务 ID</dt>
+        <dt>目标数据集</dt>
         <dd>
-          <Select<string>
-            aria-label="采集任务 ID"
-            className={styles.confirmTargetSelect}
-            disabled={!props.datasetId || tasks.isPending || tasks.isError}
-            showSearch
-            optionFilterProp="label"
-            options={taskOptions}
-            placeholder={
-              props.datasetId ? "请选择采集任务" : "请先选择目标数据集"
-            }
-            value={props.collectionTaskId || undefined}
-            notFoundContent="该数据集暂无可用采集任务"
-            onChange={props.onCollectionTaskIdChange}
-          />
+          <span aria-label="任务绑定的数据集">
+            {props.collectionTaskId ? props.datasetId : "选择任务后自动确定"}
+          </span>
+          <small className={styles.confirmTargetHint}>
+            数据将导入采集任务绑定的数据集
+          </small>
         </dd>
       </div>
       <div>

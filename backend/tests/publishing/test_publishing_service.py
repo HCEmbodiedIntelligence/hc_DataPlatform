@@ -731,13 +731,31 @@ def test_migration_enforces_append_only_publication_and_validated_promotion() ->
 
 
 @pytest.mark.integration
-def test_native_lerobot_v3_archive_reloads_with_real_parquet_reader() -> None:
+@pytest.mark.parametrize("structured", [False, True])
+def test_native_lerobot_v3_archive_reloads_with_real_parquet_reader(structured: bool) -> None:
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
     manifest = export_manifest()
     sink = InMemoryArtifactSink()
+    steps = export_steps()
+    if structured:
+        steps = [
+            step.model_copy(
+                update={
+                    "modalities": {
+                        **step.modalities,
+                        "action": {"names": ["left", "right"], "values": step.modalities["action"]},
+                        "camera.front": {
+                            "object_key": "raw/original.mp4",
+                            "frame_index": step.step_index,
+                        },
+                    }
+                }
+            )
+            for step in steps
+        ]
     result = ExportCoordinator(
-        source=InMemoryExportSource(export_steps()),
+        source=InMemoryExportSource(steps),
         sink=sink,
         exporters=[LeRobotV3Exporter()],
     ).export(manifest, format=ExportFormat.LEROBOT_V3, attempt_id="native-lerobot")
@@ -755,10 +773,19 @@ def test_native_lerobot_v3_archive_reloads_with_real_parquet_reader() -> None:
     assert [row["frame_index"] for row in rows] == [0, 1, 2, 3]
     assert [row["hc.source_step_index"] for row in rows] == [0, 1, 4, 5]
     assert all(
-        row["camera.front"] == f"frame-{source_step}"
+        (
+            json.loads(row["camera.front"])
+            == {"object_key": "raw/original.mp4", "frame_index": source_step}
+            if structured
+            else row["camera.front"] == f"frame-{source_step}"
+        )
         and row["action"] == [source_step, source_step + 1]
         for row, source_step in zip(rows, [0, 1, 4, 5], strict=True)
     )
+
+    if structured:
+        assert info["features"]["action"]["names"] == ["left", "right"]
+        assert info["hc.structured_features"]["camera.front"] == {"encoding": "json"}
 
 
 @pytest.mark.integration

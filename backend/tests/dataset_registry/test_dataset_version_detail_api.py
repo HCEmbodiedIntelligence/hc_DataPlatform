@@ -857,3 +857,27 @@ def test_p07_diff_and_deletion_preflight_are_durable_and_non_executable() -> Non
         reason["code"] == "DATASET_DELETE_CAPABILITY_REQUIRED"
         for reason in payload["blocked_reasons"]
     )
+
+
+def test_export_selection_resolves_version_bindings_and_rejects_foreign_episodes() -> None:
+    import pytest
+
+    service = _service()
+    arguments = dict(
+        auth=_auth(),
+        organization_id=ORGANIZATION_ID,
+        project_id=PROJECT_ID,
+        region_code=REGION_CODE,
+        dataset_id=DATASET_ID,
+        version_id=REVIEWING_VERSION_ID,
+    )
+    assert service.export_rollout_ids(**arguments, episode_ids=(EPISODE_ID,)) == (
+        "rollout_p07fixture",
+    )
+    with pytest.raises(ProblemException) as missing:
+        service.export_rollout_ids(**arguments, episode_ids=(EPISODE_ID, "episode_foreign"))
+    assert missing.value.problem.code == "EXPORT_EPISODE_NOT_INCLUDED"
+    with pytest.raises(ProblemException):
+        service.export_rollout_ids(
+            **{**arguments, "organization_id": "another-org"}, episode_ids=(EPISODE_ID,)
+        )

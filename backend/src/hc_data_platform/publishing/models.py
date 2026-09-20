@@ -209,10 +209,11 @@ class ExportStepV1(BaseModel):
 
 
 class ExportDatasetRequestV1(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     project_id: str = Field(min_length=1)
     format: ExportFormat
+    episode_ids: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=10000)
 
 
 class ExportResultV1(BaseModel):

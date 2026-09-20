@@ -362,6 +362,29 @@ def _feature_type(value: Any, pa: Any) -> tuple[Any, str, tuple[int, ...]]:
     raise _FeatureShapeError(f"unsupported LeRobot modality value type: {type(value).__name__}")
 
 
+def _lerobot_value(value: Any) -> tuple[Any, dict[str, Any] | None]:
+    """Keep vectors numeric and preserve other structured modalities losslessly."""
+    if not isinstance(value, dict):
+        return value, None
+    for key in ("positions", "values"):
+        vector = value.get(key)
+        if (
+            set(value) <= {key, "names"}
+            and isinstance(vector, (list, tuple))
+            and vector
+            and all(isinstance(item, (int, float)) for item in vector)
+        ):
+            return list(vector), {
+                "encoding": "vector",
+                "value_key": key,
+                "names": value.get("names"),
+            }
+    if set(value) == {"position_xyz", "orientation_wxyz"}:
+        return [*value["position_xyz"], *value["orientation_wxyz"]], {"encoding": "pose"}
+    # Camera frames stay references to existing media; exporting never re-encodes video.
+    return canonical_json_bytes(value).decode("utf-8"), {"encoding": "json"}
+
+
 def _parquet_bytes(table: Any, pq: Any) -> bytes:
     output = io.BytesIO()
     pq.write_table(
@@ -430,10 +453,19 @@ class LeRobotV3Exporter:
         modality_names = sorted(steps[0].modalities)
         modality_types: dict[str, Any] = {}
         features: dict[str, dict[str, Any]] = {}
+        structured_features: dict[str, dict[str, Any]] = {}
         for name in modality_names:
             try:
-                arrow_type, dtype, shape = _feature_type(steps[0].modalities[name], pa)
-                pa.array([step.modalities[name] for step in steps], type=arrow_type)
+                value, encoding = _lerobot_value(steps[0].modalities[name])
+                arrow_type, dtype, shape = _feature_type(value, pa)
+                if encoding is not None:
+                    structured_features[name] = encoding
+                for step in steps:
+                    if _lerobot_value(step.modalities[name])[1] != encoding:
+                        raise _FeatureShapeError("structured modality encoding changed")
+                pa.array(
+                    [_lerobot_value(step.modalities[name])[0] for step in steps], type=arrow_type
+                )
             except (TypeError, ValueError) as exc:
                 raise problem(
                     status=409,
@@ -445,7 +477,7 @@ class LeRobotV3Exporter:
             features[name] = {
                 "dtype": dtype,
                 "shape": list(shape or (1,)),
-                "names": None,
+                "names": (encoding or {}).get("names"),
             }
 
         default_features = {
@@ -476,7 +508,7 @@ class LeRobotV3Exporter:
             start_index = global_index
             for frame_index, step in enumerate(selected):
                 for name in modality_names:
-                    data_columns[name].append(step.modalities[name])
+                    data_columns[name].append(_lerobot_value(step.modalities[name])[0])
                 data_columns["timestamp"].append(frame_index / fps)
                 data_columns["frame_index"].append(frame_index)
                 data_columns["episode_index"].append(episode_index)
@@ -594,6 +626,7 @@ class LeRobotV3Exporter:
             "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
             "video_path": None,
             "robot_type": "hc-data-platform",
+            "hc.structured_features": structured_features,
             "splits": {"train": f"0:{len(manifest.rollouts)}"},
         }
         return _zip_files(
@@ -689,7 +722,7 @@ class LeRobotV3Exporter:
                         or actual["hc.source_timestamp_ns"] != expected.timestamp_ns
                         or any(
                             canonical_json_bytes(actual[name])
-                            != canonical_json_bytes(expected.modalities[name])
+                            != canonical_json_bytes(_lerobot_value(expected.modalities[name])[0])
                             for name in modality_names
                         )
                     ):

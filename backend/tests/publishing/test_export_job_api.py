@@ -410,3 +410,101 @@ def test_running_export_cancel_is_idempotent_and_cancelled_job_can_retry(
     assert retry.status_code == 202
     assert retry.json()["status"] == "RUNNING"
     assert retry.json()["job_id"] != job_id
+
+
+def test_episode_export_reads_only_selection_and_retry_preserves_it(export_api, monkeypatch):
+    import io
+    import json
+    import zipfile
+    from types import SimpleNamespace
+
+    import hc_data_platform.dataset_registry.router as datasets
+    import hc_data_platform.publishing.router as exports
+    from hc_data_platform.core.context import RequestContext
+    from hc_data_platform.publishing.exporters import LanceSnapshotExporter
+
+    client, current, _ = export_api
+    current["auth"] = _publisher_auth()
+    parent = _manifest()
+    parent = parent.model_copy(
+        update={
+            "rollouts": (
+                *parent.rollouts,
+                parent.rollouts[0].model_copy(update={"rollout_id": "rollout-b"}),
+            )
+        }
+    )
+    monkeypatch.setattr(exports._publisher, "get", lambda **_: parent)
+    monkeypatch.setattr(
+        exports,
+        "current_request_context",
+        lambda: RequestContext(
+            organization_id="org-a", project_id="project-a", region_code="region-a"
+        ),
+    )
+    monkeypatch.setattr(
+        datasets,
+        "get_dataset_page_service",
+        lambda: SimpleNamespace(
+            export_rollout_ids=lambda **kwargs: tuple(
+                "rollout-" + value.removeprefix("episode-") for value in kwargs["episode_ids"]
+            )
+        ),
+    )
+    sink = InMemoryArtifactSink()
+    source = InMemoryExportSource([_step(), _step().model_copy(update={"rollout_id": "rollout-b"})])
+    coordinator = ExportCoordinator(source=source, sink=sink, exporters=[LanceSnapshotExporter()])
+    monkeypatch.setattr(exports, "_export_coordinator", coordinator)
+    selected = {"project_id": "project-a", "format": "lance_snapshot", "episode_ids": ["episode-b"]}
+    first = client.post(_export_url(), json=selected, headers={"Idempotency-Key": "same-key"})
+    assert first.status_code == 202, first.text
+    assert first.json()["status"] == "SUCCEEDED", first.text
+    assert first.json()["result"]["row_count"] == 1
+    first_id = first.json()["job_id"]
+    record = exports.get_launcher().get(first_id)
+    assert record.result["export_selection"]["rollout_ids"] == ["rollout-b"]
+    artifact = sink.get_published(record.result["export"]["artifact_uri"])
+    with zipfile.ZipFile(io.BytesIO(artifact)) as archive:
+        metadata = json.loads(archive.read("snapshot-manifest.json"))
+        assert metadata["row_count"] == 1
+    # A different selection must neither deduplicate to the first job nor reuse its artifact.
+    second = client.post(
+        _export_url(),
+        json={**selected, "episode_ids": ["episode-a"]},
+        headers={"Idempotency-Key": "same-key"},
+    )
+    assert second.json()["job_id"] != first_id
+    assert (
+        second.json()["result"]["artifact_content_hash"]
+        != first.json()["result"]["artifact_content_hash"]
+    )
+    launcher = exports.get_launcher()
+    launcher._jobs[first_id] = record.model_copy(update={"status": JobStatus.TECHNICAL_FAILED})
+    retried = client.post(
+        f"{_export_url(first_id)}:retry",
+        params={"project_id": "project-a"},
+        headers={"Idempotency-Key": "retry-selected"},
+    )
+    assert retried.json()["status"] == "SUCCEEDED", retried.text
+    assert retried.json()["result"]["row_count"] == 1
+    assert (
+        retried.json()["result"]["artifact_content_hash"]
+        == first.json()["result"]["artifact_content_hash"]
+    )
+    for ids in ([], ["episode-missing"]):
+        invalid = client.post(
+            _export_url(),
+            json={**selected, "episode_ids": ids},
+            headers={"Idempotency-Key": "invalid"},
+        )
+        assert invalid.status_code == 422
+    launcher._jobs[first_id] = record.model_copy(
+        update={"status": JobStatus.CANCELLED, "result": None}
+    )
+    unsafe_retry = client.post(
+        f"{_export_url(first_id)}:retry",
+        params={"project_id": "project-a"},
+        headers={"Idempotency-Key": "missing-selection"},
+    )
+    assert unsafe_retry.status_code == 409
+    assert unsafe_retry.json()["code"] == "EXPORT_SELECTION_UNAVAILABLE"

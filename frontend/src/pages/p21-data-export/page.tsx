@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -25,8 +30,8 @@ import type { DatasetId } from "../../entities/dataset";
 import type { DatasetVersionId } from "../../entities/dataset-version";
 import {
   fetchDatasets,
-  useDatasetFacetsQuery,
-  useDatasetsQuery,
+  fetchVersionEpisodes,
+  type EpisodeListItemVm,
   type DatasetListItemVm,
 } from "../../features/datasets/api";
 import {
@@ -42,6 +47,10 @@ import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState, StandardPageScaffold, StatusTag } from "../../shared/ui";
+import {
+  collectionTaskGateway,
+  type CollectionTask,
+} from "../p20-collection-tasks/api";
 import styles from "./styles.module.css";
 
 const MAX_BATCH_TASKS = 50;
@@ -57,12 +66,12 @@ const formatOptions: readonly {
   {
     value: "lance_snapshot",
     label: "Lance 数据文件",
-    description: "导出当前 READY 版本的全部对齐 Step，并保留 rollout_id。",
+    description: "导出所选 Episode 的对齐 Step，并保留 rollout_id。",
   },
   {
     value: "lerobot_v3",
     label: "LeRobot v3",
-    description: "按 Rollout 拆分 Episode，生成 LeRobot v3 标准目录。",
+    description: "所选 Episode 的数值数据与媒体引用，生成 LeRobot v3 目录。",
   },
 ] as const;
 
@@ -75,18 +84,20 @@ const statusLabels = {
 } as const;
 
 type ExportSource = Readonly<{
-  key: string;
   datasetId: DatasetId;
   datasetName: string;
   versionId: DatasetVersionId | null;
   versionLabel: string;
-  versionKind: string;
-  publishedAt: string | null;
-  episodeCount: string;
 }>;
 
 type ExportableSource = ExportSource &
   Readonly<{ versionId: DatasetVersionId }>;
+
+type ExportEpisode = EpisodeListItemVm &
+  Readonly<{
+    key: string;
+    source: ExportableSource;
+  }>;
 
 type ExportTaskRef = Readonly<{
   jobId: string;
@@ -96,6 +107,7 @@ type ExportTaskRef = Readonly<{
   versionLabel: string;
   format: PublishedExportFormat;
   createdAt: string;
+  episodeCount?: number;
 }>;
 
 type TaskFilter = "all" | "active" | "succeeded" | "failed";
@@ -109,18 +121,13 @@ type TaskRow = Readonly<{
 type BatchRequest = Readonly<{
   source: ExportableSource;
   format: PublishedExportFormat;
+  episodeIds: readonly string[];
 }>;
 type CreatedTask = Readonly<{ ref: ExportTaskRef; job: PublishedExportJob }>;
 type BatchResult = Readonly<{
   created: readonly CreatedTask[];
   failed: readonly Readonly<{ request: BatchRequest; reason: string }>[];
 }>;
-type SourceFilterKind = "task" | "tag" | "robotId";
-type SourceFilterRequest = Readonly<{
-  kind: SourceFilterKind;
-  value: string;
-}>;
-
 function listParam(params: URLSearchParams, key: string): string[] {
   return [
     ...new Set(
@@ -132,13 +139,23 @@ function listParam(params: URLSearchParams, key: string): string[] {
   ];
 }
 
-function facetOptions(
-  values: readonly Readonly<{ value: string; count: string }>[] | undefined,
-) {
-  return (values ?? []).map((item) => ({
-    value: item.value,
-    label: `${item.value} (${Number(item.count).toLocaleString("zh-CN")})`,
-  }));
+async function allPages<T>(
+  fetchPage: (
+    cursor?: string,
+  ) => Promise<{ items: readonly T[]; next?: string | null }>,
+): Promise<T[]> {
+  const items: T[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await fetchPage(cursor);
+    items.push(...page.items);
+    cursor = page.next ?? undefined;
+    if (cursor && seen.has(cursor))
+      throw new Error("分页游标重复，请刷新后重试。");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return items;
 }
 
 function idempotencyKey(prefix: string): string {
@@ -170,8 +187,11 @@ function triggerDownload(url: string, fileName: string): void {
 
 function readableError(error: unknown): string {
   if (isDomainError(error)) {
-    if (error.problemCode === "NO_ELIGIBLE_ROLLOUTS") {
-      return "该版本没有可导出的已审核标注数据，请先完成质量检查和标注审核。";
+    if (
+      error.problemCode === "EXPORT_EPISODE_NOT_ELIGIBLE" ||
+      error.problemCode === "NO_ELIGIBLE_ROLLOUTS"
+    ) {
+      return "所选数据尚未全部通过质量检查和标注审核，请先完成审核后导出。";
     }
     if (error.problemCode === "DATASET_VERSION_NOT_FOUND") {
       return "当前 READY 版本尚未完成导出准备，请刷新数据后重试。";
@@ -279,14 +299,10 @@ function mergeTaskRefs(
 
 function toSource(item: DatasetListItemVm): ExportSource {
   return {
-    key: item.datasetId,
     datasetId: item.datasetId,
     datasetName: item.name,
     versionId: item.currentVersion?.versionId ?? null,
     versionLabel: item.currentVersion?.displayVersion ?? "暂无 READY 版本",
-    versionKind: item.currentVersion?.kind ?? "—",
-    publishedAt: item.currentVersion?.publishedAt ?? null,
-    episodeCount: item.episodeCount,
   };
 }
 
@@ -303,8 +319,6 @@ export function DataExportPage() {
   const queryClient = useQueryClient();
   const appliedDatasetIds = listParam(params, "datasetId");
   const appliedTasks = listParam(params, "task");
-  const appliedTags = listParam(params, "tag");
-  const appliedRobotIds = listParam(params, "robotId");
   const [selectedSourceKeys, setSelectedSourceKeys] = useState<string[]>([]);
   const [selectedFormats, setSelectedFormats] = useState<
     PublishedExportFormat[]
@@ -325,11 +339,13 @@ export function DataExportPage() {
   const canRead =
     capabilities.has("export.read") &&
     capabilities.has("dataset.read") &&
-    capabilities.has("dataset_version.read");
+    capabilities.has("dataset_version.read") &&
+    capabilities.has("episode.read");
   const canCreate = capabilities.has("export.create");
   const canDownload = capabilities.has("export.download");
 
   useEffect(() => {
+    setSelectedSourceKeys([]);
     setTaskStore((current) =>
       current.scopeKey === scopeKey
         ? current
@@ -344,82 +360,116 @@ export function DataExportPage() {
     }
   }, [scopeKey, taskStore]);
 
-  const datasets = useDatasetsQuery(
-    {
-      sort: "activityDesc",
-      limit: 100,
-    },
-    canRead,
-  );
-  const facets = useDatasetFacetsQuery({}, canRead);
-  const allSources = useMemo(
-    () => (datasets.data?.items ?? []).map(toSource),
-    [datasets.data?.items],
-  );
-  const sourceFilterRequests: SourceFilterRequest[] = [
-    ...appliedTasks.map((value) => ({ kind: "task" as const, value })),
-    ...appliedTags.map((value) => ({ kind: "tag" as const, value })),
-    ...appliedRobotIds.map((value) => ({ kind: "robotId" as const, value })),
-  ];
-  const sourceFilterQueries = useQueries({
-    queries: sourceFilterRequests.map((filter) => ({
-      queryKey: ["export-source-filter", scopeKey, filter.kind, filter.value],
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        fetchDatasets(
-          {
-            [filter.kind]: filter.value,
-            sort: "activityDesc",
-            limit: 100,
-          },
+  const datasets = useQuery({
+    queryKey: ["export-datasets", scopeKey],
+    queryFn: ({ signal }) =>
+      allPages<DatasetListItemVm>(async (after) => {
+        const page = await fetchDatasets(
+          { sort: "activityDesc", limit: 100, after },
           signal,
-        ),
-      enabled: canRead,
+        );
+        if (page.pageInfo.hasNextPage && !page.pageInfo.after)
+          throw new Error("数据集分页不完整。");
+        return {
+          items: page.items,
+          next: page.pageInfo.hasNextPage ? page.pageInfo.after : null,
+        };
+      }),
+    enabled: canRead,
+    staleTime: 30_000,
+  });
+  const collectionTasks = useQuery({
+    queryKey: ["export-collection-tasks", scopeKey],
+    queryFn: ({ signal }) =>
+      allPages<CollectionTask>(async (cursor) => {
+        const page = await collectionTaskGateway.list(
+          { ...scope!, projectId: projectId!, regionCode: scope!.regionCode! },
+          { limit: 100, ...(cursor ? { cursor } : {}) },
+          signal,
+        );
+        return { items: page.items, next: page.next_cursor };
+      }),
+    enabled: canRead && Boolean(scope && projectId),
+    staleTime: 30_000,
+  });
+  const allSources = useMemo(
+    () => (datasets.data ?? []).map(toSource),
+    [datasets.data],
+  );
+  const taskById = new Map(
+    (collectionTasks.data ?? []).map((task) => [task.collection_task_id, task]),
+  );
+  const sources = allSources.filter(
+    (source): source is ExportableSource =>
+      isExportable(source) &&
+      (appliedDatasetIds.length === 0 ||
+        appliedDatasetIds.includes(source.datasetId)) &&
+      (appliedTasks.length === 0 ||
+        appliedTasks.some(
+          (id) => taskById.get(id)?.dataset_id === source.datasetId,
+        )),
+  );
+  const activeSourceFilterCount =
+    appliedDatasetIds.length + appliedTasks.length;
+  const episodeQueries = useQueries({
+    queries: sources.map((source) => ({
+      queryKey: [
+        "export-episodes",
+        scopeKey,
+        source.datasetId,
+        source.versionId,
+      ],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        allPages<EpisodeListItemVm>(async (after) => {
+          const page = await fetchVersionEpisodes(
+            source.datasetId,
+            source.versionId,
+            {
+              limit: 100,
+              included: true,
+              after,
+            },
+            signal,
+          );
+          if (page.pageInfo.hasNextPage && !page.pageInfo.after)
+            throw new Error("Episode 分页不完整。");
+          return {
+            items: page.items,
+            next: page.pageInfo.hasNextPage ? page.pageInfo.after : null,
+          };
+        }),
+      enabled: canRead && activeSourceFilterCount > 0,
       staleTime: 30_000,
     })),
   });
-  const matchedIds: Record<SourceFilterKind, Set<string>> = {
-    task: new Set(),
-    tag: new Set(),
-    robotId: new Set(),
-  };
-  sourceFilterRequests.forEach((filter, index) => {
-    sourceFilterQueries[index]?.data?.items.forEach((item) =>
-      matchedIds[filter.kind].add(item.datasetId),
-    );
-  });
-  const sources = allSources.filter(
-    (source) =>
-      (appliedDatasetIds.length === 0 ||
-        appliedDatasetIds.includes(source.datasetId)) &&
-      (appliedTasks.length === 0 || matchedIds.task.has(source.datasetId)) &&
-      (appliedTags.length === 0 || matchedIds.tag.has(source.datasetId)) &&
-      (appliedRobotIds.length === 0 ||
-        matchedIds.robotId.has(source.datasetId)),
+  const episodes: ExportEpisode[] = sources.flatMap((source, index) =>
+    (episodeQueries[index]?.data ?? [])
+      .filter(
+        (episode) =>
+          appliedTasks.length === 0 ||
+          (episode.task !== null && appliedTasks.includes(episode.task)),
+      )
+      .map((episode) => ({
+        ...episode,
+        source,
+        key: `${scopeKey}/${source.datasetId}/${source.versionId}/${episode.episodeId}`,
+      })),
   );
-  const selectedSources = useMemo(
-    () =>
-      sources.filter(
-        (source): source is ExportableSource =>
-          selectedSourceKeys.includes(source.key) && isExportable(source),
-      ),
-    [selectedSourceKeys, sources],
+  const selectedKeys = new Set(selectedSourceKeys);
+  const selectedEpisodes = episodes.filter((episode) =>
+    selectedKeys.has(episode.key),
+  );
+  const selectedSources = sources.filter((source) =>
+    selectedEpisodes.some((episode) => episode.datasetId === source.datasetId),
   );
   const batchTaskCount = selectedSources.length * selectedFormats.length;
-  const selectedEpisodeCount = selectedSources.reduce(
-    (total, source) => total + Number(source.episodeCount),
-    0,
-  );
-  const sourceFiltersPending = sourceFilterQueries.some(
-    (query) => query.isPending,
-  );
-  const sourceFilterError = sourceFilterQueries.find(
+  const selectedEpisodeCount = selectedEpisodes.length;
+  const sourceFiltersPending =
+    activeSourceFilterCount > 0 &&
+    episodeQueries.some((query) => query.isPending);
+  const sourceFilterError = episodeQueries.find(
     (query) => query.isError,
   )?.error;
-  const activeSourceFilterCount =
-    appliedDatasetIds.length +
-    appliedTasks.length +
-    appliedTags.length +
-    appliedRobotIds.length;
 
   const taskQueries = useQueries({
     queries: taskRefs.map((ref) => ({
@@ -499,6 +549,7 @@ export function DataExportPage() {
               datasetId: request.source.datasetId,
               datasetVersion: request.source.versionId,
               format: request.format,
+              episodeIds: request.episodeIds,
               idempotencyKey: idempotencyKey("published-export"),
             }),
           ),
@@ -517,6 +568,7 @@ export function DataExportPage() {
                 versionLabel: request.source.versionLabel,
                 format: request.format,
                 createdAt: job.created_at,
+                episodeCount: request.episodeIds.length,
               },
             });
           } else {
@@ -637,57 +689,49 @@ export function DataExportPage() {
     setBatchFeedback(null);
     createBatch.mutate(
       selectedSources.flatMap((source) =>
-        selectedFormats.map((format) => ({ source, format })),
+        selectedFormats.map((format) => ({
+          source,
+          format,
+          episodeIds: selectedEpisodes
+            .filter((episode) => episode.datasetId === source.datasetId)
+            .map((episode) => episode.episodeId),
+        })),
       ),
     );
   };
 
-  const sourceColumns: ColumnsType<ExportSource> = [
+  const sourceColumns: ColumnsType<ExportEpisode> = [
+    {
+      title: "Episode",
+      key: "episode",
+      render: (_, episode) => (
+        <div className={styles.primaryCell}>
+          <strong>Episode {episode.ordinal}</strong>
+          <code>{episode.episodeId}</code>
+        </div>
+      ),
+    },
     {
       title: "数据集",
       key: "dataset",
-      render: (_, source) => (
-        <div className={styles.primaryCell}>
-          <strong>{source.datasetName}</strong>
-          <code>{source.datasetId}</code>
-        </div>
-      ),
+      render: (_, episode) => episode.source.datasetName,
     },
     {
-      title: "当前已发布版本",
+      title: "来源任务",
+      key: "task",
+      render: (_, episode) =>
+        episode.task ? (taskById.get(episode.task)?.name ?? episode.task) : "—",
+    },
+    {
+      title: "版本",
       key: "version",
-      render: (_, source) => (
-        <div className={styles.versionCell}>
-          <span>{source.versionLabel}</span>
-          {source.versionId ? (
-            <StatusTag known status="READY" tone="success" />
-          ) : (
-            <StatusTag known status="不可导出" tone="neutral" />
-          )}
-        </div>
-      ),
+      render: (_, episode) => episode.source.versionLabel,
     },
     {
-      title: "类型",
-      dataIndex: "versionKind",
-      key: "kind",
-      responsive: ["md"],
-    },
-    {
-      title: "Episode 数",
-      dataIndex: "episodeCount",
-      key: "count",
-      align: "right",
-      responsive: ["lg"],
+      title: "处理状态",
+      dataIndex: "successState",
       render: (value: string) =>
-        Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 0 }),
-    },
-    {
-      title: "发布时间",
-      dataIndex: "publishedAt",
-      key: "publishedAt",
-      responsive: ["xl"],
-      render: (value: string | null) => formatDate(value),
+        value === "SUCCEEDED" ? "已完成" : value === "FAILED" ? "失败" : "未知",
     },
   ];
 
@@ -698,7 +742,12 @@ export function DataExportPage() {
       render: (_, row) => (
         <div className={styles.primaryCell}>
           <strong>{row.ref.datasetName}</strong>
-          <span>{row.ref.versionLabel}</span>
+          <span>
+            {row.ref.versionLabel}
+            {row.ref.episodeCount !== undefined
+              ? ` · ${row.ref.episodeCount} 个 Episode`
+              : ""}
+          </span>
         </div>
       ),
     },
@@ -843,7 +892,9 @@ export function DataExportPage() {
     canCreate &&
     Boolean(projectId) &&
     batchTaskCount > 0 &&
-    batchTaskCount <= MAX_BATCH_TASKS;
+    batchTaskCount <= MAX_BATCH_TASKS &&
+    !sourceFiltersPending &&
+    !sourceFilterError;
 
   return (
     <main className={styles.page} data-page-id="P21">
@@ -896,7 +947,7 @@ export function DataExportPage() {
                         <span className={styles.stepBadge}>1</span>
                         <span>
                           <strong id="export-scope-title">选择数据范围</strong>
-                          <small>可搜索并多选，选择后立即筛选</small>
+                          <small>先按任务或数据集查找，再勾选 Episode</small>
                         </span>
                       </div>
                       <Button
@@ -936,51 +987,24 @@ export function DataExportPage() {
                           allowClear
                           showSearch
                           id="export-task-filter"
-                          loading={facets.isPending}
+                          loading={collectionTasks.isPending}
                           maxTagCount="responsive"
                           mode="multiple"
                           optionFilterProp="label"
-                          options={facetOptions(facets.data?.tasks)}
+                          options={(collectionTasks.data ?? [])
+                            .filter(
+                              (task) =>
+                                appliedDatasetIds.length === 0 ||
+                                appliedDatasetIds.includes(task.dataset_id),
+                            )
+                            .map((task) => ({
+                              value: task.collection_task_id,
+                              label: task.name,
+                            }))}
                           placeholder="全部任务"
                           value={appliedTasks}
                           onChange={(values) =>
                             updateSourceFilter("task", values)
-                          }
-                        />
-                      </div>
-                      <div className={styles.filterField}>
-                        <label htmlFor="export-tag-filter">Tag</label>
-                        <Select
-                          allowClear
-                          showSearch
-                          id="export-tag-filter"
-                          loading={facets.isPending}
-                          maxTagCount="responsive"
-                          mode="multiple"
-                          optionFilterProp="label"
-                          options={facetOptions(facets.data?.tags)}
-                          placeholder="全部 Tag"
-                          value={appliedTags}
-                          onChange={(values) =>
-                            updateSourceFilter("tag", values)
-                          }
-                        />
-                      </div>
-                      <div className={styles.filterField}>
-                        <label htmlFor="export-robot-filter">机器人</label>
-                        <Select
-                          allowClear
-                          showSearch
-                          id="export-robot-filter"
-                          loading={facets.isPending}
-                          maxTagCount="responsive"
-                          mode="multiple"
-                          optionFilterProp="label"
-                          options={facetOptions(facets.data?.robots)}
-                          placeholder="全部机器人"
-                          value={appliedRobotIds}
-                          onChange={(values) =>
-                            updateSourceFilter("robotId", values)
                           }
                         />
                       </div>
@@ -990,55 +1014,75 @@ export function DataExportPage() {
                   <div className={styles.scopeNote} role="note">
                     <Info aria-hidden="true" size={17} />
                     <span>
-                      <strong>首次导出会自动冻结不可变版本清单</strong>
+                      <strong>按 Episode 选择导出内容</strong>
                       <small>
-                        仅质量检查通过、派生完成且标注审核通过的数据可以导出。
-                        LeRobot v3 按 Rollout 拆分 Episode；Lance 保留 Rollout
-                        标识。
+                        列出当前 READY 版本中的 Episode，仅导出勾选的数据。
+                        所选数据需要通过质量检查和标注审核；同一数据集的 Episode
+                        按格式分别打包。
                       </small>
-                    </span>
-                    <span className={styles.episodeRule}>
-                      LeRobot v3 · 1 Rollout = 1 Episode
                     </span>
                   </div>
 
-                  {facets.isError || sourceFilterError ? (
+                  {collectionTasks.isError || sourceFilterError ? (
                     <Alert
                       showIcon
                       className={styles.sourceAlert}
                       title="部分筛选选项加载失败"
                       description={readableError(
-                        facets.error ?? sourceFilterError,
+                        collectionTasks.error ?? sourceFilterError,
                       )}
                       type="warning"
                     />
                   ) : null}
 
-                  <Table<ExportSource>
-                    aria-label="可导出数据列表"
+                  <div className={styles.sectionHeader}>
+                    <strong>选择 Episode</strong>
+                    <Button
+                      disabled={
+                        episodes.length === 0 ||
+                        sourceFiltersPending ||
+                        Boolean(sourceFilterError)
+                      }
+                      onClick={() =>
+                        setSelectedSourceKeys(
+                          episodes.map((episode) => episode.key),
+                        )
+                      }
+                    >
+                      {appliedTasks.length > 0
+                        ? "全选所选任务的 Episode"
+                        : "全选所选数据集的 Episode"}
+                    </Button>
+                    <Button
+                      disabled={selectedEpisodeCount === 0}
+                      onClick={() => setSelectedSourceKeys([])}
+                    >
+                      清空选择
+                    </Button>
+                  </div>
+                  <Table<ExportEpisode>
+                    aria-label="可导出 Episode 列表"
                     className={styles.sourceTable}
                     columns={sourceColumns}
-                    dataSource={sources}
+                    dataSource={episodes}
                     locale={{
                       emptyText:
                         activeSourceFilterCount > 0
-                          ? "没有匹配的可导出数据"
-                          : "当前项目还没有已发布的数据",
+                          ? "所选范围暂无 Episode"
+                          : "请先选择任务或数据集",
                     }}
                     loading={sourceFiltersPending}
-                    pagination={false}
-                    rowClassName={(source) =>
-                      source.versionId ? "" : (styles.unavailableRow ?? "")
-                    }
+                    pagination={{
+                      pageSize: 20,
+                      showSizeChanger: false,
+                      hideOnSinglePage: true,
+                    }}
                     rowSelection={{
                       selectedRowKeys: selectedSourceKeys,
                       onChange: (keys) =>
-                        setSelectedSourceKeys(keys.map((key) => String(key))),
-                      getCheckboxProps: (source) => ({
-                        disabled: source.versionId === null,
-                        "aria-label": source.versionId
-                          ? `选择 ${source.datasetName}`
-                          : `${source.datasetName} 暂不可导出`,
+                        setSelectedSourceKeys(keys.map(String)),
+                      getCheckboxProps: (episode) => ({
+                        "aria-label": `选择 Episode ${episode.ordinal} · ${episode.source.datasetName}`,
                       }),
                     }}
                     size="middle"
@@ -1113,7 +1157,8 @@ export function DataExportPage() {
                         </div>
                         <div className={styles.batchAction}>
                           <small>
-                            数据集 × 格式 = 独立任务；单个失败不影响其他任务
+                            所选 Episode
+                            按数据集和格式分别打包；不会导出未勾选的数据
                           </small>
                           <Button
                             aria-label={`创建 ${batchTaskCount} 个导出任务`}

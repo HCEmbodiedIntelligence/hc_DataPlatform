@@ -855,6 +855,70 @@ class DatasetPageService:
             meta=self._meta(request_id=request_id, now=now),
         )
 
+    def export_rollout_ids(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        version_id: str,
+        episode_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Resolve only selected, included Episodes in the exact version and tenant."""
+        scope = self._authorize_episode_read(
+            auth=auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+        )
+        self._required_version(scope=scope, dataset_id=dataset_id, version_id=version_id)
+        episodes = {
+            item.episode_id: item
+            for item in self._repository.list_episodes(
+                scope=scope,
+                dataset_id=dataset_id,
+                version_id=version_id,
+                filters=DatasetPageEpisodeFilters(),
+            )
+        }
+        rollout_ids: set[str] = set()
+        for episode_id in episode_ids:
+            episode = episodes.get(episode_id)
+            if episode is None or not episode.included:
+                raise problem(
+                    status=422,
+                    code="EXPORT_EPISODE_NOT_INCLUDED",
+                    title="Episode is not included in this version",
+                    detail="Every selected Episode must belong to the requested dataset version.",
+                )
+            revision = self._repository.episode_revision(
+                scope=scope,
+                dataset_id=dataset_id,
+                version_id=version_id,
+                revision_id=episode.selected_revision.revision_id,
+            )
+            bindings = (
+                set()
+                if revision is None
+                else {
+                    binding.rollout_id
+                    for stream in revision.streams
+                    for binding in (stream.aligned_media_binding, stream.data_binding)
+                    if binding is not None
+                }
+            )
+            if len(bindings) != 1:
+                raise problem(
+                    status=409,
+                    code="EXPORT_EPISODE_BINDING_INVALID",
+                    title="Episode export binding is unavailable",
+                    detail="The selected Episode must identify exactly one aligned rollout.",
+                )
+            rollout_ids.update(bindings)
+        return tuple(sorted(rollout_ids))
+
     def episode_revision(
         self,
         *,

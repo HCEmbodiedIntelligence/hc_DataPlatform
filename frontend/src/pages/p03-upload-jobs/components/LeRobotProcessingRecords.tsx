@@ -234,6 +234,7 @@ export function LeRobotProcessingRecords({
               <ProcessingTargetFields
                 scope={scope}
                 datasetId={processingItem.dataset_id}
+                fixedDatasetId={processingItem.dataset_id}
                 collectionTaskId={taskId}
                 robotId={robotId}
                 onDatasetIdChange={() => {}}

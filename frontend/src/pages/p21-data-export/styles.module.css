@@ -136,7 +136,7 @@
 
 .filterGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -198,7 +198,7 @@
   color: var(--hc-color-primary, #4c57c6);
 }
 
-.scopeNote > span:not(.episodeRule) {
+.scopeNote > span {
   display: grid;
   gap: 2px;
 }
@@ -213,17 +213,6 @@
   color: var(--hc-color-text-muted, #676b80);
   font-size: 10px;
   line-height: 1.45;
-}
-
-.episodeRule {
-  padding: 5px 8px;
-  color: #35409a;
-  border: 1px solid #d4d9f5;
-  border-radius: 999px;
-  background: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 .sourceAlert {
@@ -259,8 +248,7 @@
   cursor: pointer;
 }
 
-.primaryCell,
-.versionCell {
+.primaryCell {
   display: grid;
   min-width: 0;
   gap: 3px;
@@ -283,17 +271,6 @@
   color: var(--hc-color-text-muted, #676b80);
   font-size: 10px;
   white-space: nowrap;
-}
-
-.versionCell {
-  grid-template-columns: minmax(0, auto) max-content;
-  gap: 8px;
-  align-items: center;
-  justify-content: start;
-}
-
-.unavailableRow {
-  opacity: 0.62;
 }
 
 .exportSettings {
@@ -585,11 +562,6 @@
 
   .scopeNote {
     grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .episodeRule {
-    grid-column: 2;
-    justify-self: start;
   }
 
   .formatOptions,

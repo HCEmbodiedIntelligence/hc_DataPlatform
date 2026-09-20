@@ -14508,6 +14508,16 @@ components:
     ExportDatasetRequestV1:
       additionalProperties: false
       properties:
+        episode_ids:
+          anyOf:
+          - items:
+              type: string
+            maxItems: 10000
+            minItems: 1
+            type: array
+          - type: 'null'
+          default: null
+          description: Exact Episodes to export from this version; omitted preserves whole-version export.
         format:
           enum:
           - lance_snapshot

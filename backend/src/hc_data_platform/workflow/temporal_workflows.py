@@ -1108,6 +1108,9 @@ class ExportWorkflow(_JobLifecycle):
                 f"{request.format.value}/{request.attempt_id}"
             ),
         )
+        selection = {"export_selection": request.selection} if request.selection else {}
+        if selection:
+            self._job = self._record().model_copy(update={"result": selection})
         try:
             self._stage("preflight")
             await _execute_activity(
@@ -1140,7 +1143,7 @@ class ExportWorkflow(_JobLifecycle):
             )
             return self._finish(
                 JobStatus.SUCCEEDED,
-                result={"export": result.result.model_dump(mode="json")},
+                result={**selection, "export": result.result.model_dump(mode="json")},
             )
         except (asyncio.CancelledError, CancelledError):
             self._cancelled()
@@ -1148,6 +1151,7 @@ class ExportWorkflow(_JobLifecycle):
         except ActivityError as exc:
             return self._finish(
                 JobStatus.TECHNICAL_FAILED,
+                result=selection or None,
                 error_code=_error_code(exc),
                 error_message=(
                     "The export workflow failed. Retry after resolving the reported code."

@@ -322,6 +322,15 @@ components:
       properties:
         project_id: {type: string, minLength: 1}
         format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        episode_ids:
+          description: Exact Episodes to export from this version; omitted preserves whole-version export.
+          anyOf:
+            - type: array
+              items: {type: string}
+              minItems: 1
+              maxItems: 10000
+            - type: 'null'
+          default: null
     ExportJobStatus:
       type: string
       enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED]
