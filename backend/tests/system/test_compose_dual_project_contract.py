@@ -67,6 +67,58 @@ def _resource_names(config: dict[str, Any], kind: str) -> set[str]:
     return {str(resource["name"]) for resource in config[kind].values()}
 
 
+def test_development_lan_origin_exposes_only_the_gateway(tmp_path: Path) -> None:
+    for name, settings, expected_host, expected_origin in (
+        ("default", {}, "127.0.0.1", "http://127.0.0.1:9000"),
+        (
+            "lan",
+            {
+                "HC_GATEWAY_BIND_ADDRESS": "0.0.0.0",
+                "HC_GATEWAY_HOST_PORT": "28088",
+                "HC_PUBLIC_ORIGIN": "http://192.0.2.10:28088",
+            },
+            "0.0.0.0",
+            "http://192.0.2.10:28088",
+        ),
+    ):
+        env_file = tmp_path / f"{name}.env"
+        _write_env(env_file, settings)
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                str(env_file),
+                "-f",
+                str(COMPOSE),
+                "config",
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        services = json.loads(result.stdout)["services"]
+        gateway_port = services["gateway"]["ports"][0]
+        assert gateway_port["host_ip"] == expected_host
+        assert str(gateway_port["published"]) == settings.get("HC_GATEWAY_HOST_PORT", "8088")
+        for service in ("api", "worker"):
+            assert services[service]["environment"]["HC_OBJECT_STORE_PUBLIC_ENDPOINT"] == (
+                expected_origin
+            )
+            assert services[service]["environment"]["HC_OBJECT_STORE_ENDPOINT"] == (
+                "http://minio:9000"
+            )
+        assert all(
+            port["host_ip"] == "127.0.0.1"
+            for service, config in services.items()
+            if service != "gateway"
+            for port in config.get("ports", [])
+        )
+
+
 def test_two_compose_projects_have_disjoint_ports_networks_and_volumes(tmp_path: Path) -> None:
     source_project = "hc-migration-src-contract"
     target_project = "hc-migration-dst-contract"

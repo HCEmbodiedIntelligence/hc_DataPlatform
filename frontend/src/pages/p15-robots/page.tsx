@@ -35,6 +35,7 @@ import {
 } from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useOrganizationCapabilities } from "../../shared/auth/use-capabilities";
+import { sha256File } from "../../shared/lib/browser-crypto";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
   CursorPager,
@@ -113,16 +114,6 @@ const parseErrorLabels: Readonly<Record<string, string>> = {
   URDF_JOINTS_DUPLICATED: "URDF 中存在重复 joint 名称。",
   CONFIG_JSON_OBJECT_REQUIRED: "JSON 配置文件的根节点必须是对象。",
 };
-
-async function sha256File(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    await file.arrayBuffer(),
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-}
 
 function uniqueVersionLabel(prefix: string): string {
   const stamp = new Date()

@@ -4,9 +4,11 @@ import { AppProviders } from "./app/providers";
 import { readAppEnvironment, StartupErrorPage } from "./app/env";
 import { configureRuntime } from "./shared/config/runtime";
 import { configureReleaseIdentity } from "./shared/config/release-identity";
+import { installRandomUuidFallback } from "./shared/lib/browser-crypto";
 import "./app/theme/global.css";
 
 async function bootstrap(): Promise<void> {
+  installRandomUuidFallback();
   const rootElement = document.getElementById("root");
   if (rootElement === null) throw new Error("Missing application root element");
   const root = createRoot(rootElement);

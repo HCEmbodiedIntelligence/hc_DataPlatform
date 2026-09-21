@@ -47,6 +47,40 @@ docker compose --env-file .env.single-server -f compose.single-server.yaml stop
 两套配置默认都使用 8088，当前单机配置还复用了开发版的数据卷，不能同时运行。
 不需要源码热更新时，另见[六服务静态部署与迁移](docs/single-server-storage.md)。
 
+### 同网段远程开发：通过服务器 IP 访问
+
+服务器安装 Docker Engine、Compose 插件和 Git 后，在服务器上拉取代码，并保留已有 `.env`：
+
+```bash
+[ -f .env ] || cp .env.example .env
+```
+
+在 `.env` 中设置以下变量，把示例 IP 换成服务器实际的内网 IP：
+
+```dotenv
+HC_GATEWAY_BIND_ADDRESS=0.0.0.0
+HC_GATEWAY_HOST_PORT=8088
+HC_PUBLIC_ORIGIN=http://192.168.1.100:8088
+```
+
+`HC_PUBLIC_ORIGIN` 必须与浏览器实际访问的地址一致，包含协议和端口。
+页面、API、上传、下载及视频通过同一个 8088 入口访问，不需要开放 MinIO 或数据库端口。
+服务器防火墙需允许访问电脑连接 TCP 8088。然后执行：
+
+```bash
+docker compose -f compose.dev.yaml config --quiet
+docker compose -f compose.dev.yaml up --build -V -d --remove-orphans
+docker compose -f compose.dev.yaml ps -a
+```
+
+浏览器打开 `http://192.168.1.100:8088`。通过 SSH 或远程编辑器修改服务器上的
+`frontend/src`、`backend/src` 即可触发热更新；修改本地另一份代码后需先同步到服务器。
+后续更新执行 `git pull --ff-only`，再执行上面的构建启动命令。已有数据存放在命名卷中。
+
+仅通过 SSH 转发访问时，可将 `.env` 设置为 `HC_GATEWAY_BIND_ADDRESS=127.0.0.1`、
+`HC_PUBLIC_ORIGIN=http://127.0.0.1:8088`，应用配置后，在访问电脑执行
+`ssh -N -L 8088:127.0.0.1:8088 用户名@服务器IP`，浏览器打开 `http://127.0.0.1:8088`。
+
 ### 实际会构建、启动多少个
 
 | 类型 | 数量 | 内容 |
