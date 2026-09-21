@@ -34,7 +34,9 @@ docker compose -f compose.dev.yaml ps -a
 新注册用户需要申请加入项目，由有权限的管理员批准后访问业务数据。
 项目内具备上传权限（`upload.manage`）的账号可独立完成上传、标注、自审、发布、导出和下载；
 已有账号刷新页面即可获取完整操作入口，业务检查和项目访问范围仍生效。
-`compose.real-api.yaml` 用于隔离自动化验收，日常部署无需叠加。
+`deploy/compose/compose.real-api.yaml` 用于隔离自动化验收，日常部署无需叠加。
+根目录只保留开发和单机部署入口；测试、验收和迁移演练配置集中在
+[`deploy/compose/`](deploy/compose/README.md)，各文件的用途和组合命令见该目录说明。
 
 如果机器上仍在运行 `compose.single-server.yaml`，先执行下面的停止命令，再启动热更新版：
 

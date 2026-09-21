@@ -81,7 +81,7 @@ Docker volume 是 `hc-data-platform-dev_minio-data`，MinIO 容器内根路径�
   Outbox/Temporal/Worker 完成。
 - `inspect.py`：查询 PostgreSQL、回读 MinIO Raw、打开 Lance，并对源 MP4 与 MCAP
   469 个视频帧逐帧比对。
-- `compose.worker-demo.yaml`：只订阅一个精确 demo scope，关闭测试夹具 decoder。
+- `deploy/compose/compose.worker-demo.yaml`：只订阅一个精确 demo scope，关闭测试夹具 decoder。
 - `artifacts/hf-humanoid-lance/hf-g1-video-20260819-02/run-evidence.json`：主链路结果。
 - `artifacts/hf-humanoid-lance/hf-g1-video-20260819-02/inspection-evidence.json`：完整交叉检查结果。
 

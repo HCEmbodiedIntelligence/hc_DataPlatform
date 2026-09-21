@@ -146,7 +146,7 @@ def _compose(project: str, env_file: Path, *arguments: str, timeout: int = 900) 
             "-f",
             str(ROOT / "compose.dev.yaml"),
             "-f",
-            str(ROOT / "compose.minio-test.yaml"),
+            str(ROOT / "deploy/compose/compose.minio-test.yaml"),
             *arguments,
         ],
         timeout=timeout,

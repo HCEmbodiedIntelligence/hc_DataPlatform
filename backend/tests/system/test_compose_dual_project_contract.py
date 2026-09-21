@@ -7,7 +7,7 @@ from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE = ROOT / "compose.dev.yaml"
-MINIO_TEST_OVERLAY = ROOT / "compose.minio-test.yaml"
+MINIO_TEST_OVERLAY = ROOT / "deploy/compose/compose.minio-test.yaml"
 
 PORT_VARIABLES = (
     "HC_POSTGRES_HOST_PORT",

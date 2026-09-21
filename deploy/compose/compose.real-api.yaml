@@ -1,6 +1,5 @@
-# Overlay for the explicit real-API development mode.
-# Use together with compose.dev.yaml; this file intentionally does not redefine
-# the browser-Mock development default chosen by the base file.
+# Isolated real-API acceptance overlay; normal development already uses real APIs.
+# Use after the root compose.dev.yaml; paths resolve relative to that base file.
 services:
   migration-check:
     image: hc-data-platform-backend:dev

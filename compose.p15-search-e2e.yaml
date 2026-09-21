@@ -1,9 +1,0 @@
-# Local-only overlay for the P15 shell-search browser gate.  The test API uses
-# the isolated MinIO service over the Docker network; publishing its S3 port to
-# the host is unnecessary and can collide with a developer's running stack.
-services:
-  minio:
-    ports: !reset []
-  gateway:
-    ports: !override
-      - "127.0.0.1:18088:8080"

@@ -1,4 +1,5 @@
 # Explicit acceptance-only overlay for the production HTTP auto-annotation path.
+# Use after the root compose.dev.yaml; paths resolve relative to that base file.
 # The deterministic gateway is not published to the host and is never composed
 # by the default development or production manifests.
 services:

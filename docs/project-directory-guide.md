@@ -20,10 +20,14 @@ hc_DataPlatform/
 |   +-- runbooks/            # 管线告警处置手册
 |   +-- src/                 # 后端 Python 运行源码
 |   `-- tests/               # 单元、集成、系统、故障和容量测试
-+-- docs/                    # 仓库级 UI 基线、重构和目录说明
++-- docs/                    # 使用指南、架构合同、审计记录和设计说明
+|   +-- architecture/        # 架构决策、YAML 合同和 JSON Schema；自动化测试会读取
+|   +-- audits/              # 历史审计报告、验收证据和运行快照
 |   `-- status/              # 历史任务状态快照，不是当前源码事实源
 +-- deploy/                  # 唯一平台部署目录：Helm、环境、Compose 网关和发布脚本
-+-- compose.dev.yaml         # 前端、API、Worker 与本地依赖的唯一 Compose 入口
+|   `-- compose/             # 测试/验收/演练 Compose、Nginx 配置和配套资源
++-- compose.dev.yaml         # 日常开发入口，支持源码热更新
++-- compose.single-server.yaml # 单机静态部署入口
 +-- frontend/                # 可安装、开发和构建的 React/Vite 前端
 |   +-- container/           # 前端镜像内部的 Nginx 与入口脚本，不是部署入口
 |   +-- docs/                # 前端架构、交接和交付记录
@@ -34,14 +38,14 @@ hc_DataPlatform/
 |   +-- public/              # 构建时原样发布的静态资源和 MSW Worker
 |   +-- scripts/             # OpenAPI 类型生成等维护脚本
 |   `-- src/                 # 前端运行源码
-`-- plan/                    # 前后端实施计划和 API 需求草案
-    +-- BACKEND-12-GOAL-PROMPTS.md
-    +-- BACKEND-DATA-PIPELINE-IMPLEMENTATION-PLAN.md
-    +-- FINAL-IMPLEMENTATION-PLAN.md
-    `-- frontend/            # 19 个页面各自的开发计划
+`-- scripts/                 # 测试门禁、验收产物整理等仓库维护脚本
 ```
 
 `backend/.venv/`、`frontend/node_modules/` 和工具缓存都是可重建的本地依赖/缓存，不属于业务源码。`frontend/dist/` 会在前端构建后生成；`backend/openapi.generated.yaml` 则是由模块合同聚合后提交到仓库的生成文件。
+
+Compose 文件的用途和运行组合见 [`deploy/compose/README.md`](../deploy/compose/README.md)。
+`docs/` 不能作为缓存整目录清理：`architecture/` 的合同和 Schema 被备份、恢复、发布、维护和运行状态测试直接读取，部署及上传指南也被根目录 README 引用。
+`audits/`、`status/` 和 UI 计划属于历史记录，可在确认无需追溯并检查引用后单独归档。
 
 ## 3. 后端目录结构
 
@@ -258,12 +262,12 @@ frontend/src/shared/
 稳定的前端领域类型        -> frontend/src/entities/
 多个前端业务复用的能力    -> frontend/src/shared/
 前端开发模拟接口和数据    -> frontend/src/mocks/
-计划、状态和架构说明      -> plan/ 或 docs/
+计划、状态和架构说明      -> docs/
 ```
 
 边界提醒：
 
-- `plan/` 是需求和实施草案，不代表后端合同已经冻结。
+- UI 计划和历史状态说明不代表当前实现状态，应以源码、合同和测试为准。
 - `docs/**/status/`、`backend/docs/dep-requests/` 和 `frontend/docs/dep-requests/` 是状态或协作快照，应以当前源码、合同和测试为准。
 - `backend/openapi.generated.yaml`、`frontend/src/shared/api/generated/` 和 `frontend/public/mockServiceWorker.js` 是生成文件，不应直接修改。
 - `backend/.venv/`、`frontend/node_modules/`、`dist/`、`__pycache__/` 和工具缓存不应作为源码提交或手改。

@@ -36,7 +36,7 @@ def test_isolated_minio_test_stack_applies_exact_origin_browser_upload_cors() ->
     assert root.find(".//s3:MaxAgeSeconds", S3_XML_NAMESPACE).text == "600"
     assert "AllowCredentials" not in CORS_PATH.read_text(encoding="utf-8")
 
-    services = _compose("compose.test.yaml")["services"]
+    services = _compose("deploy/compose/compose.test.yaml")["services"]
     init = services["minio-init"]
     browser_edge = services["object-store-browser"]
     command = "\n".join(init["entrypoint"])
@@ -47,7 +47,10 @@ def test_isolated_minio_test_stack_applies_exact_origin_browser_upload_cors() ->
     assert "mc mb --ignore-existing" in command
     assert "mc cors set" in command
     assert "functionality that is not implemented" in command
-    assert any(str(CORS_PATH.relative_to(ROOT)) in volume for volume in init["volumes"])
+    assert any(
+        (ROOT / "deploy/compose" / volume.split(":", 1)[0]).resolve() == CORS_PATH
+        for volume in init["volumes"]
+    )
     assert any("127.0.0.1:9000:9000" in str(port) for port in browser_edge["ports"])
 
     edge_config = (ROOT / "deploy/compose/object-store-browser.conf").read_text(encoding="utf-8")

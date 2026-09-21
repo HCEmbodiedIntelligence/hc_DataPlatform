@@ -75,15 +75,15 @@ OSS 且不复制对象；`copy_referenced` 只复制数据库/manifest 引用对
 
 ### 同机双 Compose 演练
 
-迁移演练显式叠加 `compose.minio-test.yaml`，用一次性 MinIO 隔离故障注入；正常开发的
+迁移演练显式叠加 `deploy/compose/compose.minio-test.yaml`，用一次性 MinIO 隔离故障注入；正常开发的
 `compose.dev.yaml` 也包含本机 MinIO。演练项目名和全部宿主端口都可通过 env file
 参数化，未提供时仍保持测试默认值。
 示例变量见 `deploy/compose/migration.env.example`。source/target 必须使用不同 `-p` 项目名和互不重叠
 端口，例如：
 
 ```bash
-docker compose -p hc-migration-src-<run-id> --env-file <source-env> -f compose.dev.yaml -f compose.minio-test.yaml up -d
-docker compose -p hc-migration-dst-<run-id> --env-file <target-env> -f compose.dev.yaml -f compose.minio-test.yaml up -d
+docker compose -p hc-migration-src-<run-id> --env-file <source-env> -f compose.dev.yaml -f deploy/compose/compose.minio-test.yaml up -d
+docker compose -p hc-migration-dst-<run-id> --env-file <target-env> -f compose.dev.yaml -f deploy/compose/compose.minio-test.yaml up -d
 ```
 
 测试 overlay 的 Compose 项目边界会分别命名 PostgreSQL、MinIO、alignment/media 卷和 default network，因此两个项目
@@ -164,5 +164,6 @@ revision 恢复不能冒充数据库或 Temporal rollback。
 docker compose -f compose.dev.yaml up --build
 ```
 
-根目录的 Compose 文件负责所有服务，并在 `http://127.0.0.1:8088` 暴露统一网关；
-各组件目录不包含自己的 Compose 文件。
+根目录的 `compose.dev.yaml` 负责开发环境所有服务，并在 `http://127.0.0.1:8088` 暴露统一网关；
+`compose.single-server.yaml` 用于单机静态部署。测试、验收和迁移演练配置集中在
+[`deploy/compose/`](compose/README.md)，各组件目录不包含自己的 Compose 文件。

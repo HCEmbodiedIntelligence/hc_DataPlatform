@@ -1,0 +1,10 @@
+# Local-only overlay for the P15 shell-search browser gate.
+# Use after the sibling compose.test.yaml. The test API reaches MinIO over the
+# Docker network; publishing its S3 port to the host is unnecessary and can
+# collide with a developer's running stack.
+services:
+  minio:
+    ports: !reset []
+  gateway:
+    ports: !override
+      - "127.0.0.1:18088:8080"

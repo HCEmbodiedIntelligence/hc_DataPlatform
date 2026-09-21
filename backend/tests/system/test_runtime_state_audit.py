@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 AUDIT_PATH = ROOT / "docs/architecture/platform-runtime-state-audit.yaml"
 RUNTIME_PATH = ROOT / "backend/src/hc_data_platform/runtime.py"
 DEV_COMPOSE_PATH = ROOT / "compose.dev.yaml"
-TEST_COMPOSE_PATH = ROOT / "compose.test.yaml"
+TEST_COMPOSE_PATH = ROOT / "deploy/compose/compose.test.yaml"
 
 REQUIRED_DURABLE_SURFACES = {
     "authenticated_sessions",

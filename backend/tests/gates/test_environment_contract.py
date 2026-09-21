@@ -13,7 +13,7 @@ def load_yaml(relative_path: str) -> dict[str, object]:
 
 
 def test_real_api_overlay_forces_browser_mock_off_and_waits_for_migrations() -> None:
-    overlay = load_yaml("compose.real-api.yaml")
+    overlay = load_yaml("deploy/compose/compose.real-api.yaml")
     services = overlay["services"]
     assert isinstance(services, dict)
     frontend = services["frontend"]
@@ -44,7 +44,7 @@ def test_real_api_overlay_forces_browser_mock_off_and_waits_for_migrations() -> 
 
 
 def test_isolated_test_compose_has_repeatable_dependency_and_worker_health_contracts() -> None:
-    compose = load_yaml("compose.test.yaml")
+    compose = load_yaml("deploy/compose/compose.test.yaml")
     services = compose["services"]
     assert isinstance(services, dict)
     for service_name in ("postgres", "minio", "temporal"):
@@ -73,7 +73,13 @@ def test_isolated_test_compose_has_repeatable_dependency_and_worker_health_contr
     assert gate_dependencies["temporal"]["condition"] == "service_healthy"
     assert gate_dependencies["minio-init"]["condition"] == ("service_completed_successfully")
     assert gate_dependencies["migration-check"]["condition"] == ("service_completed_successfully")
-    assert "./:/workspace:ro" in services["gate-runner"]["volumes"]
+    compose_dir = ROOT / "deploy/compose"
+    workspace_sources = [
+        (compose_dir / volume.split(":", 1)[0]).resolve()
+        for volume in services["gate-runner"]["volumes"]
+        if volume.endswith(":/workspace:ro")
+    ]
+    assert workspace_sources == [ROOT]
     assert services["gate-runner"]["working_dir"] == "/workspace/backend"
     assert services["gate-runner"]["environment"]["HC_MIGRATIONS_DIR"] == (
         "/workspace/backend/migrations"

@@ -1,3 +1,4 @@
+# Standalone test stack; build contexts and bind mounts are relative to this file.
 name: hc-data-platform-test-gates
 
 services:
@@ -42,7 +43,7 @@ services:
       - /var/cache/nginx:rw,noexec,nosuid,size=16m
       - /var/run:rw,noexec,nosuid,size=1m
     volumes:
-      - ./deploy/compose/object-store-browser.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./object-store-browser.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       minio:
         condition: service_healthy
@@ -79,7 +80,7 @@ services:
           esac
         fi
     volumes:
-      - ./deploy/compose/minio-browser-upload-cors.xml:/config/browser-upload-cors.xml:ro
+      - ./minio-browser-upload-cors.xml:/config/browser-upload-cors.xml:ro
     restart: "no"
 
   temporal:
@@ -101,7 +102,7 @@ services:
 
   migration:
     build:
-      context: backend
+      context: ../../backend
       target: api
     command: [hc-data-migrate, upgrade]
     environment:
@@ -113,7 +114,7 @@ services:
 
   migration-check:
     build:
-      context: backend
+      context: ../../backend
       target: api
     command: [hc-data-migrate, status]
     environment:
@@ -125,7 +126,7 @@ services:
 
   worker:
     build:
-      context: backend
+      context: ../../backend
       target: worker
     tmpfs:
       - /tmp/hc-runtime:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0750
@@ -159,11 +160,11 @@ services:
       migration-check:
         condition: service_completed_successfully
     volumes:
-      - ./backend/tests:/test-suite/tests:ro
+      - ../../backend/tests:/test-suite/tests:ro
 
   api:
     build:
-      context: backend
+      context: ../../backend
       target: api
     environment:
       HC_ENVIRONMENT: test
@@ -206,7 +207,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
     volumes:
-      - ./deploy/compose/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       api:
         condition: service_healthy
@@ -220,7 +221,7 @@ services:
 
   gate-runner:
     build:
-      context: backend
+      context: ../../backend
       target: api-dev
     # Mount the repository at its real shape: system/security contracts read
     # sibling deploy/, frontend/, and scripts/ files in addition to backend/.
@@ -253,13 +254,13 @@ services:
       migration-check:
         condition: service_completed_successfully
     volumes:
-      - ./:/workspace:ro
-      - ./artifacts/test-gates:/artifacts
+      - ../../:/workspace:ro
+      - ../../artifacts/test-gates:/artifacts
     command: [python, -c, "print('gate dependencies ready')"]
 
   be22-runner:
     build:
-      context: backend
+      context: ../../backend
       target: api-dev
     working_dir: /app
     user: "${HC_GATE_UID:-1000}:${HC_GATE_GID:-1000}"
@@ -284,6 +285,6 @@ services:
       worker:
         condition: service_healthy
     volumes:
-      - ./backend:/app:ro
-      - ./artifacts/test-gates:/artifacts
+      - ../../backend:/app:ro
+      - ../../artifacts/test-gates:/artifacts
     command: [python, -c, "print('BE22 dependencies ready')"]

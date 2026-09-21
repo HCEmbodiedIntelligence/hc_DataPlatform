@@ -1,9 +1,0 @@
-# Explicit, disposable worker proof profile. Use only with compose.dev.yaml and
-# compose.real-api.yaml. It keeps outbox consumption on one exact demo scope and
-# exercises the production JSON/jsonschema decoder instead of the BE22 fixture decoder.
-services:
-  worker:
-    environment:
-      HC_OUTBOX_SCOPES: >-
-        ["${HC_HF_ORGANIZATION_ID:-hf-demo-org-unconfigured}/${HC_HF_PROJECT_ID:-hf-demo-project-unconfigured}/${HC_HF_REGION_CODE:-hf-demo-region-unconfigured}"]
-      HC_MCAP_DECODER_FACTORY: ""

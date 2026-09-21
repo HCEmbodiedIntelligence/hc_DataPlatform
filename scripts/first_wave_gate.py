@@ -14,7 +14,7 @@ from artifact_security import redact_text, sanitize_directory
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 ARTIFACT_ROOT = (ROOT / "artifacts/test-gates/latest").resolve()
-COMPOSE_TEST = ["docker", "compose", "-f", str(ROOT / "compose.test.yaml")]
+COMPOSE_TEST = ["docker", "compose", "-f", str(ROOT / "deploy/compose/compose.test.yaml")]
 os.environ.setdefault("HC_GATE_UID", str(os.getuid()))
 os.environ.setdefault("HC_GATE_GID", str(os.getgid()))
 
@@ -145,7 +145,7 @@ def static_gate() -> None:
             "-f",
             str(ROOT / "compose.dev.yaml"),
             "-f",
-            str(ROOT / "compose.real-api.yaml"),
+            str(ROOT / "deploy/compose/compose.real-api.yaml"),
             "config",
             "--quiet",
         ],

@@ -1,5 +1,6 @@
 # Explicit disposable MinIO overlay for migration/fault-injection drills only.
-# Normal development and production use Alibaba Cloud OSS directly.
+# Normal development already includes local MinIO. Use after the root
+# compose.dev.yaml; paths resolve relative to that base file.
 services:
   minio:
     image: minio/minio:RELEASE.2024-11-07T00-52-20Z
