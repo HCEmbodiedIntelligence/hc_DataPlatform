@@ -3,6 +3,7 @@ import type { Scope } from "../../entities/scope";
 import type {
   ViewerEventSample,
   ViewerPointFrame,
+  ViewerSeriesDescriptor,
   ViewerWindow,
   ViewerWindowPayload,
   ViewerWindowSource,
@@ -137,14 +138,16 @@ function numericVector(
       : null;
   const candidate = Array.isArray(value)
     ? value
-    : Array.isArray(record?.positions)
-      ? record.positions
-      : Array.isArray(record?.values)
-        ? record.values
-        : Array.isArray(record?.position_xyz) &&
-            Array.isArray(record?.orientation_wxyz)
-          ? [...record.position_xyz, ...record.orientation_wxyz]
-          : null;
+    : Array.isArray(record?.position)
+      ? record.position
+      : Array.isArray(record?.positions)
+        ? record.positions
+        : Array.isArray(record?.values)
+          ? record.values
+          : Array.isArray(record?.position_xyz) &&
+              Array.isArray(record?.orientation_wxyz)
+            ? [...record.position_xyz, ...record.orientation_wxyz]
+            : null;
   if (candidate === null || candidate.length === 0 || candidate.length > 4096)
     return null;
   const numeric = candidate.every(
@@ -279,6 +282,7 @@ export function createDatasetLanceWindowSource(input: {
 
       const timestampsNs: string[] = [];
       const values: (readonly number[])[] = [];
+      let series: readonly ViewerSeriesDescriptor[] | undefined;
       const pointFrames: ViewerPointFrame[] = [];
       const events: ViewerEventSample[] = [];
       for (const record of records) {
@@ -315,6 +319,27 @@ export function createDatasetLanceWindowSource(input: {
             "数值样本不符合固定数据流的声明格式。",
           );
         values.push(vector);
+        // Preserve source joint names so URDF mappings use the same identities
+        // as annotation, rather than assigning named vectors to J1, J2, ... .
+        if (
+          !series &&
+          typeof value === "object" &&
+          value !== null &&
+          !Array.isArray(value)
+        ) {
+          const record = value as Record<string, unknown>;
+          const names = record.name ?? record.names;
+          if (
+            Array.isArray(names) &&
+            names.length === vector.length &&
+            names.every((name) => typeof name === "string" && name.length > 0)
+          ) {
+            series = names.map((name, index) => ({
+              id: `series-${index + 1}`,
+              displayName: name,
+            }));
+          }
+        }
       }
 
       if (!timestampsNs.length)
@@ -328,6 +353,7 @@ export function createDatasetLanceWindowSource(input: {
         generation: 0,
         timestampsNs,
         ...(values.length ? { values } : {}),
+        ...(series ? { series } : {}),
         ...(pointFrames.length ? { pointFrames } : {}),
         ...(events.length ? { events } : {}),
       };

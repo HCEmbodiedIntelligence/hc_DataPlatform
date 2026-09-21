@@ -1,6 +1,7 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Pagination } from "antd";
 import {
   BadgeCheck,
   CircleX,
@@ -158,13 +159,10 @@ function QueueRow(props: {
     !!props.task.current_submission_id &&
     props.task.submitted_revision !== null &&
     props.task.submitted_revision !== undefined;
-  const selfReview =
-    props.actorId !== null && props.task.submitted_by === props.actorId;
   const canStartReview =
     props.task.status === "SUBMITTED" &&
     props.canReview &&
-    fixedSubmissionExists &&
-    !selfReview;
+    fixedSubmissionExists;
   const canModify = assignedToCurrent && props.canEdit;
 
   const claim = async () => {
@@ -230,15 +228,6 @@ function QueueRow(props: {
           Dataset v{props.task.dataset_version} · Lance v
           {props.task.base_lance_version}
         </small>
-      </td>
-      <td>
-        <span
-          className="p08-cell-primary p08-truncate"
-          title={props.task.tag_schema_id}
-        >
-          {props.task.tag_schema_id}
-        </span>
-        <small>标签结构 v{props.task.tag_schema_version}</small>
       </td>
       <td>
         {props.task.base_step_count === null ||
@@ -376,6 +365,14 @@ function RuntimeAnnotationQueuePage({
         (right.updated_at ?? "").localeCompare(left.updated_at ?? ""),
       );
   }, [deferredQueryText, queueSearch.stage, tasks.data]);
+  const page = Math.min(
+    queueSearch.page,
+    Math.max(1, Math.ceil(visible.length / queueSearch.limit)),
+  );
+  const pageTasks = visible.slice(
+    (page - 1) * queueSearch.limit,
+    page * queueSearch.limit,
+  );
   const currentStage = stageDefinitions[queueSearch.stage];
   const returnTo = `${location.pathname}${location.search}`;
 
@@ -383,6 +380,9 @@ function RuntimeAnnotationQueuePage({
     annotationRoutes.annotate.build({
       ...queueSearch,
       stage,
+      page: 1,
+      after: undefined,
+      before: undefined,
     });
 
   const updateQuery = (value: string) => {
@@ -392,7 +392,21 @@ function RuntimeAnnotationQueuePage({
     else next.delete("q");
     next.delete("after");
     next.delete("before");
+    next.delete("page");
     setSearchParams(next, { replace: true });
+  };
+
+  const updatePage = (nextPage: number, pageSize: number) => {
+    const next = new URLSearchParams(searchParams);
+    const limit = pageSize === 50 || pageSize === 100 ? pageSize : 20;
+    const targetPage = limit === queueSearch.limit ? nextPage : 1;
+    if (targetPage > 1) next.set("page", String(targetPage));
+    else next.delete("page");
+    if (limit !== 20) next.set("limit", String(limit));
+    else next.delete("limit");
+    next.delete("after");
+    next.delete("before");
+    setSearchParams(next);
   };
 
   if (!unscopedAccount && (capabilities.loading || tasks.isLoading))
@@ -485,7 +499,6 @@ function RuntimeAnnotationQueuePage({
               <th>采集条目 / 任务</th>
               <th>当前状态</th>
               <th>数据基线</th>
-              <th>标签结构</th>
               <th>对齐范围</th>
               <th>处理人</th>
               <th>最近更新</th>
@@ -493,7 +506,7 @@ function RuntimeAnnotationQueuePage({
             </tr>
           </thead>
           <tbody>
-            {visible.map((task) => (
+            {pageTasks.map((task) => (
               <QueueRow
                 actorId={actorId}
                 canClaim={capabilities.has("annotation_task.claim")}
@@ -512,6 +525,19 @@ function RuntimeAnnotationQueuePage({
             ))}
           </tbody>
         </table>
+      }
+      pagination={
+        <Pagination
+          current={page}
+          pageSize={queueSearch.limit}
+          total={visible.length}
+          pageSizeOptions={[20, 50, 100]}
+          showSizeChanger
+          showTotal={(total, [start, end]) =>
+            `第 ${start}–${end} 条，共 ${total} 条`
+          }
+          onChange={updatePage}
+        />
       }
       emptyActionLabel={queryText ? "清除搜索" : "重新检查队列"}
       emptyActionDisabled={!queryText && !scope}

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -102,7 +103,15 @@ def test_rollout_quality_is_tenant_scoped_and_not_cacheable() -> None:
     assert response.json()["status"] == "PASS"
 
 
-def test_failed_quality_report_is_projected_into_unified_problem_data() -> None:
+@pytest.mark.parametrize(
+    ("session_id", "source_import_id", "source_episode_index"),
+    [("upload-session-1", None, None), (None, "native-import-1", 0), (None, "native-import-1", 7)],
+)
+def test_failed_quality_report_is_projected_into_unified_problem_data(
+    session_id: str | None,
+    source_import_id: str | None,
+    source_episode_index: int | None,
+) -> None:
     profile = QualityProfileV1(
         profile_id="quality-router",
         required_topics=frozenset(),
@@ -133,7 +142,9 @@ def test_failed_quality_report_is_projected_into_unified_problem_data() -> None:
     )
     problem_row = AutoQualityProblemV1.from_report(
         report,
-        session_id="upload-session-1",
+        session_id=session_id,
+        source_import_id=source_import_id,
+        source_episode_index=source_episode_index,
         data_package_id="data-package-1",
         updated_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
     )
@@ -147,5 +158,7 @@ def test_failed_quality_report_is_projected_into_unified_problem_data() -> None:
     body = response.json()
     assert body["total"] == 1
     assert body["items"][0]["source"] == "AUTO_QC"
-    assert body["items"][0]["session_id"] == "upload-session-1"
+    assert body["items"][0]["session_id"] == session_id
+    assert body["items"][0]["source_import_id"] == source_import_id
+    assert body["items"][0]["source_episode_index"] == source_episode_index
     assert body["items"][0]["start_ns"] == "1725000000100000000"

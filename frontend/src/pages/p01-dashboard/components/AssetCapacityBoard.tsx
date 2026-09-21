@@ -9,8 +9,12 @@ import {
   UserRoundCheck,
   type LucideIcon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
-import type { DashboardTaskStatus } from "../../../features/dashboard/types";
+import { lazy, Suspense, useState } from "react";
+import type {
+  DashboardDataIssue,
+  DashboardScope,
+  DashboardTaskStatus,
+} from "../../../features/dashboard/types";
 import { StatusTag } from "../../../shared/ui";
 import {
   DashboardSectionNotice,
@@ -18,6 +22,8 @@ import {
   sectionTone,
 } from "./DashboardSectionNotice";
 import styles from "./AssetCapacityBoard.module.css";
+
+const TaskIssueDrawer = lazy(() => import("./TaskIssueDrawer"));
 
 type TaskStage = DashboardTaskStatus["pipeline"]["stages"][number];
 type TaskStageCode = TaskStage["stage"];
@@ -75,10 +81,17 @@ const attainmentLabels = {
 
 const countFormatter = new Intl.NumberFormat("zh-CN");
 
+const issueLabels: Record<DashboardDataIssue["category"], string> = {
+  QUALITY: "质检问题",
+  DUPLICATE: "重复数据",
+  TECHNICAL: "处理失败",
+  PROCESSING_CONFLICT: "处理冲突",
+  RESUME_REQUIRED: "待继续处理",
+};
+
 function stageMeta(
   stage: TaskStage,
   currentStage?: TaskStageCode,
-  qc?: DashboardTaskStatus["pipeline"]["qc"],
 ): string | null {
   const parts: string[] = [];
   if (currentStage && stage.stage === currentStage) parts.push("当前");
@@ -89,25 +102,8 @@ function stageMeta(
   }
   if (stage.running > 0)
     parts.push(`运行 ${countFormatter.format(stage.running)}`);
-  if (stage.risk > 0) parts.push(`风险 ${countFormatter.format(stage.risk)}`);
-  if (stage.isolated > 0) {
-    if (stage.stage === "AUTOMATIC_VALIDATION" && qc) {
-      const qualityFindingCount = qc.risk + qc.rejected;
-      const duplicateCount = qc.duplicate ?? 0;
-      if (qualityFindingCount > 0) {
-        parts.push(`质检问题 ${countFormatter.format(qualityFindingCount)}`);
-      }
-      if (duplicateCount > 0) {
-        parts.push(`重复数据 ${countFormatter.format(duplicateCount)}`);
-      }
-    } else {
-      parts.push(`上游问题隔离 ${countFormatter.format(stage.isolated)}`);
-    }
-  }
-  if (stage.blocked > 0)
+  if (stage.blocked > 0 && stage.stage !== "STANDARDIZATION")
     parts.push(`阻塞 ${countFormatter.format(stage.blocked)}`);
-  if (stage.failed > 0)
-    parts.push(`失败 ${countFormatter.format(stage.failed)}`);
   if (stage.unavailable > 0)
     parts.push(`不可用 ${countFormatter.format(stage.unavailable)}`);
   return parts.length > 0 ? parts.join(" · ") : null;
@@ -116,7 +112,9 @@ function stageMeta(
 export function AssetCapacityBoard({
   taskStatus,
   onTaskChange,
+  scope,
 }: Readonly<{
+  scope?: DashboardScope;
   taskStatus: DashboardTaskStatus;
   onTaskChange: (taskId: string | null) => void;
 }>) {
@@ -125,13 +123,11 @@ export function AssetCapacityBoard({
   const stagesByCode = new Map(
     pipeline.stages.map((stage) => [stage.stage, stage]),
   );
-  const qualityIssueCount =
-    pipeline.qc.risk + pipeline.qc.rejected + (pipeline.qc.duplicate ?? 0);
-  const qualityFindingCount = pipeline.qc.risk + pipeline.qc.rejected;
-  const duplicateCount = pipeline.qc.duplicate ?? 0;
-  const diagnosticTarget = selected?.actions.find(
-    (action) => action.action === "VIEW_QC_ANOMALIES",
-  )?.deepLink;
+  const [issueFilter, setIssueFilter] = useState<{
+    stage: TaskStageCode;
+    category: DashboardDataIssue["category"];
+  } | null>(null);
+  const issues = pipeline.issues ?? [];
 
   return (
     <section
@@ -221,14 +217,12 @@ export function AssetCapacityBoard({
         {stageOrder.map((stageCode) => {
           const stage = stagesByCode.get(stageCode);
           const { label, eyebrow, Icon } = stagePresentation[stageCode];
-          const meta = stage
-            ? stageMeta(stage, selected?.currentStage, pipeline.qc)
-            : null;
+          const meta = stage ? stageMeta(stage, selected?.currentStage) : null;
           const tone = !stage
             ? undefined
             : stage.blocked + stage.failed + stage.unavailable > 0
               ? "danger"
-              : stage.risk + stage.isolated > 0
+              : stage.stage === "AUTOMATIC_VALIDATION" && stage.isolated > 0
                 ? "quality"
                 : undefined;
           return (
@@ -253,46 +247,88 @@ export function AssetCapacityBoard({
                   {meta}
                 </span>
               ) : null}
+              {(
+                [
+                  {
+                    category: "QUALITY",
+                    label: "质检问题",
+                    count:
+                      stageCode === "AUTOMATIC_VALIDATION"
+                        ? pipeline.qc.risk + pipeline.qc.rejected
+                        : 0,
+                  },
+                  {
+                    category: "DUPLICATE",
+                    label: "重复数据",
+                    count:
+                      stageCode === "AUTOMATIC_VALIDATION"
+                        ? (pipeline.qc.duplicate ?? 0)
+                        : 0,
+                  },
+                  {
+                    category: "PROCESSING_CONFLICT",
+                    label: "处理冲突",
+                    count:
+                      stageCode === "STANDARDIZATION"
+                        ? (pipeline.qc.reprocessingConflicts ?? 0)
+                        : 0,
+                  },
+                  {
+                    category: "RESUME_REQUIRED",
+                    label: "待继续处理",
+                    count: issues.filter(
+                      (issue) =>
+                        issue.stage === stageCode &&
+                        issue.category === "RESUME_REQUIRED",
+                    ).length,
+                  },
+                  {
+                    category: "TECHNICAL",
+                    label: "处理失败",
+                    count: stage?.failed ?? 0,
+                  },
+                ] as const
+              ).map(({ category, label: issueLabel, count }) =>
+                count > 0 ? (
+                  <button
+                    type="button"
+                    key={category}
+                    className={styles.issueButton}
+                    data-tone={category === "TECHNICAL" ? "danger" : "quality"}
+                    onClick={() =>
+                      setIssueFilter({ stage: stageCode, category })
+                    }
+                  >
+                    {issueLabel} {countFormatter.format(count)}
+                  </button>
+                ) : null,
+              )}
+              {stageCode === "STANDARDIZATION" &&
+              (pipeline.qc.discarded ?? 0) > 0 ? (
+                <span>
+                  已移除 {countFormatter.format(pipeline.qc.discarded!)}
+                </span>
+              ) : null}
             </li>
           );
         })}
       </ol>
 
-      {selected && selected.blockerCount > 0 ? (
-        <div className={styles.issueAlert} role="status">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <span>
-            当前任务有 {countFormatter.format(selected.blockerCount)}{" "}
-            项技术或结构阻塞，请查看对应阶段状态。
-          </span>
-        </div>
-      ) : null}
-
-      {selected && qualityIssueCount > 0 ? (
-        <div className={styles.issueAlert} data-tone="quality" role="status">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <span>
-            共 {countFormatter.format(qualityIssueCount)}{" "}
-            个问题数据（质量风险或拒绝{" "}
-            {countFormatter.format(qualityFindingCount)} 个，重复{" "}
-            {countFormatter.format(duplicateCount)}{" "}
-            个），已自动隔离，不阻塞其他数据包继续处理和入库。
-          </span>
-          {diagnosticTarget ? (
-            <Link to={diagnosticTarget}>查看问题数据</Link>
-          ) : null}
-        </div>
-      ) : !selected && qualityIssueCount > 0 ? (
-        <div className={styles.issueAlert} data-tone="quality" role="status">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <span>
-            全部任务共有 {countFormatter.format(qualityIssueCount)}{" "}
-            个问题数据（质量风险或拒绝{" "}
-            {countFormatter.format(qualityFindingCount)} 个，重复{" "}
-            {countFormatter.format(duplicateCount)}{" "}
-            个），均已隔离，不阻塞正常数据流转。
-          </span>
-        </div>
+      {issueFilter ? (
+        <Suspense fallback={<span role="status">正在加载问题数据…</span>}>
+          <TaskIssueDrawer
+            key={`${issueFilter.stage}:${issueFilter.category}`}
+            scope={scope}
+            issues={issues.filter(
+              (issue) =>
+                issue.stage === issueFilter.stage &&
+                issue.category === issueFilter.category,
+            )}
+            tasks={taskStatus.tasks}
+            title={`${stagePresentation[issueFilter.stage].label} · ${issueLabels[issueFilter.category]}`}
+            onClose={() => setIssueFilter(null)}
+          />
+        </Suspense>
       ) : null}
 
       {taskStatus.tasks.length === 0 ? (

@@ -33,7 +33,7 @@ import { outputTimeToSource } from '../../features/cleaning/time-mapping';
 import { ConfirmDialog } from '../../features/datasets/components/ConfirmDialog';
 import {
   createPlaybackClock,
-  EpisodeWorkbenchCore,
+  DataVisualizationWorkbench,
   type StreamDescriptor,
 } from '../../features/viewer';
 import { isDomainError } from '../../shared/api/domain-error';
@@ -565,14 +565,25 @@ function WorkbenchContent({
               <footer>{model.preview?.previewId ?? '未生成 Preview'}</footer>
             </section>
           </section>
-          <EpisodeWorkbenchCore
-            datasetId={model.base.datasetId}
-            versionId={model.base.versionId}
-            episodeId={model.base.episodeId}
-            clock={clock}
-            mode="cleaning"
-            streams={streams}
-            onTimeRangeSelect={(startNs, endNs) => setSelectedRange([startNs, endNs])}
+          <DataVisualizationWorkbench
+            layout="preview"
+            adapter={{
+              id: `cleaning-${model.base.episodeId}`,
+              title: '视频预览',
+              mode: 'cleaning',
+              readOnly: true,
+              clock,
+              cameraStreams: streams,
+              collectionItems: [],
+              findings: [],
+              actions: [],
+              timelineTracks: [],
+              timelineDisabled: false,
+              timelineSelection: selectedRange
+                ? { startNs: selectedRange[0], endNs: selectedRange[1] }
+                : undefined,
+              onTimeRangeSelect: (startNs, endNs) => setSelectedRange([startNs, endNs]),
+            }}
           />
           <section className={styles.operationTracks} aria-label="清洗操作时间带">
             <div className={styles.trackScale}>

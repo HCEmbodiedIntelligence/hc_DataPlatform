@@ -401,6 +401,20 @@
   scrollbar-width: thin;
 }
 
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--hc-space-3) var(--hc-space-4);
+  border-top: 1px solid var(--hc-color-border-subtle);
+}
+
+.pagination :global(.ant-pagination) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--hc-space-2) 0;
+}
+
 .tableWrap :global(table) {
   width: 100%;
   min-width: 1080px;

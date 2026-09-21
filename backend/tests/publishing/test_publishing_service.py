@@ -519,6 +519,33 @@ def export_manifest() -> PublishedDatasetManifestV1:
     ).publish(request())
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("export_format", [ExportFormat.LANCE_SNAPSHOT, ExportFormat.LEROBOT_V3])
+def test_native_dataset_export_without_annotation_keeps_all_steps(
+    export_format: ExportFormat,
+) -> None:
+    pytest.importorskip("pyarrow")
+    if export_format is ExportFormat.LANCE_SNAPSHOT:
+        pytest.importorskip("lance")
+    manifest = publisher([rollout("r1")], []).dataset_export_manifest(request())
+    sink = InMemoryArtifactSink()
+    # This fixture has no actual camera asset; exercise numeric-only export here.
+    # Portable video and frozen annotation export are covered with real MP4 fixtures.
+    steps = [
+        step.model_copy(update={"modalities": {"action": step.modalities["action"]}})
+        for step in export_steps()
+    ]
+    result = ExportCoordinator(
+        source=InMemoryExportSource(steps),
+        sink=sink,
+        exporters=[LanceSnapshotExporter(), LeRobotV3Exporter()],
+    ).export(manifest, format=export_format, attempt_id=f"dataset-{export_format.value}")
+    assert result.row_count == 6
+    assert manifest.rollouts[0].annotation_revision is None
+    assert manifest.rollouts[0].included_step_ranges == (StepRangeV1(start_step=0, end_step=6),)
+    assert result.download_uri == sink.get_download_uri(result.artifact_uri)
+
+
 def test_deterministic_lerobot_export_preserves_synchronized_modalities() -> None:
     manifest = export_manifest()
     sink = InMemoryArtifactSink()
@@ -735,25 +762,20 @@ def test_migration_enforces_append_only_publication_and_validated_promotion() ->
 def test_native_lerobot_v3_archive_reloads_with_real_parquet_reader(structured: bool) -> None:
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
-    manifest = export_manifest()
+    manifest = publisher([rollout("r1")], []).dataset_export_manifest(request())
     sink = InMemoryArtifactSink()
-    steps = export_steps()
-    if structured:
-        steps = [
-            step.model_copy(
-                update={
-                    "modalities": {
-                        **step.modalities,
-                        "action": {"names": ["left", "right"], "values": step.modalities["action"]},
-                        "camera.front": {
-                            "object_key": "raw/original.mp4",
-                            "frame_index": step.step_index,
-                        },
-                    }
+    steps = [
+        step.model_copy(
+            update={
+                "modalities": {
+                    "action": {"names": ["left", "right"], "values": step.modalities["action"]}
+                    if structured
+                    else step.modalities["action"],
                 }
-            )
-            for step in steps
-        ]
+            }
+        )
+        for step in export_steps()
+    ]
     result = ExportCoordinator(
         source=InMemoryExportSource(steps),
         sink=sink,
@@ -769,23 +791,16 @@ def test_native_lerobot_v3_archive_reloads_with_real_parquet_reader(structured: 
     rows = table.to_pylist()
     assert info["codebase_version"] == "v3.0"
     assert info["video_path"] is None
-    assert episodes.to_pylist()[0]["length"] == 4
-    assert [row["frame_index"] for row in rows] == [0, 1, 2, 3]
-    assert [row["hc.source_step_index"] for row in rows] == [0, 1, 4, 5]
+    assert episodes.to_pylist()[0]["length"] == 6
+    assert [row["frame_index"] for row in rows] == list(range(6))
+    assert [row["hc.source_step_index"] for row in rows] == list(range(6))
     assert all(
-        (
-            json.loads(row["camera.front"])
-            == {"object_key": "raw/original.mp4", "frame_index": source_step}
-            if structured
-            else row["camera.front"] == f"frame-{source_step}"
-        )
-        and row["action"] == [source_step, source_step + 1]
-        for row, source_step in zip(rows, [0, 1, 4, 5], strict=True)
+        row["action"] == [source_step, source_step + 1] for source_step, row in enumerate(rows)
     )
 
     if structured:
         assert info["features"]["action"]["names"] == ["left", "right"]
-        assert info["hc.structured_features"]["camera.front"] == {"encoding": "json"}
+        assert info["hc.structured_features"]["action"]["names"] == ["left", "right"]
 
 
 @pytest.mark.integration

@@ -50,6 +50,11 @@ class ExportJobStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class ExportDataStage(str, Enum):
+    ANNOTATED = "annotated"
+    DATASET = "dataset"
+
+
 class StepRangeV1(BaseModel):
     """A half-open logical step range ``[start_step, end_step)``."""
 
@@ -114,7 +119,7 @@ class PublishedRolloutV1(BaseModel):
     rollout_id: str = Field(min_length=1)
     source_mcap_sha256: str = Field(pattern=SHA256_PATTERN)
     base_lance_version: str = Field(min_length=1)
-    annotation_revision: int = Field(ge=0)
+    annotation_revision: int | None = Field(ge=0)
     annotation_task_id: str | None = None
     annotation_submission_id: str | None = None
     quality_profile_version: str = Field(min_length=1)
@@ -158,6 +163,7 @@ class PublishedDatasetManifestV1(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: str = "published-dataset-manifest/v1"
+    data_stage: ExportDataStage = ExportDataStage.ANNOTATED
     project_id: str
     dataset_id: str
     dataset_version: str
@@ -208,11 +214,22 @@ class ExportStepV1(BaseModel):
     sample_valid: bool = True
 
 
+class ExportEligibilityV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_id: str
+    dataset_id: str
+    dataset_version: str
+    data_stage: ExportDataStage = ExportDataStage.ANNOTATED
+    eligible_episode_ids: tuple[str, ...]
+
+
 class ExportDatasetRequestV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     project_id: str = Field(min_length=1)
     format: ExportFormat
+    data_stage: ExportDataStage = ExportDataStage.ANNOTATED
     episode_ids: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=10000)
 
 

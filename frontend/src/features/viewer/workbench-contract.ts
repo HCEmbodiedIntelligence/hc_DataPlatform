@@ -15,6 +15,7 @@ export type DataVisualizationWorkbenchMode =
   | "revision"
   | "tag-review"
   | "episode-slicing"
+  | "cleaning"
   | "published-readonly";
 
 export interface WorkbenchFact {
@@ -87,6 +88,8 @@ export interface DataVisualizationWorkbenchAdapter {
   readonly findings: readonly WorkbenchFinding[];
   readonly timelineTracks: readonly ViewerTimelineTrack[];
   readonly timelineSelection?: ViewerTimelineSelection;
+  readonly timelineDisabled?: boolean;
+  readonly timelineLabel?: string;
   readonly notes?: WorkbenchDiagnosticNotes;
   readonly actions: readonly WorkbenchAction[];
   readonly banner?: {
@@ -96,6 +99,8 @@ export interface DataVisualizationWorkbenchAdapter {
     readonly tone: "warning" | "error" | "info";
   };
   readonly onTimeRangeSelect?: (startNs: string, endNs: string) => void;
+  /** A fresh drag creates an interval instead of changing the selected Tag. */
+  readonly onTimeRangeCreate?: (startNs: string, endNs: string) => void;
   readonly onResourceError?: (
     error: DomainError,
     scope: "video" | "curve" | "pointcloud" | "scene3d",

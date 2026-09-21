@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bufferJointWindows } from "../../features/viewer/buffered-joint-window-source";
 import type {
   StreamDescriptor,
   ViewerSeriesDescriptor,
@@ -189,6 +190,9 @@ function createAnnotationJointWindowSource(input: {
   readonly stepCount: number;
   readonly frequencyHz: number;
 }): ViewerWindowSource {
+  let columns: readonly string[] = [
+    ...new Set(modalityCandidates(input.topicName)),
+  ];
   return {
     async loadWindow(
       viewerWindow: ViewerWindow,
@@ -200,25 +204,34 @@ function createAnnotationJointWindowSource(input: {
         input.frequencyHz,
       );
       const endpoint = `/projects/${encodeURIComponent(input.task.project_id)}/datasets/${encodeURIComponent(input.task.dataset_id)}/rollouts/${encodeURIComponent(input.task.rollout_id)}/steps`;
-      const raw = await request<unknown>({
-        method: "GET",
-        path: endpoint,
-        scope: {
-          organizationId: input.scope.organizationId,
-          projectId: input.scope.projectId,
-          regionCode: input.scope.regionCode,
-        },
-        cache: "no-store",
-        signal,
-        query: {
-          startStep,
-          endStep,
-          version: input.task.base_lance_version,
-        },
-      });
-      const window = parseWire(annotationJointWindowWireSchema, raw, {
-        endpoint,
-      });
+      const read = (selectedColumns?: readonly string[]) =>
+        request<unknown>({
+          method: "GET",
+          path: endpoint,
+          scope: {
+            organizationId: input.scope.organizationId,
+            projectId: input.scope.projectId,
+            regionCode: input.scope.regionCode,
+          },
+          cache: "no-store",
+          signal,
+          query: {
+            startStep,
+            endStep,
+            version: input.task.base_lance_version,
+            ...(selectedColumns ? { columns: [...selectedColumns] } : {}),
+          },
+        });
+      const parse = (raw: unknown) =>
+        parseWire(annotationJointWindowWireSchema, raw, { endpoint });
+      let window = parse(await read(columns));
+      // Legacy datasets can use a different joint column name. Discover it once
+      // without making every playback window read camera/action modalities.
+      if (
+        window.steps.length &&
+        window.steps.every((step) => Object.keys(step.modalities).length === 0)
+      )
+        window = parse(await read());
       if (
         window.project_id !== input.task.project_id ||
         window.dataset_id !== input.task.dataset_id ||
@@ -244,7 +257,9 @@ function createAnnotationJointWindowSource(input: {
       const values: (readonly number[])[] = [];
       const timestampsNs: string[] = [];
       const seen = new Set<number>();
-      for (const step of window.steps) {
+      for (const step of [...window.steps].sort(
+        (a, b) => a.step_index - b.step_index,
+      )) {
         if (
           step.rollout_id !== input.task.rollout_id ||
           step.step_index < startStep ||
@@ -300,6 +315,7 @@ function createAnnotationJointWindowSource(input: {
           "当前时间范围没有有效的关节角样本。",
           true,
         );
+      if (resolvedKey) columns = [resolvedKey];
       return {
         generation: 0,
         timestampsNs,
@@ -343,13 +359,17 @@ export function buildRuntimeJointAngleStream(input: {
         : `${topic.name} 已发现，但任务未返回可读取的步骤范围。`,
     ...(stepCount > 0
       ? {
-          windowSource: createAnnotationJointWindowSource({
-            scope: input.scope,
-            task: input.bundle.task,
-            topicName: topic.name,
-            stepCount,
-            frequencyHz,
-          }),
+          windowSource: bufferJointWindows(
+            createAnnotationJointWindowSource({
+              scope: input.scope,
+              task: input.bundle.task,
+              topicName: topic.name,
+              stepCount,
+              frequencyHz,
+            }),
+            "0",
+            endNs,
+          ),
         }
       : {}),
   };

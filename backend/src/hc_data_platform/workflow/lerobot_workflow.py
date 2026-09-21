@@ -39,6 +39,7 @@ class LeRobotImportWorkflowInput(BaseModel):
     succeeded: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)
     last_error_code: str | None = None
+    only_episode: int | None = Field(default=None, ge=0, lt=10_000)
 
 
 class PreparedNativeEpisode(BaseModel):
@@ -129,7 +130,12 @@ class LeRobotImportWorkflow(_JobLifecycle):
         last_error = request.last_error_code
         await self._call(UPDATE_NATIVE_STATE, NativeStateUpdate(task=task, status="RUNNING"))
         try:
-            for index in range(request.next_episode, request.episode_count):
+            indexes = (
+                (request.only_episode,)
+                if request.only_episode is not None
+                else range(request.next_episode, request.episode_count)
+            )
+            for index in indexes:
                 episode_task = task.model_copy(
                     update={
                         "task_id": f"lerobot:{task.source.raw_upload_id}:episode:{index}",
@@ -182,7 +188,11 @@ class LeRobotImportWorkflow(_JobLifecycle):
                             task=episode_task, status="EPISODE_FAILED", error_code=last_error
                         ),
                     )
-                if (index + 1) % 20 == 0 and index + 1 < request.episode_count:
+                if (
+                    request.only_episode is None
+                    and (index + 1) % 20 == 0
+                    and index + 1 < request.episode_count
+                ):
                     workflow.continue_as_new(
                         request.model_copy(
                             update={
@@ -201,7 +211,9 @@ class LeRobotImportWorkflow(_JobLifecycle):
             job = self._finish(
                 JobStatus.SUCCEEDED if failed == 0 else JobStatus.TECHNICAL_FAILED,
                 result={
-                    "episode_count": request.episode_count,
+                    "episode_count": 1
+                    if request.only_episode is not None
+                    else request.episode_count,
                     "succeeded": succeeded,
                     "failed": failed,
                     "dataset_id": task.dataset_id,

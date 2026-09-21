@@ -202,6 +202,7 @@ export const datasetBootstrapDataWireSchema = z
 export const publishedDatasetManifestWireSchema = z
   .object({
     schema_version: z.literal("published-dataset-manifest/v1"),
+    data_stage: z.enum(["annotated", "dataset"]).optional(),
     project_id: z.string().min(1),
     dataset_id: datasetIdWireSchema,
     dataset_version: z.string().min(1),

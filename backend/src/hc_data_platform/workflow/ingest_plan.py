@@ -477,11 +477,13 @@ class PostgresIngestWorkflowInputResolver:
             (project_id,),
         )
         expected = frozenset(preflight.manifest.expected_topics)
-        candidates = [
-            profile
-            for row in cursor.fetchall()
-            if (profile := QualityProfileV1.model_validate(row[0])).required_topics == expected
-        ]
+        latest: dict[str, QualityProfileV1] = {}
+        for row in cursor.fetchall():
+            profile = QualityProfileV1.model_validate(row[0])
+            previous = latest.get(profile.profile_id)
+            if previous is None or profile.profile_version > previous.profile_version:
+                latest[profile.profile_id] = profile
+        candidates = [profile for profile in latest.values() if profile.required_topics == expected]
         if len(candidates) != 1:
             raise _blocked(
                 "the project must persist exactly one quality profile for the Manifest topic set"

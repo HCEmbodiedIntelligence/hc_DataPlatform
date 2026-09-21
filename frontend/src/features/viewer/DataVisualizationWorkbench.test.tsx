@@ -14,6 +14,7 @@ import { StrictMode, useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { createPlaybackClock } from "./PlaybackClock";
 import { RawDiagnosticWorkbench } from "./RawDiagnosticWorkbench";
+import { DataVisualizationWorkbench } from "./DataVisualizationWorkbench";
 import type { ViewerPanelRenderContext } from "./EpisodeWorkbenchCore";
 import type { RuntimeManifestDiscoveryProjection } from "./raw-diagnostic-adapter";
 import type { StreamDescriptor } from "./types";
@@ -526,6 +527,46 @@ describe("DataVisualizationWorkbench camera composition", () => {
 });
 
 describe("DataVisualizationWorkbench shared clock and boundaries", () => {
+  it("allows issue-range selection in a read-only compact preview without desynchronizing cameras", async () => {
+    const sharedClock = clock();
+    const onRangeSelect = vi.fn();
+    render(
+      <DataVisualizationWorkbench
+        layout="preview"
+        adapter={{
+          id: "preview-range",
+          title: "视频预览",
+          mode: "published-readonly",
+          readOnly: true,
+          clock: sharedClock,
+          cameraStreams: [stream(1), stream(2)],
+          collectionItems: [],
+          findings: [],
+          actions: [],
+          timelineTracks: [],
+          timelineDisabled: false,
+          timelineSelection: { startNs: "2000000000", endNs: "6000000000" },
+          onTimeRangeSelect: onRangeSelect,
+        }}
+        slots={{ renderPanel: renderProbe }}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: /标注开始/ }), {
+      key: "ArrowRight",
+    });
+    expect(onRangeSelect).toHaveBeenLastCalledWith("2010000000", "6000000000");
+    const timeline = screen.getByRole("slider", { name: "共享播放位置" });
+    fireEvent.keyDown(timeline, { key: "Home" });
+    fireEvent.keyDown(timeline, { key: "ArrowRight" });
+    await waitFor(() => expect(sharedClock.currentNs()).toBe("100000000"));
+    for (const index of [1, 2]) {
+      expect(screen.getByTestId(`probe-stream-${index}`)).toHaveAttribute(
+        "data-time-ns",
+        "100000000",
+      );
+    }
+  });
+
   it("drives every camera probe and the only video timeline from one clock", async () => {
     const props = baseProps(4);
     render(

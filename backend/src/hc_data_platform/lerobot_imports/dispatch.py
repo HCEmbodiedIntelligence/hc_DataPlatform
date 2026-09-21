@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import NAMESPACE_URL, uuid5
+
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.ingest.raw_sources import RawSourceRepositoryPort
 from hc_data_platform.workflow.lerobot_workflow import (
@@ -47,6 +49,13 @@ class LeRobotImportOutboxHandler:
             raise ValueError("native dispatch does not match committed Raw source")
         assert job.workflow_id is not None
         episodes = self.repository.list_episodes(**scope)
+        selected_index = event.payload.get("episode_index")
+        resolution_id = event.payload.get("resolution_id")
+        if (selected_index is None) != (resolution_id is None) or (
+            selected_index is not None
+            and selected_index not in {item.source_episode_index for item in episodes}
+        ):
+            raise ValueError("native resolution must target an existing Episode")
         task = LeRobotEpisodeTaskV1(
             task_id=f"lerobot:{raw.raw_source_id}:episode:0",
             organization_id=raw.organization_id,
@@ -56,12 +65,24 @@ class LeRobotImportOutboxHandler:
             collection_task_id=raw.collection_task_id,
             robot_id=raw.robot_id,
             source=LeRobotEpisodeSourceRefV1(
-                raw_upload_id=raw.raw_source_id, raw_manifest_key=raw.manifest_key, episode_index=0
+                raw_upload_id=raw.raw_source_id,
+                raw_manifest_key=raw.manifest_key,
+                episode_index=selected_index or 0,
+                processing_attempt_id=resolution_id,
+                # Stable for outbox redelivery and activity retries, fresh for an
+                # explicit import retry. Do not reuse the resolution audit ID.
+                import_attempt_id=str(
+                    uuid5(NAMESPACE_URL, f"lerobot-attempt:{raw.organization_id}:{job.workflow_id}")
+                ),
             ),
         )
         return await self.launcher.start(
             workflow_name=LEROBOT_IMPORT_WORKFLOW,
-            workflow_input=LeRobotImportWorkflowInput(task=task, episode_count=len(episodes)),
+            workflow_input=LeRobotImportWorkflowInput(
+                task=task,
+                episode_count=len(episodes),
+                only_episode=selected_index,
+            ),
             workflow_id=job.workflow_id,
             job_type=LEROBOT_IMPORT_WORKFLOW,
             project_id=event.project_id,

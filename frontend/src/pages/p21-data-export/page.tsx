@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   useMutation,
   useQueries,
@@ -12,6 +12,7 @@ import {
   Checkbox,
   Input,
   Progress,
+  Radio,
   Select,
   Table,
   Typography,
@@ -29,6 +30,7 @@ import { useSearchParams } from "react-router-dom";
 import type { DatasetId } from "../../entities/dataset";
 import type { DatasetVersionId } from "../../entities/dataset-version";
 import {
+  fetchDatasetBootstrap,
   fetchDatasets,
   fetchVersionEpisodes,
   type EpisodeListItemVm,
@@ -38,9 +40,11 @@ import {
   authorizePublishedExportDownload,
   cancelPublishedExport,
   createPublishedExport,
+  fetchExportEligibility,
   fetchPublishedExport,
   retryPublishedExport,
   type PublishedExportFormat,
+  type ExportDataStage,
   type PublishedExportJob,
 } from "../../features/exports/api";
 import { isDomainError } from "../../shared/api/domain-error";
@@ -52,6 +56,14 @@ import {
   type CollectionTask,
 } from "../p20-collection-tasks/api";
 import styles from "./styles.module.css";
+
+const RawDataExportPanel = lazy(() => import("./RawDataExportPanel"));
+type DataStage = ExportDataStage | "raw";
+const stageLabels: Record<DataStage, string> = {
+  annotated: "标注完成数据",
+  dataset: "数据集数据",
+  raw: "原始数据",
+};
 
 const MAX_BATCH_TASKS = 50;
 const CREATE_CONCURRENCY = 4;
@@ -108,6 +120,7 @@ type ExportTaskRef = Readonly<{
   format: PublishedExportFormat;
   createdAt: string;
   episodeCount?: number;
+  dataStage?: ExportDataStage;
 }>;
 
 type TaskFilter = "all" | "active" | "succeeded" | "failed";
@@ -122,6 +135,7 @@ type BatchRequest = Readonly<{
   source: ExportableSource;
   format: PublishedExportFormat;
   episodeIds: readonly string[];
+  dataStage: ExportDataStage;
 }>;
 type CreatedTask = Readonly<{ ref: ExportTaskRef; job: PublishedExportJob }>;
 type BatchResult = Readonly<{
@@ -302,12 +316,8 @@ function toSource(item: DatasetListItemVm): ExportSource {
     datasetId: item.datasetId,
     datasetName: item.name,
     versionId: item.currentVersion?.versionId ?? null,
-    versionLabel: item.currentVersion?.displayVersion ?? "暂无 READY 版本",
+    versionLabel: item.currentVersion?.displayVersion ?? "待选择数据",
   };
-}
-
-function isExportable(source: ExportSource): source is ExportableSource {
-  return source.versionId !== null;
 }
 
 export function DataExportPage() {
@@ -319,6 +329,12 @@ export function DataExportPage() {
   const queryClient = useQueryClient();
   const appliedDatasetIds = listParam(params, "datasetId");
   const appliedTasks = listParam(params, "task");
+  const dataStage: DataStage =
+    params.get("dataStage") === "raw"
+      ? "raw"
+      : params.get("dataStage") === "dataset"
+        ? "dataset"
+        : "annotated";
   const [selectedSourceKeys, setSelectedSourceKeys] = useState<string[]>([]);
   const [selectedFormats, setSelectedFormats] = useState<
     PublishedExportFormat[]
@@ -399,9 +415,10 @@ export function DataExportPage() {
   const taskById = new Map(
     (collectionTasks.data ?? []).map((task) => [task.collection_task_id, task]),
   );
-  const sources = allSources.filter(
-    (source): source is ExportableSource =>
-      isExportable(source) &&
+  const activeSourceFilterCount =
+    appliedDatasetIds.length + appliedTasks.length;
+  const requestedSources = allSources.filter(
+    (source) =>
       (appliedDatasetIds.length === 0 ||
         appliedDatasetIds.includes(source.datasetId)) &&
       (appliedTasks.length === 0 ||
@@ -409,41 +426,87 @@ export function DataExportPage() {
           (id) => taskById.get(id)?.dataset_id === source.datasetId,
         )),
   );
-  const activeSourceFilterCount =
-    appliedDatasetIds.length + appliedTasks.length;
+  const sourceQueries = useQueries({
+    queries: requestedSources.map((source) => ({
+      queryKey: ["export-source", scopeKey, source.datasetId],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchDatasetBootstrap(source.datasetId, signal),
+      enabled: canRead && activeSourceFilterCount > 0 && dataStage !== "raw",
+      staleTime: 0,
+    })),
+  });
+  const sources: ExportableSource[] = requestedSources.flatMap(
+    (source, index) => {
+      const data = sourceQueries[index]?.data;
+      // Dataset list currentVersion describes a business release. Annotation and
+      // first-time exports use the current working snapshot before any release.
+      const versionId =
+        data?.workingVersionId ?? data?.currentReadyVersion?.versionId;
+      if (!versionId) return [];
+      return [
+        {
+          ...source,
+          versionId,
+          versionLabel: data?.workingVersionId
+            ? "当前工作数据"
+            : data!.currentReadyVersion!.displayVersion,
+        },
+      ];
+    },
+  );
   const episodeQueries = useQueries({
     queries: sources.map((source) => ({
       queryKey: [
-        "export-episodes",
+        "export-eligible-episodes",
         scopeKey,
         source.datasetId,
         source.versionId,
+        dataStage,
       ],
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        allPages<EpisodeListItemVm>(async (after) => {
-          const page = await fetchVersionEpisodes(
-            source.datasetId,
-            source.versionId,
-            {
-              limit: 100,
-              included: true,
-              after,
-            },
+      queryFn: async ({ signal }: { signal: AbortSignal }) => {
+        const [eligibility, items] = await Promise.all([
+          fetchExportEligibility({
+            projectId: projectId!,
+            datasetId: source.datasetId,
+            datasetVersion: source.versionId,
             signal,
-          );
-          if (page.pageInfo.hasNextPage && !page.pageInfo.after)
-            throw new Error("Episode 分页不完整。");
-          return {
-            items: page.items,
-            next: page.pageInfo.hasNextPage ? page.pageInfo.after : null,
-          };
-        }),
-      enabled: canRead && activeSourceFilterCount > 0,
-      staleTime: 30_000,
+            dataStage: dataStage === "dataset" ? "dataset" : "annotated",
+          }),
+          allPages<EpisodeListItemVm>(async (after) => {
+            const page = await fetchVersionEpisodes(
+              source.datasetId,
+              source.versionId,
+              {
+                limit: 100,
+                included: true,
+                after,
+              },
+              signal,
+            );
+            if (page.pageInfo.hasNextPage && !page.pageInfo.after)
+              throw new Error("Episode 分页不完整。");
+            return {
+              items: page.items,
+              next: page.pageInfo.hasNextPage ? page.pageInfo.after : null,
+            };
+          }),
+        ]);
+        const eligibleIds = new Set(eligibility.eligible_episode_ids);
+        return items.filter((episode) => eligibleIds.has(episode.episodeId));
+      },
+      enabled:
+        canRead &&
+        Boolean(projectId) &&
+        activeSourceFilterCount > 0 &&
+        dataStage !== "raw",
+      staleTime: 0,
     })),
   });
   const episodes: ExportEpisode[] = sources.flatMap((source, index) =>
-    (episodeQueries[index]?.data ?? [])
+    (episodeQueries[index]?.isError || episodeQueries[index]?.isFetching
+      ? []
+      : (episodeQueries[index]?.data ?? [])
+    )
       .filter(
         (episode) =>
           appliedTasks.length === 0 ||
@@ -466,10 +529,11 @@ export function DataExportPage() {
   const selectedEpisodeCount = selectedEpisodes.length;
   const sourceFiltersPending =
     activeSourceFilterCount > 0 &&
-    episodeQueries.some((query) => query.isPending);
-  const sourceFilterError = episodeQueries.find(
-    (query) => query.isError,
-  )?.error;
+    (sourceQueries.some((query) => query.isPending || query.isFetching) ||
+      episodeQueries.some((query) => query.isPending || query.isFetching));
+  const sourceFilterError =
+    sourceQueries.find((query) => query.isError)?.error ??
+    episodeQueries.find((query) => query.isError)?.error;
 
   const taskQueries = useQueries({
     queries: taskRefs.map((ref) => ({
@@ -550,6 +614,7 @@ export function DataExportPage() {
               datasetVersion: request.source.versionId,
               format: request.format,
               episodeIds: request.episodeIds,
+              dataStage: request.dataStage,
               idempotencyKey: idempotencyKey("published-export"),
             }),
           ),
@@ -569,6 +634,7 @@ export function DataExportPage() {
                 format: request.format,
                 createdAt: job.created_at,
                 episodeCount: request.episodeIds.length,
+                dataStage: request.dataStage,
               },
             });
           } else {
@@ -685,13 +751,14 @@ export function DataExportPage() {
     setSelectedSourceKeys([]);
   };
   const startBatch = () => {
-    if (!projectId) return;
+    if (!projectId || dataStage === "raw") return;
     setBatchFeedback(null);
     createBatch.mutate(
       selectedSources.flatMap((source) =>
         selectedFormats.map((format) => ({
           source,
           format,
+          dataStage,
           episodeIds: selectedEpisodes
             .filter((episode) => episode.datasetId === source.datasetId)
             .map((episode) => episode.episodeId),
@@ -728,10 +795,14 @@ export function DataExportPage() {
       render: (_, episode) => episode.source.versionLabel,
     },
     {
-      title: "处理状态",
-      dataIndex: "successState",
-      render: (value: string) =>
-        value === "SUCCEEDED" ? "已完成" : value === "FAILED" ? "失败" : "未知",
+      title: dataStage === "annotated" ? "标注状态" : "处理状态",
+      render: () => (
+        <StatusTag
+          known
+          status={dataStage === "annotated" ? "标注完成" : "处理完成"}
+          tone="success"
+        />
+      ),
     },
   ];
 
@@ -743,6 +814,7 @@ export function DataExportPage() {
         <div className={styles.primaryCell}>
           <strong>{row.ref.datasetName}</strong>
           <span>
+            {stageLabels[row.ref.dataStage ?? "annotated"]} ·{" "}
             {row.ref.versionLabel}
             {row.ref.episodeCount !== undefined
               ? ` · ${row.ref.episodeCount} 个 Episode`
@@ -913,13 +985,19 @@ export function DataExportPage() {
               title={
                 <span className={styles.cardTitle}>
                   <FileArchive aria-hidden="true" size={18} />
-                  创建导出任务
+                  {dataStage === "raw" ? "导出原始数据" : "创建导出任务"}
                 </span>
               }
               extra={
                 <span className={styles.selectionCount} aria-live="polite">
-                  已选 {selectedSources.length} 个数据集 ·{" "}
-                  {selectedEpisodeCount.toLocaleString("zh-CN")} 个 Episode
+                  {dataStage === "raw" ? (
+                    "保留上传时的原文件"
+                  ) : (
+                    <>
+                      已选 {selectedSources.length} 个数据集 ·{" "}
+                      {selectedEpisodeCount.toLocaleString("zh-CN")} 个 Episode
+                    </>
+                  )}
                 </span>
               }
             >
@@ -938,6 +1016,32 @@ export function DataExportPage() {
                 />
               ) : (
                 <>
+                  <div
+                    className={`${styles.filterSection} ${styles.stageSelector}`}
+                  >
+                    <strong>导出数据类型</strong>
+                    <Radio.Group
+                      aria-label="导出数据类型"
+                      optionType="button"
+                      buttonStyle="solid"
+                      value={dataStage}
+                      options={(["annotated", "raw", "dataset"] as const).map(
+                        (value) => ({ value, label: stageLabels[value] }),
+                      )}
+                      onChange={(event) => {
+                        setSelectedSourceKeys([]);
+                        setBatchFeedback(null);
+                        setParams(
+                          (current) => {
+                            const next = new URLSearchParams(current);
+                            next.set("dataStage", event.target.value);
+                            return next;
+                          },
+                          { replace: true },
+                        );
+                      }}
+                    />
+                  </div>
                   <section
                     aria-labelledby="export-scope-title"
                     className={styles.filterSection}
@@ -947,7 +1051,11 @@ export function DataExportPage() {
                         <span className={styles.stepBadge}>1</span>
                         <span>
                           <strong id="export-scope-title">选择数据范围</strong>
-                          <small>先按任务或数据集查找，再勾选 Episode</small>
+                          <small>
+                            {dataStage === "raw"
+                              ? "按任务或数据集查找，再选择原始批次中的文件"
+                              : "先按任务或数据集查找，再勾选 Episode"}
+                          </small>
                         </span>
                       </div>
                       <Button
@@ -972,7 +1080,9 @@ export function DataExportPage() {
                           optionFilterProp="label"
                           options={allSources.map((source) => ({
                             value: source.datasetId,
-                            label: `${source.datasetName} · ${source.versionLabel}`,
+                            label: source.versionId
+                              ? `${source.datasetName} · ${source.versionLabel}`
+                              : source.datasetName,
                           }))}
                           placeholder="全部数据集"
                           value={appliedDatasetIds}
@@ -1011,199 +1121,240 @@ export function DataExportPage() {
                     </div>
                   </section>
 
-                  <div className={styles.scopeNote} role="note">
-                    <Info aria-hidden="true" size={17} />
-                    <span>
-                      <strong>按 Episode 选择导出内容</strong>
-                      <small>
-                        列出当前 READY 版本中的 Episode，仅导出勾选的数据。
-                        所选数据需要通过质量检查和标注审核；同一数据集的 Episode
-                        按格式分别打包。
-                      </small>
-                    </span>
-                  </div>
-
-                  {collectionTasks.isError || sourceFilterError ? (
-                    <Alert
-                      showIcon
-                      className={styles.sourceAlert}
-                      title="部分筛选选项加载失败"
-                      description={readableError(
-                        collectionTasks.error ?? sourceFilterError,
-                      )}
-                      type="warning"
-                    />
-                  ) : null}
-
-                  <div className={styles.sectionHeader}>
-                    <strong>选择 Episode</strong>
-                    <Button
-                      disabled={
-                        episodes.length === 0 ||
-                        sourceFiltersPending ||
-                        Boolean(sourceFilterError)
-                      }
-                      onClick={() =>
-                        setSelectedSourceKeys(
-                          episodes.map((episode) => episode.key),
-                        )
-                      }
+                  {dataStage === "raw" ? (
+                    <Suspense
+                      fallback={<PageState state="loading" label="原始数据" />}
                     >
-                      {appliedTasks.length > 0
-                        ? "全选所选任务的 Episode"
-                        : "全选所选数据集的 Episode"}
-                    </Button>
-                    <Button
-                      disabled={selectedEpisodeCount === 0}
-                      onClick={() => setSelectedSourceKeys([])}
-                    >
-                      清空选择
-                    </Button>
-                  </div>
-                  <Table<ExportEpisode>
-                    aria-label="可导出 Episode 列表"
-                    className={styles.sourceTable}
-                    columns={sourceColumns}
-                    dataSource={episodes}
-                    locale={{
-                      emptyText:
-                        activeSourceFilterCount > 0
-                          ? "所选范围暂无 Episode"
-                          : "请先选择任务或数据集",
-                    }}
-                    loading={sourceFiltersPending}
-                    pagination={{
-                      pageSize: 20,
-                      showSizeChanger: false,
-                      hideOnSinglePage: true,
-                    }}
-                    rowSelection={{
-                      selectedRowKeys: selectedSourceKeys,
-                      onChange: (keys) =>
-                        setSelectedSourceKeys(keys.map(String)),
-                      getCheckboxProps: (episode) => ({
-                        "aria-label": `选择 Episode ${episode.ordinal} · ${episode.source.datasetName}`,
-                      }),
-                    }}
-                    size="middle"
-                  />
-                  <section
-                    aria-labelledby="export-format-title"
-                    className={styles.exportSettings}
-                  >
-                    <div className={styles.sectionHeader}>
-                      <div>
-                        <span className={styles.stepBadge}>2</span>
+                      <RawDataExportPanel
+                        scope={scope!}
+                        datasetIds={requestedSources.map(
+                          (source) => source.datasetId,
+                        )}
+                        taskIds={appliedTasks}
+                        hasFilter={activeSourceFilterCount > 0}
+                        canRead={capabilities.has("upload.read")}
+                        canDownload={canDownload}
+                      />
+                    </Suspense>
+                  ) : (
+                    <>
+                      <div className={styles.scopeNote} role="note">
+                        <Info aria-hidden="true" size={17} />
                         <span>
-                          <strong id="export-format-title">选择导出格式</strong>
-                          <small>格式可多选，每个格式独立生成 ZIP</small>
+                          <strong>按 Episode 选择导出内容</strong>
+                          <small>
+                            {dataStage === "annotated"
+                              ? "仅列出已通过标注审核且符合导出条件的数据，无需先手动发布版本。"
+                              : "列出已经处理入库的数据，不要求完成标注；导出不包含标注审核结果。"}
+                            同一数据集的 Episode 按格式分别打包。
+                          </small>
                         </span>
                       </div>
-                    </div>
 
-                    <div className={styles.exportComposer}>
-                      <fieldset className={styles.formatFieldset}>
-                        <legend>导出格式（可多选）</legend>
-                        <div className={styles.formatOptions}>
-                          {formatOptions.map((option) => {
-                            const checked = selectedFormats.includes(
-                              option.value,
-                            );
-                            return (
-                              <label key={option.value} data-selected={checked}>
-                                <Checkbox
-                                  aria-label={option.label}
-                                  checked={checked}
-                                  onChange={(event) =>
-                                    setSelectedFormats((current) =>
-                                      event.target.checked
-                                        ? [...current, option.value]
-                                        : current.filter(
-                                            (format) => format !== option.value,
-                                          ),
-                                    )
-                                  }
-                                />
-                                <span>
-                                  <strong>{option.label}</strong>
-                                  <small>{option.description}</small>
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </fieldset>
+                      {collectionTasks.isError || sourceFilterError ? (
+                        <Alert
+                          showIcon
+                          className={styles.sourceAlert}
+                          title="部分筛选选项加载失败"
+                          description={readableError(
+                            collectionTasks.error ?? sourceFilterError,
+                          )}
+                          type="warning"
+                        />
+                      ) : null}
 
-                      <div className={styles.batchSummary} aria-live="polite">
-                        <div className={styles.summaryStats}>
-                          <span>
-                            <small>数据集</small>
-                            <strong>{selectedSources.length}</strong>
+                      <div className={styles.sectionHeader}>
+                        <strong>选择 Episode</strong>
+                        {activeSourceFilterCount > 0 &&
+                        !sourceFiltersPending &&
+                        !sourceFilterError ? (
+                          <span role="status">
+                            可导出 {episodes.length} 条
+                            {dataStage === "annotated"
+                              ? "已标注数据"
+                              : "数据集数据"}
                           </span>
-                          <span>
-                            <small>Episode 数</small>
-                            <strong>
-                              {selectedEpisodeCount.toLocaleString("zh-CN")}
-                            </strong>
-                          </span>
-                          <span>
-                            <small>格式</small>
-                            <strong>{selectedFormats.length}</strong>
-                          </span>
-                          <span>
-                            <small>任务</small>
-                            <strong>{batchTaskCount}</strong>
-                          </span>
-                        </div>
-                        <div className={styles.batchAction}>
-                          <small>
-                            所选 Episode
-                            按数据集和格式分别打包；不会导出未勾选的数据
-                          </small>
-                          <Button
-                            aria-label={`创建 ${batchTaskCount} 个导出任务`}
-                            className={styles.primaryAction}
-                            disabled={!creationReady || createBatch.isPending}
-                            icon={<PackageCheck aria-hidden="true" size={17} />}
-                            loading={createBatch.isPending}
-                            type="primary"
-                            onClick={startBatch}
-                          >
-                            {createBatch.isPending
-                              ? "正在创建…"
-                              : `创建 ${batchTaskCount} 个导出任务`}
-                          </Button>
-                        </div>
+                        ) : null}
+                        <Button
+                          disabled={
+                            episodes.length === 0 ||
+                            sourceFiltersPending ||
+                            Boolean(sourceFilterError)
+                          }
+                          onClick={() =>
+                            setSelectedSourceKeys(
+                              episodes.map((episode) => episode.key),
+                            )
+                          }
+                        >
+                          全选可导出数据
+                        </Button>
+                        <Button
+                          disabled={selectedEpisodeCount === 0}
+                          onClick={() => setSelectedSourceKeys([])}
+                        >
+                          清空选择
+                        </Button>
                       </div>
-                    </div>
+                      <Table<ExportEpisode>
+                        aria-label="可导出 Episode 列表"
+                        className={styles.sourceTable}
+                        columns={sourceColumns}
+                        dataSource={episodes}
+                        locale={{
+                          emptyText:
+                            activeSourceFilterCount > 0
+                              ? `所选范围暂无可导出的${dataStage === "annotated" ? "已标注数据" : "数据集数据"}`
+                              : "请先选择任务或数据集",
+                        }}
+                        loading={sourceFiltersPending}
+                        pagination={{
+                          pageSize: 20,
+                          showSizeChanger: false,
+                          hideOnSinglePage: true,
+                        }}
+                        rowSelection={{
+                          selectedRowKeys: selectedSourceKeys,
+                          onChange: (keys) =>
+                            setSelectedSourceKeys(keys.map(String)),
+                          getCheckboxProps: (episode) => ({
+                            "aria-label": `选择 Episode ${episode.ordinal} · ${episode.source.datasetName}`,
+                          }),
+                        }}
+                        size="middle"
+                      />
+                      <section
+                        aria-labelledby="export-format-title"
+                        className={styles.exportSettings}
+                      >
+                        <div className={styles.sectionHeader}>
+                          <div>
+                            <span className={styles.stepBadge}>2</span>
+                            <span>
+                              <strong id="export-format-title">
+                                选择导出格式
+                              </strong>
+                              <small>格式可多选，每个格式独立生成 ZIP</small>
+                            </span>
+                          </div>
+                        </div>
 
-                    {batchBlockedReason ? (
-                      <Alert
-                        showIcon
-                        className={styles.composerAlert}
-                        type="warning"
-                        title={batchBlockedReason}
-                      />
-                    ) : null}
-                    {!canCreate && !capabilities.loading ? (
-                      <Alert
-                        showIcon
-                        className={styles.composerAlert}
-                        type="warning"
-                        title="当前账户不能创建导出任务"
-                        description="需要 export.create 权限；已有任务仍可查看。"
-                      />
-                    ) : null}
-                    {batchFeedback ? (
-                      <Alert
-                        showIcon
-                        className={styles.composerAlert}
-                        description={batchFeedback.description}
-                        title={batchFeedback.title}
-                        type={batchFeedback.type}
-                      />
-                    ) : null}
-                  </section>
+                        <div className={styles.exportComposer}>
+                          <fieldset className={styles.formatFieldset}>
+                            <legend>导出格式（可多选）</legend>
+                            <div className={styles.formatOptions}>
+                              {formatOptions.map((option) => {
+                                const checked = selectedFormats.includes(
+                                  option.value,
+                                );
+                                return (
+                                  <label
+                                    key={option.value}
+                                    data-selected={checked}
+                                  >
+                                    <Checkbox
+                                      aria-label={option.label}
+                                      checked={checked}
+                                      onChange={(event) =>
+                                        setSelectedFormats((current) =>
+                                          event.target.checked
+                                            ? [...current, option.value]
+                                            : current.filter(
+                                                (format) =>
+                                                  format !== option.value,
+                                              ),
+                                        )
+                                      }
+                                    />
+                                    <span>
+                                      <strong>{option.label}</strong>
+                                      <small>{option.description}</small>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </fieldset>
+
+                          <div
+                            className={styles.batchSummary}
+                            aria-live="polite"
+                          >
+                            <div className={styles.summaryStats}>
+                              <span>
+                                <small>数据集</small>
+                                <strong>{selectedSources.length}</strong>
+                              </span>
+                              <span>
+                                <small>Episode 数</small>
+                                <strong>
+                                  {selectedEpisodeCount.toLocaleString("zh-CN")}
+                                </strong>
+                              </span>
+                              <span>
+                                <small>格式</small>
+                                <strong>{selectedFormats.length}</strong>
+                              </span>
+                              <span>
+                                <small>任务</small>
+                                <strong>{batchTaskCount}</strong>
+                              </span>
+                            </div>
+                            <div className={styles.batchAction}>
+                              <small>
+                                所选 Episode
+                                按数据集和格式分别打包；不会导出未勾选的数据
+                              </small>
+                              <Button
+                                aria-label={`创建 ${batchTaskCount} 个导出任务`}
+                                className={styles.primaryAction}
+                                disabled={
+                                  !creationReady || createBatch.isPending
+                                }
+                                icon={
+                                  <PackageCheck aria-hidden="true" size={17} />
+                                }
+                                loading={createBatch.isPending}
+                                type="primary"
+                                onClick={startBatch}
+                              >
+                                {createBatch.isPending
+                                  ? "正在创建…"
+                                  : `创建 ${batchTaskCount} 个导出任务`}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {batchBlockedReason ? (
+                          <Alert
+                            showIcon
+                            className={styles.composerAlert}
+                            type="warning"
+                            title={batchBlockedReason}
+                          />
+                        ) : null}
+                        {!canCreate && !capabilities.loading ? (
+                          <Alert
+                            showIcon
+                            className={styles.composerAlert}
+                            type="warning"
+                            title="当前账户不能创建导出任务"
+                            description="需要 export.create 权限；已有任务仍可查看。"
+                          />
+                        ) : null}
+                        {batchFeedback ? (
+                          <Alert
+                            showIcon
+                            className={styles.composerAlert}
+                            description={batchFeedback.description}
+                            title={batchFeedback.title}
+                            type={batchFeedback.type}
+                          />
+                        ) : null}
+                      </section>
+                    </>
+                  )}
                 </>
               )}
             </Card>

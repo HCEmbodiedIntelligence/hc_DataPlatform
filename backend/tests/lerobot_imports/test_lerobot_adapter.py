@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import hashlib
 import subprocess
+from dataclasses import replace
+from pathlib import Path
 
 from hc_data_platform.aligned_media.models import OriginalVideoReferenceV1
-
 from hc_data_platform.lerobot_imports.adapter import EpisodeStream
 from hc_data_platform.lerobot_imports.orchestration import LeRobotEpisodeSourceRefV1
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as source_reader
@@ -105,6 +104,26 @@ def test_episode_stream_feeds_quality_and_alignment_without_mcap(tmp_path: Path)
 
     assert stream.quality_input.rollout_id == "lerobot-rollout-0"
     assert set(stream.alignment_input.streams) == set(source_reader.ACTUAL_TOPICS)
+    rerun = replace(
+        stream,
+        source=stream.source.model_copy(
+            update={
+                "processing_attempt_id": "e2b485cf-0f3a-4349-9e91-8eb1d10c5652",
+            }
+        ),
+    )
+    assert rerun.alignment_input.attempt_id != stream.alignment_input.attempt_id
+    assert rerun.alignment_input.source_sha256 == stream.alignment_input.source_sha256
+    assert rerun.alignment_input.rollout_id == stream.alignment_input.rollout_id
+    batch_retry = replace(
+        stream,
+        source=stream.source.model_copy(
+            update={"import_attempt_id": "25a8ccf6-86bc-44b6-a099-0173a2695473"}
+        ),
+    )
+    assert batch_retry.alignment_input.attempt_id != stream.alignment_input.attempt_id
+    assert batch_retry.alignment_input.source_sha256 == stream.alignment_input.source_sha256
+    assert batch_retry.alignment_input.rollout_id == stream.alignment_input.rollout_id
     assert len(quality) == len(source_reader.ACTUAL_TOPICS) * 2
     assert len(aligned) == len(source_reader.ACTUAL_TOPICS) * 2
     camera_quality = [item for item in quality if item.is_camera]

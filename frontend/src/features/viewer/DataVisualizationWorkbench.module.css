@@ -1,4 +1,5 @@
 .workbench {
+  --viewer-medium-width: clamp(440px, calc(100dvh - 360px), 640px);
   display: grid;
   width: 100%;
   height: calc(100dvh - 124px);
@@ -919,5 +920,118 @@
   .finding,
   .actionItem button {
     transition-duration: 0.01ms;
+  }
+}
+
+.workbench[data-layout="preview"] {
+  max-width: min(100%, var(--viewer-medium-width));
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  margin-inline: auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto auto;
+  grid-template-areas: "header" "banner" "toolbar" "media" "timeline";
+  gap: 6px;
+}
+
+.workbench[data-layout="preview"] .workbenchHeader {
+  min-height: 28px;
+}
+
+.workbench[data-layout="preview"] .titleBlock .eyebrow {
+  display: none;
+}
+
+.workbench[data-layout="preview"] .titleBlock h1 {
+  font-size: 14px;
+}
+
+.workbench[data-layout="preview"] .readOnlyBadge {
+  min-height: 24px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.workbench[data-layout="preview"] .media {
+  height: auto;
+  min-height: 0;
+}
+
+.workbench[data-layout="preview"] .media > :global(.viewer-media-surface) {
+  flex: 0 0 auto;
+}
+
+.workbench[data-layout="preview"] .media :global(.viewer-media-grid) {
+  height: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  align-items: start;
+  overflow: visible;
+}
+
+.workbench[data-layout="preview"]
+  .media
+  :global(.viewer-media-grid[data-camera-layout="single"]),
+.workbench[data-layout="preview"]
+  .media
+  :global(.viewer-media-grid[data-camera-layout="empty"]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workbench[data-layout="preview"] .media :global(.viewer-panel) {
+  height: auto;
+}
+
+.workbench[data-layout="preview"] .media :global(.viewer-panel video) {
+  height: auto;
+  flex: 0 0 auto;
+  aspect-ratio: auto 4 / 3;
+  object-fit: contain;
+}
+
+.workbench[data-layout="preview"] .timeline {
+  min-height: 150px;
+}
+
+.workbench[data-layout="preview"]
+  .timeline
+  :global(.viewer-timeline__viewport) {
+  height: auto;
+  max-height: 130px;
+  overflow-y: auto;
+  scrollbar-gutter: auto;
+}
+
+@container (max-width: 540px) {
+  .workbench[data-layout="preview"]
+    .timeline
+    :global(.viewer-playback-controls) {
+    flex-wrap: wrap;
+    flex-basis: auto;
+  }
+
+  .workbench[data-layout="preview"] .timeline :global(.viewer-timeline__tools) {
+    flex-wrap: wrap;
+  }
+
+  .workbench[data-layout="preview"]
+    .timeline
+    :global(.viewer-timeline__tools button) {
+    padding: 4px 6px;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .workbench[data-layout="preview"]
+    .timeline
+    :global(.viewer-timeline__ruler span:nth-child(even)) {
+    visibility: hidden;
+  }
+}
+
+@container (max-width: 380px) {
+  .workbench[data-layout="preview"] .media :global(.viewer-media-grid) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

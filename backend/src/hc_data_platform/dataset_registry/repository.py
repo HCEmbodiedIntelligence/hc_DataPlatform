@@ -167,6 +167,10 @@ class DatasetPageRepository(Protocol):
         self, *, scope: DatasetPageScope, dataset_id: str, version_id: str, revision_id: str
     ) -> DatasetPageEpisodeRevision | None: ...
 
+    def list_episode_revisions(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
+    ) -> tuple[DatasetPageEpisodeRevision, ...]: ...
+
     def list_episode_revision_history(
         self, *, scope: DatasetPageScope, dataset_id: str, episode_id: str
     ) -> tuple[DatasetPageEpisodeRevisionHistoryItem, ...]: ...
@@ -447,6 +451,15 @@ class InMemoryDatasetPageRepository:
         with self._lock:
             return self._episode_revisions.get(
                 _revision_key(scope, dataset_id, version_id, revision_id)
+            )
+
+    def list_episode_revisions(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
+    ) -> tuple[DatasetPageEpisodeRevision, ...]:
+        prefix = _version_key(scope, dataset_id, version_id)
+        with self._lock:
+            return tuple(
+                revision for key, revision in self._episode_revisions.items() if key[:5] == prefix
             )
 
     def list_episode_revision_history(
@@ -1007,6 +1020,32 @@ class PostgresDatasetPageRepository:
             raw = cursor.fetchone()
             return (
                 None if raw is None else _episode_revision(_row(cursor, raw)["revision_document"])
+            )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def list_episode_revisions(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
+    ) -> tuple[DatasetPageEpisodeRevision, ...]:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT revision_document
+                  FROM dataset_registry.dataset_version_episode_revisions
+                 WHERE organization_id = %s
+                   AND project_id = %s
+                   AND region_code = %s
+                   AND dataset_id = %s
+                   AND version_id = %s
+                """,
+                _version_key(scope, dataset_id, version_id),
+            )
+            return tuple(
+                _episode_revision(_row(cursor, row)["revision_document"])
+                for row in cursor.fetchall()
             )
         finally:
             cursor.close()

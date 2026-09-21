@@ -241,12 +241,13 @@ function useShellViewportMode(): ShellViewportMode {
   return mode;
 }
 
-function readNavigationCollapsedPreference(): boolean {
-  if (typeof window === "undefined") return false;
+function readNavigationCollapsedPreference(): boolean | null {
+  if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(navigationPreferenceKey) === "true";
+    const preference = window.localStorage.getItem(navigationPreferenceKey);
+    return preference === "true" ? true : preference === "false" ? false : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -650,10 +651,9 @@ export function PlatformShell({
     : (objectStoreLocation.data ?? null);
   const unreadNotifications = useUnreadNotificationCount();
 
-  const desktopNavigationCollapsed =
-    viewportMode === "desktop" && navigationCollapsed;
   const shellNavigationCollapsed =
-    viewportMode === "compact" || desktopNavigationCollapsed;
+    viewportMode !== "mobile" &&
+    (navigationCollapsed ?? viewportMode === "compact");
   const grantedCapabilities = useMemo(() => {
     const expanded = new Set(
       expandGrantedCapabilities([
@@ -971,7 +971,7 @@ export function PlatformShell({
         {viewportMode !== "mobile" ? (
           <Sider
             className={styles.sider}
-            collapsed={viewportMode === "compact" || desktopNavigationCollapsed}
+            collapsed={shellNavigationCollapsed}
             collapsedWidth={64}
             data-navigation-collapsed={shellNavigationCollapsed || undefined}
             theme="light"
@@ -979,38 +979,32 @@ export function PlatformShell({
             width={218}
           >
             <NavigationMenu
-              collapsed={viewportMode === "compact" || navigationCollapsed}
+              collapsed={shellNavigationCollapsed}
               id="platform-primary-navigation"
-              label={viewportMode === "compact" ? "折叠主导航" : "主导航"}
+              label={shellNavigationCollapsed ? "折叠主导航" : "主导航"}
               manifest={visibleManifest}
             />
-            {viewportMode === "desktop" && !navigationCollapsed ? (
-              <ReleaseStamp />
-            ) : null}
-            {viewportMode === "desktop" ? (
-              <Button
-                aria-label={navigationCollapsed ? "展开导航" : "折叠导航"}
-                aria-controls="platform-primary-navigation"
-                aria-expanded={!navigationCollapsed}
-                className={styles.collapseNavigation}
-                icon={
-                  navigationCollapsed ? (
-                    <PanelLeftOpen aria-hidden="true" size={17} />
-                  ) : (
-                    <PanelLeftClose aria-hidden="true" size={17} />
-                  )
-                }
-                type="text"
-                title={navigationCollapsed ? "展开导航" : "折叠导航"}
-                onClick={() =>
-                  setNavigationCollapsed((current) => {
-                    const next = !current;
-                    persistNavigationCollapsedPreference(next);
-                    return next;
-                  })
-                }
-              />
-            ) : null}
+            {!shellNavigationCollapsed ? <ReleaseStamp /> : null}
+            <Button
+              aria-label={shellNavigationCollapsed ? "展开导航" : "折叠导航"}
+              aria-controls="platform-primary-navigation"
+              aria-expanded={!shellNavigationCollapsed}
+              className={styles.collapseNavigation}
+              icon={
+                shellNavigationCollapsed ? (
+                  <PanelLeftOpen aria-hidden="true" size={17} />
+                ) : (
+                  <PanelLeftClose aria-hidden="true" size={17} />
+                )
+              }
+              type="text"
+              title={shellNavigationCollapsed ? "展开导航" : "折叠导航"}
+              onClick={() => {
+                const next = !shellNavigationCollapsed;
+                setNavigationCollapsed(next);
+                persistNavigationCollapsedPreference(next);
+              }}
+            />
           </Sider>
         ) : null}
 

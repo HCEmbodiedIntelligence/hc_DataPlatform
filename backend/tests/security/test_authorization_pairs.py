@@ -12,6 +12,7 @@ from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
 from hc_data_platform.security.auth import AuthContext
+from hc_data_platform.security.capabilities import DATA_WORKFLOW_CAPABILITIES
 from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
@@ -202,6 +203,54 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         )
         assert revoked_session_denied.status_code == 403
         assert revoked_session_denied.json()["code"] == "ACCESS_MANAGEMENT_REQUIRED"
+
+
+def test_upload_grant_expands_bootstrap_and_existing_session_then_revokes() -> None:
+    repository = InMemoryAccessRepository()
+    service = AccessService(repository)
+    app = create_app(
+        settings=Settings(environment="test", runtime_backend="memory", _env_file=None),
+        jwt_verifier=ProjectAdminVerifier(),  # type: ignore[arg-type]
+        access_service=service,
+    )
+    with TestClient(app) as client:
+        token = _register(client, "workflow-operator")
+        membership = _request_membership(client, token, "workflow")
+        _approve_membership(client, membership["request_id"], "workflow")
+        # Independently granted read access must survive revoking workflow access.
+        _grant_capability(client, token=token, capability="dataset.read", suffix="workflow-read")
+        grant = _grant_capability(
+            client, token=token, capability="upload.manage", suffix="workflow-upload"
+        )
+
+        bootstrap = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token))
+        assert bootstrap.status_code == 200
+        scope = bootstrap.json()["available_scopes"][0]
+        assert scope["project_id"] == "project-a"
+        assert set(scope["capabilities"]) >= DATA_WORKFLOW_CAPABILITIES
+        auth = service.authenticate_access_token(token)
+        assert auth is not None
+        for capability in DATA_WORKFLOW_CAPABILITIES:
+            auth.require_capability(capability, "project-a", "organization-a")
+            assert not auth.has_capability(capability, "project-b", "organization-b")
+        assert not auth.has_capability("access.manage", "project-a", "organization-a")
+
+        revoked = client.post(
+            "/api/v1/organizations/organization-a/projects/project-a/capability-requests/"
+            + grant["request_id"]
+            + ":revoke",
+            json={"reason": "workflow access ended"},
+            headers=_headers("external-admin-a", "revoke-workflow"),
+        )
+        assert revoked.status_code == 200
+        after = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token)).json()
+        assert after["available_scopes"][0]["capabilities"] == ["dataset.read"]
+        assert after["capability_revision"] > bootstrap.json()["capability_revision"]
+        current_auth = service.authenticate_access_token(token)
+        assert current_auth is not None
+        assert current_auth.effective_capabilities("project-a", "organization-a") == frozenset(
+            {"dataset.read"}
+        )
 
 
 def _inventory_fact(project_id: str, physical_id: str) -> CapacityInventoryFact:

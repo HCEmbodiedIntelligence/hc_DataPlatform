@@ -134,6 +134,8 @@
   z-index: 1;
   display: grid;
   min-width: 0;
+  grid-template-rows: 22px 44px 24px 18px auto;
+  align-content: start;
   justify-items: center;
   text-align: center;
 }
@@ -220,6 +222,33 @@
   overflow-wrap: anywhere;
   text-overflow: clip;
   white-space: normal;
+}
+
+.issueButton {
+  margin-top: 3px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--hc-color-warning, #a26300);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.issueButton[data-tone="danger"] {
+  color: var(--hc-color-error, #b84646);
+}
+
+.issueButton:hover {
+  background: var(--hc-color-surface-muted, #f3f4f8);
+}
+
+.issueButton:focus-visible {
+  outline: 2px solid var(--hc-color-focus, #8b96ff);
+  outline-offset: 2px;
 }
 
 .issueAlert,

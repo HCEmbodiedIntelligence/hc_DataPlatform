@@ -2,6 +2,7 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,6 +15,7 @@ import {
   EpisodeWorkbenchCore,
   formatElapsedNs,
   ViewerJointAngleCurvePanel,
+  SharedSignalTimeline,
 } from "./EpisodeWorkbenchCore";
 import type { ViewerTimelineTrack } from "./EpisodeWorkbenchCore";
 
@@ -63,7 +65,7 @@ const tracks: readonly ViewerTimelineTrack[] = [
   { id: "action", label: "动作", level: 1, segments: [] },
 ];
 
-function renderTimeline() {
+function renderTimeline(onRangeCreate?: (start: string, end: string) => void) {
   const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
   const onRangeSelect = vi.fn();
   render(
@@ -81,6 +83,7 @@ function renderTimeline() {
       }}
       timelineTracks={tracks}
       onTimeRangeSelect={onRangeSelect}
+      onTimeRangeCreate={onRangeCreate}
     />,
   );
   return { clock, onRangeSelect };
@@ -92,6 +95,37 @@ it("formats all viewer time readouts as seconds with two decimals", () => {
 });
 
 describe("ClipTimeline", () => {
+  it("distinguishes a new drag from resizing an existing selection", () => {
+    const onRangeCreate = vi.fn();
+    const { clock, onRangeSelect } = renderTimeline(onRangeCreate);
+    const slider = screen.getByRole("slider", { name: /播放位置/ });
+    vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 76,
+      width: 100,
+      height: 76,
+      toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(slider, { pointerId: 7, button: 0, clientX: 70 });
+    fireEvent.pointerMove(slider, { pointerId: 7, clientX: 90 });
+    fireEvent.pointerUp(slider, { pointerId: 7, clientX: 90 });
+    expect(onRangeCreate).toHaveBeenCalledExactlyOnceWith(
+      "7000000000",
+      "9000000000",
+    );
+    expect(onRangeSelect).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("button", { name: /标注开始/ }), {
+      key: "ArrowRight",
+    });
+    expect(onRangeSelect).toHaveBeenLastCalledWith("7010000000", "9000000000");
+    expect(onRangeCreate).toHaveBeenCalledTimes(1);
+    clock.dispose();
+  });
+
   it("creates a precise range by dragging across the filmstrip", () => {
     const { clock, onRangeSelect } = renderTimeline();
     const filmstrip = screen.getByRole("slider", { name: /播放位置/ });
@@ -150,6 +184,141 @@ describe("ClipTimeline", () => {
   });
 });
 
+describe("direct Tag manipulation", () => {
+  function setup(disabled = false) {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
+    const editing = {
+      selected: true,
+      onSelect: vi.fn(),
+      onChange: vi.fn(),
+      onDelete: vi.fn(),
+    };
+    render(
+      <SharedSignalTimeline
+        clock={clock}
+        disabled={disabled}
+        tracks={[
+          {
+            ...tracks[0]!,
+            segments: [{ ...tracks[0]!.segments[0]!, editing }],
+          },
+        ]}
+      />,
+    );
+    const tag = screen.getByRole("button", { name: /从“抓取零件”起点/u });
+    vi.spyOn(tag.parentElement!, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      width: 100,
+      x: 0,
+      y: 0,
+      top: 0,
+      bottom: 25,
+      right: 100,
+      height: 25,
+      toJSON: () => ({}),
+    });
+    return { clock, editing, tag };
+  }
+
+  it("scrubs while moving a Tag, commits on release, and suppresses the drag's click", () => {
+    const { clock, editing, tag } = setup();
+    clock.play();
+    fireEvent.pointerDown(tag, { button: 0, pointerId: 1, clientX: 40 });
+    fireEvent.pointerMove(tag, { pointerId: 1, clientX: 50 });
+    expect(clock.isPlaying()).toBe(false);
+    expect(clock.currentNs()).toBe("5000000000");
+    expect(editing.onChange).not.toHaveBeenCalled();
+    fireEvent.pointerUp(tag, { pointerId: 1, clientX: 50 });
+    expect(editing.onChange).toHaveBeenCalledExactlyOnceWith(
+      "3000000000",
+      "7000000000",
+    );
+    fireEvent.click(tag);
+    expect(clock.isPlaying()).toBe(false);
+    expect(clock.currentNs()).toBe("5000000000");
+    clock.dispose();
+  });
+
+  it.each(["start", "end"] as const)(
+    "drags the %s edge directly and follows that boundary",
+    (edge) => {
+      const { clock, editing, tag } = setup();
+      const grip = tag.querySelector(`[data-tag-edge="${edge}"]`)!;
+      fireEvent.pointerDown(grip, {
+        button: 0,
+        pointerId: 1,
+        clientX: edge === "start" ? 20 : 60,
+      });
+      fireEvent.pointerMove(tag, {
+        pointerId: 1,
+        clientX: edge === "start" ? 10 : 80,
+      });
+      expect(clock.currentNs()).toBe(
+        edge === "start" ? "1000000000" : "7999999999",
+      );
+      fireEvent.pointerUp(tag, {
+        pointerId: 1,
+        clientX: edge === "start" ? 10 : 80,
+      });
+      expect(editing.onChange).toHaveBeenCalledExactlyOnceWith(
+        edge === "start" ? "1000000000" : "2000000000",
+        edge === "start" ? "6000000000" : "8000000000",
+      );
+      clock.dispose();
+    },
+  );
+
+  it("keeps the interval length inside the timeline bounds", () => {
+    const { clock, editing, tag } = setup();
+    fireEvent.pointerDown(tag, { button: 0, pointerId: 1, clientX: 40 });
+    fireEvent.pointerMove(tag, { pointerId: 1, clientX: 120 });
+    fireEvent.pointerUp(tag, { pointerId: 1, clientX: 120 });
+    expect(editing.onChange).toHaveBeenCalledExactlyOnceWith(
+      "6000000000",
+      "10000000000",
+    );
+    clock.dispose();
+  });
+
+  it.each(["Escape", "pointercancel"])(
+    "cancels without writing on %s",
+    (cancel) => {
+      const { clock, editing, tag } = setup();
+      clock.seek("8000000000");
+      fireEvent.pointerDown(tag, { button: 0, pointerId: 1, clientX: 40 });
+      fireEvent.pointerMove(tag, { pointerId: 1, clientX: 50 });
+      if (cancel === "Escape") fireEvent.keyDown(tag, { key: "Escape" });
+      else fireEvent.pointerCancel(tag, { pointerId: 1 });
+      fireEvent.pointerUp(tag, { pointerId: 1, clientX: 50 });
+      expect(editing.onChange).not.toHaveBeenCalled();
+      expect(clock.currentNs()).toBe("8000000000");
+      clock.dispose();
+    },
+  );
+
+  it("selects a right-clicked Tag and offers deletion at the pointer", () => {
+    const { clock, editing, tag } = setup();
+    fireEvent.contextMenu(tag, { clientX: 30, clientY: 40 });
+    expect(editing.onSelect).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("menuitem", { name: /删除 Tag/u }));
+    expect(editing.onDelete).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    clock.dispose();
+  });
+
+  it("does not expose direct editing or deletion when read-only", () => {
+    const { clock, editing, tag } = setup(true);
+    fireEvent.contextMenu(tag);
+    fireEvent.pointerDown(tag, { button: 0, pointerId: 1, clientX: 40 });
+    fireEvent.pointerMove(tag, { pointerId: 1, clientX: 60 });
+    fireEvent.pointerUp(tag, { pointerId: 1, clientX: 60 });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(editing.onChange).not.toHaveBeenCalled();
+    expect(editing.onDelete).not.toHaveBeenCalled();
+    clock.dispose();
+  });
+});
+
 describe("EpisodeWorkbenchCore immutable window data", () => {
   it("loads a bound non-camera stream only when visible and exposes a real-data summary", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
@@ -190,6 +359,54 @@ describe("EpisodeWorkbenchCore immutable window data", () => {
 });
 
 describe("ViewerJointAngleCurvePanel recovery", () => {
+  it("keeps a slow window request alive and updates the cursor and values when time changes", async () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "20000000000" });
+    let resolveWindow!: (payload: unknown) => void;
+    const loadWindow = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveWindow = resolve;
+        }),
+    );
+    const { container, unmount } = render(
+      <ViewerJointAngleCurvePanel
+        clock={clock}
+        stream={{
+          id: "slow-joint",
+          canonicalPath: "/joint",
+          displayName: "joint",
+          modality: "joint_state",
+          schema: { id: "joint", version: "1" },
+          startNs: "0",
+          endNs: "20000000000",
+          availability: "ready",
+          windowSource: { loadWindow: loadWindow as never },
+        }}
+      />,
+    );
+    // Enter the prefetch guard while the initial request is still running.
+    // Previously this cancelled and restarted the very data we were waiting for.
+    act(() => clock.seek("3500000000"));
+    expect(loadWindow).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      resolveWindow({
+        generation: 0,
+        timestampsNs: ["0", "3500000000"],
+        values: [[0.1], [0.8]],
+        series: [{ id: "elbow", displayName: "elbow", unit: "rad" }],
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("0.80 rad")).toBeVisible());
+    const cursor = container.querySelector(".viewer-joint-curves__cursor")!;
+    const forwardX = Number(cursor.getAttribute("x1"));
+    act(() => clock.seek("0"));
+    await waitFor(() => expect(screen.getByText("0.10 rad")).toBeVisible());
+    expect(Number(cursor.getAttribute("x1"))).toBeLessThan(forwardX);
+    expect(loadWindow).toHaveBeenCalledTimes(1);
+    unmount();
+    clock.dispose();
+  });
+
   it("renders all 29 G1 joints including the right wrist", async () => {
     const clock = createPlaybackClock({ startNs: "0", endNs: "3000000000" });
     const names = Array.from({ length: 29 }, (_, i) =>

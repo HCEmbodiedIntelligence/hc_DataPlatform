@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 NANOSECONDS_PER_SECOND = 1_000_000_000
+CURRENT_QUALITY_ENGINE_VERSION = "be06-qc/2"
 JsonScalar = bool | int | float | str
 
 
@@ -390,7 +391,7 @@ class QualityProfileV1(BaseModel):
     schema_version: Literal["quality-profile/v1"] = "quality-profile/v1"
     profile_id: str = Field(min_length=1)
     profile_version: int = Field(default=1, ge=1)
-    engine_version: str = Field(default="be06-qc/1", min_length=1)
+    engine_version: str = Field(default=CURRENT_QUALITY_ENGINE_VERSION, min_length=1)
     required_topics: frozenset[str]
     default_timing: TopicTimingProfileV1 = Field(default_factory=TopicTimingProfileV1)
     topic_timing: dict[str, TopicTimingProfileV1] = Field(default_factory=dict)
@@ -575,6 +576,8 @@ class AutoQualityProblemV1(BaseModel):
     id: str = Field(pattern=r"^qc_[0-9a-f]{32}$")
     source: Literal["AUTO_QC"] = "AUTO_QC"
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
+    source_import_id: str | None = Field(default=None, min_length=1, max_length=256)
+    source_episode_index: int | None = Field(default=None, ge=0)
     rollout_id: str = Field(min_length=1, max_length=256)
     data_package_id: str | None = Field(default=None, min_length=1, max_length=256)
     status: Literal["RISK", "REJECT"]
@@ -602,6 +605,8 @@ class AutoQualityProblemV1(BaseModel):
         session_id: str | None,
         data_package_id: str | None,
         updated_at: datetime,
+        source_import_id: str | None = None,
+        source_episode_index: int | None = None,
     ) -> AutoQualityProblemV1:
         if report.status is QualityStatus.PASS or not report.findings:
             raise ValueError("only failed QC reports with findings can become problem data")
@@ -611,6 +616,8 @@ class AutoQualityProblemV1(BaseModel):
         return cls(
             id=f"qc_{report.content_sha256[:32]}",
             session_id=session_id,
+            source_import_id=source_import_id,
+            source_episode_index=source_episode_index,
             rollout_id=report.rollout_id,
             data_package_id=data_package_id,
             status=report.status.value,

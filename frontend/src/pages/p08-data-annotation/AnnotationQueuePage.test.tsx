@@ -2,7 +2,13 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { AnnotationQueuePage, TagReviewQueuePage } from "./AnnotationQueuePage";
@@ -106,6 +112,14 @@ function renderQueue(
 }
 
 beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation(() => ({
+      matches: false,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    })),
+  );
   grantedCapabilities.clear();
   grantedCapabilities.add("annotation_task.read");
   grantedCapabilities.add("episode.read");
@@ -116,6 +130,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("AnnotationQueuePage status architecture", () => {
@@ -216,25 +231,35 @@ describe("AnnotationQueuePage status architecture", () => {
     expect(screen.queryByText("流程边界")).toBeNull();
   });
 
-  it("shows view-only submission action without annotation.review", async () => {
-    listTasksMock.mockResolvedValue([task("SUBMITTED")]);
-    renderQueue("tag-review");
+  it.each(["annotator-current", "annotator-other"])(
+    "shows view-only submission by %s without annotation.review",
+    async (submittedBy) => {
+      listTasksMock.mockResolvedValue([
+        task("SUBMITTED", { submitted_by: submittedBy }),
+      ]);
+      renderQueue("tag-review");
 
-    expect(
-      await screen.findByRole("link", { name: "查看提交" }),
-    ).toHaveAttribute("href", "/annotations/tag-review/task-submitted");
-    expect(screen.queryByRole("link", { name: "开始审核" })).toBeNull();
-  });
+      expect(
+        await screen.findByRole("link", { name: "查看提交" }),
+      ).toHaveAttribute("href", "/annotations/tag-review/task-submitted");
+      expect(screen.queryByRole("link", { name: "开始审核" })).toBeNull();
+    },
+  );
 
-  it("starts review only when capability, fixed submission and separation facts all allow it", async () => {
-    grantedCapabilities.add("annotation.review");
-    listTasksMock.mockResolvedValue([task("SUBMITTED")]);
-    renderQueue("tag-review");
+  it.each(["annotator-current", "annotator-other"])(
+    "allows reviewing submissions by %s with annotation.review",
+    async (submittedBy) => {
+      grantedCapabilities.add("annotation.review");
+      listTasksMock.mockResolvedValue([
+        task("SUBMITTED", { submitted_by: submittedBy }),
+      ]);
+      renderQueue("tag-review");
 
-    expect(
-      await screen.findByRole("link", { name: "开始审核" }),
-    ).toHaveAttribute("href", "/annotations/tag-review/task-submitted");
-  });
+      expect(
+        await screen.findByRole("link", { name: "开始审核" }),
+      ).toHaveAttribute("href", "/annotations/tag-review/task-submitted");
+    },
+  );
 
   it.each([
     [
@@ -304,5 +329,78 @@ describe("AnnotationQueuePage search and authorization semantics", () => {
       await screen.findByText("你没有访问此标注资源的权限。"),
     ).toBeVisible();
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+  });
+});
+
+describe("AnnotationQueuePage pagination", () => {
+  function tasks(status: AnnotationQueueStage, count: number) {
+    return Array.from({ length: count }, (_, index) =>
+      task(status, {
+        task_id: `${status}-task-${index + 1}`,
+        rollout_id: `${status}-rollout-${index + 1}`,
+        assignee_id: "annotator-current",
+      }),
+    );
+  }
+
+  it("pages through all tasks, keeps totals and return links, and omits the schema column", async () => {
+    listTasksMock.mockResolvedValue(tasks("DRAFT", 45));
+    renderQueue("annotation");
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(21);
+    expect(screen.queryByRole("columnheader", { name: "标签结构" })).toBeNull();
+    expect(screen.getByText("第 1–20 条，共 45 条")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: /^待标注，.*45 项/ }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByTitle("2"));
+    const task21 = await within(table).findByRole("row", {
+      name: /DRAFT-rollout-21 /,
+    });
+    expect(within(table).queryByText("DRAFT-rollout-1")).toBeNull();
+    expect(screen.getByText("第 21–40 条，共 45 条")).toBeVisible();
+    expect(within(task21).getByRole("link")).toHaveAttribute(
+      "href",
+      "/annotations/tasks/DRAFT-task-21?returnTo=%2Fannotations%2Fannotate%3Fpage%3D2",
+    );
+
+    fireEvent.click(screen.getByTitle("3"));
+    expect(await screen.findByText("第 41–45 条，共 45 条")).toBeVisible();
+    expect(within(table).getAllByRole("row")).toHaveLength(6);
+  });
+
+  it("searches across pages and resets pagination when the search or stage changes", async () => {
+    listTasksMock.mockResolvedValue([
+      ...tasks("DRAFT", 45),
+      ...tasks("APPROVED", 25),
+    ]);
+    renderQueue("annotation", "/annotations/annotate?page=2");
+
+    await screen.findByText("第 21–40 条，共 45 条");
+    const search = screen.getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "DRAFT-rollout-44" } });
+    expect(await screen.findByText("第 1–1 条，共 1 条")).toBeVisible();
+    expect(screen.getByText("DRAFT-rollout-44")).toBeVisible();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(await screen.findByText("第 1–20 条，共 45 条")).toBeVisible();
+
+    fireEvent.click(screen.getByTitle("2"));
+    fireEvent.click(screen.getByRole("link", { name: /^标注完成，/ }));
+    expect(await screen.findByText("第 1–20 条，共 25 条")).toBeVisible();
+    expect(screen.getByText("APPROVED-rollout-1")).toBeVisible();
+  });
+
+  it("clamps stale page links to the last page and honors the requested page size", async () => {
+    listTasksMock.mockResolvedValue(tasks("DRAFT", 55));
+    renderQueue("annotation", "/annotations/annotate?page=999&limit=50");
+
+    const table = await screen.findByRole("table");
+    expect(screen.getByText("第 51–55 条，共 55 条")).toBeVisible();
+    expect(within(table).getAllByRole("row")).toHaveLength(6);
+    fireEvent.click(screen.getByTitle("1"));
+    expect(await screen.findByText("第 1–50 条，共 55 条")).toBeVisible();
+    expect(within(table).getAllByRole("row")).toHaveLength(51);
   });
 });

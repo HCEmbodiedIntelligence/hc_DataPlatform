@@ -118,7 +118,7 @@ def test_two_compose_projects_have_disjoint_ports_networks_and_volumes(tmp_path:
     assert target_services["api"]["environment"]["HC_OBJECT_STORE_ENDPOINT"] == (
         f"http://host.docker.internal:{source_ports['HC_MINIO_API_HOST_PORT']}"
     )
-    for service_name in ("api", "worker", "media-worker"):
+    for service_name in ("api", "worker"):
         assert "host.docker.internal=host-gateway" in target_services[service_name]["extra_hosts"]
         assert "@postgres:5432/" in target_services[service_name]["environment"]["HC_POSTGRES_DSN"]
         assert source_project not in target_services[service_name]["environment"]["HC_POSTGRES_DSN"]
@@ -126,7 +126,7 @@ def test_two_compose_projects_have_disjoint_ports_networks_and_volumes(tmp_path:
     assert {name: service.get("image") for name, service in source["services"].items()} == {
         name: service.get("image") for name, service in target_services.items()
     }
-    for service_name in ("api", "worker", "media-worker"):
+    for service_name in ("api", "worker"):
         source_environment = source["services"][service_name]["environment"]
         target_environment = target_services[service_name]["environment"]
         for key in (

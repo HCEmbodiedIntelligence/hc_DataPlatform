@@ -46,6 +46,8 @@ def _profile(**updates: object) -> QualityProfileV1:
     values: dict[str, object] = {
         "profile_id": "production",
         "profile_version": 7,
+        # Retain regression coverage for immutable reports made before policy v2.
+        "engine_version": "be06-qc/1",
         "required_topics": {"/camera/front"},
     }
     values.update(updates)

@@ -49,6 +49,30 @@ docker compose --env-file .env.single-server -f compose.single-server.yaml up -d
 当前部署复用 `hc-data-platform-dev_postgres-data` 和 `hc-data-platform-dev_minio-data`。
 worker-cache 仅保存可重建文件。不要执行 `down -v` 或 `docker volume prune`。
 
+### 从开发环境切回单机部署
+
+两套配置默认占用同一个 `127.0.0.1:8088` 端口。当前单机配置还复用了开发环境的数据卷，
+必须先停止开发环境，再启动单机部署，避免两个 PostgreSQL / MinIO 进程同时写同一卷：
+
+```bash
+docker compose -f compose.dev.yaml stop
+docker compose --env-file .env.single-server -f compose.single-server.yaml up --build -d
+docker compose --env-file .env.single-server -f compose.single-server.yaml ps
+```
+
+需要更新源码后自动生效时，切换到热更新部署：
+
+```bash
+docker compose --env-file .env.single-server -f compose.single-server.yaml stop
+docker compose -f compose.dev.yaml up --build -d --remove-orphans
+```
+
+热更新版默认八个常驻服务、三个初始化任务，仍只构建前端和后端两个镜像。
+修改 `frontend/src` 或 `backend/src` 自动重载；依赖变更才需要重新构建。
+停止容器会保留数据卷和已有数据。
+合并部署仅构建后端、前端两个镜像；迁移复用后端镜像。
+`Building (30/39)` 显示的是镜像构建步骤，六个常驻服务之外的迁移和建桶任务完成后退出。
+
 ## 迁移
 
 1. 暂停接收写入，让 Worker 排空任务后停止；保留数据库与对象存储的一致时间点。

@@ -3,10 +3,12 @@
 # the browser-Mock development default chosen by the base file.
 services:
   migration-check:
-    build:
-      context: backend
-      target: api
-    command: [hc-data-migrate, status]
+    image: hc-data-platform-backend:dev
+    pull_policy: never
+    command: [python, -m, hc_data_platform.core.migrations, status]
+    healthcheck: {disable: true}
+    volumes:
+      - ./backend:/app:ro
     environment:
       HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
     depends_on:

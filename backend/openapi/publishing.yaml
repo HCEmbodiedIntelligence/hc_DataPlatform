@@ -1,4 +1,25 @@
 paths:
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/export-eligibility:
+    get:
+      operationId: getDatasetExportEligibility
+      tags: [publishing]
+      parameters:
+        - in: query
+          name: data_stage
+          schema: {$ref: '#/components/schemas/ExportDataStage'}
+        - $ref: '#/components/parameters/PublishingDatasetId'
+        - $ref: '#/components/parameters/PublishingDatasetVersion'
+        - $ref: '#/components/parameters/PublishingProjectId'
+        - $ref: '#/components/parameters/PublishingRegionCode'
+      responses:
+        '200':
+          description: Included Episode identities eligible for export under the frozen publication or current annotation approval preflight. Does not publish or create an export.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportEligibilityV1'}
+        '403': {description: Export or Episode read access is not granted in this tenant scope.}
+        '404': {description: The dataset version does not exist in this scope.}
   /api/v1/datasets/publication-preflight:
     post:
       operationId: preflightDatasetPublication
@@ -193,6 +214,22 @@ components:
       description: Response may contain workflow state or a bearer capability and must not be stored.
       schema: {type: string, const: no-store}
   schemas:
+    ExportDataStage:
+      type: string
+      enum: [annotated, dataset]
+      default: annotated
+    ExportEligibilityV1:
+      type: object
+      additionalProperties: false
+      required: [project_id, dataset_id, dataset_version, eligible_episode_ids]
+      properties:
+        project_id: {type: string}
+        dataset_id: {type: string}
+        dataset_version: {type: string}
+        data_stage: {$ref: '#/components/schemas/ExportDataStage'}
+        eligible_episode_ids:
+          type: array
+          items: {type: string}
     PublishDatasetRequestV1:
       type: object
       additionalProperties: false
@@ -234,7 +271,7 @@ components:
         rollout_id: {type: string, minLength: 1}
         source_mcap_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         base_lance_version: {type: string, minLength: 1}
-        annotation_revision: {type: integer, minimum: 0}
+        annotation_revision: {type: [integer, 'null'], minimum: 0}
         annotation_task_id: {type: [string, 'null']}
         quality_profile_version: {type: string, minLength: 1}
         alignment_profile_version: {type: string, minLength: 1}
@@ -298,6 +335,7 @@ components:
         - excluded_rollouts
       properties:
         schema_version: {type: string, const: published-dataset-manifest/v1}
+        data_stage: {$ref: '#/components/schemas/ExportDataStage'}
         project_id: {type: string}
         dataset_id: {type: string}
         dataset_version: {type: string}
@@ -322,6 +360,7 @@ components:
       properties:
         project_id: {type: string, minLength: 1}
         format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        data_stage: {$ref: '#/components/schemas/ExportDataStage'}
         episode_ids:
           description: Exact Episodes to export from this version; omitted preserves whole-version export.
           anyOf:

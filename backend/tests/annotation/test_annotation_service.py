@@ -8,6 +8,7 @@ from hc_data_platform.annotation import (
     AnnotationOperation,
     AnnotationPermissionError,
     AnnotationRestoreTargetError,
+    AnnotationService,
     AnnotationStatus,
     DisabledAutoAnnotationProvider,
     FeatureDisabledError,
@@ -17,6 +18,7 @@ from hc_data_platform.annotation import (
     RevisionOrigin,
     SelfReviewPolicy,
 )
+from hc_data_platform.annotation.repository import InMemoryAnnotationRepository
 
 ANNOTATOR_CAPABILITIES = frozenset(
     {
@@ -363,7 +365,53 @@ def test_reviewer_scope_and_role_are_enforced() -> None:
         )
 
 
-def test_submitter_cannot_review_own_revision() -> None:
+@pytest.mark.parametrize("use_fake_service", [False, True])
+@pytest.mark.parametrize(
+    ("decision", "expected_status"),
+    [
+        (ReviewDecision.APPROVE, AnnotationStatus.APPROVED),
+        (ReviewDecision.NEEDS_REVISION, AnnotationStatus.NEEDS_REVISION),
+        (ReviewDecision.REJECT, AnnotationStatus.REJECTED),
+    ],
+)
+def test_submitter_can_review_own_revision_by_default(
+    use_fake_service: bool, decision: ReviewDecision, expected_status: AnnotationStatus
+) -> None:
+    service = (
+        InMemoryAnnotationService()
+        if use_fake_service
+        else AnnotationService(InMemoryAnnotationRepository())
+    )
+    service.create_task(
+        task_id="task-1",
+        project_id="project-a",
+        dataset_id="dataset-a",
+        dataset_version=1,
+        rollout_id="rollout-a",
+    )
+    dual_role = actor("alice", *ANNOTATOR_CAPABILITIES, *REVIEWER_CAPABILITIES)
+    claimed = service.claim("task-1", dual_role)
+    submitted = service.submit("task-1", dual_role, expected_revision=0, if_match=claimed.etag)
+
+    approved = service.review(
+        "task-1",
+        dual_role,
+        decision,
+        revision=0,
+        submission_id=submitted.current_submission_id,
+        if_match=submitted.etag,
+    )
+
+    task = service.get_task("task-1")
+    review = service.list_reviews("task-1")[0]
+    assert task.status is expected_status
+    assert task.submitted_by == review.reviewer_id == "alice"
+    assert review.decision is decision
+    assert review.submission_id == submitted.current_submission_id
+    assert (approved is not None) == (decision is ReviewDecision.APPROVE)
+
+
+def test_explicit_deny_policy_blocks_reviewing_own_revision() -> None:
     service = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.DENY)
     service.create_task(
         task_id="task-1",

@@ -18,6 +18,7 @@ from .models import (
     DashboardPendingItemType,
     DashboardPendingSeverity,
     DashboardResourceType,
+    TaskIssueFinding,
 )
 from .repository import (
     CollectionObservationFact,
@@ -136,7 +137,9 @@ SELECT task.collection_task_id AS task_id, task.task_code, task.name,
        NULLIF(task.target_json->>'duration_seconds', '')::double precision
            AS target_duration_seconds,
        count(DISTINCT rollout.data_package_id) AS registered_count,
-       count(DISTINCT object.data_package_id) AS received_count,
+       count(DISTINCT rollout.data_package_id) FILTER (
+           WHERE object.rollout_id IS NOT NULL OR native.source_import_id IS NOT NULL
+       ) AS received_count,
        device.captured_count AS device_captured_count,
        device.saved_count AS device_saved_count,
        device.confirmed_duration_seconds
@@ -155,6 +158,23 @@ LEFT JOIN ingest.rollout_objects object
  AND object.project_id = rollout.project_id
  AND object.region_code = rollout.region_code
  AND object.rollout_id = rollout.rollout_id
+LEFT JOIN LATERAL (
+    SELECT source.upload_id AS source_import_id, episode.source_episode_index
+    FROM ingest.raw_source_episodes episode
+    JOIN ingest.raw_sources source
+      ON source.organization_id = episode.organization_id
+     AND source.project_id = episode.project_id
+     AND source.region_code = episode.region_code
+     AND source.raw_source_id = episode.raw_source_id
+    WHERE episode.organization_id = rollout.organization_id
+      AND episode.project_id = rollout.project_id
+      AND episode.region_code = rollout.region_code
+      AND episode.episode_id = rollout.rollout_id
+      AND source.raw_status = 'COMMITTED'
+      AND source.source_format = 'LEROBOT_V3'
+    ORDER BY source.committed_at DESC, source.raw_source_id
+    LIMIT 1
+) native ON true
 LEFT JOIN LATERAL (
     SELECT
         (
@@ -227,11 +247,14 @@ WITH requested_scope AS (
 SELECT rollout.task_id, rollout.rollout_id, rollout.data_package_id,
        rollout.rollout_status, rollout.duplicate_of_rollout_id,
        upload.status AS upload_status, upload.failure_code AS upload_failure_code,
-       (object.rollout_id IS NOT NULL) AS raw_committed,
+       (object.rollout_id IS NOT NULL OR native.source_import_id IS NOT NULL) AS raw_committed,
+       native.source_import_id, native.source_episode_index,
+       native.source_episode_status, native.source_processing_status,
        verification.status AS verification_status,
        verification.reason_code AS verification_reason_code,
-       qc.status AS qc_status,
-       alignment.status AS alignment_status,
+       qc.status AS qc_status, qc_report.report_json->'findings' AS quality_findings,
+       alignment.status AS alignment_status, alignment.attempt_id AS alignment_attempt_id,
+       resolution.status AS resolution_status,
        (lineage.rollout_id IS NOT NULL) AS lance_ready,
        annotation.task_id AS annotation_task_id,
        annotation.status AS annotation_status,
@@ -256,6 +279,38 @@ LEFT JOIN ingest.rollout_objects object
  AND object.region_code = rollout.region_code
  AND object.rollout_id = rollout.rollout_id
 LEFT JOIN LATERAL (
+    SELECT source.upload_id AS source_import_id, episode.source_episode_index,
+           episode.status AS source_episode_status,
+           ingest_job.status AS source_processing_status
+    FROM ingest.raw_source_episodes episode
+    JOIN ingest.raw_sources source
+      ON source.organization_id = episode.organization_id
+     AND source.project_id = episode.project_id
+     AND source.region_code = episode.region_code
+     AND source.raw_source_id = episode.raw_source_id
+    LEFT JOIN ingest.raw_ingest_jobs ingest_job
+      ON ingest_job.organization_id = source.organization_id
+     AND ingest_job.project_id = source.project_id
+     AND ingest_job.region_code = source.region_code
+     AND ingest_job.raw_source_id = source.raw_source_id
+    WHERE episode.organization_id = rollout.organization_id
+      AND episode.project_id = rollout.project_id
+      AND episode.region_code = rollout.region_code
+      AND episode.episode_id = rollout.rollout_id
+      AND source.raw_status = 'COMMITTED'
+      AND source.source_format = 'LEROBOT_V3'
+    ORDER BY source.committed_at DESC, source.raw_source_id
+    LIMIT 1
+) native ON true
+LEFT JOIN LATERAL (
+    SELECT decision.status FROM ingest.episode_resolutions decision
+    WHERE decision.organization_id = rollout.organization_id
+      AND decision.project_id = rollout.project_id
+      AND decision.region_code = rollout.region_code
+      AND decision.episode_id = rollout.rollout_id
+    ORDER BY decision.created_at DESC LIMIT 1
+) resolution ON true
+LEFT JOIN LATERAL (
     SELECT report.status,
            COALESCE(
                (SELECT finding->>'code'
@@ -277,8 +332,14 @@ LEFT JOIN quality_rollout_summaries qc
  AND qc.project_id = rollout.project_id
  AND qc.region_code = rollout.region_code
  AND qc.rollout_id = rollout.rollout_id
+LEFT JOIN qc_reports qc_report
+  ON qc_report.report_sha256 = qc.report_sha256
+ AND qc_report.organization_id = qc.organization_id
+ AND qc_report.project_id = qc.project_id
+ AND qc_report.region_code = qc.region_code
+ AND qc_report.rollout_id = qc.rollout_id
 LEFT JOIN LATERAL (
-    SELECT attempt.status
+    SELECT attempt.status, attempt.attempt_id
     FROM aligned_fragment_attempts attempt
     WHERE attempt.organization_id = rollout.organization_id
       AND attempt.project_id = rollout.project_id
@@ -840,6 +901,36 @@ class PostgresDashboardRepository:
                     None if row["upload_failure_code"] is None else str(row["upload_failure_code"])
                 ),
                 raw_committed=bool(row["raw_committed"]),
+                source_import_id=(
+                    str(row["source_import_id"]) if row.get("source_import_id") else None
+                ),
+                source_episode_index=(
+                    int(cast(int, row["source_episode_index"]))
+                    if row.get("source_episode_index") is not None
+                    else None
+                ),
+                alignment_attempt_id=(
+                    str(row["alignment_attempt_id"]) if row.get("alignment_attempt_id") else None
+                ),
+                source_episode_status=(
+                    str(row["source_episode_status"])
+                    if row.get("source_episode_status") is not None
+                    else None
+                ),
+                source_processing_status=(
+                    str(row["source_processing_status"])
+                    if row.get("source_processing_status") is not None
+                    else None
+                ),
+                resolution_status=(
+                    str(row["resolution_status"])
+                    if row.get("resolution_status") is not None
+                    else None
+                ),
+                quality_findings=tuple(
+                    TaskIssueFinding.model_validate(finding)
+                    for finding in cast(list[object], row.get("quality_findings") or [])
+                ),
                 verification_status=(
                     None if row["verification_status"] is None else str(row["verification_status"])
                 ),

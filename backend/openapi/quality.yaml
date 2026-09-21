@@ -136,6 +136,8 @@ components:
         id: {type: string, pattern: '^qc_[0-9a-f]{32}$'}
         source: {type: string, const: AUTO_QC, default: AUTO_QC}
         session_id: {type: [string, "null"], minLength: 1, maxLength: 256, default: null}
+        source_import_id: {type: [string, "null"], minLength: 1, maxLength: 256, default: null}
+        source_episode_index: {type: [integer, "null"], minimum: 0, default: null}
         rollout_id: {type: string, minLength: 1, maxLength: 256}
         data_package_id: {type: [string, "null"], minLength: 1, maxLength: 256, default: null}
         status: {type: string, enum: [RISK, REJECT]}
@@ -292,7 +294,7 @@ components:
         schema_version: {type: string, const: quality-profile/v1}
         profile_id: {type: string, minLength: 1}
         profile_version: {type: integer, minimum: 1}
-        engine_version: {type: string, minLength: 1}
+        engine_version: {type: string, minLength: 1, default: be06-qc/2}
         required_topics:
           type: array
           uniqueItems: true

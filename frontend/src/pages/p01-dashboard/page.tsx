@@ -359,6 +359,8 @@ export function DashboardPage() {
         taskStatus.error,
         taskStatusData ? (
           <AssetCapacityBoard
+            key={`${scopeKey}:${taskStatusData.selectedTaskId ?? "all"}`}
+            scope={scope ?? undefined}
             taskStatus={taskStatusData}
             onTaskChange={(taskId) =>
               setSearchParams(

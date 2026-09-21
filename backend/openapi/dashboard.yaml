@@ -251,7 +251,7 @@ components:
       enum: [TASK_EXECUTION, PACKAGE_UPLOAD, RAW_RECEIPT, AUTOMATIC_VALIDATION, STANDARDIZATION, ANNOTATION, REVIEW, PUBLICATION]
     TaskPackageMainState:
       type: string
-      enum: [REGISTERED, UPLOADING, UPLOAD_PAUSED, UPLOAD_FAILED, CANCELLED, RAW_RECEIVED, VALIDATION_RUNNING, VALIDATION_FAILED, QC_WAITING, QC_RISK, QC_REJECT, STANDARDIZATION_WAITING, ALIGNING, ALIGNMENT_FAILED, LANCE_WRITING, LANCE_FAILED, STANDARDIZED_READY, ANNOTATING, REVIEW_PENDING, PUBLISH_PENDING, PUBLISHED, UNKNOWN]
+      enum: [DISCARDED, DUPLICATE, REPROCESSING_CONFLICT, PROCESSING_RESUME_REQUIRED, REGISTERED, UPLOADING, UPLOAD_PAUSED, UPLOAD_FAILED, CANCELLED, RAW_RECEIVED, VALIDATION_RUNNING, VALIDATION_FAILED, QC_WAITING, QC_RISK, QC_REJECT, STANDARDIZATION_WAITING, ALIGNING, ALIGNMENT_FAILED, LANCE_WRITING, LANCE_FAILED, STANDARDIZED_READY, ANNOTATING, REVIEW_PENDING, PUBLISH_PENDING, PUBLISHED, UNKNOWN]
     TaskStageCounts:
       type: object
       additionalProperties: false
@@ -276,6 +276,8 @@ components:
         risk: {type: integer, minimum: 0}
         rejected: {type: integer, minimum: 0}
         duplicate: {type: integer, minimum: 0, default: 0}
+        reprocessing_conflicts: {type: integer, minimum: 0, default: 0}
+        discarded: {type: integer, minimum: 0, default: 0}
         unavailable: {type: integer, minimum: 0, default: 0}
     TaskStandardizationCounts:
       type: object
@@ -283,6 +285,7 @@ components:
       required: [waiting, aligning, alignment_failed, lance_writing, lance_failed, ready, unavailable]
       properties:
         waiting: {type: integer, minimum: 0}
+        resume_required: {type: integer, minimum: 0, default: 0}
         aligning: {type: integer, minimum: 0}
         alignment_failed: {type: integer, minimum: 0}
         lance_writing: {type: integer, minimum: 0}
@@ -374,6 +377,137 @@ components:
         unavailable_sources:
           type: array
           items: {type: string, minLength: 1, maxLength: 128}
+    TaskIssueFinding:
+      properties:
+        code:
+          title: Code
+          type: string
+        topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Topic
+        severity:
+          title: Severity
+          type: string
+        message:
+          title: Message
+          type: string
+        observed:
+          anyOf:
+          - type: number
+          - type: string
+          - type: 'null'
+          default: null
+          title: Observed
+        threshold:
+          anyOf:
+          - type: number
+          - type: string
+          - type: 'null'
+          default: null
+          title: Threshold
+        start_ns:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Start Ns
+        end_ns:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: End Ns
+      required:
+      - code
+      - severity
+      - message
+      title: TaskIssueFinding
+      type: object
+    TaskDataIssue:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+        rollout_id:
+          title: Rollout Id
+          type: string
+        data_package_id:
+          title: Data Package Id
+          type: string
+        category:
+          enum:
+          - DUPLICATE
+          - QUALITY
+          - TECHNICAL
+          - PROCESSING_CONFLICT
+          - RESUME_REQUIRED
+          title: Category
+          type: string
+        stage:
+          $ref: '#/components/schemas/TaskProcessingStage'
+        reason_code:
+          title: Reason Code
+          type: string
+        label:
+          title: Label
+          type: string
+        description:
+          title: Description
+          type: string
+        duplicate_of_rollout_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Duplicate Of Rollout Id
+        source_episode_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Source Episode Index
+        source_import_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Source Import Id
+        qc_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Qc Status
+        lance_ready:
+          default: false
+          title: Lance Ready
+          type: boolean
+        alignment_attempt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Alignment Attempt Id
+        findings:
+          default: []
+          items:
+            $ref: '#/components/schemas/TaskIssueFinding'
+          title: Findings
+          type: array
+      required:
+      - task_id
+      - rollout_id
+      - data_package_id
+      - category
+      - stage
+      - reason_code
+      - label
+      - description
+      title: TaskDataIssue
+      type: object
     TaskPipelineStatus:
       type: object
       additionalProperties: false
@@ -390,6 +524,10 @@ components:
           minItems: 8
           maxItems: 8
           items: {$ref: '#/components/schemas/TaskStageCounts'}
+        issues:
+          type: array
+          default: []
+          items: {$ref: '#/components/schemas/TaskDataIssue'}
         unavailable_sources:
           type: array
           items: {type: string, minLength: 1, maxLength: 128}

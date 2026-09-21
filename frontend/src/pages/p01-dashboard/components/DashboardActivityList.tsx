@@ -91,7 +91,11 @@ export function DashboardActivityList({
           <PageState state="empty" label="最近活动" title="当前时段暂无活动" />
         </div>
       ) : (
-        <ol className={styles.activityList}>
+        <ol
+          className={styles.activityList}
+          aria-label="最近活动记录"
+          tabIndex={0}
+        >
           {activity.items.map((event) => {
             const { Icon, label } = eventPresentation[event.eventType];
             const content = (

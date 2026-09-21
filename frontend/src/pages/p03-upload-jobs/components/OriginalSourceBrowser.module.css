@@ -1,0 +1,48 @@
+.browser {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.episodeToolbar,
+.episodeLabel,
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.episodeToolbar {
+  flex-wrap: wrap;
+}
+
+.episodeLabel,
+.meta {
+  font-size: 12px;
+}
+
+.meta,
+.loading {
+  color: var(--hc-color-text-muted);
+}
+
+.loading {
+  justify-content: center;
+  min-height: 180px;
+}
+
+.files {
+  min-width: 0;
+  border-top: 1px solid var(--hc-color-border);
+}
+
+.files > summary {
+  padding: 10px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.files > summary:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}

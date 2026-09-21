@@ -268,9 +268,7 @@ function AnnotationVisualFixture(
         dirty={scenario === "conflict"}
         externalError={externalError}
         mode={mode}
-        jointAngleStream={
-          mode === "annotation" ? visualJointAngleStream : undefined
-        }
+        jointAngleStream={visualJointAngleStream}
         permissions={{
           hasAnnotationDraft: mode === "annotation",
           canCreate: false,

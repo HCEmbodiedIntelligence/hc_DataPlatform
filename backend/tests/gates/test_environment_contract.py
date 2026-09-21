@@ -35,7 +35,12 @@ def test_real_api_overlay_forces_browser_mock_off_and_waits_for_migrations() -> 
     gateway_volumes = services["gateway"]["volumes"]
     assert any("gateway.real-api-rate-limit.conf" in volume for volume in gateway_volumes)
     assert any("gateway.real-api-auth-rate-limit.inc" in volume for volume in gateway_volumes)
-    assert services["migration-check"]["command"] == ["hc-data-migrate", "status"]
+    assert services["migration-check"]["command"] == [
+        "python",
+        "-m",
+        "hc_data_platform.core.migrations",
+        "status",
+    ]
 
 
 def test_isolated_test_compose_has_repeatable_dependency_and_worker_health_contracts() -> None:
@@ -81,7 +86,7 @@ def test_development_api_and_workers_share_one_explicit_environment_fence() -> N
     assert isinstance(services, dict)
     environment_ids = {
         services[service]["environment"]["HC_PLATFORM_ENVIRONMENT_ID"]
-        for service in ("api", "worker", "media-worker")
+        for service in ("api", "worker")
     }
     assert environment_ids == {"${HC_PLATFORM_ENVIRONMENT_ID:-hc-local}"}
 

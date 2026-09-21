@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 CAPABILITY_UPLOAD_READ = "upload.read"
 CAPABILITY_UPLOAD_MANAGE = "upload.manage"
 CAPABILITY_DATASET_READ = "dataset.read"
@@ -153,3 +155,62 @@ KNOWN_BUSINESS_CAPABILITIES = frozenset(
 ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES = (
     KNOWN_BUSINESS_CAPABILITIES | PLATFORM_ADMIN_CAPABILITIES
 )
+
+# A human upload operator can complete the data workflow in the same project.
+# These grants do not include account administration or storage lifecycle operations.
+DATA_WORKFLOW_CAPABILITIES = frozenset(
+    {
+        "annotation.edit",
+        "annotation.read",
+        "annotation.review",
+        "annotation.save",
+        "annotation.submit",
+        "annotation_draft.edit",
+        "annotation_set.read",
+        "annotation_task.claim",
+        "annotation_task.create",
+        "annotation_task.read",
+        "cleaning.create",
+        "cleaning.edit",
+        "cleaning.preview",
+        "cleaning.read",
+        "cleaning.submit",
+        "dashboard.read",
+        "data_schema.create",
+        "data_schema.import",
+        "data_schema.publish",
+        "data_schema.read",
+        "data_schema.validate",
+        "dataset.create",
+        "dataset.read",
+        "dataset_version.download_manifest",
+        "dataset_version.publish",
+        "dataset_version.read",
+        "dataset_version.review",
+        "episode.read",
+        "export.create",
+        "export.download",
+        "export.read",
+        "ingest.import",
+        "ingest_source.read",
+        "manual_issue.create",
+        "manual_issue.read",
+        "manual_issue.resolve",
+        "manual_issue.triage",
+        "robot.read",
+        "robot_model.asset.download",
+        "robot_model.read",
+        "robot_model_binding.read",
+        "upload.manage",
+        "upload.read",
+    }
+)
+
+
+def expand_data_workflow_capabilities(capabilities: Iterable[str]) -> frozenset[str]:
+    """Expand a human operator's grants after selecting their authorized scope."""
+
+    granted = frozenset(capabilities)
+    if CAPABILITY_UPLOAD_MANAGE in granted:
+        return granted | DATA_WORKFLOW_CAPABILITIES
+    return granted

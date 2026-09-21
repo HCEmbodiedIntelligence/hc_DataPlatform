@@ -11,3 +11,5 @@ export * from "./DataVisualizationWorkbench";
 export * from "./raw-diagnostic-adapter";
 export * from "./joint-frame-source";
 export * from "./RawDiagnosticWorkbench";
+export * from "./SynchronizedEpisodeWorkbench";
+export * from "./use-playback-clock";

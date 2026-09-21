@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { request } from "../../shared/api/http-client";
+import { buildJointFrameSource } from "../../features/viewer/joint-frame-source";
 import {
   createDatasetLanceWindowSource,
   type EpisodeDataBinding,
@@ -67,6 +68,33 @@ function source(binding: EpisodeDataBinding = vectorBinding) {
 afterEach(() => vi.clearAllMocks());
 
 describe("P06 immutable Lance window source", () => {
+  it("preserves source joint identities when supplying the shared robot pose panel", async () => {
+    requestMock.mockResolvedValue(
+      stepWindow(
+        { start_step: 10, end_step: 110 },
+        vectorBinding.modality_key,
+        [
+          { name: ["shoulder", "elbow"], position: [0.2, 0.4] },
+          { name: ["shoulder", "elbow"], position: [0.5, 0.6] },
+        ],
+      ) as never,
+    );
+    const frames = buildJointFrameSource({
+      id: "joints",
+      canonicalPath: "/robot/joint_states",
+      displayName: "Joints",
+      modality: "joint_state",
+      schema: { id: "joint", version: "1" },
+      startNs: "0",
+      endNs: "1000",
+      availability: "ready",
+      windowSource: source(),
+    });
+    expect(await frames?.sampleAt("0", new AbortController().signal)).toEqual({
+      shoulder: 0.2,
+      elbow: 0.4,
+    });
+  });
   it("maps the shared nanosecond timeline to a bounded fixed step interval and decodes real vectors", async () => {
     requestMock.mockResolvedValue(stepWindow() as never);
 

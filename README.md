@@ -1,91 +1,102 @@
 # HC Data Platform
 
-具身智能数据治理平台，包含 React 前端、FastAPI API、Temporal Worker、PostgreSQL、对象存储、迁移和部署资产，页面范围为 P01–P20。
+具身智能数据治理平台，包含上传存储、自动质检、时间对齐、可视化、标注、审核、发布和导出，页面范围为 P01–P20。
+原始 MCAP、LeRobot v3、ROS bag 文件原样保存；原生 G1 LeRobot 处理直接引用原视频。
 
-## 单机完整平台部署
+## 默认部署：支持源码热更新
 
-使用 [单机部署与迁移](docs/single-server-storage.md)。原始 MCAP、LeRobot v3、ROS bag 文件原样保存，
-保留自动质检、时间对齐、可视化、标注、审核、发布和导出能力。原生 G1 LeRobot 处理直接引用原视频，
-不再全量抽 JPEG 后重编码。六个常驻服务：Web、API、PostgreSQL、MinIO、Temporal、合并 Worker。
-API 和 Worker 复用同一个后端镜像；开发热更新仍使用 `compose.dev.yaml`。
+部署到机器后还需要持续更新源码，使用 **`compose.dev.yaml`**。本页的启动、更新、停止命令均以此为准。
+默认连接真实 API 和本机 MinIO，无需 OSS 凭据。
 
-本次删除清单、实测结果和功能边界见 [完整流程修复报告](docs/audits/2026-09-20-full-pipeline-fixes.md)。
+- 修改 `frontend/src`：Vite 热更新。
+- 修改 `backend/src`：API 和合并 Worker 自动重启。
+- 依赖、Dockerfile、环境变量或数据库迁移有变化：按下文“更新代码与依赖”处理。
 
-## 当前分支目标：本地服务器验证
-
-`codex/local-server-validation` 分支用于实现 GitHub 里程碑“本地服务器验证”。目标是让网页、
-脚本和自动化验收只连接本地平台入口；浏览器、API 和 Worker 都不访问 OSS，上传、持久化、
-处理和结果读取全部在本机完成。
-
-开发 Compose 默认使用本机 MinIO；原始存储与后台处理组成完整链路。
-具体操作见
-[本地 G1 页面流程](docs/lerobot-platform-upload.md)。整个里程碑还包含其他格式、网络隔离和全量 CI，
-本次 G1 流程验收不等于整个里程碑完成。范围与完成标准见
-[“本地服务器验证”里程碑](plan/LOCAL-SERVER-VALIDATION-MILESTONE.md)。生产对象存储、备份、发布
-和灾备能力不属于本次清理范围。
-
-## 最快查看前端（Mock，推荐）
-
-Mock 模式会加载演示账号、项目、权限和示例数据，适合直接查看全部页面。
+### 首次启动或重新构建
 
 ```bash
 cd /home/czy/hc_DataPlatform
 
-# 可选环境文件；开发 Compose 自带 MinIO，无需填写 OSS 凭据
-cp .env.example .env
+# 可选：仅在没有 .env 时创建，保留已有配置
+[ -f .env ] || cp .env.example .env
 
-# 首次启动或依赖有变化
-docker compose -f compose.dev.yaml up --build -d
+# 构建两个应用镜像并启动；更新前端依赖卷、移除已合并的旧容器
+docker compose -f compose.dev.yaml up --build -V -d --remove-orphans
 
-# 明确切换到 Mock 模式；已有容器时也可直接执行
+# 查看常驻服务与初始化任务
+docker compose -f compose.dev.yaml ps -a
+```
+
+`-V` 只更新前端 `/app/node_modules` 匿名依赖卷，数据库、MinIO 和处理缓存使用的命名卷会保留。
+清理过构建缓存后，第一次构建会重新安装依赖，耗时会增加。
+
+打开 <http://localhost:8088>，真实账号登录入口为 <http://localhost:8088/auth/login>。
+新注册用户需要申请加入项目，由有权限的管理员批准后访问业务数据。
+项目内具备上传权限（`upload.manage`）的账号可独立完成上传、标注、自审、发布、导出和下载；
+已有账号刷新页面即可获取完整操作入口，业务检查和项目访问范围仍生效。
+`compose.real-api.yaml` 用于隔离自动化验收，日常部署无需叠加。
+
+如果机器上仍在运行 `compose.single-server.yaml`，先执行下面的停止命令，再启动热更新版：
+
+```bash
+docker compose --env-file .env.single-server -f compose.single-server.yaml stop
+```
+
+两套配置默认都使用 8088，当前单机配置还复用了开发版的数据卷，不能同时运行。
+不需要源码热更新时，另见[六服务静态部署与迁移](docs/single-server-storage.md)。
+
+### 实际会构建、启动多少个
+
+| 类型 | 数量 | 内容 |
+| --- | ---: | --- |
+| 本地构建镜像 | 2 | `hc-data-platform-backend:dev`、`hc-data-platform-frontend:dev` |
+| 常驻服务 | 8 | `frontend`、`gateway`、`api`、`worker`、`postgres`、`minio`、`object-store-browser`、`temporal` |
+| 一次性任务 | 3 | `migration`、`minio-init`、`runtime-cache-init`，成功后退出 |
+
+API、Worker、迁移和缓存初始化复用同一个后端镜像，由 `migration` 服务统一构建。
+合并 Worker 同时监听主处理与媒体队列，不再单独启动 `media-worker`。
+本地应用镜像禁用远程拉取；基础镜像、第三方服务镜像和软件依赖首次缺失时仍需下载。
+
+日志中的 `Building (30/39)` 表示构建步骤进度，包含安装依赖、复制文件和导出镜像；
+实际容器以 `docker compose -f compose.dev.yaml ps -a` 为准。
+
+Temporal UI 按需启动，不计入默认八个常驻服务：
+
+```bash
+docker compose -f compose.dev.yaml --profile tools up -d temporal-ui
+```
+
+### 更新代码与依赖
+
+| 修改内容 | 操作 |
+| --- | --- |
+| `frontend/src` / `backend/src` | 保存或同步源码后自动重载，无需重新构建 |
+| Python / 前端依赖、锁文件、Dockerfile | 执行下面的重新构建命令 |
+| `.env` / Compose 配置 | `docker compose -f compose.dev.yaml up -d --remove-orphans` |
+| `backend/migrations` | `docker compose -f compose.dev.yaml up -d migration`，确认退出码为 0 |
+
+```bash
+cd /home/czy/hc_DataPlatform
+
+# 依赖或 Dockerfile 改动后重新构建，并更新前端依赖卷
+docker compose -f compose.dev.yaml up --build -V -d --remove-orphans
+
+# 数据库迁移后检查执行结果
+docker compose -f compose.dev.yaml logs --tail 50 migration
+```
+
+### 可选：仅查看演示界面
+
+Mock 模式使用演示账号、权限和示例数据。已有环境启动后，只切换前端：
+
+```bash
 HC_FRONTEND_MOCK_MODE=browser \
-docker compose -f compose.dev.yaml up -d \
-  --no-build --no-deps --force-recreate frontend
-```
+docker compose -f compose.dev.yaml up -d --no-build --no-deps --force-recreate frontend
 
-打开：
-
-- 完整应用：<http://localhost:8088>
-- Vite 前端：<http://localhost:5174>
-
-常用页面：
-
-```text
-http://localhost:8088/dashboard
-http://localhost:8088/ingest/uploads/new
-http://localhost:8088/datasets
-http://localhost:8088/annotations/annotate
-http://localhost:8088/storage/overview
-http://localhost:8088/settings/access
-http://localhost:8088/settings/audit
-http://localhost:8088/collection-tasks
-```
-
-## 本机真实后端模式
-
-默认启动真实 API、Worker 和 MinIO：
-
-```bash
-cd /home/czy/hc_DataPlatform
-docker compose -f compose.dev.yaml up --build -d
-docker compose -f compose.dev.yaml ps
-```
-
-`compose.real-api.yaml` 是隔离自动化验收使用的权限配置；日常页面操作只需基础文件。
-
-如果完整环境已经启动，只切换前端即可：
-
-```bash
-cd /home/czy/hc_DataPlatform
-
+# 切回真实后端
 HC_FRONTEND_MOCK_MODE=off \
-docker compose -f compose.dev.yaml up -d \
-  --no-build --no-deps --force-recreate frontend
+docker compose -f compose.dev.yaml up -d --no-build --no-deps --force-recreate frontend
 ```
-
-真实模式登录入口：<http://localhost:8088/auth/login>
-
-真实模式不会自动注入管理员权限。新注册用户是空账户，需要申请加入项目并由另一名有权限的管理员批准 capability；未登录、空账户或权限不足时页面会显示无权访问。只想查看完整界面时请使用上面的 Mock 模式。
 
 ## Unitree G1 LeRobot 上传
 
@@ -98,13 +109,13 @@ docker compose -f compose.dev.yaml up -d \
   -> 向平台提交完成
   -> 平台登记 Raw Source、Episode 和处理任务
   -> 自动质检、对齐、生成可视化与人工标注任务
-  -> 人工标注 → 另一账号审核 → 数据集手动发布
+  -> 人工标注 → 同账号审核 → 数据集手动发布 → 导出并下载
 ```
 
 网页开发环境固定使用平台 API 代理上传；视频从本机 MinIO 读取。选择文件夹时，先选择
 有效采集任务和机器人；目标数据集由任务绑定自动确定，再在确认窗口发布人工标注规则。原始文件保留，不转换成 MCAP。
 
-先启动上面的真实后端模式，然后在仓库根目录运行交互式脚本：
+先按上文启动默认热更新部署，然后在仓库根目录运行交互式脚本：
 
 ```bash
 cd /home/czy/hc_DataPlatform
@@ -174,47 +185,40 @@ docker compose -f compose.dev.yaml logs -f api
 其他本地地址：
 
 - API 文档：<http://localhost:8000/docs>
-- Temporal UI：<http://localhost:8080>
+- Temporal UI：<http://localhost:8080>（需启用 `tools` profile）
 - MinIO 控制台：<http://localhost:9001>（本机开发账号 `minio` / `minio-local-only`）
 - 浏览器媒体入口：<http://127.0.0.1:9000>；数据持久化在 `minio-data` Docker 卷
 
-## 重启与重新构建
+## 启停与清理
 
 ```bash
 cd /home/czy/hc_DataPlatform
 
-# 日常启动
+# 日常启动：镜像和依赖未变化时无需 --build
 docker compose -f compose.dev.yaml up -d
 
-# 重启前端
-docker compose -f compose.dev.yaml restart frontend
+# 手动重启应用
+docker compose -f compose.dev.yaml restart frontend api worker
 
-# 重启 API 和 Worker
-docker compose -f compose.dev.yaml restart api worker
+# 停止，包括按需开启的 Temporal UI，保留容器和数据
+docker compose -f compose.dev.yaml --profile tools stop
 
-# 依赖或 Dockerfile 变化后重新构建
-docker compose -f compose.dev.yaml up --build -V -d
+# 清理本项目已停止的容器，保留数据卷
+docker compose -f compose.dev.yaml --profile tools rm -f
 
-# 使用本机缓存构建，不主动拉取镜像
-docker compose -f compose.dev.yaml build --pull=false
-docker compose -f compose.dev.yaml up -d --no-build
+# 需要完整重建容器时：移除本项目容器和网络，保留命名数据卷
+docker compose -f compose.dev.yaml --profile tools down --remove-orphans
 ```
 
-源码已挂载到容器：修改 `frontend/src` 会触发 Vite 热更新，修改 `backend/src` 会触发 API/Worker 重启。
-
-## 停止环境
+只有需要释放构建缓存空间时执行；这会清理当前 Docker builder 的全部可清理构建缓存，
+影响该 builder 上其他项目的后续构建速度，但不会删除数据库或上传文件：
 
 ```bash
-cd /home/czy/hc_DataPlatform
-
-# 停止但保留容器和数据
-docker compose -f compose.dev.yaml stop
-
-# 移除容器和网络，保留 named volumes 中的数据
-docker compose -f compose.dev.yaml down
+docker builder prune --all --force
 ```
 
-不要使用 `down -v`，除非明确要删除本地数据库和对象存储数据。
+不要使用 `down -v`、`docker volume prune` 或 `docker system prune --volumes`，除非明确要删除持久化数据。
+清理后按本文“首次启动或重新构建”启动即可。
 
 ## 常用测试命令
 
@@ -245,6 +249,8 @@ git ls-files -u
 
 更多资料：
 
+- [本地服务器验证里程碑](plan/LOCAL-SERVER-VALIDATION-MILESTONE.md)
+- [完整流程修复报告](docs/audits/2026-09-20-full-pipeline-fixes.md)
 - [统一发布说明](deploy/README.md)
 - [前端实施计划](plan/FINAL-IMPLEMENTATION-PLAN.md)
 - [视觉合同](plan/前端-E01-E10-视觉还原合同.md)

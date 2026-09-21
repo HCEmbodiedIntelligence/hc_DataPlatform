@@ -10,6 +10,10 @@ paths:
       security:
       - bearerAuth: []
       parameters:
+      - name: include_all_sources
+        in: query
+        required: false
+        schema: {type: boolean, default: false}
       - name: project_id
         in: path
         required: true
@@ -802,6 +806,119 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution:
+    get:
+      tags:
+      - lerobot-imports
+      summary: Get Episode Resolution
+      operationId: get_episode_resolution_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__episodes__episode_index__resolution_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: episode_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Episode Index
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeResolution'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags:
+      - lerobot-imports
+      summary: Resolve Native Episode
+      operationId: resolve_native_episode_api_v1_projects__project_id__regions__region_code__lerobot_imports__import_id__episodes__episode_index__resolution_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: episode_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Episode Index
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveEpisode'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeResolution'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
     NativeConfiguration:
@@ -825,6 +942,10 @@ components:
       title: NativeConfiguration
     NativeImportProgress:
       properties:
+        collection_task_id: {type: [string, 'null'], default: null}
+        resume_required: {type: integer, default: 0}
+        reprocessing_conflicts: {type: integer, default: 0}
+        discarded: {type: integer, default: 0}
         import_id:
           title: Import Id
           type: string
@@ -1335,3 +1456,76 @@ components:
       - collection_task_id
       - robot_id
       title: StartStoredProcessing
+    ResolveEpisode:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        action:
+          type: string
+          enum:
+          - REPROCESS
+          - DISCARD
+          title: Action
+        expected_attempt_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Expected Attempt Id
+      additionalProperties: false
+      type: object
+      required:
+      - request_id
+      - action
+      - expected_attempt_id
+      title: ResolveEpisode
+    EpisodeResolution:
+      properties:
+        resolution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Id
+        action:
+          anyOf:
+          - type: string
+            enum:
+            - REPROCESS
+            - DISCARD
+          - type: 'null'
+          title: Action
+        status:
+          type: string
+          enum:
+          - UNRESOLVED
+          - PENDING
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - DISCARDED
+          title: Status
+        available:
+          type: boolean
+          title: Available
+        unavailable_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Unavailable Reason
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+      type: object
+      required:
+      - status
+      - available
+      title: EpisodeResolution

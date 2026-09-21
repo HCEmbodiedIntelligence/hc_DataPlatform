@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from io import BytesIO
 from threading import get_ident
 from typing import Any
@@ -101,6 +102,37 @@ def _app(service: LeRobotWebUploadService) -> FastAPI:
     app.dependency_overrides[get_lerobot_service] = lambda: service
     app.include_router(lerobot_router)
     return app
+
+
+def test_episode_resolution_requires_manage_permission_and_exact_scope(monkeypatch) -> None:
+    import importlib
+    from uuid import uuid4
+
+    router_module = importlib.import_module("hc_data_platform.lerobot_imports.router")
+    from hc_data_platform.lerobot_imports.resolutions import EpisodeResolution
+
+    called = []
+
+    def resolve(*args):
+        called.append(args)
+        return EpisodeResolution(status="DISCARDED", available=False)
+
+    monkeypatch.setattr(router_module, "resolve_episode", resolve)
+    client = TestClient(_app(LeRobotWebUploadService(InMemoryObjectStorage())))
+    path = "/api/v1/projects/project-a/regions/cn-hz/lerobot-imports/import/episodes/10/resolution"
+    body = {"request_id": str(uuid4()), "action": "DISCARD", "expected_attempt_id": "old"}
+    headers = {"X-Organization-Id": "org-a"}
+    assert client.post(path, json=body, headers=headers).status_code == 200
+    assert called[0][:5] == ("org-a", "project-a", "cn-hz", "import", 10)
+    assert called[0][-1] == "uploader-a"
+    assert (
+        client.post(path.replace("cn-hz", "other-region"), json=body, headers=headers).status_code
+        == 403
+    )
+    reader = replace(_auth(), capabilities=frozenset({"upload.read"}))
+    monkeypatch.setattr(__import__(__name__, fromlist=["_auth"]), "_auth", lambda: reader)
+    assert client.post(path, json=body, headers=headers).status_code == 403
+    assert len(called) == 1
 
 
 @pytest.mark.parametrize("episode_count", [154, 10_000])

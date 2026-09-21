@@ -244,7 +244,7 @@ def test_resolver_fails_closed_when_quality_plan_is_ambiguous() -> None:
                 preflight.manifest_fingerprint,
                 preflight.model_dump(mode="json"),
             ),
-            [(profile,), (profile,)],
+            [(profile,), ({**profile, "profile_id": "another-profile"},)],
         ]
     )
     resolver = PostgresIngestWorkflowInputResolver(
@@ -272,6 +272,19 @@ def test_resolver_fails_closed_when_quality_plan_is_ambiguous() -> None:
             )
     finally:
         reset_request_context(token)
+
+
+def test_resolver_uses_latest_profile_version_without_losing_immutable_history() -> None:
+    manifest = _manifest()
+    old = _profile(manifest).model_copy(update={"engine_version": "be06-qc/1"})
+    current = _profile(manifest).model_copy(update={"profile_version": 2})
+    cursor = _Cursor([[(current.model_dump(mode="json"),), (old.model_dump(mode="json"),)]])
+    selected = PostgresIngestWorkflowInputResolver._quality_profile(
+        cursor,
+        "project-a",
+        preflight_manifest(manifest),
+    )
+    assert selected == current
 
 
 def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> None:

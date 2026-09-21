@@ -60,6 +60,10 @@ TASK_PROCESSING_STAGES: tuple[TaskProcessingStage, ...] = tuple(TaskProcessingSt
 
 
 class TaskPackageMainState(str, Enum):
+    DISCARDED = "DISCARDED"
+    DUPLICATE = "DUPLICATE"
+    REPROCESSING_CONFLICT = "REPROCESSING_CONFLICT"
+    PROCESSING_RESUME_REQUIRED = "PROCESSING_RESUME_REQUIRED"
     REGISTERED = "REGISTERED"
     UPLOADING = "UPLOADING"
     UPLOAD_PAUSED = "UPLOAD_PAUSED"
@@ -125,6 +129,8 @@ class TaskQcCounts(BaseModel):
     risk: int = Field(ge=0)
     rejected: int = Field(ge=0)
     duplicate: int = Field(default=0, ge=0)
+    reprocessing_conflicts: int = Field(default=0, ge=0)
+    discarded: int = Field(default=0, ge=0)
     unavailable: int = Field(default=0, ge=0)
 
 
@@ -132,6 +138,7 @@ class TaskStandardizationCounts(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     waiting: int = Field(ge=0)
+    resume_required: int = Field(default=0, ge=0)
     aligning: int = Field(ge=0)
     alignment_failed: int = Field(ge=0)
     lance_writing: int = Field(ge=0)
@@ -228,6 +235,35 @@ class SelectedTaskStatus(BaseModel):
         return self
 
 
+class TaskIssueFinding(BaseModel):
+    code: str
+    topic: str | None = None
+    severity: str
+    message: str
+    observed: float | str | None = None
+    threshold: float | str | None = None
+    start_ns: int | None = None
+    end_ns: int | None = None
+
+
+class TaskDataIssue(BaseModel):
+    task_id: str
+    rollout_id: str
+    data_package_id: str
+    category: Literal["DUPLICATE", "QUALITY", "TECHNICAL", "PROCESSING_CONFLICT", "RESUME_REQUIRED"]
+    stage: TaskProcessingStage
+    reason_code: str
+    label: str
+    description: str
+    duplicate_of_rollout_id: str | None = None
+    source_episode_index: int | None = None
+    source_import_id: str | None = None
+    qc_status: str | None = None
+    lance_ready: bool = False
+    alignment_attempt_id: str | None = None
+    findings: tuple[TaskIssueFinding, ...] = ()
+
+
 class TaskPipelineStatus(BaseModel):
     """Current package flow for either all tasks or one selected task."""
 
@@ -237,6 +273,7 @@ class TaskPipelineStatus(BaseModel):
     package_count: int = Field(ge=0)
     qc: TaskQcCounts
     stages: tuple[TaskStageCounts, ...]
+    issues: tuple[TaskDataIssue, ...] = ()
     unavailable_sources: tuple[
         Annotated[str, StringConstraints(min_length=1, max_length=128)], ...
     ] = ()

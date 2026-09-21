@@ -94,6 +94,8 @@ export type DashboardTaskQc = Readonly<{
   risk: number;
   rejected: number;
   duplicate?: number;
+  reprocessingConflicts?: number;
+  discarded?: number;
   unavailable: number;
 }>;
 
@@ -109,6 +111,8 @@ export type DashboardTaskStage = Readonly<{
   unavailable: number;
 }>;
 
+export type DashboardDataIssue = components["schemas"]["TaskDataIssue"];
+
 export type DashboardTaskStatus = Readonly<{
   asOf: string;
   section: DashboardSection;
@@ -118,6 +122,7 @@ export type DashboardTaskStatus = Readonly<{
     packageCount: number;
     qc: DashboardTaskQc;
     stages: readonly DashboardTaskStage[];
+    issues?: readonly DashboardDataIssue[];
     unavailableSources: readonly string[];
   }>;
   selectedTaskId: string | null;

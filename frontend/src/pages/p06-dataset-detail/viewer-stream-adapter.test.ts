@@ -3,7 +3,10 @@ import {
   episodeStreamWireSchema,
   type EpisodeRevisionWire,
 } from "../../features/datasets/api/wire-schemas";
-import { adaptP06ViewerStreams } from "./viewer-stream-adapter";
+import {
+  adaptP06ViewerStreams,
+  selectEpisodeJointStream,
+} from "./viewer-stream-adapter";
 
 function revision(
   streams: EpisodeRevisionWire["streams"],
@@ -27,6 +30,30 @@ function revision(
 }
 
 describe("P06 viewer stream adapter", () => {
+  it("selects the named joint topic instead of humanoid observations or raw device state", () => {
+    const streams = adaptP06ViewerStreams(
+      revision(
+        [
+          "/humanoid/observation/state",
+          "/robot/dex1/raw_state",
+          "/robot/joint_states",
+        ].map((path, index) => ({
+          episode_stream_id: `stream_joint${index}`,
+          channel_path: path,
+          kind: "JOINT_STATE",
+          t_start_ns: "100",
+          t_end_ns: "1100",
+          aligned_media_binding: null,
+          data_binding: null,
+        })),
+      ),
+      "dataset_p06fixture",
+    );
+    expect(selectEpisodeJointStream(streams)?.canonicalPath).toBe(
+      "/robot/joint_states",
+    );
+    expect(selectEpisodeJointStream([])).toBeNull();
+  });
   it("uses only a server-projected camera binding to expose a lazy authorized MP4 source", () => {
     const [stream] = adaptP06ViewerStreams(
       revision([

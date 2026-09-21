@@ -18,6 +18,7 @@ from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdem
 from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.security.versioning import ResourceVersion
 
+from .capacity import DatasetCapacityReader
 from .models import (
     CreateDatasetCommand,
     DatasetPageActor,
@@ -157,11 +158,13 @@ class DatasetPageService:
         cursor_secret: str = "dataset-page-local-cursor-secret",
         idempotency: IdempotencyStore | None = None,
         clock: Clock = lambda: datetime.now(timezone.utc),
+        capacity_reader: DatasetCapacityReader | None = None,
     ) -> None:
         self._repository = repository
         self._cursor = CursorCodec(cursor_secret)
         self._idempotency = idempotency or InMemoryIdempotencyStore()
         self._clock = clock
+        self._capacity_reader = capacity_reader
 
     @classmethod
     def in_memory(cls) -> DatasetPageService:
@@ -711,6 +714,8 @@ class DatasetPageService:
                 title="Version capacity facts not found",
                 detail="No capacity calculation has been recorded for this immutable version.",
             )
+        if self._capacity_reader is not None:
+            facts = self._capacity_reader.resolve(facts)
         now = self._clock()
         self._audit(
             auth=auth,
@@ -854,6 +859,51 @@ class DatasetPageService:
             ),
             meta=self._meta(request_id=request_id, now=now),
         )
+
+    def export_episode_bindings(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        version_id: str,
+    ) -> dict[str, str]:
+        """Map included Episodes to their exact rollout, without per-Episode reads."""
+        scope = self._authorize_episode_read(
+            auth=auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+        )
+        self._required_version(scope=scope, dataset_id=dataset_id, version_id=version_id)
+        revisions = {
+            (revision.episode_id, revision.revision_id): revision
+            for revision in self._repository.list_episode_revisions(
+                scope=scope, dataset_id=dataset_id, version_id=version_id
+            )
+        }
+        bindings: dict[str, str] = {}
+        for episode in self._repository.list_episodes(
+            scope=scope,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            filters=DatasetPageEpisodeFilters(included=True),
+        ):
+            revision = revisions.get((episode.episode_id, episode.selected_revision.revision_id))
+            if revision is None:
+                continue
+            rollout_ids = {
+                binding.rollout_id
+                for stream in revision.streams
+                for binding in (stream.aligned_media_binding, stream.data_binding)
+                if binding is not None
+            }
+            # Incomplete or ambiguous bindings cannot be offered for export.
+            if len(rollout_ids) == 1:
+                bindings[episode.episode_id] = next(iter(rollout_ids))
+        return bindings
 
     def export_rollout_ids(
         self,

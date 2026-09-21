@@ -37,6 +37,10 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
   `workflow.jobs` 技术错误和 `lance_rollout_lineage`。Temporal ingest workflow 在每个阶段和
   终态通过幂等 activity 写入 `workflow.jobs`，并使用 patch marker 兼容历史重放。
   对齐/Lance技术失败不会改写QC结论；
+  已停止的处理在 QC 更新为 PASS 后仍需重试，投影为 `PROCESSING_RESUME_REQUIRED`，
+  在标准化阶段计入 blocked，并返回可直接处理的明细。首页与原始导入记录共用
+  `ingest.processing_status` 判断待继续处理和结果冲突；质检通过不等同于已入库。
+  `PROCESSING_CONFLICT` 与 `DUPLICATE` 分开，前者不计为重复上传。
   QC PASS 后如果既没有可用执行结果又不能由 attempt/lineage 判定，技术状态返回
   `UNKNOWN/UNAVAILABLE`，不伪造等待或成功。
 - 后续：`annotation_tasks`、最新 `annotation_reviews` 和

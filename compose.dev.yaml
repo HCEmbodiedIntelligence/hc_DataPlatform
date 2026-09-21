@@ -1,4 +1,11 @@
+# Hot-reload development stack: 8 long-running services + 3 one-shot jobs.
+# For the consolidated 6-service deployment, use compose.single-server.yaml.
+# Stop that deployment first if it uses these data volumes or host ports.
 name: ${HC_COMPOSE_PROJECT_NAME:-hc-data-platform-dev}
+
+x-backend-dev: &backend-dev
+  image: hc-data-platform-backend:dev
+  pull_policy: never
 
 services:
   minio:
@@ -97,6 +104,7 @@ services:
     ports: ["127.0.0.1:${HC_TEMPORAL_HOST_PORT:-7233}:7233"]
 
   temporal-ui:
+    profiles: [tools]
     image: temporalio/ui:2.31.2
     depends_on:
       temporal:
@@ -106,10 +114,15 @@ services:
     ports: ["127.0.0.1:${HC_TEMPORAL_UI_HOST_PORT:-8080}:8080"]
 
   migration:
+    <<: *backend-dev
+    # Build once here; all backend services depend on this migration job.
     build:
       context: backend
-      target: api
-    command: [hc-data-migrate, upgrade]
+      target: worker-dev
+    command: [python, -m, hc_data_platform.core.migrations, upgrade]
+    healthcheck: {disable: true}
+    volumes:
+      - ./backend:/app:ro
     environment:
       HC_ENVIRONMENT: local
       HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
@@ -119,22 +132,31 @@ services:
     restart: no
 
   runtime-cache-init:
-    image: hc-data-platform-api:dev
+    <<: *backend-dev
+    healthcheck: {disable: true}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
     user: "0:0"
     entrypoint: [/bin/sh, -ec]
     command:
       - >-
-        chown 65532:65532 /tmp/hc-data/alignment &&
-        chmod 0750 /tmp/hc-data/alignment
+        chown 65532:65532 /tmp/hc-data/alignment /tmp/hc-data/aligned-media &&
+        chmod 0750 /tmp/hc-data/alignment /tmp/hc-data/aligned-media
     restart: no
     volumes:
       - alignment-cache:/tmp/hc-data/alignment
+      - media-staging:/tmp/hc-data/aligned-media
 
   api:
-    image: hc-data-platform-api:dev
-    build:
-      context: backend
-      target: api-dev
+    <<: *backend-dev
+    command: [uvicorn, hc_data_platform.core.app:create_app, --factory, --host, 0.0.0.0, --port, "8000", --reload, --reload-dir, /app/src]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 10
     init: true
     extra_hosts:
       - host.docker.internal:host-gateway
@@ -235,10 +257,7 @@ services:
       - /tmp/hc-data/robot-model-upload-staging:rw,nosuid,size=512m,uid=65532,gid=65532,mode=0750
 
   worker:
-    image: hc-data-platform-worker:dev
-    build:
-      context: backend
-      target: worker-dev
+    <<: *backend-dev
     init: true
     extra_hosts:
       - host.docker.internal:host-gateway
@@ -261,9 +280,9 @@ services:
       HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
       HC_TEMPORAL_TASK_QUEUE: ${HC_TEMPORAL_TASK_QUEUE:-hc-data-pipeline}
       HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
-      HC_WORKER_ROLE: main
+      HC_WORKER_ROLE: combined
       HC_WORKER_MAX_CONCURRENT_ACTIVITIES: ${HC_WORKER_MAX_CONCURRENT_ACTIVITIES:-2}
-      HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:activity_dependencies
+      HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:media_activity_dependencies
       HC_OBJECT_STORE_PROVIDER: s3
       HC_OBJECT_STORE_ENDPOINT: http://minio:9000
       HC_OBJECT_STORE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
@@ -282,6 +301,10 @@ services:
       HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: ${HC_ALIGNED_MEDIA_STAGING_TTL_HOURS:-24}
       HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES: ${HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES:-30}
       HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS: ${HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS:-300}
+      HC_ALIGNED_MEDIA_ALLOWED_PROFILES: ${HC_ALIGNED_MEDIA_ALLOWED_PROFILES:-["canonical-h264-crf20-v1"]}
+      HC_MEDIA_MAX_CONCURRENT_GENERATIONS: ${HC_MEDIA_MAX_CONCURRENT_GENERATIONS:-2}
+      HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS: ${HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS:-4}
+      HC_MEDIA_FFMPEG_THREADS: ${HC_MEDIA_FFMPEG_THREADS:-2}
       HC_AUTO_ANNOTATION_PROVIDER_NAME: ${HC_AUTO_ANNOTATION_PROVIDER_NAME:-vlm}
       HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT: ${HC_AUTO_ANNOTATION_PROVIDER_ENDPOINT:-}
       HC_AUTO_ANNOTATION_PROVIDER_MODELS: ${HC_AUTO_ANNOTATION_PROVIDER_MODELS:-[]}
@@ -316,71 +339,12 @@ services:
     volumes:
       - ./backend:/app:ro
       - alignment-cache:/tmp/hc-data/alignment
-
-  media-worker:
-    image: hc-data-platform-worker:dev
-    build:
-      context: backend
-      target: worker-dev
-    init: true
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    tmpfs:
-      - /tmp/hc-runtime:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0750
-      - /tmp/hc-data/robot-model-upload-staging:rw,nosuid,size=512m,uid=65532,gid=65532,mode=0750
-    environment:
-      HC_ENVIRONMENT: ${HC_ENVIRONMENT:-local}
-      HC_PLATFORM_ENVIRONMENT_ID: ${HC_PLATFORM_ENVIRONMENT_ID:-hc-local}
-      HC_RUNTIME_BACKEND: production
-      HC_RELEASE_ID: ${HC_RELEASE_ID:-platform-v0.1.0-dev}
-      HC_PLATFORM_VERSION: 0.1.0
-      HC_GIT_COMMIT: ${HC_GIT_COMMIT:-unknown}
-      HC_CHART_VERSION: 0.1.0
-      HC_RELEASE_MANIFEST_DIGEST: ${HC_RELEASE_MANIFEST_DIGEST:-unreleased}
-      HC_MIGRATION_MANIFEST_DIGEST: ${HC_MIGRATION_MANIFEST_DIGEST:-unreleased}
-      HC_COMPONENT_ROLE: media-worker
-      HC_COMPONENT_IMAGE_DIGEST: ${HC_WORKER_IMAGE_DIGEST:-unreleased}
-      HC_WORKER_ROLE: media
-      HC_WORKER_MAX_CONCURRENT_ACTIVITIES: ${HC_MEDIA_MAX_CONCURRENT_GENERATIONS:-2}
-      HC_WORKFLOW_ACTIVITY_FACTORY: hc_data_platform.runtime:media_activity_dependencies
-      HC_POSTGRES_DSN: ${HC_POSTGRES_DSN:-postgresql+asyncpg://hc:hc@postgres:5432/hc_data}
-      HC_TEMPORAL_TARGET: ${HC_TEMPORAL_TARGET:-temporal:7233}
-      HC_MEDIA_TEMPORAL_TASK_QUEUE: ${HC_MEDIA_TEMPORAL_TASK_QUEUE:-hc-media-pipeline}
-      HC_OBJECT_STORE_PROVIDER: s3
-      HC_OBJECT_STORE_ENDPOINT: http://minio:9000
-      HC_OBJECT_STORE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
-      HC_OBJECT_STORE_BUCKET: hc-data-local
-      HC_OBJECT_STORE_ACCESS_KEY: minio
-      HC_OBJECT_STORE_SECRET_KEY: minio-local-only
-      HC_OBJECT_STORE_REGION: us-east-1
-      HC_ALIGNED_MEDIA_STAGING_ROOT: ${HC_ALIGNED_MEDIA_STAGING_ROOT:-/tmp/hc-data/aligned-media}
-      HC_ALIGNED_MEDIA_STAGING_TTL_HOURS: ${HC_ALIGNED_MEDIA_STAGING_TTL_HOURS:-24}
-      HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES: ${HC_ALIGNED_MEDIA_PUBLICATION_ORPHAN_TTL_MINUTES:-30}
-      HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS: ${HC_MEDIA_MAINTENANCE_INTERVAL_SECONDS:-300}
-      HC_ALIGNED_MEDIA_ALLOWED_PROFILES: ${HC_ALIGNED_MEDIA_ALLOWED_PROFILES:-["canonical-h264-crf20-v1"]}
-      HC_MEDIA_MAX_CONCURRENT_GENERATIONS: ${HC_MEDIA_MAX_CONCURRENT_GENERATIONS:-2}
-      HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS: ${HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS:-4}
-      HC_MEDIA_FFMPEG_THREADS: ${HC_MEDIA_FFMPEG_THREADS:-2}
-      HC_CURSOR_SECRET: ${HC_CURSOR_SECRET:-local-cursor-secret-change-me}
-      HC_DATA_SOURCE_CREDENTIAL_KEY: ${HC_DATA_SOURCE_CREDENTIAL_KEY:-local-data-source-credential-key-change-me}
-      HC_AUTH_ABUSE_ENABLED: ${HC_AUTH_ABUSE_ENABLED:-false}
-    depends_on:
-      minio-init:
-        condition: service_completed_successfully
-      object-store-browser:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      temporal:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-    volumes:
-      - ./backend:/app:ro
       - media-staging:/tmp/hc-data/aligned-media
+    stop_grace_period: 90s
 
   frontend:
     image: hc-data-platform-frontend:dev
+    pull_policy: never
     build:
       context: frontend
       target: frontend-dev

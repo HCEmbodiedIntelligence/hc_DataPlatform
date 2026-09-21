@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   CSSProperties,
   JSX,
@@ -27,23 +34,24 @@ import {
   Send,
   ShieldCheck,
   Tags,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
 import {
-  DataVisualizationWorkbench,
-  ViewerJointAngleCurvePanel,
-  ViewerRobotPosePanel,
+  SynchronizedEpisodeWorkbench,
+  CameraViewToolbar,
+  usePlaybackClock,
   WorkbenchCollectionPanel,
 } from "../../features/viewer";
 import type {
   DomainError,
+  PlaybackClock,
   RobotSceneCoreProps,
   StreamDescriptor,
   ViewerPanelRenderer,
   ViewerTimelineSelection,
 } from "../../features/viewer";
-import { createPlaybackClock } from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
 import type {
   ManualIssueSeverity,
@@ -70,6 +78,12 @@ import type {
   RuntimeReviewDecision,
 } from "./runtime-annotation-adapter";
 import { buildTagSchemaIndex, evaluateAnnotationTags } from "./tag-validation";
+import {
+  findIntervalParent,
+  reconcileTagHierarchy,
+  removeIntervalTag,
+  updateIntervalTag,
+} from "./tag-editing";
 import type { TagReviewCheckResult } from "./tag-validation";
 import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
 import "./p08.css";
@@ -390,20 +404,15 @@ function automaticParentRow(
   selection: StepSelection | null,
 ): IntervalTagRow | null {
   if (!selection) return null;
+  const parent = findIntervalParent(
+    rows.map(({ tag }) => tag),
+    {
+      start_step: selection.startStep,
+      end_step: selection.endStep,
+    },
+  );
   return (
-    rows
-      .filter(
-        ({ tag }) =>
-          tag.start_step <= selection.startStep &&
-          tag.end_step >= selection.endStep &&
-          (tag.start_step < selection.startStep ||
-            tag.end_step > selection.endStep),
-      )
-      .toSorted((left, right) => {
-        const leftSpan = left.tag.end_step - left.tag.start_step;
-        const rightSpan = right.tag.end_step - right.tag.start_step;
-        return leftSpan - rightSpan || right.depth - left.depth;
-      })[0] ?? null
+    rows.find(({ tag }) => tag.annotation_id === parent?.annotation_id) ?? null
   );
 }
 
@@ -413,6 +422,9 @@ function TagEditorInspector(props: {
   readonly selection: StepSelection | null;
   readonly disabled: boolean;
   readonly onChange: (tags: readonly RuntimeAnnotationTag[]) => void;
+  readonly onSelectTag: (tag: RuntimeAnnotationTag | null) => void;
+  readonly editingId: string | null;
+  readonly onDeleteTag: (annotationId: string) => void;
 }): JSX.Element {
   const frequencyHz = bundleFrequencyHz(props.bundle);
   const index = useMemo(
@@ -423,18 +435,48 @@ function TagEditorInspector(props: {
     () => intervalHierarchyRows(props.tags, index),
     [index, props.tags],
   );
-  const [newLabel, setNewLabel] = useState("");
+  const editingTag = props.tags.find(
+    (tag) => tag.annotation_id === props.editingId,
+  );
+  const [newLabel, setNewLabel] = useState(() =>
+    editingTag ? intervalTagLabel(editingTag, index) : "",
+  );
+  const selectTag = (tag: RuntimeAnnotationTag | null) => {
+    if (props.disabled) return;
+    props.onSelectTag(tag);
+  };
   const parentRow = useMemo(
     () => automaticParentRow(rows, props.selection),
     [props.selection, rows],
   );
   const selectionProblem = (() => {
     if (!props.selection) return "先在下方共享时间轴拖选一个视频片段。";
+    if (
+      !Number.isInteger(props.selection.startStep) ||
+      !Number.isInteger(props.selection.endStep) ||
+      props.selection.startStep < 0 ||
+      props.selection.startStep >= props.selection.endStep ||
+      props.selection.endStep > (props.bundle.task.base_step_count ?? 0)
+    )
+      return "区间超出视频范围，请重新拖选。";
     return null;
   })();
+  const hasEdits = Boolean(
+    editingTag &&
+      props.selection &&
+      (newLabel.trim() !== intervalTagLabel(editingTag, index) ||
+        props.selection.startStep !== editingTag.start_step ||
+        props.selection.endStep !== editingTag.end_step),
+  );
   const addInterval = () => {
     const label = newLabel.trim();
-    if (!label || !props.selection || selectionProblem || props.disabled)
+    if (
+      !label ||
+      !props.selection ||
+      selectionProblem ||
+      props.disabled ||
+      (editingTag && !hasEdits)
+    )
       return;
     const boundary = Math.max(1, props.bundle.task.base_step_count ?? 1);
     const startStep = Math.max(
@@ -445,6 +487,17 @@ function TagEditorInspector(props: {
       startStep + 1,
       Math.min(props.selection.endStep, boundary),
     );
+    if (editingTag) {
+      props.onChange(
+        updateIntervalTag(props.tags, editingTag.annotation_id, {
+          ...(label !== intervalTagLabel(editingTag, index) ? { label } : {}),
+          start_step: startStep,
+          end_step: endStep,
+        }),
+      );
+      setNewLabel(label);
+      return;
+    }
     const annotationId = tagIdentity("tag");
     const tagId = tagIdentity("manual-tag");
     const next: RuntimeAnnotationTag = {
@@ -459,7 +512,7 @@ function TagEditorInspector(props: {
       relations: [],
       subject: null,
     };
-    props.onChange([...props.tags, next]);
+    props.onChange(reconcileTagHierarchy([...props.tags, next]));
     setNewLabel("");
   };
 
@@ -474,7 +527,30 @@ function TagEditorInspector(props: {
         </span>
         <div className={styles.timelineTagEditorTitle}>
           <h2 id="tag-editor-title">多级 Tag</h2>
-          <small>拖选后自动分级</small>
+          <select
+            aria-label="编辑已有 Tag"
+            disabled={props.disabled || props.tags.length === 0}
+            title="选择已有 Tag 后可修改名称、调整区间或删除"
+            value={editingTag?.annotation_id ?? ""}
+            onChange={(event) =>
+              selectTag(
+                props.tags.find(
+                  (tag) => tag.annotation_id === event.target.value,
+                ) ?? null,
+              )
+            }
+          >
+            <option value="">
+              {editingTag
+                ? "＋ 新建 Tag"
+                : `编辑已有 Tag（${props.tags.length}）`}
+            </option>
+            {rows.map(({ tag, depth }) => (
+              <option key={tag.annotation_id} value={tag.annotation_id}>
+                {`L${depth + 1} · ${intervalTagLabel(tag, index)} · ${stepRange(tag.start_step, tag.end_step, frequencyHz)}`}
+              </option>
+            ))}
+          </select>
         </div>
         <label className={styles.compactTagField} htmlFor="manual-tag-label">
           <span>Tag 名称 *</span>
@@ -484,11 +560,14 @@ function TagEditorInspector(props: {
             id="manual-tag-label"
             maxLength={256}
             name="manual-tag-label"
-            placeholder="输入标签，按 Enter 创建"
+            placeholder={
+              editingTag ? "修改名称，按 Enter 应用" : "输入标签，按 Enter 创建"
+            }
             value={newLabel}
             onChange={(event) => setNewLabel(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") addInterval();
+              if (event.key === "Enter" && !event.nativeEvent.isComposing)
+                addInterval();
             }}
           />
         </label>
@@ -497,47 +576,81 @@ function TagEditorInspector(props: {
           data-invalid={Boolean(selectionProblem) || undefined}
           role="status"
         >
-          <span>当前选区</span>
+          <span>{editingTag ? "正在编辑" : "当前选区"}</span>
           <strong>
             {props.selection
               ? `${props.selection.startStep}–${props.selection.endStep} 步`
               : "拖动时间轴选择"}
           </strong>
           <small>
-            {props.selection
-              ? parentRow
-                ? `自动 L${parentRow.depth + 2} · 父级 ${intervalTagLabel(parentRow.tag, index)} · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
-                : `自动 L1 · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
-              : "尚未选择"}
+            {editingTag
+              ? (selectionProblem ?? "拖动选区或边界调整区间")
+              : props.selection
+                ? parentRow
+                  ? `自动 L${parentRow.depth + 2} · 父级 ${intervalTagLabel(parentRow.tag, index)} · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
+                  : `自动 L1 · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
+                : "拖选后自动分级"}
           </small>
         </div>
-        <button
-          className={styles.addTagButton}
-          disabled={
-            !newLabel.trim() || Boolean(selectionProblem) || props.disabled
-          }
-          type="button"
-          onClick={addInterval}
-          aria-label="创建 Tag"
-        >
-          <Plus aria-hidden="true" size={14} />
-          创建
-        </button>
+        <div className={styles.tagEditorActions}>
+          <button
+            className={styles.addTagButton}
+            disabled={
+              !newLabel.trim() ||
+              Boolean(selectionProblem) ||
+              props.disabled ||
+              Boolean(editingTag && !hasEdits)
+            }
+            type="button"
+            onClick={addInterval}
+            aria-label={editingTag ? "应用 Tag 修改" : "创建 Tag"}
+          >
+            {editingTag ? (
+              <Check aria-hidden="true" size={14} />
+            ) : (
+              <Plus aria-hidden="true" size={14} />
+            )}
+            {editingTag ? "应用修改" : "创建"}
+          </button>
+          {editingTag ? (
+            <>
+              <button
+                type="button"
+                disabled={props.disabled}
+                onClick={() => selectTag(null)}
+                aria-label="取消编辑 Tag"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={props.disabled}
+                className={styles.deleteTagButton}
+                onClick={() => props.onDeleteTag(editingTag.annotation_id)}
+                aria-label="删除 Tag"
+              >
+                <Trash2 aria-hidden="true" size={14} />
+                删除
+              </button>
+            </>
+          ) : null}
+        </div>
       </header>
     </section>
   );
 }
 
-function useCurrentStep(
-  clock: ReturnType<typeof createPlaybackClock>,
-  frequencyHz: number,
-): number {
-  const [step, setStep] = useState(() =>
-    timelineNsToStep(clock.currentNs(), frequencyHz),
-  );
+function useCurrentStep(clock: PlaybackClock, frequencyHz: number): number {
+  // Timeline step boundaries are truncated to whole nanoseconds. Include that
+  // fractional-nanosecond remainder when locating a Tag at its exact start.
+  const stepAt = (ns: string) =>
+    timelineNsToStep((BigInt(ns) + 1n).toString(), frequencyHz);
+  const [step, setStep] = useState(() => stepAt(clock.currentNs()));
   useEffect(
     () =>
-      clock.subscribe((value) => setStep(timelineNsToStep(value, frequencyHz))),
+      clock.subscribe((value) =>
+        setStep(timelineNsToStep((BigInt(value) + 1n).toString(), frequencyHz)),
+      ),
     [clock, frequencyHz],
   );
   return step;
@@ -546,28 +659,25 @@ function useCurrentStep(
 function ReviewInspector(props: {
   readonly bundle: RuntimeAnnotationBundle;
   readonly tags: readonly RuntimeAnnotationTag[];
-  readonly clock: ReturnType<typeof createPlaybackClock>;
+  readonly clock: PlaybackClock;
   readonly comment: string;
   readonly selectedIssueIds: ReadonlySet<string>;
   readonly onCommentChange: (value: string) => void;
   readonly onToggleIssue: (annotationId: string) => void;
 }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
   const frequencyHz = bundleFrequencyHz(props.bundle);
   const currentStep = useCurrentStep(props.clock, frequencyHz);
   const schemaIndex = useMemo(
     () => buildTagSchemaIndex(props.bundle.schema),
     [props.bundle.schema],
   );
-  const checks = evaluateAnnotationTags({
-    task: props.bundle.task,
-    schema: props.bundle.schema,
-    tags: props.tags,
-  });
   const intervalRows = useMemo(
     () => intervalHierarchyRows(props.tags, schemaIndex),
     [props.tags, schemaIndex],
   );
-  const currentTag =
+  const activeTag =
     intervalRows
       .filter(
         (row) =>
@@ -579,9 +689,8 @@ function ReviewInspector(props: {
           left.tag.end_step -
             left.tag.start_step -
             (right.tag.end_step - right.tag.start_step),
-      )[0]?.tag ??
-    props.tags[0] ??
-    null;
+      )[0]?.tag ?? null;
+  const currentTag = activeTag ?? props.tags[0] ?? null;
   const currentRow = currentTag
     ? (intervalRows.find(
         (row) => row.tag.annotation_id === currentTag.annotation_id,
@@ -599,203 +708,234 @@ function ReviewInspector(props: {
         (row) => row.tag.annotation_id === originalTag.annotation_id,
       ) ?? null)
     : null;
-  const serverSubmission = resolveReviewSubmission(props.bundle);
-  const serverChecks = new Map(
-    serverSubmission?.checks.map((check) => [check.kind, check.evidence]) ?? [],
-  );
 
   return (
-    <section
-      className={styles.inspectorPanel}
-      aria-labelledby="tag-review-title"
-    >
-      <header className={styles.inspectorHeader}>
-        <span>
-          <ShieldCheck aria-hidden="true" size={15} />
+    <section className={styles.inspectorPanel} aria-label="Tag 审核操作">
+      <div className={styles.reviewCompactBar}>
+        <span
+          className={styles.reviewCurrentTag}
+          title={
+            activeTag ? intervalTagLabel(activeTag, schemaIndex) : undefined
+          }
+        >
+          <ShieldCheck aria-hidden="true" size={14} />
+          {activeTag ? intervalTagLabel(activeTag, schemaIndex) : "当前无 Tag"}
         </span>
-        <div>
-          <h2 id="tag-review-title">Tag 审核</h2>
-          <small>修订 v{revised?.revision ?? "—"} · 提交版本</small>
-        </div>
-        <em>
-          {props.bundle.schema.schema_id} v{props.bundle.schema.version}
-        </em>
-      </header>
-      <div className={styles.inspectorScroll}>
-        <section className={styles.panelSection}>
-          <h3>
-            标记问题位置
-            <span>{props.selectedIssueIds.size} 处</span>
-          </h3>
-          <p className={styles.reviewIssueHint}>
-            勾选存在问题的标注区间。未勾选任何问题时，提交后标注完成；勾选后进入待修改。
-          </p>
-          {intervalRows.length ? (
-            <ul className={styles.reviewIssueList} aria-label="标注问题位置">
-              {intervalRows.map((row) => {
-                const selected = props.selectedIssueIds.has(
-                  row.tag.annotation_id,
-                );
-                const active =
-                  currentTag?.annotation_id === row.tag.annotation_id;
-                const label = intervalTagLabel(row.tag, schemaIndex);
-                return (
-                  <li
-                    data-active={active || undefined}
-                    data-selected={selected || undefined}
-                    key={row.tag.annotation_id}
-                    style={{ "--tag-depth": row.depth } as CSSProperties}
-                  >
-                    <label>
-                      <input
-                        aria-label={`标记问题：${label}，${row.tag.start_step} 到 ${row.tag.end_step} 步`}
-                        checked={selected}
-                        type="checkbox"
-                        onChange={() => {
-                          props.clock.seek(
-                            stepToTimelineNs(row.tag.start_step, frequencyHz),
-                          );
-                          props.onToggleIssue(row.tag.annotation_id);
-                        }}
-                      />
-                      <span>
-                        <strong>{label}</strong>
-                        <small>
-                          {row.displayPath.join(" / ")} · [{row.tag.start_step},{" "}
-                          {row.tag.end_step})
-                        </small>
-                      </span>
-                      <em>{active ? "当前" : selected ? "有问题" : "正常"}</em>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className={styles.emptyText}>
-              提交版本中没有可标记的 Tag 区间。
+        <button
+          type="button"
+          disabled={!activeTag}
+          aria-pressed={Boolean(
+            activeTag && props.selectedIssueIds.has(activeTag.annotation_id),
+          )}
+          title={
+            activeTag
+              ? "标记当前播放位置的 Tag"
+              : "播放至 Tag 区间，或展开列表选择问题位置"
+          }
+          onClick={() =>
+            activeTag && props.onToggleIssue(activeTag.annotation_id)
+          }
+        >
+          {activeTag && props.selectedIssueIds.has(activeTag.annotation_id)
+            ? "取消当前标记"
+            : "标记当前 Tag"}
+        </button>
+        <span
+          className={styles.reviewIssueCount}
+          data-has-issues={props.selectedIssueIds.size > 0 || undefined}
+        >
+          {props.selectedIssueIds.size} 处问题
+        </span>
+        {props.comment.trim() ? <small>已填写意见</small> : null}
+        <button
+          type="button"
+          className={styles.reviewExpandButton}
+          aria-controls={detailsId}
+          aria-expanded={expanded}
+          aria-label="问题与意见"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "收起" : "问题与意见"}
+          <ChevronRight aria-hidden="true" size={13} />
+        </button>
+      </div>
+      <div id={detailsId} hidden={!expanded}>
+        <div className={styles.inspectorScroll}>
+          <section className={styles.panelSection}>
+            <h3>
+              标记问题位置
+              <span>{props.selectedIssueIds.size} 处</span>
+            </h3>
+            <p className={styles.reviewIssueHint}>
+              勾选需修改的标注；未勾选则通过审核。
             </p>
-          )}
-        </section>
-        <section className={styles.panelSection}>
-          <h3>六项审核清单</h3>
-          <CheckList
-            checks={checks.map((check) => ({
-              ...check,
-              evidence: serverChecks.get(check.kind) ?? check.evidence,
-            }))}
-          />
-        </section>
-        <section className={styles.panelSection}>
-          <h3>
-            当前时间戳 <code>第 {currentStep.toLocaleString("zh-CN")} 步</code>
-          </h3>
-          {currentTag ? (
-            <>
-              <PathCrumbs
-                path={
-                  currentRow?.displayPath ?? [
-                    intervalTagLabel(currentTag, schemaIndex),
-                  ]
-                }
+            {intervalRows.length ? (
+              <ul className={styles.reviewIssueList} aria-label="标注问题位置">
+                {intervalRows.map((row) => {
+                  const selected = props.selectedIssueIds.has(
+                    row.tag.annotation_id,
+                  );
+                  const active =
+                    currentTag?.annotation_id === row.tag.annotation_id;
+                  const label = intervalTagLabel(row.tag, schemaIndex);
+                  return (
+                    <li
+                      data-active={active || undefined}
+                      data-selected={selected || undefined}
+                      key={row.tag.annotation_id}
+                      style={{ "--tag-depth": row.depth } as CSSProperties}
+                    >
+                      <label>
+                        <input
+                          aria-label={`标记问题：${label}，${row.tag.start_step} 到 ${row.tag.end_step} 步`}
+                          checked={selected}
+                          type="checkbox"
+                          onChange={() => {
+                            props.clock.seek(
+                              stepToTimelineNs(row.tag.start_step, frequencyHz),
+                            );
+                            props.onToggleIssue(row.tag.annotation_id);
+                          }}
+                        />
+                        <span>
+                          <strong>{label}</strong>
+                          <small>
+                            {row.displayPath.join(" / ")} · [
+                            {row.tag.start_step}, {row.tag.end_step})
+                          </small>
+                        </span>
+                        <em>
+                          {active ? "当前" : selected ? "有问题" : "正常"}
+                        </em>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className={styles.emptyText}>
+                提交版本中没有可标记的 Tag 区间。
+              </p>
+            )}
+          </section>
+          <section className={styles.panelSection}>
+            <label className={styles.commentField} htmlFor="tag-review-comment">
+              <span>补充审核意见（可选）</span>
+              <textarea
+                autoComplete="off"
+                id="tag-review-comment"
+                maxLength={500}
+                name="tag-review-comment"
+                placeholder="补充说明问题原因或修改要求…"
+                value={props.comment}
+                onChange={(event) => props.onCommentChange(event.target.value)}
               />
-              <dl className={styles.propertyTable}>
-                <div>
-                  <dt>区间</dt>
-                  <dd>
-                    <code>
-                      [{currentTag.start_step}, {currentTag.end_step})
-                    </code>
-                  </dd>
-                </div>
-                {Object.entries(currentTag.attributes ?? {}).map(
-                  ([key, value]) => (
-                    <div key={key}>
-                      <dt>{key}</dt>
-                      <dd>{String(value)}</dd>
-                    </div>
-                  ),
+              <output>{props.comment.length} / 500</output>
+            </label>
+          </section>
+          <details className={styles.reviewDetails}>
+            <summary>当前 Tag 与版本对比</summary>
+            <div className={styles.reviewDetailsContent}>
+              <section className={styles.panelSection}>
+                <h3>
+                  当前时间戳{" "}
+                  <code>第 {currentStep.toLocaleString("zh-CN")} 步</code>
+                </h3>
+                {currentTag ? (
+                  <>
+                    <PathCrumbs
+                      path={
+                        currentRow?.displayPath ?? [
+                          intervalTagLabel(currentTag, schemaIndex),
+                        ]
+                      }
+                    />
+                    <dl className={styles.propertyTable}>
+                      <div>
+                        <dt>区间</dt>
+                        <dd>
+                          <code>
+                            [{currentTag.start_step}, {currentTag.end_step})
+                          </code>
+                        </dd>
+                      </div>
+                      {Object.entries(currentTag.attributes ?? {}).map(
+                        ([key, value]) => (
+                          <div key={key}>
+                            <dt>{key}</dt>
+                            <dd>{String(value)}</dd>
+                          </div>
+                        ),
+                      )}
+                      {currentTag.relations.map((relation) => (
+                        <div
+                          key={`${relation.relation_type}:${relation.target.object_id}`}
+                        >
+                          <dt>{relation.relation_type}</dt>
+                          <dd>
+                            {relation.target.object_type} /{" "}
+                            {relation.target.object_id}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </>
+                ) : (
+                  <p className={styles.emptyText}>当前时间戳没有 Tag 区间。</p>
                 )}
-                {currentTag.relations.map((relation) => (
-                  <div
-                    key={`${relation.relation_type}:${relation.target.object_id}`}
-                  >
-                    <dt>{relation.relation_type}</dt>
-                    <dd>
-                      {relation.target.object_type} /{" "}
-                      {relation.target.object_id}
-                    </dd>
+              </section>
+              <section className={styles.panelSection}>
+                <h3>
+                  <GitCompareArrows aria-hidden="true" size={14} /> 原始 /
+                  修订差异
+                </h3>
+                <div
+                  className={styles.diffGrid}
+                  role="table"
+                  aria-label="原始与修订 Tag 差异"
+                >
+                  <div role="row">
+                    <strong role="columnheader">对比项</strong>
+                    <strong role="columnheader">
+                      原始 v{original?.revision ?? "—"}
+                    </strong>
+                    <strong role="columnheader">
+                      修订 v{revised?.revision ?? "—"}
+                    </strong>
                   </div>
-                ))}
-              </dl>
-            </>
-          ) : (
-            <p className={styles.emptyText}>当前时间戳没有 Tag 区间。</p>
-          )}
-        </section>
-        <section className={styles.panelSection}>
-          <h3>
-            <GitCompareArrows aria-hidden="true" size={14} /> 原始 / 修订差异
-          </h3>
-          <div
-            className={styles.diffGrid}
-            role="table"
-            aria-label="原始与修订 Tag 差异"
-          >
-            <div role="row">
-              <strong role="columnheader">对比项</strong>
-              <strong role="columnheader">
-                原始 v{original?.revision ?? "—"}
-              </strong>
-              <strong role="columnheader">
-                修订 v{revised?.revision ?? "—"}
-              </strong>
+                  <div role="row">
+                    <span role="cell">层级路径</span>
+                    <span role="cell">
+                      {originalRow?.displayPath.join(" / ") ?? "无对应项"}
+                    </span>
+                    <span role="cell">
+                      {currentRow?.displayPath.join(" / ") ?? "无"}
+                    </span>
+                  </div>
+                  <div role="row">
+                    <span role="cell">开始步</span>
+                    <code role="cell">{originalTag?.start_step ?? "—"}</code>
+                    <code role="cell">{currentTag?.start_step ?? "—"}</code>
+                  </div>
+                  <div role="row">
+                    <span role="cell">结束步</span>
+                    <code role="cell">{originalTag?.end_step ?? "—"}</code>
+                    <code role="cell">{currentTag?.end_step ?? "—"}</code>
+                  </div>
+                  <div role="row">
+                    <span role="cell">属性数</span>
+                    <code role="cell">
+                      {Object.keys(originalTag?.attributes ?? {}).length}
+                    </code>
+                    <code role="cell">
+                      {Object.keys(currentTag?.attributes ?? {}).length}
+                    </code>
+                  </div>
+                </div>
+              </section>
             </div>
-            <div role="row">
-              <span role="cell">层级路径</span>
-              <span role="cell">
-                {originalRow?.displayPath.join(" / ") ?? "无对应项"}
-              </span>
-              <span role="cell">
-                {currentRow?.displayPath.join(" / ") ?? "无"}
-              </span>
-            </div>
-            <div role="row">
-              <span role="cell">开始步</span>
-              <code role="cell">{originalTag?.start_step ?? "—"}</code>
-              <code role="cell">{currentTag?.start_step ?? "—"}</code>
-            </div>
-            <div role="row">
-              <span role="cell">结束步</span>
-              <code role="cell">{originalTag?.end_step ?? "—"}</code>
-              <code role="cell">{currentTag?.end_step ?? "—"}</code>
-            </div>
-            <div role="row">
-              <span role="cell">属性数</span>
-              <code role="cell">
-                {Object.keys(originalTag?.attributes ?? {}).length}
-              </code>
-              <code role="cell">
-                {Object.keys(currentTag?.attributes ?? {}).length}
-              </code>
-            </div>
-          </div>
-        </section>
-        <section className={styles.panelSection}>
-          <label className={styles.commentField} htmlFor="tag-review-comment">
-            <span>补充审核意见（可选）</span>
-            <textarea
-              autoComplete="off"
-              id="tag-review-comment"
-              maxLength={500}
-              name="tag-review-comment"
-              placeholder="补充说明问题原因或修改要求…"
-              value={props.comment}
-              onChange={(event) => props.onCommentChange(event.target.value)}
-            />
-            <output>{props.comment.length} / 500</output>
-          </label>
-        </section>
+          </details>
+        </div>
       </div>
     </section>
   );
@@ -1650,12 +1790,12 @@ export function AnnotationWorkbenchView(
   props: AnnotationWorkbenchViewProps,
 ): JSX.Element {
   const [selection, setSelection] = useState<StepSelection | null>(null);
-  const [cameraView, setCameraView] = useState(
-    () =>
-      (props.mode === "tag-review"
-        ? props.bundle.manifest?.cameras[0]?.camera_id
-        : undefined) ?? "__quad__",
-  );
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [deletedTag, setDeletedTag] = useState<{
+    before: readonly RuntimeAnnotationTag[];
+    after: readonly RuntimeAnnotationTag[];
+  } | null>(null);
+  const [cameraView, setCameraView] = useState("__quad__");
   const [reviewComment, setReviewComment] = useState("");
   const [reviewIssueIds, setReviewIssueIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -1688,6 +1828,10 @@ export function AnnotationWorkbenchView(
   );
   const [modeSwitchTarget, setModeSwitchTarget] =
     useState<AnnotationWorkspaceMode | null>(null);
+  const synchronizedWorkspace =
+    workspaceMode === "view" ||
+    workspaceMode === "annotation" ||
+    workspaceMode === "tag-review";
   const [restoreTargetRevision, setRestoreTargetRevision] = useState<
     number | null
   >(null);
@@ -1732,29 +1876,11 @@ export function AnnotationWorkbenchView(
   ]);
   const stepCount = Math.max(1, props.bundle.task.base_step_count ?? 1);
   const frequencyHz = bundleFrequencyHz(props.bundle);
-  const clock = useMemo(
-    () =>
-      createPlaybackClock({
-        startNs: "0",
-        endNs: stepToTimelineNs(stepCount, frequencyHz),
-      }),
-    [frequencyHz, props.bundle.task.task_id, stepCount],
+  const clock = usePlaybackClock(
+    "0",
+    stepToTimelineNs(stepCount, frequencyHz),
+    props.bundle.task.task_id,
   );
-  const clockDisposalTokens = useRef(
-    new Map<ReturnType<typeof createPlaybackClock>, symbol>(),
-  );
-  useEffect(() => {
-    const token = Symbol("annotation-clock-lifecycle");
-    const tokens = clockDisposalTokens.current;
-    tokens.set(clock, token);
-    return () => {
-      queueMicrotask(() => {
-        if (tokens.get(clock) !== token) return;
-        clock.dispose();
-        tokens.delete(clock);
-      });
-    };
-  }, [clock]);
   const reviewChecks =
     workspaceMode === "tag-review"
       ? evaluateAnnotationTags({
@@ -1785,17 +1911,6 @@ export function AnnotationWorkbenchView(
         : undefined,
     [frequencyHz, selection],
   );
-  const onTimeRangeSelect = useCallback(
-    (startNs: string, endNs: string) => {
-      if (!permissions.canEdit || workspaceMode !== "annotation") return;
-      const startStep = timelineNsToStep(startNs, frequencyHz);
-      setSelection({
-        startStep,
-        endStep: Math.max(startStep + 1, timelineNsToStep(endNs, frequencyHz)),
-      });
-    },
-    [frequencyHz, permissions.canEdit, workspaceMode],
-  );
   const onTagsChange = useCallback(
     (tags: readonly RuntimeAnnotationTag[]) => {
       if (
@@ -1804,9 +1919,100 @@ export function AnnotationWorkbenchView(
         actionInFlightRef.current
       )
         return;
+      setDeletedTag(null);
       props.onTagsChange(tags);
     },
     [permissions.canEdit, props.onTagsChange, workspaceMode],
+  );
+  const selectTag = useCallback(
+    (tag: RuntimeAnnotationTag | null) => {
+      if (
+        !permissions.canEdit ||
+        workspaceMode !== "annotation" ||
+        actionInFlightRef.current
+      )
+        return;
+      clock.pause();
+      setSelectedTagId(tag?.annotation_id ?? null);
+      setSelection(
+        tag ? { startStep: tag.start_step, endStep: tag.end_step } : null,
+      );
+      if (tag) clock.seek(stepToTimelineNs(tag.start_step, frequencyHz));
+    },
+    [clock, frequencyHz, permissions.canEdit, workspaceMode],
+  );
+  const deleteTag = useCallback(
+    (annotationId: string) => {
+      if (
+        !permissions.canEdit ||
+        workspaceMode !== "annotation" ||
+        actionInFlightRef.current
+      )
+        return;
+      const before = currentTagsRef.current;
+      if (!before.some((tag) => tag.annotation_id === annotationId)) return;
+      const after = removeIntervalTag(before, annotationId);
+      onTagsChange(after);
+      setDeletedTag({ before, after });
+      selectTag(null);
+    },
+    [onTagsChange, permissions.canEdit, selectTag, workspaceMode],
+  );
+  const commitTagRange = useCallback(
+    (annotationId: string | null, startNs: string, endNs: string) => {
+      if (
+        !permissions.canEdit ||
+        workspaceMode !== "annotation" ||
+        actionInFlightRef.current
+      )
+        return;
+      const startStep = Math.max(
+        0,
+        Math.min(
+          stepCount - 1,
+          timelineNsToStep((BigInt(startNs) + 1n).toString(), frequencyHz),
+        ),
+      );
+      const endStep = Math.max(
+        startStep + 1,
+        Math.min(
+          stepCount,
+          timelineNsToStep((BigInt(endNs) + 1n).toString(), frequencyHz),
+        ),
+      );
+      setSelection({ startStep, endStep });
+      const tag = currentTagsRef.current.find(
+        (candidate) => candidate.annotation_id === annotationId,
+      );
+      if (tag && (tag.start_step !== startStep || tag.end_step !== endStep)) {
+        onTagsChange(
+          updateIntervalTag(currentTagsRef.current, tag.annotation_id, {
+            start_step: startStep,
+            end_step: endStep,
+          }),
+        );
+      }
+    },
+    [frequencyHz, onTagsChange, permissions.canEdit, stepCount, workspaceMode],
+  );
+  const onTimeRangeSelect = useCallback(
+    (startNs: string, endNs: string) => {
+      commitTagRange(selectedTagId, startNs, endNs);
+    },
+    [commitTagRange, selectedTagId],
+  );
+  const onTimeRangeCreate = useCallback(
+    (startNs: string, endNs: string) => {
+      if (
+        !permissions.canEdit ||
+        workspaceMode !== "annotation" ||
+        actionInFlightRef.current
+      )
+        return;
+      setSelectedTagId(null);
+      commitTagRange(null, startNs, endNs);
+    },
+    [commitTagRange, permissions.canEdit, workspaceMode],
   );
   const onResourceError = useCallback((error: DomainError) => {
     const message = `${error.message}${error.requestId ? `（${error.requestId}）` : ""}`;
@@ -1831,28 +2037,55 @@ export function AnnotationWorkbenchView(
   const adapter = useMemo(() => {
     const adapterMode: AnnotationWorkbenchMode =
       workspaceMode === "tag-review" ? "tag-review" : "annotation";
+    const runtimeAdapter = buildRuntimeWorkbenchAdapter({
+      bundle: props.bundle,
+      scope: props.scope,
+      mode: adapterMode,
+      clock,
+      tags: props.tags,
+      ...(cameraView !== "__quad__" && cameraView !== "__all__"
+        ? { selectedCameraId: cameraView }
+        : {}),
+      ...(cameraView === "__quad__" ? { cameraLimit: 4 } : {}),
+      ...(cameraView === "__quad__" ? { cameraSlotCount: 4 } : {}),
+      readOnly: workspaceMode !== "annotation" || !permissions.canEdit,
+      ...(props.onSelectTask && pending === null
+        ? { onSelectTask: props.onSelectTask }
+        : {}),
+      ...(timelineSelection ? { timelineSelection } : {}),
+      ...(!permissions.canEdit || workspaceMode !== "annotation"
+        ? {}
+        : { onTimeRangeSelect, onTimeRangeCreate }),
+      onResourceError,
+    });
+    const editable =
+      permissions.canEdit && workspaceMode === "annotation" && pending === null;
+    const tagsBySegmentId = new Map(
+      props.tags.map((tag) => [`tag-intervals-${tag.annotation_id}`, tag]),
+    );
     return {
-      ...buildRuntimeWorkbenchAdapter({
-        bundle: props.bundle,
-        scope: props.scope,
-        mode: adapterMode,
-        clock,
-        tags: props.tags,
-        ...(cameraView !== "__quad__" && cameraView !== "__all__"
-          ? { selectedCameraId: cameraView }
-          : {}),
-        ...(cameraView === "__quad__" ? { cameraLimit: 4 } : {}),
-        ...(cameraView === "__quad__" ? { cameraSlotCount: 4 } : {}),
-        readOnly: workspaceMode !== "annotation" || !permissions.canEdit,
-        ...(props.onSelectTask && pending === null
-          ? { onSelectTask: props.onSelectTask }
-          : {}),
-        ...(timelineSelection ? { timelineSelection } : {}),
-        ...(!permissions.canEdit || workspaceMode !== "annotation"
-          ? {}
-          : { onTimeRangeSelect }),
-        onResourceError,
-      }),
+      ...runtimeAdapter,
+      timelineDisabled: !editable,
+      timelineTracks: editable
+        ? runtimeAdapter.timelineTracks.map((track) => ({
+            ...track,
+            segments: track.segments.map((segment) => {
+              const tag = tagsBySegmentId.get(segment.id);
+              return tag
+                ? {
+                    ...segment,
+                    editing: {
+                      selected: tag.annotation_id === selectedTagId,
+                      onSelect: () => selectTag(tag),
+                      onChange: (startNs: string, endNs: string) =>
+                        commitTagRange(tag.annotation_id, startNs, endNs),
+                      onDelete: () => deleteTag(tag.annotation_id),
+                    },
+                  }
+                : segment;
+            }),
+          }))
+        : runtimeAdapter.timelineTracks,
       cameraStreams,
     };
   }, [
@@ -1860,6 +2093,7 @@ export function AnnotationWorkbenchView(
     clock,
     onResourceError,
     onTimeRangeSelect,
+    onTimeRangeCreate,
     permissions.canEdit,
     pending,
     props.bundle,
@@ -1869,6 +2103,10 @@ export function AnnotationWorkbenchView(
     cameraView,
     workspaceMode,
     timelineSelection,
+    selectedTagId,
+    selectTag,
+    commitTagRange,
+    deleteTag,
   ]);
   const jointTopic = props.bundle.manifest?.topics.find((topic) =>
     /(^|[/_.-])joint([/_\s.-]|$)/iu.test(topic.name),
@@ -1901,17 +2139,6 @@ export function AnnotationWorkbenchView(
       props.robotScene,
       props.robotSceneUnavailableReason,
     ],
-  );
-  const workbenchAdapter = useMemo(
-    () =>
-      workspaceMode === "annotation"
-        ? {
-            ...visualAdapter,
-            robotScene: undefined,
-            robotSceneUnavailableReason: undefined,
-          }
-        : visualAdapter,
-    [visualAdapter, workspaceMode],
   );
   const invoke = async (
     action: PendingAction,
@@ -2015,6 +2242,8 @@ export function AnnotationWorkbenchView(
       );
   };
   const activateWorkspaceMode = (nextMode: AnnotationWorkspaceMode) => {
+    setSelectedTagId(null);
+    setSelection(null);
     setWorkspaceMode(nextMode);
     if (nextMode === "tag-review" && props.mode !== "tag-review")
       props.onSwitchMode?.("tag-review");
@@ -2123,103 +2352,55 @@ export function AnnotationWorkbenchView(
   const latestNeedsRevisionReview = props.bundle.history.reviews.findLast(
     (review) => review.decision === "NEEDS_REVISION",
   );
-  const connectedCameraCount = workbenchAdapter.cameraStreams.filter(
-    (stream) => stream.semanticRole !== "camera-slot-placeholder",
-  ).length;
   const mediaHeader = (): ReactNode => (
-    <div className={styles.cameraToolbar}>
-      <div className={styles.cameraToolbarSummary}>
-        <span>
-          {workspaceMode === "annotation" && cameraView === "__quad__"
-            ? `四宫格 · 已接入 ${connectedCameraCount} / 4 路`
-            : `视频视图 · 当前 ${connectedCameraCount} / ${cameras.length} 路`}
-        </span>
-        <small>保持原始画面比例；视频、机器人姿态和信号共用时间轴。</small>
-      </div>
-      <div className={styles.cameraToolbarTools}>
-        {cameras.length ? (
-          <label
-            htmlFor={
-              workspaceMode === "tag-review"
-                ? "review-camera-select"
-                : "annotation-camera-select"
-            }
-          >
-            <span>
-              {workspaceMode === "tag-review" ? "当前相机" : "显示视频"}
-            </span>
-            <select
-              aria-label={
-                workspaceMode === "tag-review" ? "当前相机" : "显示视频"
-              }
-              id={
-                workspaceMode === "tag-review"
-                  ? "review-camera-select"
-                  : "annotation-camera-select"
-              }
-              name="camera-view-select"
-              value={
-                workspaceMode === "tag-review" &&
-                (cameraView === "__quad__" || cameraView === "__all__")
-                  ? (cameras[0]?.camera_id ?? "")
-                  : cameraView
-              }
-              onChange={(event) => setCameraView(event.target.value)}
-            >
-              {workspaceMode !== "tag-review" ? (
-                <>
-                  <option value="__quad__">四宫格（固定 4 格）</option>
-                  <option value="__all__">全部视频（{cameras.length}）</option>
-                </>
-              ) : null}
-              {cameras.map((camera) => (
-                <option key={camera.camera_id} value={camera.camera_id}>
-                  {camera.camera_id}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {props.onReportDataIssue ? (
-          <Tooltip
-            title={
-              !props.canReportDataIssue
-                ? (props.reportDataIssueUnavailableReason ??
-                  "当前账号没有报告数据问题的权限。")
-                : !reportSelection
-                  ? "先在时间轴拖选异常片段；审核时也可以先勾选有问题的 Tag 区间。"
-                  : "将当前异常片段登记到统一问题数据中心。"
-            }
-            trigger={["hover", "focus"]}
-          >
-            <span className={styles.reportIssueTooltipTarget}>
-              <button
-                className={styles.reportIssueTrigger}
-                disabled={!props.canReportDataIssue || !reportSelection}
-                type="button"
-                onClick={openReportDialog}
-              >
-                <CircleAlert aria-hidden="true" size={13} />
-                报告数据问题
-              </button>
-            </span>
-          </Tooltip>
-        ) : null}
-        <button
-          aria-expanded={dataInfoOpen}
-          aria-haspopup="dialog"
-          aria-label="数据信息"
-          className={styles.dataInfoTrigger}
-          ref={dataInfoTriggerRef}
-          type="button"
-          onClick={() => setDataInfoOpen((open) => !open)}
+    <CameraViewToolbar
+      view={cameraView}
+      cameras={cameras.map((camera) => ({
+        id: camera.camera_id,
+        label: camera.camera_id,
+      }))}
+      visibleStreams={cameraStreams}
+      onViewChange={setCameraView}
+    >
+      {props.onReportDataIssue ? (
+        <Tooltip
+          title={
+            !props.canReportDataIssue
+              ? (props.reportDataIssueUnavailableReason ??
+                "当前账号没有报告数据问题的权限。")
+              : !reportSelection
+                ? "先在时间轴拖选异常片段；审核时也可以先勾选有问题的 Tag 区间。"
+                : "将当前异常片段登记到统一问题数据中心。"
+          }
+          trigger={["hover", "focus"]}
         >
-          <Database aria-hidden="true" size={13} />
-          数据信息
-          <em aria-hidden="true">{adapter.collectionItems.length}</em>
-        </button>
-      </div>
-    </div>
+          <span className={styles.reportIssueTooltipTarget}>
+            <button
+              className={styles.reportIssueTrigger}
+              disabled={!props.canReportDataIssue || !reportSelection}
+              type="button"
+              onClick={openReportDialog}
+            >
+              <CircleAlert aria-hidden="true" size={13} />
+              报告数据问题
+            </button>
+          </span>
+        </Tooltip>
+      ) : null}
+      <button
+        aria-expanded={dataInfoOpen}
+        aria-haspopup="dialog"
+        aria-label="数据信息"
+        className={styles.dataInfoTrigger}
+        ref={dataInfoTriggerRef}
+        type="button"
+        onClick={() => setDataInfoOpen((open) => !open)}
+      >
+        <Database aria-hidden="true" size={13} />
+        数据信息
+        <em aria-hidden="true">{adapter.collectionItems.length}</em>
+      </button>
+    </CameraViewToolbar>
   );
 
   return (
@@ -2288,131 +2469,174 @@ export function AnnotationWorkbenchView(
           <span>部分预览加载失败：{resourceErrors.join("；")}</span>
         </section>
       ) : null}
-      <div className={styles.workbenchFrame}>
-        <DataVisualizationWorkbench
-          adapter={workbenchAdapter}
-          showNavigation={false}
-          slots={{
-            mediaHeader,
-            ...(workspaceMode === "annotation"
-              ? {
-                  timelineTools: () => (
+      <SynchronizedEpisodeWorkbench
+        onKeyDown={(event) => {
+          if (
+            event.defaultPrevented ||
+            event.nativeEvent.isComposing ||
+            event.repeat ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            !selectedTagId
+          )
+            return;
+          const target = event.target as HTMLElement;
+          if (
+            !event.currentTarget.contains(target) ||
+            target.closest(
+              'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="dialog"]',
+            )
+          )
+            return;
+          if (event.key === "Delete") {
+            event.preventDefault();
+            deleteTag(selectedTagId);
+          } else if (event.key === "Escape") selectTag(null);
+        }}
+        data-workspace-mode={workspaceMode}
+        synchronized={synchronizedWorkspace}
+        adapter={visualAdapter}
+        jointAngleStream={jointAngleStream}
+        jointAngleUnavailableReason={
+          jointTopic
+            ? `已发现 ${jointTopic.name}，但当前固定数据窗口还没有可显示的关节角向量。`
+            : "当前数据未发现关节角 Topic。写入关节角数据后，曲线会随共享时间轴同步显示。"
+        }
+        jointAngleFooter={
+          workspaceMode === "annotation" &&
+          preSubmitCheck.status !== "idle" &&
+          preSubmitCheck.status !== "passed" ? (
+            <PreSubmitCheckPanel state={preSubmitCheck} />
+          ) : null
+        }
+        slots={{
+          mediaHeader,
+          ...(synchronizedWorkspace
+            ? {
+                timelineTools: () =>
+                  workspaceMode === "annotation" ? (
                     <div className={styles.timelineTagTools}>
                       <TagEditorInspector
+                        key={`${props.bundle.task.task_id}:${selectedTagId ?? "new"}`}
                         bundle={props.bundle}
                         disabled={!permissions.canEdit || pending !== null}
                         selection={selection}
                         tags={props.tags}
                         onChange={onTagsChange}
+                        editingId={selectedTagId}
+                        onSelectTag={selectTag}
+                        onDeleteTag={deleteTag}
+                      />
+                      {deletedTag &&
+                      props.tags.length === deletedTag.after.length &&
+                      props.tags.every(
+                        (tag, index) => tag === deletedTag.after[index],
+                      ) ? (
+                        <div className={styles.tagUndoNotice} role="status">
+                          <span>Tag 已删除，子 Tag 已保留。</span>
+                          <button
+                            type="button"
+                            disabled={!permissions.canEdit || pending !== null}
+                            onClick={() => onTagsChange(deletedTag.before)}
+                          >
+                            撤销删除
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : workspaceMode === "tag-review" ? (
+                    <div className={styles.reviewTools}>
+                      <ReviewInspector
+                        bundle={props.bundle}
+                        clock={clock}
+                        comment={reviewComment}
+                        selectedIssueIds={reviewIssueIds}
+                        tags={props.tags}
+                        onCommentChange={setReviewComment}
+                        onToggleIssue={(annotationId) =>
+                          setReviewIssueIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(annotationId))
+                              next.delete(annotationId);
+                            else next.add(annotationId);
+                            return next;
+                          })
+                        }
                       />
                     </div>
+                  ) : (
+                    <div className={styles.readOnlyTimelineStatus}>
+                      <LockKeyhole aria-hidden="true" size={13} />
+                      <span>只读查看 · {props.tags.length} 个 Tag</span>
+                      {permissions.readOnlyReason ? (
+                        <span>{permissions.readOnlyReason}</span>
+                      ) : null}
+                    </div>
                   ),
-                }
-              : {}),
-            workspaceToolbar: () => (
-              <WorkspaceToolbar
-                createButtonRef={createButtonRef}
-                dirty={props.dirty}
-                mode={workspaceMode}
-                navigationPermissions={props.permissions}
-                pending={pending}
-                permissions={permissions}
-                requestedRouteMode={props.mode}
-                restoreCandidates={restoreCandidates}
-                restoreTargetRevision={restoreTargetRevision}
-                reviewBlocked={reviewChecks.some(
-                  (check) => check.status === "FAIL",
-                )}
-                reviewIssueCount={reviewIssueIds.size}
-                taskStatus={props.bundle.task.status}
-                onCreate={createAnnotation}
-                onOpenRestore={(revision) => {
-                  setRestoreTargetRevision(revision);
-                  setDialogDecision("RESTORE");
-                }}
-                onOpenReview={setDialogDecision}
-                onOpenSave={() => {
-                  setPreSubmitCheckState(idlePreSubmitCheck);
-                  setDialogDecision("SAVE");
-                }}
-                onOpenSubmit={() => void runPreSubmitCheck()}
-                onRequestMode={requestWorkspaceMode}
-                onRestoreTargetChange={setRestoreTargetRevision}
-              />
-            ),
-            inspector: () =>
-              workspaceMode === "tag-review" ? (
-                <ReviewInspector
-                  bundle={props.bundle}
-                  clock={clock}
-                  comment={reviewComment}
-                  selectedIssueIds={reviewIssueIds}
-                  tags={props.tags}
-                  onCommentChange={setReviewComment}
-                  onToggleIssue={(annotationId) =>
-                    setReviewIssueIds((current) => {
-                      const next = new Set(current);
-                      if (next.has(annotationId)) next.delete(annotationId);
-                      else next.add(annotationId);
-                      return next;
-                    })
-                  }
-                />
-              ) : workspaceMode === "view" ? (
-                <DataViewInspector bundle={props.bundle} tags={props.tags} />
-              ) : workspaceMode === "revisions" ? (
-                <RevisionHistoryInspector
-                  bundle={props.bundle}
-                  disabled={pending !== null || !permissions.canRevise}
-                  selectedRevision={restoreTargetRevision}
-                  onSelectRevision={setRestoreTargetRevision}
-                />
-              ) : (
-                <div
-                  className={styles.robotPoseInspector}
-                  aria-label="机器人姿态同步视图"
-                >
-                  <ViewerRobotPosePanel
-                    scene={visualAdapter.robotScene}
-                    unavailableReason={
-                      visualAdapter.robotSceneUnavailableReason
-                    }
+              }
+            : {}),
+          workspaceToolbar: () => (
+            <WorkspaceToolbar
+              createButtonRef={createButtonRef}
+              dirty={props.dirty}
+              mode={workspaceMode}
+              navigationPermissions={props.permissions}
+              pending={pending}
+              permissions={permissions}
+              requestedRouteMode={props.mode}
+              restoreCandidates={restoreCandidates}
+              restoreTargetRevision={restoreTargetRevision}
+              reviewBlocked={reviewChecks.some(
+                (check) => check.status === "FAIL",
+              )}
+              reviewIssueCount={reviewIssueIds.size}
+              taskStatus={props.bundle.task.status}
+              onCreate={createAnnotation}
+              onOpenRestore={(revision) => {
+                setRestoreTargetRevision(revision);
+                setDialogDecision("RESTORE");
+              }}
+              onOpenReview={setDialogDecision}
+              onOpenSave={() => {
+                setPreSubmitCheckState(idlePreSubmitCheck);
+                setDialogDecision("SAVE");
+              }}
+              onOpenSubmit={() => void runPreSubmitCheck()}
+              onRequestMode={requestWorkspaceMode}
+              onRestoreTargetChange={setRestoreTargetRevision}
+            />
+          ),
+          ...(workspaceMode === "revisions"
+            ? {
+                inspector: () => (
+                  <RevisionHistoryInspector
+                    bundle={props.bundle}
+                    disabled={pending !== null || !permissions.canRevise}
+                    selectedRevision={restoreTargetRevision}
+                    onSelectRevision={setRestoreTargetRevision}
                   />
-                </div>
-              ),
-            actionDock: () =>
-              workspaceMode === "annotation" ? (
-                <div className={styles.jointAngleDock}>
-                  <ViewerJointAngleCurvePanel
-                    clock={clock}
-                    stream={jointAngleStream}
-                    unavailableReason={
-                      jointTopic
-                        ? `已发现 ${jointTopic.name}，但当前固定数据窗口还没有可显示的关节角向量。`
-                        : "当前数据未发现关节角 Topic。写入关节角数据后，曲线会随共享时间轴同步显示。"
-                    }
-                    onResourceError={onResourceError}
+                ),
+              }
+            : {}),
+          ...(!synchronizedWorkspace
+            ? {
+                actionDock: () => (
+                  <ActionDock
+                    bundle={props.bundle}
+                    dirty={props.dirty}
+                    surface={workspaceMode}
+                    permissions={permissions}
+                    preSubmitCheck={preSubmitCheck}
+                    tags={props.tags}
+                    onOpenRevisionLedger={props.onOpenRevisions}
                   />
-                  {preSubmitCheck.status !== "idle" &&
-                  preSubmitCheck.status !== "passed" ? (
-                    <PreSubmitCheckPanel state={preSubmitCheck} />
-                  ) : null}
-                </div>
-              ) : (
-                <ActionDock
-                  bundle={props.bundle}
-                  dirty={props.dirty}
-                  surface={workspaceMode}
-                  permissions={permissions}
-                  preSubmitCheck={preSubmitCheck}
-                  tags={props.tags}
-                  onOpenRevisionLedger={props.onOpenRevisions}
-                />
-              ),
-            ...(props.renderPanel ? { renderPanel: props.renderPanel } : {}),
-          }}
-        />
-      </div>
+                ),
+              }
+            : {}),
+          ...(props.renderPanel ? { renderPanel: props.renderPanel } : {}),
+        }}
+      />
       <EntityDrawer
         open={dataInfoOpen}
         returnFocusRef={dataInfoTriggerRef}
@@ -2428,6 +2652,11 @@ export function AnnotationWorkbenchView(
         width={400}
         onClose={() => setDataInfoOpen(false)}
       >
+        {workspaceMode === "view" ? (
+          <div className={styles.dataViewSummary}>
+            <DataViewInspector bundle={props.bundle} tags={props.tags} />
+          </div>
+        ) : null}
         <div
           className={styles.dataInfoDrawer}
           id={`${adapter.id}-data-information`}
@@ -2655,7 +2884,8 @@ export function AnnotationWorkbenchView(
               检查已通过
             </p>
             <p>
-              提交后会生成一个新的 Episode 版本并进入审核；草稿保存本身不会增加 Episode 版本号。
+              提交后会生成一个新的 Episode 版本并进入审核；草稿保存本身不会增加
+              Episode 版本号。
             </p>
           </>
         ) : null}
@@ -2665,8 +2895,10 @@ export function AnnotationWorkbenchView(
         dialogDecision !== "RESTORE" ? (
           <p>
             审核基于 Episode v
-            {resolveReviewSubmission(props.bundle)?.episode_version ?? "不可用"}（提交{" "}
-            {resolveReviewSubmission(props.bundle)?.submission_id ?? "不可用"}）。
+            {resolveReviewSubmission(props.bundle)?.episode_version ?? "不可用"}
+            （提交{" "}
+            {resolveReviewSubmission(props.bundle)?.submission_id ?? "不可用"}
+            ）。
           </p>
         ) : null}
         {dialogDecision === "APPROVE" ? (

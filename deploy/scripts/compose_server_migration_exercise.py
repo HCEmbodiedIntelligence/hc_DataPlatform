@@ -32,7 +32,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
 )
-
 from hc_data_platform.backup.contracts import (
     BackupManifestV1,
     BackupRepositoryV1,
@@ -890,7 +889,6 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
             "runtime-cache-init",
             "api",
             "worker",
-            "media-worker",
             "frontend",
             "gateway",
             timeout=1200,
@@ -898,7 +896,7 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
         _record_command(
             evidence,
             f"docker compose -p {source_project} up -d --wait postgres minio minio-init "
-            "temporal migration runtime-cache-init api worker media-worker frontend gateway",
+            "temporal migration runtime-cache-init api worker frontend gateway",
         )
         _compose(
             target_project,
@@ -967,13 +965,13 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
         if empty is None or int(empty[0]) != 0:
             raise RuntimeError("target PostgreSQL is not a fresh empty database")
         write_pause_started_monotonic = time.monotonic()
-        _compose(source_project, source_env, "stop", "api", "worker", "media-worker")
+        _compose(source_project, source_env, "stop", "api", "worker")
         operation_id = f"migration-backup-{run_id}"
         source_environment = f"src-{run_id}"
         operation = _enter_maintenance(source_dsn, operation_id, source_environment)
         _record_command(
             evidence,
-            f"docker compose -p {source_project} stop api worker media-worker + maintenance fence",
+            f"docker compose -p {source_project} stop api worker + maintenance fence",
             status="EXECUTING",
         )
         source_facts = _database_facts(source_dsn)
@@ -1422,18 +1420,18 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
         if write_pause_started_monotonic is None:
             raise RuntimeError("write-pause timing boundary was not recorded")
         write_pause_seconds = round(time.monotonic() - write_pause_started_monotonic, 3)
-        _compose(target_project, target_env, "up", "-d", "--no-deps", "worker", "media-worker")
+        _compose(target_project, target_env, "up", "-d", "--no-deps", "worker")
         _wait_http(f"http://127.0.0.1:{target_ports[6]}/health/live")
         _wait_http(f"http://127.0.0.1:{target_ports[7]}/")
         _wait_http(f"http://127.0.0.1:{target_ports[8]}/healthz")
         target_service_facts = _wait_services_running(
             target_project,
             target_env,
-            ("postgres", "temporal", "api", "frontend", "gateway", "worker", "media-worker"),
+            ("postgres", "temporal", "api", "frontend", "gateway", "worker"),
         )
         _record_command(
             evidence,
-            f"docker compose -p {target_project} up -d api frontend gateway worker media-worker",
+            f"docker compose -p {target_project} up -d api frontend gateway worker",
         )
         _http_json(
             "GET",
@@ -1491,7 +1489,6 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
                 "postgres",
                 "api",
                 "worker",
-                "media-worker",
                 "temporal",
                 "minio",
                 "frontend",
@@ -1501,7 +1498,7 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
         if (
             any(
                 source_service_facts[service]["running"] is True
-                for service in ("postgres", "api", "worker", "media-worker", "temporal")
+                for service in ("postgres", "api", "worker", "temporal")
             )
             or source_service_facts["minio"]["running"] is not True
         ):
@@ -1534,7 +1531,7 @@ def exercise(run_id: str, evidence_path: Path, *, keep_on_failure: bool) -> int:
         if leaked_count != 0:
             raise RuntimeError("target controlled write leaked into source PostgreSQL")
         component_image_ids: dict[str, str] = {}
-        for service in ("api", "frontend", "worker", "media-worker", "gateway"):
+        for service in ("api", "frontend", "worker", "gateway"):
             source_image = str(source_service_facts[service]["image_id"])
             target_image = str(target_service_facts[service]["image_id"])
             if source_image != target_image:

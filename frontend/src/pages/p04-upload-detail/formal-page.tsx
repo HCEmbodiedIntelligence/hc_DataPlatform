@@ -23,6 +23,7 @@ import {
   formatEffectiveDuration,
   formatStorageSize,
 } from "../../shared/lib/metric-presentation";
+import { qualityFindingText } from "../../shared/lib/quality-presentation";
 import { safeReturnTo } from "../../shared/routing/route-registry";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
 import { annotationRoutes } from "../p08-data-annotation/routes";
@@ -54,26 +55,6 @@ const problemDataPath = "/manual/issues";
 
 type ResolvedFormalUploadDetail = FormalUploadDetail & {
   readonly quality: FormalQcReport;
-};
-
-const findingTitles: Readonly<Record<string, string>> = {
-  QC_REQUIRED_TOPIC_MISSING: "必需 Topic 缺失",
-  QC_TIMESTAMP_DUPLICATE: "时间戳重复",
-  QC_TIMESTAMP_BACKWARD: "时间戳回退",
-  QC_FREQUENCY_LOW: "采样频率偏低",
-  QC_GAP_EXCESSIVE: "时间间隔过大",
-  QC_CONSECUTIVE_FRAMES_MISSING: "连续帧缺失",
-  QC_COVERAGE_LOW: "时间覆盖不足",
-  QC_IMAGE_BLACK: "图像持续黑屏",
-  QC_IMAGE_REPEATED: "图像重复",
-  QC_IMAGE_CORRUPT: "图像损坏",
-  QC_JOINT_OUT_OF_RANGE: "关节值超出范围",
-  QC_ACTION_MISSING: "动作信号缺失",
-  QC_ACTION_JUMP: "动作信号跳变",
-  QC_POINT_CLOUD_EMPTY: "点云为空",
-  QC_POINT_COUNT_ABNORMAL: "点数异常",
-  QC_MODALITY_OFFSET: "模态时间偏移",
-  QC_COMPLETE_STEP_RATIO_LOW: "完整步比例不足",
 };
 
 function pageStateFromError(error: unknown): PageStateKind {
@@ -143,13 +124,13 @@ function diagnosticFindings(
 ): readonly WorkbenchFinding[] {
   return quality.findings.map((finding, index) => ({
     id: `${finding.code}:${finding.topic}:${finding.start_ns}:${index}`,
-    title: findingTitles[finding.code] ?? finding.code,
+    title: qualityFindingText(finding.code).title,
     severity: finding.severity,
     streamLabel: finding.topic,
     topic: finding.topic,
     startNs: String(Math.max(0, Math.trunc(finding.start_ns))),
     endNs: String(Math.max(0, Math.trunc(finding.end_ns))),
-    message: finding.message,
+    message: qualityFindingText(finding.code).description,
     observed: String(finding.observed),
     threshold: String(finding.threshold),
   }));

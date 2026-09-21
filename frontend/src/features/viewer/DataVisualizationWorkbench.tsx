@@ -30,6 +30,8 @@ export interface DataVisualizationWorkbenchProps {
   readonly slots?: DataVisualizationWorkbenchSlots;
   /** Hide the persistent collection rail when the caller exposes it through an overlay. */
   readonly showNavigation?: boolean;
+  /** Reuse the annotation viewer in a compact, embedded preview. */
+  readonly layout?: "workspace" | "preview";
 }
 
 const actionIcons: Readonly<Record<WorkbenchActionKind, ReactNode>> = {
@@ -265,15 +267,19 @@ function ActionDock({
 export function DataVisualizationWorkbench({
   adapter,
   showNavigation = true,
+  layout = "workspace",
   slots,
 }: DataVisualizationWorkbenchProps): JSX.Element {
   const slotContext = { adapter };
+  const preview = layout === "preview";
+  const navigationVisible = showNavigation && !preview;
   return (
     <section
       className={styles.workbench}
       data-camera-count={adapter.cameraStreams.length}
       data-mode={adapter.mode}
-      data-navigation-visible={showNavigation}
+      data-layout={layout}
+      data-navigation-visible={navigationVisible}
       data-read-only={adapter.readOnly || undefined}
       aria-labelledby={`${adapter.id}-title`}
     >
@@ -285,7 +291,7 @@ export function DataVisualizationWorkbench({
         </div>
         <span className={styles.readOnlyBadge}>
           <LockKeyhole aria-hidden="true" size={14} />
-          {adapter.readOnly ? "只读诊断" : "可编辑"}
+          {adapter.readOnly ? (preview ? "只读" : "只读诊断") : "可编辑"}
         </span>
       </header>
       {adapter.banner ? (
@@ -312,7 +318,7 @@ export function DataVisualizationWorkbench({
           {slots.workspaceToolbar(slotContext)}
         </section>
       ) : null}
-      {showNavigation ? (
+      {navigationVisible ? (
         <section className={styles.navigation} aria-label="采集条目导航">
           {slots?.navigation ? (
             slots.navigation(slotContext)
@@ -343,13 +349,15 @@ export function DataVisualizationWorkbench({
           streams={adapter.cameraStreams}
         />
       </section>
-      <section className={styles.inspector} aria-label="模式工具与发现">
-        {slots?.inspector ? (
-          slots.inspector(slotContext)
-        ) : (
-          <FindingsInspector adapter={adapter} />
-        )}
-      </section>
+      {!preview ? (
+        <section className={styles.inspector} aria-label="模式工具与发现">
+          {slots?.inspector ? (
+            slots.inspector(slotContext)
+          ) : (
+            <FindingsInspector adapter={adapter} />
+          )}
+        </section>
+      ) : null}
       <section className={styles.timeline} aria-label="共享视频时间轴区域">
         <ViewerPlaybackControls clock={adapter.clock} />
         {slots?.timelineTools ? (
@@ -359,21 +367,30 @@ export function DataVisualizationWorkbench({
         ) : null}
         <SharedSignalTimeline
           clock={adapter.clock}
-          disabled={adapter.readOnly || !adapter.onTimeRangeSelect}
-          label="所有相机、关节状态、动作指令与自动质检共享的时间轴"
+          disabled={
+            adapter.timelineDisabled ??
+            (adapter.readOnly || !adapter.onTimeRangeSelect)
+          }
+          label={
+            adapter.timelineLabel ??
+            "所有相机、关节状态、动作指令与自动质检共享的时间轴"
+          }
           selection={adapter.timelineSelection}
           tracks={adapter.timelineTracks}
           variant="signals"
           onRangeSelect={adapter.onTimeRangeSelect}
+          onRangeCreate={adapter.onTimeRangeCreate}
         />
       </section>
-      <section className={styles.actions} aria-label="诊断动作边界">
-        {slots?.actionDock ? (
-          slots.actionDock(slotContext)
-        ) : (
-          <ActionDock adapter={adapter} />
-        )}
-      </section>
+      {!preview ? (
+        <section className={styles.actions} aria-label="诊断动作边界">
+          {slots?.actionDock ? (
+            slots.actionDock(slotContext)
+          ) : (
+            <ActionDock adapter={adapter} />
+          )}
+        </section>
+      ) : null}
       {adapter.cameraStreams.some(
         (stream) =>
           stream.semanticRole !== "camera-slot-placeholder" &&

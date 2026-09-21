@@ -33,6 +33,7 @@ from .processing import (
     retry_processing,
     start_stored_processing,
 )
+from .resolutions import EpisodeResolution, ResolveEpisode, get_resolution, resolve_episode
 from .service import LeRobotWebUploadService, read_bounded
 from .source_browser import (
     OriginalEpisode,
@@ -65,6 +66,35 @@ Service = Annotated[LeRobotWebUploadService, Depends(get_service)]
 class NativeLabelsRequest(BaseModel):
     dataset_id: str = Field(min_length=1, max_length=128)
     labels: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.get("/{import_id}/episodes/{episode_index}/resolution")
+def get_episode_resolution(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    episode_index: int,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+) -> EpisodeResolution:
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    return get_resolution(organization_id, project_id, region_code, import_id, episode_index)
+
+
+@router.post("/{import_id}/episodes/{episode_index}/resolution")
+def resolve_native_episode(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    episode_index: int,
+    command: ResolveEpisode,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+) -> EpisodeResolution:
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    return resolve_episode(
+        organization_id, project_id, region_code, import_id, episode_index, command, auth.subject_id
+    )
 
 
 @router.post("/{import_id}:process")
@@ -126,10 +156,17 @@ def list_native_imports(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     dataset_id: Annotated[str | None, Query(max_length=128)] = None,
+    include_all_sources: bool = False,
 ) -> list[NativeImportProgress]:
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
     return list_progress(
-        organization_id, project_id, region_code, limit=limit, offset=offset, dataset_id=dataset_id
+        organization_id,
+        project_id,
+        region_code,
+        limit=limit,
+        offset=offset,
+        dataset_id=dataset_id,
+        include_all_sources=include_all_sources,
     )
 
 

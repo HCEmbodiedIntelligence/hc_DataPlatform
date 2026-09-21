@@ -668,10 +668,13 @@
   text-align: center;
 }
 
-.episode-workbench-core .viewer-timeline {
+.viewer-timeline {
   --timeline-accent: #0b8f82;
   --timeline-selection: #ffb13c;
   --timeline-label-width: 88px;
+}
+
+.episode-workbench-core .viewer-timeline {
   height: auto;
   min-height: 0;
   margin: 0 0 8px;
@@ -1017,7 +1020,7 @@
 }
 
 .viewer-timeline__tracks {
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid #d3dfdc;
   border-radius: 3px;
   background: #fff;
@@ -1037,14 +1040,22 @@
 .viewer-timeline__track > strong {
   position: sticky;
   left: 0;
-  z-index: 2;
+  z-index: 7;
   display: flex;
+  min-width: 0;
   align-items: center;
+  padding-right: 6px;
   border-right: 1px solid #dfe7e5;
   color: #5c6177;
   background: #f7f8fc;
   font-size: 0.63rem;
   box-sizing: border-box;
+}
+
+.viewer-timeline__track > strong > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .viewer-timeline__track > div {
@@ -1089,6 +1100,7 @@
 }
 
 button.viewer-timeline__segment {
+  min-height: 0;
   font-family: inherit;
   cursor: pointer;
   transition:
@@ -1111,6 +1123,64 @@ button.viewer-timeline__segment:focus-visible {
   z-index: 2;
   outline: 2px solid var(--hc-color-focus);
   outline-offset: 1px;
+}
+
+button.viewer-timeline__segment[data-editable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+
+button.viewer-timeline__segment[aria-pressed="true"] {
+  z-index: 3;
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: -1px;
+}
+
+.viewer-timeline__segment-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.viewer-timeline__segment-grip[data-tag-edge="start"] {
+  left: 0;
+}
+.viewer-timeline__segment-grip[data-tag-edge="end"] {
+  right: 0;
+}
+
+.viewer-tag-menu {
+  position: fixed;
+  z-index: 1100;
+  width: 176px;
+  padding: 4px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 8px;
+  background: var(--hc-color-surface);
+  box-shadow: 0 4px 16px rgb(36 50 71 / 16%);
+}
+
+.viewer-tag-menu > button {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--hc-color-error);
+  background: transparent;
+  cursor: pointer;
+}
+
+.viewer-tag-menu > button:focus-visible,
+.viewer-tag-menu > button:hover {
+  background: var(--hc-color-error-surface);
 }
 
 button.viewer-timeline__segment[aria-current="time"] {
@@ -1226,7 +1296,7 @@ button.viewer-timeline__segment[aria-current="time"] {
 }
 
 @media (max-width: 640px) {
-  .episode-workbench-core .viewer-timeline {
+  .viewer-timeline {
     --timeline-label-width: 70px;
   }
 

@@ -55,6 +55,7 @@ from hc_data_platform.security.capabilities import (  # noqa: E402
     CAPABILITY_DATASET_READ,
     CAPABILITY_DATASET_VERSION_PUBLISH,
     CAPABILITY_UPLOAD_MANAGE,
+    CAPABILITY_UPLOAD_READ,
 )
 from hc_data_platform.workflow.models import (  # noqa: E402
     JobRecord,
@@ -373,8 +374,8 @@ def seed_scope(dsn: str, project_id: str, region_code: str, prefix: str) -> None
     with psycopg.connect(dsn) as connection:
         connection.execute(
             """
-            INSERT INTO registry.organization_projects (organization_id, project_id)
-            VALUES (%s, %s) ON CONFLICT DO NOTHING
+            INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+            VALUES (%s, %s, 'Dashboard test project') ON CONFLICT DO NOTHING
             """,
             (organization_for(project_id), project_id),
         )
@@ -581,6 +582,7 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
 ) -> None:
     capabilities = (
         CAPABILITY_UPLOAD_MANAGE,
+        CAPABILITY_UPLOAD_READ,
         CAPABILITY_DATASET_READ,
         CAPABILITY_ANNOTATION_REVIEW,
         CAPABILITY_DATASET_VERSION_PUBLISH,
@@ -722,6 +724,135 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
             "dashboard_annotation_reviews_event_idx",
             "rollout_publication_lineage_scope_published_idx",
         } <= index_names
+
+
+def test_native_receipt_and_issue_details_use_committed_source_in_exact_scope(
+    isolated_dsn: str,
+) -> None:
+    project, region, rollout = "project-native", "cn-east", "rollout-native-qc"
+    seed_scope(isolated_dsn, project, region, "native")
+    finding = {
+        "code": "QC_IMAGE_BLACK",
+        "severity": "warning",
+        "message": "black frames",
+        "topic": "/camera/wrist_right/image",
+        "observed": 0.03,
+        "threshold": 0.02,
+        "start_ns": 0,
+        "end_ns": 1_000_000_000,
+    }
+    with psycopg.connect(isolated_dsn) as connection:
+        connection.execute(
+            "DELETE FROM ingest.rollout_objects WHERE project_id = %s AND rollout_id = %s",
+            (project, rollout),
+        )
+        connection.execute(
+            "UPDATE qc_reports SET report_json = %s::jsonb "
+            "WHERE project_id = %s AND rollout_id = %s",
+            (json.dumps({"findings": [finding]}), project, rollout),
+        )
+        # Matching episode IDs elsewhere must not confer receipt or preview access.
+        for source_project, source_region, source_status in (
+            (project, region, "UPLOADING"),
+            (project, "cn-west", "COMMITTED"),
+            ("project-b", region, "COMMITTED"),
+        ):
+            identity = f"native-{source_project}-{source_region}"
+            connection.execute(
+                """
+                INSERT INTO ingest.raw_sources (
+                    organization_id, project_id, region_code, raw_source_id, upload_id,
+                    source_format, source_format_version, manifest_key, storage_prefix,
+                    content_hash, file_count, total_bytes, raw_status, processing_status,
+                    created_at, committed_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, 'LEROBOT_V3', '3.0', %s, %s,
+                          %s, 1, 100, %s, 'PARTIALLY_FAILED', %s, %s, %s)
+                """,
+                (
+                    organization_for(source_project),
+                    source_project,
+                    source_region,
+                    identity,
+                    identity,
+                    f"{identity}/manifest",
+                    identity,
+                    "a" * 64,
+                    source_status,
+                    NOW,
+                    NOW,
+                    NOW,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO ingest.raw_source_episodes (
+                    organization_id, project_id, region_code, raw_source_id, episode_id,
+                    source_episode_index, status, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, 0, 'FAILED', %s, %s)
+                """,
+                (
+                    organization_for(source_project),
+                    source_project,
+                    source_region,
+                    identity,
+                    rollout,
+                    NOW,
+                    NOW,
+                ),
+            )
+    service = DashboardService(
+        PostgresDashboardRepository(psycopg_connection_factory(isolated_dsn)), clock=lambda: NOW
+    )
+    query = dict(
+        auth=actor(project, region),
+        project_id=project,
+        region_code=region,
+        task_id="task-native-qc",
+    )
+    with request_scope(project, region):
+        before = service.task_status(**query)
+        assert before.selected.task.received_count == 0
+        assert before.pipeline.stages[1].succeeded == 0
+        assert before.pipeline.issues == ()
+    with psycopg.connect(isolated_dsn) as connection:
+        connection.execute(
+            """
+            INSERT INTO ingest.raw_sources (
+                organization_id, project_id, region_code, raw_source_id, upload_id,
+                source_format, source_format_version, manifest_key, storage_prefix,
+                content_hash, file_count, total_bytes, raw_status, processing_status,
+                created_at, committed_at, updated_at
+            ) SELECT organization_id, project_id, region_code,
+                     raw_source_id || '-committed', upload_id || '-committed',
+                     source_format, source_format_version, manifest_key || '-committed',
+                     storage_prefix, content_hash, file_count, total_bytes,
+                     'COMMITTED', processing_status, created_at, committed_at, updated_at
+              FROM ingest.raw_sources WHERE project_id = %s AND region_code = %s
+            """,
+            (project, region),
+        )
+        connection.execute(
+            """
+            INSERT INTO ingest.raw_source_episodes (
+                organization_id, project_id, region_code, raw_source_id, episode_id,
+                source_episode_index, status, created_at, updated_at
+            ) SELECT organization_id, project_id, region_code, raw_source_id || '-committed',
+                     episode_id, source_episode_index, status, created_at, updated_at
+              FROM ingest.raw_source_episodes WHERE project_id = %s AND region_code = %s
+            """,
+            (project, region),
+        )
+    with request_scope(project, region):
+        after = service.task_status(**query)
+        assert after.selected.task.received_count == 1
+        assert after.pipeline.stages[1].succeeded == after.pipeline.stages[2].succeeded == 1
+        assert after.pipeline.qc.rejected == 1
+        (issue,) = after.pipeline.issues
+        assert issue.rollout_id == rollout
+        assert issue.source_episode_index == 0
+        assert issue.source_import_id == "native-project-native-cn-east-committed"
+        assert issue.findings[0].observed == 0.03
+        assert issue.findings[0].threshold == 0.02
 
 
 def test_postgres_capability_intersection_and_half_open_boundaries(isolated_dsn: str) -> None:

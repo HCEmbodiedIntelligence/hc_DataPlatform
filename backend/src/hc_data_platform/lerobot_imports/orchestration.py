@@ -18,6 +18,8 @@ class LeRobotEpisodeSourceRefV1(BaseModel):
     raw_upload_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     raw_manifest_key: str = Field(min_length=1, max_length=2048)
     episode_index: int = Field(ge=0, lt=MAX_LEROBOT_IMPORT_EPISODES)
+    processing_attempt_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
+    import_attempt_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
 
 
 class LeRobotEpisodeTaskV1(BaseModel):

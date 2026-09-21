@@ -52,7 +52,10 @@ from .access_models import (
 )
 from .access_repository import AccessRepository
 from .auth import AuthContext
-from .capabilities import CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE
+from .capabilities import (
+    CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE,
+    expand_data_workflow_capabilities,
+)
 from .challenge import (
     DisabledPublicAuthChallengeVerifier,
     PublicAuthChallengeVerifier,
@@ -377,9 +380,18 @@ class AccessService:
                 )
             ),
             available_scopes=tuple(
-                scope.model_copy(update={"region_codes": self._scope_region_resolver(scope)})
-                if self._scope_region_resolver is not None and scope.project_wide
-                else scope
+                scope.model_copy(
+                    update={
+                        "region_codes": (
+                            self._scope_region_resolver(scope)
+                            if self._scope_region_resolver is not None and scope.project_wide
+                            else scope.region_codes
+                        ),
+                        "capabilities": tuple(
+                            sorted(expand_data_workflow_capabilities(scope.capabilities))
+                        ),
+                    }
+                )
                 for scope in resolved.scopes
             ),
             platform_capabilities=resolved.platform_capabilities,

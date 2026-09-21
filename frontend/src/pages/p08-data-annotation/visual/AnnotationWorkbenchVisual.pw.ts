@@ -229,7 +229,7 @@ async function runAxe(
 
 async function expectGeometry(
   page: Page,
-  mode: "annotation" | "tag-review",
+  mode: "view" | "annotation" | "tag-review",
 ): Promise<void> {
   await expect(page.getByLabel("采集条目导航")).toHaveCount(0);
   const boxes = await Promise.all([
@@ -239,12 +239,26 @@ async function expectGeometry(
   expect(boxes.every(Boolean)).toBe(true);
   const widths = boxes.map((box) => box?.width ?? 0);
   const total = widths.reduce((sum, width) => sum + width, 0);
-  const expected = mode === "annotation" ? [0.7, 0.3] : [0.68, 0.32];
-  widths.forEach((width, index) =>
-    expect(Math.abs(width / total - (expected[index] ?? 0))).toBeLessThan(
-      0.035,
-    ),
+  expect(widths[0]! / total).toBeCloseTo(3 / 5, 2);
+  const frame = await page
+    .locator(`[data-workspace-mode="${mode}"]`)
+    .boundingBox();
+  const timeline = await page.getByLabel("共享视频时间轴区域").boundingBox();
+  const telemetry = await page.getByLabel("诊断动作边界").boundingBox();
+  expect(timeline!.width).toBeCloseTo(total + 12, 0);
+  expect(timeline!.width).toBeCloseTo(frame!.width, 0);
+  expect(timeline!.y).toBeGreaterThanOrEqual(0);
+  expect(timeline!.y + timeline!.height).toBeLessThanOrEqual(
+    page.viewportSize()!.height + 1,
   );
+  expect(
+    await page.getByLabel("共享视频时间轴区域").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { position: style.position, bottom: style.bottom, top: style.top };
+    }),
+  ).toEqual({ position: "sticky", bottom: "0px", top: "auto" });
+  expect(telemetry!.x).toBeCloseTo(boxes[1]!.x, 0);
+  expect(telemetry!.y).toBeGreaterThan(boxes[1]!.y + boxes[1]!.height);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
   );
@@ -285,15 +299,38 @@ for (const mode of ["annotation", "tag-review"] as const) {
           await page
             .locator(".viewer-timeline__viewport")
             .evaluate((element) => getComputedStyle(element).overflowY),
-        ).toBe("hidden");
-        expect(
-          await page.evaluate(
-            () => document.documentElement.scrollHeight > window.innerHeight,
-          ),
-        ).toBe(true);
-        expect(
-          (await page.getByLabel("相机与同步信号").boundingBox())?.height ?? 0,
-        ).toBeGreaterThanOrEqual(500);
+        ).toBe("auto");
+        await expect(
+          page.getByLabel("Tag 名称 *", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("slider", { name: "共享播放位置" }),
+        ).toBeVisible();
+        const mediaHeight =
+          (await page.getByLabel("相机与同步信号").boundingBox())?.height ?? 0;
+        expect(mediaHeight).toBeGreaterThanOrEqual(240);
+        const cameraFrames = await page
+          .locator(".viewer-media-grid .viewer-panel > svg")
+          .evaluateAll((frames) =>
+            frames.map((frame) => {
+              const box = frame.getBoundingClientRect();
+              return {
+                top: box.top,
+                left: box.left,
+                width: box.width,
+                ratio: box.width / box.height,
+              };
+            }),
+          );
+        expect(cameraFrames).toHaveLength(4);
+        expect(cameraFrames[0]!.top).toBe(cameraFrames[1]!.top);
+        expect(cameraFrames[2]!.top).toBe(cameraFrames[3]!.top);
+        expect(cameraFrames[2]!.top).toBeGreaterThan(cameraFrames[0]!.top);
+        expect(cameraFrames[0]!.left).toBe(cameraFrames[2]!.left);
+        expect(cameraFrames[1]!.left).toBe(cameraFrames[3]!.left);
+        for (const frame of cameraFrames) {
+          expect(frame.ratio).toBeCloseTo(16 / 9, 1);
+        }
         await expect(
           page.getByRole("article", { name: "关节角变化" }),
         ).toBeVisible();
@@ -310,27 +347,35 @@ for (const mode of ["annotation", "tag-review"] as const) {
             .locator(".viewer-panel:not(.viewer-robot-panel)"),
         ).toHaveCount(4);
       } else {
-        await expect(page.getByText("六项审核清单")).toBeVisible();
-        await expect(page.getByText("原始 / 修订差异")).toBeVisible();
+        await expect(page.getByText("六项审核清单")).toHaveCount(0);
+        await expect(
+          page.getByRole("button", { name: "问题与意见" }),
+        ).toHaveAttribute("aria-expanded", "false");
+        await expect(page.getByLabel(/补充审核意见/u)).toBeHidden();
+        expect(
+          (await page
+            .getByLabel("Tag 审核操作", { exact: true })
+            .boundingBox())!.height,
+        ).toBeLessThanOrEqual(48);
+        await expect(page.getByLabel(/关节角时间序列/u)).toBeVisible();
         await expect(
           page
             .getByLabel("数据清单相机视图")
             .locator(".viewer-panel:not(.viewer-robot-panel)"),
-        ).toHaveCount(1);
-        await expect(page.locator("#review-camera-select option")).toHaveCount(
-          4,
+        ).toHaveCount(4);
+        await expect(page.getByLabel("显示视频").locator("option")).toHaveCount(
+          6,
         );
       }
       await expect(
         page.getByLabel("数据清单相机视图").locator(".viewer-robot-panel"),
-      ).toHaveCount(mode === "annotation" ? 0 : 1);
-      if (mode === "annotation")
-        await expect(
-          page.getByLabel("机器人姿态同步视图").locator(".viewer-robot-panel"),
-        ).toHaveCount(1);
+      ).toHaveCount(0);
+      await expect(
+        page.getByLabel("机器人姿态同步视图").locator(".viewer-robot-panel"),
+      ).toHaveCount(1);
       await page.screenshot({
         path: resolve(directory, viewport.file),
-        fullPage: false,
+        fullPage: true,
       });
     });
   }
@@ -388,7 +433,7 @@ test("E07 adapts a one-camera Manifest without adding another timeline", async (
   });
 });
 
-test("E07 keeps Tag editing compact below the four-camera viewer", async ({
+test("E07 keeps Tag editing visible while watching either camera row", async ({
   page,
 }) => {
   const directory = resolve(artifactRoot, "E07");
@@ -396,12 +441,28 @@ test("E07 keeps Tag editing compact below the four-camera viewer", async ({
   await page.setViewportSize({ width: 1280, height: 800 });
   await mountFixture(page, {
     mode: "annotation",
-    cameraCount: 1,
+    cameraCount: 4,
     scenario: "reference",
   });
 
   const timeline = page.getByLabel("共享视频时间轴区域");
-  await timeline.scrollIntoViewIfNeeded();
+  const tagInput = page.getByLabel("Tag 名称");
+  await expect(tagInput).toBeInViewport();
+  await expect(page.getByRole("button", { name: "创建 Tag" })).toBeInViewport();
+  const cameraFrames = page.locator(".viewer-media-grid .viewer-panel > svg");
+  const topFrame = await cameraFrames.first().boundingBox();
+  const dock = await timeline.boundingBox();
+  expect(topFrame!.y + topFrame!.height).toBeLessThanOrEqual(dock!.y);
+  await page.evaluate(() =>
+    window.scrollTo(0, document.documentElement.scrollHeight),
+  );
+  await expect(tagInput).toBeInViewport();
+  const bottomFrame = await cameraFrames.last().boundingBox();
+  const scrolledDock = await timeline.boundingBox();
+  expect(bottomFrame!.y).toBeGreaterThanOrEqual(0);
+  expect(bottomFrame!.y + bottomFrame!.height).toBeLessThanOrEqual(
+    scrolledDock!.y,
+  );
   await expect(page.getByText("拖选后自动分级")).toBeVisible();
   await expect(page.getByLabel("父级")).toHaveCount(0);
   await expect(page.getByLabel(/当前 Tag · 共/u)).toHaveCount(0);
@@ -441,11 +502,184 @@ test("E07 keeps Tag editing compact below the four-camera viewer", async ({
     (await page.getByRole("heading", { name: "多级 Tag" }).boundingBox())
       ?.height ?? 0,
   ).toBeLessThan(24);
+  const scrollBeforeTyping = await page.evaluate(() => window.scrollY);
+  await tagInput.fill("拿取物品");
+  await tagInput.press("Enter");
+  await expect(timeline.locator(".viewer-timeline__tracks")).toContainText(
+    "拿取物品",
+  );
+  await expect(tagInput).toHaveValue("");
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeTyping);
+  const tagSelector = page.getByLabel("编辑已有 Tag");
+  const createdTag = page.getByRole("button", { name: /从“拿取物品”起点/u });
+  await createdTag.click();
+  await expect(tagInput).toHaveValue("拿取物品");
+  await expect(createdTag).toHaveAttribute("aria-pressed", "true");
+  const cameraClocks = page.locator(".viewer-media-grid time");
+  const rangeBeforeDrag = await page
+    .getByRole("button", { name: "拖动整个标注区间" })
+    .textContent();
+  const tagBox = (await createdTag.boundingBox())!;
+  await page.mouse.move(
+    tagBox.x + tagBox.width / 2,
+    tagBox.y + tagBox.height / 2,
+  );
+  await page.mouse.down();
+  const clockBeforeDrag = await cameraClocks.first().textContent();
+  await page.mouse.move(
+    tagBox.x + tagBox.width / 2 + 35,
+    tagBox.y + tagBox.height / 2,
+    { steps: 4 },
+  );
+  await expect(cameraClocks.first()).not.toHaveText(clockBeforeDrag!);
+  const liveTimes = await cameraClocks.allTextContents();
+  expect(new Set(liveTimes).size).toBe(1);
+  await page.mouse.up();
+  await expect(
+    page.getByRole("button", { name: "拖动整个标注区间" }),
+  ).not.toHaveText(rangeBeforeDrag!);
+  await expect(
+    page.getByRole("button", { name: "应用 Tag 修改" }),
+  ).toBeDisabled();
+  const endGrip = createdTag.locator('[data-tag-edge="end"]');
+  const gripBox = (await endGrip.boundingBox())!;
+  await page.mouse.move(
+    gripBox.x + gripBox.width / 2,
+    gripBox.y + gripBox.height / 2,
+  );
+  await page.mouse.down();
+  const clockBeforeTrim = await cameraClocks.first().textContent();
+  await page.mouse.move(gripBox.x + 24, gripBox.y + gripBox.height / 2, {
+    steps: 3,
+  });
+  await expect(cameraClocks.first()).not.toHaveText(clockBeforeTrim!);
+  await page.mouse.up();
+  await expect(
+    page.getByRole("button", { name: "应用 Tag 修改" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "应用 Tag 修改" }),
+  ).toBeInViewport();
+  await expect(
+    page.getByRole("button", { name: "删除 Tag", exact: true }),
+  ).toBeInViewport();
+  await tagInput.fill("放回物品");
+  const endHandle = page.getByRole("button", { name: /^标注结束/u });
+  const endBefore = await endHandle.getAttribute("aria-valuetext");
+  await endHandle.press("ArrowRight");
+  await expect(endHandle).not.toHaveAttribute("aria-valuetext", endBefore!);
+  await page.getByRole("button", { name: "应用 Tag 修改" }).click();
+  await expect(timeline.locator(".viewer-timeline__tracks")).toContainText(
+    "放回物品",
+  );
+  await expect(timeline.locator(".viewer-timeline__tracks")).not.toContainText(
+    "拿取物品",
+  );
+  await page.screenshot({
+    path: resolve(directory, "1280x800-edit-tag.png"),
+    fullPage: false,
+  });
+  const renamedTag = page.getByRole("button", { name: /从“放回物品”起点/u });
+  await renamedTag.click({ button: "right" });
+  await page.getByRole("menuitem", { name: /删除 Tag/u }).click();
+  await expect(timeline.locator(".viewer-timeline__tracks")).not.toContainText(
+    "放回物品",
+  );
+  await expect(tagSelector.getByRole("option")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "创建 Tag" })).toBeInViewport();
+  await page.getByRole("button", { name: "撤销删除" }).click();
+  await renamedTag.click();
+  await tagInput.focus();
+  await tagInput.press("Delete");
+  await expect(renamedTag).toBeVisible();
+  await renamedTag.focus();
+  await page.keyboard.press("Delete");
+  await expect(renamedTag).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "撤销删除" })).toBeInViewport();
   await page.screenshot({
     path: resolve(directory, "1280x800-one-camera-timeline.png"),
     fullPage: false,
   });
 });
+
+for (const mode of ["annotation", "tag-review"] as const) {
+  test(`keeps the shared layout when switching ${mode} to read-only viewing`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountFixture(page, { mode, cameraCount: 4 });
+    await expectGeometry(page, mode);
+    const cameras = page.locator(".viewer-media-grid .viewer-panel");
+    const before = await cameras.first().boundingBox();
+    await page.getByRole("tab", { name: /查看/ }).click();
+    await expectGeometry(page, "view");
+    await expect(cameras).toHaveCount(4);
+    await expect(page.getByLabel("机器人姿态同步视图")).toBeVisible();
+    await expect(
+      page.getByRole("article", { name: "关节角变化" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Tag 名称")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "问题与意见" })).toHaveCount(
+      0,
+    );
+    const after = await cameras.first().boundingBox();
+    expect(after!.width).toBeCloseTo(before!.width, 0);
+    expect(after!.height).toBeCloseTo(before!.height, 0);
+    await page.getByRole("button", { name: "数据信息" }).click();
+    await expect(
+      page
+        .getByRole("dialog", { name: /数据信息/ })
+        .getByRole("heading", { name: "数据查看" }),
+    ).toBeVisible();
+  });
+
+  test(`allows page scrolling over video, pose and task panels in ${mode}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await mountFixture(page, { mode, cameraCount: 4, scenario: "reference" });
+
+    const surfaces = [
+      page.locator(".viewer-media-grid .viewer-panel > svg").first(),
+      page.getByLabel("机器人姿态同步视图"),
+      page.locator(".viewer-timeline__viewport"),
+    ];
+    if (mode === "tag-review") {
+      await page
+        .getByRole("button", { name: "问题与意见", exact: true })
+        .click();
+      surfaces.push(
+        page
+          .getByRole("region", { name: "Tag 审核操作" })
+          .locator('[class*="inspectorScroll"]'),
+      );
+    }
+
+    for (const surface of surfaces) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      // At an inner panel's end, subsequent wheels must reach the page.
+      await surface.evaluate(async (element) => {
+        element.scrollTop = element.scrollHeight;
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+      await surface.hover();
+      const before = await page.evaluate(() => window.scrollY);
+      await expect
+        .poll(
+          async () => {
+            // Chromium may finish the inner scroll gesture before handing the
+            // next wheel event to the page.
+            await page.mouse.wheel(0, 220);
+            return page.evaluate(() => window.scrollY);
+          },
+          { intervals: [250], timeout: 2_000 },
+        )
+        .toBeGreaterThan(before);
+    }
+  });
+}
 
 test("E07 opens collection data as an overlay without resizing the viewer", async ({
   page,

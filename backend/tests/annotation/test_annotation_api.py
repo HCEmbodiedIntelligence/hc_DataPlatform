@@ -10,7 +10,6 @@ from httpx import Response as HttpxResponse
 
 from hc_data_platform.annotation import (
     InMemoryAnnotationService,
-    SelfReviewPolicy,
 )
 from hc_data_platform.annotation.repository import InMemoryAnnotationRepository
 from hc_data_platform.annotation.router import (
@@ -62,7 +61,7 @@ def auth(
 
 @pytest.fixture
 def api() -> Iterator[tuple[TestClient, dict[str, AuthContext], InMemoryAnnotationService]]:
-    service = InMemoryAnnotationService(self_review_policy=SelfReviewPolicy.DENY)
+    service = InMemoryAnnotationService()
     service.create_task(
         task_id="task-api",
         project_id="project-a",
@@ -194,8 +193,10 @@ def test_revision_thread_index_is_scoped_paginated_and_audited(
     assert denied.status_code == 403
 
 
+@pytest.mark.parametrize("reviewer_id", ["alice", "bob"])
 def test_claim_save_replay_submit_review_publish_and_invalidate_api(
     api: tuple[TestClient, dict[str, AuthContext], InMemoryAnnotationService],
+    reviewer_id: str,
 ) -> None:
     client, current, service = api
     claimed = client.post("/api/v1/annotation-tasks/task-api/claim")
@@ -253,15 +254,14 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
     assert submitted.json()["revision"] == 1
     assert submitted.json()["task_id"] == "task-api"
 
-    current["auth"] = auth("alice", *ANNOTATOR_CAPABILITIES, *REVIEWER_CAPABILITIES)
-    self_review = client.post(
+    review_without_capability = client.post(
         "/api/v1/annotation-tasks/task-api/reviews",
         headers={"If-Match": submitted.headers["etag"]},
         json={"revision": 1, "decision": "APPROVE"},
     )
-    assert self_review.status_code == 403
+    assert review_without_capability.status_code == 403
 
-    current["auth"] = auth("bob", *REVIEWER_CAPABILITIES)
+    current["auth"] = auth(reviewer_id, *REVIEWER_CAPABILITIES)
     reviewed = client.post(
         "/api/v1/annotation-tasks/task-api/reviews",
         headers={"If-Match": submitted.headers["etag"]},
@@ -269,6 +269,8 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["approved_revision"] == 1
+    assert service.get_task("task-api").submitted_by == "alice"
+    assert service.list_reviews("task-api")[0].reviewer_id == reviewer_id
     approved_etag = reviewed.headers["etag"]
 
     reviewer_read = client.get(
@@ -406,6 +408,9 @@ def test_api_denies_cross_project_and_reports_unconfigured_provider(
     assert cross_project.status_code == 403
 
     current["auth"] = auth("uploader", "upload.read", "upload.manage")
+    assert client.get("/api/v1/annotation-tasks/task-api").status_code == 200
+
+    current["auth"] = auth("reader", "upload.read")
     wrong_role = client.get("/api/v1/annotation-tasks/task-api")
     assert wrong_role.status_code == 403
 

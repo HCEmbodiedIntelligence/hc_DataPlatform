@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -701,9 +703,13 @@ def test_p07_episode_revision_history_is_scoped_cursor_bound_and_immutable() -> 
     assert tampered.json()["code"] == "CURSOR_DIRECTION_CONFLICT"
 
 
-def test_p07_approval_is_durable_idempotent_and_does_not_fake_ready() -> None:
+@pytest.mark.parametrize("upload_operator", [False, True])
+def test_p07_approval_is_durable_idempotent_and_does_not_fake_ready(upload_operator: bool) -> None:
     configure_dataset_page(_service())
-    current: dict[str, AuthContext | None] = {"value": _auth()}
+    auth = _auth()
+    if upload_operator:
+        auth = replace(auth, scoped_capabilities=frozenset({(PROJECT_ID, "upload.manage")}))
+    current: dict[str, AuthContext | None] = {"value": auth}
     client = TestClient(_app(current))
     initial_bootstrap = client.get(f"{_root()}/bootstrap", headers=_headers())
     assert initial_bootstrap.status_code == 200
@@ -874,6 +880,7 @@ def test_export_selection_resolves_version_bindings_and_rejects_foreign_episodes
     assert service.export_rollout_ids(**arguments, episode_ids=(EPISODE_ID,)) == (
         "rollout_p07fixture",
     )
+    assert service.export_episode_bindings(**arguments) == {EPISODE_ID: "rollout_p07fixture"}
     with pytest.raises(ProblemException) as missing:
         service.export_rollout_ids(**arguments, episode_ids=(EPISODE_ID, "episode_foreign"))
     assert missing.value.problem.code == "EXPORT_EPISODE_NOT_INCLUDED"
@@ -881,3 +888,5 @@ def test_export_selection_resolves_version_bindings_and_rejects_foreign_episodes
         service.export_rollout_ids(
             **{**arguments, "organization_id": "another-org"}, episode_ids=(EPISODE_ID,)
         )
+    with pytest.raises(ProblemException):
+        service.export_episode_bindings(**{**arguments, "organization_id": "another-org"})

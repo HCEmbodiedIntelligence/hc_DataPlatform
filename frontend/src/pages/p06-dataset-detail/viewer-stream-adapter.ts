@@ -1,3 +1,4 @@
+import { bufferJointWindows } from "../../features/viewer/buffered-joint-window-source";
 import type {
   StreamDescriptor,
   ViewerStreamModality,
@@ -51,10 +52,23 @@ export function adaptP06ViewerStreams(
       streamModality !== "other" &&
       dataBinding !== null &&
       dataBinding !== undefined;
+    const windowSource = dataReady
+      ? createDatasetLanceWindowSource({
+          scope: {
+            organizationId: revision.scope.organization_id,
+            projectId: revision.scope.project_id,
+            regionCode: revision.scope.region_code,
+          },
+          datasetId,
+          streamStartNs: stream.t_start_ns,
+          streamEndNs: stream.t_end_ns,
+          binding: dataBinding,
+        })
+      : undefined;
     return {
       id: stream.episode_stream_id,
       canonicalPath: stream.channel_path,
-      displayName: stream.channel_path,
+      displayName: mediaBinding?.camera_id ?? stream.channel_path,
       modality: streamModality,
       schema: {
         id: `hc.${stream.kind.toLowerCase()}`,
@@ -84,21 +98,32 @@ export function adaptP06ViewerStreams(
             }),
           }
         : {}),
-      ...(dataReady
+      ...(windowSource
         ? {
-            windowSource: createDatasetLanceWindowSource({
-              scope: {
-                organizationId: revision.scope.organization_id,
-                projectId: revision.scope.project_id,
-                regionCode: revision.scope.region_code,
-              },
-              datasetId,
-              streamStartNs: stream.t_start_ns,
-              streamEndNs: stream.t_end_ns,
-              binding: dataBinding,
-            }),
+            windowSource:
+              streamModality === "joint_state"
+                ? bufferJointWindows(
+                    windowSource,
+                    stream.t_start_ns,
+                    stream.t_end_ns,
+                  )
+                : windowSource,
           }
         : {}),
     } satisfies StreamDescriptor;
   });
+}
+
+/** Prefer the explicit joint-angle topic, as in the annotation workbench. */
+export function selectEpisodeJointStream(
+  streams: readonly StreamDescriptor[],
+): StreamDescriptor | null {
+  const joints = streams.filter((stream) => stream.modality === "joint_state");
+  return (
+    joints.find((stream) =>
+      /(^|[/_.-])joint([/_\s.-]|$)/iu.test(stream.canonicalPath),
+    ) ??
+    joints[0] ??
+    null
+  );
 }

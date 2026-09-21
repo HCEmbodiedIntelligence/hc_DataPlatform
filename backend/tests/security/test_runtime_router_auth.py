@@ -118,7 +118,7 @@ def test_publication_requires_publish_permission_before_accessing_adapters(
     protected_api: tuple[TestClient, dict[str, AuthContext | None]],
 ) -> None:
     client, current = protected_api
-    current["auth"] = _auth("upload.manage")
+    current["auth"] = _auth("upload.read")
     denied = client.post("/api/v1/datasets/publication-preflight", json=_publication_request())
     assert denied.status_code == 403
     assert denied.json()["code"] == "CAPABILITY_REQUIRED"

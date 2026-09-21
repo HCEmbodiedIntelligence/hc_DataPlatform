@@ -36,6 +36,7 @@ export interface WorkflowQueuePageProps<Key extends string> {
   readonly resultLabel?: string;
   readonly tableLabel: string;
   readonly table: ReactNode;
+  readonly pagination?: ReactNode;
   readonly emptyTitle?: string;
   readonly emptyDescription?: string;
   readonly emptyActionLabel: string;
@@ -184,6 +185,11 @@ export function WorkflowQueuePage<Key extends string>({
             {props.table}
           </div>
         )}
+        {props.visibleCount > 0 && props.pagination ? (
+          <nav aria-label={`${props.title}分页`} className={styles.pagination}>
+            {props.pagination}
+          </nav>
+        ) : null}
       </section>
     </main>
   );

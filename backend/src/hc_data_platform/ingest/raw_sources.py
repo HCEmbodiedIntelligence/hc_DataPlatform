@@ -50,6 +50,7 @@ class RawSourceEpisodeStatus(str, Enum):
     PROCESSING = "PROCESSING"
     READY = "READY"
     FAILED = "FAILED"
+    DISCARDED = "DISCARDED"
 
 
 class RawIngestJobType(str, Enum):

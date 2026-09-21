@@ -3,7 +3,8 @@
 # by the default development or production manifests.
 services:
   auto-annotation-provider:
-    image: hc-data-platform-api:dev
+    image: hc-data-platform-backend:dev
+    pull_policy: never
     command: [python, /fixture/auto-annotation-provider.py]
     environment:
       HC_AUTO_ANNOTATION_FIXTURE_API_KEY: ${HC_AUTO_ANNOTATION_FIXTURE_API_KEY:-local-acceptance-provider-key}

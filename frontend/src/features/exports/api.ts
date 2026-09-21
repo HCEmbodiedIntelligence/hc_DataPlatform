@@ -4,9 +4,20 @@ import { request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 
 export type PublishedExportFormat = components["schemas"]["ExportFormat"];
+export type ExportDataStage = "annotated" | "dataset";
 export type PublishedExportJob = components["schemas"]["ExportJobV1"];
 export type PublishedExportDownload =
   components["schemas"]["ExportDownloadAuthorizationV1"];
+
+const exportEligibilitySchema = z
+  .object({
+    project_id: z.string().min(1),
+    dataset_id: z.string().min(1),
+    dataset_version: z.string().min(1),
+    data_stage: z.enum(["annotated", "dataset"]).default("annotated"),
+    eligible_episode_ids: z.array(z.string().min(1)),
+  })
+  .strict();
 
 const exportFormatSchema = z.enum(["lance_snapshot", "lerobot_v3"]);
 const exportResultSchema = z
@@ -90,6 +101,7 @@ export async function createPublishedExport(
       format: PublishedExportFormat;
       idempotencyKey: string;
       episodeIds?: readonly string[];
+      dataStage?: ExportDataStage;
     }>,
 ): Promise<PublishedExportJob> {
   const path = basePath(target);
@@ -99,12 +111,45 @@ export async function createPublishedExport(
     body: {
       project_id: target.projectId,
       format: target.format,
+      ...(target.dataStage ? { data_stage: target.dataStage } : {}),
       ...(target.episodeIds ? { episode_ids: target.episodeIds } : {}),
     },
     idempotencyKey: target.idempotencyKey,
     cache: "no-store",
   });
   return parseJob(raw, path);
+}
+
+export async function fetchExportEligibility(
+  target: ExportTarget &
+    Readonly<{ signal?: AbortSignal; dataStage?: ExportDataStage }>,
+) {
+  const path = `${basePath(target).replace(/\/exports$/u, "")}/export-eligibility`;
+  const raw = await request<unknown>({
+    method: "GET",
+    path,
+    query: {
+      project_id: target.projectId,
+      data_stage: target.dataStage ?? "annotated",
+    },
+    signal: target.signal,
+    cache: "no-store",
+  });
+  return parseWire(
+    exportEligibilitySchema.refine(
+      (value) =>
+        value.project_id === target.projectId &&
+        value.dataset_id === target.datasetId &&
+        value.dataset_version === target.datasetVersion &&
+        value.data_stage === (target.dataStage ?? "annotated"),
+      {
+        message:
+          "Export eligibility scope does not match the requested version",
+      },
+    ),
+    raw,
+    { endpoint: path, schemaVersion: "export-eligibility.v1" },
+  );
 }
 
 export async function fetchPublishedExport(

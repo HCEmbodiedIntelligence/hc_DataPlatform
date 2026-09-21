@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, InputNumber, Space, Table } from "antd";
+import { Alert, Button, InputNumber, Space, Spin, Table } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
 import { request } from "../../../shared/api/http-client";
 import { createPlaybackClock } from "../../../features/viewer/PlaybackClock";
-import { EpisodeWorkbenchCore } from "../../../features/viewer/EpisodeWorkbenchCore";
+import { DataVisualizationWorkbench } from "../../../features/viewer/DataVisualizationWorkbench";
 import type { StreamDescriptor } from "../../../features/viewer/types";
 import { nativeRoot } from "../lerobot-processing";
 import { formatBytes } from "../upload-contract";
+import styles from "./OriginalSourceBrowser.module.css";
 
 interface OriginalFile {
   path: string;
@@ -96,14 +97,22 @@ export function OriginalEpisodePlayer({
     [episode, importId, scope],
   );
   return (
-    <EpisodeWorkbenchCore
-      episodeId={`original-${episode.episode_index}`}
-      datasetId={importId}
-      versionId={`original-${episode.episode_index}`}
-      clock={clock}
-      streams={streams}
-      mode="readonly"
-      timelineLabel="原始视频时间轴"
+    <DataVisualizationWorkbench
+      layout="preview"
+      adapter={{
+        id: `original-${importId}-${episode.episode_index}`,
+        mode: "raw-diagnostic",
+        title: `原始视频 · Episode ${episode.episode_index}`,
+        description: `${episode.frame_count} 帧 · ${episode.fps} FPS`,
+        readOnly: true,
+        clock,
+        cameraStreams: streams,
+        collectionItems: [],
+        findings: [],
+        actions: [],
+        timelineLabel: "原始视频时间轴",
+        timelineTracks: [],
+      }}
     />
   );
 }
@@ -111,12 +120,18 @@ export function OriginalEpisodePlayer({
 export default function OriginalSourceBrowser({
   scope,
   importId,
+  initialEpisodeIndex = 0,
+  filesOnly = false,
+  canDownload = true,
 }: {
   scope: IngestScope;
   importId: string;
+  initialEpisodeIndex?: number;
+  filesOnly?: boolean;
+  canDownload?: boolean;
 }) {
   const [offset, setOffset] = useState(0);
-  const [episodeIndex, setEpisodeIndex] = useState(0);
+  const [episodeIndex, setEpisodeIndex] = useState(initialEpisodeIndex);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const base = `${nativeRoot(scope)}/${encodeURIComponent(importId)}`;
   const identity = [
@@ -142,6 +157,7 @@ export default function OriginalSourceBrowser({
   const episode = useQuery({
     queryKey: [...identity, "episode", episodeIndex],
     enabled:
+      !filesOnly &&
       (files.data?.episode_count ?? 0) > 0 &&
       files.data?.source_format === "LEROBOT_V3",
     queryFn: ({ signal }) =>
@@ -175,8 +191,7 @@ export default function OriginalSourceBrowser({
     }
   };
   return (
-    <Space orientation="vertical" style={{ width: "100%" }} size="middle">
-      <p>文件内容和目录保持原样。预览直接读取原视频，浏览器需支持其编码。</p>
+    <div className={styles.browser}>
       {files.isError ? (
         <Alert
           type="error"
@@ -184,21 +199,52 @@ export default function OriginalSourceBrowser({
           action={<Button onClick={() => void files.refetch()}>重试</Button>}
         />
       ) : null}
-      {(files.data?.episode_count ?? 0) > 0 ? (
-        <label>
-          Episode（从 0 开始）{" "}
-          <InputNumber
-            min={0}
-            max={files.data!.episode_count - 1}
-            value={episodeIndex}
-            aria-label="原始 Episode"
-            onChange={(value) => {
-              if (value !== null) setEpisodeIndex(value);
-            }}
-          />
-        </label>
+      {!filesOnly &&
+      (files.data?.episode_count ?? 0) > 0 &&
+      files.data?.source_format === "LEROBOT_V3" ? (
+        <div className={styles.episodeToolbar}>
+          <Space size="small" wrap>
+            <Button
+              size="small"
+              disabled={episodeIndex <= 0}
+              onClick={() => setEpisodeIndex((index) => index - 1)}
+            >
+              上一条
+            </Button>
+            <label className={styles.episodeLabel}>
+              Episode
+              <InputNumber
+                size="small"
+                min={0}
+                max={files.data!.episode_count - 1}
+                precision={0}
+                value={episodeIndex}
+                aria-label="原始 Episode"
+                onChange={(value) => {
+                  if (
+                    value !== null &&
+                    Number.isInteger(value) &&
+                    value >= 0 &&
+                    value < files.data!.episode_count
+                  )
+                    setEpisodeIndex(value);
+                }}
+              />
+            </label>
+            <Button
+              size="small"
+              disabled={episodeIndex >= files.data!.episode_count - 1}
+              onClick={() => setEpisodeIndex((index) => index + 1)}
+            >
+              下一条
+            </Button>
+            <span className={styles.meta}>
+              共 {files.data!.episode_count} 条 · 从 0 开始
+            </span>
+          </Space>
+        </div>
       ) : null}
-      {episode.isError ? (
+      {!filesOnly && episode.isError ? (
         <Alert
           type="warning"
           title="此 Episode 暂时无法预览"
@@ -212,7 +258,12 @@ export default function OriginalSourceBrowser({
           }
         />
       ) : null}
-      {episode.data ? (
+      {!filesOnly && episode.isFetching && !episode.data ? (
+        <div className={styles.loading}>
+          <Spin size="small" /> 正在加载视频…
+        </div>
+      ) : null}
+      {!filesOnly && episode.data ? (
         <OriginalEpisodePlayer
           key={`${importId}:${episodeIndex}`}
           scope={scope}
@@ -221,45 +272,56 @@ export default function OriginalSourceBrowser({
         />
       ) : null}
       {downloadError ? <Alert type="error" title={downloadError} /> : null}
-      <Table<OriginalFile>
-        size="small"
-        rowKey="path"
-        dataSource={files.data?.files ?? []}
-        loading={files.isPending}
-        pagination={false}
-        scroll={{ x: true }}
-        columns={[
-          { title: "原始路径", dataIndex: "path" },
-          {
-            title: "大小",
-            dataIndex: "size",
-            render: (size: number) => formatBytes(size),
-          },
-          { title: "SHA-256", dataIndex: "sha256", ellipsis: true },
-          {
-            title: "下载",
-            key: "download",
-            render: (_: unknown, file: OriginalFile) => (
-              <Button onClick={() => void download(file)}>下载原文件</Button>
-            ),
-          },
-        ]}
-      />
-      <Space>
-        <Button
-          disabled={offset === 0}
-          onClick={() => setOffset((value) => Math.max(0, value - 50))}
-        >
-          上一页
-        </Button>
-        <span>共 {files.data?.total ?? 0} 个文件</span>
-        <Button
-          disabled={offset + 50 >= (files.data?.total ?? 0)}
-          onClick={() => setOffset((value) => value + 50)}
-        >
-          下一页
-        </Button>
-      </Space>
-    </Space>
+      <details
+        className={styles.files}
+        open={filesOnly || files.data?.episode_count === 0}
+      >
+        <summary>原始文件（{files.data?.total ?? 0}）</summary>
+        <Table<OriginalFile>
+          size="small"
+          rowKey="path"
+          dataSource={files.data?.files ?? []}
+          loading={files.isPending}
+          pagination={false}
+          scroll={{ x: true }}
+          columns={[
+            { title: "原始路径", dataIndex: "path" },
+            {
+              title: "大小",
+              dataIndex: "size",
+              render: (size: number) => formatBytes(size),
+            },
+            { title: "SHA-256", dataIndex: "sha256", ellipsis: true },
+            {
+              title: "下载",
+              key: "download",
+              render: (_: unknown, file: OriginalFile) => (
+                <Button
+                  disabled={!canDownload}
+                  onClick={() => void download(file)}
+                >
+                  下载原文件
+                </Button>
+              ),
+            },
+          ]}
+        />
+        <Space>
+          <Button
+            disabled={offset === 0}
+            onClick={() => setOffset((value) => Math.max(0, value - 50))}
+          >
+            上一页
+          </Button>
+          <span>共 {files.data?.total ?? 0} 个文件</span>
+          <Button
+            disabled={offset + 50 >= (files.data?.total ?? 0)}
+            onClick={() => setOffset((value) => value + 50)}
+          >
+            下一页
+          </Button>
+        </Space>
+      </details>
+    </div>
   );
 }

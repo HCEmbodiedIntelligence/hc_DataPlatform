@@ -23,6 +23,7 @@ export interface AnnotationQueueSearch {
   readonly sort: AnnotationQueueSort;
   readonly after?: string;
   readonly before?: string;
+  readonly page: number;
   readonly limit: 20 | 50 | 100;
 }
 
@@ -122,6 +123,7 @@ export const annotationQueueQueryCodec = {
     const sortValue = params.get("sort") as AnnotationQueueSort | null;
     const stageValue = params.get("stage") as AnnotationQueueStage | null;
     const limitValue = Number(params.get("limit"));
+    const pageValue = Number(params.get("page"));
     const after = normalizedText(params.get("after"), 1024);
     const before = normalizedText(params.get("before"), 1024);
     const states = (params.get("state") ?? "")
@@ -159,7 +161,8 @@ export const annotationQueueQueryCodec = {
         sortValue && sortValues.has(sortValue) ? sortValue : "priority_desc",
       ...(after && !before ? { after } : {}),
       ...(before && !after ? { before } : {}),
-      limit: limitValue === 20 || limitValue === 100 ? limitValue : 50,
+      page: Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1,
+      limit: limitValue === 50 || limitValue === 100 ? limitValue : 20,
     };
   },
   build(search: AnnotationQueueSearch): string {
@@ -177,7 +180,8 @@ export const annotationQueueQueryCodec = {
     if (search.sort !== "priority_desc") params.set("sort", search.sort);
     if (search.after) params.set("after", search.after);
     else if (search.before) params.set("before", search.before);
-    if (search.limit !== 50) params.set("limit", String(search.limit));
+    if (search.page > 1) params.set("page", String(search.page));
+    if (search.limit !== 20) params.set("limit", String(search.limit));
     return params.toString();
   },
 };

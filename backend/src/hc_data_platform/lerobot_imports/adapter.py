@@ -82,10 +82,13 @@ class EpisodeStream:
     @property
     def alignment_input(self) -> AlignmentInputV1:
         camera_topics = {camera.topic for camera in source_reader.CAMERAS}
+        attempt = self.source.processing_attempt_id or self.source.import_attempt_id
         return AlignmentInputV1(
             rollout_id=self.rollout_id,
             source_sha256=self.source_sha256,
-            attempt_id=f"lerobot-v3-{self.source_sha256[:24]}",
+            attempt_id=(
+                f"lerobot-retry-{attempt}" if attempt else f"lerobot-v3-{self.source_sha256[:24]}"
+            ),
             start_ns=self.start_ns,
             end_ns=self.end_ns,
             streams={

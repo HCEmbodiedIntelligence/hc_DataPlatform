@@ -14,6 +14,7 @@ from .capabilities import (
     KNOWN_BUSINESS_CAPABILITIES,
     PLATFORM_ADMIN_CAPABILITIES,
     PLATFORM_OPERATION_CAPABILITIES,
+    expand_data_workflow_capabilities,
 )
 
 # PyJWT supports more algorithms than the platform should accept from configuration. This
@@ -261,7 +262,7 @@ class AuthContext:
     def effective_capabilities(
         self, project_id: str | None = None, organization_id: str | None = None
     ) -> frozenset[str]:
-        """Resolve exact global and project-scoped capability grants."""
+        """Resolve scope-specific grants and human data-workflow permissions."""
 
         scoped = (
             frozenset(
@@ -286,7 +287,8 @@ class AuthContext:
         # ``platform.admin`` is only meaningful as a global platform grant.  A malformed
         # JWT or an accidentally approved project capability must never activate it.
         project_capabilities = (scoped | organization_scoped) - {CAPABILITY_PLATFORM_ADMIN}
-        return self.capabilities | project_capabilities
+        granted = self.capabilities | project_capabilities
+        return granted if self.service_identity else expand_data_workflow_capabilities(granted)
 
     @property
     def is_platform_admin(self) -> bool:
@@ -333,12 +335,16 @@ class AuthContext:
             return False
         if self.is_platform_admin:
             return True
-        return any(
-            scoped_organization == organization_id and scoped_capability == capability
+        granted = frozenset(
+            scoped_capability
             for scoped_organization, _project_id, scoped_capability in (
                 self.organization_scoped_capabilities
             )
+            if scoped_organization == organization_id
         )
+        if not self.service_identity:
+            granted = expand_data_workflow_capabilities(granted)
+        return capability in granted
 
     def require_organization_capability(self, organization_id: str, capability: str) -> None:
         if not self.has_organization_capability(organization_id, capability):

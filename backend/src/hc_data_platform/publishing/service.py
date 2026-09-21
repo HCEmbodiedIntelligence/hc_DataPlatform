@@ -12,6 +12,7 @@ from .models import (
     DatasetVersionPublishedV1,
     DerivedStatus,
     ExcludedRolloutV1,
+    ExportDataStage,
     ExportFormat,
     ExportResultV1,
     PublicationAssetV1,
@@ -311,6 +312,56 @@ class DatasetPublisher:
             dataset_version=request.dataset_version,
             eligible_rollouts=tuple(eligible),
             excluded_rollouts=tuple(excluded),
+        )
+
+    def dataset_export_manifest(
+        self, request: PublishDatasetRequestV1
+    ) -> PublishedDatasetManifestV1:
+        """Freeze materialized dataset rows for export without publishing or claiming approval."""
+        snapshots = self._catalog.list_rollouts(
+            project_id=request.project_id,
+            dataset_id=request.dataset_id,
+            lance_version=request.base_lance_version,
+        )
+        rollouts = tuple(
+            PublishedRolloutV1(
+                rollout_id=snapshot.rollout_id,
+                source_mcap_sha256=snapshot.source_mcap_sha256,
+                base_lance_version=request.base_lance_version,
+                annotation_revision=None,
+                quality_profile_version=snapshot.quality_profile_version,
+                alignment_profile_version=snapshot.alignment_profile_version,
+                alignment_frequency_hz=snapshot.alignment_frequency_hz,
+                converter_version=snapshot.converter_version,
+                total_steps=snapshot.total_steps,
+                included_step_ranges=(StepRangeV1(start_step=0, end_step=snapshot.total_steps),),
+            )
+            for snapshot in sorted(snapshots, key=lambda item: item.rollout_id)
+            if snapshot.derived_status is DerivedStatus.DERIVED_READY
+        )
+        digest = hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    "data_stage": ExportDataStage.DATASET.value,
+                    "snapshot": request.model_dump(mode="json"),
+                    "rollouts": [item.model_dump(mode="json") for item in rollouts],
+                }
+            )
+        ).hexdigest()
+        empty_hash = hashlib.sha256(b"").hexdigest()
+        return PublishedDatasetManifestV1(
+            project_id=request.project_id,
+            dataset_id=request.dataset_id,
+            dataset_version=request.dataset_version,
+            base_lance_version=request.base_lance_version,
+            data_stage=ExportDataStage.DATASET,
+            created_at=self._clock(),
+            content_hash=digest,
+            annotations_uri="",
+            annotations_content_sha256=empty_hash,
+            training_manifest_uri="",
+            training_manifest_content_sha256=empty_hash,
+            rollouts=rollouts,
         )
 
     def publish(self, request: PublishDatasetRequestV1) -> PublishedDatasetManifestV1:

@@ -12,6 +12,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+class SourceCacheLimitExceeded(RuntimeError):
+    code = "SOURCE_CACHE_LIMIT_EXCEEDED"
+
+
 class SourceCache:
     def __init__(self, root: Path, *, max_bytes: int, ttl_seconds: float) -> None:
         if max_bytes <= 0 or ttl_seconds <= 0:
@@ -57,7 +61,7 @@ class SourceCache:
         with self._lock("admission"):
             _, remaining = self._evict(additional_bytes)
             if remaining + additional_bytes > self.max_bytes:
-                raise RuntimeError(
+                raise SourceCacheLimitExceeded(
                     "SOURCE_CACHE_LIMIT_EXCEEDED: active source files exceed "
                     "HC_LEROBOT_CACHE_MAX_BYTES; originals remain in object storage"
                 )

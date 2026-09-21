@@ -25,6 +25,7 @@ from .models import (
     TopicTimingMetricsV1,
     TopicTimingProfileV1,
 )
+from .policy import LEGACY_QUALITY_ENGINE_VERSION, approved_risk_findings
 from .ports import MetadataSink, QualityPersistenceError, ReportSink
 
 
@@ -81,6 +82,7 @@ class QualityEngine:
         findings.extend(self._point_clouds(data, profile))
         findings.extend(self._offsets(data, profile))
         findings.extend(self._complete_steps(data, profile))
+        findings = self._apply_policy(findings, profile)
         findings.sort(key=self._finding_key)
 
         report = QcReportV1.build(
@@ -226,6 +228,7 @@ class QualityEngine:
         findings.extend(self._point_clouds(data, profile))
         findings.extend(self._offsets(data, profile))
         findings.extend(self._complete_steps(data, profile))
+        findings = self._apply_policy(findings, profile)
         findings.sort(key=self._finding_key)
         report = QcReportV1.build(
             rollout_id=data.rollout_id,
@@ -242,6 +245,16 @@ class QualityEngine:
         )
         self._persist(report)
         return report
+
+    def _apply_policy(
+        self,
+        findings: list[QcFinding],
+        profile: QualityProfileV1,
+    ) -> list[QcFinding]:
+        # Archived v1 profiles remain reproducible for historical workflow replay.
+        if (self._engine_version or profile.engine_version) == LEGACY_QUALITY_ENGINE_VERSION:
+            return findings
+        return approved_risk_findings(findings, profile)
 
     def _online_timing(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -252,7 +253,7 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
     service = DashboardService(repository, cursor_secret="pending-test", clock=lambda: NOW)
 
     upload_only = service.pending_items(
-        **common(auth(capabilities=(CAPABILITY_UPLOAD_MANAGE,))),
+        **common(replace(auth(capabilities=(CAPABILITY_UPLOAD_MANAGE,)), service_identity=True)),
         cursor=None,
         limit=50,
     ).pending_items
@@ -283,6 +284,15 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
     assert all(item.target.deep_link is not None for item in all_sources.items)
     assert all(".." not in str(item.target.deep_link) for item in all_sources.items)
     assert "upload-closed" not in {item.source_id for item in all_sources.items}
+
+    # Human upload operators receive the same workflow access within their project.
+    human_operator = service.pending_items(
+        **common(auth(capabilities=(CAPABILITY_UPLOAD_MANAGE,))),
+        cursor=None,
+        limit=50,
+    ).pending_items
+    assert human_operator.authorized_source_types == all_sources.authorized_source_types
+    assert human_operator.items == all_sources.items
 
 
 def test_coverage_is_always_blocked_without_versioned_denominator() -> None:

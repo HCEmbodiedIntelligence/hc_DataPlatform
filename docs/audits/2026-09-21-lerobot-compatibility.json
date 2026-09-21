@@ -1,0 +1,117 @@
+[
+  {
+    "file": "/mnt/d/下载/dataset.lerobot-v3.fixed.zip",
+    "sha256": "89a9742cc05712f12565452dd8de6f8fb17765c8ae51092224c86c1b1ef25adf",
+    "lerobot_version": "0.6.1",
+    "torch_version": "2.11.0+cpu",
+    "video_backend": "torchcodec",
+    "frames": 920,
+    "cameras": 4,
+    "features": [
+      "action",
+      "observation.images.head_stereo_left",
+      "observation.images.head_stereo_right",
+      "observation.images.wrist_left",
+      "observation.images.wrist_right",
+      "observation.state"
+    ],
+    "action_batch_shape": [
+      2,
+      4,
+      29
+    ],
+    "prediction_shape": [
+      2,
+      4,
+      29
+    ],
+    "tail_padding": [
+      false,
+      true,
+      true,
+      true
+    ],
+    "optimizer_steps": 3,
+    "losses": [
+      66.07569122314453,
+      63.63490676879883,
+      59.86470413208008
+    ],
+    "seconds": 11.878
+  },
+  {
+    "file": "/tmp/hc-mcap-export-check/mcap-legal.lerobot-v3.zip",
+    "sha256": "e8aef6c7db60e1e9f4700b0f5c4ef0e416134bd64cad0e46b2e9f86462d7e458",
+    "lerobot_version": "0.6.1",
+    "torch_version": "2.11.0+cpu",
+    "video_backend": "torchcodec",
+    "frames": 30,
+    "cameras": 1,
+    "features": [
+      "action",
+      "observation.images.front",
+      "observation.state"
+    ],
+    "action_batch_shape": [
+      2,
+      4,
+      2
+    ],
+    "prediction_shape": [
+      2,
+      4,
+      2
+    ],
+    "tail_padding": [
+      false,
+      true,
+      true,
+      true
+    ],
+    "optimizer_steps": 3,
+    "losses": [
+      104.55912780761719,
+      100.46253967285156,
+      101.6731948852539
+    ],
+    "seconds": 0.466
+  },
+  {
+    "file": "/tmp/hc-mcap-export-check/mcap-multi_camera.lerobot-v3.zip",
+    "sha256": "73978caaed3a0cf930d4790e99628b3c38c28d37d0cedb359063891f9209792d",
+    "lerobot_version": "0.6.1",
+    "torch_version": "2.11.0+cpu",
+    "video_backend": "torchcodec",
+    "frames": 30,
+    "cameras": 2,
+    "features": [
+      "action",
+      "observation.images.front",
+      "observation.images.rear",
+      "observation.state"
+    ],
+    "action_batch_shape": [
+      2,
+      4,
+      2
+    ],
+    "prediction_shape": [
+      2,
+      4,
+      2
+    ],
+    "tail_padding": [
+      false,
+      true,
+      true,
+      true
+    ],
+    "optimizer_steps": 3,
+    "losses": [
+      104.51345825195312,
+      101.74893951416016,
+      100.54569244384766
+    ],
+    "seconds": 0.593
+  }
+]

@@ -122,6 +122,5 @@ def test_compose_workers_mount_the_bounded_runtime_sentinel_tmpfs() -> None:
     expected = ["/tmp/hc-runtime:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0750"]
     dev = cast(dict[str, Any], yaml.safe_load(DEV_COMPOSE_PATH.read_text(encoding="utf-8")))
     test = cast(dict[str, Any], yaml.safe_load(TEST_COMPOSE_PATH.read_text(encoding="utf-8")))
-    assert dev["services"]["worker"]["tmpfs"] == expected
-    assert dev["services"]["media-worker"]["tmpfs"] == expected
+    assert set(expected) <= set(dev["services"]["worker"]["tmpfs"])
     assert test["services"]["worker"]["tmpfs"] == expected

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Alert, Button, Card, Modal, Typography } from "antd";
+import { Alert, Button, Card, Drawer, Modal, Typography } from "antd";
 import {
   useLocation,
   useNavigate,
@@ -14,8 +14,10 @@ import {
 } from "../../entities/dataset-version";
 import { isEpisodeId, type EpisodeId } from "../../entities/episode";
 import {
-  EpisodeWorkbenchCore,
-  createPlaybackClock,
+  SynchronizedEpisodeWorkbench,
+  CameraViewToolbar,
+  selectCameraStreams,
+  usePlaybackClock,
 } from "../../features/viewer";
 import {
   createManualIssueCommand,
@@ -27,9 +29,13 @@ import { datasetRegionStateForError } from "../../features/datasets/components/e
 import { routes } from "../../features/datasets/routing";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { PageState, WorkbenchScaffold } from "../../shared/ui";
+import { PageState } from "../../shared/ui";
+import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
-import { adaptP06ViewerStreams } from "./viewer-stream-adapter";
+import {
+  adaptP06ViewerStreams,
+  selectEpisodeJointStream,
+} from "./viewer-stream-adapter";
 import styles from "./styles.module.css";
 
 const invalidDataset = "dataset_invalid" as DatasetId;
@@ -84,6 +90,8 @@ export function EpisodeViewerShell() {
       : null,
   );
   const [issueOpen, setIssueOpen] = useState(false);
+  const [dataInfoOpen, setDataInfoOpen] = useState(false);
+  const [cameraView, setCameraView] = useState("__quad__");
   const [issueIntentKey, setIssueIntentKey] = useState("");
   const [issueType, setIssueType] = useState<
     | "POSE_JITTER"
@@ -108,18 +116,11 @@ export function EpisodeViewerShell() {
   const endNs = revision
     ? (BigInt(revision.started_at_ns) + BigInt(revision.duration_ns)).toString()
     : "1";
-  const clock = useMemo(
-    () =>
-      createPlaybackClock({
-        startNs,
-        endNs:
-          BigInt(endNs) > BigInt(startNs)
-            ? endNs
-            : (BigInt(startNs) + 1n).toString(),
-      }),
-    [endNs, startNs],
+  const clock = usePlaybackClock(
+    startNs,
+    BigInt(endNs) > BigInt(startNs) ? endNs : (BigInt(startNs) + 1n).toString(),
+    `${datasetId}:${versionId}:${episodeId}`,
   );
-  useEffect(() => () => clock.dispose(), [clock]);
   useEffect(() => {
     if (!search.t) return;
     const value = decimalSecondsToNs(search.t);
@@ -144,6 +145,34 @@ export function EpisodeViewerShell() {
     () => (revision ? adaptP06ViewerStreams(revision, datasetId) : []),
     [datasetId, revision],
   );
+  const cameras = useMemo(
+    () =>
+      streams.filter(
+        (stream) => stream.modality === "rgb" || stream.modality === "depth",
+      ),
+    [streams],
+  );
+  const cameraStreams = useMemo(
+    () => selectCameraStreams(cameras, cameraView, clock),
+    [cameras, cameraView, clock],
+  );
+  const jointAngleStream = useMemo(
+    () => selectEpisodeJointStream(streams),
+    [streams],
+  );
+  const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
+    capabilities.has("episode.read")
+      ? (query.data?.episode.robotId ?? null)
+      : null,
+    jointAngleStream,
+    scope,
+  );
+  useEffect(() => {
+    setCameraView("__quad__");
+    setSelectedStreamId(search.streamId ?? "");
+    setCreatedIssueId(null);
+    setIssueOpen(false);
+  }, [datasetId, versionId, episodeId, search.streamId]);
   useEffect(() => {
     if (!revision || selectedStreamId) return;
     const requested =
@@ -264,138 +293,158 @@ export function EpisodeViewerShell() {
       data-page-kind="episode-viewer"
       data-navigation-owner-page-id="P06"
     >
-      <WorkbenchScaffold
-        header={{
-          title: `Episode ${episodeId}`,
-          breadcrumbs: [
-            {
-              key: datasetId,
-              label: <code>{datasetId}</code>,
-              to: routes.datasetDetail.build({ datasetId }),
-            },
-            {
-              key: versionId,
-              label: <code>{versionId}</code>,
-              to: routes.versionDetail.build({ datasetId, versionId }),
-            },
-            { key: episodeId, label: <code>{episodeId}</code> },
-          ],
-          metadata: (
-            <>
-              Revision <code>{revision!.revision_id}</code>
-            </>
+      <SynchronizedEpisodeWorkbench
+        adapter={{
+          id: `episode-${episodeId}`,
+          title: `Episode ${query.data!.episode.ordinal} · 数据查看`,
+          mode: "published-readonly",
+          readOnly: true,
+          clock,
+          cameraStreams,
+          ...(robotScene
+            ? { robotScene: { ...robotScene, clock } }
+            : { robotSceneUnavailableReason }),
+          collectionItems: [],
+          findings: [],
+          actions: [],
+          timelineTracks: [],
+          timelineDisabled: false,
+          timelineSelection: selection
+            ? { startNs: selection.start, endNs: selection.end }
+            : undefined,
+          onTimeRangeSelect: (start, end) => setSelection({ start, end }),
+        }}
+        jointAngleStream={jointAngleStream}
+        jointAngleUnavailableReason="当前 Episode 未提供可读取的关节角数据。"
+        slots={{
+          workspaceToolbar: () => (
+            <div className={styles.viewerToolbar}>
+              <Button onClick={() => void navigate(returnTo)}>
+                返回数据集
+              </Button>
+              <Typography.Text type="secondary">
+                当前版本 {versionId} · 只读查看
+              </Typography.Text>
+            </div>
           ),
-          actions: (
-            <Button onClick={() => void navigate(returnTo)}>返回</Button>
+          mediaHeader: () => (
+            <CameraViewToolbar
+              view={cameraView}
+              cameras={cameras.map((camera) => ({
+                id: camera.id,
+                label: camera.displayName,
+              }))}
+              visibleStreams={cameraStreams}
+              onViewChange={setCameraView}
+            >
+              <Button size="small" onClick={() => setDataInfoOpen(true)}>
+                数据信息
+              </Button>
+            </CameraViewToolbar>
+          ),
+          timelineTools: () => (
+            <div className={styles.viewerInspector}>
+              <Typography.Text type="secondary">
+                只读查看 · 拖选时间范围可记录数据问题
+              </Typography.Text>
+              {selection ? (
+                <Typography.Text>
+                  已选片段{" "}
+                  {(
+                    Number(BigInt(selection.start) - BigInt(startNs)) / 1e9
+                  ).toFixed(2)}{" "}
+                  –{" "}
+                  {(
+                    Number(BigInt(selection.end) - BigInt(startNs)) / 1e9
+                  ).toFixed(2)}{" "}
+                  秒
+                </Typography.Text>
+              ) : (
+                <Typography.Paragraph>
+                  在时间轴拖动选择范围。
+                </Typography.Paragraph>
+              )}
+              {revision!.streams.length > 1 ? (
+                <label className={styles.filterField}>
+                  数据通道
+                  <select
+                    value={selectedStreamId}
+                    onChange={(event) =>
+                      setSelectedStreamId(event.target.value)
+                    }
+                  >
+                    <option value="">请选择</option>
+                    {revision!.streams.map((stream) => (
+                      <option
+                        key={stream.episode_stream_id}
+                        value={stream.episode_stream_id}
+                      >
+                        {stream.channel_path}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {canCreateIssue ? (
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    setIssueIntentKey(newIntentKey("viewer-manual-issue"));
+                    setIssueOpen(true);
+                  }}
+                >
+                  添加人工问题
+                </Button>
+              ) : null}
+              {capabilities.has("manual_issue.read") ? (
+                <Button
+                  onClick={() =>
+                    void navigate(
+                      cleaningRoutes.manualIssues.build({
+                        datasetId,
+                        versionId,
+                        episodeId,
+                        ...(createdIssueId ? { issueId: createdIssueId } : {}),
+                        returnTo: viewerReturn,
+                      }),
+                    )
+                  }
+                >
+                  查看问题清单
+                </Button>
+              ) : null}
+              {createdIssueId ? (
+                <Alert
+                  type="success"
+                  showIcon
+                  title="问题已添加"
+                  description={<code>{createdIssueId}</code>}
+                />
+              ) : null}
+            </div>
           ),
         }}
-        navigation={
-          <div className={styles.streamList}>
-            <Typography.Title level={2}>Streams</Typography.Title>
-            {streams.map((stream) => (
-              <Card key={stream.id} size="small" className={styles.streamItem}>
-                <strong>{stream.displayName}</strong>
-                <code>{stream.id}</code>
-              </Card>
-            ))}
-          </div>
-        }
-        media={
-          <EpisodeWorkbenchCore
-            episodeId={episodeId}
-            datasetId={datasetId}
-            versionId={versionId}
-            clock={clock}
-            streams={streams}
-            mode="readonly"
-            onTimeRangeSelect={(start, end) => setSelection({ start, end })}
-          />
-        }
-        editor={
-          <Card title="只读约束" size="small">
-            <Typography.Paragraph>
-              媒体、时间轴与通道数据为只读。
-            </Typography.Paragraph>
-          </Card>
-        }
-        inspector={
-          <div className={styles.viewerInspector}>
-            <Typography.Title level={2}>交接</Typography.Title>
-            {selection ? (
-              <Typography.Paragraph>
-                <code>{selection.start}</code>
-                <br />—<br />
-                <code>{selection.end}</code>
-              </Typography.Paragraph>
-            ) : (
-              <Typography.Paragraph>
-                在时间轴拖动选择范围。
-              </Typography.Paragraph>
-            )}
-            {revision!.streams.length > 1 ? (
-              <label className={styles.filterField}>
-                Stream
-                <select
-                  value={selectedStreamId}
-                  onChange={(event) => setSelectedStreamId(event.target.value)}
-                >
-                  <option value="">请选择</option>
-                  {revision!.streams.map((stream) => (
-                    <option
-                      key={stream.episode_stream_id}
-                      value={stream.episode_stream_id}
-                    >
-                      {stream.channel_path}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {canCreateIssue ? (
-              <Button
-                type="primary"
-                onClick={() => {
-                  setIssueIntentKey(newIntentKey("viewer-manual-issue"));
-                  setIssueOpen(true);
-                }}
-              >
-                添加人工问题
-              </Button>
-            ) : null}
-            {capabilities.has("manual_issue.read") ? (
-              <Button
-                onClick={() =>
-                  void navigate(
-                    cleaningRoutes.manualIssues.build({
-                      datasetId,
-                      versionId,
-                      episodeId,
-                      ...(createdIssueId ? { issueId: createdIssueId } : {}),
-                      returnTo: viewerReturn,
-                    }),
-                  )
-                }
-              >
-                查看问题清单
-              </Button>
-            ) : null}
-            {createdIssueId ? (
-              <Alert
-                type="success"
-                showIcon
-                title="问题已添加"
-                description={<code>{createdIssueId}</code>}
-              />
-            ) : null}
-            {!canCreateIssue ? (
-              <PageState
-                state="feature-unavailable"
-                description="ManualIssue 创建需要 capability 与资源 CREATE_ISSUE 同时允许；不会创建 CleaningDraft，也不会直达 P11。"
-              />
-            ) : null}
-          </div>
-        }
       />
+      <Drawer
+        title="数据信息"
+        open={dataInfoOpen}
+        onClose={() => setDataInfoOpen(false)}
+      >
+        <Typography.Paragraph>
+          Episode <code>{episodeId}</code>
+        </Typography.Paragraph>
+        <Typography.Paragraph>
+          Revision <code>{revision!.revision_id}</code>
+        </Typography.Paragraph>
+        <div className={styles.streamList}>
+          {streams.map((stream) => (
+            <Card key={stream.id} size="small" className={styles.streamItem}>
+              <strong>{stream.displayName}</strong>
+              <code>{stream.id}</code>
+            </Card>
+          ))}
+        </div>
+      </Drawer>
       <Modal
         open={issueOpen}
         title="添加人工问题"

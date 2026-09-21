@@ -293,7 +293,7 @@ class AnnotationService:
         *,
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[], str] = lambda: str(uuid4()),
-        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.UNCONFIRMED,
+        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.ALLOW,
         cursor_secret: str = "annotation-revision-cursor-secret",
     ) -> None:
         self._repository = repository
@@ -1460,7 +1460,7 @@ class InMemoryAnnotationService(AnnotationService):
         *,
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[], str] = lambda: str(uuid4()),
-        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.UNCONFIRMED,
+        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.ALLOW,
     ) -> None:
         super().__init__(
             InMemoryAnnotationRepository(),

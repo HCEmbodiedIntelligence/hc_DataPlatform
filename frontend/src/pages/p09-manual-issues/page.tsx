@@ -24,7 +24,7 @@ import {
   MoreHorizontal,
   Wrench,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { isDatasetId } from "../../entities/dataset";
 import { isDatasetVersionId } from "../../entities/dataset-version";
@@ -51,12 +51,18 @@ import {
   routes as cleaningRoutes,
 } from "../../features/cleaning/routing";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
+import { useIngestScope } from "../../features/ingest/use-ingest-scope";
+import { VideoPreviewModal } from "../../features/viewer/VideoPreviewModal";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import {
   formatEffectiveDuration,
   formatTimeRange,
 } from "../../shared/lib/metric-presentation";
+import {
+  qualityProblemDescription,
+  qualityProblemSummary,
+} from "../../shared/lib/quality-presentation";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
   CursorPager,
@@ -69,6 +75,11 @@ import {
   type PageStateKind,
 } from "../../shared/ui";
 import styles from "./styles.module.css";
+import { RawDiagnosticActions } from "./RawDiagnosticActions";
+
+const OriginalSourceBrowser = lazy(
+  () => import("../p03-upload-jobs/components/OriginalSourceBrowser"),
+);
 
 type DialogState =
   | { readonly kind: "triage"; readonly issue: ManualIssueListItem }
@@ -165,7 +176,7 @@ function autoProblemRow(problem: AutoQualityProblem): ProblemDataRow {
     sourceTitle: problem.dataPackageId
       ? `采集包 ${problem.dataPackageId}`
       : `Rollout ${problem.rolloutId}`,
-    sourceSubtitle: `${problem.status} · ${problem.findingCount} 项质检发现`,
+    sourceSubtitle: `质检${problem.status === "REJECT" ? "拒绝" : "风险"} · ${problem.findingCount} 项质检发现`,
     manualIssue: null,
     autoProblem: problem,
   };
@@ -245,6 +256,8 @@ function filteredAutoProblems(
         problem.dataPackageId,
         problem.rolloutId,
         problem.message,
+        qualityProblemSummary(problem.findingCodes),
+        qualityProblemDescription(problem.findingCodes),
         ...problem.findingCodes,
         ...problem.topics,
       ]
@@ -526,6 +539,7 @@ function IssueDetail({
 }
 
 export function ManualIssuesPage() {
+  const scope = useIngestScope();
   const screens = Grid.useBreakpoint();
   const desktopInspector = Boolean(screens.xxl);
   const capabilities = useCapabilities();
@@ -575,6 +589,22 @@ export function ManualIssuesPage() {
   const resolve = useResolveManualIssue();
   const createDraft = useCreateDraftFromManualIssue();
   const [dialog, setDialog] = useState<DialogState>(null);
+  const rawScopeKey = scope
+    ? `${scope.organizationId}:${scope.projectId}:${scope.regionCode}`
+    : null;
+  const [rawSelection, setRawSelection] = useState<{
+    readonly scopeKey: string | null;
+    readonly problem: AutoQualityProblem;
+  } | null>(null);
+  const rawProblem =
+    rawSelection?.scopeKey === rawScopeKey ? rawSelection?.problem : null;
+  const openRawProblem = (problem: AutoQualityProblem | null) => {
+    if (problem) setRawSelection({ scopeKey: rawScopeKey, problem });
+  };
+  const canPreviewOriginal = (problem: AutoQualityProblem) =>
+    Boolean(
+      scope && problem.sourceImportId && problem.sourceEpisodeIndex != null,
+    );
   const [reason, setReason] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [severity, setSeverity] = useState<ManualIssueSeverity>("MEDIUM");
@@ -725,13 +755,24 @@ export function ManualIssuesPage() {
             type="link"
             {...(row.original.manualIssue
               ? { onClick: () => update({ issueId: row.original.id }) }
-              : href
-                ? { href }
-                : { disabled: true })}
+              : row.original.autoProblem &&
+                  canPreviewOriginal(row.original.autoProblem)
+                ? { onClick: () => openRawProblem(row.original.autoProblem) }
+                : href
+                  ? { href }
+                  : { disabled: true })}
           >
-            <strong>{ISSUE_TYPE_LABELS[row.original.issueType]}</strong>
+            <strong>
+              {row.original.autoProblem
+                ? qualityProblemSummary(row.original.autoProblem.findingCodes)
+                : ISSUE_TYPE_LABELS[row.original.issueType]}
+            </strong>
             <small>
-              {row.original.autoProblem?.message ?? "查看问题证据与处置记录"}
+              {row.original.autoProblem
+                ? qualityProblemDescription(
+                    row.original.autoProblem.findingCodes,
+                  )
+                : "查看问题证据与处置记录"}
             </small>
           </Button>
         );
@@ -825,16 +866,19 @@ export function ManualIssuesPage() {
       cell: ({ row }) => {
         if (row.original.autoProblem) {
           const href = autoProblemHref(row.original.autoProblem, currentReturn);
-          return href ? (
+          const original = canPreviewOriginal(row.original.autoProblem);
+          return original || href ? (
             <Button
               type="primary"
-              href={href}
+              {...(original
+                ? { onClick: () => openRawProblem(row.original.autoProblem) }
+                : { href: href! })}
               icon={<LocateFixed aria-hidden="true" size={16} />}
             >
               查看 Raw 诊断
             </Button>
           ) : (
-            <Tooltip title="该历史质检记录未关联可定位的上传会话。">
+            <Tooltip title="该质检记录未关联可预览的原始数据来源或上传会话。">
               <Button disabled>Raw 入口不可用</Button>
             </Tooltip>
           );
@@ -1326,6 +1370,34 @@ export function ManualIssuesPage() {
           ) : null}
         </div>
       </StandardPageScaffold>
+
+      {scope &&
+      rawProblem?.sourceImportId &&
+      rawProblem.sourceEpisodeIndex != null ? (
+        <VideoPreviewModal
+          open
+          title={`Raw 诊断 · Episode ${rawProblem.sourceEpisodeIndex}`}
+          onCancel={() => setRawSelection(null)}
+        >
+          <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+            <RawDiagnosticActions
+              key={`${rawScopeKey}:${rawProblem.id}`}
+              scope={scope}
+              problem={rawProblem}
+              canManage={capabilities.has("upload.manage")}
+              canReadDataset={capabilities.has("dataset.read")}
+            />
+            <Suspense fallback={<PageState state="loading" label="原始数据" />}>
+              <OriginalSourceBrowser
+                key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${rawProblem.sourceImportId}:${rawProblem.sourceEpisodeIndex}`}
+                scope={scope}
+                importId={rawProblem.sourceImportId}
+                initialEpisodeIndex={rawProblem.sourceEpisodeIndex}
+              />
+            </Suspense>
+          </Space>
+        </VideoPreviewModal>
+      ) : null}
 
       <EntityDrawer
         open={Boolean(search.issueId) && !desktopInspector}

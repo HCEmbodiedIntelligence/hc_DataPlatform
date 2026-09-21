@@ -39,6 +39,10 @@ import {
 } from "./testing/annotation-fixture";
 
 beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+    configurable: true,
+    value: () => undefined,
+  });
   if (!window.PointerEvent) {
     class TestPointerEvent extends MouseEvent {
       readonly pointerId: number;
@@ -250,6 +254,44 @@ const failedPreSubmitChecks: readonly TagReviewCheckResult[] = [
 ];
 
 describe("P08 page-level workspace navigation", () => {
+  it.each(["annotation", "tag-review"] as const)(
+    "keeps ordinary wheels available for page scrolling in %s while allowing modified model zoom",
+    (mode) => {
+      renderWorkbench({ cameraCount: 4, mode });
+      const pose = screen.getByLabelText("机器人姿态同步视图");
+      const canvas = document.createElement("canvas");
+      pose.append(canvas);
+      // Emulate the native wheel listener installed by OrbitControls.
+      const zoom = vi.fn((event: WheelEvent) => event.preventDefault());
+      canvas.addEventListener("wheel", zoom);
+
+      expect(
+        canvas.dispatchEvent(
+          new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            deltaY: 120,
+          }),
+        ),
+      ).toBe(true);
+      expect(zoom).not.toHaveBeenCalled();
+
+      for (const modifier of ["ctrlKey", "metaKey"]) {
+        expect(
+          canvas.dispatchEvent(
+            new WheelEvent("wheel", {
+              bubbles: true,
+              cancelable: true,
+              deltaY: 120,
+              [modifier]: true,
+            }),
+          ),
+        ).toBe(false);
+      }
+      expect(zoom).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("places work modes above the three-column body and keeps camera tools local", () => {
     renderWorkbench({ cameraCount: 4, mode: "tag-review" });
 
@@ -259,9 +301,9 @@ describe("P08 page-level workspace navigation", () => {
       within(workspace).getByRole("tablist", { name: "数据标注工作模式" }),
     ).toBeVisible();
     expect(within(media).queryByRole("tablist")).not.toBeInTheDocument();
-    expect(within(media).getByLabelText(/当前相机/u)).toBeVisible();
+    expect(within(media).getByLabelText("显示视频")).toBeVisible();
     expect(
-      within(workspace).queryByLabelText(/当前相机/u),
+      within(workspace).queryByLabelText("显示视频"),
     ).not.toBeInTheDocument();
   });
 
@@ -474,7 +516,7 @@ describe("P08 page-level workspace navigation", () => {
       mode: "tag-review",
     });
     const workspace = screen.getByLabelText("页面工作模式与操作");
-    const dock = screen.getByLabelText("Tag 审核提交概要");
+    const dock = screen.getByLabelText("共享视频时间轴区域");
     const submit = within(workspace).getByRole("button", {
       name: "提交审核",
     });
@@ -501,6 +543,13 @@ describe("P08 page-level workspace navigation", () => {
       cameraCount: 1,
       mode: "tag-review",
     });
+    const expand = screen.getByRole("button", { name: "问题与意见" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("checkbox", { name: /^标记问题：/u }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "标记当前 Tag" })).toBeDisabled();
+    await user.click(expand);
     const issue = screen.getByRole("checkbox", { name: /^标记问题：/u });
     await user.click(issue);
     await user.type(
@@ -509,6 +558,20 @@ describe("P08 page-level workspace navigation", () => {
     );
 
     expect(screen.getByText("1 处")).toBeVisible();
+    await user.click(expand);
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("1 处问题")).toBeVisible();
+    expect(screen.getByText("已填写意见")).toBeVisible();
+    expect(screen.getByLabelText(/^补充审核意见/u)).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "取消当前标记" }));
+    expect(screen.getByText("0 处问题")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "标记当前 Tag" }));
+    await user.click(expand);
+    expect(issue).toBeChecked();
+    expect(screen.getByLabelText(/^补充审核意见/u)).toHaveValue(
+      "边界需要重新确认",
+    );
+    await user.click(expand);
     await user.click(screen.getByRole("button", { name: "提交审核" }));
     const dialog = screen.getByRole("dialog", { name: "提交审核" });
     expect(dialog).toHaveTextContent("进入“待修改”");
@@ -544,6 +607,57 @@ describe("P08 page-level workspace navigation", () => {
 });
 
 describe("P08 viewer-slot composition", () => {
+  it.each(["annotation", "tag-review"] as const)(
+    "keeps the synchronized layout and read-only Tag behavior when %s falls back to viewing",
+    async (mode) => {
+      const user = userEvent.setup();
+      const { onTagsChange, onSave, onReview } = renderWorkbench({
+        cameraCount: 4,
+        mode,
+        editable: false,
+      });
+      expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
+      const pose = screen.getByLabelText("机器人姿态同步视图");
+      expect(pose.closest('[data-workspace-mode="view"]')).toHaveAttribute(
+        "data-workspace-layout",
+        "synchronized",
+      );
+      expect(screen.getByRole("article", { name: "关节角变化" })).toBeVisible();
+      const cameras = screen.getByLabelText("数据清单相机视图");
+      expect(cameras.querySelectorAll(".viewer-panel")).toHaveLength(4);
+      expect(cameras.querySelector(".viewer-robot-panel")).toBeNull();
+      expect(screen.getAllByRole("slider")).toHaveLength(1);
+      expect(screen.queryByLabelText("Tag 名称 *")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "问题与意见" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "保存修改" }),
+      ).not.toBeInTheDocument();
+      const tag = screen.getAllByRole("button", {
+        name: /起点同步播放全部视频和关节数据/u,
+      })[0]!;
+      await user.click(tag);
+      await user.keyboard("{Delete}");
+      expect(onTagsChange).not.toHaveBeenCalled();
+      expect(onSave).not.toHaveBeenCalled();
+      expect(onReview).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "数据信息" }));
+      const drawer = screen.getByRole("dialog", { name: /数据信息/u });
+      expect(
+        within(drawer).getByRole("heading", { name: "数据查看" }),
+      ).toBeVisible();
+      expect(within(drawer).getByText("当前数据身份")).toBeVisible();
+      await user.click(within(drawer).getByRole("button", { name: /close/i }));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: /数据信息/u }),
+        ).not.toBeInTheDocument(),
+      );
+    },
+  );
+
   it("reports a selected annotation range into the unified problem center", async () => {
     const user = userEvent.setup();
     const onReportDataIssue = vi
@@ -603,10 +717,14 @@ describe("P08 viewer-slot composition", () => {
     expect(await screen.findByText(/已登记为问题数据/u)).toBeVisible();
   });
 
-  it.each([0, 1, 4, 8])(
-    "keeps %i Manifest cameras on one shared timeline",
-    (cameraCount) => {
-      const { bundle } = renderWorkbench({ cameraCount });
+  it.each(
+    (["annotation", "tag-review"] as const).flatMap((mode) =>
+      [0, 1, 4, 8].map((cameraCount) => ({ mode, cameraCount })),
+    ),
+  )(
+    "$mode keeps $cameraCount Manifest cameras on one shared timeline",
+    ({ mode, cameraCount }) => {
+      const { bundle } = renderWorkbench({ cameraCount, mode });
       expect(
         screen
           .getByLabelText("数据清单相机视图")
@@ -641,7 +759,9 @@ describe("P08 viewer-slot composition", () => {
       ).toBeInTheDocument();
       expect(screen.getAllByRole("slider")).toHaveLength(1);
       expect(
-        screen.getByText(`四宫格 · 已接入 ${Math.min(cameraCount, 4)} / 4 路`),
+        screen.getByText(
+          `四路视频 · 已接入 ${Math.min(cameraCount, 4)} / 4 路`,
+        ),
       ).toBeInTheDocument();
       expect(
         screen.getByText(/视频、机器人姿态和信号共用时间轴/u),
@@ -649,17 +769,46 @@ describe("P08 viewer-slot composition", () => {
     },
   );
 
-  it("uses one main camera for review while retaining all Manifest camera choices", () => {
-    renderWorkbench({ cameraCount: 8, mode: "tag-review" });
-    expect(
+  it("reuses camera, pose and curve panels for review without an audit checklist", async () => {
+    const user = userEvent.setup();
+    const { bundle, onTagsChange } = renderWorkbench({
+      cameraCount: 8,
+      mode: "tag-review",
+    });
+    const cameraPanels = () =>
       screen
         .getByLabelText("数据清单相机视图")
-        .querySelectorAll(".viewer-panel:not(.viewer-robot-panel)"),
-    ).toHaveLength(1);
-    expect(
-      screen.getByLabelText(/当前相机/u).querySelectorAll("option"),
-    ).toHaveLength(8);
+        .querySelectorAll(".viewer-panel:not(.viewer-robot-panel)");
+    const selector = screen.getByLabelText("显示视频");
+    expect(cameraPanels()).toHaveLength(4);
+    expect(selector.querySelectorAll("option")).toHaveLength(10);
     expect(screen.getAllByRole("slider")).toHaveLength(1);
+    expect(
+      screen.getByRole("article", { name: "关节角变化" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("机器人姿态同步视图")).toBeInTheDocument();
+    expect(screen.queryByText("六项审核清单")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "保存修改" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Tag 名称 *")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "问题与意见" }));
+    const issue = screen.getByRole("checkbox", { name: /^标记问题：/u });
+    await user.click(issue);
+    await user.selectOptions(selector, "__all__");
+    expect(cameraPanels()).toHaveLength(8);
+    await user.selectOptions(selector, bundle.manifest!.cameras[5]!.camera_id);
+    expect(cameraPanels()).toHaveLength(1);
+    expect(cameraPanels()[0]).toHaveAttribute(
+      "aria-label",
+      `${bundle.manifest!.cameras[5]!.camera_id} test panel`,
+    );
+    await user.selectOptions(selector, "__quad__");
+    expect(cameraPanels()).toHaveLength(4);
+    expect(issue).toBeChecked();
+    expect(onTagsChange).not.toHaveBeenCalled();
+    await user.click(screen.getByText("当前 Tag 与版本对比"));
     expect(screen.getByText("原始 / 修订差异")).toBeInTheDocument();
   });
 
@@ -770,9 +919,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("当前 Tag 概要")).not.toBeInTheDocument();
     await user.click(workspaceTab("查看"));
-    expect(
-      screen.queryByRole("article", { name: "关节角变化" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "关节角变化" })).toBeVisible();
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
     await user.click(workspaceTab("数据修订"));
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
@@ -782,15 +929,23 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
   });
 
   it("switches view, annotation, and immutable history inside one workbench", async () => {
-    const { onOpenRevisions } = renderWorkbench({ cameraCount: 1 });
     const user = userEvent.setup();
+    const { onOpenRevisions } = renderWorkbench({ cameraCount: 1 });
 
     await user.click(workspaceTab("查看"));
+    expect(screen.getByLabelText("机器人姿态同步视图")).toBeVisible();
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "数据信息" }));
+    // Ant Design uses the same test-only ID for the tab tooltip and drawer.
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByText("数据信息", { exact: true })).toBeVisible();
     expect(screen.getByRole("heading", { name: "数据查看" })).toBeVisible();
     expect(
       screen.getByText(/媒体、数值流和时间轴继续使用同一工作台/u),
     ).toBeVisible();
     expect(screen.getAllByRole("slider")).toHaveLength(1);
+
+    await user.click(within(drawer).getByRole("button", { name: /close/i }));
 
     await user.click(workspaceTab("标注"));
     expect(screen.getByRole("heading", { name: "多级 Tag" })).toBeVisible();
@@ -841,7 +996,110 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     await user.click(screen.getByRole("button", { name: "暂停" }));
   });
 
-  it("infers the closest containing Tag as parent and otherwise creates L1", async () => {
+  it.each([
+    [600, 700],
+    [330, 420],
+    [250, 500],
+  ])(
+    "creates an independent Tag at %i–%i after selecting tag1",
+    async (startStep, endStep) => {
+      const user = userEvent.setup();
+      const bundle = createVisualAnnotationBundle({
+        mode: "annotation",
+        cameraCount: 1,
+      });
+      const original = {
+        ...bundle.draft!.tags[0]!,
+        label: "tag1",
+        path: [bundle.draft!.tags[0]!.tag_id],
+      };
+      let latestTags: readonly RuntimeAnnotationTag[] = [original];
+      function Harness(): JSX.Element {
+        const [tags, setTags] = useState(latestTags);
+        return (
+          <AnnotationWorkbenchView
+            bundle={bundle}
+            dirty
+            mode="annotation"
+            renderPanel={panel}
+            scope={visualAnnotationScope}
+            tags={tags}
+            permissions={{
+              hasAnnotationDraft: true,
+              canCreate: false,
+              canEdit: true,
+              canSave: true,
+              canSubmit: true,
+              canReview: false,
+              canRevise: true,
+            }}
+            onReview={() => Promise.resolve()}
+            onSave={() => Promise.resolve()}
+            onSubmit={() => Promise.resolve()}
+            onTagsChange={(next) => {
+              latestTags = next;
+              setTags(next);
+            }}
+          />
+        );
+      }
+      render(<Harness />);
+      await user.click(screen.getByRole("button", { name: /从“tag1”起点/ }));
+      expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("tag1");
+      const slider = screen.getByRole("slider", { name: "共享播放位置" });
+      vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({
+        bottom: 28,
+        height: 28,
+        left: 0,
+        right: 26_787,
+        top: 0,
+        width: 26_787,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      fireEvent.pointerDown(slider, {
+        button: 0,
+        clientX: startStep + 0.5,
+        pointerId: 7,
+      });
+      fireEvent.pointerMove(slider, { clientX: endStep + 0.5, pointerId: 7 });
+      fireEvent.pointerUp(slider, { clientX: endStep + 0.5, pointerId: 7 });
+      expect(latestTags).toEqual([original]);
+      expect(screen.getByLabelText("编辑已有 Tag")).toHaveValue("");
+      expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("");
+      await user.type(screen.getByLabelText("Tag 名称 *"), "tag2");
+      await user.click(screen.getByRole("button", { name: "创建 Tag" }));
+      expect(latestTags).toHaveLength(2);
+      expect(latestTags[0]).toMatchObject({
+        annotation_id: original.annotation_id,
+        label: "tag1",
+        start_step: original.start_step,
+        end_step: original.end_step,
+      });
+      expect(latestTags[1]).toMatchObject({
+        label: "tag2",
+        start_step: startStep,
+        end_step: endStep,
+      });
+      expect(latestTags[1]!.annotation_id).not.toBe(original.annotation_id);
+      expect(latestTags[1]!.tag_id).not.toBe(original.tag_id);
+      if (startStep === 250) {
+        expect(latestTags[0]!.parent_annotation_id).toBe(
+          latestTags[1]!.annotation_id,
+        );
+        expect(latestTags[1]!.parent_annotation_id).toBeNull();
+      } else if (startStep === 330) {
+        expect(latestTags[1]!.parent_annotation_id).toBe(
+          original.annotation_id,
+        );
+      } else {
+        expect(latestTags.every((tag) => !tag.parent_annotation_id)).toBe(true);
+      }
+    },
+  );
+
+  it("creates hierarchical Tags, edits their names and intervals, and deletes a parent while keeping its children", async () => {
     const user = userEvent.setup();
     const bundle = createVisualAnnotationBundle({
       mode: "annotation",
@@ -900,11 +1158,11 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     const selectSteps = (startStep: number, endStep: number) => {
       fireEvent.pointerDown(slider, {
         button: 0,
-        clientX: startStep,
+        clientX: startStep + 0.5,
         pointerId: 7,
       });
-      fireEvent.pointerMove(slider, { clientX: endStep, pointerId: 7 });
-      fireEvent.pointerUp(slider, { clientX: endStep, pointerId: 7 });
+      fireEvent.pointerMove(slider, { clientX: endStep + 0.5, pointerId: 7 });
+      fireEvent.pointerUp(slider, { clientX: endStep + 0.5, pointerId: 7 });
     };
 
     selectSteps(330, 420);
@@ -936,6 +1194,113 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(latestTags.find((tag) => tag.label === "搬运阶段")).toMatchObject({
       parent_annotation_id: null,
     });
+
+    const count = latestTags.length;
+    await user.selectOptions(
+      screen.getByLabelText("编辑已有 Tag"),
+      child!.annotation_id,
+    );
+    const labelInput = screen.getByLabelText("Tag 名称 *", {
+      selector: "#manual-tag-label",
+    });
+    expect(labelInput).toHaveValue("夹爪闭合");
+    expect(
+      screen.getByRole("button", { name: "应用 Tag 修改" }),
+    ).toBeDisabled();
+    await user.clear(labelInput);
+    expect(
+      screen.getByRole("button", { name: "应用 Tag 修改" }),
+    ).toBeDisabled();
+    await user.type(labelInput, "夹爪抓紧");
+    for (const [boundary, step] of [
+      ["标注开始", 280],
+      ["标注结束", 500],
+    ] as const) {
+      fireEvent.pointerDown(
+        screen.getByRole("button", { name: new RegExp(boundary) }),
+        {
+          button: 0,
+          clientX: step + 0.5,
+          pointerId: 7,
+        },
+      );
+      fireEvent.pointerMove(slider, { clientX: step + 0.5, pointerId: 7 });
+      fireEvent.pointerUp(slider, { clientX: step + 0.5, pointerId: 7 });
+    }
+    await user.click(screen.getByRole("button", { name: "应用 Tag 修改" }));
+    expect(latestTags).toHaveLength(count);
+    expect(
+      latestTags.find((tag) => tag.annotation_id === child!.annotation_id),
+    ).toEqual({
+      ...child,
+      label: "夹爪抓紧",
+      start_step: 280,
+      end_step: 500,
+      parent_annotation_id: null,
+      path: [child!.tag_id],
+    });
+    expect(
+      screen.getByRole("button", { name: "应用 Tag 修改" }),
+    ).toBeDisabled();
+
+    const parentSegment = screen.getByRole("button", {
+      name: /从“夹爪抓紧 \/ 抓取成功”起点/u,
+    });
+    fireEvent.contextMenu(parentSegment, { clientX: 40, clientY: 40 });
+    await user.click(screen.getByRole("menuitem", { name: /删除 Tag/u }));
+    expect(latestTags).toHaveLength(count - 1);
+    expect(
+      latestTags.some((tag) => tag.annotation_id === parent!.annotation_id),
+    ).toBe(false);
+    expect(
+      latestTags.find((tag) => tag.annotation_id === child!.annotation_id),
+    ).toMatchObject({
+      label: "夹爪抓紧",
+      parent_annotation_id: null,
+      path: [child!.tag_id],
+      start_step: 280,
+      end_step: 500,
+    });
+    expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "创建 Tag" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "撤销删除" }));
+    expect(latestTags).toHaveLength(count);
+    expect(
+      latestTags.find((tag) => tag.annotation_id === child!.annotation_id)
+        ?.parent_annotation_id,
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", {
+        name: /从“夹爪抓紧 \/ 抓取成功”起点/u,
+      }),
+    );
+    fireEvent.keyDown(screen.getByLabelText("Tag 名称 *"), { key: "Delete" });
+    expect(latestTags).toHaveLength(count);
+    fireEvent.keyDown(
+      screen.getByRole("button", {
+        name: /从“夹爪抓紧 \/ 抓取成功”起点/u,
+      }),
+      { key: "Delete" },
+    );
+    expect(latestTags).toHaveLength(count - 1);
+  });
+
+  it("cancels edits without mutating Tags and ignores Enter during Chinese composition", async () => {
+    const user = userEvent.setup();
+    const { onTagsChange } = renderWorkbench({ cameraCount: 1 });
+    await user.selectOptions(
+      screen.getByLabelText("编辑已有 Tag"),
+      "annotation-grasp-01",
+    );
+    const input = screen.getByLabelText("Tag 名称 *", {
+      selector: "#manual-tag-label",
+    });
+    await user.type(input, "修正");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onTagsChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "取消编辑 Tag" }));
+    expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("");
+    expect(onTagsChange).not.toHaveBeenCalled();
   });
 
   it("becomes read-only when edit capabilities are revoked", () => {
@@ -971,6 +1336,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(workspaceTab("标注")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "保存修改" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "提交审核" })).toBeDisabled();
+    expect(screen.getByLabelText("编辑已有 Tag")).toBeDisabled();
     expect(
       screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" }),
     ).toBeDisabled();
@@ -983,6 +1349,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(submit).toBeEnabled();
     expect(screen.getByText(/尚未标记问题/u)).toBeVisible();
 
+    await user.click(screen.getByRole("button", { name: "问题与意见" }));
     await user.click(screen.getByRole("checkbox", { name: /^标记问题：/u }));
     expect(submit).toBeEnabled();
     expect(screen.getByText(/已标记 1 处问题/u)).toBeVisible();

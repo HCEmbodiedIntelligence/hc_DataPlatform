@@ -9,17 +9,10 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import { AnnotationPageState } from "../../features/annotation";
 import { createAnnotationManualIssueCommand } from "../../features/cleaning/api";
 import {
-  authorizeRobotModelViewerAssets,
-  useRobotModelAssets,
-  useRobotModelJointMappings,
-  useRobotModelVersion,
-} from "../../features/robot-models/api";
-import { useRobotBootstrap } from "../../features/robots/api";
-import {
-  createLazyThreeRobotSceneLoader,
   createPlaybackClock,
   DataVisualizationWorkbench,
 } from "../../features/viewer";
+import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import { AnnotationWorkbenchView } from "./AnnotationWorkbenchView";
 import type {
   AnnotationWorkbenchPermissions,
@@ -48,10 +41,7 @@ import {
 } from "./tag-draft-recovery";
 import type { TagDraftRecoveryIdentity } from "./tag-draft-recovery";
 import { annotationRoutes } from "./routes";
-import {
-  buildRuntimeJointAngleStream,
-  buildRuntimeJointFrameSource,
-} from "./joint-angle-stream";
+import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
 import styles from "./workbench.module.css";
 
 function taskQueryKey(
@@ -113,14 +103,12 @@ function WorkbenchState(props: {
             timelineTracks: [],
             actions: [],
             banner: {
-              label:
-                props.kind === "first-loading" ? "正在加载" : "加载状态",
+              label: props.kind === "first-loading" ? "正在加载" : "加载状态",
               title:
                 props.kind === "first-loading"
                   ? "正在读取标注事实"
                   : "标注数据暂时不可用",
-              description:
-                props.detail ?? "请稍后重试或返回任务队列。",
+              description: props.detail ?? "请稍后重试或返回任务队列。",
               tone: props.kind === "first-loading" ? "info" : "warning",
             },
           }}
@@ -209,13 +197,10 @@ function permissionSnapshot(input: {
     input.has("annotation_task.claim") &&
     input.has("annotation.edit") &&
     input.has("annotation_draft.edit");
-  const selfReview =
-    !!input.principalId && task.submitted_by === input.principalId;
   const reviewSubmission = resolveReviewSubmission(input.bundle);
   const canReview =
     task.status === "SUBMITTED" &&
     reviewSubmission !== null &&
-    !selfReview &&
     input.has("annotation.review");
   const canRevise =
     canSave &&
@@ -238,13 +223,11 @@ function permissionSnapshot(input: {
         : undefined;
   const reviewUnavailableReason = !input.has("annotation.review")
     ? "当前账号没有 Tag 审核权限。"
-    : selfReview
-      ? "提交人与审核人必须分离；当前账号不能自审。"
-      : reviewSubmission === null
-        ? task.status === "DRAFT" || task.status === "NEEDS_REVISION"
-          ? "任务仍为草稿，标注尚未提交。"
-          : "当前没有有效的待审核提交。"
-        : undefined;
+    : reviewSubmission === null
+      ? task.status === "DRAFT" || task.status === "NEEDS_REVISION"
+        ? "任务仍为草稿，标注尚未提交。"
+        : "当前没有有效的待审核提交。"
+      : undefined;
   const revisionUnavailableReason = !hasAnnotationDraft
     ? "请先创建标注草稿。"
     : !canSave
@@ -253,9 +236,7 @@ function permissionSnapshot(input: {
         ? "当前没有可用于数据修订的历史版本。"
         : undefined;
   let readOnlyReason: string | undefined;
-  if (input.mode === "tag-review" && selfReview)
-    readOnlyReason = "提交人与审核人必须分离；当前账号不能自审。";
-  else if (input.mode === "tag-review" && task.status !== "SUBMITTED")
+  if (input.mode === "tag-review" && task.status !== "SUBMITTED")
     readOnlyReason = `任务状态为 ${task.status}，没有待审核提交。`;
   else if (input.mode === "tag-review" && !input.has("annotation.review"))
     readOnlyReason = "当前授权仅允许查看，不允许创建审核决定。";
@@ -326,131 +307,16 @@ function RuntimeAnnotationTaskPage({
   >(null);
   const initializedBaseline = useRef<string | null>(null);
   const bundle = query.data;
-  const manifestRobotId = bundle?.manifest?.robot_id ?? null;
-  const robotBootstrap = useRobotBootstrap(manifestRobotId);
-  const boundVersionId =
-    robotBootstrap.data?.effectiveModelBinding?.robotModelVersionId ?? null;
-  const robotModelVersion = useRobotModelVersion(boundVersionId);
-  const robotModelAssets = useRobotModelAssets(boundVersionId);
-  const robotJointMappings = useRobotModelJointMappings(boundVersionId);
   const jointAngleStream = useMemo(
     () =>
       bundle && scope ? buildRuntimeJointAngleStream({ bundle, scope }) : null,
     [bundle, scope],
   );
-  const jointFrameSource = useMemo(() => {
-    const base = buildRuntimeJointFrameSource(jointAngleStream);
-    if (!base) return;
-    const directions = new Map(
-      (robotJointMappings.data ?? []).map((mapping) => [
-        mapping.source_joint_name,
-        mapping.direction,
-      ]),
-    );
-    return {
-      async sampleAt(ns: string, signal: AbortSignal) {
-        const frame = await base.sampleAt(ns, signal);
-        return Object.fromEntries(
-          Object.entries(frame).map(([joint, value]) => [
-            joint,
-            directions.get(joint) === "INVERTED" ? -value : value,
-          ]),
-        );
-      },
-    };
-  }, [jointAngleStream, robotJointMappings.data]);
-  const urdfAsset = robotModelAssets.data?.find(
-    (asset) => asset.role === "URDF",
-  );
-  const robotScene = useMemo(() => {
-    if (
-      !scope ||
-      !robotModelVersion.data ||
-      robotModelVersion.data.lifecycle !== "PUBLISHED" ||
-      !urdfAsset ||
-      !jointFrameSource
-    )
-      return;
-    const modelId = robotModelVersion.data.robotModelId;
-    const modelVersion = robotModelVersion.data.id;
-    const jointMapping = Object.fromEntries(
-      (robotJointMappings.data ?? []).map((mapping) => [
-        mapping.source_joint_name,
-        mapping.target_joint_name,
-      ]),
-    );
-    const requiredJoints = (robotJointMappings.data ?? []).map(
-      (mapping) => mapping.source_joint_name,
-    );
-    const isCompatibilityPreview =
-      manifestRobotId === "droid-franka" &&
-      robotModelVersion.data.versionLabel === "DROID-open-assets-v1";
-    return {
-      title: isCompatibilityPreview
-        ? "兼容性机器人模型（非源数据 URDF）"
-        : "机器人 URDF",
-      modelRef: { modelId, modelVersion },
-      jointMapping,
-      jointFrameSource,
-      runtimeLoader: createLazyThreeRobotSceneLoader(async (_props, signal) => {
-        const viewerAssets = await authorizeRobotModelViewerAssets(
-          scope.organizationId,
-          modelVersion,
-          robotModelAssets.data ?? [],
-          signal,
-        );
-        return {
-          manifest: { modelId, modelVersion, requiredJoints },
-          ...viewerAssets,
-        };
-      }),
-    };
-  }, [
-    jointFrameSource,
-    robotJointMappings.data,
-    robotModelAssets.data,
-    robotModelVersion.data,
-    manifestRobotId,
-    scope,
-    urdfAsset,
-  ]);
-  const robotSceneUnavailableReason = useMemo(() => {
-    if (!jointAngleStream)
-      return "当前数据未发现关节角 Topic；写入关节角数据后才能同步机器人姿态。";
-    if (!manifestRobotId)
-      return "采集数据清单未返回 robot_id，无法解析本次数据对应的机器人。请重新生成采集清单。";
-    if (robotBootstrap.isPending)
-      return `正在解析机器人 ${manifestRobotId} 的模型绑定…`;
-    if (robotBootstrap.isError)
-      return `无法读取机器人 ${manifestRobotId} 的配置或当前账号无权访问。`;
-    if (!boundVersionId)
-      return `机器人 ${manifestRobotId} 尚未绑定已发布 URDF 模型。请在“机器人管理 → 模型配置”中完成绑定。`;
-    if (robotModelVersion.isPending || robotModelAssets.isPending)
-      return "正在加载已发布模型版本与 URDF 资产…";
-    if (robotModelVersion.isError || robotModelAssets.isError)
-      return "模型绑定已存在，但固定版本或 URDF 资产加载失败。";
-    if (robotModelVersion.data?.lifecycle !== "PUBLISHED")
-      return "当前机器人绑定的模型版本尚未发布，已阻止加载非固定 3D 事实。";
-    if (!urdfAsset)
-      return "当前已发布模型没有可用的 URDF 资产。请在机器人管理中创建更新草稿并导入 URDF。";
-    if (robotJointMappings.isPending) return "正在加载关节映射…";
-    if (robotJointMappings.isError) return "URDF 已找到，但关节映射加载失败。";
-    return undefined;
-  }, [
-    boundVersionId,
+  const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
+    bundle?.manifest?.robot_id ?? null,
     jointAngleStream,
-    manifestRobotId,
-    robotBootstrap.isError,
-    robotBootstrap.isPending,
-    robotJointMappings.isError,
-    robotJointMappings.isPending,
-    robotModelAssets.isError,
-    robotModelAssets.isPending,
-    robotModelVersion.data?.lifecycle,
-    robotModelVersion.isError,
-    robotModelVersion.isPending,
-    urdfAsset,
-  ]);
+    scope,
+  );
   const baseline = bundle
     ? `${bundle.task.etag}:${mode === "annotation" ? (bundle.draft?.revision ?? -1) : (resolveReviewRevision(bundle)?.revision ?? -1)}`
     : null;
@@ -502,8 +368,7 @@ function RuntimeAnnotationTaskPage({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  if (capabilities.loading)
-    return <WorkbenchState kind="first-loading" />;
+  if (capabilities.loading) return <WorkbenchState kind="first-loading" />;
   if (capabilities.failed || !canRead) {
     return (
       <WorkbenchState

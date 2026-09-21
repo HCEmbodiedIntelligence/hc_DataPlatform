@@ -117,6 +117,10 @@ from hc_data_platform.data_sources.models import DataSourceMutationRecord
 from hc_data_platform.data_sources.repository import PostgresDataSourceRepository
 from hc_data_platform.data_sources.router import configure_data_sources
 from hc_data_platform.data_sources.service import DataSourceService
+from hc_data_platform.dataset_registry.capacity import (
+    PostgresCapacityReferences,
+    StoredDatasetCapacityReader,
+)
 from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
 from hc_data_platform.dataset_registry.models import (
     DatasetPageApproveReviewMutationRecord,
@@ -173,6 +177,7 @@ from hc_data_platform.publishing.adapters import (
     StepReaderAdapter,
 )
 from hc_data_platform.publishing.audit import PostgresExportAuditRecorder
+from hc_data_platform.publishing.export_assets import PostgresExportAssets
 from hc_data_platform.publishing.exporters import LanceSnapshotExporter, LeRobotV3Exporter
 from hc_data_platform.publishing.postgres import (
     PostgresCatalogRolloutState,
@@ -781,6 +786,12 @@ def build_runtime(
     )
     dataset_page = DatasetPageService(
         PostgresDatasetPageRepository(connection_factory),
+        capacity_reader=StoredDatasetCapacityReader(
+            PostgresCapacityReferences(connection_factory),
+            S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
+            bucket=resolved.object_store_bucket,
+            storage_options=_lance_storage_options(resolved),
+        ),
         cursor_secret=resolved.cursor_secret,
         idempotency=PsycopgIdempotencyStore(
             connection_factory,
@@ -913,7 +924,10 @@ def build_runtime(
     exporter = ExportCoordinator(
         source=StepReaderAdapter(catalog),
         sink=artifact_sink,
-        exporters=(LanceSnapshotExporter(), LeRobotV3Exporter()),
+        exporters=(
+            LanceSnapshotExporter(),
+            LeRobotV3Exporter(PostgresExportAssets(connection_factory, object_storage)),
+        ),
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
     dataset_ingest_projection = PostgresDatasetIngestProjector(

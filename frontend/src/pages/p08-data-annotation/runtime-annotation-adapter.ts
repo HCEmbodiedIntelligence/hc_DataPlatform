@@ -1162,6 +1162,7 @@ export function buildRuntimeWorkbenchAdapter(input: {
   readonly onSelectTask?: (taskId: string) => void;
   readonly timelineSelection?: ViewerTimelineSelection;
   readonly onTimeRangeSelect?: (startNs: string, endNs: string) => void;
+  readonly onTimeRangeCreate?: (startNs: string, endNs: string) => void;
   readonly onResourceError?: DataVisualizationWorkbenchAdapter["onResourceError"];
 }): DataVisualizationWorkbenchAdapter {
   const { bundle, mode } = input;
@@ -1196,6 +1197,9 @@ export function buildRuntimeWorkbenchAdapter(input: {
     ...(input.onTimeRangeSelect
       ? { onTimeRangeSelect: input.onTimeRangeSelect }
       : {}),
+    ...(input.onTimeRangeCreate
+      ? { onTimeRangeCreate: input.onTimeRangeCreate }
+      : {}),
     ...(input.onResourceError
       ? { onResourceError: input.onResourceError }
       : {}),
@@ -1210,21 +1214,16 @@ export function buildRuntimeCameraStreams(input: {
   readonly cameraLimit?: number;
   readonly cameraSlotCount?: number;
 }): readonly StreamDescriptor[] {
-  const { bundle, mode } = input;
+  const { bundle } = input;
   const frequencyHz = normalizeStepRateHz(bundle.datasetVersion.frequency_hz);
   const allCameras = bundle.manifest?.cameras ?? [];
-  const cameras =
-    mode === "tag-review" || input.selectedCameraId
-      ? allCameras
-          .filter(
-            (camera, index) =>
-              camera.camera_id === input.selectedCameraId ||
-              (!input.selectedCameraId && index === 0),
-          )
-          .slice(0, 1)
-      : input.cameraLimit
-        ? allCameras.slice(0, input.cameraLimit)
-        : allCameras;
+  const cameras = input.selectedCameraId
+    ? allCameras
+        .filter((camera) => camera.camera_id === input.selectedCameraId)
+        .slice(0, 1)
+    : input.cameraLimit
+      ? allCameras.slice(0, input.cameraLimit)
+      : allCameras;
   const cameraStreams = cameras.map((camera) =>
     streamForCamera(input.scope, bundle.task, camera, frequencyHz),
   );

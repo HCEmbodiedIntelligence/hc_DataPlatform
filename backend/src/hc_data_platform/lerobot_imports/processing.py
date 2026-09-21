@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.ingest.processing_status import processing_interruption
 from hc_data_platform.workflow.models import workflow_id
 
 from .configuration import connections
@@ -114,6 +116,7 @@ def start_stored_processing(
 class NativeImportProgress(BaseModel):
     import_id: str
     dataset_id: str
+    collection_task_id: str | None = None
     status: str
     episode_count: int
     ready: int
@@ -123,6 +126,72 @@ class NativeImportProgress(BaseModel):
     source_format: str = "LEROBOT_V3"
     file_count: int = 0
     total_bytes: int = 0
+    discarded: int = 0
+    resume_required: int = 0
+    reprocessing_conflicts: int = 0
+
+
+def _interruption_counts(
+    cursor: Any, scope: tuple[str, str, str], import_ids: list[str]
+) -> dict[str, dict[str, int]]:
+    if not import_ids:
+        return {}
+    cursor.execute(
+        """SELECT e.raw_source_id, e.status, batch.status, qc.status,
+                  workflow.status, workflow.error_code, alignment.status,
+                  resolution.status, rollout.duplicate_of_rollout_id,
+                  EXISTS (SELECT 1 FROM lance_rollout_lineage lineage
+                          WHERE lineage.organization_id=e.organization_id
+                            AND lineage.project_id=e.project_id
+                            AND lineage.rollout_id=e.episode_id)
+           FROM ingest.raw_source_episodes e
+           JOIN ingest.raw_ingest_jobs batch USING
+               (organization_id, project_id, region_code, raw_source_id)
+           LEFT JOIN quality_rollout_summaries qc
+             ON qc.organization_id=e.organization_id AND qc.project_id=e.project_id
+            AND qc.region_code=e.region_code AND qc.rollout_id=e.episode_id
+           LEFT JOIN ingest.rollouts rollout
+             ON rollout.organization_id=e.organization_id AND rollout.project_id=e.project_id
+            AND rollout.region_code=e.region_code AND rollout.rollout_id=e.episode_id
+           LEFT JOIN LATERAL (
+               SELECT status, error_code FROM workflow.jobs w
+               WHERE w.organization_id=e.organization_id AND w.project_id=e.project_id
+                 AND w.resource_id=e.episode_id AND w.job_type='IngestRolloutWorkflow'
+               ORDER BY updated_at DESC, job_id DESC LIMIT 1
+           ) workflow ON true
+           LEFT JOIN LATERAL (
+               SELECT status FROM aligned_fragment_attempts a
+               WHERE a.organization_id=e.organization_id AND a.project_id=e.project_id
+                 AND a.region_code=e.region_code AND a.rollout_id=e.episode_id
+               ORDER BY updated_at DESC, attempt_id DESC LIMIT 1
+           ) alignment ON true
+           LEFT JOIN LATERAL (
+               SELECT status FROM ingest.episode_resolutions r
+               WHERE r.organization_id=e.organization_id AND r.project_id=e.project_id
+                 AND r.region_code=e.region_code AND r.episode_id=e.episode_id
+               ORDER BY created_at DESC LIMIT 1
+           ) resolution ON true
+           WHERE e.organization_id=%s AND e.project_id=%s AND e.region_code=%s
+             AND e.raw_source_id=ANY(%s) AND e.status='FAILED'""",
+        (*scope, import_ids),
+    )
+    counts: dict[str, dict[str, int]] = {}
+    for row in cursor.fetchall():
+        interruption = processing_interruption(
+            source_episode_status=row[1],
+            source_processing_status=row[2],
+            qc_status=row[3],
+            workflow_status=row[4],
+            workflow_error_code=row[5],
+            alignment_status=row[6],
+            resolution_status=row[7],
+            duplicate_of_rollout_id=row[8],
+            lance_ready=row[9],
+        )
+        if interruption is not None:
+            current = counts.setdefault(row[0], {})
+            current[interruption] = current.get(interruption, 0) + 1
+    return counts
 
 
 def list_progress(
@@ -133,6 +202,7 @@ def list_progress(
     limit: int = 50,
     offset: int = 0,
     dataset_id: str | None = None,
+    include_all_sources: bool = False,
 ) -> list[NativeImportProgress]:
     with connections()() as connection, connection.cursor() as cursor:
         cursor.execute(
@@ -140,22 +210,26 @@ def list_progress(
             CASE WHEN j.job_type='RAW_STORAGE' THEN 'RAW_COMMITTED' ELSE j.status END,
             count(e.episode_id), count(*) FILTER (WHERE e.status='READY'),
             count(*) FILTER (WHERE e.status='FAILED'), j.last_error_code, j.updated_at,
-            s.source_format, s.file_count, s.total_bytes
+            s.source_format, s.file_count, s.total_bytes,
+            count(*) FILTER (WHERE e.status='DISCARDED'), s.collection_task_id
             FROM ingest.raw_sources s JOIN ingest.raw_ingest_jobs j USING
               (organization_id, project_id, region_code, raw_source_id)
             LEFT JOIN ingest.raw_source_episodes e USING
               (organization_id, project_id, region_code, raw_source_id)
             WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
-              AND (j.job_type='RAW_STORAGE' OR s.source_format='LEROBOT_V3')
+              AND (%s OR j.job_type='RAW_STORAGE' OR s.source_format='LEROBOT_V3')
+              AND s.raw_status='COMMITTED'
               AND (%s::text IS NULL OR s.raw_source_id=%s)
               AND (%s::text IS NULL OR s.dataset_id=%s)
             GROUP BY s.raw_source_id, s.dataset_id, j.job_type, j.status,
-            j.last_error_code, j.updated_at, s.source_format, s.file_count, s.total_bytes
+            j.last_error_code, j.updated_at, s.source_format, s.file_count, s.total_bytes,
+            s.collection_task_id
             ORDER BY j.updated_at DESC, s.raw_source_id LIMIT %s OFFSET %s""",
             (
                 organization_id,
                 project_id,
                 region_code,
+                include_all_sources,
                 import_id,
                 import_id,
                 dataset_id,
@@ -163,6 +237,12 @@ def list_progress(
                 limit,
                 offset,
             ),
+        )
+        rows = cursor.fetchall()
+        interruptions = _interruption_counts(
+            cursor,
+            (organization_id, project_id, region_code),
+            [row[0] for row in rows if row[5] > 0],
         )
         return [
             NativeImportProgress(
@@ -177,8 +257,12 @@ def list_progress(
                 source_format=r[8],
                 file_count=r[9],
                 total_bytes=r[10],
+                discarded=r[11],
+                collection_task_id=r[12],
+                resume_required=interruptions.get(r[0], {}).get("RESUME_REQUIRED", 0),
+                reprocessing_conflicts=interruptions.get(r[0], {}).get("PROCESSING_CONFLICT", 0),
             )
-            for r in cursor.fetchall()
+            for r in rows
         ]
 
 

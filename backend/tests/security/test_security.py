@@ -16,6 +16,8 @@ from hc_data_platform.security.capabilities import (
     CAPABILITY_PLATFORM_ADMIN,
     CAPABILITY_PLATFORM_BREAK_GLASS,
     CAPABILITY_PLATFORM_MAINTENANCE_OPERATE,
+    DATA_WORKFLOW_CAPABILITIES,
+    KNOWN_BUSINESS_CAPABILITIES,
 )
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
 from hc_data_platform.security.postgres import RlsSessionContext
@@ -209,6 +211,36 @@ def test_upload_read_does_not_activate_upload_write_authority() -> None:
     )
     reader.require_capability("upload.read", "p1")
     _assert_problem("CAPABILITY_REQUIRED", lambda: reader.require_capability("upload.manage", "p1"))
+
+
+def test_upload_operator_can_complete_workflow_only_in_granted_scope() -> None:
+    context = _verifier().verify(_token())
+    assert DATA_WORKFLOW_CAPABILITIES <= KNOWN_BUSINESS_CAPABILITIES
+    for capability in DATA_WORKFLOW_CAPABILITIES:
+        context.require_capability(capability, "p1", "org-1")
+        assert not context.has_capability(capability, "p2", "org-1")
+        assert not context.has_capability(capability, "p1", "org-other")
+    assert context.has_organization_capability("org-1", "robot.read")
+    assert not context.has_organization_capability("org-other", "robot.read")
+    for capability in ("access.manage", "platform.admin", "storage.lifecycle.execute"):
+        assert not context.has_capability(capability, "p1", "org-1")
+    _assert_problem("REGION_SCOPE_DENIED", lambda: ScopeGuard.require(context, "p1", "eu"))
+
+
+def test_service_upload_identity_keeps_explicit_capabilities() -> None:
+    context = AuthContext(
+        subject_id="upload-service",
+        project_ids=frozenset({"p1"}),
+        region_codes=frozenset({"cn"}),
+        service_identity=True,
+        scope_pairs=frozenset({("p1", "cn")}),
+        scoped_capabilities=frozenset({("p1", "upload.manage")}),
+        organization_ids=frozenset({"org-1"}),
+        organization_scoped_capabilities=frozenset({("org-1", "p1", "upload.manage")}),
+    )
+    context.require_capability("upload.manage", "p1")
+    assert context.effective_capabilities("p1") == frozenset({"upload.manage"})
+    assert not context.has_organization_capability("org-1", "robot.read")
 
 
 def test_platform_admin_has_every_business_operation_across_real_projects() -> None:

@@ -18,6 +18,12 @@
 - `platform.admin` 不能作为项目 capability 申请。平台会话 bootstrap 直接从
   `registry.organization_projects` 生成平台管理员的 `available_scopes`，因此不存在的项目仍
   返回 404，超级管理员不是任意租户 ID 绕过。
+- 人类账号在已授权项目内具有 `upload.manage` 时，同时获得上传、数据读取、标注、清洗、
+  标注及数据版本审核、发布、导出与导出下载能力，可由同一账号完成全流程。
+  API 和会话 bootstrap 使用同一份 `DATA_WORKFLOW_CAPABILITIES`，页面据此显示操作入口。
+  项目和区域范围保持原授权；只读账号和 Worker 服务身份不会自动扩权，账号管理及存储
+  生命周期操作也不在此权限集合内。撤销上传权限后，随之获得的权限在下一次请求失效；
+  单独授予的权限仍保留。发布仍须满足数据就绪和审核通过等业务条件。
 - 在调用 `await uow.commit()` 前完成业务写入，并调用 `uow.audit.append(...)` 和
   `uow.outbox.stage(...)`。工作单元会在同一个事务中插入这三项内容。未提交便退出上下文时，
   所有操作都会回滚。

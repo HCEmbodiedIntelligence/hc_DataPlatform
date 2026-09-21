@@ -1,0 +1,714 @@
+.workbenchFrame {
+  min-width: 0;
+}
+.workbenchFrame[data-workspace-layout="synchronized"] {
+  --desk-ink: #243247;
+  --desk-muted: #64748b;
+  --desk-line: #dde4ed;
+  --desk-surface: #ffffff;
+  --desk-inset: #f5f7fb;
+  --desk-accent: #5359c9;
+}
+
+.workbenchFrame
+  :global(
+    :is(
+      [data-mode="annotation"],
+      [data-mode="tag-review"],
+      [data-mode="published-readonly"]
+    )
+  ) {
+  grid-template-columns: minmax(0, 76fr) minmax(250px, 24fr);
+}
+
+.workbenchFrame :global([data-mode="tag-review"] > header > span) {
+  display: none;
+}
+
+.cameraToolbar {
+  display: flex;
+  min-height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--hc-color-border-subtle);
+  background: var(--hc-color-surface);
+  color: var(--hc-color-text-muted);
+  font-size: 10px;
+}
+
+.cameraToolbarSummary,
+.cameraToolbarTools,
+.cameraToolbar label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.cameraToolbarSummary small,
+.cameraToolbar label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cameraToolbar select {
+  max-width: 138px;
+  min-height: 30px;
+  padding: 3px 24px 3px 7px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 6px;
+  color: var(--hc-color-text);
+  background: var(--hc-color-surface);
+  font: inherit;
+}
+
+.robotPoseInspector {
+  height: 100%;
+  min-height: 0;
+  padding: 7px;
+  overflow: hidden auto;
+  overscroll-behavior: contain auto;
+  scrollbar-color: var(--hc-color-border-strong) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  background: var(--hc-color-surface-muted);
+}
+
+.robotPoseInspector :global(.viewer-robot-panel) {
+  min-height: 100%;
+  border-color: color-mix(
+    in srgb,
+    var(--hc-color-primary) 30%,
+    var(--hc-color-border)
+  );
+}
+
+.robotPoseInspector :global(.robot-scene-core),
+.robotPoseInspector :global(.viewer-robot-placeholder) {
+  min-height: 300px;
+  flex: 1 1 auto;
+}
+
+.jointAngleDock {
+  width: 100%;
+  min-width: 0;
+  min-height: 320px;
+  height: 100%;
+  padding: 0;
+  background: var(--hc-color-surface);
+}
+
+.jointAngleDock :global(.viewer-joint-curves) {
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+@media (min-width: 768px) {
+  .workbenchFrame :global([data-navigation-visible="false"]) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    grid-template-rows:
+      minmax(32px, auto) auto auto minmax(260px, auto)
+      auto;
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+        [data-mode="annotation"],
+        [data-mode="tag-review"],
+        [data-mode="published-readonly"]
+      )
+    ) {
+    grid-template-columns: minmax(0, 70fr) minmax(294px, 30fr);
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="模式工具与发现"]
+    ),
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="共享视频时间轴区域"]
+    ),
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="诊断动作边界"]
+    ) {
+    overflow: visible;
+  }
+
+  .workbenchFrame
+    :global([data-navigation-visible="false"] > header:first-child) {
+    min-height: 32px;
+  }
+
+  .workbenchFrame
+    :global(
+      [data-navigation-visible="false"]
+        > header:first-child
+        > div
+        > span:first-child
+    ) {
+    display: none;
+  }
+
+  .cameraToolbar {
+    min-height: 36px;
+    flex-basis: 36px;
+    padding-block: 3px;
+  }
+
+  .workbenchFrame :global(.viewer-media-grid) {
+    height: auto;
+    grid-auto-rows: max-content;
+    align-content: start;
+    overflow: hidden auto;
+    overscroll-behavior: contain auto;
+    scrollbar-gutter: stable;
+  }
+
+  .workbenchFrame :global(.viewer-media-grid[data-camera-layout="quad"]) {
+    width: min(100%, var(--viewer-medium-width));
+    margin-inline: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+    grid-auto-rows: auto;
+    align-items: start;
+    scrollbar-gutter: auto;
+  }
+
+  .workbenchFrame
+    :global(.viewer-media-grid[data-camera-layout="quad"] .viewer-panel) {
+    height: auto;
+  }
+
+  .workbenchFrame
+    :global(
+      .viewer-media-grid[data-camera-layout="quad"] .viewer-panel > video
+    ),
+  .workbenchFrame
+    :global(
+      .viewer-media-grid[data-camera-layout="quad"] .viewer-panel > canvas
+    ),
+  .workbenchFrame
+    :global(.viewer-media-grid[data-camera-layout="quad"] .viewer-panel > svg),
+  .workbenchFrame
+    :global(
+      .viewer-media-grid[data-camera-layout="quad"]
+        .viewer-camera-slot-placeholder
+    ) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    flex: 0 0 auto;
+    aspect-ratio: auto 16 / 9;
+    object-fit: contain;
+  }
+
+  .workbenchFrame :global(.viewer-panel-slot),
+  .workbenchFrame :global(.viewer-panel) {
+    height: auto;
+  }
+
+  .workbenchFrame :global(.viewer-panel > video),
+  .workbenchFrame :global(.viewer-panel > canvas),
+  .workbenchFrame :global(.viewer-panel > svg),
+  .workbenchFrame :global(.viewer-panel__error),
+  .workbenchFrame :global(.viewer-panel__unavailable),
+  .workbenchFrame :global(.viewer-camera-slot-placeholder),
+  .workbenchFrame :global(.viewer-robot-panel .robot-scene-core),
+  .workbenchFrame :global(.viewer-robot-placeholder) {
+    width: 100%;
+    min-height: 120px;
+    max-height: min(26vh, 240px);
+    flex: 0 0 auto;
+    aspect-ratio: auto 16 / 9;
+  }
+
+  .workbenchFrame :global(.viewer-panel > video) {
+    height: auto;
+    background: #111827;
+    object-fit: contain;
+  }
+
+  .workbenchFrame :global(.viewer-media-grid[data-camera-layout="single"]) {
+    grid-template-columns: minmax(0, 320px);
+  }
+
+  .workbenchFrame :global(.viewer-media-grid[data-camera-layout="pair"]) {
+    grid-template-columns: repeat(2, minmax(0, 240px));
+  }
+
+  .workbenchFrame :global(.viewer-panel__error),
+  .workbenchFrame :global(.viewer-panel__unavailable),
+  .workbenchFrame :global(.viewer-camera-slot-placeholder) {
+    height: min(22vh, 220px);
+  }
+
+  .workbenchFrame :global(.viewer-panel > svg),
+  .workbenchFrame :global(.viewer-robot-panel .robot-scene-core),
+  .workbenchFrame :global(.viewer-robot-placeholder) {
+    aspect-ratio: 16 / 9;
+  }
+
+  .workbenchFrame :global(.viewer-robot-panel) {
+    border-color: color-mix(
+      in srgb,
+      var(--hc-color-primary) 24%,
+      var(--hc-color-border)
+    );
+  }
+
+  .robotPoseInspector :global(.viewer-robot-panel .robot-scene-core),
+  .robotPoseInspector :global(.viewer-robot-placeholder) {
+    min-height: calc(100% - 30px);
+    max-height: none;
+    flex: 1 1 auto;
+  }
+
+  .robotPoseInspector {
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline
+    ) {
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline__viewport
+    ) {
+    height: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-gutter: auto;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline__surface
+    ) {
+    min-height: max-content;
+    padding-bottom: 8px;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline__track
+    ) {
+    min-height: 25px;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline__track
+        > div
+    ) {
+    min-height: 24px;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline__track
+        > strong
+    ) {
+    font-size: 9px;
+  }
+
+  .workbenchFrame
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        .viewer-timeline__segment
+    ) {
+    top: 3px;
+    height: 18px;
+    padding: 1px 5px;
+    font-size: 9px;
+    line-height: 14px;
+  }
+
+  .workbenchFrame :global(.viewer-timeline__viewport) {
+    scrollbar-color: var(--hc-color-border) transparent;
+  }
+}
+
+@media (max-width: 1320px) {
+  .workbenchFrame
+    :global(
+      :is(
+        [data-mode="annotation"],
+        [data-mode="tag-review"],
+        [data-mode="published-readonly"]
+      )
+    ) {
+    grid-template-columns: minmax(0, 70fr) minmax(276px, 30fr);
+  }
+
+  .cameraToolbarSummary small {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .workbenchFrame
+    :global(
+      :is(
+        [data-mode="annotation"],
+        [data-mode="tag-review"],
+        [data-mode="published-readonly"]
+      )
+    ) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "header"
+      "banner"
+      "toolbar"
+      "media"
+      "timeline"
+      "inspector"
+      "actions";
+    overflow: visible;
+  }
+
+  .cameraToolbarSummary > span,
+  .cameraToolbar label > span {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+        [data-mode="annotation"],
+        [data-mode="tag-review"],
+        [data-mode="published-readonly"]
+      )[data-navigation-visible="false"]
+    ) {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+    grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
+    grid-template-rows:
+      auto auto auto minmax(210px, auto) minmax(210px, auto)
+      auto;
+    grid-template-areas:
+      "header header"
+      "banner banner"
+      "toolbar toolbar"
+      "media inspector"
+      "media actions"
+      "timeline timeline";
+    gap: 12px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > header:first-child
+        h1
+    ) {
+    color: var(--desk-ink);
+    font-size: 22px;
+    letter-spacing: -0.025em;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="相机与同步信号"]
+    ),
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="模式工具与发现"]
+    ),
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="诊断动作边界"]
+    ),
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="共享视频时间轴区域"]
+    ) {
+    border-color: var(--desk-line);
+    border-radius: 10px;
+    background: var(--desk-surface);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(section[aria-label="相机与同步信号"] > header) {
+    display: none;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"] .cameraToolbar {
+    min-height: 46px;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    border-color: var(--desk-line);
+    color: var(--desk-muted);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .cameraToolbarSummary
+    > span {
+    color: var(--desk-ink);
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .cameraToolbarSummary
+    small,
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .cameraToolbar
+    label
+    > span {
+    display: none;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"] .cameraToolbarTools {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-media-surface) {
+    flex: 0 0 auto;
+    padding: 8px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-media-grid[data-camera-layout="quad"]) {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-media-grid .viewer-panel) {
+    border-color: var(--desk-line);
+    border-radius: 6px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-media-grid .viewer-panel > header) {
+    min-height: 28px;
+    padding: 4px 8px;
+    background: var(--desk-ink);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-media-grid .viewer-panel > header h3) {
+    font-size: 11px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"] .robotPoseInspector {
+    min-height: 0;
+    padding: 0;
+    background: var(--desk-inset);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .robotPoseInspector
+    :global(.viewer-robot-panel) {
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 10px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .robotPoseInspector
+    :global(.viewer-robot-panel > header) {
+    min-height: 38px;
+    color: var(--desk-ink);
+    background: var(--desk-surface);
+    border-color: var(--desk-line);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .robotPoseInspector
+    :global(.viewer-robot-panel > header span) {
+    color: var(--desk-muted);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .robotPoseInspector
+    :global(.viewer-robot-placeholder),
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .robotPoseInspector
+    :global(.robot-scene-core) {
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+    aspect-ratio: auto;
+    background: var(--desk-inset);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"] .jointAngleDock,
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .jointAngleDock
+    :global(.viewer-joint-curves) {
+    height: 100%;
+    min-height: 0;
+    border-radius: 10px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .jointAngleDock
+    :global(.viewer-joint-curves > header) {
+    min-height: 38px;
+    border-color: var(--desk-line);
+    background: var(--desk-surface);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .jointAngleDock
+    :global(.viewer-joint-curves__chart) {
+    min-height: 112px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .jointAngleDock
+    :global(.viewer-joint-curves__legend) {
+    max-height: 68px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    .jointAngleDock
+    :global(.viewer-joint-curves__empty) {
+    min-height: 170px;
+    padding: 14px;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-playback-controls) {
+    min-height: 36px;
+    padding: 3px 10px;
+    border-color: var(--desk-line);
+    background: var(--desk-inset);
+  }
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      :is(
+          [data-mode="annotation"],
+          [data-mode="tag-review"],
+          [data-mode="published-readonly"]
+        )
+        > section[aria-label="共享视频时间轴区域"]
+    ) {
+    position: sticky;
+    top: auto;
+    bottom: 0;
+    z-index: 20;
+    align-self: end;
+    box-shadow: 0 -4px 18px rgb(36 50 71 / 12%);
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-timeline__viewport) {
+    max-height: min(104px, 18dvh);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(.viewer-timeline__tools button) {
+    min-height: 28px;
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+}

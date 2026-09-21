@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   CSSProperties,
   JSX,
@@ -56,6 +57,7 @@ export interface EpisodeWorkbenchCoreProps {
   };
   overlays?: readonly OverlayRenderer[];
   onTimeRangeSelect?: (startNs: string, endNs: string) => void;
+  onTimeRangeCreate?: (startNs: string, endNs: string) => void;
   timelineSelection?: ViewerTimelineSelection;
   timelineTracks?: readonly ViewerTimelineTrack[];
   timelineDisabled?: boolean;
@@ -94,6 +96,13 @@ export interface ViewerTimelineSegment {
   readonly endNs?: string;
   /** Makes this segment start every shared-clock consumer from its first frame. */
   readonly activatePlayback?: boolean;
+  /** Present only for mutable annotation intervals. */
+  readonly editing?: {
+    readonly selected: boolean;
+    readonly onSelect: () => void;
+    readonly onChange: (startNs: string, endNs: string) => void;
+    readonly onDelete: () => void;
+  };
   readonly tone?:
     | "phase"
     | "action"
@@ -1021,7 +1030,8 @@ export function ViewerJointAngleCurvePanel({
       if (
         pendingStart !== null &&
         pendingEnd !== null &&
-        insideSafeWindow(current, pendingStart, pendingEnd)
+        current >= pendingStart &&
+        current < pendingEnd
       )
         return;
       const start =
@@ -1145,7 +1155,9 @@ export function ViewerJointAngleCurvePanel({
           <Activity aria-hidden="true" size={15} />
           <strong id="joint-angle-curves-title">关节角变化</strong>
         </span>
-        <small>{stream?.canonicalPath ?? "共享时间轴"}</small>
+        <small>
+          {secondsLabel(cursorNs)} · {stream?.canonicalPath ?? "共享时间轴"}
+        </small>
       </header>
       {unavailable ? (
         <div className="viewer-joint-curves__empty" role="status">
@@ -1256,6 +1268,23 @@ export function ViewerJointAngleCurvePanel({
               y1={chart.plot.top}
               y2={chart.plot.bottom}
             />
+            {currentValues.map((value, index) =>
+              Number.isFinite(value) ? (
+                <circle
+                  key={`joint-current-${index}`}
+                  cx={cursorX}
+                  cy={
+                    chart.plot.bottom -
+                    ((value - chart.low) / (chart.high - chart.low)) *
+                      (chart.plot.bottom - chart.plot.top)
+                  }
+                  r="2.5"
+                  fill={jointCurveColors[index % jointCurveColors.length]}
+                  stroke="white"
+                  strokeWidth="0.8"
+                />
+              ) : null,
+            )}
           </svg>
           <div
             className="viewer-joint-curves__legend"
@@ -1341,6 +1370,9 @@ interface TimelineDragState {
   initialStart: bigint;
   initialEnd: bigint;
   moved: boolean;
+  segmentId?: string;
+  rect?: { left: number; width: number };
+  originPlayheadNs: string;
 }
 
 function clampNs(value: bigint, low: bigint, high: bigint): bigint {
@@ -1365,6 +1397,7 @@ export function SharedSignalTimeline({
   disabled = false,
   label = "共享视频时间轴与信号轨道",
   onRangeSelect,
+  onRangeCreate,
   selection,
   tracks = [],
   variant = "filmstrip",
@@ -1373,6 +1406,7 @@ export function SharedSignalTimeline({
   disabled?: boolean;
   label?: string;
   onRangeSelect?: (start: string, end: string) => void;
+  onRangeCreate?: (start: string, end: string) => void;
   selection?: ViewerTimelineSelection;
   tracks?: readonly ViewerTimelineTrack[];
   variant?: ViewerTimelineVariant;
@@ -1383,6 +1417,15 @@ export function SharedSignalTimeline({
   const currentText = useClockText(clock, 10);
   const current = BigInt(currentText);
   const filmstripRef = useRef<HTMLDivElement>(null);
+  const timelineRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    trigger: HTMLButtonElement;
+  } | null>(null);
   const dragRef = useRef<TimelineDragState | null>(null);
   const [dragging, setDragging] = useState<TimelineDragMode | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -1407,6 +1450,31 @@ export function SharedSignalTimeline({
   const hasPlaybackSegments = tracks.some((track) =>
     track.segments.some((segment) => segment.activatePlayback),
   );
+  const menuSegment =
+    contextMenu && !disabled
+      ? tracks
+          .flatMap((track) => track.segments)
+          .find((segment) => segment.id === contextMenu.id && segment.editing)
+      : undefined;
+  const hasEditableSegments =
+    !disabled &&
+    tracks.some((track) => track.segments.some((segment) => segment.editing));
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    menuRef.current?.querySelector("button")?.focus({ preventScroll: true });
+    const dismiss = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node))
+        setContextMenu(null);
+    };
+    const closeOnScroll = () => setContextMenu(null);
+    document.addEventListener("pointerdown", dismiss);
+    window.addEventListener("scroll", closeOnScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("scroll", closeOnScroll, true);
+    };
+  }, [contextMenu]);
 
   const setPreview = (next: ViewerTimelineSelection | null) => {
     previewRef.current = next;
@@ -1421,7 +1489,8 @@ export function SharedSignalTimeline({
   }, [normalizeSelection, selection]);
 
   const nsFromClientX = (clientX: number): bigint => {
-    const rect = filmstripRef.current?.getBoundingClientRect();
+    const rect =
+      dragRef.current?.rect ?? filmstripRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return boundsStart;
     const scaled = BigInt(
       Math.max(
@@ -1443,14 +1512,45 @@ export function SharedSignalTimeline({
   const beginDrag = (
     mode: TimelineDragMode,
     event: ReactPointerEvent<HTMLElement>,
+    segment?: ViewerTimelineSegment,
   ) => {
-    if (!rangeEditing || event.button !== 0) return;
-    const point = nsFromClientX(event.clientX);
-    const active = previewRef.current;
+    if (
+      disabled ||
+      event.button !== 0 ||
+      (segment ? !segment.editing : !rangeEditing)
+    )
+      return;
+    const active = segment?.endNs
+      ? { startNs: segment.startNs, endNs: segment.endNs, label: segment.label }
+      : previewRef.current;
     if (mode !== "create" && !active) return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.focus({ preventScroll: true });
+    suppressClickRef.current = null;
+    setContextMenu(null);
+    const originPlayheadNs = clock.currentNs();
+    segment?.editing?.onSelect();
+    clock.pause();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = segment
+      ? event.currentTarget.parentElement?.getBoundingClientRect()
+      : undefined;
+    const point =
+      rect && rect.width > 0
+        ? clampNs(
+            boundsStart +
+              (duration *
+                BigInt(
+                  Math.round(
+                    ((event.clientX - rect.left) / rect.width) * 1_000_000,
+                  ),
+                )) /
+                1_000_000n,
+            boundsStart,
+            boundsEnd,
+          )
+        : nsFromClientX(event.clientX);
     dragRef.current = {
       pointerId: event.pointerId,
       mode,
@@ -1461,13 +1561,18 @@ export function SharedSignalTimeline({
         active?.endNs ?? clampNs(point + 1n, boundsStart + 1n, boundsEnd),
       ),
       moved: false,
+      originPlayheadNs,
+      ...(segment ? { segmentId: segment.id } : {}),
+      ...(rect ? { rect: { left: rect.left, width: rect.width } } : {}),
     };
+    if (segment && active) setPreview(active);
     setDragging(mode);
   };
 
-  const updateDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const updateDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    if (disabled) return;
     const point = nsFromClientX(event.clientX);
     if (Math.abs(event.clientX - drag.originClientX) >= 3) drag.moved = true;
     let start = drag.initialStart;
@@ -1499,12 +1604,33 @@ export function SharedSignalTimeline({
       endNs: end.toString(),
       ...(selection?.label ? { label: selection.label } : {}),
     });
+    clock.seek(
+      clampNs(
+        drag.mode === "start" ? start : drag.mode === "end" ? end - 1n : point,
+        boundsStart,
+        boundsEnd - 1n,
+      ).toString(),
+    );
   };
 
-  const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const finishDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    if (drag.mode === "create" && !drag.moved) {
+    if (disabled) {
+      cancelDrag();
+      return;
+    }
+    updateDrag(event);
+    if (drag.segmentId) {
+      const next = previewRef.current;
+      const segment = tracks
+        .flatMap((track) => track.segments)
+        .find((candidate) => candidate.id === drag.segmentId);
+      if (drag.moved && next) {
+        suppressClickRef.current = drag.segmentId;
+        segment?.editing?.onChange(next.startNs, next.endNs);
+      } else setPreview(normalizeSelection(selection));
+    } else if (drag.mode === "create" && !drag.moved) {
       const point = clampNs(
         nsFromClientX(event.clientX),
         boundsStart,
@@ -1514,8 +1640,10 @@ export function SharedSignalTimeline({
       setPreview(normalizeSelection(selection));
     } else {
       const next = previewRef.current;
-      commitRange(next);
-      if (next)
+      if (next && drag.mode === "create" && onRangeCreate)
+        onRangeCreate(next.startNs, next.endNs);
+      else commitRange(next);
+      if (next && drag.mode !== "move")
         clock.seek(
           drag.mode === "start"
             ? next.startNs
@@ -1527,6 +1655,7 @@ export function SharedSignalTimeline({
   };
 
   const cancelDrag = () => {
+    if (dragRef.current) clock.seek(dragRef.current.originPlayheadNs);
     dragRef.current = null;
     setDragging(null);
     setPreview(normalizeSelection(selection));
@@ -1564,6 +1693,12 @@ export function SharedSignalTimeline({
           };
     setPreview(next);
     commitRange(next);
+    clock.pause();
+    clock.seek(
+      boundary === "start"
+        ? next.startNs
+        : (BigInt(next.endNs) - 1n).toString(),
+    );
   };
 
   const setBoundaryAtPlayhead = (boundary: "start" | "end") => {
@@ -1606,10 +1741,25 @@ export function SharedSignalTimeline({
 
   return (
     <section
+      ref={timelineRef}
+      tabIndex={-1}
       className="viewer-timeline"
       aria-label={label}
       data-dragging={dragging ?? undefined}
       data-variant={variant}
+      onPointerMove={updateDrag}
+      onPointerUp={finishDrag}
+      onPointerCancel={cancelDrag}
+      onLostPointerCapture={() => {
+        if (dragRef.current) cancelDrag();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && dragRef.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          cancelDrag();
+        }
+      }}
     >
       <header className="viewer-timeline__toolbar">
         <div className="viewer-timeline__readout">
@@ -1717,9 +1867,6 @@ export function SharedSignalTimeline({
                   ).toString(),
                 );
             }}
-            onPointerMove={updateDrag}
-            onPointerUp={finishDrag}
-            onPointerCancel={cancelDrag}
           >
             {variant === "filmstrip" ? (
               <div className="viewer-timeline__frames" aria-hidden="true">
@@ -1794,16 +1941,23 @@ export function SharedSignalTimeline({
                   key={track.id}
                 >
                   <strong
-                    style={{ paddingLeft: `${10 + (track.level ?? 0) * 12}px` }}
+                    title={track.label}
+                    style={{
+                      paddingLeft: `${10 + Math.min(track.level ?? 0, 3) * 8}px`,
+                    }}
                   >
-                    {track.label}
+                    <span>{track.label}</span>
                   </strong>
                   <div>
                     {track.segments.length ? (
                       track.segments.map((segment) => {
-                        const segmentStart = BigInt(segment.startNs);
-                        const segmentEnd = segment.endNs
-                          ? BigInt(segment.endNs)
+                        const displayed =
+                          dragRef.current?.segmentId === segment.id && preview
+                            ? preview
+                            : segment;
+                        const segmentStart = BigInt(displayed.startNs);
+                        const segmentEnd = displayed.endNs
+                          ? BigInt(displayed.endNs)
                           : segmentStart + 1n;
                         const left = timelinePercent(
                           segmentStart,
@@ -1818,7 +1972,7 @@ export function SharedSignalTimeline({
                           : Math.max(
                               0.25,
                               timelinePercent(
-                                BigInt(segment.endNs!),
+                                segmentEnd,
                                 boundsStart,
                                 boundsEnd,
                               ) - left,
@@ -1839,19 +1993,74 @@ export function SharedSignalTimeline({
                         return segment.activatePlayback ? (
                           <button
                             aria-current={isCurrent ? "time" : undefined}
+                            aria-pressed={segment.editing?.selected}
                             aria-label={`从“${segment.label}”起点同步播放全部视频和关节数据`}
                             key={segment.id}
                             className={className}
                             data-tone={segment.tone}
+                            data-editable={
+                              Boolean(segment.editing && !disabled) || undefined
+                            }
+                            data-segment-id={segment.id}
                             style={style}
-                            title={`从“${segment.label}”起点同步播放全部视频和关节数据`}
+                            title={
+                              segment.editing && !disabled
+                                ? `${segment.label}：拖动移动区间，拖动两端调整边界，右击或按 Delete 删除`
+                                : `从“${segment.label}”起点同步播放全部视频和关节数据`
+                            }
                             type="button"
                             onClick={() => {
+                              if (suppressClickRef.current === segment.id) {
+                                suppressClickRef.current = null;
+                                return;
+                              }
+                              if (!disabled) segment.editing?.onSelect();
                               clock.seek(segment.startNs);
                               clock.play();
                             }}
+                            onPointerDown={(event) => {
+                              if (!segment.editing || disabled) return;
+                              const edge = (
+                                event.target as HTMLElement
+                              ).closest<HTMLElement>("[data-tag-edge]")?.dataset
+                                .tagEdge;
+                              beginDrag(
+                                edge === "start" || edge === "end"
+                                  ? edge
+                                  : "move",
+                                event,
+                                segment,
+                              );
+                            }}
+                            onContextMenu={(event) => {
+                              if (!segment.editing || disabled) return;
+                              event.preventDefault();
+                              segment.editing.onSelect();
+                              const box =
+                                event.currentTarget.getBoundingClientRect();
+                              setContextMenu({
+                                id: segment.id,
+                                x: event.clientX || box.left,
+                                y: event.clientY || box.bottom,
+                                trigger: event.currentTarget,
+                              });
+                            }}
                           >
                             {content}
+                            {segment.editing && !disabled ? (
+                              <>
+                                <span
+                                  className="viewer-timeline__segment-grip"
+                                  data-tag-edge="start"
+                                  aria-hidden="true"
+                                />
+                                <span
+                                  className="viewer-timeline__segment-grip"
+                                  data-tag-edge="end"
+                                  aria-hidden="true"
+                                />
+                              </>
+                            ) : null}
                           </button>
                         ) : (
                           <span
@@ -1912,10 +2121,53 @@ export function SharedSignalTimeline({
         </div>
       </div>
       <footer className="viewer-timeline__hint">
-        {variant === "signals"
-          ? `${hasPlaybackSegments ? "点击 Tag 从起点同步播放 · " : ""}方向键微调 0.10s · Home / End 跳转边界 · 只有一条视频播放时间轴`
-          : "拖拽空白处新建区间 · 拖动两侧手柄调整入点/出点 · 拖动选区中部整体移动"}
+        {hasEditableSegments
+          ? "点击 Tag 从起点同步播放 · 拖动 Tag 或两端调整区间，视频同步跟随 · 右击 / Delete 删除"
+          : variant === "signals"
+            ? `${hasPlaybackSegments ? "点击 Tag 从起点同步播放 · " : ""}方向键微调 0.10s · Home / End 跳转边界 · 只有一条视频播放时间轴`
+            : "拖拽空白处新建区间 · 拖动两侧手柄调整入点/出点 · 拖动选区中部整体移动"}
       </footer>
+      {contextMenu && menuSegment?.editing
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="viewer-tag-menu"
+              role="menu"
+              aria-label="Tag 操作"
+              style={{
+                left: Math.max(
+                  8,
+                  Math.min(contextMenu.x, window.innerWidth - 184),
+                ),
+                top: Math.max(
+                  8,
+                  Math.min(contextMenu.y, window.innerHeight - 56),
+                ),
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setContextMenu(null);
+                  contextMenu.trigger.focus({ preventScroll: true });
+                }
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  menuSegment.editing?.onDelete();
+                  setContextMenu(null);
+                  timelineRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                删除 Tag <kbd>Del</kbd>
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }
@@ -2117,6 +2369,7 @@ export function EpisodeWorkbenchCore(
         tracks={p.timelineTracks}
         variant={p.timelineVariant}
         onRangeSelect={p.onTimeRangeSelect}
+        onRangeCreate={p.onTimeRangeCreate}
       />
     </section>
   );

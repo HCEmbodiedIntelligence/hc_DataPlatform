@@ -73,6 +73,7 @@ from hc_data_platform.lance_catalog.service import (
     CatalogConflictError,
     SchemaIncompatibleError,
 )
+from hc_data_platform.lerobot_imports.cache import SourceCacheLimitExceeded
 from hc_data_platform.platform_control.maintenance_contract import MaintenanceContractError
 from hc_data_platform.platform_ops.maintenance import (
     EnvironmentId,
@@ -570,7 +571,7 @@ async def _invoke(
             non_retryable=not details.retryable,
         ) from exc
 
-    except WorkflowPortNotConfigured as exc:
+    except (WorkflowPortNotConfigured, SourceCacheLimitExceeded) as exc:
         raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
     except AutomaticAnnotationBlocked as exc:
         raise ApplicationError(

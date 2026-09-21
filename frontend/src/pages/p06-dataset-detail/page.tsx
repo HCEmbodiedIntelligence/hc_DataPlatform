@@ -494,7 +494,6 @@ export function DatasetDetailPage() {
     datasetId,
     chosenVersionId,
     validRequest &&
-      search.tab === "capacity" &&
       hasChosenVersion &&
       capabilities.has("storage.overview.read"),
   );
@@ -630,6 +629,17 @@ export function DatasetDetailPage() {
         returnTo: `${location.pathname}${location.search}`,
       }),
     );
+  // The version capacity query also supplies the overview and persistent summary.
+  // An incomplete import projection must not turn unknown storage into 0 B.
+  const displayedCapacity = capacity.data ?? {
+    sourceBytes: data.summary.sourceBytes,
+    requiredPhysicalBytes:
+      data.summary.calculationState === "SETTLED"
+        ? data.summary.requiredPhysicalBytes
+        : null,
+    actualOssBytes: data.summary.actualOssBytes,
+  };
+  const capacityLoading = capacity.isFetching && !capacity.data;
   const tabContent = (() => {
     if (search.tab === "overview")
       return (
@@ -664,21 +674,34 @@ export function DatasetDetailPage() {
               />
               <MetricCard
                 label="源数据量"
-                value={formatStorageSize(data.summary.sourceBytes)}
+                value={formatStorageSize(displayedCapacity.sourceBytes)}
                 basis="授权聚合"
               />
               <MetricCard
                 label="必需物理容量"
-                value={formatStorageSize(data.summary.requiredPhysicalBytes)}
-                basis="授权聚合"
+                value={formatStorageSize(
+                  displayedCapacity.requiredPhysicalBytes,
+                )}
+                state={
+                  displayedCapacity.requiredPhysicalBytes === null
+                    ? capacityLoading
+                      ? "loading"
+                      : "unknown"
+                    : "ready"
+                }
+                basis="当前版本引用文件"
               />
               <MetricCard
                 label="实际存储"
-                value={formatStorageSize(data.summary.actualOssBytes)}
+                value={formatStorageSize(displayedCapacity.actualOssBytes)}
                 state={
-                  data.summary.actualOssBytes === null ? "unknown" : "ready"
+                  displayedCapacity.actualOssBytes === null
+                    ? capacityLoading
+                      ? "loading"
+                      : "unknown"
+                    : "ready"
                 }
-                basis="容量事实"
+                basis="当前版本引用文件去重统计"
               />
               <MetricCard
                 label="待复核"
@@ -973,13 +996,16 @@ export function DatasetDetailPage() {
             }
           />
           <MetricCard
-            label="实际存储 容量"
+            label="数据集存储容量"
             value={formatStorageSize(capacity.data.actualOssBytes)}
             state={capacity.data.actualOssBytes === null ? "unknown" : "ready"}
           />
         </div>
         <Typography.Paragraph>
-          Basis <code>{capacity.data.basisRevision}</code> ·{" "}
+          容量按当前版本引用的 Lance
+          数据与视频文件去重统计；共享视频只计一次，源数据量单独列示。
+          <br />
+          统计依据 <code>{capacity.data.basisRevision}</code> ·{" "}
           {new Date(capacity.data.calculatedAt).toLocaleString()}
         </Typography.Paragraph>
       </section>
@@ -1025,12 +1051,16 @@ export function DatasetDetailPage() {
               </div>
               <div>
                 <span>源数据量</span>
-                <strong>{formatStorageSize(data.summary.sourceBytes)}</strong>
+                <strong>
+                  {formatStorageSize(displayedCapacity.sourceBytes)}
+                </strong>
               </div>
               <div>
                 <span>实际存储</span>
                 <strong>
-                  {formatStorageSize(data.summary.actualOssBytes)}
+                  {capacityLoading && displayedCapacity.actualOssBytes === null
+                    ? "统计中…"
+                    : formatStorageSize(displayedCapacity.actualOssBytes)}
                 </strong>
               </div>
             </div>

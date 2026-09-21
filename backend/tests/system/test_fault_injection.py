@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -20,6 +21,7 @@ from hc_data_platform.lance_catalog import (
     StepRecord,
     compute_fragment_hash,
 )
+from hc_data_platform.publishing.export_assets import ExportAssetsPort
 from hc_data_platform.publishing.exporters import LeRobotV3Exporter
 from hc_data_platform.publishing.memory import (
     InMemoryAnnotationSnapshot,
@@ -326,10 +328,16 @@ def test_worker_death_after_lance_side_effect_replays_without_duplicate_steps() 
 def test_worker_death_after_export_promotion_recovers_one_downloadable_version() -> None:
     manifest, steps = _published_fixture()
     sink = _FailAfterPublishSink()
+    assets = Mock(spec=ExportAssetsPort)
+    assets.episode_metadata.return_value = {
+        "tags": [],
+        "task": "Fault recovery demonstration",
+        "robot_type": "test-robot",
+    }
     coordinator = ExportCoordinator(
         source=InMemoryExportSource(steps),
         sink=sink,
-        exporters=[LeRobotV3Exporter()],
+        exporters=[LeRobotV3Exporter(assets)],
     )
 
     with pytest.raises(ConnectionError, match="worker death"):

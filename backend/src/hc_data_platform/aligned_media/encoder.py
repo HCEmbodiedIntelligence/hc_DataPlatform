@@ -185,6 +185,7 @@ class FFmpegMp4Encoder:
                 filters = (
                     f"trim=start={start:.9f}:end={end:.9f},setpts=PTS-STARTPTS,"
                     f"fps=fps={profile.fps}:start_time=0:round=near,"
+                    "scale=iw:ih:out_range=tv,"
                     f"format={profile.pixel_format},setparams=range=limited"
                 )
                 command = [
@@ -426,8 +427,10 @@ class FFmpegMp4Encoder:
             )
         else:
             width, height = self._output_dimensions(b"", profile)
+        # JPEG is full-range. Convert the samples as well as their range metadata;
+        # setparams alone can darken the decoded MP4 on newer FFmpeg versions.
         filters = (
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease:out_range=tv,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
             f"format={profile.pixel_format},setparams=range=limited"
         )

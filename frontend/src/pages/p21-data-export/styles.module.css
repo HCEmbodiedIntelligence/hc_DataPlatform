@@ -75,6 +75,11 @@
   padding: 15px 18px 16px;
 }
 
+.stageSelector {
+  display: grid;
+  gap: 10px;
+}
+
 .filterSection {
   border-bottom: 1px solid var(--hc-color-border-subtle, #e7e9f2);
   background: #fbfcfe;

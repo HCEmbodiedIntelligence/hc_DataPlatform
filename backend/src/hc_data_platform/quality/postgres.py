@@ -70,7 +70,14 @@ class PostgresQualityRepository:
         )
         return None if row is None else QualityProfileV1.model_validate(row[0])
 
-    def put_report(self, *, project_id: str, region_code: str, report: QcReportV1) -> None:
+    def put_report(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        report: QcReportV1,
+        expected_previous_report_sha256: str | None = None,
+    ) -> None:
         summary = QualitySummaryV1.from_report(report)
         connection = self._connection_factory()
         try:
@@ -128,6 +135,11 @@ class PostgresQualityRepository:
                         title="Quality report is immutable",
                         detail="This evaluation identity already has different report content.",
                     )
+                summary_guard = (
+                    " WHERE quality_rollout_summaries.report_sha256 IN (%s, %s)"
+                    if expected_previous_report_sha256 is not None
+                    else ""
+                )
                 cursor.execute(
                     """
                     INSERT INTO quality_rollout_summaries (
@@ -142,7 +154,8 @@ class PostgresQualityRepository:
                         status = EXCLUDED.status,
                         report_sha256 = EXCLUDED.report_sha256,
                         updated_at = now()
-                    """,
+                    """
+                    + summary_guard,
                     (
                         project_id,
                         region_code,
@@ -153,8 +166,20 @@ class PostgresQualityRepository:
                         summary.engine_version,
                         summary.status.value,
                         summary.report_sha256,
+                    )
+                    + (
+                        (expected_previous_report_sha256, report.content_sha256)
+                        if expected_previous_report_sha256 is not None
+                        else ()
                     ),
                 )
+                if expected_previous_report_sha256 is not None and cursor.rowcount != 1:
+                    raise problem(
+                        status=409,
+                        code="QUALITY_SUMMARY_CHANGED",
+                        title="Quality summary changed",
+                        detail="A newer evaluation replaced the selected report.",
+                    )
             connection.commit()
         except Exception:
             connection.rollback()
@@ -190,22 +215,44 @@ class PostgresQualityRepository:
                     """
                     SELECT report.report_json,
                            session.session_id,
-                           session.data_package_id,
-                           summary.updated_at
+                           COALESCE(session.data_package_id, native.episode_id),
+                           summary.updated_at,
+                           native.source_import_id,
+                           native.source_episode_index
                       FROM quality_rollout_summaries AS summary
                       JOIN qc_reports AS report
-                        ON report.project_id = summary.project_id
+                        ON report.organization_id = summary.organization_id
+                       AND report.project_id = summary.project_id
                        AND report.region_code = summary.region_code
                        AND report.report_sha256 = summary.report_sha256
                       LEFT JOIN LATERAL (
                            SELECT upload.session_id, upload.data_package_id
                              FROM ingest.upload_sessions AS upload
-                            WHERE upload.project_id = summary.project_id
+                            WHERE upload.organization_id = summary.organization_id
+                              AND upload.project_id = summary.project_id
                               AND upload.region_code = summary.region_code
                               AND upload.rollout_id = summary.rollout_id
                             ORDER BY upload.created_at DESC, upload.session_id DESC
                             LIMIT 1
                       ) AS session ON TRUE
+                      LEFT JOIN LATERAL (
+                           SELECT source.upload_id AS source_import_id,
+                                  episode.source_episode_index, episode.episode_id
+                             FROM ingest.raw_source_episodes AS episode
+                             JOIN ingest.raw_sources AS source
+                               ON source.organization_id = episode.organization_id
+                              AND source.project_id = episode.project_id
+                              AND source.region_code = episode.region_code
+                              AND source.raw_source_id = episode.raw_source_id
+                            WHERE episode.organization_id = summary.organization_id
+                              AND episode.project_id = summary.project_id
+                              AND episode.region_code = summary.region_code
+                              AND episode.episode_id = summary.rollout_id
+                              AND source.raw_status = 'COMMITTED'
+                              AND source.source_format = 'LEROBOT_V3'
+                            ORDER BY source.committed_at DESC, source.raw_source_id
+                            LIMIT 1
+                      ) AS native ON TRUE
                      WHERE summary.project_id = %s
                        AND summary.region_code = %s
                        AND summary.status IN ('RISK', 'REJECT')
@@ -215,7 +262,14 @@ class PostgresQualityRepository:
                     (project_id, region_code),
                 )
                 result: list[AutoQualityProblemV1] = []
-                for report_json, session_id, data_package_id, updated_at in cursor.fetchall():
+                for (
+                    report_json,
+                    session_id,
+                    data_package_id,
+                    updated_at,
+                    source_import_id,
+                    source_episode_index,
+                ) in cursor.fetchall():
                     report = self._report(report_json)
                     if not report.findings:
                         continue
@@ -227,6 +281,8 @@ class PostgresQualityRepository:
                                 None if data_package_id is None else str(data_package_id)
                             ),
                             updated_at=updated_at,
+                            source_import_id=source_import_id,
+                            source_episode_index=source_episode_index,
                         )
                     )
                 return tuple(result)

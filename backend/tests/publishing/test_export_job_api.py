@@ -22,7 +22,9 @@ from hc_data_platform.publishing.models import (
     ApprovedAnnotationSnapshotV1,
     CatalogRolloutSnapshotV1,
     DerivedStatus,
+    ExportDataStage,
     ExportStepV1,
+    PublishDatasetRequestV1,
     PublishedDatasetManifestV1,
     PublishedRolloutV1,
     QualityStatus,
@@ -184,12 +186,19 @@ def export_api(
         yield client, current, audit
 
 
-def _publisher_auth(project_id: str = "project-a") -> AuthContext:
+def _publisher_auth(project_id: str = "project-a", *, upload_operator: bool = False) -> AuthContext:
     return AuthContext(
         subject_id="publisher-a",
         project_ids=frozenset({project_id}),
         region_codes=frozenset(),
-        capabilities=frozenset({"dataset_version.publish", "data_schema.publish", "export.read"}),
+        scoped_capabilities=frozenset(
+            (project_id, capability)
+            for capability in (
+                {"upload.manage"}
+                if upload_operator
+                else {"dataset_version.publish", "data_schema.publish", "export.read"}
+            )
+        ),
         scope_pairs=frozenset({(project_id, None)}),
     )
 
@@ -199,11 +208,140 @@ def _export_url(job_id: str | None = None) -> str:
     return base if job_id is None else f"{base}/{job_id}"
 
 
+@pytest.mark.parametrize("stage,expected_count", [("annotated", 1), ("dataset", 21)])
+def test_eligibility_uses_stage_and_never_publishes(
+    export_api, monkeypatch: pytest.MonkeyPatch, stage: str, expected_count: int
+) -> None:
+    from unittest.mock import Mock
+
+    import hc_data_platform.dataset_registry.router as dataset_router
+    import hc_data_platform.publishing.router as router_module
+
+    client, current, _ = export_api
+    current["auth"] = _publisher_auth()
+    sample = router_module._publisher._catalog.rollouts[0]
+    catalog = InMemoryCatalogSnapshot(
+        tuple(sample.model_copy(update={"rollout_id": f"rollout-{i}"}) for i in range(21))
+    )
+    manifests = InMemoryPublishedManifestRepository()
+    sink = InMemoryArtifactSink()
+    publisher = DatasetPublisher(
+        catalog=catalog,
+        annotations=InMemoryAnnotationSnapshot(
+            [ApprovedAnnotationSnapshotV1(rollout_id="rollout-20", annotation_revision=1)]
+        ),
+        repository=manifests,
+        artifact_sink=sink,
+    )
+    monkeypatch.setattr(router_module, "_publisher", publisher)
+    bindings = {f"episode-{i}": f"rollout-{i}" for i in range(21)}
+    monkeypatch.setattr(
+        dataset_router,
+        "get_dataset_page_service",
+        lambda: Mock(export_episode_bindings=Mock(return_value=bindings)),
+    )
+    response = client.get(
+        "/api/v1/datasets/dataset-a/versions/version_lance_1/export-eligibility",
+        params={"project_id": "project-a", "data_stage": stage},
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    result = response.json()
+    assert result["data_stage"] == stage
+    assert len(result["eligible_episode_ids"]) == expected_count
+    assert "episode-20" in result["eligible_episode_ids"]
+    assert not manifests._manifests and not sink.artifacts
+    current["auth"] = _publisher_auth("foreign-project")
+    assert (
+        client.get(
+            "/api/v1/datasets/dataset-a/versions/version_lance_1/export-eligibility",
+            params={"project_id": "project-a", "data_stage": stage},
+        ).status_code
+        == 403
+    )
+
+
+def test_dataset_stage_exports_unannotated_rows_without_publishing(export_api, monkeypatch) -> None:
+    import hc_data_platform.publishing.router as router_module
+
+    client, current, _ = export_api
+    current["auth"] = _publisher_auth()
+    publisher = router_module._publisher
+    monkeypatch.setattr(publisher, "_annotations", InMemoryAnnotationSnapshot())
+    url = "/api/v1/datasets/dataset-a/versions/version_lance_1/exports"
+    rejected = client.post(
+        url,
+        json={"project_id": "project-a", "format": "lance_snapshot"},
+        headers={"Idempotency-Key": "requires-approval"},
+    )
+    assert rejected.status_code == 422
+    created = client.post(
+        url,
+        json={"project_id": "project-a", "format": "lance_snapshot", "data_stage": "dataset"},
+        headers={"Idempotency-Key": "dataset-without-approval"},
+    )
+    assert created.status_code == 202
+    assert created.json()["status"] == "SUCCEEDED"
+    assert created.json()["result"]["row_count"] == 1
+    manifest = publisher.dataset_export_manifest(
+        PublishDatasetRequestV1(
+            project_id="project-a",
+            dataset_id="dataset-a",
+            dataset_version="version_lance_1",
+            base_lance_version="1",
+        )
+    )
+    assert manifest.data_stage is ExportDataStage.DATASET
+    assert manifest.rollouts[0].annotation_revision is None
+    assert manifest.annotations_uri == ""
+    assert (
+        publisher._repository.get(
+            project_id="project-a", dataset_id="dataset-a", dataset_version="version_lance_1"
+        )
+        is None
+    )
+
+
+def test_dataset_export_retry_preserves_stage_and_snapshot(export_api, monkeypatch) -> None:
+    import hc_data_platform.publishing.router as router_module
+
+    client, current, _ = export_api
+    current["auth"] = _publisher_auth()
+    monkeypatch.setattr(router_module._publisher, "_annotations", InMemoryAnnotationSnapshot())
+    original_export = router_module._export_coordinator.export
+    attempts = []
+
+    def fail_once(manifest, **kwargs):
+        attempts.append(manifest)
+        if len(attempts) == 1:
+            raise RuntimeError("Transient export failure")
+        return original_export(manifest, **kwargs)
+
+    monkeypatch.setattr(router_module._export_coordinator, "export", fail_once)
+    url = "/api/v1/datasets/dataset-a/versions/version_lance_1/exports"
+    created = client.post(
+        url,
+        json={"project_id": "project-a", "format": "lance_snapshot", "data_stage": "dataset"},
+        headers={"Idempotency-Key": "dataset-retry-start"},
+    )
+    assert created.status_code == 202 and created.json()["status"] == "FAILED"
+    retried = client.post(
+        f"{url}/{created.json()['job_id']}:retry",
+        params={"project_id": "project-a"},
+        headers={"Idempotency-Key": "dataset-retry"},
+    )
+    assert retried.status_code == 202 and retried.json()["status"] == "SUCCEEDED"
+    assert attempts[0] == attempts[1]
+    assert attempts[1].data_stage is ExportDataStage.DATASET
+
+
+@pytest.mark.parametrize("upload_operator", [False, True])
 def test_first_export_materializes_missing_ready_lance_manifest(
     export_api: tuple[TestClient, dict[str, AuthContext | None], InMemoryExportAuditRecorder],
+    upload_operator: bool,
 ) -> None:
     client, current, _audit = export_api
-    current["auth"] = _publisher_auth()
+    current["auth"] = _publisher_auth(upload_operator=upload_operator)
 
     created = client.post(
         "/api/v1/datasets/dataset-a/versions/version_lance_1/exports",
@@ -233,8 +371,10 @@ def test_missing_non_lance_publication_is_not_inferred(
     assert response.json()["code"] == "DATASET_VERSION_NOT_FOUND"
 
 
+@pytest.mark.parametrize("upload_operator", [False, True])
 def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_download(
     export_api: tuple[TestClient, dict[str, AuthContext | None], InMemoryExportAuditRecorder],
+    upload_operator: bool,
 ) -> None:
     client, current, audit = export_api
     anonymous = client.post(
@@ -244,7 +384,7 @@ def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_downl
     )
     assert anonymous.status_code == 401
 
-    current["auth"] = _publisher_auth()
+    current["auth"] = _publisher_auth(upload_operator=upload_operator)
     created = client.post(
         _export_url(),
         json={"project_id": "project-a", "format": "lance_snapshot"},
@@ -302,7 +442,7 @@ def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_downl
     assert len(audit.events) == 2
     assert all(item.job_id == job_id for item in audit.events)
 
-    current["auth"] = _publisher_auth("project-b")
+    current["auth"] = _publisher_auth("project-b", upload_operator=upload_operator)
     denied = client.get(f"{_export_url(job_id)}/download", params={"project_id": "project-a"})
     assert denied.status_code == 403
     assert len(audit.events) == 2

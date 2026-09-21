@@ -221,8 +221,10 @@ def test_be02_scope_roles_self_review_and_publisher_contract() -> None:
         service.read_task(
             "task-1", auth("outsider", *REVIEWER_CAPABILITIES, projects=("project-b",))
         )
+    uploader = auth("uploader", "upload.manage")
+    assert service.read_task("task-1", uploader).project_id == "project-a"
     with pytest.raises(AnnotationPermissionError):
-        service.read_task("task-1", auth("uploader", "upload.read", "upload.manage"))
+        service.read_task("task-1", auth("reader", "upload.read"))
 
     submitted = service.submit(
         "task-1",

@@ -76,7 +76,7 @@ OSS 且不复制对象；`copy_referenced` 只复制数据库/manifest 引用对
 ### 同机双 Compose 演练
 
 迁移演练显式叠加 `compose.minio-test.yaml`，用一次性 MinIO 隔离故障注入；正常开发的
-`compose.dev.yaml` 只连接阿里云 OSS，不包含 MinIO。演练项目名和全部宿主端口都可通过 env file
+`compose.dev.yaml` 也包含本机 MinIO。演练项目名和全部宿主端口都可通过 env file
 参数化，未提供时仍保持测试默认值。
 示例变量见 `deploy/compose/migration.env.example`。source/target 必须使用不同 `-p` 项目名和互不重叠
 端口，例如：

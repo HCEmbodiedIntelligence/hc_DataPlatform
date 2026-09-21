@@ -15,6 +15,7 @@ from .models import (
     DashboardPendingItemType,
     DashboardPendingSeverity,
     DashboardResourceType,
+    TaskIssueFinding,
 )
 
 DASHBOARD_CAPABILITY = CAPABILITY_DASHBOARD_READ
@@ -160,6 +161,13 @@ class TaskStatusPackageFact:
     workflow_stage: str | None = None
     workflow_error_code: str | None = None
     technical_state_available: bool = True
+    source_import_id: str | None = None
+    source_episode_index: int | None = None
+    source_episode_status: str | None = None
+    source_processing_status: str | None = None
+    alignment_attempt_id: str | None = None
+    resolution_status: str | None = None
+    quality_findings: tuple[TaskIssueFinding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

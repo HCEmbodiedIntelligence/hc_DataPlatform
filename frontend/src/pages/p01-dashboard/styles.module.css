@@ -201,6 +201,20 @@
   min-height: 248px;
 }
 
+.activityList {
+  max-height: 288px;
+  overflow: hidden auto;
+  overscroll-behavior-y: contain;
+  scrollbar-color: var(--hc-color-border-strong, #a9b1d8) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.activityList:focus-visible {
+  outline: 2px solid var(--hc-color-focus, #8b96ff);
+  outline-offset: -2px;
+}
+
 .activityList > li {
   display: grid;
   min-width: 0;

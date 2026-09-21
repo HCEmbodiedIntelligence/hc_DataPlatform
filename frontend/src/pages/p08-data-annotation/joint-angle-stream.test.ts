@@ -38,6 +38,60 @@ function jointBundle() {
 }
 
 describe("P08 joint-angle Lance stream", () => {
+  it("discovers a legacy joint column once and projects it in subsequent chunks", async () => {
+    const bundle = jointBundle();
+    requestMock.mockImplementation(async (options) => {
+      const startStep = Number(options.query?.startStep);
+      const endStep = Number(options.query?.endStep);
+      const selected = options.query?.columns;
+      const includeJoint =
+        !selected ||
+        (Array.isArray(selected) && selected.includes("legacy_joint_angles"));
+      return {
+        schema_version: "1",
+        project_id: bundle.task.project_id,
+        dataset_id: bundle.task.dataset_id,
+        dataset_version: bundle.task.base_lance_version,
+        rollout_id: bundle.task.rollout_id,
+        start_step: startStep,
+        end_step: endStep,
+        steps: [
+          {
+            schema_version: "1",
+            rollout_id: bundle.task.rollout_id,
+            step_index: startStep,
+            timestamp_ns: "0",
+            modalities: includeJoint ? { legacy_joint_angles: [0.1, 0.2] } : {},
+            source_timestamps_ns: {},
+            time_error_ns: {},
+            valid: {},
+            repeated: {},
+            sample_valid: true,
+          },
+        ],
+      } as never;
+    });
+    const source = buildRuntimeJointAngleStream({
+      bundle,
+      scope: visualAnnotationScope,
+    })!.windowSource!;
+    const signal = new AbortController().signal;
+    const first = await source.loadWindow(
+      { startNs: "0", endNs: "4000000000", lod: 1 },
+      signal,
+    );
+    expect(first.values).toEqual([[0.1, 0.2]]);
+    expect(requestMock).toHaveBeenCalledTimes(2);
+    await source.loadWindow(
+      { startNs: "4000000000", endNs: "8000000000", lod: 0 },
+      signal,
+    );
+    expect(requestMock).toHaveBeenCalledTimes(3);
+    expect(requestMock.mock.calls[2]?.[0].query?.columns).toEqual([
+      "legacy_joint_angles",
+    ]);
+  });
+
   it("reads the fixed task window and resolves a real joint vector without synthesizing values", async () => {
     const bundle = jointBundle();
     requestMock.mockResolvedValue({
@@ -47,7 +101,7 @@ describe("P08 joint-angle Lance stream", () => {
       dataset_version: bundle.task.base_lance_version,
       rollout_id: bundle.task.rollout_id,
       start_step: 0,
-      end_step: 30,
+      end_step: 60,
       steps: [
         {
           schema_version: "1",
@@ -115,8 +169,12 @@ describe("P08 joint-angle Lance stream", () => {
         path: `/projects/${bundle.task.project_id}/datasets/${bundle.task.dataset_id}/rollouts/${bundle.task.rollout_id}/steps`,
         query: {
           startStep: 0,
-          endStep: 30,
+          endStep: 60,
           version: bundle.task.base_lance_version,
+          columns: expect.arrayContaining([
+            "/robot/joint_states",
+            "joint.position",
+          ]),
         },
       }),
     );
@@ -180,6 +238,10 @@ describe("P08 joint-angle Lance stream", () => {
           startStep: 0,
           endStep: 60,
           version: bundle.task.base_lance_version,
+          columns: expect.arrayContaining([
+            "/robot/joint_states",
+            "joint.position",
+          ]),
         },
       }),
     );

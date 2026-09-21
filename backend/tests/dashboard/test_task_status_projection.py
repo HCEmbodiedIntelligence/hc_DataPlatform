@@ -8,6 +8,7 @@ import pytest
 from hc_data_platform.dashboard.models import (
     DashboardSectionStatus,
     TaskAttainment,
+    TaskIssueFinding,
     TaskPackageMainState,
     TaskProcessingStage,
 )
@@ -82,6 +83,23 @@ def package(**changes: object) -> TaskStatusPackageFact:
         raw_committed=True,
     )
     return replace(base, **changes)
+
+
+def test_discarded_conflict_is_counted_without_active_failure_or_waiting() -> None:
+    result = status(
+        package(
+            resolution_status="DISCARDED",
+            qc_status="PASS",
+            alignment_status="READY",
+            workflow_status="TECHNICAL_FAILED",
+            workflow_error_code="ALIGNMENT_ATTEMPT_IMMUTABLE",
+        )
+    )
+    assert result.qc.discarded == 1
+    assert result.qc.reprocessing_conflicts == 0
+    assert result.main_state_counts[TaskPackageMainState.DISCARDED] == 1
+    assert result.blockers == ()
+    assert result.standardization.lance_writing == 0
 
 
 def status(
@@ -207,6 +225,180 @@ def test_raw_structure_failure_is_not_qc_reject_and_has_diagnostic_action() -> N
     assert selected.blockers[0].category == "RAW_VALIDATION"
     assert selected.blockers[0].reason_code == "MCAP_FOOTER_MISSING"
     assert selected.actions[0].action == "VIEW_RAW_DIAGNOSTICS"
+
+
+@pytest.mark.parametrize("batch_status", [None, "PENDING", "RUNNING", "PARTIALLY_FAILED"])
+def test_reprocessing_conflict_is_distinct_from_duplicate_upload_and_lance_failure(
+    batch_status: str | None,
+) -> None:
+    conflict = package(
+        qc_status="PASS",
+        alignment_status="READY",
+        workflow_status="TECHNICAL_FAILED",
+        workflow_stage="ingest_processing",
+        workflow_error_code="ALIGNMENT_ATTEMPT_IMMUTABLE",
+        alignment_attempt_id="immutable-attempt",
+        source_import_id="source-import",
+        source_episode_index=10,
+        source_episode_status="FAILED",
+        source_processing_status=batch_status,
+    )
+    repository = InMemoryDashboardRepository(
+        task_status_projection=TaskStatusProjectionFacts(tasks=(task(),), packages=(conflict,))
+    )
+    result = DashboardService(repository, clock=lambda: NOW).task_status(
+        auth=auth(), project_id="project-a", region_code="cn-east"
+    )
+    selected = result.selected
+    assert selected is not None
+    assert selected.qc.duplicate == 0
+    assert selected.qc.reprocessing_conflicts == 1
+    assert selected.qc.passed == 1
+    assert selected.blocker_count == selected.standardization.lance_failed == 0
+    assert selected.standardization.ready == 0
+    assert selected.main_state_counts == {TaskPackageMainState.REPROCESSING_CONFLICT: 1}
+    assert selected.stages[3].succeeded == 1
+    assert all(stage.isolated == 1 for stage in selected.stages[4:])
+    (issue,) = result.pipeline.issues
+    assert issue.category == "PROCESSING_CONFLICT"
+    assert issue.stage is TaskProcessingStage.STANDARDIZATION
+    assert issue.label == "处理结果冲突"
+    assert issue.source_episode_index == 10
+    assert issue.source_import_id == "source-import"
+    assert issue.duplicate_of_rollout_id is None
+    assert issue.alignment_attempt_id == "immutable-attempt"
+    assert not issue.lance_ready
+
+    actual_failure = status(replace(conflict, workflow_error_code="LANCE_WRITE_FAILED"))
+    assert actual_failure.blocker_count == 1
+    assert actual_failure.standardization.lance_failed == 1
+    assert actual_failure.qc.reprocessing_conflicts == 0
+    ready = status(replace(conflict, lance_ready=True))
+    assert ready.standardization.ready == 1
+    assert ready.qc.reprocessing_conflicts == 0
+    risky = status(replace(conflict, qc_status="RISK"))
+    assert risky.qc.risk == 1
+    assert risky.qc.reprocessing_conflicts == 0
+
+    pre_lance_failure = status(replace(conflict, workflow_error_code="INGEST_PROCESSING_FAILED"))
+    assert pre_lance_failure.standardization.lance_failed == 0
+    assert pre_lance_failure.main_state_counts == {TaskPackageMainState.ALIGNMENT_FAILED: 1}
+    retried = status(
+        replace(conflict, source_episode_status="PENDING", source_processing_status="RUNNING")
+    )
+    assert retried.standardization.waiting == 1
+    assert retried.qc.reprocessing_conflicts == retried.standardization.lance_failed == 0
+
+
+def test_quality_issue_details_are_filtered_to_the_selected_task_and_episode() -> None:
+    finding = TaskIssueFinding(
+        code="QC_IMAGE_BLACK",
+        severity="warning",
+        message="Black frame ratio exceeds limit",
+        topic="/camera/wrist_right/image",
+        observed=0.03,
+        threshold=0.02,
+        start_ns=1_000_000_000,
+        end_ns=2_000_000_000,
+    )
+    repository = InMemoryDashboardRepository(
+        task_status_projection=TaskStatusProjectionFacts(
+            tasks=(task(), task("task-b")),
+            packages=(
+                package(
+                    qc_status="RISK",
+                    source_import_id="import-a",
+                    source_episode_index=0,
+                    quality_findings=(finding,),
+                ),
+                package(task_id="task-b", rollout_id="other-rollout", qc_status="RISK"),
+            ),
+        )
+    )
+    result = DashboardService(repository, clock=lambda: NOW).task_status(
+        auth=auth(), project_id="project-a", region_code="cn-east", task_id="task-a"
+    )
+    (issue,) = result.pipeline.issues
+    assert result.pipeline.qc.risk == 1
+    assert issue.rollout_id == "rollout-a"
+    assert issue.stage is TaskProcessingStage.AUTOMATIC_VALIDATION
+    assert issue.source_episode_index == 0
+    assert issue.findings == (finding,)
+
+
+def test_reclassified_quality_does_not_hide_22_unfinished_episodes() -> None:
+    ready = tuple(
+        package(
+            rollout_id=f"ready-{i}",
+            data_package_id=f"ready-{i}",
+            qc_status="PASS",
+            lance_ready=True,
+            source_episode_status="READY",
+        )
+        for i in range(132)
+    )
+    stopped = tuple(
+        package(
+            rollout_id=f"stopped-{i}",
+            data_package_id=f"stopped-{i}",
+            qc_status="PASS",
+            workflow_status="QUALITY_RISK",
+            source_episode_status="FAILED",
+            source_processing_status="PARTIALLY_FAILED",
+        )
+        for i in range(21)
+    )
+    conflict = package(
+        qc_status="PASS",
+        workflow_status="TECHNICAL_FAILED",
+        workflow_error_code="ALIGNMENT_ATTEMPT_IMMUTABLE",
+        alignment_status="READY",
+        source_episode_status="FAILED",
+        source_processing_status="PARTIALLY_FAILED",
+    )
+    repository = InMemoryDashboardRepository(
+        task_status_projection=TaskStatusProjectionFacts(
+            tasks=(task(registered=154, received=154),), packages=(*ready, *stopped, conflict)
+        )
+    )
+    result = DashboardService(repository, clock=lambda: NOW).task_status(
+        auth=auth(), project_id="project-a", region_code="cn-east"
+    )
+    assert result.pipeline.package_count == result.pipeline.qc.passed == 154
+    assert result.pipeline.qc.duplicate == 0
+    assert result.pipeline.qc.reprocessing_conflicts == 1
+    standardization = result.pipeline.stages[4]
+    assert standardization.succeeded == 132
+    assert standardization.blocked == 21
+    assert standardization.isolated == 1
+    assert standardization.waiting == standardization.failed == 0
+    assert len(result.pipeline.issues) == 22
+    assert sum(issue.category == "RESUME_REQUIRED" for issue in result.pipeline.issues) == 21
+    assert sum(issue.category == "PROCESSING_CONFLICT" for issue in result.pipeline.issues) == 1
+    assert result.selected.standardization.resume_required == 21
+    assert result.selected.blocker_count == 21
+
+
+@pytest.mark.parametrize("workflow_status", ("QUALITY_RISK", "QUALITY_REJECTED", None))
+def test_stopped_processing_is_visible_until_retried_or_committed(
+    workflow_status: str | None,
+) -> None:
+    stopped = package(
+        qc_status="PASS",
+        workflow_status=workflow_status,
+        source_episode_status="FAILED",
+        source_processing_status="PARTIALLY_FAILED",
+    )
+    assert status(stopped).standardization.resume_required == 1
+    assert status(replace(stopped, lance_ready=True)).standardization.resume_required == 0
+    assert status(replace(stopped, qc_status="RISK")).qc.risk == 1
+    assert status(replace(stopped, qc_status="RISK")).standardization.resume_required == 0
+    retried = status(
+        replace(stopped, source_episode_status="PENDING", source_processing_status="RUNNING")
+    )
+    assert retried.standardization.resume_required == 0
+    assert retried.standardization.waiting == 1
+    assert retried.blocker_count == 0
 
 
 @pytest.mark.parametrize("outcome", ("RISK", "REJECT"))

@@ -10,6 +10,8 @@ const autoQualityProblemSchema = z
     id: z.string().regex(/^qc_[0-9a-f]{32}$/u),
     source: z.literal("AUTO_QC"),
     session_id: z.string().min(1).nullable(),
+    source_import_id: z.string().min(1).nullish(),
+    source_episode_index: z.number().int().nonnegative().nullish(),
     rollout_id: z.string().min(1),
     data_package_id: z.string().min(1).nullable(),
     status: z.enum(["RISK", "REJECT"]),
@@ -37,6 +39,8 @@ export interface AutoQualityProblem {
   readonly id: string;
   readonly source: "AUTO_QC";
   readonly sessionId: string | null;
+  readonly sourceImportId: string | null;
+  readonly sourceEpisodeIndex: number | null;
   readonly rolloutId: string;
   readonly dataPackageId: string | null;
   readonly status: "RISK" | "REJECT";
@@ -54,7 +58,12 @@ export interface AutoQualityProblem {
 export function useAutoQualityProblems(allowed = true) {
   const scope = useShellStore((state) => state.scope);
   return useQuery({
-    queryKey: ["quality-problems", scope?.projectId, scope?.regionCode],
+    queryKey: [
+      "quality-problems",
+      scope?.organizationId,
+      scope?.projectId,
+      scope?.regionCode,
+    ],
     enabled: allowed && Boolean(scope?.projectId && scope.regionCode),
     staleTime: 15_000,
     queryFn: async ({ signal }) => {
@@ -73,6 +82,8 @@ export function useAutoQualityProblems(allowed = true) {
             id: item.id,
             source: item.source,
             sessionId: item.session_id,
+            sourceImportId: item.source_import_id ?? null,
+            sourceEpisodeIndex: item.source_episode_index ?? null,
             rolloutId: item.rollout_id,
             dataPackageId: item.data_package_id,
             status: item.status,

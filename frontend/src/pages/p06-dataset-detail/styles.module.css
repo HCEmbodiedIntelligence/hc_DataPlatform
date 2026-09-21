@@ -501,3 +501,31 @@
     min-width: 0;
   }
 }
+
+.viewerToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 10px;
+  background: var(--hc-color-surface);
+}
+
+.viewerInspector {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 10px;
+}
+
+.page[data-page-kind="episode-viewer"] {
+  max-width: none;
+  min-width: 0;
+}
+
+.viewerInspector :global(.ant-typography) {
+  margin-bottom: 0;
+}

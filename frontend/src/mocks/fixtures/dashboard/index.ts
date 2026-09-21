@@ -141,6 +141,7 @@ export const dashboardTaskStatusFixture = {
     },
   ],
   pipeline: {
+    issues: [],
     task_count: 1,
     package_count: 12,
     qc: {
@@ -149,6 +150,8 @@ export const dashboardTaskStatusFixture = {
       risk: 2,
       rejected: 1,
       duplicate: 0,
+      reprocessing_conflicts: 0,
+      discarded: 0,
       unavailable: 0,
     },
     stages: dashboardTaskPipelineStages,
@@ -181,10 +184,13 @@ export const dashboardTaskStatusFixture = {
       risk: 2,
       rejected: 1,
       duplicate: 0,
+      reprocessing_conflicts: 0,
+      discarded: 0,
       unavailable: 0,
     },
     standardization: {
       waiting: 2,
+      resume_required: 0,
       aligning: 1,
       alignment_failed: 1,
       lance_writing: 1,
@@ -351,6 +357,7 @@ export const dashboardTaskStatusAllTasksFixture = {
     },
   ],
   pipeline: {
+    issues: [],
     task_count: 2,
     package_count: 14,
     qc: {
@@ -359,6 +366,8 @@ export const dashboardTaskStatusAllTasksFixture = {
       risk: 2,
       rejected: 1,
       duplicate: 0,
+      reprocessing_conflicts: 0,
+      discarded: 0,
       unavailable: 0,
     },
     stages: [
@@ -400,6 +409,7 @@ export const dashboardTaskStatusEmptyFixture = {
   section: empty,
   tasks: [],
   pipeline: {
+    issues: [],
     task_count: 0,
     package_count: 0,
     qc: {
@@ -408,6 +418,8 @@ export const dashboardTaskStatusEmptyFixture = {
       risk: 0,
       rejected: 0,
       duplicate: 0,
+      reprocessing_conflicts: 0,
+      discarded: 0,
       unavailable: 0,
     },
     stages: dashboardEmptyTaskPipelineStages,

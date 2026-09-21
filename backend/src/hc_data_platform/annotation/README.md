@@ -17,8 +17,9 @@
 
 HTTP 路由从 `request.state.auth_context` 读取已由 BE-02 验证的 `AuthContext`。
 标注员、审核员和发布者的操作使用不同的角色检查；所有公开读取都限定在项目范围内。
-OPEN-08 未确认时，自审由 `SelfReviewPolicy.UNCONFIRMED` 保持未冻结；部署只能显式配置
-`ALLOW` 或 `DENY`，不能由 UI 或角色名推断。发布模块只能获得 `AnnotationApprovedV1`，即一个精确的已批准修订及其
+默认使用 `SelfReviewPolicy.ALLOW`：同一账号可以提交并审核自己的标注，但仍须具备项目内的
+`annotation.review` 权限。服务层保留显式配置 `DENY` 或 `UNCONFIRMED` 的策略校验。
+发布模块只能获得 `AnnotationApprovedV1`，即一个精确的已批准修订及其
 生效排除范围快照。后续任何编辑都会创建新修订并移除当前批准指针，同时保留审核历史。
 
 Tag Schema 以 `schema_id + version` 标识。Schema 内容支持任意深度的父子 Tag 图、路径、

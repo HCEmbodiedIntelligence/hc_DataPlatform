@@ -7,10 +7,14 @@ export function nativeRoot(scope: IngestScope): string {
 export interface NativeProgress {
   import_id: string;
   dataset_id: string;
+  collection_task_id?: string | null;
   status: string;
   episode_count: number;
   ready: number;
   failed: number;
+  discarded?: number;
+  resume_required?: number;
+  reprocessing_conflicts?: number;
   last_error_code: string | null;
   updated_at: string;
   source_format: string;

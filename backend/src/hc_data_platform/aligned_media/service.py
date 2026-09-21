@@ -32,8 +32,8 @@ from .ports import (
 )
 from .profiles import DEFAULT_ALIGNED_MEDIA_PROFILES, AlignedMediaProfileCatalog
 
-ALIGNED_MEDIA_PIPELINE_REVISION = "aligned-mp4-image2pipe-v1"
-MP4_EPISODE_PIPELINE_REVISION = "aligned-mp4-native-cut-v1"
+ALIGNED_MEDIA_PIPELINE_REVISION = "aligned-mp4-image2pipe-range-v2"
+MP4_EPISODE_PIPELINE_REVISION = "aligned-mp4-native-cut-range-v2"
 
 
 def aligned_media_artifact_key(request: AlignedMediaGenerationRequestV1) -> str:

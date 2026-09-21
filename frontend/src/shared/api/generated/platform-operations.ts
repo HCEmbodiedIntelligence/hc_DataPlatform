@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: aee8a65e197c89a1b0466b013266b0fa2b69fa9e3fdd556be3264d28b92059c6
+// Runtime-OpenAPI-SHA256: caf55764d4556ddbb2dea87e4e9f4997ff963127f32abf10b91eaed7f252a49d
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -45,6 +45,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/auth/sessions" },
   { method: "GET", path: "/capabilities/auto-annotation" },
   { method: "GET", path: "/datasets/{dataset_id}/versions/{dataset_version}" },
+  { method: "GET", path: "/datasets/{dataset_id}/versions/{dataset_version}/export-eligibility" },
   { method: "POST", path: "/datasets/{dataset_id}/versions/{dataset_version}/exports" },
   { method: "GET", path: "/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}" },
   { method: "POST", path: "/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:cancel" },
@@ -261,6 +262,8 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:read" },
   { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:upload-part" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },

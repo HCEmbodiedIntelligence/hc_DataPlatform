@@ -2,6 +2,7 @@ name: ${HC_COMPOSE_PROJECT_NAME:-hc-data-platform-single}
 
 x-api: &api
   image: hc-data-platform-backend:${HC_IMAGE_TAG:-full}
+  pull_policy: never
   build:
     context: backend
     target: worker
@@ -179,6 +180,7 @@ services:
 
   web:
     image: hc-data-platform-frontend:${HC_IMAGE_TAG:-full}
+    pull_policy: never
     build:
       context: frontend
       target: runtime

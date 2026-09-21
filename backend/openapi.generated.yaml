@@ -3992,6 +3992,19 @@ components:
           const: AUTO_QC
           default: AUTO_QC
           type: string
+        source_episode_index:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        source_import_id:
+          default: null
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
         start_ns:
           pattern: ^(?:0|[1-9][0-9]*)$
           type: string
@@ -14247,6 +14260,55 @@ components:
       - READY
       - FAILED
       type: string
+    EpisodeResolution:
+      properties:
+        action:
+          anyOf:
+          - enum:
+            - REPROCESS
+            - DISCARD
+            type: string
+          - type: 'null'
+          title: Action
+        available:
+          title: Available
+          type: boolean
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        resolution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Id
+        status:
+          enum:
+          - UNRESOLVED
+          - PENDING
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - DISCARDED
+          title: Status
+          type: string
+        unavailable_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Unavailable Reason
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated At
+      required:
+      - status
+      - available
+      title: EpisodeResolution
+      type: object
     EpisodeSlice:
       additionalProperties: false
       properties:
@@ -14505,9 +14567,17 @@ components:
       - end_step
       title: ExclusionRange
       type: object
+    ExportDataStage:
+      default: annotated
+      enum:
+      - annotated
+      - dataset
+      type: string
     ExportDatasetRequestV1:
       additionalProperties: false
       properties:
+        data_stage:
+          $ref: '#/components/schemas/ExportDataStage'
         episode_ids:
           anyOf:
           - items:
@@ -14560,6 +14630,27 @@ components:
       - expires_at
       - artifact_content_hash
       - media_type
+      type: object
+    ExportEligibilityV1:
+      additionalProperties: false
+      properties:
+        data_stage:
+          $ref: '#/components/schemas/ExportDataStage'
+        dataset_id:
+          type: string
+        dataset_version:
+          type: string
+        eligible_episode_ids:
+          items:
+            type: string
+          type: array
+        project_id:
+          type: string
+      required:
+      - project_id
+      - dataset_id
+      - dataset_version
+      - eligible_episode_ids
       type: object
     ExportJobProgressV1:
       additionalProperties: false
@@ -17609,9 +17700,17 @@ components:
       type: object
     NativeImportProgress:
       properties:
+        collection_task_id:
+          default: null
+          type:
+          - string
+          - 'null'
         dataset_id:
           title: Dataset Id
           type: string
+        discarded:
+          default: 0
+          type: integer
         episode_count:
           title: Episode Count
           type: integer
@@ -17632,6 +17731,12 @@ components:
           title: Last Error Code
         ready:
           title: Ready
+          type: integer
+        reprocessing_conflicts:
+          default: 0
+          type: integer
+        resume_required:
+          default: 0
           type: integer
         source_format:
           default: LEROBOT_V3
@@ -19838,6 +19943,8 @@ components:
         created_at:
           format: date-time
           type: string
+        data_stage:
+          $ref: '#/components/schemas/ExportDataStage'
         dataset_id:
           type: string
         dataset_version:
@@ -19887,7 +19994,9 @@ components:
           type: string
         annotation_revision:
           minimum: 0
-          type: integer
+          type:
+          - integer
+          - 'null'
         annotation_task_id:
           type:
           - string
@@ -20120,6 +20229,7 @@ components:
         default_timing:
           $ref: '#/components/schemas/TopicTimingProfileV1'
         engine_version:
+          default: be06-qc/2
           minLength: 1
           type: string
         image_profiles:
@@ -21125,6 +21235,30 @@ components:
       - request_id
       - roles
       - service_identity
+      type: object
+    ResolveEpisode:
+      additionalProperties: false
+      properties:
+        action:
+          enum:
+          - REPROCESS
+          - DISCARD
+          title: Action
+          type: string
+        expected_attempt_id:
+          maxLength: 128
+          minLength: 1
+          title: Expected Attempt Id
+          type: string
+        request_id:
+          format: uuid
+          title: Request Id
+          type: string
+      required:
+      - request_id
+      - action
+      - expected_attempt_id
+      title: ResolveEpisode
       type: object
     ResolveManualIssueCommand:
       additionalProperties: false
@@ -23573,6 +23707,88 @@ components:
       - EXCEEDED
       - UNKNOWN
       type: string
+    TaskDataIssue:
+      properties:
+        alignment_attempt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Alignment Attempt Id
+        category:
+          enum:
+          - DUPLICATE
+          - QUALITY
+          - TECHNICAL
+          - PROCESSING_CONFLICT
+          - RESUME_REQUIRED
+          title: Category
+          type: string
+        data_package_id:
+          title: Data Package Id
+          type: string
+        description:
+          title: Description
+          type: string
+        duplicate_of_rollout_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Duplicate Of Rollout Id
+        findings:
+          default: []
+          items:
+            $ref: '#/components/schemas/TaskIssueFinding'
+          title: Findings
+          type: array
+        label:
+          title: Label
+          type: string
+        lance_ready:
+          default: false
+          title: Lance Ready
+          type: boolean
+        qc_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Qc Status
+        reason_code:
+          title: Reason Code
+          type: string
+        rollout_id:
+          title: Rollout Id
+          type: string
+        source_episode_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Source Episode Index
+        source_import_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Source Import Id
+        stage:
+          $ref: '#/components/schemas/TaskProcessingStage'
+        task_id:
+          title: Task Id
+          type: string
+      required:
+      - task_id
+      - rollout_id
+      - data_package_id
+      - category
+      - stage
+      - reason_code
+      - label
+      - description
+      title: TaskDataIssue
+      type: object
     TaskDeviceProgress:
       additionalProperties: false
       description: Counts only authenticated device-agent CAPTURED/SAVED facts. Upload registration, Raw
@@ -23600,6 +23816,55 @@ components:
       - saved_count
       - confirmed_duration_seconds
       type: object
+    TaskIssueFinding:
+      properties:
+        code:
+          title: Code
+          type: string
+        end_ns:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: End Ns
+        message:
+          title: Message
+          type: string
+        observed:
+          anyOf:
+          - type: number
+          - type: string
+          - type: 'null'
+          default: null
+          title: Observed
+        severity:
+          title: Severity
+          type: string
+        start_ns:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Start Ns
+        threshold:
+          anyOf:
+          - type: number
+          - type: string
+          - type: 'null'
+          default: null
+          title: Threshold
+        topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Topic
+      required:
+      - code
+      - severity
+      - message
+      title: TaskIssueFinding
+      type: object
     TaskLifecycle:
       description: Configuration lifecycle only; target attainment is reported separately.
       enum:
@@ -23609,6 +23874,10 @@ components:
       type: string
     TaskPackageMainState:
       enum:
+      - DISCARDED
+      - DUPLICATE
+      - REPROCESSING_CONFLICT
+      - PROCESSING_RESUME_REQUIRED
       - REGISTERED
       - UPLOADING
       - UPLOAD_PAUSED
@@ -23637,6 +23906,11 @@ components:
       description: Current package flow for all tasks when task_id is omitted, or for the selected task
         when task_id is present. Every package is classified exactly once in every stage.
       properties:
+        issues:
+          default: []
+          items:
+            $ref: '#/components/schemas/TaskDataIssue'
+          type: array
         package_count:
           minimum: 0
           type: integer
@@ -23678,6 +23952,10 @@ components:
     TaskQcCounts:
       additionalProperties: false
       properties:
+        discarded:
+          default: 0
+          minimum: 0
+          type: integer
         duplicate:
           default: 0
           minimum: 0
@@ -23686,6 +23964,10 @@ components:
           minimum: 0
           type: integer
         rejected:
+          minimum: 0
+          type: integer
+        reprocessing_conflicts:
+          default: 0
           minimum: 0
           type: integer
         risk:
@@ -23774,6 +24056,10 @@ components:
           minimum: 0
           type: integer
         ready:
+          minimum: 0
+          type: integer
+        resume_required:
+          default: 0
           minimum: 0
           type: integer
         unavailable:
@@ -26583,6 +26869,37 @@ paths:
           description: Frozen publication manifest.
         '404':
           description: The immutable dataset version does not exist.
+      security:
+      - bearerAuth: []
+      tags:
+      - publishing
+  /api/v1/datasets/{dataset_id}/versions/{dataset_version}/export-eligibility:
+    get:
+      operationId: getDatasetExportEligibility
+      parameters:
+      - in: query
+        name: data_stage
+        schema:
+          $ref: '#/components/schemas/ExportDataStage'
+      - $ref: '#/components/parameters/PublishingDatasetId'
+      - $ref: '#/components/parameters/PublishingDatasetVersion'
+      - $ref: '#/components/parameters/PublishingProjectId'
+      - $ref: '#/components/parameters/PublishingRegionCode'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportEligibilityV1'
+          description: Included Episode identities eligible for export under the frozen publication or
+            current annotation approval preflight. Does not publish or create an export.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+        '403':
+          description: Export or Episode read access is not granted in this tenant scope.
+        '404':
+          description: The dataset version does not exist in this scope.
       security:
       - bearerAuth: []
       tags:
@@ -41254,6 +41571,12 @@ paths:
     get:
       operationId: listNativeImports
       parameters:
+      - in: query
+        name: include_all_sources
+        required: false
+        schema:
+          default: false
+          type: boolean
       - in: path
         name: project_id
         required: true
@@ -41780,6 +42103,119 @@ paths:
       security:
       - bearerAuth: []
       summary: Get Original Episode
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution:
+    get:
+      operationId: getEpisodeResolution
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          title: Import Id
+          type: string
+      - in: path
+        name: episode_index
+        required: true
+        schema:
+          title: Episode Index
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeResolution'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Episode Resolution
+      tags:
+      - lerobot-imports
+    post:
+      operationId: resolveNativeEpisode
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          title: Import Id
+          type: string
+      - in: path
+        name: episode_index
+        required: true
+        schema:
+          title: Episode Index
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveEpisode'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeResolution'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Resolve Native Episode
       tags:
       - lerobot-imports
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files:

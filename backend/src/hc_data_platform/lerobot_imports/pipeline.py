@@ -96,7 +96,7 @@ class LeRobotPipeline:
                 ),
             )
             row = cursor.fetchone()
-            return row is not None and row[0] == "READY"
+            return row is not None and row[0] in {"READY", "DISCARDED"}
 
     def update_state(self, update: Any) -> None:
         task = update.task
@@ -110,6 +110,28 @@ class LeRobotPipeline:
         )
         scope = (task.organization_id, task.project_id, task.region_code, task.source.raw_upload_id)
         with self.connections() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT job_id FROM ingest.raw_ingest_jobs
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                  AND raw_source_id=%s FOR UPDATE""",
+                scope,
+            )
+            resolution_id = task.source.processing_attempt_id
+            if resolution_id:
+                # Ignore obsolete activity deliveries after a newer user decision.
+                cursor.execute(
+                    """SELECT resolution_id FROM ingest.episode_resolutions
+                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                      AND raw_source_id=%s AND episode_id=(
+                        SELECT episode_id FROM ingest.raw_source_episodes
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND raw_source_id=%s AND source_episode_index=%s)
+                    ORDER BY created_at DESC LIMIT 1""",
+                    (*scope, *scope, task.source.episode_index),
+                )
+                latest = cursor.fetchone()
+                if latest is None or latest[0] != resolution_id:
+                    return
             if update.status.startswith("EPISODE_"):
                 job = update.episode_job
                 ready = job is not None and job.status.value == "SUCCEEDED"
@@ -151,6 +173,35 @@ class LeRobotPipeline:
                 AND raw_source_id=%s""",
                 (source_status, *scope),
             )
+            if resolution_id:
+                if update.status in {"FAILED", "PARTIALLY_FAILED", "CANCELLED"}:
+                    cursor.execute(
+                        """UPDATE ingest.raw_source_episodes SET status='FAILED',
+                        updated_at=clock_timestamp()
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND raw_source_id=%s AND source_episode_index=%s
+                          AND status IN ('PENDING', 'PROCESSING')""",
+                        (*scope, task.source.episode_index),
+                    )
+                cursor.execute(
+                    """UPDATE ingest.episode_resolutions SET status=%s, error_code=%s,
+                    updated_at=clock_timestamp() WHERE resolution_id=%s
+                    AND organization_id=%s AND project_id=%s AND region_code=%s""",
+                    (
+                        "RUNNING"
+                        if update.status == "RUNNING"
+                        else "SUCCEEDED"
+                        if update.status == "SUCCEEDED"
+                        else "FAILED",
+                        error,
+                        resolution_id,
+                        *scope[:3],
+                    ),
+                )
+            if update.status not in {"RUNNING", "CANCELLED"}:
+                from .resolutions import refresh_import_state
+
+                refresh_import_state(cursor, scope)
 
     def source(self, task: LeRobotEpisodeTaskV1) -> RawSource:
         ctx = current_request_context()
@@ -248,21 +299,32 @@ class LeRobotPipeline:
         if len(matches) != 1:
             raise ValueError("native episode is not uniquely declared in metadata")
         metadata = matches[0]
-        copy(
+        required = {
             info["data_path"].format(
                 chunk_index=int(metadata["data/chunk_index"]),
                 file_index=int(metadata["data/file_index"]),
             )
-        )
+        }
         for camera in reader.CAMERAS:
             prefix = f"videos/{camera.feature_key}"
-            copy(
+            required.add(
                 info["video_path"].format(
                     video_key=camera.feature_key,
                     chunk_index=int(metadata[f"{prefix}/chunk_index"]),
                     file_index=int(metadata[f"{prefix}/file_index"]),
                 )
             )
+        # Both callers hold the source's exclusive pin. Older Episodes in this
+        # same import are no longer using these local chunks, but whole-source
+        # eviction cannot remove them while this Episode holds the pin.
+        # Retain shared chunks and metadata; immutable object-store Raw stays intact.
+        retained = required | {f"{relative}.verified-sha256" for relative in required}
+        for folder in (root / "data", root / "videos"):
+            for cached in folder.rglob("*"):
+                if cached.is_file() and cached.relative_to(root).as_posix() not in retained:
+                    cached.unlink()
+        for relative in sorted(required):
+            copy(relative)
         return root
 
     def prepare(self, task: LeRobotEpisodeTaskV1) -> IngestRolloutWorkflowInput:
@@ -350,7 +412,7 @@ class LeRobotPipeline:
         )
         profile = QualityProfileV1(
             profile_id="native-g1-v3-30hz-v1",
-            profile_version=2,
+            profile_version=3,
             required_topics=frozenset(reader.ACTUAL_TOPICS),
             default_timing={"target_frequency_hz": 30},
             joint_topic=reader.JOINT_TOPIC,

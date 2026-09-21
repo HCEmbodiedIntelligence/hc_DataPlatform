@@ -1,8 +1,9 @@
 import { createDomainError } from "../../shared/api/domain-error";
 import type { RobotJointFrameSource } from "./RobotSceneCore";
+import { JOINT_WINDOW_NS } from "./buffered-joint-window-source";
 import type { StreamDescriptor, ViewerWindowPayload } from "./types";
 
-const CHUNK_NS = 4_000_000_000n;
+const CHUNK_NS = JOINT_WINDOW_NS;
 
 function emptyJointFrameError() {
   return createDomainError({
@@ -31,6 +32,10 @@ export function buildJointFrameSource(
   const streamStartNs = BigInt(stream.startNs);
   const streamEndNs = BigInt(stream.endNs);
   const payloadCache = new Map<string, ViewerWindowPayload>();
+  const sampleTimes = new WeakMap<
+    ViewerWindowPayload,
+    readonly { time: bigint; index: number }[]
+  >();
   const inFlight = new Map<string, Promise<ViewerWindowPayload>>();
   const failures = new Map<
     string,
@@ -65,6 +70,12 @@ export function buildJointFrameSource(
       )
       .then((payload) => {
         failures.delete(key);
+        sampleTimes.set(
+          payload,
+          payload.timestampsNs
+            .map((timestamp, index) => ({ time: BigInt(timestamp), index }))
+            .sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)),
+        );
         payloadCache.set(key, payload);
         while (payloadCache.size > 3) {
           const oldestKey = payloadCache.keys().next().value as
@@ -130,20 +141,31 @@ export function buildJointFrameSource(
       );
       if (!payload.values?.length || !payload.timestampsNs.length)
         throw emptyJointFrameError();
-      let nearestIndex = 0;
-      let nearestDistance =
-        BigInt(payload.timestampsNs[0] ?? "0") > targetNs
-          ? BigInt(payload.timestampsNs[0] ?? "0") - targetNs
-          : targetNs - BigInt(payload.timestampsNs[0] ?? "0");
-      payload.timestampsNs.forEach((timestamp, index) => {
-        const candidate = BigInt(timestamp);
-        const distance =
-          candidate > targetNs ? candidate - targetNs : targetNs - candidate;
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestIndex = index;
-        }
-      });
+      // Load ahead while the current chunk is still playing, including at 2x.
+      if (endNs < streamEndNs && endNs - targetNs <= 2_000_000_000n) {
+        const nextEnd =
+          endNs + CHUNK_NS < streamEndNs ? endNs + CHUNK_NS : streamEndNs;
+        const nextKey = `${endNs}:${nextEnd}`;
+        if (!payloadCache.has(nextKey) && !inFlight.has(nextKey))
+          void loadChunk(nextKey, endNs, nextEnd).catch(() => undefined);
+      }
+      const times = sampleTimes.get(payload)!;
+      let low = 0;
+      let high = times.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (times[middle]!.time < targetNs) low = middle + 1;
+        else high = middle;
+      }
+      const nearest =
+        low === 0
+          ? 0
+          : low === times.length
+            ? low - 1
+            : targetNs - times[low - 1]!.time <= times[low]!.time - targetNs
+              ? low - 1
+              : low;
+      const nearestIndex = times[nearest]!.index;
       const values = payload.values[nearestIndex] ?? [];
       return Object.fromEntries(
         values.map((value, index) => [

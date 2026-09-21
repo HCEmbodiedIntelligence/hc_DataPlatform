@@ -21,7 +21,6 @@ from hc_data_platform.alignment import (
     TimedSampleV1,
 )
 from hc_data_platform.annotation import (
-    AnnotationActor,
     AnnotationOperation,
     InMemoryAnnotationService,
     OperationKind,
@@ -64,7 +63,10 @@ from hc_data_platform.publishing.models import (
 )
 from hc_data_platform.publishing.service import DatasetPublisher, ExportCoordinator
 from hc_data_platform.quality import QualityEngine, QualityInputV1, QualityProfileV1
+from hc_data_platform.security.auth import AuthContext
+from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.verification import FakeDecoderProbe, McapVerifier
+from tests.publishing.export_fixtures import portable_export_source
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 PROJECT_ID = "be12-project"
@@ -203,7 +205,16 @@ def _export_steps(steps: Sequence[StepRecord]) -> tuple[ExportStepV1, ...]:
     return tuple(ExportStepV1.model_validate(step.model_dump(mode="python")) for step in steps)
 
 
-def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
+def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> None:
+    operator = AuthContext(
+        subject_id="single-operator",
+        project_ids=frozenset({PROJECT_ID}),
+        region_codes=frozenset({REGION_CODE}),
+        scope_pairs=frozenset({(PROJECT_ID, None)}),
+        scoped_capabilities=frozenset({(PROJECT_ID, "upload.manage")}),
+    )
+    ScopeGuard.require(operator, PROJECT_ID, REGION_CODE)
+    operator.require_capability("upload.manage", PROJECT_ID)
     raw = (FIXTURES / "mcap" / "legal.mcap").read_bytes()
     manifest = _manifest(raw)
 
@@ -314,26 +325,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         rollout_id=ROLLOUT_ID,
         base_step_count=30,
     )
-    annotator = AnnotationActor(
-        actor_id="alice",
-        capabilities=frozenset(
-            {
-                "annotation_task.read",
-                "annotation_task.claim",
-                "annotation_task.assign",
-                "annotation.edit",
-                "annotation.save",
-                "annotation.submit",
-            }
-        ),
-        project_ids=frozenset({PROJECT_ID}),
-    )
-    reviewer = AnnotationActor(
-        actor_id="bob",
-        capabilities=frozenset({"annotation_task.read", "annotation.review"}),
-        project_ids=frozenset({PROJECT_ID}),
-    )
-    task = annotations.claim(task.task_id, annotator)
+    task = annotations.claim(task.task_id, operator)
     operation = AnnotationOperation(
         operation_id="exclude-2-4",
         kind=OperationKind.EXCLUDE,
@@ -343,7 +335,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
     )
     revision = annotations.save_draft(
         task.task_id,
-        annotator,
+        operator,
         [operation],
         expected_revision=0,
         if_match=task.etag,
@@ -351,32 +343,34 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
     )
     replay_revision = annotations.save_draft(
         task.task_id,
-        annotator,
+        operator,
         [operation],
         expected_revision=0,
         if_match=task.etag,
         client_mutation_id="annotation-mutation-1",
     )
     assert replay_revision == revision
-    assert [item.revision for item in annotations.list_revisions(task.task_id, annotator)] == [
+    assert [item.revision for item in annotations.list_revisions(task.task_id, operator)] == [
         0,
         1,
     ]
     submitted = annotations.submit(
         task.task_id,
-        annotator,
+        operator,
         expected_revision=revision.revision,
         if_match=annotations.get_task(task.task_id).etag,
     )
     approved = annotations.review(
         task.task_id,
-        reviewer,
+        operator,
         ReviewDecision.APPROVE,
         revision=revision.revision,
         if_match=submitted.etag,
     )
     assert approved is not None
-    assert len(annotations.list_reviews(task.task_id, reviewer)) == 1
+    reviews = annotations.list_reviews(task.task_id, operator)
+    assert len(reviews) == 1
+    assert submitted.submitted_by == reviews[0].reviewer_id == operator.subject_id
 
     excluded = tuple(
         PublishingStepRange(start_step=item.start_step, end_step=item.end_step)
@@ -420,6 +414,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         dataset_version="pilot-v1",
         base_lance_version=str(version.version),
     )
+    operator.require_capability("dataset_version.publish", PROJECT_ID)
     published = publisher.publish(publish_request)
     assert publisher.publish(publish_request) == published
     assert (
@@ -437,11 +432,15 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
     )
 
     export_sink = InMemoryArtifactSink()
-    coordinator = ExportCoordinator(
-        source=InMemoryExportSource(_export_steps(steps)),
-        sink=export_sink,
-        exporters=[LeRobotV3Exporter()],
+    export_assets, export_steps = portable_export_source(
+        _export_steps(steps), tmp_path, tags=[tag.model_dump(mode="json") for tag in revision.tags]
     )
+    coordinator = ExportCoordinator(
+        source=InMemoryExportSource(export_steps),
+        sink=export_sink,
+        exporters=[LeRobotV3Exporter(export_assets)],
+    )
+    operator.require_capability("export.create", PROJECT_ID)
     exported = coordinator.export(
         published,
         format=ExportFormat.LEROBOT_V3,
@@ -456,6 +455,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
     assert exported.row_count == 28
     assert len(export_sink.artifacts) == 1
     assert len(export_sink.download_authorizations) == 1
+    operator.require_capability("export.download", PROJECT_ID)
 
     artifact = export_sink.artifacts[exported.artifact_uri]
     assert artifact.startswith(b"PK\x03\x04"), (exported, artifact[:80])
@@ -463,5 +463,8 @@ def test_complete_pipeline_and_duplicate_recovery_invariants() -> None:
         info = json.loads(archive.read("meta/info.json"))
         table = pq.read_table(pa.BufferReader(archive.read("data/chunk-000/file-000.parquet")))
     assert info["total_frames"] == 28
+    assert info["features"]["action"]["dtype"] == "float32"
+    assert info["features"]["observation.state"]["shape"] == [1]
+    assert info["features"]["observation.images.front"]["dtype"] == "video"
     assert table.num_rows == 28
     assert table.column("hc.source_step_index").to_pylist() == [*range(2), *range(4, 30)]

@@ -33,7 +33,9 @@ from .memory import (
 )
 from .models import (
     ExportDatasetRequestV1,
+    ExportDataStage,
     ExportDownloadAuthorizationV1,
+    ExportEligibilityV1,
     ExportFormat,
     ExportJobProgressV1,
     ExportJobResultV1,
@@ -122,8 +124,14 @@ def _resource_id(
 
 
 def _resolve_export_manifest(
-    *, project_id: str, dataset_id: str, dataset_version: str
+    *,
+    project_id: str,
+    dataset_id: str,
+    dataset_version: str,
+    data_stage: ExportDataStage = ExportDataStage.ANNOTATED,
 ) -> PublishedDatasetManifestV1:
+    if data_stage is ExportDataStage.DATASET:
+        return _dataset_export_manifest(project_id, dataset_id, dataset_version)
     try:
         return _publisher.get(
             project_id=project_id,
@@ -144,6 +152,27 @@ def _resolve_export_manifest(
                 base_lance_version=match.group(1),
             )
         )
+
+
+def _dataset_export_manifest(
+    project_id: str, dataset_id: str, dataset_version: str
+) -> PublishedDatasetManifestV1:
+    match = _READY_LANCE_VERSION.fullmatch(dataset_version)
+    base_lance_version = (
+        match.group(1)
+        if match
+        else _publisher.get(
+            project_id=project_id, dataset_id=dataset_id, dataset_version=dataset_version
+        ).base_lance_version
+    )
+    return _publisher.dataset_export_manifest(
+        PublishDatasetRequestV1(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+            base_lance_version=base_lance_version,
+        )
+    )
 
 
 def _export_job_not_found() -> Exception:
@@ -298,6 +327,86 @@ async def _launch_export(
     )
 
 
+@router.get(
+    "/{dataset_id}/versions/{dataset_version}/export-eligibility",
+    operation_id="getDatasetExportEligibility",
+    response_model=ExportEligibilityV1,
+    responses={200: {"headers": _NO_STORE_HEADERS}},
+)
+def get_export_eligibility(
+    dataset_id: str,
+    dataset_version: str,
+    project_id: str,
+    auth: VerifiedAuth,
+    response: Response,
+    data_stage: ExportDataStage = ExportDataStage.ANNOTATED,
+    region_code: str | None = Header(default=None, alias="X-Region-Code"),
+) -> ExportEligibilityV1:
+    """Read export eligibility using the same frozen scope as export creation."""
+    from hc_data_platform.dataset_registry.router import get_dataset_page_service
+
+    authorize_scope(auth, project_id, "export.read", region_code=region_code)
+    context = current_request_context()
+    bindings = get_dataset_page_service().export_episode_bindings(
+        auth=auth,
+        organization_id=context.organization_id or "",
+        project_id=project_id,
+        region_code=context.region_code or "",
+        dataset_id=dataset_id,
+        version_id=dataset_version,
+    )
+    if data_stage is ExportDataStage.DATASET:
+        eligible = {
+            item.rollout_id
+            for item in _dataset_export_manifest(project_id, dataset_id, dataset_version).rollouts
+        }
+        response.headers["Cache-Control"] = "no-store"
+        return ExportEligibilityV1(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+            data_stage=data_stage,
+            eligible_episode_ids=tuple(
+                sorted(
+                    episode_id
+                    for episode_id, rollout_id in bindings.items()
+                    if rollout_id in eligible
+                )
+            ),
+        )
+    try:
+        rollouts = _publisher.get(
+            project_id=project_id, dataset_id=dataset_id, dataset_version=dataset_version
+        ).rollouts
+    except ProblemException as exc:
+        if exc.problem.code != "DATASET_VERSION_NOT_FOUND":
+            raise
+        match = _READY_LANCE_VERSION.fullmatch(dataset_version)
+        if match is None:
+            raise
+        # Reading the selection list must never publish/freeze an annotation snapshot.
+        rollouts = _publisher.preflight(
+            PublishDatasetRequestV1(
+                project_id=project_id,
+                dataset_id=dataset_id,
+                dataset_version=dataset_version,
+                base_lance_version=match.group(1),
+            )
+        ).eligible_rollouts
+    eligible = {rollout.rollout_id for rollout in rollouts}
+    response.headers["Cache-Control"] = "no-store"
+    return ExportEligibilityV1(
+        project_id=project_id,
+        dataset_id=dataset_id,
+        dataset_version=dataset_version,
+        eligible_episode_ids=tuple(
+            sorted(
+                episode_id for episode_id, rollout_id in bindings.items() if rollout_id in eligible
+            )
+        ),
+    )
+
+
 @router.post("/publication-preflight", response_model=PublishPreflightReportV1)
 def publication_preflight(
     request: PublishDatasetRequestV1,
@@ -378,7 +487,7 @@ async def export_dataset_version(
         region_code=region_code,
     )
     rollout_ids = None
-    selection = None
+    selection: dict[str, Any] | None = None
     if request.episode_ids is not None:
         from hc_data_platform.dataset_registry.router import get_dataset_page_service
 
@@ -396,12 +505,27 @@ async def export_dataset_version(
         project_id=request.project_id,
         dataset_id=dataset_id,
         dataset_version=dataset_version,
+        data_stage=request.data_stage,
     )
     if rollout_ids is not None and request.episode_ids is not None:
         manifest = select_export_rollouts(manifest, rollout_ids)
         selection = {
             "episode_ids": sorted(set(request.episode_ids)),
             "rollout_ids": list(rollout_ids),
+            "content_hash": manifest.content_hash,
+        }
+    if request.data_stage is ExportDataStage.DATASET:
+        if not manifest.rollouts:
+            raise problem(
+                status=422,
+                code="NO_ELIGIBLE_ROLLOUTS",
+                title="No dataset rows ready",
+                detail="No processed Episodes are available in the selected snapshot.",
+            )
+        selection = {
+            **(selection or {}),
+            "data_stage": request.data_stage.value,
+            "frozen_manifest": manifest.model_dump(mode="json"),
             "content_hash": manifest.content_hash,
         }
     attempt_id = _selected_attempt(manifest, request.format, idempotency_key)
@@ -488,12 +612,32 @@ async def retry_export_job(
             title="Export retry is not allowed",
             detail="Only failed or cancelled export jobs can be retried.",
         )
-    manifest = _publisher.get(
-        project_id=project_id,
-        dataset_id=dataset_id,
-        dataset_version=dataset_version,
-    )
     selection = (existing.result or {}).get("export_selection")
+    if selection is not None and selection.get("data_stage") == ExportDataStage.DATASET.value:
+        manifest = PublishedDatasetManifestV1.model_validate(selection["frozen_manifest"])
+        if (
+            manifest.project_id,
+            manifest.dataset_id,
+            manifest.dataset_version,
+            manifest.data_stage,
+        ) != (
+            project_id,
+            dataset_id,
+            dataset_version,
+            ExportDataStage.DATASET,
+        ) or manifest.content_hash != selection["content_hash"]:
+            raise problem(
+                status=409,
+                code="EXPORT_SELECTION_CHANGED",
+                title="Export selection changed",
+                detail="The retry snapshot does not match the original export selection.",
+            )
+    else:
+        manifest = _publisher.get(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+        )
     if previous.attempt_id.startswith("episodes-") and selection is None:
         raise problem(
             status=409,
@@ -501,7 +645,7 @@ async def retry_export_job(
             title="Export selection is unavailable",
             detail="Reload the original job before retrying its Episode selection.",
         )
-    if selection is not None:
+    if selection is not None and manifest.data_stage is ExportDataStage.ANNOTATED:
         manifest = select_export_rollouts(manifest, tuple(selection["rollout_ids"]))
         if manifest.content_hash != selection["content_hash"]:
             raise problem(

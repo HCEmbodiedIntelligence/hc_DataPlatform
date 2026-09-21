@@ -340,6 +340,7 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/account/notifications/unread-count` | N1；A2 当前账户未读计数，session-only、no-store。 |
 | `/api/v1/account/notifications/{notification_id}:read` | N1；A2 当前账户已读幂等写入与脱敏审计。 |
 | `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}` | N1；P07 导出任务 project 读取范围。 |
+| `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/export-eligibility` | N1；要求 `export.read`，按 organization/project/region 与数据集版本范围读取可导出 Episode；只读且响应 no-store。 |
 | `/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}/download` | N1；P07 导出下载当前授权范围。 |
 
 ## 7. 2026-08-24 运行时路径增量
@@ -490,3 +491,23 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/robot-ingest/uploads/{upload_id}:commit` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，仅在全部本地资产校验通过后提交。 |
 | `/api/v1/robot-ingest/uploads/{upload_id}:pause` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，状态转换受 upload 归属与状态机约束。 |
 | `/api/v1/robot-ingest/uploads/{upload_id}:resume` | N1；OpenAPI authn 缺口：运行时使用独立机器人凭证认证，状态转换受 upload 归属与状态机约束。 |
+
+## 2026-09-21 数据全流程权限与原生上传路径补充
+
+人类账号的项目级 `upload.manage` 包含标注、自审、版本审核、发布及导出下载权限；
+组织、项目和区域校验仍生效。只读账号及服务身份保持显式授权。
+同会话授权及撤销见 `test_authorization_pairs.py::test_upload_grant_expands_bootstrap_and_existing_session_then_revokes`；
+单账号处理及导出产物验证见 `tests/system/test_e2e_pipeline.py`。
+
+以下原生上传路径由 N1 覆盖匿名拒绝；能力和作用域由 `authorize_scope` 校验。
+
+| 路径 | 权限边界 |
+| --- | --- |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration` | GET 要求 `upload.read`；POST 要求 `data_schema.publish`。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:read` | `upload.read`；校验原始文件所属组织、项目和区域。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}` | `upload.read`；校验 Episode 所属原始导入。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution` | N1；GET 要求 `upload.read`，POST 要求 `upload.manage`；校验 organization/project/region 与 Episode 归属，处理决定受当前 attempt、入库状态及请求幂等约束。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files` | `upload.read`；按组织、项目和区域读取原始文件列表。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing` | `upload.read`；按当前作用域读取处理状态。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process` | `upload.manage`；校验原始导入的作用域、格式及处理目标。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry` | `upload.manage`；仅在当前作用域重试导入处理。 |

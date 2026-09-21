@@ -8,6 +8,7 @@ import { request } from "../../../shared/api/http-client";
 import { nativeRoot, type NativeProgress } from "../lerobot-processing";
 import styles from "../styles.module.css";
 import { ProcessingTargetFields } from "./ProcessingTargetFields";
+import { VideoPreviewModal } from "../../../features/viewer/VideoPreviewModal";
 import {
   ProcessingLabels,
   useProcessingConfiguration,
@@ -18,7 +19,7 @@ const labels: Record<string, string> = {
   PENDING: "等待后台处理",
   RUNNING: "质检 / 对齐处理中",
   SUCCEEDED: "处理完成，可人工标注",
-  PARTIALLY_FAILED: "部分处理失败",
+  PARTIALLY_FAILED: "部分处理未完成",
   FAILED: "处理失败",
   CANCELLED: "处理已取消",
 };
@@ -76,7 +77,12 @@ export function LeRobotProcessingRecords({
         scope,
         path: `${nativeRoot(scope)}/${encodeURIComponent(id)}:retry`,
       }),
-    onSuccess: () => client.invalidateQueries({ queryKey: key }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: key }),
+        client.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    },
   });
   const processStored = useMutation({
     mutationFn: () =>
@@ -135,7 +141,7 @@ export function LeRobotProcessingRecords({
               <Progress
                 aria-label="LeRobot 处理进度"
                 percent={Math.round(
-                  (100 * (item.ready + item.failed)) /
+                  (100 * (item.ready + item.failed + (item.discarded ?? 0))) /
                     Math.max(1, item.episode_count),
                 )}
                 status={
@@ -153,13 +159,26 @@ export function LeRobotProcessingRecords({
               </p>
             ) : (
               <p>
-                共 {item.episode_count} 个 Episode · 已就绪 {item.ready} · 失败{" "}
-                {item.failed}
+                共 {item.episode_count} 个 Episode · 已就绪 {item.ready} ·
+                处理未完成 {item.failed}
+                {(item.discarded ?? 0) > 0 ? ` · 已移除 ${item.discarded}` : ""}
               </p>
             )}
+            {(item.resume_required ?? 0) + (item.reprocessing_conflicts ?? 0) >
+            0 ? (
+              <p>
+                未完成明细：待继续处理 {item.resume_required ?? 0} · 处理冲突{" "}
+                {item.reprocessing_conflicts ?? 0}
+                {item.failed >
+                (item.resume_required ?? 0) + (item.reprocessing_conflicts ?? 0)
+                  ? ` · 其他未完成 ${item.failed - (item.resume_required ?? 0) - (item.reprocessing_conflicts ?? 0)}`
+                  : ""}
+                。质检通过后仍需完成入库，处理冲突可在首页查看详情。
+              </p>
+            ) : null}
             {item.last_error_code ? (
               <p role="alert">
-                失败原因：<code>{item.last_error_code}</code>
+                上次处理错误：<code>{item.last_error_code}</code>
               </p>
             ) : null}
             <Space>
@@ -256,13 +275,10 @@ export function LeRobotProcessingRecords({
           </>
         ) : null}
       </Modal>
-      <Modal
+      <VideoPreviewModal
         open={openedId !== null}
         onCancel={() => setOpenedId(null)}
-        footer={null}
-        width="min(1400px, 95vw)"
         title="原始文件与视频"
-        destroyOnHidden
       >
         {openedId ? (
           <Suspense fallback={<p>正在加载原始数据…</p>}>
@@ -273,7 +289,7 @@ export function LeRobotProcessingRecords({
             />
           </Suspense>
         ) : null}
-      </Modal>
+      </VideoPreviewModal>
     </section>
   );
 }
