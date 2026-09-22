@@ -8,6 +8,9 @@
 部署到机器后还需要持续更新源码，使用 **`compose.dev.yaml`**。本页的启动、更新、停止命令均以此为准。
 默认连接真实 API 和本机 MinIO，无需 OSS 凭据。
 
+两台开发部署之间需要保留双方项目和数据时，使用[自动合并迁移](docs/data-merge.md)：
+`deploy/scripts/merge-dev-data.py` 提供导出、预检与导入，自动备份目标数据库并处理账号、日志编号和重复文件。
+
 - 修改 `frontend/src`：Vite 热更新。
 - 修改 `backend/src`：API 和合并 Worker 自动重启。
 - 依赖、Dockerfile、环境变量或数据库迁移有变化：按下文“更新代码与依赖”处理。
