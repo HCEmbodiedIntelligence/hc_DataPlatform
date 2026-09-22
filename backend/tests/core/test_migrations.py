@@ -186,6 +186,7 @@ EXPECTED_MANIFEST = (
     "ingest/013_native_lerobot_workflow.sql",
     "ingest/014_raw_storage_only.sql",
     "ingest/015_stored_source_processing.sql",
+    "ingest/016_episode_resolutions.sql",
 )
 
 

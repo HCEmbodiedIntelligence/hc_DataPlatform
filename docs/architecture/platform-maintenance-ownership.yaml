@@ -322,7 +322,8 @@ task_ownership:
       forbidden_parallel_authorities:
         [temporal_workflow, outbox_dispatcher, database_lease]
       evidence:
-        - plan/PLATFORM-BACKUP-RESTORE-HA-UPGRADE-IMPLEMENTATION-PLAN.md
+        - deploy/helm/hc-data-platform/templates/backend-restore-job.yaml
+        - backend/src/hc_data_platform/backup/restore_cli.py
 
     - id: platform_maintenance_operation
       coordination_authority: database_lease
