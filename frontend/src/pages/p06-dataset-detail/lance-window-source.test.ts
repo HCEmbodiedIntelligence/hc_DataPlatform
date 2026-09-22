@@ -129,8 +129,12 @@ describe("P06 immutable Lance window source", () => {
   it("decodes Unitree named vectors and pose objects without flattening their metadata", async () => {
     requestMock.mockResolvedValue(
       stepWindow({}, vectorBinding.modality_key, [
-        { names: ["joint_a", "joint_b"], positions: [1, 2] },
-        { names: ["joint_a", "joint_b"], values: [3, 4] },
+        {
+          names: ["joint_a", "joint_b"],
+          positions: [1, 2],
+          units: ["rad", "m"],
+        },
+        { names: ["joint_a", "joint_b"], values: [3, 4], units: ["rad", "m"] },
       ]) as never,
     );
     await expect(
@@ -142,6 +146,10 @@ describe("P06 immutable Lance window source", () => {
       values: [
         [1, 2],
         [3, 4],
+      ],
+      series: [
+        expect.objectContaining({ unit: "rad" }),
+        expect.objectContaining({ unit: "m" }),
       ],
     });
 

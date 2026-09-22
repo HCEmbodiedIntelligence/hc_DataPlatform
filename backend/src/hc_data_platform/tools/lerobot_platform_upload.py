@@ -144,6 +144,7 @@ def build_native_source(
     dataset_id: str,
     collection_task_id: str | None = None,
     robot_id: str | None = None,
+    process: bool = True,
 ) -> NativeLeRobotSource:
     """Inspect one LeRobot tree while preserving every original source object."""
 
@@ -192,7 +193,7 @@ def build_native_source(
         for relative, path in files.items()
     )
     manifest = CreateLeRobotImportV1(
-        processing_mode="PROCESS" if collection_task_id and robot_id else "STORE_ONLY",
+        processing_mode="PROCESS" if process and collection_task_id and robot_id else "STORE_ONLY",
         dataset_id=dataset_id,
         collection_task_id=collection_task_id,
         robot_id=robot_id,
@@ -236,8 +237,14 @@ def upload_native_lerobot(
         dataset_id=dataset_id or "robot-task-resolved",
         collection_task_id=collection_task_id,
         robot_id=robot_id,
+        process=not bool(robot_credential),
     )
     if robot_credential:
+        # Robot identity uses its own ingest protocol. Validate processing schema
+        # only after selecting that route; never construct a browser PROCESS first.
+        from hc_data_platform.lerobot_imports.source_profile import validate_processing_info
+
+        validate_processing_info(source.manifest.info)
         if not collection_task_id or not robot_id:
             raise ValueError("robot-authenticated uploads require explicit task and robot IDs")
         if not capture_started_at or not capture_ended_at:
@@ -501,6 +508,7 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
         dataset_id=dataset_id or "robot-task-resolved",
         collection_task_id=cast(str | None, args.collection_task_id),
         robot_id=cast(str | None, args.robot_id),
+        process=not bool(robot_token),
     )
     print("\n将通过平台原样上传 LeRobot Raw（不会生成 MCAP）：")
     print(f"  Project : {project_id or '由 Task 解析'}")

@@ -14,6 +14,7 @@ from hc_data_platform.tools import hf_unitree_g1_to_mcap as reader
 
 def test_later_episode_reclaims_old_chunks_in_the_same_pinned_source(tmp_path):
     info = {
+        "robot_type": "unitree_g1",
         "data_path": "data/{file_index}.parquet",
         "video_path": "videos/{video_key}/{file_index}.mp4",
     }

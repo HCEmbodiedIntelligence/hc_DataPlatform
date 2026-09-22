@@ -1,0 +1,80 @@
+{
+  "assets": [
+    {
+      "crc64": "16078073583668521334",
+      "path": "capture-context.json",
+      "sha256": "fe6ab0e5c7e28be80afa7018277d31890d01080efca7f8443c0c152ef7bcfc1d",
+      "size_bytes": 3997
+    },
+    {
+      "crc64": "10609138339617907971",
+      "path": "data/chunk-000/file-000.parquet",
+      "sha256": "2d53c432f17cd0c92e8b6bb0dee37e1c41b1f8aad54370969addfb210018d20b",
+      "size_bytes": 4396
+    },
+    {
+      "crc64": "1374676670773486131",
+      "path": "export.json",
+      "sha256": "1ad1f1788b789a43cf5dc4c360cc7d967fc0e4bcda4cfae644051fcbd52d4dd4",
+      "size_bytes": 740
+    },
+    {
+      "crc64": "4385169895985805199",
+      "path": "meta/episodes/chunk-000/file-000.parquet",
+      "sha256": "3c1053a6b4950acddffe6b8a82cc1874736c86d62ce2cf58d4dfb612ce7d7bae",
+      "size_bytes": 8758
+    },
+    {
+      "crc64": "15962222539107409334",
+      "path": "meta/info.json",
+      "sha256": "af9edc0f89ea4f1148f8ed1bb1d8e2fa9c54cd491e167af240c6c0fded508e3f",
+      "size_bytes": 3683
+    },
+    {
+      "crc64": "10761030021959626616",
+      "path": "meta/stats.json",
+      "sha256": "402d68ffac4c0d5aaf6b7f9e368e5b34bd100d4cc498ccf70c4e6754587594c5",
+      "size_bytes": 7218
+    },
+    {
+      "crc64": "8247790542860109476",
+      "path": "meta/tasks.parquet",
+      "sha256": "79353153f41976f732a9cda676754758ca91715b779b23685edc11ecfd8657de",
+      "size_bytes": 2046
+    },
+    {
+      "crc64": "11317515391232362366",
+      "path": "source_mapping.jsonl",
+      "sha256": "0c62405f06390ac52b43f9dd66b06d592a2f7db8ec3a68aee5cb0c8717e0d27f",
+      "size_bytes": 15921
+    },
+    {
+      "crc64": "7236484279044389398",
+      "path": "videos/observation.images.camera_hand/chunk-000/file-000.mp4",
+      "sha256": "c59f4473fa0f924198bb3b00b45e8a5609ced974875f5b7eab401a2d09b6c1ab",
+      "size_bytes": 5401
+    },
+    {
+      "crc64": "2446250501929602006",
+      "path": "videos/observation.images.camera_left/chunk-000/file-000.mp4",
+      "sha256": "6238abf3b96e33aeb7b3a11dfc9c29f56070c83367fb4cf7d5b24b4b2bd81648",
+      "size_bytes": 5650
+    },
+    {
+      "crc64": "12777952293360509603",
+      "path": "videos/observation.images.camera_right/chunk-000/file-000.mp4",
+      "sha256": "fbe0672c941261d0eef3b9827fa24bb165defec570f3a4042c66087d7910a52e",
+      "size_bytes": 5608
+    }
+  ],
+  "collection_task_id": "synthetic-task-001",
+  "completed_at": "2026-09-22T00:00:02Z",
+  "content_sha256": "519196f4b14f489d6d26561d0a14af7893a3cea7e300c8a73188e7a0c0be13b6",
+  "contract_version": "openarm-capture/v1",
+  "export_id": "synthetic-export-openarmx-v1",
+  "robot_id": "synthetic-platform-robot-01",
+  "schema_version": "openarm-export-complete/v1",
+  "session_id": "synthetic-session-001",
+  "status": "COMPLETE",
+  "synthetic": true
+}

@@ -372,7 +372,7 @@ def _lerobot_value(value: Any) -> tuple[Any, dict[str, Any] | None]:
     for key in ("positions", "values"):
         vector = value.get(key)
         if (
-            set(value) <= {key, "names"}
+            set(value) <= {key, "names", "units"}
             and isinstance(vector, (list, tuple))
             and vector
             and all(isinstance(item, (int, float)) for item in vector)
@@ -381,6 +381,7 @@ def _lerobot_value(value: Any) -> tuple[Any, dict[str, Any] | None]:
                 "encoding": "vector",
                 "value_key": key,
                 "names": value.get("names"),
+                **({"units": value["units"]} if "units" in value else {}),
             }
     if set(value) == {"position_xyz", "orientation_wxyz"}:
         return [*value["position_xyz"], *value["orientation_wxyz"]], {"encoding": "pose"}

@@ -1,0 +1,36 @@
+ Image openarm-g0-b-backend:2f602220 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 644B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.offline
+#2 transferring dockerfile: 185B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/hc-offline/backend:71eaa560
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 226B done
+#4 DONE 0.0s
+
+#5 [1/2] FROM docker.io/hc-offline/backend:71eaa560@sha256:fbcefa6508cab37d4d74a6f8d17baaeddf3fb6e371c0fd45e250872b644a77c3
+#5 resolve docker.io/hc-offline/backend:71eaa560@sha256:fbcefa6508cab37d4d74a6f8d17baaeddf3fb6e371c0fd45e250872b644a77c3 done
+#5 CACHED
+
+#6 [2/2] RUN python -c "import pytest, pyarrow, lance, psycopg, temporalio"
+#6 DONE 1.4s
+
+#7 exporting to image
+#7 exporting layers 0.1s done
+#7 exporting manifest sha256:aa56be09cfb9c3480853f61fee4e034b6ccbfe3c9f392668ef42c9fc23659ab1 0.0s done
+#7 exporting config sha256:6caf35a77b8e36adb148c143bc0d5b95ddc84f34aa3ce2acc0df4d0e9a0c81da 0.0s done
+#7 exporting attestation manifest sha256:67aa2dc98f61dc9972b56dbc7b8a2fcf459708e0ba95740fe23a50fb0c6b4753 0.0s done
+#7 exporting manifest list sha256:8ef054379424e62da0bd6b37d9fb8e07845458e9eccc2c19541878f6ce899828 0.0s done
+#7 naming to docker.io/library/openarm-g0-b-backend:2f602220 done
+#7 unpacking to docker.io/library/openarm-g0-b-backend:2f602220 0.0s done
+#7 DONE 0.2s
+
+#8 resolving provenance for metadata file
+#8 DONE 0.0s
+ Image openarm-g0-b-backend:2f602220 Built 

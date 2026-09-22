@@ -49,3 +49,7 @@ release-values.yaml
 *.rej
 # Generated test, visual, and acceptance artifacts.
 /artifacts/
+/.reader-venv/
+/.frontend-env/
+/.reader-compose/
+/frontend/.pnpm-store/

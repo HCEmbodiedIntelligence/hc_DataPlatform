@@ -281,3 +281,37 @@ def test_robot_cli_does_not_prompt_for_or_send_authoritative_task_scope(
     assert captured["project_id"] is None
     assert captured["region_code"] is None
     assert captured["dataset_id"] is None
+
+
+@pytest.mark.parametrize("fixture", ["valid-openarm", "valid-generic"])
+def test_robot_identity_accepts_native_profiles_before_browser_process_construction(
+    monkeypatch: pytest.MonkeyPatch, fixture: str
+) -> None:
+    root = Path(__file__).parents[1] / "fixtures/openarm-g0" / fixture
+    captured: dict[str, Any] = {}
+
+    def fake_upload(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"status": "COMMITTED"}
+
+    monkeypatch.setattr(
+        "hc_data_platform.tools.lerobot_platform_upload.upload_robot_ingest", fake_upload
+    )
+    result = upload_native_lerobot(
+        root,
+        organization_id=None,
+        project_id=None,
+        region_code=None,
+        dataset_id=None,
+        collection_task_id="task",
+        robot_id="robot",
+        api_base_url="https://platform.test",
+        access_token=None,
+        robot_credential="test-secret",
+        capture_started_at="2026-09-01T00:00:00Z",
+        capture_ended_at="2026-09-01T00:10:00Z",
+    )
+    assert result == {"status": "COMMITTED"}
+    assert captured["declared_episode_count"] == 2
+    assert captured["source_format"] == "LEROBOT_V3"
+    assert "capture-context.json" in {asset.path for asset in captured["assets"]}

@@ -182,7 +182,9 @@ class PostgresExportAssets:
 
             def read(relative: str) -> bytes:
                 descriptor = descriptors[relative]
-                content = b"".join(self.storage.read_chunks(f"{raw[1]}/{relative}"))
+                content = b"".join(
+                    self.storage.read_chunks(descriptor.get("object_key") or f"{raw[1]}/{relative}")
+                )
                 if (
                     len(content) != descriptor["size"]
                     or hashlib.sha256(content).hexdigest() != descriptor["sha256"]
@@ -194,6 +196,30 @@ class PostgresExportAssets:
 
             info = json.loads(read("meta/info.json"))
             metadata["robot_type"] = info.get("robot_type") or "unknown"
+            metadata["source_features"] = {
+                key: value
+                for key, value in info["features"].items()
+                if key in {"action", "observation.state"}
+            }
+            if "capture-context.json" in descriptors:
+                capture = json.loads(read("capture-context.json"))
+                index = source_metadata.get("episode_index")
+                sources = [e for e in capture["episodes"] if e["episode_index"] == index]
+                if len(sources) != 1:
+                    raise export_error(
+                        "EXPORT_SOURCE_EPISODE_MISSING", "Source episode is ambiguous."
+                    )
+                metadata.update(capture_context=capture, source_episode=sources[0])
+                metadata["source_assets"] = {
+                    "raw_source_id": raw_id,
+                    "manifest_key": raw[0],
+                    "files": [
+                        {"path": name, "size": d["size"], "sha256": d["sha256"]}
+                        for name, d in sorted(descriptors.items())
+                    ],
+                }
+                for feature in metadata["source_features"].values():
+                    feature["units"] = [axis["unit"] for axis in capture["profile"]["axes"]]
             if "meta/tasks.parquet" in descriptors:
                 import pyarrow as pa
                 import pyarrow.parquet as pq

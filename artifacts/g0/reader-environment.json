@@ -1,0 +1,43 @@
+{
+  "python": "3.12.8 (main, Feb  4 2025, 04:56:13) [GCC 12.2.0]",
+  "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.36",
+  "av": "15.1.0",
+  "av_libraries": {
+    "libavutil": [
+      59,
+      39,
+      100
+    ],
+    "libavcodec": [
+      61,
+      19,
+      101
+    ],
+    "libavformat": [
+      61,
+      7,
+      100
+    ],
+    "libavdevice": [
+      61,
+      3,
+      100
+    ],
+    "libavfilter": [
+      10,
+      4,
+      100
+    ],
+    "libswscale": [
+      8,
+      3,
+      100
+    ],
+    "libswresample": [
+      5,
+      3,
+      100
+    ]
+  },
+  "system_site_packages": false
+}

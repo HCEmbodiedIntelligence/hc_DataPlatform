@@ -337,6 +337,10 @@ export function createDatasetLanceWindowSource(input: {
             series = names.map((name, index) => ({
               id: `series-${index + 1}`,
               displayName: name,
+              ...(Array.isArray(record.units) &&
+              typeof record.units[index] === "string"
+                ? { unit: record.units[index] }
+                : {}),
             }));
           }
         }

@@ -145,7 +145,10 @@ class OriginalSourceBrowser:
 
     def grant(self, raw: RawSource, path: str, *, download: bool = False) -> OriginalFileGrant:
         # Membership, not just path syntax, controls the signed object location.
-        if not any(item["path"] == path for item in self.manifest(raw)["files"]):
+        descriptor = next(
+            (item for item in self.manifest(raw)["files"] if item["path"] == path), None
+        )
+        if descriptor is None:
             raise problem(
                 status=404,
                 code="RAW_OBJECT_NOT_FOUND",
@@ -155,7 +158,7 @@ class OriginalSourceBrowser:
         return OriginalFileGrant(
             path=path,
             url=self.storage.presign_read(
-                f"{raw.storage_prefix}/{path}",
+                descriptor.get("object_key") or f"{raw.storage_prefix}/{path}",
                 900,
                 download_name=path.rsplit("/", 1)[-1] if download else None,
             ),
@@ -205,7 +208,11 @@ class OriginalSourceBrowser:
             )
         files = {item["path"]: item for item in manifest["files"]}
         info = json.loads(
-            read_bounded(self.storage, f"{raw.storage_prefix}/meta/info.json", 1024**2)
+            read_bounded(
+                self.storage,
+                files["meta/info.json"].get("object_key") or f"{raw.storage_prefix}/meta/info.json",
+                1024**2,
+            )
         )
         cameras = [
             key
@@ -225,7 +232,9 @@ class OriginalSourceBrowser:
             if not path.startswith("meta/episodes/") or not path.endswith(".parquet"):
                 continue
             with _RangeReader(
-                self.storage, f"{raw.storage_prefix}/{path}", descriptor["size"]
+                self.storage,
+                descriptor.get("object_key") or f"{raw.storage_prefix}/{path}",
+                descriptor["size"],
             ) as stream:
                 parquet = pq.ParquetFile(stream)
                 for column in columns:

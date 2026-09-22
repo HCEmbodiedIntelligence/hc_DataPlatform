@@ -1,0 +1,33 @@
+ Container openarm-g0-b-migration-run-4b73fc55b9a5 Creating 
+ Container openarm-g0-b-migration-run-4b73fc55b9a5 Created 
+src/pages/p03-upload-jobs/processing-profile.ts 40ms
+src/pages/p03-upload-jobs/processing-profile.test.ts 9ms
+src/pages/p06-dataset-detail/lance-window-source.ts 35ms
+src/pages/p06-dataset-detail/lance-window-source.test.ts 17ms
+
+> hc-data-platform-frontend@0.1.0 typecheck /frontend
+> tsc -b --pretty false
+
+
+ RUN  v3.2.4 /frontend
+
+ ✓ src/pages/p03-upload-jobs/processing-profile.test.ts (3 tests) 2ms
+ ✓ src/pages/p06-dataset-detail/lance-window-source.test.ts (7 tests) 11ms
+ ✓ src/pages/p15-robots/urdf-import.test.ts (3 tests) 16ms
+ ✓ src/pages/p03-upload-jobs/upload-contract.test.ts (13 tests) 21ms
+ ✓ src/pages/p03-upload-jobs/upload-flow.test.ts (10 tests) 26ms
+ ✓ src/pages/p03-upload-jobs/lerobot-client.test.ts (7 tests) 14ms
+ ✓ src/pages/p03-upload-jobs/upload-queue-store.test.ts (22 tests) 490ms
+ ✓ src/pages/p03-upload-jobs/components/OriginalSourceBrowser.test.tsx (1 test) 74ms
+ ✓ src/features/viewer/EpisodeWorkbenchCore.test.tsx (17 tests) 613ms
+ ✓ src/pages/p03-upload-jobs/components/RobotUploadRecordsPanel.test.tsx (1 test) 231ms
+ ✓ src/pages/p03-upload-jobs/components/LeRobotProcessingRecords.test.tsx (1 test) 219ms
+ ✓ src/pages/p03-upload-jobs/components/UploadConfirmationDialog.test.tsx (1 test) 312ms
+   ✓ UploadConfirmationDialog original storage > accepts a dataset without a collection task, robot or processing configuration  311ms
+ ✓ src/pages/p03-upload-jobs/page.test.tsx (17 tests) 1922ms
+
+ Test Files  13 passed (13)
+      Tests  103 passed (103)
+   Start at  08:05:33
+   Duration  3.61s (transform 1.11s, setup 0ms, collect 5.82s, tests 3.95s, environment 2.78s, prepare 850ms)
+

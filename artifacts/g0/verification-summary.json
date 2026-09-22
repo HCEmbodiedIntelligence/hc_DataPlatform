@@ -1,0 +1,163 @@
+{
+  "baseline": "2f6022202728f7c18852c0afd0fbd8df4244f362",
+  "branch": "feat/openarm-lerobot-v1",
+  "backend": "118 passed, no skips",
+  "frontend": "typecheck PASS; 103 passed in 13 files",
+  "reader": {
+    "python": "3.12.8",
+    "lerobot": "0.6.1",
+    "torch": "2.11.0+cpu",
+    "packages": 64,
+    "lock_sha256": "3c47fa7f61424556725e3c140def146d3abc3a04b80206a4ebdf436438f2a93c",
+    "results": "6/6 PASS"
+  },
+  "roundtrips": [
+    {
+      "name": "valid-openarm",
+      "source_content_sha256": "0cddb74670559656850fd78ebe0451efd701d6e167a8026fe30620cbdba2fa32",
+      "export_sha256": "9f5241d14a9950a40e815ef43345bba8123ada86571dc3e66f396569a3de1e17",
+      "episodes": 2,
+      "frames": 12,
+      "cameras": 3,
+      "downloaded_assets": 12,
+      "qc": [
+        {
+          "episode": 0,
+          "status": "PASS",
+          "sha256": "661fa1fa6bcc4a92585d1bbc198751adab7ccc4cedba97f80791231e5f6b2192"
+        },
+        {
+          "episode": 1,
+          "status": "PASS",
+          "sha256": "866cd5eb3999606d0df6ad9409ddf4a31241508aaed493468704ee8980ce8f9a"
+        }
+      ],
+      "batch_shapes": {
+        "observation.images.camera_hand": [
+          8,
+          3,
+          480,
+          640
+        ],
+        "observation.images.camera_left": [
+          8,
+          3,
+          480,
+          640
+        ],
+        "observation.images.camera_right": [
+          8,
+          3,
+          480,
+          640
+        ],
+        "action": [
+          8,
+          16
+        ],
+        "observation.state": [
+          8,
+          16
+        ]
+      },
+      "max_video_mean_absolute_error": 0.0078042056411504745,
+      "reader": "PASS"
+    },
+    {
+      "name": "valid-generic",
+      "source_content_sha256": "de070232fb249a0340a5a2e4e0449a52e9e50e78b95eaa74f3c8d4bf9ddd2b08",
+      "export_sha256": "9b1a4f400cf808789297ebefaa4de84a93ffe607857d097af15a158047b2badf",
+      "episodes": 2,
+      "frames": 12,
+      "cameras": 1,
+      "downloaded_assets": 10,
+      "qc": [
+        {
+          "episode": 0,
+          "status": "PASS",
+          "sha256": "cdec62c2c5c2ed0ac76fe416b543d3f1f76f9d60894f0581f985ae983e0dc0ea"
+        },
+        {
+          "episode": 1,
+          "status": "PASS",
+          "sha256": "0a97f1ef333da4e3565c1443d09465c7008a7dcf214d1c669b1faea740dcbbce"
+        }
+      ],
+      "batch_shapes": {
+        "observation.images.single": [
+          8,
+          3,
+          240,
+          320
+        ],
+        "action": [
+          8,
+          2
+        ],
+        "observation.state": [
+          8,
+          2
+        ]
+      },
+      "max_video_mean_absolute_error": 0.004557036329060793,
+      "reader": "PASS"
+    },
+    {
+      "name": "a-actual",
+      "source_content_sha256": "e678e557da2b36bd2582a6cf541615d7098b30dd04ed9df33f5e1954b4ef2043",
+      "export_sha256": "33f68a038e02361fff7adcafb3c1013a9093ff813c03163c5ce902a21fc3af0c",
+      "episodes": 2,
+      "frames": 12,
+      "cameras": 3,
+      "downloaded_assets": 20,
+      "qc": [
+        {
+          "episode": 0,
+          "status": "PASS",
+          "sha256": "e0145feb845de0a5f22edf4150aaf8e834132d6f75f1f3d50874549d8fccc068"
+        },
+        {
+          "episode": 1,
+          "status": "PASS",
+          "sha256": "b6cbd9746795cf119787757c08714e9ca7ad14afa7278983dcdd233c259be39b"
+        }
+      ],
+      "batch_shapes": {
+        "observation.images.camera_hand": [
+          8,
+          3,
+          480,
+          640
+        ],
+        "observation.images.camera_left": [
+          8,
+          3,
+          480,
+          640
+        ],
+        "observation.images.camera_right": [
+          8,
+          3,
+          480,
+          640
+        ],
+        "action": [
+          8,
+          16
+        ],
+        "observation.state": [
+          8,
+          16
+        ]
+      },
+      "max_video_mean_absolute_error": 0.003955971449613571,
+      "reader": "PASS"
+    }
+  ],
+  "a_provenance": {
+    "repository": "humanoid_manager",
+    "commit": "0efe2ff0aabfb123e0ccb4d64b0f95092d67661d",
+    "source": "/home/hc_op/workspace/openarm-integration/A/robot/artifacts/g0/openarm-capture-v1-final/bundle",
+    "content_sha256": "e678e557da2b36bd2582a6cf541615d7098b30dd04ed9df33f5e1954b4ef2043"
+  }
+}

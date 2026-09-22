@@ -121,8 +121,8 @@ def _seed_product_dataset(
     with psycopg.connect(dsn) as connection:
         connection.execute(
             """
-            INSERT INTO registry.organization_projects (organization_id, project_id)
-            VALUES (%s, %s)
+            INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+            VALUES (%s, %s, 'Publication test')
             """,
             (ORGANIZATION_ID, project_id),
         )

@@ -27,6 +27,8 @@ from hc_data_platform.quality.models import (
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as source_reader
 
 from .orchestration import LeRobotEpisodeSourceRefV1
+from .profiles import profile_for_info
+from .reader import read_episode
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,10 @@ class EpisodeStream:
     layout: source_reader.SourceLayout
     original_videos: dict[str, OriginalVideoReferenceV1]
     camera_luma: dict[tuple[str, int], float] = field(default_factory=dict)
+
+    @property
+    def profile(self):
+        return profile_for_info(self.layout.info)
 
     @property
     def start_ns(self) -> int:
@@ -71,7 +77,7 @@ class EpisodeStream:
             joints=tuple(
                 JointObservation(
                     timestamp_ns=timestamp,
-                    positions=dict(zip(source_reader.G1_JOINT_NAMES, values, strict=True)),
+                    positions=dict(zip(self.profile.state_names, values, strict=True)),
                 )
                 for timestamp, values in zip(
                     self.episode.relative_timestamps_ns, self.episode.joints, strict=True
@@ -81,7 +87,7 @@ class EpisodeStream:
 
     @property
     def alignment_input(self) -> AlignmentInputV1:
-        camera_topics = {camera.topic for camera in source_reader.CAMERAS}
+        camera_topics = {camera.topic for camera in self.profile.cameras}
         attempt = self.source.processing_attempt_id or self.source.import_attempt_id
         return AlignmentInputV1(
             rollout_id=self.rollout_id,
@@ -104,7 +110,7 @@ class EpisodeStream:
                     ),
                     samples=(),
                 )
-                for topic in source_reader.ACTUAL_TOPICS
+                for topic in self.profile.topics
             },
         )
 
@@ -114,7 +120,7 @@ class EpisodeStream:
 
     def quality_observations(self) -> Iterator[QualityStreamObservationV1]:
         """Decode one bounded gray frame at a time; never encode or save images."""
-        for camera in source_reader.CAMERAS:
+        for camera in self.profile.cameras:
             video = self.layout.videos[camera.feature_key]
             original = self.original_videos[camera.topic]
             command = [
@@ -187,6 +193,9 @@ class EpisodeStream:
                 yield QualityStreamObservationV1(topic=topic, timestamp_ns=timestamp)
 
     def _samples(self) -> Iterator[tuple[str, int, object]]:
+        if not self.profile.legacy_g1:
+            yield from self._generic_samples()
+            return
         source = {
             "episode_index": self.source.episode_index,
             "nominal_frequency_hz": self.episode.fps,
@@ -196,7 +205,7 @@ class EpisodeStream:
             "task_index": self.episode.task_index,
         }
         for index, timestamp_ns in enumerate(self.episode.relative_timestamps_ns):
-            for camera in source_reader.CAMERAS:
+            for camera in self.profile.cameras:
                 original = self.original_videos[camera.topic]
                 source_pts_ns = round(original.start_seconds * 1_000_000_000) + timestamp_ns
                 yield (
@@ -255,6 +264,60 @@ class EpisodeStream:
             )
             yield source_reader.SOURCE_TOPIC, timestamp_ns, source
 
+    def _generic_samples(self) -> Iterator[tuple[str, int, object]]:
+        episode = self.episode
+        units = [axis["unit"] for axis in episode.context.get("profile", {}).get("axes", [])]
+        features = self.layout.info["features"]
+        state_units = features["observation.state"].get("units", units)
+        action_units = features["action"].get("units", units)
+        for index, timestamp in enumerate(episode.relative_timestamps_ns):
+            yield (
+                self.profile.joint_topic,
+                timestamp,
+                {
+                    "names": list(self.profile.state_names),
+                    "positions": episode.joints[index],
+                    **({"units": state_units} if state_units else {}),
+                },
+            )
+            yield (
+                self.profile.action_topic,
+                timestamp,
+                {
+                    "names": list(self.profile.action_names),
+                    "values": episode.target_joints[index],
+                    **({"units": action_units} if action_units else {}),
+                },
+            )
+            for camera in self.profile.cameras:
+                original = self.original_videos[camera.topic]
+                pts = round(original.start_seconds * 1e9) + timestamp
+                yield (
+                    camera.topic,
+                    timestamp,
+                    {
+                        "source_frame_index": round(pts * episode.fps / 1e9),
+                        "source_pts_ns": pts,
+                    },
+                )
+            yield (
+                source_reader.SOURCE_TOPIC,
+                timestamp,
+                {
+                    "episode_index": self.source.episode_index,
+                    "nominal_frequency_hz": episode.fps,
+                    "raw_upload_id": self.source.raw_upload_id,
+                    "raw_manifest_key": self.source.raw_manifest_key,
+                    "source_format": self.source.source_format,
+                    "task_index": episode.task_index,
+                    "source_timestamp": episode.source_timestamps[index],
+                    "capture_context_path": "capture-context.json" if episode.context else None,
+                    "source_episode": episode.source_episode,
+                    "source_mapping": episode.mappings[index] if episode.mappings else None,
+                    "profile": episode.context.get("profile"),
+                },
+            )
+
 
 class LeRobotAdapter:
     """Read native LeRobot Raw and expose an EpisodeStream without writing MCAP."""
@@ -272,25 +335,9 @@ class LeRobotAdapter:
             char not in "0123456789abcdef" for char in raw_manifest_sha256
         ):
             raise ValueError("Raw manifest SHA-256 must be lowercase hexadecimal")
-        layout = source_reader.acquire_source(
-            repository="platform-raw/lerobot",
-            revision=source.raw_upload_id,
-            episode_index=source.episode_index,
-            cache_root=source_root,
-            source_root=source_root,
-        )
-        fps_value = layout.info.get("fps")
-        if not isinstance(fps_value, (int, float)) or not 0 < float(fps_value) <= 240:
-            raise RuntimeError("LeRobot metadata has an invalid fps")
-        episode = source_reader.load_episode_data(
-            layout.data_file,
-            source.episode_index,
-            float(fps_value),
-        )
-        if layout.episode_metadata.get("length") != episode.frame_count:
-            raise RuntimeError("LeRobot episode metadata length differs from Parquet rows")
+        profile, layout, episode = read_episode(source_root, source.episode_index)
         originals: dict[str, OriginalVideoReferenceV1] = {}
-        for camera in source_reader.CAMERAS:
+        for camera in profile.cameras:
             video = layout.videos[camera.feature_key]
             probe = subprocess.run(
                 [

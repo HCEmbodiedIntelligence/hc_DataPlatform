@@ -1,0 +1,35 @@
+ Image openarm-g0-b-backend:2f602220 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 631B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 9.82kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc
+#3 DONE 6.4s
+
+#4 [internal] load metadata for docker.io/library/python:3.12.8-slim@sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da120e564723292a2f0
+#4 ERROR: failed to do request: Head "https://registry-1.docker.io/v2/library/python/manifests/sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da120e564723292a2f0": dial tcp 108.160.163.116:443: i/o timeout
+------
+ > [internal] load metadata for docker.io/library/python:3.12.8-slim@sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da120e564723292a2f0:
+------
+Dockerfile:6
+
+--------------------
+
+   4 |     FROM ${UV_IMAGE} AS uv
+
+   5 |     FROM ${POSTGRES_IMAGE} AS postgres-tools
+
+   6 | >>> FROM ${PYTHON_IMAGE} AS dependencies
+
+   7 |     
+
+   8 |     ENV PYTHONDONTWRITEBYTECODE=1 \
+
+--------------------
+
+failed to solve: DeadlineExceeded: python:3.12.8-slim@sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da120e564723292a2f0: failed to resolve source metadata for docker.io/library/python:3.12.8-slim@sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da120e564723292a2f0: failed to do request: Head "https://registry-1.docker.io/v2/library/python/manifests/sha256:2199a62885a12290dc9c5be3ca0681d367576ab7bf037da120e564723292a2f0": dial tcp 108.160.163.116:443: i/o timeout
+

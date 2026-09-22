@@ -1,0 +1,128 @@
+{
+  "schema_version": "openarm-export-complete/v1",
+  "contract_version": "openarm-capture/v1",
+  "status": "COMPLETE",
+  "completed_at": "2026-09-22T07:37:05.876053+00:00",
+  "assets": [
+    {
+      "path": "capture-context.json",
+      "size_bytes": 4017,
+      "sha256": "2343a7d02b8481a753e6d57393657ca0418156dd1402ddc29e2410febc190c34",
+      "crc64": "12216329616832738841"
+    },
+    {
+      "path": "data/chunk-000/file-000.parquet",
+      "size_bytes": 3532,
+      "sha256": "2dd0c2a9fdedf0cbd6213e93b55f6dda11088435b90837f0fd00ffce65f6425b",
+      "crc64": "2062821097613652526"
+    },
+    {
+      "path": "data/chunk-000/file-001.parquet",
+      "size_bytes": 3532,
+      "sha256": "81f7c13a6e7400a04ee8a6f91605c95d7951830622a5fbc54ac0a08f8361b437",
+      "crc64": "16393264043955321218"
+    },
+    {
+      "path": "depth.mcap",
+      "size_bytes": 22053,
+      "sha256": "97329251d4e8661cc6370288a57b47ca56c1f611bc7008f698730d918b934caa",
+      "crc64": "14832216568987442434"
+    },
+    {
+      "path": "depth_index.sqlite3",
+      "size_bytes": 40960,
+      "sha256": "352d2a0017bf5ab2e7b082bf892efe5f20946685aa2b0666a7daccbe2f735ef1",
+      "crc64": "9002806535200973453"
+    },
+    {
+      "path": "export.json",
+      "size_bytes": 1269,
+      "sha256": "03878c039d0c64ff8205741c381555df64ec74e4e60d0a77c67d34f4374b0040",
+      "crc64": "16727758965988746459"
+    },
+    {
+      "path": "meta/episodes/chunk-000/file-000.parquet",
+      "size_bytes": 8442,
+      "sha256": "d75cb0a331ebd40ef65dbcd5f5bc37b5b68c89079f947adbea1719882e053756",
+      "crc64": "4764945626060099164"
+    },
+    {
+      "path": "meta/info.json",
+      "size_bytes": 3661,
+      "sha256": "414fce5f1bb57850e272008d1feadeb684b2314f60da49be6339e36f1d00ecca",
+      "crc64": "3788581262939193692"
+    },
+    {
+      "path": "meta/stats.json",
+      "size_bytes": 5780,
+      "sha256": "7b87c6c009fd8aa9085be71ff04b11f43a42bfb6a63e4c2c8684e0908f18f301",
+      "crc64": "15032430895466017862"
+    },
+    {
+      "path": "meta/tasks.parquet",
+      "size_bytes": 2135,
+      "sha256": "adc538cc1d2d6343271f02bedb011ca5219fb8256822f8c9048675e7cec7d2fb",
+      "crc64": "7374972312369249915"
+    },
+    {
+      "path": "pointcloud.mcap",
+      "size_bytes": 2209,
+      "sha256": "be0dac6aedd067bcffa7b13e4a75701b1575b25b74189bcc86a3c069973891f1",
+      "crc64": "6719234745676964067"
+    },
+    {
+      "path": "source_mapping.jsonl",
+      "size_bytes": 21930,
+      "sha256": "d8b8c22bbeb1cc5077b22bb0d65053f700d23067119b56cf8bd985bd0466c68e",
+      "crc64": "10360434247191965942"
+    },
+    {
+      "path": "source_trace.jsonl",
+      "size_bytes": 161368,
+      "sha256": "980c0ebd7100b347efb9e7f76663a186ee02f7b25a24144418f361bcfdc63cc0",
+      "crc64": "7659873343037711484"
+    },
+    {
+      "path": "videos/observation.images.camera_hand/chunk-000/file-000.mp4",
+      "size_bytes": 3235,
+      "sha256": "185a3fa6f8a87307609ff810492958d8dc776e3b649dda4857bb2b7287656687",
+      "crc64": "2652532834068000274"
+    },
+    {
+      "path": "videos/observation.images.camera_hand/chunk-000/file-001.mp4",
+      "size_bytes": 4410,
+      "sha256": "b63e3efa227790a25e818decc25c8b45c1ba48f8da8f497eb11bb915dcdd4e46",
+      "crc64": "9344098191287255990"
+    },
+    {
+      "path": "videos/observation.images.camera_left/chunk-000/file-000.mp4",
+      "size_bytes": 3251,
+      "sha256": "0c3913999cd1ebb3eb6ec986c77ec8cc5135b5eea5643b8022c30347ea7c6bb1",
+      "crc64": "6484703766550660465"
+    },
+    {
+      "path": "videos/observation.images.camera_left/chunk-000/file-001.mp4",
+      "size_bytes": 3261,
+      "sha256": "2833ca17b707652b76df6b78d4e6058c18345e3741e7afb02e8fea8a314899d1",
+      "crc64": "17645098241862464667"
+    },
+    {
+      "path": "videos/observation.images.camera_right/chunk-000/file-000.mp4",
+      "size_bytes": 3284,
+      "sha256": "bfab1cfa3fe236c0e79751c32250464fce15639734b44c6052c290c29ea5931b",
+      "crc64": "903738476357820819"
+    },
+    {
+      "path": "videos/observation.images.camera_right/chunk-000/file-001.mp4",
+      "size_bytes": 3146,
+      "sha256": "c4a6c3277dbfdd66ce24454d9a46273204e4847e2a0bfc2d0f3d5fdc7fe5bb6b",
+      "crc64": "15493058558476976351"
+    }
+  ],
+  "content_sha256": "e678e557da2b36bd2582a6cf541615d7098b30dd04ed9df33f5e1954b4ef2043",
+  "export_id": "04242113-b0cb-4f4e-9681-74334c2c5819",
+  "session_id": "synthetic-openarm-A",
+  "collection_task_id": "synthetic-task-A",
+  "robot_id": "synthetic-platform-robot",
+  "synthetic": true
+}

@@ -1153,7 +1153,7 @@ export function ViewerJointAngleCurvePanel({
       <header>
         <span>
           <Activity aria-hidden="true" size={15} />
-          <strong id="joint-angle-curves-title">关节角变化</strong>
+          <strong id="joint-angle-curves-title">关节位置变化</strong>
         </span>
         <small>
           {secondsLabel(cursorNs)} · {stream?.canonicalPath ?? "共享时间轴"}
@@ -1229,7 +1229,7 @@ export function ViewerJointAngleCurvePanel({
               {chart.high.toFixed(2)}
             </text>
             <text x="6" y={(chart.plot.top + chart.plot.bottom) / 2 + 4}>
-              rad
+              {Array.from(new Set(series.map((item) => item.unit ?? "rad"))).join(" / ") || "rad"}
             </text>
             <text x="6" y={chart.plot.bottom + 4}>
               {chart.low.toFixed(2)}
