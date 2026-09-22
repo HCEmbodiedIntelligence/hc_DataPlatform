@@ -1,0 +1,45 @@
+{
+  "upload_id": "riu-46cfe99059f252699786d27db046ee7b",
+  "raw_source_id": "raw-2810cacb8002502096eeb28c7139b54d",
+  "workflow_ids": [
+    "robot-processing-0e5573f39ed95cec967b81442cccc244",
+    "robot-processing-50bfb65c14cd57dca65960039cea0115"
+  ],
+  "counts": [
+    1,
+    1,
+    0
+  ],
+  "result": {
+    "schema_version": "openarm-processing-result/v1",
+    "upload_id": "riu-46cfe99059f252699786d27db046ee7b",
+    "raw_source_id": "raw-2810cacb8002502096eeb28c7139b54d",
+    "processing_status": "FAILED",
+    "quality_status": "PENDING",
+    "terminal": true,
+    "poll_after_seconds": 0,
+    "episodes": []
+  },
+  "diagnostics": {
+    "upload_id": "riu-46cfe99059f252699786d27db046ee7b",
+    "workflow_id": "robot-processing-0e5573f39ed95cec967b81442cccc244",
+    "generation": 0,
+    "error_code": "ROBOT_PROCESSOR_UNAVAILABLE",
+    "retryable": true,
+    "next_action": "retry_processing"
+  },
+  "assertions": [
+    "commit rollback",
+    "response-loss reconciliation",
+    "outbox lease recovery",
+    "duplicate Temporal start",
+    "worker offline at commit",
+    "Worker restart after activity scheduled; Temporal history replay",
+    "automatic serve_outbox retry dispatch",
+    "new Worker consumes retry",
+    "stale generation rejected",
+    "real S3 byte read",
+    "B unavailable persisted"
+  ],
+  "openarm_success_verified": false
+}

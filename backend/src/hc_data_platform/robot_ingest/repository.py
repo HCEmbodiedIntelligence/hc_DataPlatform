@@ -1518,6 +1518,20 @@ class PostgresRobotIngestRepository:
         connection = self._scoped()
         cursor = connection.cursor()
         try:
+            # Serialize competing commits with processing/retry projection writes.
+            cursor.execute(
+                """SELECT upload_document FROM ingest.robot_ingest_uploads
+                WHERE organization_id=%s AND upload_id=%s FOR UPDATE""",
+                (upload.target.organization_id, upload.upload_id),
+            )
+            locked = cursor.fetchone()
+            if locked is not None:
+                latest = RobotIngestUpload.model_validate(
+                    _json(_row(cursor, locked)["upload_document"])
+                )
+                if latest.state is UploadState.COMMITTED:
+                    connection.commit()
+                    return latest
             cursor.execute(
                 """INSERT INTO ingest.raw_sources (
                        organization_id, project_id, region_code, raw_source_id, upload_id,
@@ -1624,6 +1638,10 @@ class PostgresRobotIngestRepository:
                     upload.ingest_identity_id,
                 ),
             )
+            from .processing_store import eligible, enqueue
+
+            if eligible(committed):
+                enqueue(cursor, committed)
             connection.commit()
             return committed
         except Exception:

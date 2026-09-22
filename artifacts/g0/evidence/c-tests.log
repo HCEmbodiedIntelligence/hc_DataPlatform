@@ -1,0 +1,3 @@
+Final C Compose run: tests/robot_ingest/test_processing_integration.py tests/robot_ingest/test_processing_contract.py tests/robot_ingest/test_robot_ingest_service.py tests/robot_ingest/test_robot_ingest_api.py tests/tools/test_robot_ingest_upload.py
+42 passed, 1 StarletteDeprecationWarning in 24.76s
+See c-tests.xml for individual results.

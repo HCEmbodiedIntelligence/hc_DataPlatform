@@ -1,0 +1,9 @@
+{
+  "services": {
+    "migration": {"build": {"dockerfile": "../artifacts/g0/Dockerfile.cached"}},
+    "postgres": {"image": "hc-offline/postgres:71eaa560", "pull_policy": "never"},
+    "temporal": {"image": "hc-offline/temporal:71eaa560", "pull_policy": "never"},
+    "minio": {"image": "hc-offline/minio:71eaa560", "pull_policy": "never"},
+    "minio-init": {"image": "hc-offline/mc:71eaa560", "pull_policy": "never"}
+  }
+}

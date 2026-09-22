@@ -1,0 +1,47 @@
+{
+  "result": {
+    "schema_version": "openarm-processing-result/v1",
+    "upload_id": "riu-16510f523e035b63bcaea51f999d0654",
+    "raw_source_id": "raw-323079e8a5a857cfb78c771717b5a83d",
+    "processing_status": "READY",
+    "quality_status": "PASS",
+    "terminal": true,
+    "poll_after_seconds": 0,
+    "episodes": [
+      {
+        "source_episode_id": "source-0",
+        "source_episode_index": 0,
+        "episode_id": "rie-747a7895882e50579624f93f88c2f5ee",
+        "dataset_id": "dataset_robot_c",
+        "status": "READY",
+        "quality_status": "PASS",
+        "error_code": null,
+        "retryable": false,
+        "next_action": "open_episode"
+      },
+      {
+        "source_episode_id": "source-1",
+        "source_episode_index": 1,
+        "episode_id": "rie-f57629627b335e79ad0b7afa6be240f9",
+        "dataset_id": "dataset_robot_c",
+        "status": "READY",
+        "quality_status": "PASS",
+        "error_code": null,
+        "retryable": false,
+        "next_action": "open_episode"
+      }
+    ]
+  },
+  "counts": [
+    2,
+    12,
+    2,
+    0,
+    0
+  ],
+  "processor_calls": [
+    0,
+    1
+  ],
+  "openarm_success_verified": false
+}

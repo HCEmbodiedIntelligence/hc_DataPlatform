@@ -1,0 +1,4 @@
+# C-only offline test image: dependency image retained from the audited baseline.
+# Product code is the C checkout mounted by the fixed G0 Compose entry point.
+FROM hc-offline/backend:71eaa560 AS worker-dev
+ENV PYTHONPATH=/app/src
