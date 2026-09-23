@@ -187,6 +187,7 @@ EXPECTED_MANIFEST = (
     "ingest/014_raw_storage_only.sql",
     "ingest/015_stored_source_processing.sql",
     "ingest/016_episode_resolutions.sql",
+    "ingest/017_robot_processing.sql",
 )
 
 

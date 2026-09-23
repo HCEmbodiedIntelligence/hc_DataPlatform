@@ -236,14 +236,9 @@ class LeRobotPipeline:
         return raw
 
     def _read_manifest(self, raw: RawSource) -> tuple[dict[str, Any], bytes]:
-        body = b"".join(self.storage.read_chunks(raw.manifest_key))
-        manifest = json.loads(body)
-        if (
-            manifest.get("content_hash") != raw.content_hash
-            or manifest.get("source_prefix") != raw.storage_prefix
-        ):
-            raise ValueError("native Raw manifest changed after commit")
-        return manifest, body
+        from .committed import read_committed_manifest
+
+        return read_committed_manifest(self.storage, raw)
 
     def _localize(self, raw: RawSource, manifest: dict[str, Any], episode_index: int) -> Path:
         # A content-addressed local cache is reconstructible from immutable Raw objects.
@@ -359,7 +354,9 @@ class LeRobotPipeline:
     ) -> IngestRolloutWorkflowInput:
         native_profile, layout, episode = read_episode(root, task.source.episode_index)
         digest = hashlib.sha256(body).hexdigest()
-        rollout_id = f"lerobot-{raw.raw_source_id[:16]}-ep-{task.source.episode_index:06d}"
+        rollout_id = task.source.platform_episode_id or (
+            f"lerobot-{raw.raw_source_id[:16]}-ep-{task.source.episode_index:06d}"
+        )
         start = datetime(1970, 1, 1, tzinfo=timezone.utc)
         duration_ns = episode.relative_timestamps_ns[-1] + round(1e9 / episode.fps)
         nominal_ns = int(episode.frame_count * 1e9 / episode.fps)

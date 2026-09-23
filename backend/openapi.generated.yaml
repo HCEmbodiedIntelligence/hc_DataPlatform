@@ -21363,6 +21363,15 @@ components:
       - plan_hash
       - reason
       type: object
+    RetryProcessing:
+      additionalProperties: false
+      properties:
+        request_id:
+          format: uuid
+          type: string
+      required:
+      - request_id
+      type: object
     ReviewCheckKind:
       enum:
       - HIERARCHY
@@ -45393,6 +45402,18 @@ paths:
       responses: {}
       security:
       - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/processing:
+    get:
+      operationId: getRobotIngestProcessing
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
+    get:
+      operationId: getRobotIngestProcessingDiagnostics
+      responses: {}
+      security:
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}:cancel:
     post:
       operationId: cancelRobotIngestUpload
@@ -45414,6 +45435,17 @@ paths:
   /api/v1/robot-ingest/uploads/{upload_id}:resume:
     post:
       operationId: resumeRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:retry-processing:
+    post:
+      operationId: retryRobotIngestProcessing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryProcessing'
       responses: {}
       security:
       - robotBearerAuth: []

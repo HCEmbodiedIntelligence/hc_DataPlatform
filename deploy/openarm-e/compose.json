@@ -1,0 +1,72 @@
+{
+  "services": {
+    "migration": {
+      "image": "openarm-e-backend:integration",
+      "environment": {
+        "HC_RUNTIME_BACKEND": "production",
+        "HC_PLATFORM_ENVIRONMENT_ID": "openarm-e",
+        "HC_TEMPORAL_TARGET": "temporal:7233",
+        "HC_OBJECT_STORE_PROVIDER": "s3",
+        "HC_OBJECT_STORE_ENDPOINT": "http://minio:9000",
+        "HC_OBJECT_STORE_PUBLIC_ENDPOINT": "http://192.168.31.126:38088",
+        "HC_OBJECT_STORE_BUCKET": "hc-e-accept",
+        "HC_OBJECT_STORE_ACCESS_KEY": "minio",
+        "HC_OBJECT_STORE_SECRET_KEY": "minio-local-only",
+        "HC_OBJECT_STORE_REGION": "us-east-1"
+      },
+      "build": {
+        "context": "./backend",
+        "dockerfile": "../deploy/openarm-e/Dockerfile",
+        "target": null
+      }
+    },
+    "runtime-cache-init": {
+      "image": "openarm-e-backend:integration"
+    },
+    "api": {
+      "image": "openarm-e-backend:integration",
+      "environment": {
+        "HC_TEMPORAL_TASK_QUEUE": "openarm-e",
+        "HC_OBJECT_STORE_BUCKET": "hc-e-accept"
+      }
+    },
+    "worker": {
+      "image": "openarm-e-backend:integration",
+      "environment": {
+        "HC_OBJECT_STORE_BUCKET": "hc-e-accept"
+      }
+    },
+    "postgres": {
+      "image": "hc-offline/postgres:71eaa560"
+    },
+    "temporal": {
+      "image": "hc-offline/temporal:71eaa560"
+    },
+    "minio": {
+      "image": "hc-offline/minio:71eaa560",
+      "environment": {
+        "MINIO_API_CORS_ALLOW_ORIGIN": "http://192.168.31.126:38088"
+      }
+    },
+    "minio-init": {
+      "image": "hc-offline/mc:71eaa560",
+      "entrypoint": [
+        "/bin/sh", "-ec",
+        "mc alias set local http://minio:9000 minio minio-local-only; mc mb --ignore-existing local/hc-e-accept"
+      ]
+    },
+    "gateway": {
+      "image": "hc-offline/nginx:71eaa560",
+      "volumes": [
+        "./deploy/openarm-e/gateway.conf:/etc/nginx/conf.d/default.conf:ro"
+      ]
+    },
+    "object-store-browser": {
+      "image": "hc-offline/nginx:71eaa560"
+    },
+    "frontend": {
+      "image": "openarm-e-frontend:integration",
+      "volumes": []
+    }
+  }
+}

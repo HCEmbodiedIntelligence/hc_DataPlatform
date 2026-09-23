@@ -20,6 +20,8 @@ class LeRobotEpisodeSourceRefV1(BaseModel):
     episode_index: int = Field(ge=0, lt=MAX_LEROBOT_IMPORT_EPISODES)
     processing_attempt_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
     import_attempt_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
+    # Robot processing owns the stable identity; browser imports retain their IDs.
+    platform_episode_id: str | None = Field(default=None, pattern=r"^rie-[a-f0-9]{32}$")
 
 
 class LeRobotEpisodeTaskV1(BaseModel):

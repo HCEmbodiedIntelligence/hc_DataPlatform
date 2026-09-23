@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 from collections.abc import Callable, Coroutine, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -55,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 
 class WorkerGroup:
-    """Two task queues in one process, with independent activity concurrency."""
+    """Task queues in one process, with independent activity concurrency."""
 
     def __init__(self, *workers: Any) -> None:
         self.workers = workers
@@ -310,6 +311,28 @@ async def serve() -> None:
         build_id=build_id,
         use_worker_versioning=build_id is not None,
     )
+    robot_executor = None
+    if role != "media":
+        from hc_data_platform.robot_ingest.lerobot_processor import NativeLeRobotProcessor, robot_task_queue
+        from hc_data_platform.robot_ingest.processing_store import ProcessingStore
+        from hc_data_platform.robot_ingest.processing_worker import RobotProcessingActivities
+        from hc_data_platform.robot_ingest.processing_workflow import RobotIngestProcessingWorkflow
+        from .activities import _dependencies, _require
+
+        pipeline = _require(_dependencies.lerobot_pipeline, "lerobot_pipeline")
+        robot_activities = RobotProcessingActivities(
+            ProcessingStore(pipeline.connections), pipeline.storage,
+            NativeLeRobotProcessor(pipeline, client, asyncio.get_running_loop(), task_queue=task_queue),
+        )
+        robot_executor = ThreadPoolExecutor(max_workers=settings.worker_max_concurrent_activities)
+        worker = WorkerGroup(worker, Worker(
+            client, task_queue=robot_task_queue(task_queue),
+            workflows=[RobotIngestProcessingWorkflow], activities=robot_activities.activities,
+            activity_executor=robot_executor,
+            max_concurrent_activities=settings.worker_max_concurrent_activities,
+            graceful_shutdown_timeout=timedelta(seconds=settings.worker_graceful_shutdown_seconds),
+            build_id=build_id, use_worker_versioning=build_id is not None,
+        ))
     if role == "combined":
         media_queue = os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline")
         if media_queue == task_queue:
@@ -532,6 +555,8 @@ async def serve() -> None:
         for shutdown_signal in installed_signals:
             loop.remove_signal_handler(shutdown_signal)
         await runtime_config_synchronizer.stop()
+        if robot_executor is not None:
+            robot_executor.shutdown(wait=False, cancel_futures=True)
 
 
 def main() -> None:

@@ -53,3 +53,7 @@ release-values.yaml
 /.frontend-env/
 /.reader-compose/
 /frontend/.pnpm-store/
+
+/.reader-e/
+
+/deploy/openarm-e/secrets/

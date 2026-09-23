@@ -66,8 +66,11 @@ class RobotProcessingActivities:
 
     @contextmanager
     def scope(self, request: dict[str, Any]):
+        from hc_data_platform.workflow.activities import _worker_scope
+
         task = ProcessingTask.model_validate(request["task"])
-        with processing_scope(task):
+        with _worker_scope(task.project_id, task.region_code, task.raw_source_id,
+                           organization_id=task.organization_id):
             try:
                 yield task
             except ProcessingFailure as exc:

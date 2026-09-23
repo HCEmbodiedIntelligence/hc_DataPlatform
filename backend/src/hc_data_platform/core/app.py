@@ -1383,6 +1383,10 @@ def create_app(
 
     for module in discover_module_routers(module_package):
         app.include_router(module.router)
+        if module.module_name == "robot_ingest":
+            from hc_data_platform.robot_ingest.processing_api import router as processing_router
+
+            app.include_router(processing_router)
     original_openapi = app.openapi
 
     def normalized_openapi() -> dict[str, Any]:

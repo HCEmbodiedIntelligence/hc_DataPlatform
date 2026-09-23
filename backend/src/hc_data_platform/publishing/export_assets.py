@@ -12,6 +12,8 @@ from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
+from hc_data_platform.lerobot_imports.committed import read_committed_manifest
 
 from .adapters import parse_lance_version
 from .models import PublishedDatasetManifestV1, PublishedRolloutV1
@@ -173,12 +175,27 @@ class PostgresExportAssets:
             else:
                 raw = None
         if raw is not None:
-            body = b"".join(self.storage.read_chunks(raw[0]))
+            raw_source = PostgresRawSourceRepository(self.connections).get_source(
+                organization_id=organization,
+                project_id=manifest.project_id,
+                region_code=region,
+                raw_source_id=raw_id,
+            )
+            if raw_source is None or raw_source.manifest_key != raw[0]:
+                raise export_error(
+                    "EXPORT_ASSET_SCOPE_MISMATCH", "Raw metadata does not belong to this export."
+                )
+            try:
+                normalized, body = read_committed_manifest(self.storage, raw_source)
+            except (ValueError, KeyError, TypeError) as exc:
+                raise export_error(
+                    "EXPORT_SOURCE_HASH_MISMATCH", "Raw manifest cannot be verified."
+                ) from exc
             if hashlib.sha256(body).hexdigest() != rollout.source_mcap_sha256:
                 raise export_error(
                     "EXPORT_SOURCE_HASH_MISMATCH", "Raw manifest changed after publication."
                 )
-            descriptors = {item["path"]: item for item in json.loads(body)["files"]}
+            descriptors = {item["path"]: item for item in normalized["files"]}
 
             def read(relative: str) -> bytes:
                 descriptor = descriptors[relative]

@@ -203,6 +203,8 @@ from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
 from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
 from hc_data_platform.robot_ingest.router import configure_robot_ingest
 from hc_data_platform.robot_ingest.service import RobotIngestService
+from hc_data_platform.robot_ingest.processing_store import ProcessingStore
+from hc_data_platform.robot_ingest.processing_api import configure_processing
 from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -485,6 +487,7 @@ class RuntimeComponents:
     data_schemas: DataSchemaService
     data_sources: DataSourceService
     robot_ingest: RobotIngestService
+    robot_processing: ProcessingStore
     dataset_page: DatasetPageService
     manual_issues: ManualIssueService
     cleaning_drafts: CleaningDraftService
@@ -1021,6 +1024,7 @@ def build_runtime(
         data_schemas=data_schemas,
         data_sources=data_sources,
         robot_ingest=robot_ingest,
+        robot_processing=ProcessingStore(connection_factory),
         dataset_page=dataset_page,
         manual_issues=manual_issues,
         cleaning_drafts=cleaning_drafts,
@@ -1056,6 +1060,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_data_schemas(runtime.data_schemas)
     configure_data_sources(runtime.data_sources)
     configure_robot_ingest(runtime.robot_ingest)
+    configure_processing(runtime.robot_processing)
     configure_dataset_page(runtime.dataset_page)
     configure_manual_issues(runtime.manual_issues)
     configure_cleaning_drafts(runtime.cleaning_drafts)
@@ -1298,10 +1303,17 @@ def build_worker_outbox(
         require_sampling_manifest=True,
     )
     from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
+    from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
+    from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
+    from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
 
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
+            EVENT_TYPE: RobotProcessingOutboxHandler(
+                temporal_client, ProcessingStore(connection_factory),
+                task_queue=robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
+            ),
             LeRobotImportOutboxHandler.EVENT_TYPE: LeRobotImportOutboxHandler(
                 launcher, PostgresRawSourceRepository(connection_factory)
             ),

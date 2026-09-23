@@ -163,3 +163,34 @@ paths:
       security:
         - robotBearerAuth: []
       responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}/processing:
+    get:
+      operationId: getRobotIngestProcessing
+      security:
+        - robotBearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
+    get:
+      operationId: getRobotIngestProcessingDiagnostics
+      security:
+        - robotBearerAuth: []
+      responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}:retry-processing:
+    post:
+      operationId: retryRobotIngestProcessing
+      security:
+        - robotBearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryProcessing'
+      responses: {}
+components:
+  schemas:
+    RetryProcessing:
+      type: object
+      additionalProperties: false
+      required: [request_id]
+      properties:
+        request_id: {type: string, format: uuid}

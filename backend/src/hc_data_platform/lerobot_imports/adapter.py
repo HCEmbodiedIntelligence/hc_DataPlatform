@@ -372,7 +372,9 @@ class LeRobotAdapter:
         yield EpisodeStream(
             source=source,
             source_sha256=raw_manifest_sha256,
-            rollout_id=f"lerobot-{source.raw_upload_id[:16]}-ep-{source.episode_index:06d}",
+            rollout_id=source.platform_episode_id or (
+                f"lerobot-{source.raw_upload_id[:16]}-ep-{source.episode_index:06d}"
+            ),
             episode=episode,
             layout=layout,
             original_videos=originals,
