@@ -45414,6 +45414,12 @@ paths:
       responses: {}
       security:
       - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/recording:
+    get:
+      operationId: getRobotIngestRecording
+      responses: {}
+      security:
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}:cancel:
     post:
       operationId: cancelRobotIngestUpload

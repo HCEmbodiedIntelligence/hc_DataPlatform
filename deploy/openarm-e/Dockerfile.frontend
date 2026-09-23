@@ -1,0 +1,4 @@
+FROM openarm-e-frontend:integration AS frontend-dev
+COPY src /app/src
+COPY scripts /app/scripts
+RUN pnpm typecheck

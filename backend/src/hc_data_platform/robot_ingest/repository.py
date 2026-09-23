@@ -1642,6 +1642,9 @@ class PostgresRobotIngestRepository:
 
             if eligible(committed):
                 enqueue(cursor, committed)
+            from . import recording_bridge
+            if recording_bridge.eligible(committed):
+                recording_bridge.enqueue(cursor,committed)
             connection.commit()
             return committed
         except Exception:

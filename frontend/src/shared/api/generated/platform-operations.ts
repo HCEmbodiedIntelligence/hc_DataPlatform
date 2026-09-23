@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: caf55764d4556ddbb2dea87e4e9f4997ff963127f32abf10b91eaed7f252a49d
+// Runtime-OpenAPI-SHA256: 577a6dd4ef006cb219556baa6ed5cffa1cb508a720afa7c3ce31bc0ed1a5e3b3
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -354,8 +354,12 @@ export const runtimeOperations = [
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}:commit" },
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}:pause" },
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}:resume" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}:retry-processing" },
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts" },
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete" },
+  { method: "GET", path: "/robot-ingest/uploads/{upload_id}/processing" },
+  { method: "GET", path: "/robot-ingest/uploads/{upload_id}/processing/diagnostics" },
+  { method: "GET", path: "/robot-ingest/uploads/{upload_id}/recording" },
 ] as const;
 
 export type RuntimeOperation = (typeof runtimeOperations)[number];

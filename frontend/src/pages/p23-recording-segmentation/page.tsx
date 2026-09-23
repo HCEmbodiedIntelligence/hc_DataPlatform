@@ -1280,7 +1280,7 @@ function RecordingSegmentationPage({
                                         versionId:
                                           `version_lance_${episodeProcessing.dataset_version}` as DatasetVersionId,
                                         episodeId:
-                                          episodeProcessing.episode_id as EpisodeId,
+                                          (episodeProcessing.dataset_episode_id ?? episodeProcessing.episode_id) as EpisodeId,
                                         returnTo: globalThis.location.pathname,
                                       })}
                                     >

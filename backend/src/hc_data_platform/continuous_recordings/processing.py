@@ -26,13 +26,14 @@ from hc_data_platform.aligned_media.models import (
 )
 from hc_data_platform.aligned_media.ports import AlignedMediaRepositoryPort
 from hc_data_platform.alignment.models import (
+    AlignedRowV1,
     AlignmentInputV1,
     AlignmentProfileV1,
     ModalityKind,
     ModalityStreamV1,
     TimedSampleV1,
 )
-from hc_data_platform.alignment.ports import AlignmentPort
+from hc_data_platform.alignment.ports import AlignmentPort, FragmentWriterPort
 from hc_data_platform.dataset_registry.models import DatasetId, DatasetIngestViewerTarget
 from hc_data_platform.ingest.models import (
     ManifestCameraV1,
@@ -247,16 +248,16 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 cursor.execute(
                     """
                     SELECT asset.asset_document
-                      FROM ingest.recording_episode_asset_windows window
+                      FROM ingest.recording_episode_asset_windows asset_window
                       JOIN ingest.recording_upload_assets asset
-                        ON asset.organization_id = window.organization_id
-                       AND asset.project_id = window.project_id
-                       AND asset.region_code = window.region_code
-                       AND asset.upload_id = window.upload_id
-                       AND asset.asset_id = window.asset_id
-                     WHERE window.organization_id = %s AND window.project_id = %s
-                       AND window.region_code = %s AND window.recording_id = %s
-                       AND window.episode_id = %s AND asset.status = 'COMMITTED'
+                        ON asset.organization_id = asset_window.organization_id
+                       AND asset.project_id = asset_window.project_id
+                       AND asset.region_code = asset_window.region_code
+                       AND asset.upload_id = asset_window.upload_id
+                       AND asset.asset_id = asset_window.asset_id
+                     WHERE asset_window.organization_id = %s AND asset_window.project_id = %s
+                       AND asset_window.region_code = %s AND asset_window.recording_id = %s
+                       AND asset_window.episode_id = %s AND asset.status = 'COMMITTED'
                      ORDER BY asset.asset_path
                     """,
                     (organization_id, project_id, region_code, recording_id, episode_id),
@@ -637,6 +638,7 @@ class ContinuousEpisodeProcessingService:
             "qc_report_id": request.qc_report_id or current.qc_report_id,
             "alignment_attempt_id": request.alignment_attempt_id or current.alignment_attempt_id,
             "dataset_id": request.dataset_id,
+            "dataset_episode_id": request.dataset_episode_id,
             "dataset_version": request.dataset_version,
             "lance_version": request.lance_version,
             "annotation_task_id": request.annotation_task_id,
@@ -718,12 +720,15 @@ class ContinuousEpisodeProcessingService:
                         findings=findings,
                     )
 
+            joints, actions = self._openarm_numeric_quality(request, localized, findings)
             quality_data = QualityInputV1(
                 rollout_id=request.projection.rollout_id,
                 source_sha256=request.projection.source_sha256,
                 start_ns=_datetime_ns(request.projection.started_at),
                 end_ns=_datetime_ns(request.projection.ended_at),
                 topic_timestamps_ns={},
+                joints=joints,
+                actions=actions,
             )
             report = self._quality.evaluate_stream(
                 quality_data, quality_observations(), request.quality_profile
@@ -763,6 +768,12 @@ class ContinuousEpisodeProcessingService:
     ) -> ContinuousEpisodeAlignmentActivityOutput:
         start_ns = _datetime_ns(request.projection.started_at)
         end_ns = _datetime_ns(request.projection.ended_at)
+        if request.recording_config.recorder_version == "openarm-session/v2":
+            from .openarm_grid import frame_at, frame_time
+
+            end_ns = start_ns + frame_time(
+                frame_at(request.end_offset_ns) - frame_at(request.start_offset_ns)
+            )
         stream_kinds = {
             camera.modality_key: ModalityKind.IMAGE for camera in request.recording_config.cameras
         }
@@ -804,7 +815,7 @@ class ContinuousEpisodeProcessingService:
                 for camera in request.recording_config.cameras
             )
             merged = heapq.merge(*iterators, key=lambda item: (item[0], item[1]))
-            writer = self._fragment_writers.create(alignment_request)
+            writer = _CompleteFrameWriter(self._fragment_writers.create(alignment_request))
             manifest = self._alignment.align_stream_to_writer(
                 rollout_id=data.rollout_id,
                 source_sha256=data.source_sha256,
@@ -868,7 +879,7 @@ class ContinuousEpisodeProcessingService:
         next_version = 1 if current is None else current.version + 1
         recovering = (
             current is not None
-            and current.version == expected_dataset_version
+            and current.version >= expected_dataset_version
             and source.rollout_id in current.committed_rollouts
         )
         if next_version != expected_dataset_version and not recovering:
@@ -888,18 +899,66 @@ class ContinuousEpisodeProcessingService:
             lease_expires_at=now + timedelta(hours=6),
             now=now,
         )
-        with self._staging.local_file(
-            alignment_staging.object_key,
-            expected_sha256=alignment_staging.content_sha256,
-            expected_size=alignment_staging.size_bytes,
-        ) as path:
-            local_manifest = staged_manifest.model_copy(
-                update={"staging_uri": path.resolve().as_uri()}
+        if recovering:
+            # The immutable Lance receipt survives a lost downstream receipt,
+            # later appends, and staging cleanup. Verify it before replaying only
+            # the missing projection/annotation work.
+            version = self._catalog.version_snapshot(
+                workflow_input.dataset_id,
+                project_id=source.project_id,
+                version=expected_dataset_version,
             )
-            catalog_manifest, steps = self._catalog_fragments.prepare_streaming(
-                alignment, local_manifest, media_artifacts
+            lineage = self._catalog.lineage(
+                workflow_input.dataset_id,
+                source.rollout_id,
+                project_id=source.project_id,
+                version=expected_dataset_version,
             )
-            version, ready = self._catalog.commit_fragment(catalog_manifest, steps)
+            if (
+                lineage.source_sha256 != source.source_sha256
+                or lineage.converter_version != staged_manifest.converter_version
+                or lineage.schema_snapshot_id != workflow_input.schema_snapshot_id
+            ):
+                raise ContinuousEpisodeProcessingError("committed Episode lineage changed")
+            row_count = 0
+            for begin in range(0, staged_manifest.row_count + 1, 4096):
+                rows = self._catalog.read_steps(
+                    workflow_input.dataset_id,
+                    source.rollout_id,
+                    begin,
+                    min(begin + 4096, staged_manifest.row_count + 1),
+                    project_id=source.project_id,
+                    version=expected_dataset_version,
+                ).steps
+                if not all(row.sample_valid for row in rows):
+                    raise ContinuousEpisodeProcessingError("committed Episode has invalid rows")
+                row_count += len(rows)
+            if row_count != staged_manifest.row_count:
+                raise ContinuousEpisodeProcessingError("committed Episode rows are incomplete")
+            ready = DerivedReadyV1(
+                project_id=source.project_id,
+                dataset_id=workflow_input.dataset_id,
+                rollout_id=source.rollout_id,
+                source_sha256=source.source_sha256,
+                converter_version=lineage.converter_version,
+                dataset_version=version.version,
+                lance_version=version.lance_version,
+                step_count=row_count,
+                content_hash=version.content_hash,
+            )
+        else:
+            with self._staging.local_file(
+                alignment_staging.object_key,
+                expected_sha256=alignment_staging.content_sha256,
+                expected_size=alignment_staging.size_bytes,
+            ) as path:
+                local_manifest = staged_manifest.model_copy(
+                    update={"staging_uri": path.resolve().as_uri()}
+                )
+                catalog_manifest, steps = self._catalog_fragments.prepare_streaming(
+                    alignment, local_manifest, media_artifacts
+                )
+                version, ready = self._catalog.commit_fragment(catalog_manifest, steps)
         if version.version != expected_dataset_version:
             raise ContinuousEpisodeProcessingError(
                 "Lance committed a version different from canonical media"
@@ -1003,7 +1062,7 @@ class ContinuousEpisodeProcessingService:
                      WHERE organization_id = %s AND project_id = %s AND region_code = %s
                        AND recording_id = %s AND episode_id = %s
                        AND dataset_id = %s AND dataset_version = %s
-                       AND reservation_status = 'RESERVED'
+                       AND reservation_status IN ('RESERVED', 'RELEASED')
                     """,
                     (
                         datetime.now(timezone.utc),
@@ -1081,6 +1140,70 @@ class ContinuousEpisodeProcessingService:
                 localized[asset.asset_id] = path
             yield localized
 
+    def _openarm_numeric_quality(self, request, localized, findings):
+        """Evaluate the actual recorded vectors as well as MCAP timing and video."""
+        from hc_data_platform.quality.models import ActionObservation, JointObservation
+
+        if request.recording_config.recorder_version != "openarm-session/v2":
+            return (), ()
+        configured = {s.topic: s for s in request.recording_config.sensors}
+        joints, actions = [], []
+        layouts = {}
+        lower, upper = (
+            _datetime_ns(request.projection.started_at),
+            _datetime_ns(request.projection.ended_at),
+        )
+        for asset in _assets_for_role(request.assets, RecordingAssetRole.SENSOR_DATA):
+            for count, (_, channel, message) in enumerate(
+                _mcap_messages(localized[asset.asset_id]), start=1
+            ):
+                if count > _MAX_SENSOR_MESSAGES:
+                    raise ContinuousEpisodeProcessingError(
+                        "sensor MCAP exceeds the bounded message limit"
+                    )
+                topic = str(channel.topic)
+                if topic not in {"/action", "/observation/state"} or topic not in configured:
+                    continue
+                timestamp = _episode_sensor_timestamp(
+                    int(message.log_time), configured[topic].timestamp_mode, request
+                )
+                if timestamp is None:
+                    continue
+                if not lower <= timestamp < upper:
+                    continue
+                try:
+                    body = json.loads(message.data)
+                    names, units, values = body["names"], body["units"], body["values"]
+                    if (
+                        not isinstance(values, list)
+                        or not 1 <= len(values) <= 256
+                        or len(names) != len(values)
+                        or len(units) != len(values)
+                        or len(set(names)) != len(names)
+                        or any(not isinstance(n, str) or not n for n in names + units)
+                        or any(type(v) not in (int, float) or not math.isfinite(v) for v in values)
+                    ):
+                        raise ValueError("invalid vector layout")
+                    layout = (tuple(names), tuple(units))
+                    if layouts.setdefault(topic, layout) != layout:
+                        raise ValueError("vector layout changed")
+                    if topic == "/action":
+                        actions.append(
+                            ActionObservation(timestamp_ns=timestamp, values=tuple(values))
+                        )
+                    else:
+                        joints.append(
+                            JointObservation(
+                                timestamp_ns=timestamp,
+                                positions=dict(zip(names, values, strict=True)),
+                            )
+                        )
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    findings.add("OPENARM_CAPTURE_VECTOR_INVALID")
+        if not joints or not actions or layouts.get("/action") != layouts.get("/observation/state"):
+            findings.add("OPENARM_CAPTURE_VECTOR_LAYOUT_MISMATCH")
+        return tuple(joints), tuple(actions)
+
     def _sensor_quality_observations(
         self,
         path: Path,
@@ -1119,17 +1242,26 @@ class ContinuousEpisodeProcessingService:
                         )
                     except Exception:
                         findings.add("SENSOR_DECODE_FAILED")
-                timestamp = _sensor_timestamp(
-                    int(message.log_time),
-                    configured[topic].timestamp_mode,
-                    request.projection.started_at,
-                    request.start_offset_ns,
+                timestamp = _episode_sensor_timestamp(
+                    int(message.log_time), configured[topic].timestamp_mode, request
                 )
+                if timestamp is None:
+                    continue
                 if (
                     _datetime_ns(request.projection.started_at)
                     <= timestamp
                     < _datetime_ns(request.projection.ended_at)
                 ):
+                    if (
+                        request.recording_config.recorder_version == "openarm-session/v2"
+                        and topic == "/openarm/capture_validity"
+                    ):
+                        try:
+                            validity = json.loads(message.data)
+                            if validity.get("valid") is not True:
+                                findings.add("OPENARM_CAPTURE_FRAME_INVALID")
+                        except (ValueError, TypeError, AttributeError):
+                            findings.add("OPENARM_CAPTURE_VALIDITY_INVALID")
                     counter[0] += 1
                     yield QualityStreamObservationV1(
                         topic=topic,
@@ -1229,6 +1361,10 @@ class ContinuousEpisodeProcessingService:
                     # (for example ``0.000000,``). The requested timestamp is always
                     # the first column, so retain frame zero instead of treating it as
                     # a missing PTS.
+                    # FFprobe CSV may put a side-data separator on its own blank
+                    # line. It is not a frame with missing timestamps.
+                    if not line.strip():
+                        continue
                     raw_timestamp = line.strip().split(",", maxsplit=1)[0]
                     if not raw_timestamp or raw_timestamp == "N/A":
                         findings.add("VIDEO_PTS_MISSING")
@@ -1237,9 +1373,22 @@ class ContinuousEpisodeProcessingService:
                     if pts_ns <= previous:
                         findings.add("VIDEO_PTS_NOT_STRICT")
                     previous = pts_ns
-                    if clip_start_ns <= pts_ns < clip_end_ns:
+                    in_window = clip_start_ns <= pts_ns < clip_end_ns
+                    timestamp_ns = capture_start_ns + camera.capture_start_offset_ns + pts_ns
+                    if request.recording_config.recorder_version == "openarm-session/v2":
+                        from .openarm_grid import frame_at, frame_time
+
+                        frame = frame_at(pts_ns + camera.capture_start_offset_ns)
+                        first, last = (
+                            frame_at(request.start_offset_ns),
+                            frame_at(request.end_offset_ns),
+                        )
+                        in_window = first <= frame < last
+                        timestamp_ns = _datetime_ns(request.projection.started_at) + frame_time(
+                            frame - first
+                        )
+                    if in_window:
                         observed += 1
-                        timestamp_ns = capture_start_ns + camera.capture_start_offset_ns + pts_ns
                         yield QualityStreamObservationV1(
                             topic=camera.modality_key,
                             timestamp_ns=timestamp_ns,
@@ -1305,12 +1454,11 @@ class ContinuousEpisodeProcessingService:
                 channel.message_encoding, schema.encoding
             ):
                 raise ContinuousEpisodeProcessingError(f"sensor topic {topic!r} has no decoder")
-            timestamp = _sensor_timestamp(
-                int(message.log_time),
-                sensor.timestamp_mode,
-                request.projection.started_at,
-                request.start_offset_ns,
+            timestamp = _episode_sensor_timestamp(
+                int(message.log_time), sensor.timestamp_mode, request
             )
+            if timestamp is None:
+                continue
             if timestamp < previous:
                 raise ContinuousEpisodeProcessingError(
                     "sensor MCAP timestamps are not globally ordered"
@@ -1342,6 +1490,11 @@ class ContinuousEpisodeProcessingService:
         end_ns = _datetime_ns(request.projection.ended_at)
         source_start_ns = request.start_offset_ns - camera.capture_start_offset_ns
         frame_count = math.ceil((end_ns - start_ns) * 30 / 1_000_000_000)
+        if request.recording_config.recorder_version == "openarm-session/v2":
+            from .openarm_grid import frame_at, frame_time
+
+            frame_count = frame_at(request.end_offset_ns) - frame_at(request.start_offset_ns)
+            end_ns = start_ns + frame_time(frame_count)
         for index in range(frame_count):
             timestamp = start_ns + index * 1_000_000_000 // 30
             if timestamp >= end_ns:
@@ -1541,6 +1694,54 @@ def _bounded_value(value: object) -> object:
     if len(json.dumps(result, separators=(",", ":")).encode()) > 1024 * 1024:
         raise ContinuousEpisodeProcessingError("decoded sensor value exceeds one MiB")
     return result
+
+
+class _CompleteFrameWriter:
+    """Never publish an aligned fragment with absent required samples."""
+
+    def __init__(self, writer: FragmentWriterPort) -> None:
+        self.writer = writer
+
+    def begin(self, *, rollout_id: str, attempt_id: str) -> None:
+        self.writer.begin(rollout_id=rollout_id, attempt_id=attempt_id)
+
+    def write_row(self, row: AlignedRowV1) -> None:
+        if not row.sample_valid:
+            missing = sorted(name for name, value in row.modalities.items() if not value.valid)
+            raise ContinuousEpisodeProcessingError(
+                f"aligned frame {row.step_index} has missing required samples: {missing}"
+            )
+        self.writer.write_row(row)
+
+    def commit(self, *, row_count: int, content_sha256: str, schema_sha256: str) -> str:
+        if row_count == 0:
+            raise ContinuousEpisodeProcessingError("aligned Episode has no frames")
+        return self.writer.commit(
+            row_count=row_count, content_sha256=content_sha256, schema_sha256=schema_sha256
+        )
+
+    def abort(self) -> None:
+        self.writer.abort()
+
+
+def _episode_sensor_timestamp(
+    raw_timestamp_ns: int, mode: SensorTimestampMode, request: ContinuousEpisodeWorkflowInput
+) -> int | None:
+    if request.recording_config.recorder_version == "openarm-session/v2":
+        from .openarm_grid import slice_frame_time
+
+        if mode is not SensorTimestampMode.RECORDING_OFFSET_NS:
+            raise ContinuousEpisodeProcessingError("OpenArm grid requires recording offsets")
+        try:
+            relative = slice_frame_time(
+                raw_timestamp_ns, request.start_offset_ns, request.end_offset_ns
+            )
+        except ValueError as error:
+            raise ContinuousEpisodeProcessingError(str(error)) from error
+        return None if relative is None else _datetime_ns(request.projection.started_at) + relative
+    return _sensor_timestamp(
+        raw_timestamp_ns, mode, request.projection.started_at, request.start_offset_ns
+    )
 
 
 def _sensor_timestamp(

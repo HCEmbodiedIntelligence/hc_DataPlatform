@@ -9,7 +9,10 @@ const frontendRoot = path.resolve(scriptDir, "..");
 const repositoryRoot = path.resolve(frontendRoot, "..");
 const backendRoot = path.join(repositoryRoot, "backend");
 const aggregateContractPath = path.join(backendRoot, "openapi.generated.yaml");
-const runtimeContractPath = path.join(
+const runtimeFileIndex = process.argv.indexOf("--runtime-contract");
+const suppliedRuntime = runtimeFileIndex < 0 ? null : process.argv[runtimeFileIndex + 1];
+if (runtimeFileIndex >= 0 && !suppliedRuntime) throw new Error("--runtime-contract requires a path");
+const runtimeContractPath = suppliedRuntime ? path.resolve(suppliedRuntime) : path.join(
   frontendRoot,
   "src/shared/api/generated/.runtime-openapi.tmp.yaml",
 );
@@ -156,16 +159,18 @@ async function runtimeExporter() {
 
 export async function main() {
   try {
-    const exporter = await runtimeExporter();
-    const exportResult = await runProcess(
-      exporter.executable,
-      exporter.args,
-      backendRoot,
-    );
-    if (!exportResult.ok) {
-      throw new Error(`runtime OpenAPI export failed: ${exportResult.reason}`);
-    }
+    if (!suppliedRuntime) {
+      const exporter = await runtimeExporter();
+      const exportResult = await runProcess(
+        exporter.executable,
+        exporter.args,
+        backendRoot,
+      );
+      if (!exportResult.ok) {
+        throw new Error(`runtime OpenAPI export failed: ${exportResult.reason}`);
+      }
 
+    }
     const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
     const generateResult = await runProcess(
       pnpm,
@@ -234,7 +239,7 @@ export async function main() {
   } finally {
     await rm(temporaryPath, { force: true });
     await rm(temporaryOperationsPath, { force: true });
-    await rm(runtimeContractPath, { force: true });
+    if (!suppliedRuntime) await rm(runtimeContractPath, { force: true });
   }
 }
 

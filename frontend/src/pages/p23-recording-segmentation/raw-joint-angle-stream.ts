@@ -10,6 +10,7 @@ import type { RecordingGateway, RecordingScope } from "./api";
 interface JointVector {
   readonly values: readonly number[];
   readonly names?: readonly string[];
+  readonly units?: readonly string[];
 }
 
 function rawJointError(code: string, message: string, retryable = false) {
@@ -54,7 +55,7 @@ export function recordingJointVector(value: unknown): JointVector | null {
   )
     return null;
   const record = candidate as Record<string, unknown>;
-  const positions = numericVector(record.position ?? record.positions);
+  const positions = numericVector(record.position ?? record.positions ?? record.values);
   if (!positions) return null;
   const namesValue = record.name ?? record.names;
   const names = Array.isArray(namesValue) ? namesValue : null;
@@ -65,7 +66,10 @@ export function recordingJointVector(value: unknown): JointVector | null {
     )
       ? names
       : undefined;
-  return { values: positions, ...(validNames ? { names: validNames } : {}) };
+  const units = Array.isArray(record.units) && record.units.length === positions.length &&
+    record.units.every((unit): unit is string => typeof unit === "string" && unit.length > 0)
+      ? record.units : undefined;
+  return { values: positions, ...(validNames ? { names: validNames } : {}), ...(units ? { units } : {}) };
 }
 
 function seriesForVector(
@@ -74,7 +78,7 @@ function seriesForVector(
   return vector.values.map((_, index) => ({
     id: `joint-${index + 1}`,
     displayName: vector.names?.[index] ?? `J${index + 1}`,
-    unit: "rad",
+    unit: vector.units?.[index] ?? "rad",
   }));
 }
 

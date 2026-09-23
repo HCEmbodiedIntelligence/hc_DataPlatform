@@ -73,6 +73,16 @@ class PostgresPublishedManifestRepository:
                         detail="The rollout publication lineage migration is not available.",
                         retryable=True,
                     )
+                from hc_data_platform.continuous_recordings.lineage import materialize_rollout
+
+                for rollout in manifest.rollouts:
+                    materialize_rollout(
+                        cursor,
+                        project_id=manifest.project_id,
+                        dataset_id=manifest.dataset_id,
+                        rollout_id=rollout.rollout_id,
+                        source_sha256=rollout.source_mcap_sha256,
+                    )
                 cursor.execute(
                     """
                     SELECT expected_count, resolved_count
@@ -642,6 +652,58 @@ class PostgresCatalogRolloutState:
                     (project_id, dataset_id, dataset_version),
                 )
                 rows = cursor.fetchall()
+                # Continuous recordings publish through the committed media/Lance
+                # bundle receipt rather than aligned_fragment_attempts. Require
+                # that independent receipt and its immutable QC before exposing
+                # the rollout to publication; never infer readiness from upload.
+                cursor.execute(
+                    """
+                    SELECT lineage.rollout_id,lineage.step_count,report.status,
+                           report.report_document #>> '{quality_report,profile_id}',
+                           (report.report_document #>> '{quality_report,profile_version}')::integer,
+                           'continuous:' || lineage.schema_snapshot_id,
+                           version.frequency_hz::integer
+                      FROM lance_rollout_lineage lineage
+                      JOIN ingest.recording_episode_processing episode
+                        ON episode.organization_id=lineage.organization_id
+                       AND episode.project_id=lineage.project_id
+                       AND episode.recording_id || ':' || episode.episode_id=lineage.rollout_id
+                       AND episode.dataset_id=lineage.dataset_id
+                       AND episode.dataset_version=lineage.version_added
+                       AND episode.status='READY'
+                      JOIN ingest.recording_episode_qc_reports report
+                        ON report.organization_id=episode.organization_id
+
+                       AND report.project_id=episode.project_id
+                       AND report.region_code=episode.region_code
+
+                       AND report.recording_id=episode.recording_id
+                       AND report.episode_id=episode.episode_id
+                       AND report.report_id=episode.qc_report_id
+                       AND report.report_document->>'source_sha256'=lineage.source_sha256
+                      JOIN lance_dataset_versions version
+                        ON version.organization_id=lineage.organization_id
+
+                       AND version.project_id=lineage.project_id
+                       AND version.dataset_id=lineage.dataset_id
+
+                       AND version.version=lineage.version_added
+                       AND version.lance_version=episode.lance_version
+                     WHERE lineage.project_id=%s
+                     AND lineage.dataset_id=%s
+                     AND lineage.version_added<=%s
+                       AND lineage.converter_version='continuous-mp4-sensor/1'
+                       AND NOT EXISTS (SELECT 1 FROM aligned_fragment_attempts attempt
+                           WHERE attempt.organization_id=lineage.organization_id
+
+                             AND attempt.project_id=lineage.project_id
+                             AND attempt.rollout_id=lineage.rollout_id
+                             AND attempt.status='READY' AND attempt.manifest_json IS NOT NULL)
+                     ORDER BY lineage.rollout_id
+                    """,
+                    (project_id, dataset_id, dataset_version),
+                )
+                rows.extend(cursor.fetchall())
         finally:
             connection.close()
         return tuple(

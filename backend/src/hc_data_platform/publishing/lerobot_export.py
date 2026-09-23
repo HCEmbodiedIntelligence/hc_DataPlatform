@@ -20,7 +20,7 @@ from .export_video import inspect_video, materialize_video
 from .models import ExportStepV1, PublishedDatasetManifestV1
 from .service import canonical_json_bytes
 
-EXPORT_REVISION = "lerobot-materialized-v2"
+EXPORT_REVISION = "lerobot-materialized-v3"
 VIDEO_PATH = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
 DATA_PATH = "data/chunk-000/file-000.parquet"
 EPISODES_PATH = "meta/episodes/chunk-000/file-000.parquet"
@@ -35,7 +35,7 @@ def _feature_names(names: Sequence[str]) -> dict[str, str]:
     for name in names:
         if name in {"/humanoid/action", "/action"}:
             target = "action"
-        elif name == "/humanoid/observation/state" or (
+        elif name in {"/humanoid/observation/state", "/observation/state"} or (
             name in {"/robot/joint_states", "/joint_states"}
             and "/humanoid/observation/state" not in names
         ):
@@ -43,6 +43,7 @@ def _feature_names(names: Sequence[str]) -> dict[str, str]:
         elif _camera(name):
             camera = (
                 name.removeprefix("/camera/")
+                .removesuffix("/image_raw")
                 .removesuffix("/image")
                 .removeprefix("camera.")
                 .removeprefix("observation.images.")

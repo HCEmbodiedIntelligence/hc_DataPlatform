@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildJointFrameSource } from "../../features/viewer";
 import type { RecordingGateway, RecordingScope } from "./api";
-import { buildRecordingJointAngleStream } from "./raw-joint-angle-stream";
+import { buildRecordingJointAngleStream, recordingJointVector } from "./raw-joint-angle-stream";
 
 const scope: RecordingScope = {
   organizationId: "org-test",
@@ -10,6 +10,11 @@ const scope: RecordingScope = {
 };
 
 describe("raw recording joint-angle stream", () => {
+  it("preserves OpenArm joint names and mixed arm/gripper units", () => {
+    expect(recordingJointVector({ values: [0.5, 0.01], names: ["arm", "gripper"], units: ["rad", "m"] }))
+      .toEqual({ values: [0.5, 0.01], names: ["arm", "gripper"], units: ["rad", "m"] });
+    expect(recordingJointVector({ values: [null], names: ["arm"], units: ["rad"] })).toBeNull();
+  });
   it("reads original MCAP windows and drives the shared robot frame source", async () => {
     const sensorWindow = vi.fn(
       async (

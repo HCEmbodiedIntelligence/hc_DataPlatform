@@ -346,8 +346,8 @@ class PostgresDatasetIngestProjector:
         target = DatasetIngestViewerTarget(
             dataset_id=ready.dataset_id,
             version_id=_version_id(ready.dataset_version),
-            episode_id=source.episode_id,
-            revision_id=_stable_id("revision", source.episode_id, source.source_sha256),
+            episode_id=_stable_id("episode", source.rollout_id),
+            revision_id=_stable_id("revision", source.rollout_id, source.source_sha256),
         )
         facts = _ProjectionFacts(
             collection_task_id=source.collection_task_id,
@@ -441,6 +441,25 @@ class PostgresDatasetIngestProjector:
             None,
         )
         expected_token = f"lance-version:{version.storage_commit_id}"
+        if revision is None and isinstance(source, ContinuousEpisodeProjectionSourceV1):
+            # Preserve already published projections from the older local-ID
+            # scheme when recovering a lost receipt. New recordings use the
+            # recording-qualified rollout identity, so episode_0001 cannot clash.
+            revision = next(
+                (
+                    item
+                    for item in persisted.content_snapshot.revision_refs
+                    if item.episode_id == source.episode_id
+                    and item.content_sha256 == source.source_sha256
+                    and item.revision_id
+                    == _stable_id("revision", source.episode_id, source.source_sha256)
+                ),
+                None,
+            )
+            if revision is not None:
+                target = target.model_copy(
+                    update={"episode_id": revision.episode_id, "revision_id": revision.revision_id}
+                )
         if (
             persisted.version_id != target.version_id
             or revision is None
@@ -797,10 +816,22 @@ class PostgresDatasetIngestProjector:
             dataset_id=target.dataset_id,
             dataset_version=ready.dataset_version,
             current=provenance,
+            expected_sources=()
+            if previous_projection is None
+            else previous_projection.content_snapshot.source_manifest_refs,
         )
         for item in provenance_items:
             self._put_provenance(cursor, item)
         source_increment = facts.source_size_bytes
+        if (
+            isinstance(source, ContinuousEpisodeProjectionSourceV1)
+            and previous_projection is not None
+            and any(
+                ref.reference_id == source.data_package_id
+                for ref in previous_projection.content_snapshot.source_manifest_refs
+            )
+        ):
+            source_increment = 0
         if (
             isinstance(source, IngestProjectionSourceV1)
             and source.lerobot is not None
@@ -986,6 +1017,7 @@ class PostgresDatasetIngestProjector:
         dataset_id: str,
         dataset_version: int,
         current: DatasetPageSourceProvenance,
+        expected_sources: Sequence[DatasetPageContentReference],
     ) -> tuple[DatasetPageSourceProvenance, ...]:
         if dataset_version == 1:
             return (current,)
@@ -1011,7 +1043,9 @@ class PostgresDatasetIngestProjector:
             )
             for row in cursor.fetchall()
         )
-        if len(previous) != dataset_version - 1:
+        expected = {(item.reference_id, item.sha256) for item in expected_sources}
+        actual = {(item.source_manifest_id, item.source_manifest_sha256) for item in previous}
+        if actual != expected or len(previous) != len(expected):
             raise DatasetIngestProjectionConflict(
                 "the preceding Dataset snapshot has incomplete source provenance"
             )

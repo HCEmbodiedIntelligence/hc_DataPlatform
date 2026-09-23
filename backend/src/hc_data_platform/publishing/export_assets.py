@@ -158,6 +158,11 @@ class PostgresExportAssets:
                     tag_schema_hash=row[4],
                     tag_schema=row[5],
                 )
+            from hc_data_platform.continuous_recordings.export_metadata import frozen_metadata
+
+            metadata.update(
+                frozen_metadata(cursor, self.storage, organization, region, manifest, rollout)
+            )
             raw_id = source_metadata.get("raw_upload_id")
             if raw_id:
                 cursor.execute(

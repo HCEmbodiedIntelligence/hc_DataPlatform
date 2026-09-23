@@ -523,6 +523,7 @@ class ContinuousEpisodeStateActivityInput(BaseModel):
     qc_report_id: str | None = Field(default=None, min_length=1, max_length=256)
     alignment_attempt_id: str | None = Field(default=None, min_length=1, max_length=256)
     dataset_id: str | None = Field(default=None, min_length=1, max_length=128)
+    dataset_episode_id: str | None = Field(default=None, min_length=1, max_length=128)
     dataset_version: int | None = Field(default=None, ge=1)
     lance_version: int | None = Field(default=None, ge=1)
     annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)

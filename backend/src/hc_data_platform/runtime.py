@@ -1306,10 +1306,12 @@ def build_worker_outbox(
     from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
     from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
     from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
+    from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
 
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
+            RecordingOutboxHandler.EVENT_TYPE:RecordingOutboxHandler(connection_factory,object_storage),
             EVENT_TYPE: RobotProcessingOutboxHandler(
                 temporal_client, ProcessingStore(connection_factory),
                 task_queue=robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),

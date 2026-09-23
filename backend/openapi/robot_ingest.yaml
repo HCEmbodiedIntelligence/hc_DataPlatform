@@ -169,6 +169,12 @@ paths:
       security:
         - robotBearerAuth: []
       responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}/recording:
+    get:
+      operationId: getRobotIngestRecording
+      security:
+        - robotBearerAuth: []
+      responses: {}
   /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
     get:
       operationId: getRobotIngestProcessingDiagnostics

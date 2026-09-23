@@ -1,9 +1,10 @@
 """Robot-owned processing reads/retries; E includes this router beside robot_ingest.router."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import Field
 
 from hc_data_platform.core.errors import problem
 
@@ -115,6 +116,40 @@ def get_diagnostics(
 
 class RetryProcessing(StrictModel):
     request_id: UUID
+
+
+class RecordingResult(StrictModel):
+    upload_id: str
+    raw_source_id: str | None
+    recording_id: str | None
+    status: Literal["REGISTERING", "AWAITING_SLICE", "SLICED"]
+    page_path: str | None
+    terminal: bool
+    poll_after_seconds: int = Field(ge=0, le=60)
+    error_code: str | None = None
+    registration_attempts: int = Field(default=0, ge=0)
+
+
+@router.get(
+    "/uploads/{upload_id}/recording",
+    response_model=RecordingResult,
+    operation_id="getRobotIngestRecording",
+)
+def get_recording(
+    upload_id: str, response: Response, token: RobotToken, service: Service, store: Store
+) -> RecordingResult:
+    from . import recording_bridge
+
+    upload = service.get_upload(token=token, upload_id=upload_id).data
+    if not recording_bridge.eligible(upload):
+        raise problem(
+            status=409,
+            code="ROBOT_RECORDING_INCOMPATIBLE",
+            title="Recording unavailable",
+            detail="This endpoint requires a committed OpenArm recording bundle.",
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return RecordingResult.model_validate(recording_bridge.result(store.connections, upload))
 
 
 @router.post(

@@ -1064,6 +1064,12 @@ class ContinuousRecordingService:
                     detail="The requested topic is not declared by this recording.",
                 )
             return sensor.topic, sensor.timestamp_mode
+        if upload.command.recording_config.recorder_version == "openarm-session/v2":
+            state = next(
+                (sensor for sensor in sensors if sensor.topic == "/observation/state"), None
+            )
+            if state is not None:
+                return state.topic, state.timestamp_mode
         joint_sensors = tuple(sensor for sensor in sensors if "joint" in sensor.topic.casefold())
         if not joint_sensors:
             raise problem(
@@ -1103,6 +1109,30 @@ class ContinuousRecordingService:
         authoring_mode: SliceAuthoringMode = SliceAuthoringMode.HUMAN,
         model: ModelSliceProposalMetadata | None = None,
     ) -> RecordingSliceRevision:
+        if recording.recording_upload_id is not None:
+            upload = self._require_asset_repository().get_upload(
+                recording.scope, recording.recording_upload_id
+            )
+            if upload and upload.command.recording_config.recorder_version == "openarm-session/v2":
+                from .openarm_grid import frame_at, frame_time
+
+                # Return the snapped boundaries in the saved draft for operator review.
+                items = []
+                for item in inputs.slices:
+                    value = item.model_dump()
+                    for key in ("start_offset_ns", "end_offset_ns"):
+                        value[key] = min(recording.duration_ns, frame_time(frame_at(value[key])))
+                    items.append(value)
+                try:
+                    inputs = SaveSliceDraftCommand.model_validate({"slices": items})
+                except ValueError as error:
+                    raise problem(
+                        status=422,
+                        code="OPENARM_SLICE_FRAME_BOUNDARIES_INVALID",
+                        title="Slices must contain distinct complete frames",
+                        detail=("Adjust the boundaries and save again; "
+                                "OpenArm slices snap to 30 Hz frames."),
+                    ) from error
         ordered = sorted(
             inputs.slices,
             key=lambda item: (item.start_offset_ns, item.end_offset_ns, item.episode_id),

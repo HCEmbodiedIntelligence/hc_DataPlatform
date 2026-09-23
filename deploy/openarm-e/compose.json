@@ -51,7 +51,8 @@
     "minio-init": {
       "image": "hc-offline/mc:71eaa560",
       "entrypoint": [
-        "/bin/sh", "-ec",
+        "/bin/sh",
+        "-ec",
         "mc alias set local http://minio:9000 minio minio-local-only; mc mb --ignore-existing local/hc-e-accept"
       ]
     },
@@ -65,8 +66,13 @@
       "image": "hc-offline/nginx:71eaa560"
     },
     "frontend": {
-      "image": "openarm-e-frontend:integration",
-      "volumes": []
+      "image": "openarm-e-frontend:recording-v2",
+      "volumes": [],
+      "build": {
+        "context": "./frontend",
+        "dockerfile": "../deploy/openarm-e/Dockerfile.frontend",
+        "target": null
+      }
     }
   }
 }

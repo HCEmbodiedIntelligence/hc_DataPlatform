@@ -158,7 +158,7 @@ def test_export_materializes_exact_frames_tags_statistics_and_standard_features(
     )
     manifest = export_manifest()
     result = coordinator.export(manifest, format=ExportFormat.LEROBOT_V3, attempt_id="portable")
-    assert "lerobot-materialized-v2/" in result.artifact_uri
+    assert "lerobot-materialized-v3/" in result.artifact_uri
     with zipfile.ZipFile(io.BytesIO(sink.artifacts[result.artifact_uri])) as archive:
         info = json.loads(archive.read("meta/info.json"))
         stats = json.loads(archive.read("meta/stats.json"))
