@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import re
 import secrets
 from collections.abc import Callable, Sequence
@@ -886,14 +887,45 @@ class RobotIngestService:
                 detail="The approved source format Adapter could not normalize this upload.",
             ) from exc
         if self.storage.head(manifest_key) is None:
-            self.storage.put_json(
-                manifest_key,
-                {
-                    "schema_version": "robot-ingest-committed/v1",
-                    "upload": verified.model_dump(mode="json"),
-                    "adapter": normalized_raw,
-                },
-                if_none_match=True,
+            try:
+                self.storage.put_json(
+                    manifest_key,
+                    {
+                        "schema_version": "robot-ingest-committed/v1",
+                        "upload": verified.model_dump(mode="json"),
+                        "adapter": normalized_raw,
+                    },
+                    if_none_match=True,
+                )
+            except ProblemException as exc:
+                if exc.problem.code != "OBJECT_ALREADY_EXISTS":
+                    raise
+                # Another commit won the conditional write. Validate its immutable
+                # lineage below; per-request verification timestamps may differ.
+        stored_manifest = json.loads(b"".join(self.storage.read_chunks(manifest_key)))
+        stored_upload = RobotIngestUpload.model_validate(stored_manifest.get("upload"))
+        lineage_fields = (
+            "upload_id",
+            "ingest_identity_id",
+            "authenticated_robot_id",
+            "target",
+            "manifest_fingerprint",
+            "manifest",
+            "assets",
+        )
+        if (
+            stored_manifest.get("schema_version") != "robot-ingest-committed/v1"
+            or stored_manifest.get("adapter") != normalized_raw
+            or any(
+                getattr(stored_upload, field) != getattr(verified, field)
+                for field in lineage_fields
+            )
+        ):
+            raise problem(
+                status=409,
+                code="ROBOT_COMMIT_MANIFEST_CONFLICT",
+                title="Committed manifest conflicts with upload",
+                detail="The stored commit manifest does not match immutable upload lineage.",
             )
         content_hash = hashlib.sha256(
             "\n".join(

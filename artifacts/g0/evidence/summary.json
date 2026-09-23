@@ -1,0 +1,27 @@
+{
+  "baseline": "2f6022202728f7c18852c0afd0fbd8df4244f362",
+  "contract": "openarm-capture/v1 / g0-20260922.1",
+  "g0_release_sha256": "4e074444877cd037dbbb9a3f5045333638e480f107c5e4abec4ee0806a11dae8",
+  "tests": {
+    "c_suite_passed": 42,
+    "baseline_postgres_passed": 2,
+    "static_check": "ruff passed",
+    "real_infrastructure": "PostgreSQL + Temporal + MinIO; true failed processing and recovery",
+    "receipt_double_tests": 3
+  },
+  "original_build": "failed: Docker Hub python image manifest network timeout",
+  "test_base_image": "sha256:fbcefa6508cab37d4d74a6f8d17baaeddf3fb6e371c0fd45e250872b644a77c3",
+  "infrastructure_images": {
+    "postgres": "sha256:61c57e5eeda4d69232c97cb23ae5d95d170a1a2fd0b40a6b4f34fb56819b056d",
+    "temporal": "sha256:9ce78f5a7ba7169acb659a8bb7a174a64251c3bfe1553d1fefdd669a59d41df5",
+    "minio": "sha256:d051d800a3025588f37f69f132bb5ef718547a9a4ee95ddee44e04ad952a0a96"
+  },
+  "openarm_success_verified": false,
+  "not_executed": [
+    "B real generic/OpenArm parsing, QC, dataset/media publication and receipt",
+    "B publication-before-C-receipt crash recovery",
+    "E default production runtime/worker/router/migration wiring",
+    "external robot/public origin/gateway and real captures",
+    "fresh original online Dockerfile build"
+  ]
+}

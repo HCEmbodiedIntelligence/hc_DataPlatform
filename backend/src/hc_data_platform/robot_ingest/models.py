@@ -562,7 +562,11 @@ class RobotIngestEpisodeResult(StrictModel):
 
     @model_validator(mode="after")
     def validate_ready_versions(self) -> RobotIngestEpisodeResult:
-        if self.status == "READY" and (self.dataset_version is None or self.lance_version is None):
+        if (
+            self.status == "READY"
+            and self.quality_status not in {QualityStatus.RISK, QualityStatus.REJECT}
+            and (self.dataset_version is None or self.lance_version is None)
+        ):
             raise ValueError("READY Episodes require Dataset and Lance versions")
         return self
 
