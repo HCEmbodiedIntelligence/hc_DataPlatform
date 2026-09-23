@@ -1,0 +1,30 @@
+{
+  "action_stage": "sent",
+  "contract_version": "openarm-capture/v1",
+  "episodes": [
+    {
+      "end_frame": 6,
+      "episode_index": 0,
+      "export_qualified": true,
+      "outcome": "success",
+      "source_episode_id": "source-episode-0",
+      "start_frame": 0,
+      "task": "synthetic task 0"
+    },
+    {
+      "end_frame": 21,
+      "episode_index": 1,
+      "export_qualified": true,
+      "outcome": "failure",
+      "source_episode_id": "source-episode-1",
+      "start_frame": 15,
+      "task": "synthetic task 1"
+    }
+  ],
+  "export_id": "synthetic-export-openarmx-v1",
+  "format": "v3.0",
+  "session_id": "synthetic-session-001",
+  "source_mapping": "source_mapping.jsonl",
+  "synthetic": true,
+  "total_frames": 12
+}

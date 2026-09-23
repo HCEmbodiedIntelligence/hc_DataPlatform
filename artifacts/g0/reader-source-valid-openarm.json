@@ -1,0 +1,69 @@
+{
+  "root": "/sources/valid-openarm",
+  "source": "/sources/valid-openarm",
+  "status": "PASS",
+  "python": "3.12.8",
+  "lerobot": "0.6.1",
+  "torch": "2.11.0+cpu",
+  "frames": 12,
+  "episodes": 2,
+  "video_keys": [
+    "observation.images.camera_hand",
+    "observation.images.camera_left",
+    "observation.images.camera_right"
+  ],
+  "max_video_mean_absolute_error": 0.0,
+  "batch_shapes": {
+    "observation.images.camera_hand": [
+      8,
+      3,
+      480,
+      640
+    ],
+    "observation.images.camera_left": [
+      8,
+      3,
+      480,
+      640
+    ],
+    "observation.images.camera_right": [
+      8,
+      3,
+      480,
+      640
+    ],
+    "action": [
+      8,
+      16
+    ],
+    "episode_index": [
+      8
+    ],
+    "frame_index": [
+      8
+    ],
+    "index": [
+      8
+    ],
+    "observation.state": [
+      8,
+      16
+    ],
+    "task_index": [
+      8
+    ],
+    "timestamp": [
+      8
+    ]
+  },
+  "batch_episode_indexes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1
+  ]
+}

@@ -240,7 +240,25 @@ class LeRobotArchive:
                 "dtype": dtype,
                 "shape": list(shape or (1,)),
                 "names": (encoding or {}).get("names"),
+                **({"units": encoding["units"]} if encoding and "units" in encoding else {}),
             }
+            declarations = [m.get("source_features", {}).get(target) for m in self.metadata]
+            if any(declarations):
+                if any(d != declarations[0] for d in declarations):
+                    raise export_error(
+                        "LEROBOT_MODALITY_SCHEMA_MISMATCH",
+                        "Source feature definitions differ between episodes.",
+                    )
+                declaration = declarations[0]
+                if (
+                    declaration["shape"] != features[target]["shape"]
+                    or declaration["names"] != features[target]["names"]
+                ):
+                    raise export_error(
+                        "LEROBOT_MODALITY_SCHEMA_MISMATCH",
+                        "Numeric axis identities changed during processing.",
+                    )
+                features[target].update(declaration)
             if encoding:
                 encodings[target] = encoding
 

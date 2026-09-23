@@ -53,8 +53,8 @@ def test_postgres_export_download_audit_is_scoped_and_never_persists_locator() -
     )
     with psycopg.connect(dsn) as connection:
         connection.execute(
-            "INSERT INTO registry.organization_projects (organization_id, project_id) "
-            "VALUES (%s, %s)",
+            "INSERT INTO registry.organization_projects (organization_id, project_id, display_name) "
+            "VALUES (%s, %s, 'Export audit test')",
             (organization_id, project_id),
         )
     token = bind_request_context(

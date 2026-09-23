@@ -1,0 +1,224 @@
+{
+  "status": "PASS",
+  "source": {
+    "urdf_sha256": "ee8ad00f81fcb39b1ce4c5329def6b063d24f2d4366741ea84d4e0834df43c9f"
+  },
+  "joint_mapping": [
+    {
+      "source_joint_name": "openarmx_left_joint1",
+      "target_joint_name": "openarmx_left_joint1",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_left_joint2",
+      "target_joint_name": "openarmx_left_joint2",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_left_joint3",
+      "target_joint_name": "openarmx_left_joint3",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_left_joint4",
+      "target_joint_name": "openarmx_left_joint4",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_left_joint5",
+      "target_joint_name": "openarmx_left_joint5",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_left_joint6",
+      "target_joint_name": "openarmx_left_joint6",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_left_joint7",
+      "target_joint_name": "openarmx_left_joint7",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint1",
+      "target_joint_name": "openarmx_right_joint1",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint2",
+      "target_joint_name": "openarmx_right_joint2",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint3",
+      "target_joint_name": "openarmx_right_joint3",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint4",
+      "target_joint_name": "openarmx_right_joint4",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint5",
+      "target_joint_name": "openarmx_right_joint5",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint6",
+      "target_joint_name": "openarmx_right_joint6",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "openarmx_right_joint7",
+      "target_joint_name": "openarmx_right_joint7",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "left_gripper",
+      "target_joint_name": "openarmx_left_finger_joint1",
+      "direction": "SAME"
+    },
+    {
+      "source_joint_name": "right_gripper",
+      "target_joint_name": "openarmx_right_finger_joint1",
+      "direction": "SAME"
+    }
+  ],
+  "grippers": {
+    "left": {
+      "type": "prismatic",
+      "mimic": {
+        "joint": "openarmx_left_finger_joint1"
+      }
+    },
+    "right": {
+      "type": "prismatic",
+      "mimic": {
+        "joint": "openarmx_right_finger_joint1"
+      }
+    }
+  },
+  "assets": [
+    {
+      "path": "meshes/arm/v10/collision/link0_symp.stl",
+      "size": 111184,
+      "sha256": "5c63295dcd10d25f916ac3a7f0dddd845f69d2c75b29a2d67eec892119931b46"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link1_symp.stl",
+      "size": 219134,
+      "sha256": "1545e1ab01724f17ba4abae4d175d8315f23f6aeccd9d630aa9cf4f19d1c3151"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link2_symp.stl",
+      "size": 358784,
+      "sha256": "3d9237f561446e8d34c8bc2d2988716ce8ccf139dbf1ad8a3136415ccd97618f"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link3_symp.stl",
+      "size": 325534,
+      "sha256": "64032fab1b731e81501137d0cff136b72fba050975725671382d7ff9f04c4f58"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link4_symp.stl",
+      "size": 290584,
+      "sha256": "645db80f9c01ab0a1b26a3f045ca262384fece1b22db2a6cd69aa0fb98a4c539"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link5_symp.stl",
+      "size": 277334,
+      "sha256": "490128014c1100b3c9a8b90764eeb41e825ce280dbd422567d386b7b85e3a6e6"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link6_symp.stl",
+      "size": 191184,
+      "sha256": "b2e849f83a547b63afeda4d65f2440d560730316c86697e3ceda0f63a22af7b9"
+    },
+    {
+      "path": "meshes/arm/v10/collision/link7_symp.stl",
+      "size": 94984,
+      "sha256": "04fb9a30f10bc6c935870f736309d9b5daf73f788cf9379386e2c369aab961c0"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link0.dae",
+      "size": 142170,
+      "sha256": "e9727ea20fad96d7dca6572b8556cda52bc08b9cda003d4c5c54b97f9ce74efc"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link1.dae",
+      "size": 297859,
+      "sha256": "bf876ab2b23314af66b08540064b5bc8d0fd43060d9ef4414e159ffc026e6e41"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link2.dae",
+      "size": 499466,
+      "sha256": "447a5fb58cae6261c4886c6e7e65aa472e655b24035d3e4f61205904ca346585"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link3.dae",
+      "size": 453320,
+      "sha256": "a9cb9a4dcdf66a790d71f593a63bdc0eff610aee4e565bd4e2750c59f63e9299"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link4.dae",
+      "size": 409639,
+      "sha256": "0906103018ded40b14e312b282458ec30b0e46ccc01777d9ec51319766a7e070"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link5.dae",
+      "size": 382432,
+      "sha256": "cf097bcefc985d55f6e9dea720edc6aec1ecea500755ed0afe8fc2042b1a4d1c"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link6.dae",
+      "size": 265409,
+      "sha256": "8ed6209d9b0b6b199e387f234c1501ac5a2327585f082f4c63d54784d667c736"
+    },
+    {
+      "path": "meshes/arm/v10/visual/link7.dae",
+      "size": 132145,
+      "sha256": "d018e498bc27c3c6b8fc136e4f2b53d6da2ad196e4b81222332f913edfa4d24d"
+    },
+    {
+      "path": "meshes/body/v10/collision/body_link0_symp.stl",
+      "size": 293284,
+      "sha256": "6c18bbf7e86b03e3faf802e61e8eb438b38dcbcf146d97cffe6e808c65e9a72a"
+    },
+    {
+      "path": "meshes/body/v10/visual/body_link0.dae",
+      "size": 1243354,
+      "sha256": "4b3a7555b5f9af7181bbf6d75f237067c1eb0d4cdcb6ef03d3bd67da88bd5079"
+    },
+    {
+      "path": "meshes/ee/openarmx_hand/collision/finger.stl",
+      "size": 13284,
+      "sha256": "8e96e1314618cf434908f70df78f68dd2b049c03538964e8d41fc99abe41564d"
+    },
+    {
+      "path": "meshes/ee/openarmx_hand/collision/hand.stl",
+      "size": 18284,
+      "sha256": "8e5d373ebbd3fd001b506058644062ad71a68f1ced5ca5d5ed0f6de20137956b"
+    },
+    {
+      "path": "meshes/ee/openarmx_hand/visual/finger.dae",
+      "size": 6021840,
+      "sha256": "79ceb27587d85d91566a812c3037859f88f79add3322fb957c149e79f17fc779"
+    },
+    {
+      "path": "meshes/ee/openarmx_hand/visual/hand.dae",
+      "size": 1549191,
+      "sha256": "3450ff4da4258bef3724d78b044af0ea4e72bd13b15fb1c24f0e7039ada22ed3"
+    },
+    {
+      "path": "robot.config.json",
+      "size": 2785,
+      "sha256": "3afbbfcadab0990bcf57a42a52f51d4c9562d6e4c94546cad12dec7737a52763"
+    },
+    {
+      "path": "robot.urdf",
+      "size": 26253,
+      "sha256": "2ac37f87c6b2c764337410af0707cc198daa5795b33c150a41752669f986a2db"
+    }
+  ]
+}

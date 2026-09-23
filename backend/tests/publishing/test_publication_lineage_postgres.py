@@ -25,11 +25,6 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
     psycopg_connection_factory,
 )
 from hc_data_platform.core.errors import ProblemException  # noqa: E402
-from hc_data_platform.dashboard.postgres import PostgresDashboardRepository  # noqa: E402
-from hc_data_platform.dashboard.repository import (  # noqa: E402
-    DashboardScope,
-    DashboardWindow,
-)
 from hc_data_platform.publishing.models import (  # noqa: E402
     PublishedDatasetManifestV1,
     PublishedRolloutV1,
@@ -293,19 +288,24 @@ def test_fresh_migration_backfills_only_certain_history_and_is_reentrant(
             """
         ).fetchone() == (1,)
 
+    # This is a migration contract test. The removed dashboard convenience
+    # method is no longer a public repository API; exercise the SQL contract.
     actor = dashboard_actor("history-project", "cn-east")
-    with request_context("history-project", "cn-east"):
-        summary = PostgresDashboardRepository(
-            psycopg_connection_factory(dsn), statement_timeout_ms=5000
-        ).publication_lineage_summary(
-            auth=actor,
-            scope=DashboardScope(actor.subject_id, "history-project", "cn-east"),
-            window=DashboardWindow(NOW - timedelta(days=1), NOW + timedelta(days=1), "UTC"),
-        )
-    assert summary.available is True
-    assert summary.lineage_count == 1
-    assert summary.publication_count == 1
-    assert summary.unresolved_history_count == 1
+    with (
+        request_context("history-project", "cn-east"),
+        psycopg_connection_factory(dsn)() as connection,
+    ):
+        summary = connection.execute(
+            "SELECT * FROM publishing.dashboard_publication_lineage_summary(%s,%s,%s,%s,%s)",
+            (
+                actor.subject_id,
+                "history-project",
+                "cn-east",
+                NOW - timedelta(days=1),
+                NOW + timedelta(days=1),
+            ),
+        ).fetchone()
+    assert summary[:3] == (1, 1, 1)
 
 
 def test_forward_publication_writes_atomic_idempotent_exact_region_lineage(

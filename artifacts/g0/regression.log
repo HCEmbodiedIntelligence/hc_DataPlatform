@@ -1,0 +1,29 @@
+ Container openarm-g0-b-migration-run-f7c28da18966 Creating 
+ Container openarm-g0-b-migration-run-f7c28da18966 Created 
+.ssss...............................sss......s....s............s........ [ 61%]
+..ssssss......................................                           [100%]
+=============================== warnings summary ===============================
+../opt/venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /opt/venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/publishing/test_mcap_lerobot_export.py: 90 warnings
+  /app/src/hc_data_platform/workflow/ingest_plan.py:1417: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+    pixels = list(reduced.getdata())
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [2] tests/lerobot_imports/test_episode_resolutions.py:99: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/lerobot_imports/test_episode_resolutions.py:195: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/lerobot_imports/test_episode_resolutions.py:212: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [3] tests/lerobot_imports/test_openarm_roundtrip.py:72: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/lerobot_imports/test_original_storage_postgres.py:15: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_export_audit_postgres.py:32: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_export_minio_integration.py:31: HC_MINIO_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY are required
+SKIPPED [1] tests/publishing/test_publication_lineage_postgres.py:262: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_publication_lineage_postgres.py:311: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_publication_lineage_postgres.py:346: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_publication_lineage_postgres.py:403: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_publication_notification_postgres.py:286: HC_TEST_POSTGRES_DSN is not set
+SKIPPED [1] tests/publishing/test_publication_notification_postgres.py:340: HC_TEST_POSTGRES_DSN is not set
+102 passed, 16 skipped, 91 warnings in 13.62s

@@ -1,4 +1,4 @@
-"""Explicit browser configuration of labels before a native G1 import."""
+"""Explicit browser configuration of labels before a native LeRobot import."""
 
 from __future__ import annotations
 
@@ -93,8 +93,8 @@ def validate_target(organization_id: str, project_id: str, region_code: str, man
         raise problem(
             status=409,
             code="LEROBOT_PROCESSING_PLAN_REQUIRED",
-            title="G1 标注规则未配置",
-            detail="请先在上传确认窗口配置并发布 G1 标注规则，再开始上传。",
+            title="LeRobot 标注规则未配置",
+            detail="请先在上传确认窗口配置并发布 LeRobot 标注规则，再开始上传。",
         )
 
 
@@ -139,7 +139,7 @@ def configure_labels(
     identity = hashlib.sha256(
         f"{organization_id}/{project_id}/{region_code}/{dataset_id}".encode()
     ).hexdigest()[:24]
-    schema_id, snapshot_id = f"native-g1-labels-{identity}", "native-g1-v3-30hz-v1"
+    schema_id, snapshot_id = f"native-lerobot-labels-{identity}", "native-lerobot-v3-v1"
     service = get_annotation_service()
     versions = service.list_tag_schema_versions(
         project_id=project_id, schema_id=schema_id, actor=auth
@@ -149,7 +149,7 @@ def configure_labels(
             project_id=project_id,
             schema_id=schema_id,
             version=1,
-            name="G1 原生数据人工标注",
+            name="LeRobot 原生数据人工标注",
             actor=auth,
             document=TagSchemaDocument(
                 nodes=tuple(

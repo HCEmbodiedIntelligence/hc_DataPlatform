@@ -87,13 +87,17 @@ def validate_source_info(info: object) -> dict[str, Any]:
 
 
 def validate_processing_info(info: object) -> dict[str, Any]:
-    """The optional legacy training pipeline still requires the G1 profile."""
+    """Validate the training schema without confusing robot identity with format."""
+    from .profiles import profile_for_info
+
+    info = validate_source_info(info)
+    profile = profile_for_info(info)
+    if not profile.legacy_g1:
+        return info
     if not isinstance(info, dict):
         raise ValueError("LeRobot meta/info.json must contain an object")
     if info.get("codebase_version") != "v3.0":
         raise ValueError("this importer currently requires LeRobotDataset v3.0")
-    if info.get("robot_type") != "unitree_g1":
-        raise ValueError("this importer currently requires the Unitree G1 source profile")
     fps = info.get("fps")
     if not isinstance(fps, (int, float)) or isinstance(fps, bool) or not 0 < float(fps) <= 240:
         raise ValueError("LeRobot metadata has an invalid fps")

@@ -1,0 +1,40 @@
+{
+  "session_id": "synthetic-openarm-A",
+  "lerobot_version": "0.4.4",
+  "format": "v3.0",
+  "alignment_version": "online",
+  "camera_validation": "timestamps",
+  "exposure_validation": "disabled",
+  "episodes": [
+    {
+      "start_frame": 0,
+      "end_frame": 6,
+      "task": "synthetic pick",
+      "outcome": "success",
+      "source_episode_id": "synthetic-pick"
+    },
+    {
+      "start_frame": 15,
+      "end_frame": 21,
+      "task": "synthetic place",
+      "outcome": "failure",
+      "source_episode_id": "synthetic-place"
+    }
+  ],
+  "total_frames": 12,
+  "source_mapping": "source_mapping.jsonl",
+  "action_definition": "active_at_target, actual sent command; send_time approximation explicitly retained",
+  "depth": {
+    "format": "humanoid-depth-extension/1",
+    "reader": "humanoid_manager.recording.exporter.DepthReader",
+    "native_lerobot_rgb_video": false
+  },
+  "pointcloud": {
+    "format": "humanoid-pointcloud-extension/1.2",
+    "reader": "humanoid_manager.recording.exporter.PointCloudReader",
+    "selected_frames": 12,
+    "native_lerobot_field": false
+  },
+  "image_stats": "streaming per-channel pixel statistics over selected RGB frames",
+  "video_policy": "selected source frames reencoded at dataset.fps; raw session unchanged"
+}

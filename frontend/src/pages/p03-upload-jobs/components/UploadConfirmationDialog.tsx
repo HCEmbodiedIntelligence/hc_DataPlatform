@@ -1,3 +1,4 @@
+import { supportsLeRobotProcessing } from "../processing-profile";
 import { Alert, Button, Modal, Select, Radio } from "antd";
 import {
   FileJson2,
@@ -85,7 +86,7 @@ export function UploadConfirmationDialog(props: {
   const [robotId, setRobotId] = useState("");
   const supportsProcessing =
     props.selection.lerobot?.format === "lerobot" &&
-    props.selection.lerobot.info.robot_type === "unitree_g1";
+    supportsLeRobotProcessing(props.selection.lerobot.info);
   const [processingMode, setProcessingMode] = useState<
     "PROCESS" | "STORE_ONLY"
   >(supportsProcessing ? "PROCESS" : "STORE_ONLY");

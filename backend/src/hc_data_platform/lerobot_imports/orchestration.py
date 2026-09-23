@@ -15,7 +15,7 @@ class LeRobotEpisodeSourceRefV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     source_format: Literal["lerobot_v3"] = "lerobot_v3"
-    raw_upload_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    raw_upload_id: str = Field(pattern=r"^(?:raw-)?[a-f0-9]{32}$")
     raw_manifest_key: str = Field(min_length=1, max_length=2048)
     episode_index: int = Field(ge=0, lt=MAX_LEROBOT_IMPORT_EPISODES)
     processing_attempt_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
@@ -41,7 +41,7 @@ class LeRobotImportPlanV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["lerobot-import-plan/v1"] = "lerobot-import-plan/v1"
-    raw_upload_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    raw_upload_id: str = Field(pattern=r"^(?:raw-)?[a-f0-9]{32}$")
     raw_manifest_key: str = Field(min_length=1, max_length=2048)
     source_format: Literal["lerobot_v3"] = "lerobot_v3"
     episode_tasks: tuple[LeRobotEpisodeTaskV1, ...] = Field(

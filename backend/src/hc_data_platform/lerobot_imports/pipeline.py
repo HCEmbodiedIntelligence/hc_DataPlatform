@@ -1,4 +1,4 @@
-"""Native G1 episodes adapted to the common durable ingest/media pipeline."""
+"""Native LeRobot episodes adapted to the common durable ingest/media pipeline."""
 
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository, Raw
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.quality.models import QualityProfileV1, QualityStreamObservationV1
 from hc_data_platform.quality.postgres import PostgresQualityRepository
-from hc_data_platform.tools import hf_unitree_g1_to_mcap as reader
 from hc_data_platform.verification.models import (
     RawVerificationReportV1,
     TopicInventoryV1,
@@ -52,6 +51,8 @@ from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePo
 from .adapter import EpisodeStream, LeRobotAdapter
 from .cache import SourceCache
 from .orchestration import LeRobotEpisodeTaskV1
+from .profiles import NativeProfile, quality_profile
+from .reader import read_episode, required_episode_files
 
 
 class NativeImportBlocked(RuntimeError):
@@ -69,7 +70,9 @@ class LeRobotPipeline:
         *,
         cache_max_bytes: int = 5 * 1024**3,
         cache_ttl_hours: int = 24,
+        quality_profile_factory: Callable[[NativeProfile, int], QualityProfileV1] = quality_profile,
     ) -> None:
+        self.quality_profile_factory = quality_profile_factory
         self.connections = connection_factory
         self.storage = storage
         self.catalog = catalog
@@ -219,6 +222,7 @@ class LeRobotPipeline:
         )
         if (
             raw is None
+            or raw.raw_status.value != "COMMITTED"
             or raw.source_format.value != "LEROBOT_V3"
             or (raw.dataset_id, raw.collection_task_id, raw.robot_id, raw.manifest_key)
             != (
@@ -274,7 +278,9 @@ class LeRobotPipeline:
                 fd, name = tempfile.mkstemp(dir=target.parent, suffix=".part")
                 try:
                     with os.fdopen(fd, "wb") as output:
-                        for chunk in self.storage.read_chunks(f"{raw.storage_prefix}/{relative}"):
+                        for chunk in self.storage.read_chunks(
+                            descriptor.get("object_key") or f"{raw.storage_prefix}/{relative}"
+                        ):
                             digest.update(chunk)
                             size += len(chunk)
                             output.write(chunk)
@@ -299,21 +305,19 @@ class LeRobotPipeline:
         if len(matches) != 1:
             raise ValueError("native episode is not uniquely declared in metadata")
         metadata = matches[0]
-        required = {
-            info["data_path"].format(
-                chunk_index=int(metadata["data/chunk_index"]),
-                file_index=int(metadata["data/file_index"]),
-            )
-        }
-        for camera in reader.CAMERAS:
-            prefix = f"videos/{camera.feature_key}"
-            required.add(
-                info["video_path"].format(
-                    video_key=camera.feature_key,
-                    chunk_index=int(metadata[f"{prefix}/chunk_index"]),
-                    file_index=int(metadata[f"{prefix}/file_index"]),
-                )
-            )
+        required = required_episode_files(info, metadata)
+        for relative in (
+            "meta/tasks.parquet",
+            "capture-context.json",
+            "export-complete.json",
+            "source_mapping.jsonl",
+        ):
+            if relative in files:
+                copy(relative)
+        if "capture-context.json" in files:
+            from .capture import verify_completion
+
+            verify_completion(root, files)
         # Both callers hold the source's exclusive pin. Older Episodes in this
         # same import are no longer using these local chunks, but whole-source
         # eviction cannot remove them while this Episode holds the pin.
@@ -331,22 +335,29 @@ class LeRobotPipeline:
         raw = self.source(task)
         manifest, body = self._read_manifest(raw)
         with self.cache.pin(raw.content_hash):
-            root = self._localize(raw, manifest, task.source.episode_index)
-            return self._prepare(task, raw, body, root)
+            try:
+                root = self._localize(raw, manifest, task.source.episode_index)
+                return self._prepare(task, raw, body, root)
+            except (ValueError, KeyError, IndexError) as exc:
+                import re
+
+                from hc_data_platform.core.errors import problem
+
+                code = str(exc).split(":", 1)[0]
+                if not re.fullmatch(r"(?:LEROBOT|OPENARM)_[A-Z0-9_]+", code):
+                    code = "LEROBOT_SOURCE_INVALID"
+                raise problem(
+                    status=422,
+                    code=code,
+                    title="LeRobot 源数据校验失败",
+                    detail=str(exc),
+                    retryable=False,
+                ) from exc
 
     def _prepare(
         self, task: LeRobotEpisodeTaskV1, raw: RawSource, body: bytes, root: Path
     ) -> IngestRolloutWorkflowInput:
-        layout = reader.acquire_source(
-            repository="platform-raw/lerobot",
-            revision=raw.raw_source_id,
-            episode_index=task.source.episode_index,
-            cache_root=root,
-            source_root=root,
-        )
-        episode = reader.load_episode_data(
-            layout.data_file, task.source.episode_index, float(layout.info["fps"])
-        )
+        native_profile, layout, episode = read_episode(root, task.source.episode_index)
         digest = hashlib.sha256(body).hexdigest()
         rollout_id = f"lerobot-{raw.raw_source_id[:16]}-ep-{task.source.episode_index:06d}"
         start = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -366,10 +377,10 @@ class LeRobotPipeline:
             robot_id=task.robot_id,
             start_time=start,
             end_time=start + timedelta(microseconds=(duration_ns + 999) // 1000),
-            cameras=[{"camera_id": c.camera_id, "topic": c.topic} for c in reader.CAMERAS],
-            topics=[{"name": topic, "required": True} for topic in reader.ACTUAL_TOPICS],
-            expected_topics=list(reader.ACTUAL_TOPICS),
-            actual_topics=list(reader.ACTUAL_TOPICS),
+            cameras=[{"camera_id": c.camera_id, "topic": c.topic} for c in native_profile.cameras],
+            topics=[{"name": topic, "required": True} for topic in native_profile.topics],
+            expected_topics=list(native_profile.topics),
+            actual_topics=list(native_profile.topics),
             files=[
                 {
                     "path": "manifest.json",
@@ -410,14 +421,7 @@ class LeRobotPipeline:
                 status=RolloutStatus.RAW_COMMITTED,
             ),
         )
-        profile = QualityProfileV1(
-            profile_id="native-g1-v3-30hz-v1",
-            profile_version=3,
-            required_topics=frozenset(reader.ACTUAL_TOPICS),
-            default_timing={"target_frequency_hz": 30},
-            joint_topic=reader.JOINT_TOPIC,
-            action={"topic": reader.ACTION_TOPIC},
-        )
+        profile = self.quality_profile_factory(native_profile, int(episode.fps))
         with self.connections() as connection, connection.cursor() as cursor:
             dataset = PostgresIngestWorkflowInputResolver._task_dataset(
                 cursor,
@@ -488,7 +492,7 @@ class LeRobotPipeline:
                 rollout_id=rollout_id,
                 object_key=raw.manifest_key,
                 source_sha256=digest,
-                required_topics=frozenset(reader.ACTUAL_TOPICS),
+                required_topics=frozenset(native_profile.topics),
             ),
             quality=QualityActivityInput(
                 organization_id=task.organization_id,
@@ -507,12 +511,12 @@ class LeRobotPipeline:
                 profile=AlignmentProfileV1(
                     profile_id=schema_id,
                     converter_version="native-lerobot-v3/1",
-                    frequency_hz=30,
-                    required_modalities=frozenset(reader.ACTUAL_TOPICS),
+                    frequency_hz=30 if native_profile.legacy_g1 else int(episode.fps),
+                    required_modalities=frozenset(native_profile.topics),
                     # Native rows already share a frame clock. Nearest preserves
                     # named joint vectors and avoids interpolating string labels.
-                    stream_strategies={topic: "nearest" for topic in reader.ACTUAL_TOPICS},
-                    default_tolerance_ns=34_000_000,
+                    stream_strategies={topic: "nearest" for topic in native_profile.topics},
+                    default_tolerance_ns=34_000_000 if native_profile.legacy_g1 else 1_000,
                 ),
             ),
         )
@@ -539,7 +543,7 @@ class LeRobotPipeline:
                 raw_manifest_sha256=source.source_sha256,
                 original_files={
                     item["path"]: (
-                        f"{raw.storage_prefix}/{item['path']}",
+                        item.get("object_key") or f"{raw.storage_prefix}/{item['path']}",
                         item["size"],
                         item["sha256"],
                     )
@@ -610,9 +614,9 @@ class NativeEpisodeSession:
             profile="native-lerobot-v3",
             library="pyarrow+ffmpeg",
             record_count=stream.episode.frame_count,
-            message_count=stream.episode.frame_count * len(reader.ACTUAL_TOPICS),
+            message_count=stream.episode.frame_count * len(stream.profile.topics),
             schemas=0,
-            channels=len(reader.ACTUAL_TOPICS),
+            channels=len(stream.profile.topics),
             chunks=0,
             schema_inventory=(),
             channel_inventory=(),
@@ -624,7 +628,7 @@ class NativeEpisodeSession:
                     decode_checked=True,
                     decodable=True,
                 )
-                for t in reader.ACTUAL_TOPICS
+                for t in stream.profile.topics
             ),
             findings=(),
             status=VerificationStatus.VERIFIED,
@@ -635,7 +639,7 @@ class NativeEpisodeSession:
 
     def alignment_samples(self) -> Iterator[tuple[str, TimedSampleV1]]:
         sampler = _FrameSelectionSampler()
-        cameras = {c.topic for c in reader.CAMERAS}
+        cameras = set(self.stream.original_videos)
         for topic, sample in self.stream.alignment_samples():
             if topic in cameras:
                 luma = self.stream.camera_luma[(topic, sample.timestamp_ns)]

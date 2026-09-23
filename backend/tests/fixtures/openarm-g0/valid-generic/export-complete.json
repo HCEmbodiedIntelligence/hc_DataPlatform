@@ -1,0 +1,68 @@
+{
+  "assets": [
+    {
+      "crc64": "18002454276947721165",
+      "path": "capture-context.json",
+      "sha256": "b362d488cf801ddaa0ec9cf8a88b9f80895fb14eeff97721b6196be7d747e4d7",
+      "size_bytes": 2219
+    },
+    {
+      "crc64": "15048487976035148968",
+      "path": "data/chunk-000/file-000.parquet",
+      "sha256": "6427b4eb46ae8ab3e94f14a4dafd21072c4a0a9b291f7666788aa440dde012a0",
+      "size_bytes": 2866
+    },
+    {
+      "crc64": "15156849735138368410",
+      "path": "export.json",
+      "sha256": "35882cca63cc88cf826c6773da0c6d6b7e933019cbf6692d44f9b4682358ebac",
+      "size_bytes": 748
+    },
+    {
+      "crc64": "13934239007824377424",
+      "path": "meta/episodes/chunk-000/file-000.parquet",
+      "sha256": "e98d8e7c4b6cc1190db7b892172c854a21fe5dfd8f854eb3c9321aa0a2c40ff8",
+      "size_bytes": 5096
+    },
+    {
+      "crc64": "1203120560004602370",
+      "path": "meta/info.json",
+      "sha256": "e301f7e9b2094b8b97d6d7975b69c8e964cc67881b1b46170642336a818e0582",
+      "size_bytes": 1791
+    },
+    {
+      "crc64": "3652438820513419682",
+      "path": "meta/stats.json",
+      "sha256": "ee668926318d0b8c8d54ff08c4aa0e39d70286a4ed2e26bff18c783bf85db5d7",
+      "size_bytes": 2496
+    },
+    {
+      "crc64": "8247790542860109476",
+      "path": "meta/tasks.parquet",
+      "sha256": "79353153f41976f732a9cda676754758ca91715b779b23685edc11ecfd8657de",
+      "size_bytes": 2046
+    },
+    {
+      "crc64": "3749550100587358528",
+      "path": "source_mapping.jsonl",
+      "sha256": "bcdee347b44575ee2b76776941acb2c06c7d02ca54efcff1421820bdda5b4379",
+      "size_bytes": 5688
+    },
+    {
+      "crc64": "11624797230055005019",
+      "path": "videos/observation.images.single/chunk-000/file-000.mp4",
+      "sha256": "fa261488dd8ae83dfe61bbf0377d22687872d068e0f91dbc204078e98b16904c",
+      "size_bytes": 5541
+    }
+  ],
+  "collection_task_id": "synthetic-task-001",
+  "completed_at": "2026-09-22T00:00:02Z",
+  "content_sha256": "de070232fb249a0340a5a2e4e0449a52e9e50e78b95eaa74f3c8d4bf9ddd2b08",
+  "contract_version": "openarm-capture/v1",
+  "export_id": "synthetic-export-generic-two-axis-v1",
+  "robot_id": "synthetic-platform-robot-01",
+  "schema_version": "openarm-export-complete/v1",
+  "session_id": "synthetic-session-001",
+  "status": "COMPLETE",
+  "synthetic": true
+}
