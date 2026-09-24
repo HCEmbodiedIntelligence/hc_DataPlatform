@@ -221,7 +221,7 @@ class PostgresExportAssets:
             metadata["source_features"] = {
                 key: value
                 for key, value in info["features"].items()
-                if key in {"action", "observation.state"}
+                if key in {"action", "observation.state"} or value.get('dtype') == 'video'
             }
             if "capture-context.json" in descriptors:
                 capture = json.loads(read("capture-context.json"))
@@ -241,7 +241,12 @@ class PostgresExportAssets:
                     ],
                 }
                 for feature in metadata["source_features"].values():
-                    feature["units"] = [axis["unit"] for axis in capture["profile"]["axes"]]
+                    if feature.get('dtype') == 'video':
+                        continue
+                    from hc_data_platform import recording_fields as public
+                    axes = (public.axes(capture['profile']) if info.get('recording_field_schema') == public.SCHEMA
+                            else capture['profile']['axes'])
+                    feature["units"] = [axis["unit"] for axis in axes]
             if "meta/tasks.parquet" in descriptors:
                 import pyarrow as pa
                 import pyarrow.parquet as pq

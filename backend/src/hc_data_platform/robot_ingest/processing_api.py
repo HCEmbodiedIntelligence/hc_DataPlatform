@@ -122,7 +122,7 @@ class RecordingResult(StrictModel):
     upload_id: str
     raw_source_id: str | None
     recording_id: str | None
-    status: Literal["REGISTERING", "AWAITING_SLICE", "SLICED"]
+    status: Literal["REGISTERING", "AWAITING_SLICE", "SLICED", "FAILED"]
     page_path: str | None
     terminal: bool
     poll_after_seconds: int = Field(ge=0, le=60)
@@ -150,6 +150,28 @@ def get_recording(
         )
     response.headers["Cache-Control"] = "no-store"
     return RecordingResult.model_validate(recording_bridge.result(store.connections, upload))
+
+
+@router.post(
+    "/uploads/{upload_id}/recording:retry",
+    response_model=RecordingResult,
+    operation_id="retryRobotRecordingPreparation",
+)
+def retry_recording(
+    upload_id: str,
+    command: RetryProcessing,
+    response: Response,
+    token: RobotToken,
+    service: Service,
+    store: Store,
+) -> RecordingResult:
+    from . import recording_bridge
+
+    # Same Bearer ownership check as GET; this never allocates another Raw.
+    get_recording(upload_id, response, token, service, store)
+    upload = service.get_upload(token=token, upload_id=upload_id).data
+    recording_bridge.retry(store.connections, upload, str(command.request_id))
+    return get_recording(upload_id, response, token, service, store)
 
 
 @router.post(

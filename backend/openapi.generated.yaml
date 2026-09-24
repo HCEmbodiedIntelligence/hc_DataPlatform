@@ -45420,6 +45420,17 @@ paths:
       responses: {}
       security:
       - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/recording:retry:
+    post:
+      operationId: retryRobotRecordingPreparation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryProcessing'
+      responses: {}
+      security:
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}:cancel:
     post:
       operationId: cancelRobotIngestUpload

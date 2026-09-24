@@ -8,8 +8,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from uuid import NAMESPACE_URL, uuid5
+
+from temporalio import activity
+from temporalio.common import WorkflowIDReusePolicy
+from temporalio.exceptions import WorkflowAlreadyStartedError
 
 from hc_data_platform.continuous_recordings.asset_models import RecordingAsset, RecordingUpload
 from hc_data_platform.continuous_recordings.asset_repository import _asset_values
@@ -28,7 +32,7 @@ from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
 
 from .models import RobotIngestUpload
-from .recording_contract import OpenArmRecordingComplete
+from .recording_contract import OpenArmRawRecordingUpload, OpenArmRecordingComplete
 
 EVENT_TYPE = "robot.recording.register.requested.v1"
 
@@ -43,7 +47,7 @@ def eligible(upload):
         and upload.source_format == "CAPTURE_BUNDLE"
         and upload.source_format_version == "2"
         and upload.capture_mode.value == "CONTINUOUS"
-        and upload.manifest.format_metadata.get("openarm_recording", {}).get("version") == 1
+        and upload.manifest.format_metadata.get("openarm_recording", {}).get("version") in {1, 2}
     )
 
 
@@ -99,11 +103,58 @@ def recording_upload_id(upload_id):
 class RecordingOutboxHandler:
     EVENT_TYPE = EVENT_TYPE
 
-    def __init__(self, connections, storage):
+    def __init__(self, connections, storage, client=None, task_queue=None):
         self.connections, self.storage = connections, storage
+        self.client, self.task_queue = client, task_queue
 
     async def __call__(self, event):
-        await asyncio.to_thread(self.adopt, event)
+        if self.client is None:
+            await asyncio.to_thread(self.adopt, event)
+            return
+        with suppress(WorkflowAlreadyStartedError):
+            await self.client.start_workflow(
+                "RobotRecordingWorkflow",
+                event.model_dump(mode="json"),
+                id="robot-recording-" + event.event_id,
+                task_queue=self.task_queue,
+                id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
+            )
+
+    @activity.defn(name="robot.recording.prepare")
+    def prepare(self, value):
+        from hc_data_platform.workflow.activities import _worker_scope
+
+        event = DomainEventEnvelope.model_validate(value)
+        with _worker_scope(
+            event.project_id,
+            event.region_code,
+            event.aggregate_id,
+            organization_id=event.organization_id,
+        ):
+            self.adopt(event, progress=activity.heartbeat)
+
+    @activity.defn(name="robot.recording.failed")
+    def failed(self, value):
+        from hc_data_platform.workflow.activities import _worker_scope
+
+        event = DomainEventEnvelope.model_validate(value)
+        with (
+            _worker_scope(
+                event.project_id,
+                event.region_code,
+                event.aggregate_id,
+                organization_id=event.organization_id,
+            ),
+            self.connections() as db,
+        ):
+            db.execute(
+                """UPDATE ingest.raw_ingest_jobs SET status='FAILED',
+                last_error_code='RAW_RECORDING_PREPARATION_FAILED',updated_at=clock_timestamp()
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
+                AND status<>'SUCCEEDED'""",
+                (event.organization_id, event.project_id, event.region_code, event.aggregate_id),
+            )
+            db.commit()
 
     def _json_asset(self, asset):
         if asset.expected_size_bytes > 16 * 1024 * 1024:
@@ -120,7 +171,7 @@ class RecordingOutboxHandler:
             raise RecordingBridgeError("recording metadata differs from verified receipt")
         return json.loads(value)
 
-    def adopt(self, event):
+    def adopt(self, event, progress=lambda: None):
         if event.event_type != EVENT_TYPE:
             raise RecordingBridgeError("unexpected event")
         scope = (event.organization_id, event.project_id, event.region_code)
@@ -163,12 +214,17 @@ class RecordingOutboxHandler:
                 raise RecordingBridgeError("recording inventory mismatch")
             if marker["content_sha256"] != canonical_hash(marker["recording_upload"]["assets"]):
                 raise RecordingBridgeError("recording seal mismatch")
-            config = command.recording_config
-            if config.recorder_version != "openarm-session/v2" or not {
-                "/observation/state",
-                "/action",
-                "/openarm/capture_validity",
-            } <= {s.topic for s in config.sensors if s.required}:
+            raw = isinstance(command, OpenArmRawRecordingUpload)
+            config = None if raw else command.recording_config
+            if not raw and (
+                config.recorder_version != "openarm-session/v2"
+                or not {
+                    "/observation/state",
+                    "/action",
+                    "/openarm/capture_validity",
+                }
+                <= {s.topic for s in config.sensors if s.required}
+            ):
                 raise RecordingBridgeError("recording validity sources are required")
             declarations = {a.path: a for a in upload.manifest.assets}
             for declared in command.assets:
@@ -200,6 +256,12 @@ class RecordingOutboxHandler:
                         != command.recording_config
                     ):
                         raise RecordingBridgeError("recording configuration mismatch")
+            if raw:
+                from .raw_recording import materialize
+
+                command, assets = materialize(
+                    self.storage, upload, marker, command, assets, progress
+                )
             # The authenticated ingest service owns the collection job. Keep the
             # original client marker immutable and project the authoritative job.
             command = command.model_copy(update={"collection_job_id": upload.collection_job_id})
@@ -363,14 +425,75 @@ def result(connections, upload):
             ),
         )
         delivery = cursor.fetchone()
+        cursor.execute(
+            """SELECT status,last_error_code FROM ingest.raw_ingest_jobs
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s""",
+            (
+                upload.target.organization_id,
+                upload.target.project_id,
+                upload.target.region_code,
+                upload.raw_source_id,
+            ),
+        )
+        job = cursor.fetchone()
+    failed = not row and job and job[0] == "FAILED"
     return {
         "upload_id": upload.upload_id,
         "raw_source_id": upload.raw_source_id,
         "recording_id": row[0] if row else None,
-        "status": ("SLICED" if row[1] == "SLICED" else "AWAITING_SLICE") if row else "REGISTERING",
+        "status": ("SLICED" if row[1] == "SLICED" else "AWAITING_SLICE")
+        if row
+        else "FAILED"
+        if failed
+        else "REGISTERING",
         "page_path": "/recordings/" + row[0] + "/slice" if row else None,
-        "terminal": bool(row),
-        "poll_after_seconds": 0 if row else 5,
-        "error_code": delivery[0] if delivery and not row else None,
+        "terminal": bool(row or failed),
+        "poll_after_seconds": 0 if row or failed else 5,
+        "error_code": job[1] if failed else delivery[0] if delivery and not row else None,
         "registration_attempts": int(delivery[1]) if delivery else 0,
     }
+
+
+def retry(connections, upload, request_id):
+    """One retry event per request ID; retain the Raw and derivation receipt."""
+    scope = (upload.target.organization_id, upload.target.project_id, upload.target.region_code)
+    with scope_context(*scope), connections() as db:
+        job = db.execute(
+            """SELECT status FROM ingest.raw_ingest_jobs WHERE organization_id=%s AND project_id=%s
+            AND region_code=%s AND raw_source_id=%s FOR UPDATE""",
+            (*scope, upload.raw_source_id),
+        ).fetchone()
+        event = DomainEventEnvelope(
+            event_id=str(
+                uuid5(NAMESPACE_URL, "recording-retry:" + upload.upload_id + ":" + request_id)
+            ),
+            event_type=EVENT_TYPE,
+            aggregate_type="raw_source",
+            aggregate_id=upload.raw_source_id,
+            organization_id=scope[0],
+            project_id=scope[1],
+            region_code=scope[2],
+            payload={"upload_id": upload.upload_id},
+        )
+        if job and job[0] == "FAILED":
+            inserted = db.execute(
+                """INSERT INTO core.outbox_events
+                (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)
+                VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,%s) ON CONFLICT DO NOTHING RETURNING event_id""",
+                (
+                    event.event_id,
+                    *scope,
+                    event.event_type,
+                    event.model_dump_json(),
+                    event.occurred_at,
+                    event.occurred_at,
+                ),
+            ).fetchone()
+            if inserted:
+                db.execute(
+                    """UPDATE ingest.raw_ingest_jobs SET status='PENDING',last_error_code=NULL,
+                    updated_at=clock_timestamp() WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                    AND raw_source_id=%s""",
+                    (*scope, upload.raw_source_id),
+                )
+        db.commit()

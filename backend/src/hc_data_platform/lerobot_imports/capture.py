@@ -109,6 +109,8 @@ def _read_capture_episode(
     profile = context["profile"]
     axes = profile["axes"]
     names, units = [a["name"] for a in axes], [a["unit"] for a in axes]
+    from hc_data_platform import recording_fields as public
+    public_fields = info.get("recording_field_schema") == public.SCHEMA
     if profile_for_info(info).profile_id == "openarmx-v1" and profile["robot_type"] != "openarmx":
         raise ValueError("OPENARM_PROFILE_IDENTITY")
     if profile["robot_type"] == "openarmx" and (
@@ -126,17 +128,22 @@ def _read_capture_episode(
     if profile["fps"] != info["fps"] or profile["action_stage"] != "sent":
         raise ValueError("OPENARM_PROFILE_GRID_OR_ACTION_STAGE")
     for key in ("observation.state", "action"):
-        if info["features"][key]["names"] != names:
+        output_axes = public.axes(profile) if public_fields else axes
+        if info["features"][key]["names"] != [a['name'] for a in output_axes]:
             raise ValueError("OPENARM_FEATURE_IDENTITY")
-        if info["features"][key].get("units", units) != units:
+        output_units = [a['unit'] for a in output_axes]
+        if info["features"][key].get("units", output_units) != output_units:
             raise ValueError("OPENARM_FEATURE_UNITS")
     cameras = profile["cameras"]
-    if {"observation.images." + c["id"] for c in cameras} != {
+    expected_cameras = ({public.image_key(c['id'], depth) for c in cameras for depth in (False, True)}
+                        if public_fields else {"observation.images." + c["id"] for c in cameras})
+    if expected_cameras != {
         key for key, feature in info["features"].items() if feature["dtype"] == "video"
     }:
         raise ValueError("OPENARM_CAMERA_INVENTORY")
     for camera in cameras:
-        if info["features"]["observation.images." + camera["id"]]["shape"] != [
+        key = public.image_key(camera['id']) if public_fields else 'observation.images.' + camera['id']
+        if info["features"][key]["shape"] != [
             camera["height"],
             camera["width"],
             3,

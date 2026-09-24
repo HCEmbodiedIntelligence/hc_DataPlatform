@@ -158,7 +158,7 @@ def test_export_materializes_exact_frames_tags_statistics_and_standard_features(
     )
     manifest = export_manifest()
     result = coordinator.export(manifest, format=ExportFormat.LEROBOT_V3, attempt_id="portable")
-    assert "lerobot-materialized-v3/" in result.artifact_uri
+    assert "lerobot-materialized-v4-holobrain/" in result.artifact_uri
     with zipfile.ZipFile(io.BytesIO(sink.artifacts[result.artifact_uri])) as archive:
         info = json.loads(archive.read("meta/info.json"))
         stats = json.loads(archive.read("meta/stats.json"))
@@ -330,3 +330,54 @@ def test_multiple_episodes_repeat_frames_and_exclude_unapproved_tags(
     ).stdout
     actual = np.frombuffer(decoded, dtype=np.uint8).reshape(4, -1).mean(axis=1)
     np.testing.assert_allclose(actual, np.array([6, 6, 10, 11]) * 15, atol=3)
+
+
+def test_holobrain_depth_and_source_timestamp_survive_export(portable_source, tmp_path):
+    """Depth remains one channel and 12-bit codes; source ns are not rounded to floats."""
+    import av
+    from hc_data_platform.publishing.holobrain_depth import DepthVideo, DEPTH_INFO, codes
+
+    _, steps = portable_source
+    path = tmp_path / 'depth.mp4'
+    video = DepthVideo(path, 30, (16, 16))
+    originals = []
+    for frame in range(14):
+        pixels = np.full((16, 16), 700 + frame * 131, dtype=np.uint16)
+        originals.append(codes(pixels, .001))
+        video.write(pixels, .001)
+    video.close()
+
+    class DepthAssets(Assets):
+        def episode_metadata(self, *args):
+            result = super().episode_metadata(*args)
+            result['source_features'] = {'observation.images.head_depth': {'info': DEPTH_INFO}}
+            return result
+
+    assets = DepthAssets(path.read_bytes())
+    selected = []
+    for step in steps:
+        reference = dict(step.modalities['/camera/front/image'])
+        reference['camera_id'] = 'observation.images.head_depth'
+        modalities = {k: v for k, v in step.modalities.items() if k != '/camera/front/image'}
+        modalities.update({'observation.images.head_depth': reference,
+                           'source.timestamp_ns': 1_790_000_000_000_000_001 + step.step_index * 33_333_333})
+        selected.append(step.model_copy(update={'modalities': modalities}))
+    archive = LeRobotArchive(export_manifest(), selected, assets)
+    content = archive.build()
+    archive.validate(content)
+    with zipfile.ZipFile(io.BytesIO(content)) as package:
+        info = json.loads(package.read('meta/info.json'))
+        feature = info['features']['observation.images.head_depth']
+        assert feature['shape'] == [16, 16, 1]
+        assert feature['info']['is_depth_map'] is True
+        assert feature['info']['video.pix_fmt'] == 'gray12le'
+        table = pq.read_table(pa.BufferReader(package.read(DATA_PATH)))
+        assert table.schema.field('source.timestamp_ns').type == pa.int64()
+        assert table['source.timestamp_ns'].to_pylist() == [s.modalities['source.timestamp_ns'] for s in selected]
+        output = tmp_path / 'exported-depth.mp4'
+        output.write_bytes(package.read('videos/observation.images.head_depth/chunk-000/file-000.mp4'))
+    with av.open(str(output)) as container:
+        actual = [f.to_ndarray(format='gray12le') for f in container.decode(video=0)]
+    assert len(actual) == 4
+    for frame, index in zip(actual, (6, 7, 10, 11), strict=True):
+        np.testing.assert_array_equal(frame, originals[index])

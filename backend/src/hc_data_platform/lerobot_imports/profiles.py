@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as g1
+from hc_data_platform.recording_fields import AXES, SCHEMA
 
 SOURCE_TOPIC = "/metadata/source"
 OPENARM_AXES = tuple(
@@ -48,6 +49,7 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
             True,
         )
     features = info.get("features", {})
+    public_fields = info.get("recording_field_schema") == SCHEMA
     names = {}
     for key in ("observation.state", "action"):
         feature = features.get(key, {})
@@ -93,7 +95,7 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
         if (
             not isinstance(shape, list)
             or len(shape) != 3
-            or shape[2] != 3
+            or shape[2] != (1 if feature.get("info", {}).get("is_depth_map") else 3)
             or any(type(x) is not int or x <= 0 for x in shape)
         ):
             raise ValueError("LEROBOT_CAMERA_SCHEMA: expected [height,width,3]")
@@ -101,18 +103,20 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
             Camera(
                 key,
                 key.removeprefix("observation.images."),
-                "/camera/" + key.removeprefix("observation.images.") + "/image",
+                key if public_fields else "/camera/" + key.removeprefix("observation.images.") + "/image",
             )
         )
     robot_type = info.get("robot_type", "unknown")
     openarm = robot_type == "openarmx" or re.fullmatch(r"openarmx_\d+", robot_type or "")
-    if openarm and any(value != OPENARM_AXES for value in names.values()):
+    expected_axes = tuple(name for _, name in AXES) if public_fields else OPENARM_AXES
+    if openarm and any(value != expected_axes for value in names.values()):
         raise ValueError("OPENARM_FEATURE_IDENTITY: axes differ from openarmx-v1")
     topics = (
         "/humanoid/observation/state",
         "/humanoid/action",
         SOURCE_TOPIC,
         *(c.topic for c in cameras),
+        *(("source.timestamp_ns",) if "source.timestamp_ns" in features else ()),
     )
     return NativeProfile(
         "openarmx-v1" if openarm else "native-generic-v3",

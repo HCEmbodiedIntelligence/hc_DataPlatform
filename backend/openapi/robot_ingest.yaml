@@ -175,6 +175,17 @@ paths:
       security:
         - robotBearerAuth: []
       responses: {}
+  /api/v1/robot-ingest/uploads/{upload_id}/recording:retry:
+    post:
+      operationId: retryRobotRecordingPreparation
+      security:
+        - robotBearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryProcessing'
+      responses: {}
   /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
     get:
       operationId: getRobotIngestProcessingDiagnostics

@@ -1,0 +1,20 @@
+{
+  "source": "humanoid_manager/recording",
+  "commit": "331eb1ffcf21a87a3a0f95eac01c5058afa8c3d9",
+  "purpose": "Move the tested association semantics into the platform. Robot legacy reader remains compatible; raw recording never calls this engine.",
+  "files": {
+    "__init__.py": "a38342a68998053afee4d67c47384dd844d6c4fbe43f309e8e18cadd46407b0e",
+    "alignment.py": "9434ebb01bc5a2e974a572496c021d7134e28735a6cee1c8597977f254c232b1",
+    "named.py": "d4754f3c6151e3171955cf6a228667ed889ff2a00daa0d277c4f51b8ebb8d0d4",
+    "buffers.py": "4fa22d59e0db6b89ce9b77c092653c11863c9ad2f16717c5d76401eb9b6dee3d",
+    "config.py": "cf0aed35bb833df4863395308767c32351ec1624fa3dfc1c9cff6de6126b9356",
+    "profile.py": "58a8538f1cee2b25705fc51a73305c776e3c5fba687579ae11c20e1a246067b0"
+  },
+  "hash_scope": "SHA256 of original robot source files at the named commit, before platform adaptation.",
+  "adaptations": [
+    "platform Pydantic profile validation",
+    "Worker-local temporary index and source queries",
+    "public field order and RGB/depth preview output",
+    "formatting without changing association semantics"
+  ]
+}

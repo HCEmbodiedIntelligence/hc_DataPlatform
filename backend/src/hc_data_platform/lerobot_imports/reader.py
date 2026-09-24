@@ -108,6 +108,7 @@ class GenericEpisode:
     context: dict[str, Any]
     source_episode: dict[str, Any]
     mappings: tuple[dict[str, Any], ...]
+    source_timestamp_ns: tuple[int, ...] = ()
 
     @property
     def frame_count(self) -> int:
@@ -233,6 +234,7 @@ def read_episode(root: Path, index: int) -> tuple[NativeProfile, Any, Any]:
         context,
         source_episode,
         mappings,
+        tuple(r['source.timestamp_ns'] for r in rows) if 'source.timestamp_ns' in table.column_names else (),
     )
     return profile, layout, episode
 

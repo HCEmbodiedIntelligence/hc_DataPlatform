@@ -1311,7 +1311,8 @@ def build_worker_outbox(
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
-            RecordingOutboxHandler.EVENT_TYPE:RecordingOutboxHandler(connection_factory,object_storage),
+            RecordingOutboxHandler.EVENT_TYPE:RecordingOutboxHandler(connection_factory,object_storage,
+                temporal_client,robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE))),
             EVENT_TYPE: RobotProcessingOutboxHandler(
                 temporal_client, ProcessingStore(connection_factory),
                 task_queue=robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),

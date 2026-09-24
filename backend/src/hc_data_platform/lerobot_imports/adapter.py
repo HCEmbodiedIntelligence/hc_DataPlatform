@@ -267,10 +267,15 @@ class EpisodeStream:
     def _generic_samples(self) -> Iterator[tuple[str, int, object]]:
         episode = self.episode
         units = [axis["unit"] for axis in episode.context.get("profile", {}).get("axes", [])]
+        from hc_data_platform import recording_fields as public
+        if self.layout.info.get('recording_field_schema') == public.SCHEMA and episode.context.get('profile'):
+            units = [axis['unit'] for axis in public.axes(episode.context['profile'])]
         features = self.layout.info["features"]
         state_units = features["observation.state"].get("units", units)
         action_units = features["action"].get("units", units)
         for index, timestamp in enumerate(episode.relative_timestamps_ns):
+            if episode.source_timestamp_ns:
+                yield 'source.timestamp_ns', timestamp, episode.source_timestamp_ns[index]
             yield (
                 self.profile.joint_topic,
                 timestamp,
