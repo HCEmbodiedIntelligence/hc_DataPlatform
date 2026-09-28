@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     ingest_part_authorization_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
+    episode_package_cache_bytes: int = Field(default=2 * 1024**3, ge=1024**2)
+    episode_package_max_object_bytes: int = Field(default=32 * 1024**3, ge=1024**2)
     lerobot_cache_max_bytes: int = Field(default=5 * 1024**3, ge=1024**2)
     lerobot_cache_ttl_hours: int = Field(default=24, ge=1, le=168)
     aligned_media_staging_root: str = "/tmp/hc-data/aligned-media"

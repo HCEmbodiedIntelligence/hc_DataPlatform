@@ -506,6 +506,7 @@ class RuntimeComponents:
     exporter: ExportCoordinator
     export_audit: PostgresExportAuditRecorder
     activities: ActivityDependencies
+    episode_packages: Any = None
 
 
 @dataclass(frozen=True)
@@ -1008,6 +1009,7 @@ def build_runtime(
         access=access,
         admin_accounts=admin_accounts,
         recovery=recovery,
+        episode_packages=_episode_packages(connection_factory, object_storage, resolved),
         audit_projection=audit_projection,
         audit_governance=audit_governance,
         dashboard=dashboard,
@@ -1047,6 +1049,10 @@ def build_runtime(
 
 
 def configure_api(runtime: RuntimeComponents) -> None:
+    from hc_data_platform.episode_store.router import configure_episode_packages
+
+    if runtime.episode_packages is not None:
+        configure_episode_packages(runtime.episode_packages)
     configure_audit_projection(runtime.audit_projection, runtime.audit_governance)
     configure_dashboard(runtime.dashboard)
     configure_ingest_service(runtime.ingest)
@@ -1081,6 +1087,17 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_dataset_publisher(runtime.publisher)
     configure_export_coordinator(runtime.exporter)
     configure_export_audit_recorder(runtime.export_audit)
+
+
+def _episode_packages(connection_factory, object_storage, settings):
+    from hc_data_platform.episode_store.service import EpisodePackageService
+
+    return EpisodePackageService(
+        connection_factory, object_storage,
+        Path(settings.alignment_staging_root) / "episode-packages",
+        cache_bytes=settings.episode_package_cache_bytes,
+        max_object_bytes=settings.episode_package_max_object_bytes,
+    )
 
 
 def activity_dependencies() -> ActivityDependencies:

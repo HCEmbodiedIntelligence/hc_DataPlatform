@@ -1,0 +1,30 @@
+{
+  "scope": "synthetic standalone RGB-D format acceptance, not real data or model training",
+  "lerobot_version": "0.6.1",
+  "frames": 4,
+  "episodes": 1,
+  "depth_shape": [
+    4,
+    1,
+    16,
+    16
+  ],
+  "depth_unit": "mm",
+  "rgb_shape": [
+    4,
+    3,
+    16,
+    16
+  ],
+  "independent_hc_mask_applied": true,
+  "source_mapping_checked": true,
+  "platform_imported": false,
+  "network": "disabled by container",
+  "source": "actual HTTP complete-package download",
+  "max_error_mm_by_frame": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ]
+}

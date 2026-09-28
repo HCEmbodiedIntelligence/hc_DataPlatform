@@ -93,6 +93,9 @@ class AuthorizedPackage:
         if relative not in self.entries:
             raise KeyError("file is not part of the authorized committed package")
         key = f"{self.receipt.data.package_prefix}/{relative}"
+        metadata = self.storage.head(key)
+        if metadata is None or metadata.size != self.entries[relative].size:
+            raise PackageConflict("committed package file is missing or has a different size")
         with self.cache.file(self.storage, key, self.entries[relative]) as path:
             yield path
 

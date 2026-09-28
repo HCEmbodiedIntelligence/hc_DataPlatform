@@ -142,3 +142,34 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 - Remaining: runtime/three-ingress integration, common read routing and API/UI,
   source units/calibration inventory, long-file chunking, mixed collection versions,
   annotations/reviews/download delivery/migration, and real/human acceptance.
+
+## Read/download HTTP milestone (partial W2/W4/W6)
+
+- Production API composition now exposes explicit Episode data-version routes for
+  version listing, package metadata, selected step windows, depth metadata/NPZ/PNG,
+  and complete offline ZIP download. Legacy routes remain for historical data.
+- Exact organization/project/region capability checks precede binding resolution;
+  no caller-supplied rollout or object prefix controls file access. Read requires
+  `dataset_version.read`; complete download requires `export.download`. Missing
+  bindings, forbidden scope, invalid windows and failed integrity have distinct errors.
+- Complete ZIP includes every manifest member and the manifest/commit receipt.
+  Media are copied unchanged, with bounded working memory and ZIP64 support.
+  Repeated fixture downloads produced identical ZIP bytes and every file SHA-256
+  matched the committed package. ZIP caching, queued large/batch delivery and API
+  access audit integration remain outstanding.
+- Actual isolated `gateway:8080 -> API -> PostgreSQL/MinIO` was exercised with a
+  registered account and normal login session; only fixture membership/grants were
+  bootstrapped directly. Anonymous access, foreign organization, wrong region/
+  Episode, oversized range and revoked download permission were checked. Warm
+  cache did not bypass revocation. Credentials are not part of the reports.
+- `compose.sh run --rm --no-deps test tests/episode_store
+  tests/security/test_runtime_router_auth.py
+  tests/core/test_object_store_endpoint_config.py --fail-on-skipped --fail-on-xfailed
+  -q`: **45 passed**, one existing Starlette/httpx deprecation warning.
+  Evidence `episode-http-tests.xml`, `http-reader-evidence.json`.
+- The actual downloaded ZIP was extracted and read in the offline official reader
+  container with no platform imports: RGB-D DataLoader, independent HC masks,
+  mapping and fixture error checks passed. Evidence `http-rgbd-reader.json`.
+- These are synthetic software/service-chain checks. They do not satisfy real
+  recording, three-ingress, UI/browser or human acceptance. New writer dispatch,
+  worker outbox wiring and all other pending items above still require work.

@@ -21,6 +21,45 @@ class PostgresEpisodeStore:
     def __init__(self, connections):
         self.connections = connections
 
+    def identity(self, dataset_id: str, episode_id: str) -> EpisodeIdentity:
+        context = current_request_context()
+        scope = context.organization_id, context.project_id, context.region_code
+        with self.transaction() as cursor:
+            cursor.execute(
+                """SELECT rollout_id FROM episode_store.bindings
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                  AND dataset_id=%s AND episode_id=%s""",
+                (*scope, dataset_id, episode_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise KeyError("Episode binding not found in request scope")
+            return EpisodeIdentity(
+                organization_id=scope[0],
+                project_id=scope[1],
+                region_code=scope[2],
+                dataset_id=dataset_id,
+                episode_id=episode_id,
+                rollout_id=row[0],
+            )
+
+    def list_versions(
+        self, identity: EpisodeIdentity, *, before: int | None = None, limit: int = 100
+    ):
+        assert_scope(identity)
+        if not 1 <= limit <= 100:
+            raise ValueError("version page limit must be 1..100")
+        with self.transaction() as cursor:
+            cursor.execute(
+                """SELECT receipt_document FROM episode_store.versions
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                  AND dataset_id=%s AND episode_id=%s AND status='COMMITTED'
+                  AND (%s::bigint IS NULL OR version < %s)
+                ORDER BY version DESC LIMIT %s""",
+                (*identity.key, before, before, limit),
+            )
+            return tuple(CommitReceipt.model_validate(row[0]).data for row in cursor.fetchall())
+
     @contextmanager
     def transaction(self):
         connection = self.connections()

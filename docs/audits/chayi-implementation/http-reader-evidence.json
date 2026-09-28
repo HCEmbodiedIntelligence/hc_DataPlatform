@@ -1,0 +1,33 @@
+{
+  "scope": "synthetic real gateway/API/DB/object-store verification",
+  "data": {
+    "identity": {
+      "organization_id": "http-ed37609879e0417884bf464d00bc4f23",
+      "project_id": "writer-project",
+      "region_code": "writer-region",
+      "dataset_id": "writer-dataset",
+      "episode_id": "writer-episode",
+      "rollout_id": "explicit:writer-rollout"
+    },
+    "data_version_id": "dv_b7d6b2445e748e3d752072d7b73058f01c29a1a94e20dc615708861f749efeef",
+    "version": 1,
+    "content_hash": "da06af3a4af84e010a493140918b8e382c864cfaa8b8d820280fef5ed9375130",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-http-ed37609879e0417884bf464d00bc4f23/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_b7d6b2445e748e3d752072d7b73058f01c29a1a94e20dc615708861f749efeef",
+    "frame_count": 4
+  },
+  "gateway": "isolated gateway:8080",
+  "session_auth": true,
+  "depth_npz_m": true,
+  "masked_invalid_nan": true,
+  "depth_png": true,
+  "full_archive_sha256": "a2b5db9bca17f14b0a2b8b6f9cf848bd1030bfba50863fe5bd437805accda5aa",
+  "archive_files": 19,
+  "all_file_hashes_verified": true,
+  "repeat_download_identical": true,
+  "foreign_scope_denied": true,
+  "revoked_download_denied_on_warm_cache": true,
+  "real_recording": false,
+  "ingress_verified": false
+}

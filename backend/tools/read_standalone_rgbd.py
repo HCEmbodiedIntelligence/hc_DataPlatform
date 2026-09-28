@@ -18,10 +18,15 @@ from torch.utils.data import DataLoader
 
 assert version("lerobot") == "0.6.1"
 assert not any(name.startswith("hc_data_platform") for name in sys.modules)
+from_http = len(sys.argv) > 1 and sys.argv[1] == "--http"
 root = Path(
     sys.argv[1]
-    if len(sys.argv) > 1
-    else Path("/app/.g1-artifacts/standalone-rgbd-latest.txt").read_text().strip()
+    if len(sys.argv) > 1 and not from_http
+    else Path(
+        "/app/.g1-artifacts/" + ("http-rgbd" if from_http else "standalone-rgbd") + "-latest.txt"
+    )
+    .read_text()
+    .strip()
 )
 key = "observation.images.head_depth"
 dataset = LeRobotDataset("local/chayi-rgbd-input-contract", root=root, video_backend="pyav")
@@ -56,7 +61,9 @@ result = {
     "source_mapping_checked": True,
     "platform_imported": any(name.startswith("hc_data_platform") for name in sys.modules),
     "network": "disabled by container",
+    "source": "actual HTTP complete-package download" if from_http else "writer output copy",
     "max_error_mm_by_frame": errors,
 }
-Path("/evidence/standalone-rgbd-reader.json").write_text(json.dumps(result, indent=2) + "\n")
+report = "http-rgbd-reader.json" if from_http else "standalone-rgbd-reader.json"
+Path("/evidence", report).write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result))

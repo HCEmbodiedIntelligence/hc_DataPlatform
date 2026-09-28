@@ -178,7 +178,10 @@ class DepthFrame:
             "dtype": str(self.values.dtype),
             "shape": list(self.values.shape),
             "profile": self.profile,
-            "source": self.source,
+            "source": {
+                key: str(value) if key.endswith("_ns") and value is not None else value
+                for key, value in self.source.items()
+            },
             "invalid": "NaN",
             "flags": {"valid": 1, "saturated_low": 2, "saturated_high": 4},
             "quantized": True,
