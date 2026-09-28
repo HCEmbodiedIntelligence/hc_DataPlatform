@@ -57,3 +57,6 @@ release-values.yaml
 /.reader-e/
 
 /deploy/openarm-e/secrets/
+
+# Per-machine deployment configuration (keep examples in Git).
+/deploy/local/*.env

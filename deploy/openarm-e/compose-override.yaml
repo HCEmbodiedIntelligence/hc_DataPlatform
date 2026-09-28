@@ -1,3 +1,8 @@
 services:
   frontend:
-    volumes: !override []
+    volumes: !override
+      - ./frontend:/app:ro
+      - frontend-dependencies:/app/node_modules
+
+volumes:
+  frontend-dependencies:

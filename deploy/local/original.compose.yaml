@@ -1,0 +1,41 @@
+# Reuse the installed dependencies and original Compose project/data volumes.
+# Application source comes from this Git checkout via compose.dev.yaml mounts.
+services:
+  minio:
+    image: hc-offline/minio:71eaa560
+    pull_policy: never
+  object-store-browser:
+    image: hc-offline/nginx:71eaa560
+    pull_policy: never
+  minio-init:
+    image: hc-offline/mc:71eaa560
+    pull_policy: never
+  postgres:
+    image: hc-offline/postgres:71eaa560
+    pull_policy: never
+  temporal:
+    image: hc-offline/temporal:71eaa560
+    pull_policy: never
+  temporal-ui:
+    image: hc-offline/temporal-ui:71eaa560
+    pull_policy: never
+  migration:
+    build: !reset null
+    image: openarm-e-backend:integration
+    pull_policy: never
+  runtime-cache-init:
+    image: openarm-e-backend:integration
+    pull_policy: never
+  api:
+    image: openarm-e-backend:integration
+    pull_policy: never
+  worker:
+    image: openarm-e-backend:integration
+    pull_policy: never
+  frontend:
+    build: !reset null
+    image: hc-offline/frontend:71eaa560
+    pull_policy: never
+  gateway:
+    image: hc-offline/nginx:71eaa560
+    pull_policy: never
