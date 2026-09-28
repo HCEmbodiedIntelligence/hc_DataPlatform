@@ -30,3 +30,18 @@ services:
       HC_OBJECT_STORE_BUCKET: hc-data-local
       HC_OBJECT_STORE_ACCESS_KEY: minio
       HC_OBJECT_STORE_SECRET_KEY: minio-local-only
+  reader:
+    profiles: [test]
+    image: openarm-e-backend:integration
+    pull_policy: never
+    user: "1000:1000"
+    network_mode: none
+    working_dir: /app
+    entrypoint: [/reader/bin/python, -I]
+    environment:
+      USER: chayi-reader
+      TORCHINDUCTOR_CACHE_DIR: /tmp/chayi-torch-cache
+    volumes:
+      - /home/hc_op/workspace/hc_DataPlatform/.reader-e:/reader:ro
+      - ./backend:/app:ro
+      - ./docs/audits/chayi-implementation:/evidence

@@ -67,3 +67,30 @@ def test_raw_manifest_rejects_robot_index():
     value["recording_upload"]["assets"].append(asset)
     with pytest.raises(ValueError):
         OpenArmRecordingComplete.model_validate(value)
+
+
+def test_simultaneous_cameras_do_not_share_the_first_depth_message(tmp_path):
+    import struct
+
+    import numpy as np
+    from mcap.writer import Writer
+
+    from hc_data_platform.continuous_recordings.openarm_raw.prepare import read_depth_message
+
+    path = tmp_path / "depth.mcap"
+    with path.open("wb") as stream:
+        writer = Writer(stream)
+        writer.start()
+        channel = writer.register_channel("/humanoid/session/depth", "humanoid-depth", 0)
+        for camera, value in (("left", 100), ("right", 900)):
+            pixels = np.full((16, 16), value, dtype="<u2")
+            meta = json.dumps({"source_id": camera, "source_seq": 7,
+                               "depth": {"dtype": "<u2", "shape": [16, 16]}}).encode()
+            writer.add_message(channel, log_time=1000, publish_time=1000,
+                               data=struct.pack("<I", len(meta)) + meta + pixels.tobytes())
+        writer.finish()
+    pixels, meta = read_depth_message(path, "right", 7, 1000)
+    assert meta["source_id"] == "right"
+    assert (pixels == 900).all()
+    with pytest.raises(ValueError, match="source identity"):
+        read_depth_message(path, "right", 8, 1000)

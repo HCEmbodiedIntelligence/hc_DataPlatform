@@ -18,7 +18,7 @@ from mcap.reader import make_reader
 from mcap.writer import CompressionType, Writer
 
 from hc_data_platform import recording_fields as public
-from hc_data_platform.publishing.holobrain_depth import DepthVideo
+from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo
 
 from .alignment import Aligner, target_count, target_time
 from .buffers import TimeCache
@@ -26,7 +26,7 @@ from .config import config_hash, validate
 from .models import Sample
 from .video import FrameReader, TrainingVideo
 
-VERSION = "openarm-raw-platform/1"
+VERSION = "openarm-raw-platform/2"
 
 
 def canonical(value):
@@ -183,6 +183,26 @@ def vectors(row, kind, cfg):
     return [values[a["source_name"]] for a in public.axes(cfg["capture"]["profile"])]
 
 
+def read_depth_message(path, source_id, source_seq, log_ns):
+    """A timestamp is not a camera identity: multiple cameras can share it."""
+    with Path(path).open("rb") as raw_stream:
+        matches = make_reader(raw_stream, validate_crcs=True).iter_messages(
+            start_time=log_ns, end_time=log_ns + 1
+        )
+        for _, channel, message in matches:
+            if channel.message_encoding != "humanoid-depth":
+                continue
+            size = struct.unpack("<I", message.data[:4])[0]
+            metadata = json.loads(message.data[4 : 4 + size])
+            if (metadata["source_id"], metadata["source_seq"]) != (source_id, source_seq):
+                continue
+            pixels = np.frombuffer(
+                message.data[4 + size :], dtype=metadata["depth"]["dtype"]
+            ).reshape(metadata["depth"]["shape"])
+            return pixels, metadata
+    raise ValueError("committed depth message missing for source identity")
+
+
 def prepare(root, destination, command, progress=lambda: None):
     root, destination = Path(root), Path(destination)
     snapshot = json.loads((root / "session.json").read_text())
@@ -305,31 +325,30 @@ def prepare(root, destination, command, progress=lambda: None):
                         videos[ident].write(pixels)
                         depth_id = ident + "_depth"
                         if depth_id not in videos:
-                            videos[depth_id] = DepthVideo(
+                            videos[depth_id] = DepthEvidenceVideo(
                                 destination / f"videos/{depth_id}.mp4",
+                                destination / f"hc/depth/{ident}",
                                 fps,
                                 (camera["height"], camera["width"]),
                             )
-                        depth_array = np.zeros((camera["height"], camera["width"]), dtype=np.uint16)
-                        scale = 0.001
+                        depth_array, scale, metadata = None, None, None
                         if depth:
-                            with (root / "raw.mcap").open("rb") as raw_stream:
-                                matches = make_reader(raw_stream).iter_messages(
-                                    start_time=depth[0], end_time=depth[0] + 1
-                                )
-                                for _, channel, message in matches:
-                                    if channel.message_encoding != "humanoid-depth":
-                                        continue
-                                    size = struct.unpack("<I", message.data[:4])[0]
-                                    metadata = json.loads(message.data[4 : 4 + size])
-                                    depth_array = np.frombuffer(
-                                        message.data[4 + size :], dtype=metadata["depth"]["dtype"]
-                                    ).reshape(metadata["depth"]["shape"])
-                                    scale = metadata["depth"]["depth_scale"]
-                                    break
-                                else:
-                                    raise ValueError("committed depth message missing")
-                        videos[depth_id].write(depth_array, scale)
+                            depth_array, metadata = read_depth_message(
+                                root / "raw.mcap", ident, group["source_seq"], depth[0]
+                            )
+                            scale = metadata["depth"].get("depth_scale")
+                        depth_meta = metadata["depth"] if depth else {}
+                        videos[depth_id].write(
+                            depth_array,
+                            scale,
+                            source_id=ident,
+                            source_seq=depth_meta.get("source_seq") if depth else None,
+                            source_timestamp_ns=depth_meta.get("capture_time_ns"),
+                            target_timestamp_ns=row["target_time_ns"],
+                            missing=not bool(depth),
+                            invalid_values=(depth_meta.get("invalid_value", 0),),
+                            max_time_error_ns=round(cfg["alignment"]["camera_max_error_ms"] * 1e6),
+                        )
                     for ident, cloud in row["pointclouds"].items():
                         if (
                             cloud["required"]
@@ -379,6 +398,17 @@ def prepare(root, destination, command, progress=lambda: None):
             "recording-config.json": ("RECORDING_CONFIG", None, "application/json"),
             "capture-provenance.json": ("AUXILIARY", None, "application/json"),
         }
+        for evidence_file in (destination / "hc/depth").rglob("*"):
+            if evidence_file.is_file():
+                suffix = evidence_file.suffix
+                media_type = {".json": "application/json", ".png": "image/png"}.get(
+                    suffix, "application/octet-stream"
+                )
+                roles[evidence_file.relative_to(destination).as_posix()] = (
+                    "AUXILIARY",
+                    None,
+                    media_type,
+                )
         for camera in profile["cameras"]:
             ident = camera["id"]
             path = f"videos/{ident}.mp4"
