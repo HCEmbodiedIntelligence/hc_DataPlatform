@@ -1,0 +1,32 @@
+services:
+  minio:
+    environment:
+      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:48088,http://localhost:48088
+  api:
+    environment:
+      HC_TEMPORAL_NAMESPACE: chayi-g1
+      HC_TEMPORAL_TASK_QUEUE: chayi-g1-data
+  worker:
+    environment:
+      HC_TEMPORAL_NAMESPACE: chayi-g1
+  # Tests use the same dependency image and the executing worktree. No production
+  # mounts, host network, device access, or production credentials are inherited.
+  test:
+    profiles: [test]
+    image: openarm-e-backend:integration
+    pull_policy: never
+    user: "1000:1000"
+    working_dir: /app
+    entrypoint: [python, -m, pytest]
+    volumes:
+      - ./backend:/app
+    environment:
+      PYTHONPATH: /app/src
+      HC_POSTGRES_DSN: postgresql+asyncpg://hc:hc@postgres:5432/hc_data
+      HC_TEMPORAL_TARGET: temporal:7233
+      HC_TEMPORAL_NAMESPACE: chayi-g1
+      HC_TEMPORAL_TASK_QUEUE: chayi-g1-test
+      HC_OBJECT_STORE_ENDPOINT: http://minio:9000
+      HC_OBJECT_STORE_BUCKET: hc-data-local
+      HC_OBJECT_STORE_ACCESS_KEY: minio
+      HC_OBJECT_STORE_SECRET_KEY: minio-local-only
