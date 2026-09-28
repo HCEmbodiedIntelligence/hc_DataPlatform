@@ -1,0 +1,277 @@
+"""Validate standalone v3 packages before publication, with bounded frame memory."""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import math
+from pathlib import Path
+
+import av
+import numpy as np
+import pyarrow.parquet as pq
+from PIL import Image
+
+from hc_data_platform.publishing.depth_evidence import file_hash
+from hc_data_platform.publishing.holobrain_depth import DepthProfile
+from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
+
+from .models import FileEntry, PackageInput, PackageManifest
+
+
+def package_file(root: Path, relative: str) -> Path:
+    # Reuse the manifest's canonical-path validator without weakening it for reads.
+    FileEntry(path=relative, size=1, sha256="0" * 64, media_type="application/octet-stream")
+    path = root / relative
+    if not path.is_file() or path.is_symlink() or root.resolve() not in path.resolve().parents:
+        raise ValueError(f"missing/unsafe package file: {relative}")
+    if any(p.is_symlink() for p in path.parents if p != root.parent):
+        raise ValueError(f"symlink in package path: {relative}")
+    return path
+
+
+def document(root: Path, relative: str) -> dict:
+    path = package_file(root, relative)
+    if path.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError(f"package JSON exceeds limit: {relative}")
+    value = json.loads(
+        path.read_bytes(),
+        parse_constant=lambda s: (_ for _ in ()).throw(ValueError(f"nonfinite JSON: {s}")),
+    )
+    if not isinstance(value, dict):
+        raise ValueError(f"package JSON must be an object: {relative}")
+    return value
+
+
+def parquet_rows(path: Path):
+    for batch in pq.ParquetFile(path).iter_batches(batch_size=128):
+        yield from batch.to_pylist()
+
+
+def validate_depth(
+    root: Path, evidence_path: str, video: Path, feature: dict, frame_count: int, fps: float
+) -> None:
+    declaration = document(root, f"{evidence_path}/profile.json")
+    profile = DepthProfile(
+        **{
+            key: declaration[key]
+            for key in ("depth_min", "depth_max", "shift", "use_log", "version")
+        }
+    )
+    if (
+        declaration.get("profile_sha256") != profile.sha256
+        or {k: v for k, v in declaration.items() if k not in {"profile_sha256", "feature_info"}}
+        != profile.document()
+    ):
+        raise ValueError("depth profile hash/parameters mismatch")
+    expected_info = {**profile.metadata(), "video.fps": fps}
+    if declaration["feature_info"] != expected_info or any(
+        feature["info"].get(key) != value for key, value in expected_info.items()
+    ):
+        raise ValueError("official depth metadata does not match frozen profile")
+    report = document(root, f"{evidence_path}/report.json")
+    if (
+        report["profile_sha256"] != profile.sha256
+        or report["frames"] != frame_count
+        or report["video_encoding"]["video_sha256"] != file_hash(video)
+        or report["video_encoding"]["lossless_codes"] is not True
+        or report["quantization"]["half_cell_bound_passed"] is not True
+    ):
+        raise ValueError("depth encoding evidence mismatch")
+    rows = parquet_rows(package_file(root, f"{evidence_path}/frames.parquet"))
+    masks = parquet_rows(package_file(root, f"{evidence_path}/validity/flags.parquet"))
+    observed, count, with_source = hashlib.sha256(), 0, False
+    with av.open(str(video)) as container:
+        stream = container.streams.video[0]
+        if (stream.codec_context.name, stream.codec_context.format.name) != ("hevc", "gray12le"):
+            raise ValueError("depth requires HEVC gray12le")
+        for frame in container.decode(stream):
+            row, mask = next(rows, None), next(masks, None)
+            if (
+                row is None
+                or mask is None
+                or row["frame_index"] != count
+                or mask["frame_index"] != count
+                or row["profile_sha256"] != profile.sha256
+                or hashlib.sha256(mask["flags_png"]).hexdigest() != row["mask_sha256"]
+            ):
+                raise ValueError("depth video/source/mask frame mapping mismatch")
+            pixels = frame.to_ndarray(format="gray12le")
+            with Image.open(io.BytesIO(mask["flags_png"])) as image:
+                flags = np.asarray(image)
+            if (
+                flags.dtype != np.uint8
+                or flags.shape != pixels.shape
+                or np.any(flags > 7)
+                or pixels.shape != tuple(feature["shape"][:2])
+                or np.any((flags & 6 != 0) & (flags & 1 == 0))
+                or np.any(flags & 6 == 6)
+            ):
+                raise ValueError("depth mask flags/shape invalid")
+            if row["missing"]:
+                if (
+                    flags.any()
+                    or pixels.any()
+                    or any(
+                        row[k] is not None
+                        for k in ("source_seq", "source_timestamp_ns", "depth_scale_m_per_unit")
+                    )
+                ):
+                    raise ValueError("missing depth frame claims measurement/source")
+            else:
+                scale = row["depth_scale_m_per_unit"]
+                if (
+                    scale is None
+                    or not math.isfinite(scale)
+                    or scale <= 0
+                    or row["source_timestamp_ns"] is None
+                    or row["source_seq"] is None
+                ):
+                    raise ValueError("depth source unit/identity missing")
+                with_source = True
+            if frame.pts is None or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6:
+                raise ValueError("depth PTS mismatch")
+            observed.update(pixels.astype("<u2").tobytes())
+            count += 1
+    if (
+        count != frame_count
+        or next(rows, None) is not None
+        or next(masks, None) is not None
+        or not with_source
+        or observed.hexdigest() != report["video_encoding"]["codes_sha256"]
+    ):
+        raise ValueError("depth completeness/code hash mismatch")
+
+
+def validate_package(root: Path, source: PackageInput) -> PackageManifest:
+    root = Path(root)
+    info = document(root, "meta/info.json")
+    if info.get("codebase_version") != "v3.0" or info.get("total_episodes") != 1:
+        raise ValueError("primary package must be one independent LeRobot v3 Episode")
+    frames, fps = info["total_frames"], info["fps"]
+    if not isinstance(frames, int) or frames <= 0 or not math.isfinite(fps) or fps <= 0:
+        raise ValueError("invalid frame count/frequency")
+    features = info["features"]
+    if not set(source.required_features).issubset(features):
+        raise ValueError("declared source modality missing from complete package")
+    depths = {key for key, f in features.items() if f.get("info", {}).get("is_depth_map")}
+    if depths != set(source.required_depth_features):
+        raise ValueError("collected depth features differ from complete package")
+    origin = document(root, "hc/source.json")
+    if (
+        origin.get("identity") != source.identity.model_dump(mode="json")
+        or origin.get("source_sha256") != source.source_sha256
+    ):
+        raise ValueError("package provenance differs from frozen source")
+    modalities = document(root, "hc/modalities.json")
+    for path in (
+        "meta/stats.json",
+        "hc/calibration.json",
+        "hc/conversion_report.json",
+        "hc/quality.json",
+    ):
+        document(root, path)
+    tasks = list(parquet_rows(package_file(root, "meta/tasks.parquet")))
+    episodes = list(parquet_rows(package_file(root, EPISODES_PATH)))
+    if (
+        len(episodes) != 1
+        or len(tasks) != info["total_tasks"]
+        or not tasks
+        or {t["task_index"] for t in tasks} != set(range(len(tasks)))
+    ):
+        raise ValueError("episode/task metadata mismatch")
+    episode = episodes[0]
+    if any(
+        episode.get(key) != value
+        for key, value in {
+            "episode_index": 0,
+            "length": frames,
+            "dataset_from_index": 0,
+            "dataset_to_index": frames,
+            "data/chunk_index": 0,
+            "data/file_index": 0,
+        }.items()
+    ):
+        raise ValueError("independent Episode offsets/indexes invalid")
+    parquet = pq.ParquetFile(package_file(root, DATA_PATH))
+    if parquet.metadata.num_rows != frames:
+        raise ValueError("numerical row count mismatch")
+    offset = 0
+    for batch in parquet.iter_batches(batch_size=4096):
+        columns = batch.to_pydict()
+        count = batch.num_rows
+        index = list(range(offset, offset + count))
+        if (
+            columns.get("index") != index
+            or columns.get("frame_index") != index
+            or columns.get("episode_index") != [0] * count
+            or any(t not in range(len(tasks)) for t in columns["task_index"])
+            or not np.allclose(
+                columns["timestamp"],
+                np.asarray(index) / fps,
+                rtol=0,
+                atol=max(1e-6, frames / fps * 1.2e-7),
+            )
+        ):
+            raise ValueError("data indexes/timestamps invalid")
+        for key, feature in features.items():
+            if feature["dtype"] != "video" and key not in columns:
+                raise ValueError(f"missing declared numerical feature: {key}")
+        offset += count
+    for key, feature in features.items():
+        if feature["dtype"] != "video":
+            continue
+        if "/" in key or "\\" in key:
+            raise ValueError("unsafe video feature key")
+        relative = VIDEO_PATH.format(video_key=key, chunk_index=0, file_index=0)
+        video = package_file(root, relative)
+        if any(
+            episode.get(f"videos/{key}/{suffix}") != value
+            for suffix, value in {
+                "chunk_index": 0,
+                "file_index": 0,
+                "from_timestamp": 0.0,
+                "to_timestamp": frames / fps,
+            }.items()
+        ):
+            raise ValueError("video offset mismatch")
+        if key in depths:
+            validate_depth(
+                root, modalities["depth"][key]["evidence_path"], video, feature, frames, fps
+            )
+        else:
+            count = 0
+            with av.open(str(video)) as container:
+                for frame in container.decode(video=0):
+                    if (
+                        [frame.height, frame.width, 3] != feature["shape"]
+                        or frame.pts is None
+                        or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6
+                    ):
+                        raise ValueError("RGB dimensions/time grid mismatch")
+                    count += 1
+            if count != frames:
+                raise ValueError("RGB frame count mismatch")
+    files = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            if path.is_symlink():
+                raise ValueError("package symlink forbidden")
+            continue
+        relative = path.relative_to(root).as_posix()
+        package_file(root, relative)
+        media_type = {
+            ".json": "application/json",
+            ".mp4": "video/mp4",
+            ".parquet": "application/vnd.apache.parquet",
+        }.get(path.suffix, "application/octet-stream")
+        files.append(
+            FileEntry(
+                path=relative,
+                size=path.stat().st_size,
+                sha256=file_hash(path),
+                media_type=media_type,
+            )
+        )
+    return PackageManifest(input=source, frame_count=frames, files=tuple(files))

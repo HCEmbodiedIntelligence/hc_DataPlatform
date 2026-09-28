@@ -53,7 +53,8 @@ def test_action_invalidation_is_not_repaired_into_valid_training_data(tmp_path):
         snapshot = json.loads((FIXTURE / "session.json").read_text())
         manifest = json.loads((FIXTURE / "manifest.json").read_text())
         db.execute(
-            "UPDATE raw_samples SET body=json_set(body,'$.validity_known',json('false')) WHERE json_extract(body,'$.kind')='action'"
+            "UPDATE raw_samples SET body=json_set(body,'$.validity_known',json('false')) "
+            "WHERE json_extract(body,'$.kind')='action'"
         )
         aligned = list(
             rows(db, validate(snapshot["config"]), manifest["t0_ns"], manifest["end_ns"])
@@ -84,10 +85,15 @@ def test_simultaneous_cameras_do_not_share_the_first_depth_message(tmp_path):
         channel = writer.register_channel("/humanoid/session/depth", "humanoid-depth", 0)
         for camera, value in (("left", 100), ("right", 900)):
             pixels = np.full((16, 16), value, dtype="<u2")
-            meta = json.dumps({"source_id": camera, "source_seq": 7,
-                               "depth": {"dtype": "<u2", "shape": [16, 16]}}).encode()
-            writer.add_message(channel, log_time=1000, publish_time=1000,
-                               data=struct.pack("<I", len(meta)) + meta + pixels.tobytes())
+            meta = json.dumps(
+                {"source_id": camera, "source_seq": 7, "depth": {"dtype": "<u2", "shape": [16, 16]}}
+            ).encode()
+            writer.add_message(
+                channel,
+                log_time=1000,
+                publish_time=1000,
+                data=struct.pack("<I", len(meta)) + meta + pixels.tobytes(),
+            )
         writer.finish()
     pixels, meta = read_depth_message(path, "right", 7, 1000)
     assert meta["source_id"] == "right"

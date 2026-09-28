@@ -81,3 +81,27 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 - Still pending: real RGB-D data evidence, complete-package writer/commit,
   metadata/sidecar propagation through three inputs, original-source calibration
   and unselected-frame inventory, standalone reader and all remaining P0 flows.
+
+## Package commit milestone (partial W1)
+
+- New `episode_store` data references include full tenant/dataset/Episode/rollout
+  identity, data version, content hash, format and schema; no fake Lance version.
+- Additive migrations `episode_store/0001_episode_packages.sql` and
+  `0002_commit_pointer_guard.sql` applied only in `hc-chayi-g1`. Separate binding,
+  version, attempt, collection and transactional event tables use organization/
+  project/region RLS. Committed versions are immutable; pointer guard rejects
+  PREPARING versions even via direct SQL.
+- Package validator checks independent v3 indexes/time/media, required modalities,
+  depth profile/source/mask/code hashes; bounded object uploads and read-back hashes
+  precede immutable manifest/receipt and the visibility transaction.
+- `compose.sh run --rm --no-deps test tests/episode_store/test_commit_services.py
+  --fail-on-skipped --fail-on-xfailed -q`: **9 passed** against actual isolated
+  PostgreSQL and MinIO. Evidence: `episode-commit-tests.xml`.
+- Covered partial object interruption, object receipt before DB, lost response,
+  four concurrent identical requests, changed-content conflicts, missing modality,
+  existing corrupt destination, tenant guard, non-superuser PostgreSQL RLS across
+  organization/project/region, actual DB trigger failure and rollback/recovery,
+  pointer guard, immutable committed rows and depth mask tampering.
+- Inputs here are deterministic synthetic fixtures: these prove commit mechanics,
+  not real ingestion or complete G1 acceptance. Runtime still uses the legacy
+  writer until W2 integration; the new event table is not yet consumed.
