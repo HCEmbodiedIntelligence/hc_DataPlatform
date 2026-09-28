@@ -105,7 +105,8 @@ def rows(database, cfg, start, end):
                 continue
             queries = [
                 (
-                    "SELECT body FROM raw_samples WHERE source=? AND capture_ns>=? AND capture_ns<=? ORDER BY capture_ns,seq",
+                    "SELECT body FROM raw_samples WHERE source=? "
+                    "AND capture_ns>=? AND capture_ns<=? ORDER BY capture_ns,seq",
                     (ident, target - retention, target + retention),
                 )
             ]
@@ -115,7 +116,8 @@ def rows(database, cfg, start, end):
                         queries.append(
                             (
                                 "SELECT body FROM raw_samples WHERE source=? AND capture_ns<? "
-                                "AND EXISTS(SELECT 1 FROM json_each(body,'$.joint_names') WHERE value=?) "
+                                "AND EXISTS(SELECT 1 FROM json_each(body,'$.joint_names') "
+                                "WHERE value=?) "
                                 "AND (json_extract(body,'$.validity_event') IS NOT NULL)=? "
                                 "ORDER BY capture_ns DESC,seq DESC LIMIT 1",
                                 (ident, target - retention, axis["name"], int(event)),
@@ -124,7 +126,8 @@ def rows(database, cfg, start, end):
             else:
                 queries.append(
                     (
-                        "SELECT body FROM raw_samples WHERE source=? AND capture_ns<? ORDER BY capture_ns DESC,seq DESC LIMIT 1",
+                        "SELECT body FROM raw_samples WHERE source=? AND capture_ns<? "
+                        "ORDER BY capture_ns DESC,seq DESC LIMIT 1",
                         (ident, target - retention),
                     )
                 )
@@ -430,7 +433,10 @@ def prepare(root, destination, command, progress=lambda: None):
                     ).hexdigest(),
                     "invalid_frame_count": invalid,
                     "frame_count": target_count(start, end, fps),
-                    "preview_policy": "platform generated; missing frames explicitly invalid; original files retained",
+                    "preview_policy": (
+                        "platform generated; missing frames explicitly invalid; "
+                        "original files retained"
+                    ),
                 }
             )
         )

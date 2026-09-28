@@ -268,14 +268,17 @@ class EpisodeStream:
         episode = self.episode
         units = [axis["unit"] for axis in episode.context.get("profile", {}).get("axes", [])]
         from hc_data_platform import recording_fields as public
-        if self.layout.info.get('recording_field_schema') == public.SCHEMA and episode.context.get('profile'):
-            units = [axis['unit'] for axis in public.axes(episode.context['profile'])]
+
+        if self.layout.info.get("recording_field_schema") == public.SCHEMA and episode.context.get(
+            "profile"
+        ):
+            units = [axis["unit"] for axis in public.axes(episode.context["profile"])]
         features = self.layout.info["features"]
         state_units = features["observation.state"].get("units", units)
         action_units = features["action"].get("units", units)
         for index, timestamp in enumerate(episode.relative_timestamps_ns):
             if episode.source_timestamp_ns:
-                yield 'source.timestamp_ns', timestamp, episode.source_timestamp_ns[index]
+                yield "source.timestamp_ns", timestamp, episode.source_timestamp_ns[index]
             yield (
                 self.profile.joint_topic,
                 timestamp,
@@ -377,9 +380,8 @@ class LeRobotAdapter:
         yield EpisodeStream(
             source=source,
             source_sha256=raw_manifest_sha256,
-            rollout_id=source.platform_episode_id or (
-                f"lerobot-{source.raw_upload_id[:16]}-ep-{source.episode_index:06d}"
-            ),
+            rollout_id=source.platform_episode_id
+            or (f"lerobot-{source.raw_upload_id[:16]}-ep-{source.episode_index:06d}"),
             episode=episode,
             layout=layout,
             original_videos=originals,

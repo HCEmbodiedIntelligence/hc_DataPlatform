@@ -49,9 +49,11 @@ def _feature_names(names: Sequence[str]) -> dict[str, str]:
                 .removeprefix("observation.images.")
             )
             target = "observation.images." + re.sub(r"[^A-Za-z0-9_.-]", "_", camera)
-        elif name == 'source.timestamp_ns':
-            target = name
-        elif name.startswith(("observation.", "action")) and "/" not in name:
+        elif (
+            name == "source.timestamp_ns"
+            or name.startswith(("observation.", "action"))
+            and "/" not in name
+        ):
             target = name
         else:
             target = "hc.source." + re.sub(
@@ -374,10 +376,15 @@ class LeRobotArchive:
                         video_key=target, chunk_index=index // 1000, file_index=index % 1000
                     )
                     output = root / "camera.mp4"
-                    depth_info = metadata.get('source_features', {}).get(target, {}).get('info', {})
-                    depth_info = depth_info if depth_info.get('is_depth_map') else None
+                    depth_info = metadata.get("source_features", {}).get(target, {}).get("info", {})
+                    depth_info = depth_info if depth_info.get("is_depth_map") else None
                     feature, stats, receipts = materialize_video(
-                        self.assets, self.manifest, rollout, references, output, fps=self.fps,
+                        self.assets,
+                        self.manifest,
+                        rollout,
+                        references,
+                        output,
+                        fps=self.fps,
                         depth_info=depth_info,
                     )
                     if target in features and features[target] != feature:
@@ -472,9 +479,10 @@ class LeRobotArchive:
             "hc.annotations_path": "meta/annotations.json",
             "splits": {"train": f"0:{len(self.episodes)}"},
         }
-        if 'source.timestamp_ns' in features:
+        if "source.timestamp_ns" in features:
             from hc_data_platform.recording_fields import SCHEMA
-            info['recording_field_schema'] = SCHEMA
+
+            info["recording_field_schema"] = SCHEMA
         files.update(
             {
                 DATA_PATH: _parquet_bytes(table, pq),
@@ -607,9 +615,12 @@ class LeRobotArchive:
                         )
                         path = Path(directory) / "camera.mp4"
                         path.write_bytes(archive.read(relative))
-                        source_info = self.metadata[index].get("source_features", {}).get(
-                            target, {}
-                        ).get("info", {})
+                        source_info = (
+                            self.metadata[index]
+                            .get("source_features", {})
+                            .get(target, {})
+                            .get("info", {})
+                        )
                         if source_info.get("is_depth_map"):
                             feature, video_stats = inspect_depth_video(
                                 path, len(selected), self.fps, source_info

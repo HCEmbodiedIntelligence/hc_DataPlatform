@@ -86,7 +86,8 @@ def _selected_frames(
     path: Path,
     references: Sequence[AlignedMediaFrameReferenceV1],
     root: Path,
-    *, depth: bool = False,
+    *,
+    depth: bool = False,
 ) -> Iterator[bytes]:
     unique: list[AlignedMediaFrameReferenceV1] = []
     counts: list[int] = []
@@ -260,7 +261,7 @@ def inspect_video(
             "video.fps": fps,
             "video.codec": stream["codec_name"],
             "video.pix_fmt": stream["pix_fmt"],
-            "video.is_depth_map": False,
+            "is_depth_map": False,
             "has_audio": False,
         },
     }
@@ -328,7 +329,10 @@ def materialize_video(
             str(output),
         ]
         if depth:
-            command[-1:-1] = ['-x265-params', 'lossless=1:bframes=0:open-gop=0:pools=none:frame-threads=1:log-level=error']
+            command[-1:-1] = [
+                "-x265-params",
+                "lossless=1:bframes=0:open-gop=0:pools=none:frame-threads=1:log-level=error",
+            ]
         with _process(command, encode=True) as encoder:
             assert encoder.stdin is not None
             for _, group in itertools.groupby(references, key=lambda ref: ref.artifact_id):
@@ -360,9 +364,13 @@ def materialize_video(
                 )
                 if depth:
                     import av
+
                     with av.open(str(path)) as check:
-                        if check.streams.video[0].codec_context.pix_fmt != 'gray12le':
-                            raise export_error('EXPORT_DEPTH_FORMAT_INVALID','Depth source must preserve gray12le codes.')
+                        if check.streams.video[0].codec_context.pix_fmt != "gray12le":
+                            raise export_error(
+                                "EXPORT_DEPTH_FORMAT_INVALID",
+                                "Depth source must preserve gray12le codes.",
+                            )
                 for frame in _selected_frames(source, path, selected, root, depth=depth):
                     encoder.stdin.write(frame)
         if depth:
@@ -374,35 +382,66 @@ def materialize_video(
 
 def inspect_depth_video(path, frame_count, fps, info):
     import av
-    total = square = 0.
-    low, high = float('inf'), float('-inf')
+
+    total = square = 0.0
+    low, high = float("inf"), float("-inf")
     count = 0
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
-        if (stream.codec_context.pix_fmt != 'gray12le'
-                or stream.codec_context.name != 'hevc' or stream.average_rate != fps):
-            raise export_error('EXPORT_DEPTH_FORMAT_INVALID', 'Depth video codec/FPS changed.')
+        if (
+            stream.codec_context.pix_fmt != "gray12le"
+            or stream.codec_context.name != "hevc"
+            or stream.average_rate != fps
+        ):
+            raise export_error("EXPORT_DEPTH_FORMAT_INVALID", "Depth video codec/FPS changed.")
         for index, frame in enumerate(container.decode(video=0)):
             if abs(float(frame.pts * frame.time_base) - index / fps) > 1e-6:
-                raise export_error('EXPORT_DEPTH_TIME_INVALID', 'Depth PTS differs from the dataset grid.')
-            pixels = frame.to_ndarray(format='gray12le').astype(np.float64)
+                raise export_error(
+                    "EXPORT_DEPTH_TIME_INVALID", "Depth PTS differs from the dataset grid."
+                )
+            pixels = frame.to_ndarray(format="gray12le").astype(np.float64)
             # Statistics in the decoded depth unit, matching the public depth metadata.
-            minimum, maximum, shift = (info['video.depth_min'], info['video.depth_max'], info['video.shift'])
-            if info['video.use_log']:
-                pixels = np.exp(pixels / 4095 * (np.log(maximum+shift)-np.log(minimum+shift)) + np.log(minimum+shift))-shift
+            minimum, maximum, shift = (
+                info["video.depth_min"],
+                info["video.depth_max"],
+                info["video.shift"],
+            )
+            if info["video.use_log"]:
+                pixels = (
+                    np.exp(
+                        pixels / 4095 * (np.log(maximum + shift) - np.log(minimum + shift))
+                        + np.log(minimum + shift)
+                    )
+                    - shift
+                )
             else:
-                pixels = pixels / 4095 * (maximum-minimum) + minimum
-            pixels *= 1000 if info['depth_unit'] == 'mm' else 1
-            total += pixels.sum(); square += np.square(pixels).sum()
+                pixels = pixels / 4095 * (maximum - minimum) + minimum
+            pixels *= 1000 if info["depth_unit"] == "mm" else 1
+            total += pixels.sum()
+            square += np.square(pixels).sum()
             low, high = min(low, float(pixels.min())), max(high, float(pixels.max()))
             count += 1
         height, width = stream.height, stream.width
     if count != frame_count:
-        raise export_error('EXPORT_DEPTH_FRAME_COUNT_INVALID', 'Depth frame count differs from data rows.')
+        raise export_error(
+            "EXPORT_DEPTH_FRAME_COUNT_INVALID", "Depth frame count differs from data rows."
+        )
     samples = count * height * width
     mean = total / samples
-    stats = {k:[[[float(v)]]] for k,v in {'min':low,'max':high,'mean':mean,'std':np.sqrt(max(0,square/samples-mean*mean))}.items()}
-    stats['count'] = [count]
-    feature = {'dtype':'video','shape':[height,width,1],'names':['height','width','channels'],
-               'info':{**info,'video.fps':fps,'video.height':height,'video.width':width}}
+    stats = {
+        k: [[[float(v)]]]
+        for k, v in {
+            "min": low,
+            "max": high,
+            "mean": mean,
+            "std": np.sqrt(max(0, square / samples - mean * mean)),
+        }.items()
+    }
+    stats["count"] = [count]
+    feature = {
+        "dtype": "video",
+        "shape": [height, width, 1],
+        "names": ["height", "width", "channels"],
+        "info": {**info, "video.fps": fps, "video.height": height, "video.width": width},
+    }
     return feature, stats

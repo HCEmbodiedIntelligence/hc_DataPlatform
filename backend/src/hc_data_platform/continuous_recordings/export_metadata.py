@@ -40,12 +40,18 @@ def frozen_metadata(cursor, storage, organization, region, manifest, rollout):
         "recording_upload": command,
     }
     from hc_data_platform.publishing.holobrain_depth import DEPTH_INFO
-    result['source_features'] = {
-        camera['topic']: {'dtype':'video','shape':[camera['height'],camera['width'],1],
-                          'names':['height','width','channels'],'info':dict(DEPTH_INFO)}
-        for camera in command['recording_config']['cameras']
-        if camera.get('topic','').startswith('observation.images.')
-        and camera['topic'].endswith('_depth') and camera['codec'] == 'hevc'
+
+    result["source_features"] = {
+        camera["topic"]: {
+            "dtype": "video",
+            "shape": [camera["height"], camera["width"], 1],
+            "names": ["height", "width", "channels"],
+            "info": dict(DEPTH_INFO),
+        }
+        for camera in command["recording_config"]["cameras"]
+        if camera.get("topic", "").startswith("observation.images.")
+        and camera["topic"].endswith("_depth")
+        and camera["codec"] == "hevc"
     }
     cursor.execute(
         """SELECT asset_document FROM ingest.recording_upload_assets

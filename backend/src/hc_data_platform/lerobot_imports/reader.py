@@ -152,6 +152,11 @@ def read_episode(root: Path, index: int) -> tuple[NativeProfile, Any, Any]:
     }
     if not required <= set(table.column_names):
         raise ValueError(f"LEROBOT_COLUMN_MISSING: {sorted(required - set(table.column_names))}")
+    if "source.timestamp_ns" in table.column_names and (
+        table.schema.field("source.timestamp_ns").type != pa.int64()
+        or table["source.timestamp_ns"].null_count
+    ):
+        raise ValueError("LEROBOT_SOURCE_TIMESTAMP: source timestamps must be non-null int64")
     for key in ("observation.state", "action"):
         kind = table.schema.field(key).type
         if not (
@@ -234,7 +239,9 @@ def read_episode(root: Path, index: int) -> tuple[NativeProfile, Any, Any]:
         context,
         source_episode,
         mappings,
-        tuple(r['source.timestamp_ns'] for r in rows) if 'source.timestamp_ns' in table.column_names else (),
+        tuple(r["source.timestamp_ns"] for r in rows)
+        if "source.timestamp_ns" in table.column_names
+        else (),
     )
     return profile, layout, episode
 

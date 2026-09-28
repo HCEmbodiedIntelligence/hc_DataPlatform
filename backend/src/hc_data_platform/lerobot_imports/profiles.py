@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from hc_data_platform.tools import hf_unitree_g1_to_mcap as g1
 from hc_data_platform.recording_fields import AXES, SCHEMA
+from hc_data_platform.tools import hf_unitree_g1_to_mcap as g1
 
 SOURCE_TOPIC = "/metadata/source"
 OPENARM_AXES = tuple(
@@ -103,7 +103,9 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
             Camera(
                 key,
                 key.removeprefix("observation.images."),
-                key if public_fields else "/camera/" + key.removeprefix("observation.images.") + "/image",
+                key
+                if public_fields
+                else "/camera/" + key.removeprefix("observation.images.") + "/image",
             )
         )
     robot_type = info.get("robot_type", "unknown")

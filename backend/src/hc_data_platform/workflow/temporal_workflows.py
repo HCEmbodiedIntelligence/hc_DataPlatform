@@ -797,17 +797,32 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                     )
                 media_staging = aligned.alignment_staging
                 media_profile = "canonical-h264-crf20-v1"
-                if (camera.modality_key.startswith('observation.images.')
-                        and camera.modality_key.endswith('_depth') and camera.codec == 'hevc'):
+                if (
+                    camera.modality_key.startswith("observation.images.")
+                    and camera.modality_key.endswith("_depth")
+                    and camera.codec == "hevc"
+                ):
                     # Preserve the original depth codes; the RGB preview encoder is lossy.
-                    media_profile = 'original-video-reference-v1'
+                    media_profile = "original-video-reference-v1"
                     original = OriginalVideoReferenceV1(
-                        object_key=asset.object_key, size_bytes=asset.size_bytes,
+                        object_key=asset.object_key,
+                        size_bytes=asset.size_bytes,
                         content_sha256=asset.content_sha256,
-                        start_seconds=source_start_ns / 1e9, end_seconds=source_end_ns / 1e9,
-                        width=camera.width, height=camera.height, codec=camera.codec, fps=camera.fps)
-                    media_staging = media_staging.model_copy(update={
-                        'original_videos': {**media_staging.original_videos, camera.modality_key: original}})
+                        start_seconds=source_start_ns / 1e9,
+                        end_seconds=source_end_ns / 1e9,
+                        width=camera.width,
+                        height=camera.height,
+                        codec=camera.codec,
+                        fps=camera.fps,
+                    )
+                    media_staging = media_staging.model_copy(
+                        update={
+                            "original_videos": {
+                                **media_staging.original_videos,
+                                camera.modality_key: original,
+                            }
+                        }
+                    )
                 media_inputs.append(
                     AlignedMediaActivityInput(
                         organization_id=source.organization_id,
@@ -941,7 +956,8 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 new=EpisodeProcessingStatus.READY,
                 dataset_id=request.dataset_id,
                 dataset_episode_id=committed.viewer_target.episode_id
-                if workflow.patched('continuous-recording-viewer-identity-v2') else None,
+                if workflow.patched("continuous-recording-viewer-identity-v2")
+                else None,
                 dataset_version=derived.dataset_version,
                 lance_version=derived.lance_version,
                 annotation_task_id=annotation.task_id,
