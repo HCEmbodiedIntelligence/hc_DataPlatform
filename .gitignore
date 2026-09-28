@@ -56,6 +56,10 @@ release-values.yaml
 
 /.reader-e/
 
+# Isolated G1 verification outputs; curated reports live under docs/audits.
+/backend/.g1-artifacts/
+/backend/test-*-g1.xml
+
 /deploy/openarm-e/secrets/
 
 # Per-machine deployment configuration (keep examples in Git).

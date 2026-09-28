@@ -380,12 +380,20 @@ def materialize_video(
     return feature, stats, receipts
 
 
-def inspect_depth_video(path, frame_count, fps, info):
+def inspect_depth_video(path, frame_count, fps, info, *, masks=None):
     import av
+
+    from .holobrain_depth import DepthProfile, dequantize
 
     total = square = 0.0
     low, high = float("inf"), float("-inf")
-    count = 0
+    count = samples = 0
+    profile = DepthProfile(
+        depth_min=info["video.depth_min"],
+        depth_max=info["video.depth_max"],
+        shift=info["video.shift"],
+        use_log=info["video.use_log"],
+    )
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         if (
@@ -399,34 +407,27 @@ def inspect_depth_video(path, frame_count, fps, info):
                 raise export_error(
                     "EXPORT_DEPTH_TIME_INVALID", "Depth PTS differs from the dataset grid."
                 )
-            pixels = frame.to_ndarray(format="gray12le").astype(np.float64)
-            # Statistics in the decoded depth unit, matching the public depth metadata.
-            minimum, maximum, shift = (
-                info["video.depth_min"],
-                info["video.depth_max"],
-                info["video.shift"],
-            )
-            if info["video.use_log"]:
-                pixels = (
-                    np.exp(
-                        pixels / 4095 * (np.log(maximum + shift) - np.log(minimum + shift))
-                        + np.log(minimum + shift)
-                    )
-                    - shift
-                )
-            else:
-                pixels = pixels / 4095 * (maximum - minimum) + minimum
-            pixels *= 1000 if info["depth_unit"] == "mm" else 1
+            pixels = dequantize(
+                frame.to_ndarray(format="gray12le"), profile, output_unit=info["depth_unit"]
+            ).astype(np.float64)
+            if masks is not None:
+                valid = next(masks, None)
+                if valid is None or valid.shape != pixels.shape:
+                    raise ValueError("depth statistics require a mask for every frame")
+                pixels = pixels[valid]
             total += pixels.sum()
             square += np.square(pixels).sum()
-            low, high = min(low, float(pixels.min())), max(high, float(pixels.max()))
+            if pixels.size:
+                low, high = min(low, float(pixels.min())), max(high, float(pixels.max()))
+            samples += pixels.size
             count += 1
         height, width = stream.height, stream.width
     if count != frame_count:
         raise export_error(
             "EXPORT_DEPTH_FRAME_COUNT_INVALID", "Depth frame count differs from data rows."
         )
-    samples = count * height * width
+    if not samples or (masks is not None and next(masks, None) is not None):
+        raise ValueError("depth statistics have no valid pixels or extra masks")
     mean = total / samples
     stats = {
         k: [[[float(v)]]]
@@ -444,4 +445,6 @@ def inspect_depth_video(path, frame_count, fps, info):
         "names": ["height", "width", "channels"],
         "info": {**info, "video.fps": fps, "video.height": height, "video.width": width},
     }
+    if masks is not None:
+        feature["info"]["hc.stats_valid_pixels"] = samples
     return feature, stats

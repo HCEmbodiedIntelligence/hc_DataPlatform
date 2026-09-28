@@ -10,6 +10,7 @@ from pathlib import Path
 
 import av
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
@@ -50,7 +51,15 @@ def parquet_rows(path: Path):
 
 
 def validate_depth(
-    root: Path, evidence_path: str, video: Path, feature: dict, frame_count: int, fps: float
+    root: Path,
+    evidence_path: str,
+    video: Path,
+    feature: dict,
+    frame_count: int,
+    fps: float,
+    *,
+    target_rows,
+    feature_key: str,
 ) -> None:
     declaration = document(root, f"{evidence_path}/profile.json")
     profile = DepthProfile(
@@ -88,15 +97,34 @@ def validate_depth(
             raise ValueError("depth requires HEVC gray12le")
         for frame in container.decode(stream):
             row, mask = next(rows, None), next(masks, None)
+            target = next(target_rows, None)
             if (
                 row is None
                 or mask is None
+                or target is None
                 or row["frame_index"] != count
                 or mask["frame_index"] != count
                 or row["profile_sha256"] != profile.sha256
                 or hashlib.sha256(mask["flags_png"]).hexdigest() != row["mask_sha256"]
             ):
                 raise ValueError("depth video/source/mask frame mapping mismatch")
+            if row["target_timestamp_ns"] != target["hc.timestamp_ns"]:
+                raise ValueError("depth source mapping targets a different Episode time grid")
+            expected_source = () if row["missing"] else (row["source_timestamp_ns"],)
+            for kind, expected in (
+                ("source_timestamps_ns", list(expected_source)),
+                ("time_error_ns", row["time_error_ns"]),
+                ("repeated", row["repeated"]),
+            ):
+                column = f"hc.{kind}.{feature_key}"
+                if column in target:
+                    actual = (
+                        json.loads(target[column])
+                        if isinstance(target[column], str)
+                        else target[column]
+                    )
+                    if actual != expected:
+                        raise ValueError("depth and aligned step source evidence differ")
             pixels = frame.to_ndarray(format="gray12le")
             with Image.open(io.BytesIO(mask["flags_png"])) as image:
                 flags = np.asarray(image)
@@ -197,6 +225,21 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
     parquet = pq.ParquetFile(package_file(root, DATA_PATH))
     if parquet.metadata.num_rows != frames:
         raise ValueError("numerical row count mismatch")
+    for key, feature in features.items():
+        if feature["dtype"] == "video":
+            continue
+        shape = feature.get("shape")
+        if not shape or any(not isinstance(n, int) or n < 1 for n in shape):
+            raise ValueError("invalid numerical feature shape")
+        expected = pa.type_for_alias(feature["dtype"])
+        if shape != [1]:
+            for width in reversed(shape):
+                expected = pa.list_(expected, width)
+        if (
+            key not in parquet.schema_arrow.names
+            or parquet.schema_arrow.field(key).type != expected
+        ):
+            raise ValueError(f"numerical feature dtype/shape differs from official metadata: {key}")
     offset = 0
     for batch in parquet.iter_batches(batch_size=4096):
         columns = batch.to_pydict()
@@ -237,8 +280,27 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
         ):
             raise ValueError("video offset mismatch")
         if key in depths:
+            if "hc.timestamp_ns" not in parquet.schema_arrow.names:
+                raise ValueError("depth reuse requires exact Episode timestamp evidence")
+            target_columns = ["hc.timestamp_ns"] + [
+                f"hc.{kind}.{key}"
+                for kind in ("source_timestamps_ns", "time_error_ns", "repeated")
+                if f"hc.{kind}.{key}" in parquet.schema_arrow.names
+            ]
+            target_rows = (
+                row
+                for batch in parquet.iter_batches(batch_size=128, columns=target_columns)
+                for row in batch.to_pylist()
+            )
             validate_depth(
-                root, modalities["depth"][key]["evidence_path"], video, feature, frames, fps
+                root,
+                modalities["depth"][key]["evidence_path"],
+                video,
+                feature,
+                frames,
+                fps,
+                target_rows=target_rows,
+                feature_key=key,
             )
         else:
             count = 0

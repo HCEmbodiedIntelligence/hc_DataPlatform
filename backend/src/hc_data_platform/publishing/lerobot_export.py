@@ -431,34 +431,9 @@ class LeRobotArchive:
             if features[key]["dtype"] not in {"string", "binary"}
         }
         stats.update({key: _video_stats(items) for key, items in video_statistics.items()})
-        tasks_table = pa.table(
-            {"task_index": pa.array(range(len(tasks)), type=pa.int64()), "task": tasks}
-        )
-        pandas_metadata = {
-            "index_columns": ["task"],
-            "column_indexes": [],
-            "columns": [
-                {
-                    "name": "task_index",
-                    "field_name": "task_index",
-                    "pandas_type": "int64",
-                    "numpy_type": "int64",
-                    "metadata": None,
-                },
-                {
-                    "name": "task",
-                    "field_name": "task",
-                    "pandas_type": "unicode",
-                    "numpy_type": "object",
-                    "metadata": None,
-                },
-            ],
-            "creator": {"library": "hc-data-platform", "version": "2"},
-            "pandas_version": "2.0.0",
-        }
-        tasks_table = tasks_table.replace_schema_metadata(
-            {b"pandas": canonical_json_bytes(pandas_metadata)}
-        )
+        from .lerobot_format import make_task_table
+
+        tasks_table = make_task_table(tasks)
         robot_types = set(item["robot_type"] for item in self.metadata)
         info = {
             "codebase_version": "v3.0",

@@ -105,3 +105,40 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 - Inputs here are deterministic synthetic fixtures: these prove commit mechanics,
   not real ingestion or complete G1 acceptance. Runtime still uses the legacy
   writer until W2 integration; the new event table is not yet consumed.
+
+## Standalone writer and readers milestone (partial W1/W2)
+
+- Attempt-scoped prepared assets verify frozen source media/evidence hashes without
+  calling or weakening the READY-only export resolver. RGB H.265 and matching depth
+  are copied byte-for-byte; conversion receipts record no transcode/requantization.
+- Streaming writer emits numerical Parquet in 1024-row groups, exact int64 source
+  nanoseconds, standard task/episode metadata, and HC source/quality/calibration
+  documents. Original inferred numerical precision is retained. A one-element
+  vector uses the official scalar Parquet representation; its original shape and
+  structured semantics are separately recorded and reconstructed for platform reads.
+- Validation now rejects numerical dtype/shape mismatches and depth evidence whose
+  target timestamps or supplied aligned source mapping differ from the Episode.
+  Depth statistics exclude invalid pixels, independently of official video decode.
+- Fixed-version readers resolve authorization from PostgreSQL before every access,
+  verify manifests/files, cache bounded private disk copies, and prune numerical
+  columns/row groups. Binary depth returns float32 mm/m, independent validity and
+  saturation flags, profile and source mapping; invalid pixels become NaN. A PNG
+  pseudocolor derivative is available separately from the measurements.
+- Combined isolated regression command: `compose.sh run --rm --no-deps test
+  tests/episode_store tests/publishing/test_depth_contract.py
+  tests/continuous_recordings/test_openarm_raw.py
+  tests/publishing/test_lerobot_materialized_export.py --fail-on-skipped
+  --fail-on-xfailed -q`: **36 passed**. Evidence `episode-reader-tests.xml`.
+- New reader tests exercise actual PostgreSQL/MinIO, reverse depth seeks, binary
+  round-trip, foreign tenant/Episode/rollout rejection, row-group/column pruning,
+  precision and structured-state round-trip, and warm seeks without object downloads.
+- Official offline `LeRobotDataset` + `DataLoader` directly opened the copied RGB-D
+  root with no platform imports and network disabled (LeRobot 0.6.1). Shapes are
+  RGB `[4,3,16,16]`, depth `[4,1,16,16]` in mm. Independent HC mask/application and
+  source mapping passed; measured fixture errors `[0,0,1,1]` mm. Evidence:
+  `standalone-rgbd-reader.json`; reproducible script `backend/tools/read_standalone_rgbd.py`.
+- The four-frame fixture is explicitly synthetic, not real-data, long-recording,
+  browser, or model-training acceptance. 17 P0 statuses above remain pending.
+- Remaining: runtime/three-ingress integration, common read routing and API/UI,
+  source units/calibration inventory, long-file chunking, mixed collection versions,
+  annotations/reviews/download delivery/migration, and real/human acceptance.

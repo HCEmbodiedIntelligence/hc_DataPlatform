@@ -91,7 +91,8 @@ def package(tmp_path):
             "episode_index": [0, 0, 0],
             "task_index": [0, 0, 0],
             "timestamp": pa.array([0, 1 / 30, 2 / 30], type=pa.float32()),
-            "observation.state": pa.array([[1.0], [2.0], [3.0]], type=pa.list_(pa.float64(), 1)),
+            "hc.timestamp_ns": [0, 33_333_333, 66_666_666],
+            "observation.state": pa.array([1.0, 2.0, 3.0], type=pa.float64()),
         }
     )
     pq.write_table(table, root / DATA_PATH)

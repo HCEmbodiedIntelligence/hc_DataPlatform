@@ -195,3 +195,25 @@ class PostgresEpisodeStore:
             )
             row = cursor.fetchone()
             return CommitReceipt.model_validate(row[0]) if row else None
+
+    def get(self, identity: EpisodeIdentity, data_version_id: str) -> CommitReceipt:
+        """Resolve persisted authorization, never trust a caller-supplied prefix."""
+        assert_scope(identity)
+        with self.transaction() as cursor:
+            cursor.execute(
+                """SELECT v.receipt_document FROM episode_store.versions v
+                JOIN episode_store.bindings b ON b.organization_id=v.organization_id
+                  AND b.project_id=v.project_id AND b.region_code=v.region_code
+                  AND b.dataset_id=v.dataset_id AND b.episode_id=v.episode_id
+                WHERE v.organization_id=%s AND v.project_id=%s AND v.region_code=%s
+                  AND v.dataset_id=%s AND v.episode_id=%s AND b.rollout_id=%s
+                  AND v.data_version_id=%s AND v.status='COMMITTED'""",
+                (*identity.key, identity.rollout_id, data_version_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise KeyError("committed Episode data version not found in request scope")
+            receipt = CommitReceipt.model_validate(row[0])
+            if receipt.data.identity != identity:
+                raise PackageConflict("persisted Episode binding differs from commit receipt")
+            return receipt
