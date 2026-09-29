@@ -479,6 +479,17 @@ def _annotation_revision_files(annotation, connection_factory, object_storage):
     )
 
 
+def _annotation_deliveries(annotation, connection_factory, object_storage, packages):
+    from hc_data_platform.annotation.delivery import AnnotationDeliveryService
+    from hc_data_platform.annotation.delivery_repository import PostgresAnnotationDeliveries
+
+    return AnnotationDeliveryService(
+        _annotation_revision_files(annotation, connection_factory, object_storage),
+        packages,
+        PostgresAnnotationDeliveries(connection_factory),
+    )
+
+
 class PublicationReconciler:
     def __init__(self, publisher: DatasetPublisher) -> None:
         self._publisher = publisher
@@ -527,6 +538,7 @@ class RuntimeComponents:
     activities: ActivityDependencies
     episode_packages: Any = None
     annotation_revision_files: Any = None
+    annotation_deliveries: Any = None
 
 
 @dataclass(frozen=True)
@@ -963,7 +975,8 @@ def build_runtime(
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
     dataset_ingest_projection = PostgresDatasetIngestProjector(
-        connection_factory, native_manifest_parser=ObjectStorageManifestParser(object_storage),
+        connection_factory,
+        native_manifest_parser=ObjectStorageManifestParser(object_storage),
         episode_packages=episode_packages,
     )
     from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
@@ -1046,6 +1059,9 @@ def build_runtime(
         annotation_revision_files=_annotation_revision_files(
             annotation, connection_factory, object_storage
         ),
+        annotation_deliveries=_annotation_deliveries(
+            annotation, connection_factory, object_storage, episode_packages
+        ),
         audit_projection=audit_projection,
         audit_governance=audit_governance,
         dashboard=dashboard,
@@ -1111,6 +1127,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
         runtime.annotation,
         auto_jobs=runtime.auto_annotation_jobs,
         revision_files=runtime.annotation_revision_files,
+        deliveries=runtime.annotation_deliveries,
     )
     configure_verification_repository(runtime.verification_repository)
     configure_quality_repository(runtime.quality_repository)
@@ -1130,13 +1147,19 @@ def configure_api(runtime: RuntimeComponents) -> None:
 
 
 def _episode_packages(
-    connection_factory, object_storage, settings, legacy_catalog, media_repository,
-    *, preview_signer=None,
+    connection_factory,
+    object_storage,
+    settings,
+    legacy_catalog,
+    media_repository,
+    *,
+    preview_signer=None,
 ):
     from hc_data_platform.episode_store.service import EpisodePackageService
 
     return EpisodePackageService(
-        connection_factory, object_storage,
+        connection_factory,
+        object_storage,
         Path(settings.alignment_staging_root) / "episode-packages",
         cache_bytes=settings.episode_package_cache_bytes,
         max_object_bytes=settings.episode_package_max_object_bytes,
@@ -1371,6 +1394,7 @@ def build_worker_outbox(
         sampling_repository=PostgresAutoAnnotationSamplingRepository(connection_factory),
         require_sampling_manifest=True,
     )
+    from hc_data_platform.annotation.delivery import AnnotationDeliveryOutboxHandler
     from hc_data_platform.annotation.revision_files import AnnotationRevisionFileOutboxHandler
     from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
     from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
@@ -1382,11 +1406,14 @@ def build_worker_outbox(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
             RecordingOutboxHandler.EVENT_TYPE: RecordingOutboxHandler(
-                connection_factory, object_storage, temporal_client,
+                connection_factory,
+                object_storage,
+                temporal_client,
                 robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
             ),
             EVENT_TYPE: RobotProcessingOutboxHandler(
-                temporal_client, ProcessingStore(connection_factory),
+                temporal_client,
+                ProcessingStore(connection_factory),
                 task_queue=robot_task_queue(
                     os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)
                 ),
@@ -1404,6 +1431,14 @@ def build_worker_outbox(
             ),
             AnnotationRevisionFileOutboxHandler.EVENT_TYPE: AnnotationRevisionFileOutboxHandler(
                 _annotation_revision_files(annotation, connection_factory, object_storage)
+            ),
+            AnnotationDeliveryOutboxHandler.EVENT_TYPE: AnnotationDeliveryOutboxHandler(
+                _annotation_deliveries(
+                    annotation,
+                    connection_factory,
+                    object_storage,
+                    _episode_packages(connection_factory, object_storage, resolved, catalog, None),
+                )
             ),
         },
         worker_id=f"hc-outbox-{socket.gethostname()}",

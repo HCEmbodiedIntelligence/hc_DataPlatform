@@ -7,7 +7,6 @@ file first and queue this work; this module does not grant access or publish REA
 
 import hashlib
 import json
-import shutil
 from bisect import bisect_right
 from pathlib import Path
 from typing import Literal
@@ -60,7 +59,9 @@ class AnnotatedDeliveryManifest(FrozenModel):
         return self
 
 
-def write_annotated_delivery(root, package, annotation_file, track):
+def write_annotated_delivery(
+    root, package, annotation_file, track, *, checkpoint=lambda: None, review_document=None
+):
     data, body = package.receipt.data, annotation_file.content
     if hashlib.sha256(body).hexdigest() != annotation_file.file.content_sha256:
         raise ValueError("annotation file differs from its authorized receipt")
@@ -91,6 +92,7 @@ def write_annotated_delivery(root, package, annotation_file, track):
         "hc/parent_manifest.json",
         "hc/parent_commit.json",
         "hc/delivery_manifest.json",
+        "hc/annotation-review.json",
     }
     if reserved.intersection(entry.path for entry in package.manifest.files):
         raise ValueError("parent package already contains an annotation delivery extension")
@@ -100,12 +102,19 @@ def write_annotated_delivery(root, package, annotation_file, track):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=False)
     for entry in package.manifest.files:
+        checkpoint()
         if entry.path in {DATA_PATH, "meta/info.json", "meta/stats.json", EPISODES_PATH}:
             continue
         target = root / entry.path
         target.parent.mkdir(parents=True, exist_ok=True)
-        with package.file(entry.path) as source:
-            shutil.copyfile(source, target)
+        with (
+            package.file(entry.path) as source,
+            source.open("rb") as input_file,
+            target.open("xb") as output_file,
+        ):
+            for chunk in iter(lambda: input_file.read(1024**2), b""):
+                checkpoint()
+                output_file.write(chunk)
         if target.stat().st_size != entry.size or file_hash(target) != entry.sha256:
             raise ValueError("copied package member differs from its parent receipt")
     (root / DATA_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +160,7 @@ def write_annotated_delivery(root, package, annotation_file, track):
             ) as mapping,
         ):
             for batch in parquet.iter_batches(batch_size=1024):
+                checkpoint()
                 frames = batch.column("frame_index").to_pylist()
                 if frames != list(range(offset, offset + len(frames))):
                     raise ValueError("parent frame indexes are incomplete or unordered")
@@ -200,6 +210,8 @@ def write_annotated_delivery(root, package, annotation_file, track):
     )
     info["hc.annotation_delivery"] = {"format": PROCESSOR, "manifest": "hc/delivery_manifest.json"}
     (root / "hc/annotation.json").write_bytes(body)
+    if review_document is not None:
+        write_json(root, "hc/annotation-review.json", review_document)
     (root / "hc/subtasks.jsonl").write_bytes(
         b"".join(canonical(row) + b"\n" for row in projection.rows())
     )

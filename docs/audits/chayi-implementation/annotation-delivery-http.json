@@ -1,0 +1,69 @@
+{
+  "synthetic_input": true,
+  "real_gateway_login_api_worker_minio": true,
+  "browser_verified": false,
+  "job": {
+    "job_id": "ad_9d3f9a3d34e3bc776a8caf40d0b6c52f76f6248b0057cf809e20ed9b13627a36",
+    "plan": {
+      "format": "hc-annotation-delivery-plan/1",
+      "binding": {
+        "data": {
+          "identity": {
+            "organization_id": "bundle-2402229d37c141f9a3cfd5dfe95bcecb",
+            "project_id": "writer-project",
+            "region_code": "writer-region",
+            "dataset_id": "writer-dataset",
+            "episode_id": "writer-episode",
+            "rollout_id": "explicit:writer-rollout"
+          },
+          "data_version_id": "dv_7145c3738181d71396b87d6d8f93b2daa432409119eddd34c0d64e8fef128968",
+          "version": 1,
+          "content_hash": "45f8804c5bef152398a38dddb15d8598bfe0c36ba63b477d9e54fd47165bc320",
+          "storage_format": "lerobot_v3",
+          "schema_snapshot_id": "schema-1",
+          "package_prefix": "episodes/id-bundle-2402229d37c141f9a3cfd5dfe95bcecb/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_7145c3738181d71396b87d6d8f93b2daa432409119eddd34c0d64e8fef128968",
+          "frame_count": 4
+        },
+        "task_id": "3a6ddcc5-05a9-532d-b740-6ff9d2d5b748",
+        "revision": 1,
+        "revision_content_hash": "60df5fc237509c021f741007ee54b4c5ef24bde7628c7a27a492cb21a6766da9",
+        "annotation_file_sha256": "21ea6ab2a323bd4b3c406be21477a274b0ad378be89736e37230f88ceadb5e0e",
+        "track": {
+          "format": "hc-subtask-track/1",
+          "track_id": "task-segments",
+          "label": "\u4efb\u52a1\u5206\u6bb5",
+          "annotation_ids": [
+            "parent"
+          ]
+        }
+      },
+      "annotation_size": 3803,
+      "review": {
+        "status": "UNREVIEWED",
+        "review_id": null,
+        "submission_id": null
+      },
+      "approval": null,
+      "submission": null,
+      "parent_manifest_sha256": "45f8804c5bef152398a38dddb15d8598bfe0c36ba63b477d9e54fd47165bc320",
+      "processor_version": "hc-annotated-delivery-queue/1",
+      "reader_version": "lerobot/0.6.1",
+      "archive_format": "independent_episode_zip/1",
+      "includes_collected_depth": true
+    },
+    "status": "READY",
+    "phase": "completed",
+    "generation": 1,
+    "attempts": 1,
+    "artifact_sha256": "dbe2cd7385d3de141a2c7f2b40e3b89037ecae7df7502cd2d41f3c47676b0f06",
+    "size_bytes": 135361,
+    "manifest_sha256": "8d446da673a18998449f477d38a6db61314d94f1c4b0397f1353ceb837b8dd94",
+    "error_code": null,
+    "created_at": "2026-09-29T11:15:11.355276Z",
+    "updated_at": "2026-09-29T11:15:12.872444Z"
+  },
+  "archive_hash_verified": true,
+  "all_members_verified": true,
+  "http_range": true,
+  "new_grant_denied_after_capability_revocation": true
+}

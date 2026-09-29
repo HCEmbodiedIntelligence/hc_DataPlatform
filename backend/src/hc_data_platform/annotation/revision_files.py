@@ -318,6 +318,8 @@ class RevisionFileDownload:
     approved: bool
     review_id: str | None
     submission_id: str | None
+    # Internal locator, never serialized in public responses or supplied by a client.
+    object_key: str | None = None
 
 
 class AnnotationRevisionFileService:
@@ -475,7 +477,7 @@ class AnnotationRevisionFileService:
             "submission_id": submission.submission_id if approved else None,
         }
         self.repository.audit_download(row, auth.subject_id, details)
-        return RevisionFileDownload(body, _public(row), **details)
+        return RevisionFileDownload(body, _public(row), **details, object_key=row["object_key"])
 
 
 class AnnotationRevisionFileOutboxHandler:

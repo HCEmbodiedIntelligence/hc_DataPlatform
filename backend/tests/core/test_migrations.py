@@ -188,6 +188,21 @@ EXPECTED_MANIFEST = (
     "ingest/015_stored_source_processing.sql",
     "ingest/016_episode_resolutions.sql",
     "ingest/017_robot_processing.sql",
+    "episode_store/0001_episode_packages.sql",
+    "episode_store/0002_commit_pointer_guard.sql",
+    "episode_store/0003_collection_publication.sql",
+    "episode_store/0004_dataset_schemas.sql",
+    "episode_store/0005_media_previews.sql",
+    "episode_store/0006_native_ready_binding.sql",
+    "episode_store/0007_native_ready_guard.sql",
+    "episode_store/0008_robot_package_samples.sql",
+    "annotation/0013_episode_data_bindings.sql",
+    "annotation/0014_binding_scope_and_identity.sql",
+    "annotation/0015_revision_snapshot_files.sql",
+    "annotation/0016_revision_file_content_guards.sql",
+    "episode_store/0009_continuous_ready_binding.sql",
+    "episode_store/0010_continuous_ready_document.sql",
+    "annotation/0017_annotation_deliveries.sql",
 )
 
 

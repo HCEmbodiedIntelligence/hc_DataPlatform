@@ -1,0 +1,24 @@
+{
+  "source": "/app/.g1-artifacts/annotation-delivery-live/ad_0c5b20c72eb7658e5fc0a63ef95db68a9f76d81c5c105a286bba4987893d63fa/episode",
+  "synthetic_input": true,
+  "lerobot": "0.6.1",
+  "official_reader_and_dataloader": true,
+  "independent_hc_masks_applied": true,
+  "frames": 4,
+  "segments": 1,
+  "all_tags": 2,
+  "invalid_pixels_masked": 4,
+  "media_and_depth_evidence_byte_reused": 6,
+  "depth_streams": 1,
+  "base_data_version": "dv_775f5488c43be9a25cfe29cb14afb61f2438f8ddb1d0caeefdc5dc24d72cd468",
+  "revision": 1,
+  "review": {
+    "review_id": null,
+    "status": "UNREVIEWED",
+    "submission_id": null
+  },
+  "network": "disabled by reader container",
+  "platform_imported": false,
+  "queue_api_browser_verified": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

@@ -1,0 +1,156 @@
+{
+  "job_id": "ad_878f36e9da1a8d548e17b490e3f538ac635826ec855c6718669d68350d0c2583",
+  "plan": {
+    "format": "hc-annotation-delivery-plan/1",
+    "binding": {
+      "data": {
+        "identity": {
+          "organization_id": "bundle-0d40dc06499b4e6481b4a87d243d3900",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_2a56910d1072b577703538585e9672a105d552e9446eb5c40a3094c783b74e3c",
+        "version": 1,
+        "content_hash": "1d1098df7ba5fe56a25790a8cc6f4138a9d019496b68a0ff01fe2b84d4c5aaad",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-0d40dc06499b4e6481b4a87d243d3900/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_2a56910d1072b577703538585e9672a105d552e9446eb5c40a3094c783b74e3c",
+        "frame_count": 4
+      },
+      "task_id": "9cfa2aba-878f-57f0-ad45-131d7dd271d0",
+      "revision": 1,
+      "revision_content_hash": "15566fff5303234d9f8af1f1bfb514cfbc50c69cc8e05c7ed9db311e57d59287",
+      "annotation_file_sha256": "ac61c36d1a6e546550490f33efde7e1b43b9791a50a12356e252a90f07aabe08",
+      "track": {
+        "format": "hc-subtask-track/1",
+        "track_id": "task-segments",
+        "label": "任务分段",
+        "annotation_ids": [
+          "parent"
+        ]
+      }
+    },
+    "annotation_size": 3803,
+    "review": {
+      "status": "APPROVED",
+      "review_id": "521ed2f9-d77b-42cc-a20d-3140d98da244",
+      "submission_id": "d6a97200-109a-43a3-9165-183467e1a2e3"
+    },
+    "approval": {
+      "schema_version": "1",
+      "data_ref": {
+        "identity": {
+          "organization_id": "bundle-0d40dc06499b4e6481b4a87d243d3900",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_2a56910d1072b577703538585e9672a105d552e9446eb5c40a3094c783b74e3c",
+        "version": 1,
+        "content_hash": "1d1098df7ba5fe56a25790a8cc6f4138a9d019496b68a0ff01fe2b84d4c5aaad",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-0d40dc06499b4e6481b4a87d243d3900/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_2a56910d1072b577703538585e9672a105d552e9446eb5c40a3094c783b74e3c",
+        "frame_count": 4
+      },
+      "review_id": "521ed2f9-d77b-42cc-a20d-3140d98da244",
+      "submission_id": "d6a97200-109a-43a3-9165-183467e1a2e3",
+      "task_id": "9cfa2aba-878f-57f0-ad45-131d7dd271d0",
+      "revision": 1,
+      "reviewer_id": "reviewer",
+      "decision": "APPROVE",
+      "checked_kinds": [
+        "HIERARCHY",
+        "BOUNDARY",
+        "REQUIRED_ATTRIBUTES",
+        "MUTUAL_EXCLUSION",
+        "OBJECT_RELATIONS",
+        "SCHEMA_VERSION"
+      ],
+      "comment": "",
+      "created_at": "2026-09-29T11:07:25.188407Z"
+    },
+    "submission": {
+      "base_lance_version": null,
+      "data_ref": {
+        "identity": {
+          "organization_id": "bundle-0d40dc06499b4e6481b4a87d243d3900",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_2a56910d1072b577703538585e9672a105d552e9446eb5c40a3094c783b74e3c",
+        "version": 1,
+        "content_hash": "1d1098df7ba5fe56a25790a8cc6f4138a9d019496b68a0ff01fe2b84d4c5aaad",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-0d40dc06499b4e6481b4a87d243d3900/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_2a56910d1072b577703538585e9672a105d552e9446eb5c40a3094c783b74e3c",
+        "frame_count": 4
+      },
+      "submission_id": "d6a97200-109a-43a3-9165-183467e1a2e3",
+      "task_id": "9cfa2aba-878f-57f0-ad45-131d7dd271d0",
+      "episode_version": 1,
+      "revision": 1,
+      "submitted_by": "editor",
+      "tag_schema_id": "7a978942-f2d9-46f2-aa2b-b8e75d9838f6",
+      "tag_schema_version": 1,
+      "tag_schema_hash": "a813620428b0a8535e6788f2f0e5e5a04b6e8540c3b428b9a5690926e436b144",
+      "revision_content_hash": "15566fff5303234d9f8af1f1bfb514cfbc50c69cc8e05c7ed9db311e57d59287",
+      "checks": [
+        {
+          "kind": "HIERARCHY",
+          "status": "PASS",
+          "evidence": "2 Tag paths are valid; 2 manually named intervals use independent time ranges"
+        },
+        {
+          "kind": "BOUNDARY",
+          "status": "PASS",
+          "evidence": "all intervals are valid inside 4 steps"
+        },
+        {
+          "kind": "REQUIRED_ATTRIBUTES",
+          "status": "PASS",
+          "evidence": "required and typed attributes are satisfied"
+        },
+        {
+          "kind": "MUTUAL_EXCLUSION",
+          "status": "PASS",
+          "evidence": "no mutually exclusive Tags overlap"
+        },
+        {
+          "kind": "OBJECT_RELATIONS",
+          "status": "PASS",
+          "evidence": "object relation constraints are satisfied"
+        },
+        {
+          "kind": "SCHEMA_VERSION",
+          "status": "PASS",
+          "evidence": "7a978942-f2d9-46f2-aa2b-b8e75d9838f6@1 is published as a813620428b0a8535e6788f2f0e5e5a04b6e8540c3b428b9a5690926e436b144"
+        }
+      ],
+      "created_at": "2026-09-29T11:07:25.133451Z"
+    },
+    "parent_manifest_sha256": "1d1098df7ba5fe56a25790a8cc6f4138a9d019496b68a0ff01fe2b84d4c5aaad",
+    "processor_version": "hc-annotated-delivery-queue/1",
+    "reader_version": "lerobot/0.6.1",
+    "archive_format": "independent_episode_zip/1",
+    "includes_collected_depth": true
+  },
+  "status": "READY",
+  "phase": "completed",
+  "generation": 1,
+  "attempts": 1,
+  "artifact_sha256": "ffcb61e244823a4be1d9f7b215c470ba9816a48eaae733a6eff2f427d160496c",
+  "size_bytes": 138610,
+  "manifest_sha256": "9dd4e6ee6ee6df4d1893974f49253ce2c6b6fef38ba29c2449a4cbbabc083987",
+  "error_code": null,
+  "created_at": "2026-09-29T11:07:25.311086Z",
+  "updated_at": "2026-09-29T11:07:25.839101Z"
+}

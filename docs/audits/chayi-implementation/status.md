@@ -44,6 +44,13 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W3/W5 下载任务补充（2026-09-29）：接通固定修订/轨道/审核的 RGB-D 派生包、
+  事务 outbox、租约、幂等、取消/重试、校验缓存、授权 API 与 P08 入口。后端 49 项、
+  前端 23 项通过，追加真实登录/网关/下载/撤权 1 项通过；常驻 worker 实际完成下载任务，两份输出断网通过官方 reader /
+  DataLoader 并独立应用 HC 掩码。隔离迁移 144/144。见
+  [任务层证据与未完成项](annotation-delivery.md)。输入为合成故障夹具，真实账号
+  浏览器/真人条件、Tag 新 Episode 身份、统一详情/通用完整包缓存、批量及 W7 仍需
+  继续；17 项 P0 保持 Pending。以下“交付队列/API/UI 尚未接通”为早期生成层状态。
 - W3/W6 生成层补充（2026-09-29）：显式标签集合定义导出分段轨道，冻结数据/修订
   与文件哈希；不改旧标注模型/审核哈希。分段列、完整标注及全 RGB-D 派生包生成层
   13 项测试通过，断网官方 reader/DataLoader 和独立 HC 掩码通过。见

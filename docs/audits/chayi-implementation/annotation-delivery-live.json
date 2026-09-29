@@ -1,0 +1,84 @@
+{
+  "synthetic_input": true,
+  "execution": "unmodified isolated outbox daemon",
+  "job": {
+    "job_id": "ad_0c5b20c72eb7658e5fc0a63ef95db68a9f76d81c5c105a286bba4987893d63fa",
+    "plan": {
+      "format": "hc-annotation-delivery-plan/1",
+      "binding": {
+        "data": {
+          "identity": {
+            "organization_id": "bundle-939265ea07a843149fd8aa61faf7c4b5",
+            "project_id": "writer-project",
+            "region_code": "writer-region",
+            "dataset_id": "writer-dataset",
+            "episode_id": "writer-episode",
+            "rollout_id": "explicit:writer-rollout"
+          },
+          "data_version_id": "dv_775f5488c43be9a25cfe29cb14afb61f2438f8ddb1d0caeefdc5dc24d72cd468",
+          "version": 1,
+          "content_hash": "9fa077f24d6185acfd3cc30f350e9fefbdcb04a7d49d4ed29bc4fe69628b3c58",
+          "storage_format": "lerobot_v3",
+          "schema_snapshot_id": "schema-1",
+          "package_prefix": "episodes/id-bundle-939265ea07a843149fd8aa61faf7c4b5/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_775f5488c43be9a25cfe29cb14afb61f2438f8ddb1d0caeefdc5dc24d72cd468",
+          "frame_count": 4
+        },
+        "task_id": "f3f47862-48db-54f3-8d20-fdc8a81d22a5",
+        "revision": 1,
+        "revision_content_hash": "e1ecf2e73bee4c991857fed59a732c03ff20849b768ca7f8972033eb6ba6d5d4",
+        "annotation_file_sha256": "98b5702dc7ad9e0224494fae80d1f23ba619b1b2bebad0fccc2a6ba697d5f1fb",
+        "track": {
+          "format": "hc-subtask-track/1",
+          "track_id": "task-segments",
+          "label": "\u4efb\u52a1\u5206\u6bb5",
+          "annotation_ids": [
+            "parent"
+          ]
+        }
+      },
+      "annotation_size": 3803,
+      "review": {
+        "status": "UNREVIEWED",
+        "review_id": null,
+        "submission_id": null
+      },
+      "approval": null,
+      "submission": null,
+      "parent_manifest_sha256": "9fa077f24d6185acfd3cc30f350e9fefbdcb04a7d49d4ed29bc4fe69628b3c58",
+      "processor_version": "hc-annotated-delivery-queue/1",
+      "reader_version": "lerobot/0.6.1",
+      "archive_format": "independent_episode_zip/1",
+      "includes_collected_depth": true
+    },
+    "status": "READY",
+    "phase": "completed",
+    "generation": 1,
+    "attempts": 1,
+    "artifact_sha256": "af9daae1af114676d90b834354e376f8969c7434701203b10a17e3daa25963b8",
+    "size_bytes": 135361,
+    "manifest_sha256": "6cdbe1969bb4d85c557c510b63dc887be96d5dad5f8b9eb93c964a07244ea95a",
+    "error_code": null,
+    "created_at": "2026-09-29T11:08:46.791191Z",
+    "updated_at": "2026-09-29T11:09:34.753265Z"
+  },
+  "outbox_published_at": "2026-09-29T11:09:34.569637+00:00",
+  "outbox": {
+    "payload": {
+      "job_id": "ad_0c5b20c72eb7658e5fc0a63ef95db68a9f76d81c5c105a286bba4987893d63fa",
+      "task_id": "f3f47862-48db-54f3-8d20-fdc8a81d22a5",
+      "generation": 1
+    },
+    "event_id": "98593887-1dba-b5d1-d181-314fa25eddd2",
+    "event_type": "annotation.delivery.requested.v1",
+    "project_id": "writer-project",
+    "occurred_at": "2026-09-29T11:08:46.792649+00:00",
+    "region_code": "writer-region",
+    "aggregate_id": "ad_0c5b20c72eb7658e5fc0a63ef95db68a9f76d81c5c105a286bba4987893d63fa",
+    "aggregate_type": "annotation_delivery",
+    "schema_version": 1,
+    "organization_id": "bundle-939265ea07a843149fd8aa61faf7c4b5"
+  },
+  "archive_hash_verified": true,
+  "http_browser_verified": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

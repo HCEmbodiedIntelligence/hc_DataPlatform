@@ -151,6 +151,168 @@ components:
       - updated_at
       title: AnnotationCurrent
       type: object
+    AnnotationDeliveryDownload:
+      additionalProperties: false
+      properties:
+        artifact_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Artifact Sha256
+          type: string
+        expires_seconds:
+          const: 300
+          default: 300
+          title: Expires Seconds
+          type: integer
+        job_id:
+          title: Job Id
+          type: string
+        size_bytes:
+          title: Size Bytes
+          type: integer
+        url:
+          title: Url
+          type: string
+      required:
+      - job_id
+      - artifact_sha256
+      - size_bytes
+      - url
+      title: AnnotationDeliveryDownload
+      type: object
+    AnnotationDeliveryJob:
+      additionalProperties: false
+      properties:
+        artifact_sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Artifact Sha256
+        attempts:
+          minimum: 0.0
+          title: Attempts
+          type: integer
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        generation:
+          minimum: 1.0
+          title: Generation
+          type: integer
+        job_id:
+          title: Job Id
+          type: string
+        manifest_sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Manifest Sha256
+        phase:
+          enum:
+          - queued
+          - verifying
+          - projecting
+          - archiving
+          - uploading
+          - completed
+          - failed
+          - cancelled
+          title: Phase
+          type: string
+        plan:
+          $ref: '#/components/schemas/AnnotationDeliveryPlan'
+        size_bytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size Bytes
+        status:
+          enum:
+          - PENDING
+          - RUNNING
+          - READY
+          - FAILED
+          - CANCELLED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - job_id
+      - plan
+      - status
+      - phase
+      - generation
+      - attempts
+      - created_at
+      - updated_at
+      title: AnnotationDeliveryJob
+      type: object
+    AnnotationDeliveryPlan:
+      additionalProperties: false
+      properties:
+        annotation_size:
+          exclusiveMinimum: 0.0
+          maximum: 67108864.0
+          title: Annotation Size
+          type: integer
+        approval:
+          anyOf:
+          - $ref: '#/components/schemas/AnnotationReview'
+          - type: 'null'
+        archive_format:
+          const: independent_episode_zip/1
+          default: independent_episode_zip/1
+          title: Archive Format
+          type: string
+        binding:
+          $ref: '#/components/schemas/SubtaskBinding'
+        format:
+          const: hc-annotation-delivery-plan/1
+          default: hc-annotation-delivery-plan/1
+          title: Format
+          type: string
+        includes_collected_depth:
+          const: true
+          default: true
+          title: Includes Collected Depth
+          type: boolean
+        parent_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Parent Manifest Sha256
+          type: string
+        processor_version:
+          const: hc-annotated-delivery-queue/1
+          default: hc-annotated-delivery-queue/1
+          title: Processor Version
+          type: string
+        reader_version:
+          const: lerobot/0.6.1
+          default: lerobot/0.6.1
+          title: Reader Version
+          type: string
+        review:
+          $ref: '#/components/schemas/ReviewReference'
+        submission:
+          anyOf:
+          - $ref: '#/components/schemas/AnnotationSubmission'
+          - type: 'null'
+      required:
+      - binding
+      - annotation_size
+      - review
+      - parent_manifest_sha256
+      title: AnnotationDeliveryPlan
+      type: object
     AnnotationDraft:
       description: Current editable read model backed by an immutable revision.
       properties:
@@ -1368,6 +1530,17 @@ components:
       - document
       title: CreateTagSchemaVersionRequest
       type: object
+    DeliveryGeneration:
+      additionalProperties: false
+      properties:
+        expected_generation:
+          minimum: 1.0
+          title: Expected Generation
+          type: integer
+      required:
+      - expected_generation
+      title: DeliveryGeneration
+      type: object
     ExclusionRange:
       description: Normalized half-open range that applies to every synchronized modality.
       properties:
@@ -1451,6 +1624,25 @@ components:
       - RESTORE
       title: OperationKind
       type: string
+    RequestAnnotationDelivery:
+      additionalProperties: false
+      properties:
+        allow_unreviewed:
+          default: false
+          title: Allow Unreviewed
+          type: boolean
+        revision:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Revision
+        track:
+          $ref: '#/components/schemas/SubtaskTrack'
+      required:
+      - track
+      title: RequestAnnotationDelivery
+      type: object
     RequestRevisionFile:
       additionalProperties: false
       properties:
@@ -1506,6 +1698,29 @@ components:
       - REJECT
       title: ReviewDecision
       type: string
+    ReviewReference:
+      additionalProperties: false
+      properties:
+        review_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Review Id
+        status:
+          enum:
+          - APPROVED
+          - UNREVIEWED
+          title: Status
+          type: string
+        submission_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Submission Id
+      required:
+      - status
+      title: ReviewReference
+      type: object
     ReviewRequest:
       additionalProperties: false
       properties:
@@ -1577,6 +1792,70 @@ components:
       required:
       - expected_revision
       title: SubmitRequest
+      type: object
+    SubtaskBinding:
+      additionalProperties: false
+      properties:
+        annotation_file_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Annotation File Sha256
+          type: string
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        revision_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Revision Content Hash
+          type: string
+        task_id:
+          minLength: 1
+          title: Task Id
+          type: string
+        track:
+          $ref: '#/components/schemas/SubtaskTrack'
+      required:
+      - data
+      - task_id
+      - revision
+      - revision_content_hash
+      - annotation_file_sha256
+      - track
+      title: SubtaskBinding
+      type: object
+    SubtaskTrack:
+      additionalProperties: false
+      description: User-selected members of one exported track in one frozen revision.
+      properties:
+        annotation_ids:
+          items:
+            type: string
+          maxItems: 10000
+          minItems: 1
+          title: Annotation Ids
+          type: array
+        format:
+          const: hc-subtask-track/1
+          default: hc-subtask-track/1
+          title: Format
+          type: string
+        label:
+          maxLength: 256
+          minLength: 1
+          title: Label
+          type: string
+        track_id:
+          maxLength: 256
+          minLength: 1
+          title: Track Id
+          type: string
+      required:
+      - track_id
+      - label
+      - annotation_ids
+      title: SubtaskTrack
       type: object
     TagAttributeDefinition:
       properties:
@@ -1868,7 +2147,7 @@ paths:
         Later review records never rewrite these bytes. Response headers identify revision,
 
         current approval/submission (when applicable), and the verified content SHA-256.'
-      operationId: downloadRevisionFile
+      operationId: download_revision_file_api_v1_annotation_tasks__task_id__annotation_file_get
       parameters:
       - in: path
         name: task_id
@@ -1901,43 +2180,41 @@ paths:
           description: Successful Response
         '401':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Verified authentication required
         '403':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Organization/project/region or action capability denied
         '404':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Task or immutable revision unavailable in the selected scope
         '409':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: File not ready, integrity mismatch, generation conflict or explicit review selection
             required
         '422':
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
         '503':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: File service or object store unavailable
-      security:
-      - bearerAuth: []
       summary: Download Revision File
       tags:
       - annotation
@@ -2172,6 +2449,432 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Annotation Current
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/deliveries:
+    get:
+      description: Read persisted jobs, newest first. Pass the last job_id as before for the next page.
+      operationId: list_annotation_deliveries_api_v1_annotation_tasks__task_id__deliveries_get
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^ad_[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Before
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AnnotationDeliveryJob'
+                title: Response List Annotation Deliveries Api V1 Annotation Tasks  Task Id  Deliveries
+                  Get
+                type: array
+          description: Successful Response
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified authentication required
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Organization/project/region or action capability denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Task or immutable revision unavailable in the selected scope
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Invalid track selection; overlap errors identify annotation IDs
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File service or object store unavailable
+      summary: List Annotation Deliveries
+      tags:
+      - annotation
+    post:
+      description: 'Queue one complete RGB-D package with an explicit subtask track.
+
+
+        Defaults to the currently approved immutable revision. A draft requires both
+
+        revision and allow_unreviewed=true. Media is byte-copied, without requantizing.
+
+        Reusing an idempotency key returns the original frozen selection.'
+      operationId: request_annotation_delivery_api_v1_annotation_tasks__task_id__deliveries_post
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestAnnotationDelivery'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationDeliveryJob'
+          description: Successful Response
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified authentication required
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Organization/project/region or action capability denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Task or immutable revision unavailable in the selected scope
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Invalid track selection; overlap errors identify annotation IDs
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File service or object store unavailable
+      summary: Request Annotation Delivery
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}:
+    get:
+      operationId: get_annotation_delivery_api_v1_annotation_tasks__task_id__deliveries__job_id__get
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationDeliveryJob'
+          description: Successful Response
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified authentication required
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Organization/project/region or action capability denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Task or immutable revision unavailable in the selected scope
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Invalid track selection; overlap errors identify annotation IDs
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File service or object store unavailable
+      summary: Get Annotation Delivery
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}/cancel:
+    post:
+      description: Fence the active worker immediately. Existing source/artifact objects are retained.
+      operationId: cancel_annotation_delivery_api_v1_annotation_tasks__task_id__deliveries__job_id__cancel_post
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryGeneration'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationDeliveryJob'
+          description: Successful Response
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified authentication required
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Organization/project/region or action capability denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Task or immutable revision unavailable in the selected scope
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Invalid track selection; overlap errors identify annotation IDs
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File service or object store unavailable
+      summary: Cancel Annotation Delivery
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}/download:
+    post:
+      description: Reauthorize task ownership and verify the cached archive before issuing a 5-minute
+        grant.
+      operationId: download_annotation_delivery_api_v1_annotation_tasks__task_id__deliveries__job_id__download_post
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationDeliveryDownload'
+          description: Successful Response
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified authentication required
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Organization/project/region or action capability denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Task or immutable revision unavailable in the selected scope
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Invalid track selection; overlap errors identify annotation IDs
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File service or object store unavailable
+      summary: Download Annotation Delivery
+      tags:
+      - annotation
+  /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}/retry:
+    post:
+      description: Retry the same frozen data/revision/track. Never creates an annotation revision.
+      operationId: retry_annotation_delivery_api_v1_annotation_tasks__task_id__deliveries__job_id__retry_post
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryGeneration'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationDeliveryJob'
+          description: Successful Response
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Verified authentication required
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Organization/project/region or action capability denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Task or immutable revision unavailable in the selected scope
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Invalid track selection; overlap errors identify annotation IDs
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: File service or object store unavailable
+      summary: Retry Annotation Delivery
       tags:
       - annotation
   /api/v1/annotation-tasks/{task_id}/draft:
@@ -2435,7 +3138,7 @@ paths:
   /api/v1/annotation-tasks/{task_id}/revisions/{revision}/file:
     get:
       description: Read generation state for one saved revision without creating a job or file.
-      operationId: revisionFileStatus
+      operationId: revision_file_status_api_v1_annotation_tasks__task_id__revisions__revision__file_get
       parameters:
       - in: path
         name: task_id
@@ -2458,49 +3161,47 @@ paths:
           description: Successful Response
         '401':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Verified authentication required
         '403':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Organization/project/region or action capability denied
         '404':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Task or immutable revision unavailable in the selected scope
         '409':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: File not ready, integrity mismatch, generation conflict or explicit review selection
             required
         '422':
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
         '503':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: File service or object store unavailable
-      security:
-      - bearerAuth: []
       summary: Revision File Status
       tags:
       - annotation
     post:
       description: Request generation/retry using the observed generation; never create a new revision.
-      operationId: requestRevisionFile
+      operationId: request_revision_file_api_v1_annotation_tasks__task_id__revisions__revision__file_post
       parameters:
       - in: path
         name: task_id
@@ -2529,43 +3230,41 @@ paths:
           description: Successful Response
         '401':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Verified authentication required
         '403':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Organization/project/region or action capability denied
         '404':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: Task or immutable revision unavailable in the selected scope
         '409':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: File not ready, integrity mismatch, generation conflict or explicit review selection
             required
         '422':
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
         '503':
           content:
-            application/problem+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: File service or object store unavailable
-      security:
-      - bearerAuth: []
       summary: Request Revision File
       tags:
       - annotation

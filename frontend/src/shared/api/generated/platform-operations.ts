@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: f2404c8f082333c76c7fd64937c795bc34b5a10ea3895c7c9924d2bd25a8e507
+// Runtime-OpenAPI-SHA256: 52ad3422bcf1cda21aa8c311cbb76ed5f17b2d7e9ea83cb0f4aedb16e2a27260
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -24,6 +24,12 @@ export const runtimeOperations = [
   { method: "POST", path: "/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}:retry" },
   { method: "POST", path: "/annotation-tasks/{task_id}/claim" },
   { method: "GET", path: "/annotation-tasks/{task_id}/current" },
+  { method: "GET", path: "/annotation-tasks/{task_id}/deliveries" },
+  { method: "POST", path: "/annotation-tasks/{task_id}/deliveries" },
+  { method: "GET", path: "/annotation-tasks/{task_id}/deliveries/{job_id}" },
+  { method: "POST", path: "/annotation-tasks/{task_id}/deliveries/{job_id}/cancel" },
+  { method: "POST", path: "/annotation-tasks/{task_id}/deliveries/{job_id}/download" },
+  { method: "POST", path: "/annotation-tasks/{task_id}/deliveries/{job_id}/retry" },
   { method: "GET", path: "/annotation-tasks/{task_id}/draft" },
   { method: "GET", path: "/annotation-tasks/{task_id}/exclusions" },
   { method: "GET", path: "/annotation-tasks/{task_id}/history" },

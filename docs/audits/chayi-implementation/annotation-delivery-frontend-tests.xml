@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="23" failures="0" errors="0" time="0.558765021">
+    <testsuite name="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" timestamp="2026-09-29T11:06:10.645Z" hostname="f6a99f7a88e4" tests="5" failures="0" errors="0" skipped="0" time="0.26452827">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="requires an explicit track and unreviewed choice, and keeps media inclusion visible" time="0.126084395">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="rejects overlap only within the chosen track" time="0.047195197">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="retries the frozen generation without creating a new revision" time="0.026343099">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="keeps command buttons disabled without export.create" time="0.013232405">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="keeps the idempotency key after an ambiguous network failure" time="0.050917828">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" timestamp="2026-09-29T11:06:10.646Z" hostname="f6a99f7a88e4" tests="5" failures="0" errors="0" skipped="0" time="0.175915769">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; shows saved revision separately from a failed file and retries that generation" time="0.09366133">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; requires an explicit unreviewed choice and downloads the selected saved revision" time="0.031178269">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; defaults to the current approved revision" time="0.015739148">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; keeps retry and download disabled without their capabilities" time="0.01773915">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; cancels an unfinished download when the panel closes" time="0.016744268">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" timestamp="2026-09-29T11:06:10.651Z" hostname="f6a99f7a88e4" tests="5" failures="0" errors="0" skipped="0" time="0.102252569">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit APPROVE with review permission" time="0.071298923">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit NEEDS_REVISION with review permission" time="0.009239485">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit REJECT with review permission" time="0.008349992">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; keeps self review disabled without review permission" time="0.007973909">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; keeps self review disabled without the submitted snapshot" time="0.004638103">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/annotation-deliveries.test.ts" timestamp="2026-09-29T11:06:10.654Z" hostname="f6a99f7a88e4" tests="8" failures="0" errors="0" skipped="0" time="0.016068413">
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects a mismatched scope" time="0.008869727">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects a mismatched revision" time="0.000600424">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects a mismatched data" time="0.000470041">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects a mismatched ready receipt" time="0.0004649">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects unsafe or mismatched download authorization: javascript:alert(1)" time="0.001150621">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects unsafe or mismatched download authorization: https://user:password@example.test/a" time="0.000729374">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="rejects unsafe or mismatched download authorization: https://example.test/wrong" time="0.000535574">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-deliveries.test.ts" name="reauthorizes one immutable artifact using the current scope" time="0.002252006">
+        </testcase>
+    </testsuite>
+</testsuites>

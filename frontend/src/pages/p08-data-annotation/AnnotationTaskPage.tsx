@@ -20,6 +20,7 @@ import type {
 } from "./AnnotationWorkbenchView";
 import { RuntimeAutoAnnotationPanel } from "./RuntimeAutoAnnotationPanel";
 import { AnnotationRevisionFilesPanel } from "./AnnotationRevisionFilesPanel";
+import { AnnotationDeliveryPanel } from "./AnnotationDeliveryPanel";
 import {
   createRuntimeAnnotationCommands,
   createClientMutationId,
@@ -561,13 +562,25 @@ function RuntimeAnnotationTaskPage({
       key={bundle.task.task_id}
       bundle={bundle}
       revisionFilesPanel={
-        <AnnotationRevisionFilesPanel
-          scope={scope}
-          history={bundle.history}
-          dirty={dirty}
-          canRetry={capabilities.has("annotation.save")}
-          canDownload={capabilities.has("export.download")}
-        />
+        <>
+          <AnnotationRevisionFilesPanel
+            scope={scope}
+            history={bundle.history}
+            dirty={dirty}
+            canRetry={capabilities.has("annotation.save")}
+            canDownload={capabilities.has("export.download")}
+          />
+          {bundle.task.data_ref && (
+            <AnnotationDeliveryPanel
+              key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}/${bundle.task.task_id}`}
+              scope={scope}
+              history={bundle.history}
+              dirty={dirty}
+              canCreate={capabilities.has("export.create")}
+              canDownload={capabilities.has("export.download")}
+            />
+          )}
+        </>
       }
       autoAnnotationPanel={
         mode === "annotation" ? (

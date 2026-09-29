@@ -19,6 +19,13 @@ from .auto_jobs import (
     AutoAnnotationJob,
     AutoAnnotationJobService,
 )
+from .delivery import AnnotationDeliveryService
+from .delivery_models import (
+    AnnotationDeliveryDownload,
+    AnnotationDeliveryJob,
+    DeliveryGeneration,
+    RequestAnnotationDelivery,
+)
 from .models import (
     AnnotationApprovedV1,
     AnnotationCurrent,
@@ -50,6 +57,7 @@ _service: AnnotationService = InMemoryAnnotationService()
 _auto_provider: AutoAnnotationProvider = DisabledAutoAnnotationProvider()
 _auto_jobs: AutoAnnotationJobService | None = None
 _revision_files: AnnotationRevisionFileService | None = None
+_deliveries: AnnotationDeliveryService | None = None
 
 
 def configure_annotation(
@@ -58,14 +66,16 @@ def configure_annotation(
     auto_provider: AutoAnnotationProvider | None = None,
     auto_jobs: AutoAnnotationJobService | None = None,
     revision_files: AnnotationRevisionFileService | None = None,
+    deliveries: AnnotationDeliveryService | None = None,
 ) -> None:
     """Application composition hook for PostgreSQL, BE-02 auth, and feature providers."""
 
-    global _auto_jobs, _auto_provider, _service, _revision_files
+    global _auto_jobs, _auto_provider, _service, _revision_files, _deliveries
     _service = service
     _auto_provider = auto_provider or DisabledAutoAnnotationProvider()
     _auto_jobs = auto_jobs
     _revision_files = revision_files
+    _deliveries = deliveries
 
 
 def get_annotation_service() -> AnnotationService:
@@ -81,6 +91,17 @@ def get_revision_file_service() -> AnnotationRevisionFileService:
             detail="The revision file service is not configured.",
         )
     return _revision_files
+
+
+def get_annotation_delivery_service() -> AnnotationDeliveryService:
+    if _deliveries is None:
+        raise problem(
+            status=503,
+            code="ANNOTATION_DELIVERY_UNAVAILABLE",
+            title="Annotation delivery unavailable",
+            detail="The delivery service is not configured.",
+        )
+    return _deliveries
 
 
 def get_auto_annotation_job_service() -> AutoAnnotationJobService:
@@ -182,6 +203,118 @@ _FILE_ERRORS = {
 class RequestRevisionFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_generation: int = Field(ge=0)
+
+
+DeliveryDependency = Annotated[AnnotationDeliveryService, Depends(get_annotation_delivery_service)]
+_DELIVERY_ERRORS = {
+    **_FILE_ERRORS,
+    422: {
+        "model": ProblemDetails,
+        "description": "Invalid track selection; overlap errors identify annotation IDs",
+    },
+}
+
+
+@router.post(
+    "/annotation-tasks/{task_id}/deliveries",
+    response_model=AnnotationDeliveryJob,
+    responses=_DELIVERY_ERRORS,
+)
+def request_annotation_delivery(
+    task_id: str,
+    body: RequestAnnotationDelivery,
+    service: DeliveryDependency,
+    auth: AuthDependency,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+):
+    """Queue one complete RGB-D package with an explicit subtask track.
+
+    Defaults to the currently approved immutable revision. A draft requires both
+    revision and allow_unreviewed=true. Media is byte-copied, without requantizing.
+    Reusing an idempotency key returns the original frozen selection.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    return service.request(task_id, body, idempotency_key, auth)
+
+
+@router.get(
+    "/annotation-tasks/{task_id}/deliveries",
+    response_model=list[AnnotationDeliveryJob],
+    responses=_DELIVERY_ERRORS,
+)
+def list_annotation_deliveries(
+    task_id: str,
+    service: DeliveryDependency,
+    auth: AuthDependency,
+    response: Response,
+    limit: int = Query(25, ge=1, le=100),
+    before: str | None = Query(None, pattern=r"^ad_[0-9a-f]{64}$"),
+):
+    """Read persisted jobs, newest first. Pass the last job_id as before for the next page."""
+    response.headers["Cache-Control"] = "no-store"
+    return service.list(task_id, auth, limit=limit, before=before)
+
+
+@router.get(
+    "/annotation-tasks/{task_id}/deliveries/{job_id}",
+    response_model=AnnotationDeliveryJob,
+    responses=_DELIVERY_ERRORS,
+)
+def get_annotation_delivery(
+    task_id: str, job_id: str, service: DeliveryDependency, auth: AuthDependency, response: Response
+):
+    response.headers["Cache-Control"] = "no-store"
+    return service.status(task_id, job_id, auth)
+
+
+@router.post(
+    "/annotation-tasks/{task_id}/deliveries/{job_id}/cancel",
+    response_model=AnnotationDeliveryJob,
+    responses=_DELIVERY_ERRORS,
+)
+def cancel_annotation_delivery(
+    task_id: str,
+    job_id: str,
+    body: DeliveryGeneration,
+    service: DeliveryDependency,
+    auth: AuthDependency,
+    response: Response,
+):
+    """Fence the active worker immediately. Existing source/artifact objects are retained."""
+    response.headers["Cache-Control"] = "no-store"
+    return service.command(task_id, job_id, body.expected_generation, auth, retry=False)
+
+
+@router.post(
+    "/annotation-tasks/{task_id}/deliveries/{job_id}/retry",
+    response_model=AnnotationDeliveryJob,
+    responses=_DELIVERY_ERRORS,
+)
+def retry_annotation_delivery(
+    task_id: str,
+    job_id: str,
+    body: DeliveryGeneration,
+    service: DeliveryDependency,
+    auth: AuthDependency,
+    response: Response,
+):
+    """Retry the same frozen data/revision/track. Never creates an annotation revision."""
+    response.headers["Cache-Control"] = "no-store"
+    return service.command(task_id, job_id, body.expected_generation, auth, retry=True)
+
+
+@router.post(
+    "/annotation-tasks/{task_id}/deliveries/{job_id}/download",
+    response_model=AnnotationDeliveryDownload,
+    responses=_DELIVERY_ERRORS,
+)
+def download_annotation_delivery(
+    task_id: str, job_id: str, service: DeliveryDependency, auth: AuthDependency, response: Response
+):
+    """Reauthorize task ownership and verify the cached archive before issuing a 5-minute grant."""
+    response.headers["Cache-Control"] = "no-store"
+    return service.download(task_id, job_id, auth)
 
 
 @router.get(
