@@ -9,6 +9,12 @@ services:
   worker:
     environment:
       HC_TEMPORAL_NAMESPACE: chayi-g1
+  frontend:
+    environment:
+      # This shared development host can exhaust inotify watches. Poll only the
+      # isolated G1 frontend instead of changing host limits or other services.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "1000"
   # Tests use the same dependency image and the executing worktree. No production
   # mounts, host network, device access, or production credentials are inherited.
   test:
@@ -32,6 +38,17 @@ services:
       HC_OBJECT_STORE_BUCKET: hc-data-local
       HC_OBJECT_STORE_ACCESS_KEY: minio
       HC_OBJECT_STORE_SECRET_KEY: minio-local-only
+  frontend-test:
+    profiles: [test]
+    image: hc-offline/frontend:71eaa560
+    pull_policy: never
+    user: "1000:1000"
+    network_mode: none
+    working_dir: /app
+    entrypoint: [pnpm, exec]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
   reader:
     profiles: [test]
     image: openarm-e-backend:integration

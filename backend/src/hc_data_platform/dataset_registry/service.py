@@ -897,7 +897,11 @@ class DatasetPageService:
             rollout_ids = {
                 binding.rollout_id
                 for stream in revision.streams
-                for binding in (stream.aligned_media_binding, stream.data_binding)
+                for binding in (
+                    stream.aligned_media_binding,
+                    stream.data_binding,
+                    stream.package_binding,
+                )
                 if binding is not None
             }
             # Incomplete or ambiguous bindings cannot be offered for export.
@@ -955,7 +959,11 @@ class DatasetPageService:
                 else {
                     binding.rollout_id
                     for stream in revision.streams
-                    for binding in (stream.aligned_media_binding, stream.data_binding)
+                    for binding in (
+                        stream.aligned_media_binding,
+                        stream.data_binding,
+                        stream.package_binding,
+                    )
                     if binding is not None
                 }
             )

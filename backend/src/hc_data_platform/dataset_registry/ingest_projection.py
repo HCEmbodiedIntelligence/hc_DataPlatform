@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from fractions import Fraction
 from typing import Any, Literal
 
 from hc_data_platform.aligned_media.models import (
@@ -15,6 +17,7 @@ from hc_data_platform.aligned_media.models import (
 )
 from hc_data_platform.alignment.models import AlignmentInputV1, ModalityKind
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.episode_store.catalog_models import CollectionVersion, EpisodeDerivedReady
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1
 from hc_data_platform.security.audit import canonical_hash
@@ -33,6 +36,7 @@ from .models import (
     DatasetPageDetailSummary,
     DatasetPageEpisodeAlignedMediaBinding,
     DatasetPageEpisodeDataBinding,
+    DatasetPageEpisodePackageBinding,
     DatasetPageEpisodeRecord,
     DatasetPageEpisodeRevision,
     DatasetPageEpisodeStream,
@@ -72,8 +76,52 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{digest}"
 
 
-def _version_id(version: int) -> str:
-    return f"version_lance_{version}"
+def _version_id(version: int | DatasetVersionRef | CollectionVersion) -> str:
+    if isinstance(version, CollectionVersion):
+        return version.version_id
+    number = version.version if isinstance(version, DatasetVersionRef) else version
+    return f"version_lance_{number}"
+
+
+def _previous_id(version: DatasetVersionRef | CollectionVersion) -> str | None:
+    if isinstance(version, CollectionVersion) and version.previous_collection_version_id:
+        return "version_" + version.previous_collection_version_id
+    return _version_id(version.version - 1) if version.version > 1 else None
+
+
+def _version_token(version: DatasetVersionRef | CollectionVersion) -> str:
+    prefix = "episode-collection" if isinstance(version, CollectionVersion) else "lance-version"
+    return f"{prefix}:{version.storage_commit_id}"
+
+
+def _operational_revision(version):
+    return (
+        _version_token(version)
+        if isinstance(version, CollectionVersion)
+        else f"lance:{version.storage_commit_id}"
+    )
+
+
+def _target(source, version, ready):
+    if isinstance(version, CollectionVersion):
+        return DatasetIngestViewerTarget(
+            dataset_id=ready.dataset_id,
+            version_id=version.version_id,
+            episode_id=ready.data.identity.episode_id,
+            revision_id=_stable_id("revision", ready.data.data_version_id),
+        )
+    return DatasetIngestViewerTarget(
+        dataset_id=ready.dataset_id,
+        version_id=_version_id(ready.dataset_version),
+        episode_id=_stable_id("episode", source.rollout_id),
+        revision_id=_stable_id("revision", source.rollout_id, source.source_sha256),
+    )
+
+
+def _revision_hash(source, version, episode_id):
+    if isinstance(version, CollectionVersion):
+        return next(e.content_hash for e in version.episodes if e.identity.episode_id == episode_id)
+    return source.source_sha256
 
 
 def _numeric_sequence(value: object) -> tuple[float, ...] | None:
@@ -157,10 +205,48 @@ class PostgresDatasetIngestProjector:
     """Publish one all-or-nothing, idempotent Dataset/Version/Episode view."""
 
     def __init__(
-        self, connection_factory: Callable[[], Any], *, native_manifest_parser: Any = None
+        self,
+        connection_factory: Callable[[], Any],
+        *,
+        native_manifest_parser: Any = None,
+        episode_packages: Any = None,
     ) -> None:
         self._connection_factory = connection_factory
         self._native_manifest_parser = native_manifest_parser
+        self._episode_packages = episode_packages
+
+    def _commit_matches(self, source, version, ready):
+        if isinstance(version, CollectionVersion):
+            if not isinstance(ready, EpisodeDerivedReady) or self._episode_packages is None:
+                return False
+            identity = ready.data.identity
+            if (
+                identity.scope != (source.organization_id, source.project_id, source.region_code)
+                or identity.dataset_id != ready.dataset_id
+                or identity.rollout_id != source.rollout_id
+                or ready.data not in version.episodes
+                or ready.collection_version_id != version.collection_version_id
+                or ready.step_count != ready.data.frame_count
+            ):
+                return False
+            stored = self._episode_packages.collections.get(
+                ready.dataset_id, collection_version_id=version.collection_version_id
+            )
+            receipt = self._episode_packages.repository.get(identity, ready.data.data_version_id)
+            package_input = self._episode_packages.files.open(
+                identity, ready.data.data_version_id
+            ).manifest.input
+            return (
+                stored == version
+                and receipt.data == ready.data
+                and package_input.source_sha256 == source.source_sha256
+                and package_input.processor_version == ready.converter_version
+            )
+        return (
+            isinstance(ready, DerivedReadyV1)
+            and version.lance_version == ready.lance_version
+            and len(version.committed_rollouts) == version.version
+        )
 
     def project(
         self,
@@ -169,8 +255,8 @@ class PostgresDatasetIngestProjector:
         alignment: AlignmentInputV1,
         schema_snapshot_id: str,
         frequency_hz: float,
-        version: DatasetVersionRef,
-        ready: DerivedReadyV1,
+        version: DatasetVersionRef | CollectionVersion,
+        ready: DerivedReadyV1 | EpisodeDerivedReady,
         media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> DatasetIngestViewerTarget:
         context = current_request_context()
@@ -189,7 +275,7 @@ class PostgresDatasetIngestProjector:
             or version.project_id != source.project_id
             or version.dataset_id != ready.dataset_id
             or version.version != ready.dataset_version
-            or version.lance_version != ready.lance_version
+            or not self._commit_matches(source, version, ready)
             or version.schema_snapshot_id != schema_snapshot_id
             or version.frequency_hz != frequency_hz
             or ready.project_id != source.project_id
@@ -198,18 +284,12 @@ class PostgresDatasetIngestProjector:
             or ready.content_hash != version.content_hash
             or ready.step_count <= 0
             or source.rollout_id not in version.committed_rollouts
-            or len(version.committed_rollouts) != version.version
         ):
             raise DatasetIngestProjectionConflict(
-                "dataset ingest projection lineage does not match the Lance commit"
+                "dataset ingest projection lineage does not match the data commit"
             )
 
-        target = DatasetIngestViewerTarget(
-            dataset_id=ready.dataset_id,
-            version_id=_version_id(ready.dataset_version),
-            episode_id=_stable_id("episode", source.rollout_id),
-            revision_id=_stable_id("revision", source.rollout_id, source.source_sha256),
-        )
+        target = _target(source, version, ready)
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
@@ -307,8 +387,8 @@ class PostgresDatasetIngestProjector:
         alignment: AlignmentInputV1,
         schema_snapshot_id: str,
         frequency_hz: float,
-        version: DatasetVersionRef,
-        ready: DerivedReadyV1,
+        version: DatasetVersionRef | CollectionVersion,
+        ready: DerivedReadyV1 | EpisodeDerivedReady,
         media_artifacts: Sequence[AlignedMediaArtifactV1],
     ) -> DatasetIngestViewerTarget:
         """Publish a finalized soft Episode through the same immutable projection."""
@@ -329,7 +409,7 @@ class PostgresDatasetIngestProjector:
             or version.project_id != source.project_id
             or version.dataset_id != ready.dataset_id
             or version.version != ready.dataset_version
-            or version.lance_version != ready.lance_version
+            or not self._commit_matches(source, version, ready)
             or version.schema_snapshot_id != schema_snapshot_id
             or version.frequency_hz != frequency_hz
             or ready.project_id != source.project_id
@@ -338,17 +418,11 @@ class PostgresDatasetIngestProjector:
             or ready.content_hash != version.content_hash
             or ready.step_count <= 0
             or source.rollout_id not in version.committed_rollouts
-            or len(version.committed_rollouts) != version.version
         ):
             raise DatasetIngestProjectionConflict(
-                "continuous Episode lineage does not match the Lance commit"
+                "continuous Episode lineage does not match the data commit"
             )
-        target = DatasetIngestViewerTarget(
-            dataset_id=ready.dataset_id,
-            version_id=_version_id(ready.dataset_version),
-            episode_id=_stable_id("episode", source.rollout_id),
-            revision_id=_stable_id("revision", source.rollout_id, source.source_sha256),
-        )
+        target = _target(source, version, ready)
         facts = _ProjectionFacts(
             collection_task_id=source.collection_task_id,
             robot_id=source.robot_id,
@@ -410,7 +484,7 @@ class PostgresDatasetIngestProjector:
         cursor: Any,
         *,
         source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
-        version: DatasetVersionRef,
+        version: DatasetVersionRef | CollectionVersion,
         target: DatasetIngestViewerTarget,
     ) -> DatasetIngestViewerTarget | None:
         cursor.execute(
@@ -440,8 +514,12 @@ class PostgresDatasetIngestProjector:
             ),
             None,
         )
-        expected_token = f"lance-version:{version.storage_commit_id}"
-        if revision is None and isinstance(source, ContinuousEpisodeProjectionSourceV1):
+        expected_token = _version_token(version)
+        if (
+            revision is None
+            and isinstance(version, DatasetVersionRef)
+            and isinstance(source, ContinuousEpisodeProjectionSourceV1)
+        ):
             # Preserve already published projections from the older local-ID
             # scheme when recovering a lost receipt. New recordings use the
             # recording-qualified rollout identity, so episode_0001 cannot clash.
@@ -464,11 +542,13 @@ class PostgresDatasetIngestProjector:
             persisted.version_id != target.version_id
             or revision is None
             or revision.revision_id != target.revision_id
-            or revision.content_sha256 != source.source_sha256
+            or revision.content_sha256 != _revision_hash(source, version, target.episode_id)
             or persisted.version_token != expected_token
         ):
             raise DatasetIngestProjectionConflict(
-                "an existing Dataset version disagrees with the Lance commit"
+                "an existing Dataset version disagrees with the "
+                + ("Episode" if isinstance(version, CollectionVersion) else "Lance")
+                + " commit"
             )
         key = (
             source.organization_id,
@@ -556,8 +636,9 @@ class PostgresDatasetIngestProjector:
             SELECT preflight_json
               FROM ingest.manifest_discoveries
              WHERE session_id = %s AND project_id = %s AND region_code = %s
+               AND organization_id = %s
             """,
-            (source.session_id, source.project_id, source.region_code),
+            (source.session_id, source.project_id, source.region_code, source.organization_id),
         )
         raw = cursor.fetchone()
         if raw is None:
@@ -609,8 +690,8 @@ class PostgresDatasetIngestProjector:
         alignment: AlignmentInputV1,
         schema_snapshot_id: str,
         frequency_hz: float,
-        version: DatasetVersionRef,
-        ready: DerivedReadyV1,
+        version: DatasetVersionRef | CollectionVersion,
+        ready: DerivedReadyV1 | EpisodeDerivedReady,
         target: DatasetIngestViewerTarget,
         facts: _ProjectionFacts,
         media_artifacts: Sequence[AlignedMediaArtifactV1],
@@ -624,21 +705,34 @@ class PostgresDatasetIngestProjector:
             cursor,
             scope=scope,
             dataset_id=target.dataset_id,
-            dataset_version=ready.dataset_version,
+            version=version,
             committed_rollout_count=len(version.committed_rollouts),
+            target_episode_id=target.episode_id,
         )
-        streams = self._streams(
+        stream_builder = (
+            self._package_streams if isinstance(version, CollectionVersion) else self._streams
+        )
+        streams = stream_builder(
             alignment=alignment,
             camera_topics=facts.camera_topics,
             ready=ready,
             frequency_hz=frequency_hz,
             media_artifacts=media_artifacts,
         )
+        previous_index = next(
+            (
+                item.selected_revision.ordinal
+                for item in previous_episodes
+                if item.episode_id == target.episode_id
+            ),
+            len(previous_episodes),
+        )
+        revision_hash = _revision_hash(source, version, target.episode_id)
         current_ref = DatasetPageRevisionSnapshotReference(
             episode_id=target.episode_id,
             revision_id=target.revision_id,
-            ordinal=len(previous_episodes),
-            content_sha256=source.source_sha256,
+            ordinal=previous_index,
+            content_sha256=revision_hash,
         )
         current_episode = DatasetPageEpisodeRecord(
             scope=scope,
@@ -665,13 +759,33 @@ class PostgresDatasetIngestProjector:
             episode_id=target.episode_id,
             revision_id=target.revision_id,
             ordinal=current_ref.ordinal,
-            content_sha256=source.source_sha256,
+            content_sha256=revision_hash,
             started_at_ns=str(alignment.start_ns),
             duration_ns=str(alignment.end_ns - alignment.start_ns),
             streams=streams,
         )
-        episodes = (*previous_episodes, current_episode)
-        revisions = (*previous_revisions, current_revision)
+        episodes = tuple(
+            sorted(
+                (
+                    *(item for item in previous_episodes if item.episode_id != target.episode_id),
+                    current_episode,
+                ),
+                key=lambda item: item.selected_revision.ordinal,
+            )
+        )
+        revisions = tuple(
+            sorted(
+                (
+                    *(item for item in previous_revisions if item.episode_id != target.episode_id),
+                    current_revision,
+                ),
+                key=lambda item: item.ordinal,
+            )
+        )
+        if isinstance(version, CollectionVersion) and tuple(
+            e.episode_id for e in episodes
+        ) != tuple(e.identity.episode_id for e in version.episodes):
+            raise DatasetIngestProjectionConflict("product Episode set differs from the collection")
         version_streams = tuple(
             {
                 stream.channel_path: stream for revision in revisions for stream in revision.streams
@@ -697,7 +811,11 @@ class PostgresDatasetIngestProjector:
             "source_manifest_refs": [item.model_dump(mode="json") for item in source_refs],
         }
         content_snapshot = DatasetPageContentSnapshot(
-            content_snapshot_id=f"lance-snapshot-{ready.dataset_version}",
+            content_snapshot_id=(
+                version.collection_version_id
+                if isinstance(version, CollectionVersion)
+                else f"lance-snapshot-{ready.dataset_version}"
+            ),
             content_snapshot_hash=canonical_hash(snapshot_payload),
             revision_refs=revision_refs,
             schema_ref=schema_ref,
@@ -707,7 +825,7 @@ class PostgresDatasetIngestProjector:
             cursor,
             scope=scope,
             dataset_id=target.dataset_id,
-            dataset_version=ready.dataset_version,
+            version=version,
             current=DatasetPageManifestEntry(
                 entry_id=f"entry-{current_revision.revision_id}",
                 episode_id=current_revision.episode_id,
@@ -719,7 +837,11 @@ class PostgresDatasetIngestProjector:
             ),
         )
         manifest_summary = DatasetPageManifestSummary(
-            manifest_id=f"manifest-lance-{ready.dataset_version}",
+            manifest_id=(
+                f"manifest-{version.collection_version_id}"
+                if isinstance(version, CollectionVersion)
+                else f"manifest-lance-{ready.dataset_version}"
+            ),
             format_version="dataset-manifest/v1",
             canonicalization="rfc8785-json",
             sha256=canonical_hash([item.entry.model_dump(mode="json") for item in entries]),
@@ -733,7 +855,7 @@ class PostgresDatasetIngestProjector:
             kind="RAW",
             created_at=version.created_at,
             etag=ResourceVersion().etag,
-            version_token=f"lance-version:{version.storage_commit_id}",
+            version_token=_version_token(version),
             status="READY",
             published_at=version.created_at,
             content_snapshot=content_snapshot,
@@ -745,7 +867,7 @@ class PostgresDatasetIngestProjector:
             version_id=target.version_id,
             content_snapshot=content_snapshot,
             manifest=manifest_summary,
-            operational_revision=f"lance:{version.storage_commit_id}",
+            operational_revision=_operational_revision(version),
         )
         record = self._dataset_record(
             cursor,
@@ -785,7 +907,9 @@ class PostgresDatasetIngestProjector:
                     channel_id=stream.episode_stream_id,
                     name=stream.channel_path,
                     data_type=(
-                        "binary/jpeg"
+                        (stream.package_binding.value_kind or "video")
+                        if stream.package_binding is not None
+                        else "binary/jpeg"
                         if stream.aligned_media_binding is not None
                         else stream.data_binding.value_kind
                         if stream.data_binding is not None
@@ -814,7 +938,7 @@ class PostgresDatasetIngestProjector:
             cursor,
             scope=scope,
             dataset_id=target.dataset_id,
-            dataset_version=ready.dataset_version,
+            version=version,
             current=provenance,
             expected_sources=()
             if previous_projection is None
@@ -823,13 +947,9 @@ class PostgresDatasetIngestProjector:
         for item in provenance_items:
             self._put_provenance(cursor, item)
         source_increment = facts.source_size_bytes
-        if (
-            isinstance(source, ContinuousEpisodeProjectionSourceV1)
-            and previous_projection is not None
-            and any(
-                ref.reference_id == source.data_package_id
-                for ref in previous_projection.content_snapshot.source_manifest_refs
-            )
+        if previous_projection is not None and any(
+            ref.reference_id == source.data_package_id
+            for ref in previous_projection.content_snapshot.source_manifest_refs
         ):
             source_increment = 0
         if (
@@ -843,7 +963,7 @@ class PostgresDatasetIngestProjector:
                 cursor,
                 scope,
                 target.dataset_id,
-                ready.dataset_version,
+                version,
             )
             + source_increment
         )
@@ -856,7 +976,7 @@ class PostgresDatasetIngestProjector:
             required_physical_bytes=None,
             actual_oss_bytes=None,
             calculated_at=version.created_at,
-            basis_revision=f"lance:{version.storage_commit_id}",
+            basis_revision=_operational_revision(version),
         )
         self._put_capacity(cursor, capacity)
         detail_facts = DatasetPageDetailFacts(
@@ -903,16 +1023,17 @@ class PostgresDatasetIngestProjector:
         *,
         scope: DatasetPageScope,
         dataset_id: str,
-        dataset_version: int,
+        version: DatasetVersionRef | CollectionVersion,
         committed_rollout_count: int,
+        target_episode_id: str,
     ) -> tuple[
         tuple[DatasetPageEpisodeRecord, ...],
         tuple[DatasetPageEpisodeRevision, ...],
         DatasetPageVersionContentProjection | None,
     ]:
-        if dataset_version == 1:
+        if version.version == 1:
             return (), (), None
-        previous_id = _version_id(dataset_version - 1)
+        previous_id = _previous_id(version)
         key = (
             scope.organization_id,
             scope.project_id,
@@ -931,7 +1052,7 @@ class PostgresDatasetIngestProjector:
         )
         raw_projection = cursor.fetchone()
         if raw_projection is None:
-            if committed_rollout_count > 1:
+            if committed_rollout_count > 1 or isinstance(version, CollectionVersion):
                 raise DatasetIngestProjectionConflict(
                     "the preceding product Dataset version is unavailable for "
                     "snapshot carry-forward"
@@ -952,7 +1073,7 @@ class PostgresDatasetIngestProjector:
         )
         episodes = tuple(
             DatasetPageEpisodeRecord.model_validate(_row_document(row)).model_copy(
-                update={"version_id": _version_id(dataset_version)}
+                update={"version_id": _version_id(version)}
             )
             for row in cursor.fetchall()
         )
@@ -968,7 +1089,7 @@ class PostgresDatasetIngestProjector:
         )
         revisions = tuple(
             DatasetPageEpisodeRevision.model_validate(_row_document(row)).model_copy(
-                update={"version_id": _version_id(dataset_version)}
+                update={"version_id": _version_id(version)}
             )
             for row in cursor.fetchall()
         )
@@ -977,9 +1098,16 @@ class PostgresDatasetIngestProjector:
             (item.episode_id, item.revision_id, item.ordinal, item.content_sha256)
             for item in revisions
         }
+        expected_members = (
+            {e.episode_id for e in episodes} - {target_episode_id}
+            == {e.identity.episode_id for e in version.episodes} - {target_episode_id}
+            if isinstance(version, CollectionVersion)
+            else len(episodes) == committed_rollout_count - 1
+        )
         if (
             projection.version_id != previous_id
-            or len(episodes) != committed_rollout_count - 1
+            or not expected_members
+            or len({e.episode_id for e in episodes}) != len(episodes)
             or len(episodes) != len(revisions)
             or tuple(projection.content_snapshot.revision_refs) != episode_refs
             or {
@@ -1015,11 +1143,11 @@ class PostgresDatasetIngestProjector:
         *,
         scope: DatasetPageScope,
         dataset_id: str,
-        dataset_version: int,
+        version: DatasetVersionRef | CollectionVersion,
         current: DatasetPageSourceProvenance,
         expected_sources: Sequence[DatasetPageContentReference],
     ) -> tuple[DatasetPageSourceProvenance, ...]:
-        if dataset_version == 1:
+        if version.version == 1:
             return (current,)
         cursor.execute(
             """
@@ -1034,12 +1162,12 @@ class PostgresDatasetIngestProjector:
                 scope.project_id,
                 scope.region_code,
                 dataset_id,
-                _version_id(dataset_version - 1),
+                _previous_id(version),
             ),
         )
         previous = tuple(
             DatasetPageSourceProvenance.model_validate(_row_document(row)).model_copy(
-                update={"version_id": _version_id(dataset_version)}
+                update={"version_id": _version_id(version)}
             )
             for row in cursor.fetchall()
         )
@@ -1057,11 +1185,11 @@ class PostgresDatasetIngestProjector:
         *,
         scope: DatasetPageScope,
         dataset_id: str,
-        dataset_version: int,
+        version: DatasetVersionRef | CollectionVersion,
         current: DatasetPageManifestEntry,
     ) -> tuple[DatasetPageVersionManifestEntryRecord, ...]:
         previous: tuple[DatasetPageManifestEntry, ...] = ()
-        if dataset_version > 1:
+        if version.version > 1:
             cursor.execute(
                 """
                 SELECT entry_document
@@ -1075,14 +1203,20 @@ class PostgresDatasetIngestProjector:
                     scope.project_id,
                     scope.region_code,
                     dataset_id,
-                    _version_id(dataset_version - 1),
+                    _previous_id(version),
                 ),
             )
             previous = tuple(
                 DatasetPageManifestEntry.model_validate(_row_document(row))
                 for row in cursor.fetchall()
             )
-            if len(previous) != dataset_version - 1:
+            complete = (
+                {e.episode_id for e in previous} - {current.episode_id}
+                == {e.identity.episode_id for e in version.episodes} - {current.episode_id}
+                if isinstance(version, CollectionVersion)
+                else len(previous) == version.version - 1
+            )
+            if not complete or len({e.episode_id for e in previous}) != len(previous):
                 raise DatasetIngestProjectionConflict(
                     "the preceding Dataset snapshot has incomplete Manifest entries"
                 )
@@ -1090,11 +1224,69 @@ class PostgresDatasetIngestProjector:
             DatasetPageVersionManifestEntryRecord(
                 scope=scope,
                 dataset_id=dataset_id,
-                version_id=_version_id(dataset_version),
+                version_id=_version_id(version),
                 entry=item,
             )
-            for item in (*previous, current)
+            for item in (
+                *(item for item in previous if item.episode_id != current.episode_id),
+                current,
+            )
         )
+
+    def _package_streams(self, *, alignment, camera_topics, ready, frequency_hz, media_artifacts):
+        # The committed package, including its own media and feature mapping, is
+        # authoritative. Temporary aligned-media version ordinals are not reused.
+        package = self._episode_packages.files.open(ready.data.identity, ready.data.data_version_id)
+        info = package.document("meta/info.json")
+        mapping = info["hc.feature_mapping"]
+        features = info["features"]
+        if info["fps"] != frequency_hz or set(mapping) != set(alignment.streams):
+            raise DatasetIngestProjectionConflict("package and projected alignment schema differ")
+        cameras = {name for name, key in mapping.items() if features[key]["dtype"] == "video"}
+        if cameras != set(camera_topics):
+            raise DatasetIngestProjectionConflict("package cameras differ from the declared input")
+        first = self._episode_packages.steps.read_steps(
+            ready.data.identity, ready.data.data_version_id, 0, 1
+        ).steps[0]
+        if first.timestamp_ns != alignment.start_ns or ready.step_count != math.ceil(
+            (alignment.end_ns - alignment.start_ns) * Fraction(str(frequency_hz)) / 10**9
+        ):
+            raise DatasetIngestProjectionConflict("package and projected alignment window differ")
+        streams = []
+        for topic, stream in sorted(alignment.streams.items()):
+            feature_key = mapping[topic]
+            feature = features[feature_key]
+            if topic in cameras:
+                kind = "DEPTH" if feature.get("info", {}).get("is_depth_map") else "RGB_VIDEO"
+                value_kind = None
+            else:
+                value_kind = (
+                    "POINTCLOUD_XYZ"
+                    if stream.kind is ModalityKind.POINT_CLOUD
+                    else _value_kind((first.modalities[topic],))
+                )
+                kind = _stream_kind(topic, stream.kind, value_kind)
+                if kind == "EVENT":
+                    value_kind = "EVENT"
+            streams.append(
+                DatasetPageEpisodeStream(
+                    episode_stream_id=_stable_id("stream", ready.data.identity.episode_id, topic),
+                    channel_path=topic,
+                    kind=kind,
+                    t_start_ns=str(alignment.start_ns),
+                    t_end_ns=str(alignment.end_ns),
+                    package_binding=DatasetPageEpisodePackageBinding(
+                        data=ready.data,
+                        rollout_id=ready.rollout_id,
+                        feature_key=feature_key,
+                        modality_key=topic,
+                        value_kind=value_kind,
+                        start_step=0,
+                        end_step=ready.step_count,
+                    ),
+                )
+            )
+        return tuple(streams)
 
     @staticmethod
     def _streams(
@@ -1518,9 +1710,9 @@ class PostgresDatasetIngestProjector:
         cursor: Any,
         scope: DatasetPageScope,
         dataset_id: str,
-        dataset_version: int,
+        version: DatasetVersionRef | CollectionVersion,
     ) -> int:
-        if dataset_version == 1:
+        if version.version == 1:
             return 0
         cursor.execute(
             """
@@ -1534,7 +1726,7 @@ class PostgresDatasetIngestProjector:
                 scope.project_id,
                 scope.region_code,
                 dataset_id,
-                _version_id(dataset_version - 1),
+                _previous_id(version),
             ),
         )
         raw = cursor.fetchone()

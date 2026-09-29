@@ -244,3 +244,38 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   explicitly in this port until exact window materialization is implemented;
   they are never silently treated as a full aligned Episode. All 17 P0 rows remain
   pending for the broader required coverage.
+
+## Product projection milestone (partial W2)
+
+- The real PostgreSQL product projector accepts committed Episode collections,
+  verifies the persisted collection and package receipt, and pins each projected
+  stream to its complete scoped data reference. RGB and depth have distinct stream
+  kinds. No fabricated Lance number is used in product versions or workflow results.
+- Append and reprocessing preserve prior immutable product snapshots; replacing
+  an Episode keeps its ordinal. Collection ordinal is not treated as Episode count.
+  Product writes are transactional and retries preserve the original target.
+  Shared source packages are counted once in source-byte capacity projections.
+- Activity output models accept new-format receipts with identity checks while
+  retaining legacy histories. New ingestion dispatch and automatic annotation
+  still need integration before the processing entrances can switch to this path.
+- Frontend strict wire schemas accept the new references and reject cross-scope
+  references and mixed legacy/package stream bindings. Viewer sources still need
+  new-format numeric and media routing; schema acceptance alone is not UI acceptance.
+- Regression with isolated PostgreSQL/MinIO and historical Lance fixtures:
+  `tests/episode_store tests/dataset_registry/test_ingest_projection_postgres.py
+  tests/lerobot_imports/test_native_viewer_projection.py tests/lance_catalog/test_adapters.py
+  tests/lance_catalog/test_lance_integration.py tests/workflow/test_workflow.py
+  tests/security/test_runtime_router_auth.py tests/core/test_object_store_endpoint_config.py
+  --fail-on-skipped --fail-on-xfailed -q`: **72 passed**, one existing Starlette/httpx
+  deprecation warning. Evidence: `episode-projection-tests.xml`.
+- New service tests cover concurrent repeated projection, interruption of the
+  product transaction, retry, second Episode, same-Episode reprocessing, immutable
+  prior versions and forged ready receipts. Both continuous-style and MCAP-style
+  projection inputs are synthetic; these are NOT upload/Temporal end-to-end tests.
+- Frontend wire/adapters/viewer adapter regression: **13 passed**, evidence
+  `episode-projection-frontend-tests.xml`; full `tsc -b --pretty false` passed.
+  Changed backend modules/tests pass Ruff (runtime's prior findings excluded).
+- Isolated frontend exhausted host inotify watchers. Polling is enabled only in
+  the G1 compose override; frontend recovered healthy without changing host limits.
+  An offline frontend-test service provides a writable test mount. All 17 P0 rows
+  remain pending for their full required acceptance scope.

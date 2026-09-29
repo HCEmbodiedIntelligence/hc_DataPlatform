@@ -868,6 +868,9 @@ def build_runtime(
     )
 
     aligned_media_repository = PostgresAlignedMediaRepository(connection_factory)
+    episode_packages = _episode_packages(
+        connection_factory, object_storage, resolved, catalog, aligned_media_repository
+    )
     aligned_media_store = S3AlignedMediaArtifactStore(
         s3_client,
         resolved.object_store_bucket,
@@ -935,7 +938,8 @@ def build_runtime(
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
     dataset_ingest_projection = PostgresDatasetIngestProjector(
-        connection_factory, native_manifest_parser=ObjectStorageManifestParser(object_storage)
+        connection_factory, native_manifest_parser=ObjectStorageManifestParser(object_storage),
+        episode_packages=episode_packages,
     )
     from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
 
@@ -962,9 +966,6 @@ def build_runtime(
         catalog=catalog,
         media_repository=aligned_media_repository,
         dataset_projection=dataset_ingest_projection,
-    )
-    episode_packages = _episode_packages(
-        connection_factory, object_storage, resolved, catalog, aligned_media_repository
     )
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),

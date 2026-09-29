@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from hc_data_platform.episode_store.models import DataVersionRef
+
 DatasetId = Annotated[
     str,
     Field(pattern=r"^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"),
@@ -494,9 +496,14 @@ class DatasetPageEpisodeStream(_DatasetPageModel):
     t_end_ns: DecimalString
     aligned_media_binding: DatasetPageEpisodeAlignedMediaBinding | None = None
     data_binding: DatasetPageEpisodeDataBinding | None = None
+    package_binding: DatasetPageEpisodePackageBinding | None = None
 
     @model_validator(mode="after")
     def validate_aligned_media_binding_kind(self) -> DatasetPageEpisodeStream:
+        if self.package_binding is not None and (
+            self.aligned_media_binding is not None or self.data_binding is not None
+        ):
+            raise ValueError("a stream must bind to exactly one storage representation")
         if self.aligned_media_binding is not None and self.kind.strip().upper() not in {
             "VIDEO",
             "RGB",
@@ -515,6 +522,10 @@ class DatasetPageEpisodeStream(_DatasetPageModel):
             "EVENT",
         }
         kind = self.kind.strip().upper()
+        if self.package_binding is not None:
+            camera = kind in {"VIDEO", "RGB", "RGB_VIDEO", "DEPTH"}
+            if camera != (self.package_binding.value_kind is None):
+                raise ValueError("package camera/numeric binding kind mismatch")
         if self.data_binding is not None and kind not in non_camera_kinds:
             raise ValueError("data_binding is only valid for supported non-camera streams")
         if self.data_binding is not None and kind == "POINTCLOUD":
@@ -573,6 +584,27 @@ class DatasetPageEpisodeDataBinding(_DatasetPageModel):
         return self
 
 
+class DatasetPageEpisodePackageBinding(_DatasetPageModel):
+    """Exact committed package binding for either a numeric or RGB/depth stream."""
+
+    data: DataVersionRef
+    rollout_id: str = Field(min_length=1, max_length=256)
+    feature_key: str = Field(min_length=1, max_length=512)
+    modality_key: str = Field(min_length=1, max_length=512)
+    value_kind: Literal["SCALAR", "VECTOR", "POINTCLOUD_XYZ", "EVENT"] | None = None
+    start_step: int = Field(ge=0)
+    end_step: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> DatasetPageEpisodePackageBinding:
+        if (
+            self.rollout_id != self.data.identity.rollout_id
+            or not self.start_step < self.end_step <= self.data.frame_count
+        ):
+            raise ValueError("package stream identity/window differs from committed data")
+        return self
+
+
 class DatasetPageEpisodeRevision(_DatasetPageModel):
     scope: DatasetPageScope
     dataset_id: DatasetId
@@ -584,6 +616,20 @@ class DatasetPageEpisodeRevision(_DatasetPageModel):
     started_at_ns: DecimalString
     duration_ns: DecimalString
     streams: tuple[DatasetPageEpisodeStream, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_package_scope(self) -> DatasetPageEpisodeRevision:
+        for stream in self.streams:
+            if binding := stream.package_binding:
+                identity = binding.data.identity
+                if (
+                    identity.scope
+                    != (self.scope.organization_id, self.scope.project_id, self.scope.region_code)
+                    or identity.dataset_id != self.dataset_id
+                    or identity.episode_id != self.episode_id
+                ):
+                    raise ValueError("package stream is outside the immutable Episode revision")
+        return self
 
 
 class DatasetPageEpisodeRevisionEnvelope(_DatasetPageModel):

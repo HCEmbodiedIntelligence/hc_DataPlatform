@@ -59,6 +59,8 @@ release-values.yaml
 # Isolated G1 verification outputs; curated reports live under docs/audits.
 /backend/.g1-artifacts/
 /backend/test-*-g1.xml
+/frontend/.g1-*.xml
+/frontend/.g1-runtime-openapi.yaml
 
 /deploy/openarm-e/secrets/
 

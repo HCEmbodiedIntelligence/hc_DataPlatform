@@ -82,7 +82,7 @@ def test_streaming_numeric_precision_and_row_group_boundary(tmp_path):
     assert table["hc.timestamp_ns"][2050].as_py() == 1_790_000_000_000_000_001 + 2050 * 33_333_333
 
 
-def build_rgbd_package(tmp_path, ident=None):
+def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False):
     ident = ident or identity()
     rgb, depth = "observation.images.head_rgb", "observation.images.head_depth"
     source = PackageInput(
@@ -169,6 +169,23 @@ def build_rgbd_package(tmp_path, ident=None):
         )
         for i in range(4)
     ]
+    if mcap_topics:
+        names = {
+            rgb: "/camera/head_rgb/image",
+            depth: "/camera/head_depth/image",
+            "action": "/action",
+        }
+        rows = [
+            row.model_copy(
+                update={
+                    field: {
+                        names.get(key, key): value for key, value in getattr(row, field).items()
+                    }
+                    for field in ("modalities", "valid", "source_timestamps_ns", "time_error_ns")
+                }
+            )
+            for row in rows
+        ]
     token = bind_request_context(
         RequestContext(
             organization_id=ident.organization_id,

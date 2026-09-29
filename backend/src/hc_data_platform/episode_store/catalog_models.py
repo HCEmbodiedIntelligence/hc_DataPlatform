@@ -3,17 +3,21 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from hc_data_platform.lance_catalog.models import StepWindow
 
-from .models import CollectionSnapshot, DataVersionRef, EpisodeDataRef, FrozenModel
+from .models import CollectionSnapshot, DataVersionRef, Digest, EpisodeDataRef, FrozenModel
 
 
 class CollectionVersion(CollectionSnapshot):
     storage_format: Literal["episode_collection"] = "episode_collection"
     created_at: datetime
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @property
+    def version_id(self):
+        return "version_" + self.collection_version_id
 
     @property
     def committed_rollouts(self):
@@ -44,7 +48,7 @@ class EpisodeLineage(FrozenModel):
     dataset_version: int
     collection_version_id: str
     rollout_id: str
-    source_sha256: str
+    source_sha256: Digest
     converter_version: str
     schema_snapshot_id: str
     schema_fingerprint: str
@@ -62,8 +66,33 @@ class EpisodeDerivedReady(FrozenModel):
     project_id: str
     dataset_id: str
     rollout_id: str
-    source_sha256: str
+    source_sha256: Digest
     converter_version: str
-    dataset_version: int
-    step_count: int
-    content_hash: str
+    dataset_version: int = Field(ge=1)
+    step_count: int = Field(ge=1)
+    content_hash: Digest
+
+    @model_validator(mode="after")
+    def validate_data_identity(self):
+        if (self.project_id, self.dataset_id, self.rollout_id) != (
+            self.data.identity.project_id,
+            self.data.identity.dataset_id,
+            self.data.identity.rollout_id,
+        ) or self.step_count != self.data.frame_count:
+            raise ValueError("ready result differs from its immutable Episode reference")
+        return self
+
+
+def validate_commit_pair(version, ready):
+    """Prevent a workflow result from combining receipts from different storage/version states."""
+    if isinstance(version, CollectionVersion) != isinstance(ready, EpisodeDerivedReady):
+        raise ValueError("commit result mixes legacy and Episode package references")
+    if isinstance(version, CollectionVersion) and (
+        ready.data not in version.episodes
+        or ready.project_id != version.project_id
+        or ready.dataset_id != version.dataset_id
+        or ready.dataset_version != version.version
+        or ready.collection_version_id != version.collection_version_id
+        or ready.content_hash != version.content_hash
+    ):
+        raise ValueError("commit result differs from the immutable collection")

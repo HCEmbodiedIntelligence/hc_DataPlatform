@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { episodePackageBindingWireSchema } from "./episode-package-wire";
 
 export const CONTRACT_VERSION = "dataset-version-review.v1alpha1" as const;
 
@@ -703,6 +704,7 @@ export const episodeStreamWireSchema = z
       .strict()
       .nullable()
       .default(null),
+    package_binding: episodePackageBindingWireSchema.nullable().optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -748,6 +750,19 @@ export const episodeStreamWireSchema = z
       });
     }
     const streamKind = value.kind.trim().toUpperCase();
+    if (
+      value.package_binding &&
+      (value.aligned_media_binding ||
+        value.data_binding ||
+        ["VIDEO", "RGB", "RGB_VIDEO", "DEPTH"].includes(streamKind) !==
+          (value.package_binding.value_kind === null))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["package_binding"],
+        message: "package stream kind or storage binding mismatch",
+      });
+    }
     if (
       value.data_binding &&
       ![
@@ -815,7 +830,26 @@ export const episodeRevisionDataWireSchema = z
     duration_ns: decimalNsWireSchema,
     streams: z.array(episodeStreamWireSchema).min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    for (const [index, stream] of value.streams.entries()) {
+      const identity = stream.package_binding?.data.identity;
+      if (
+        identity &&
+        (identity.organization_id !== value.scope.organization_id ||
+          identity.project_id !== value.scope.project_id ||
+          identity.region_code !== value.scope.region_code ||
+          identity.dataset_id !== value.dataset_id ||
+          identity.episode_id !== value.episode_id)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["streams", index, "package_binding"],
+          message: "package binding is outside the Episode revision",
+        });
+      }
+    }
+  });
 
 export const episodeRevisionWireSchema = successEnvelope(
   episodeRevisionDataWireSchema,

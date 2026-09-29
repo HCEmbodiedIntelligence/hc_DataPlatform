@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="13" failures="0" errors="0" time="0.018241121">
+    <testsuite name="src/features/datasets/api/adapters.test.ts" timestamp="2026-09-29T02:12:20.750Z" hostname="c6aabeb3f065" tests="1" failures="0" errors="0" skipped="0" time="0.004595174">
+        <testcase classname="src/features/datasets/api/adapters.test.ts" name="adaptEpisodePage &gt; preserves a missing review finding count as unknown" time="0.003841866">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/datasets/api/wire-schemas.test.ts" timestamp="2026-09-29T02:12:20.751Z" hostname="c6aabeb3f065" tests="5" failures="0" errors="0" skipped="0" time="0.007778792">
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; accepts a pinned RGB-D package reference without a Lance version" time="0.003009724">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects cross-tenant, cross-Episode, out-of-range or mixed-storage bindings" time="0.001689369">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Dataset Episode list wire contract &gt; accepts the formal nullable review projection for a newly ingested Episode" time="0.000569637">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Dataset Episode revision-history wire contract &gt; accepts one immutable selected revision per visible Version" time="0.001045747">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Dataset Episode revision-history wire contract &gt; rejects a history item whose selected revision belongs to another Episode" time="0.00062307">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" timestamp="2026-09-29T02:12:20.752Z" hostname="c6aabeb3f065" tests="7" failures="0" errors="0" skipped="0" time="0.005867155">
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; selects the named joint topic instead of humanoid observations or raw device state" time="0.001315854">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; uses only a server-projected camera binding to expose a lazy authorized MP4 source" time="0.000717993">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; does not invent a rollout or a browser video when a camera has no immutable binding" time="0.000252639">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; marks an unbound non-camera modality as missing rather than claiming its format is unsupported" time="0.000111327">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; uses only a server-projected non-camera binding to expose a lazy real Lance window source" time="0.000461007">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; fails closed on a malformed non-camera media binding before it can reach the viewer" time="0.001529831">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; fails closed on a camera data binding or an incompatible declared pointcloud decoder" time="0.000542189">
+        </testcase>
+    </testsuite>
+</testsuites>

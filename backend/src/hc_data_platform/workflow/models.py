@@ -32,6 +32,11 @@ from hc_data_platform.continuous_recordings.asset_models import (
     RecordingConfigurationV1,
 )
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
+from hc_data_platform.episode_store.catalog_models import (
+    CollectionVersion,
+    EpisodeDerivedReady,
+    validate_commit_pair,
+)
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -340,8 +345,8 @@ class AlignmentActivityOutput(BaseModel):
 
     staged_manifest: StagedFragmentManifestV1
     catalog_fragment: CatalogFragmentPayloadV1 | None = None
-    dataset_version: DatasetVersionRef | None = None
-    derived_ready: DerivedReadyV1 | None = None
+    dataset_version: DatasetVersionRef | CollectionVersion | None = None
+    derived_ready: DerivedReadyV1 | EpisodeDerivedReady | None = None
     viewer_target: DatasetIngestViewerTarget | None = None
     alignment_staging: AlignmentStagingArtifactV1 | None = None
     expected_dataset_version: int | None = Field(default=None, ge=1)
@@ -350,6 +355,8 @@ class AlignmentActivityOutput(BaseModel):
     def complete_inline_commit(self) -> AlignmentActivityOutput:
         if (self.dataset_version is None) != (self.derived_ready is None):
             raise ValueError("inline alignment commit must return both version results")
+        if self.dataset_version is not None:
+            validate_commit_pair(self.dataset_version, self.derived_ready)
         if (
             self.dataset_version is not None
             and self.catalog_fragment is not None
@@ -358,10 +365,15 @@ class AlignmentActivityOutput(BaseModel):
             raise ValueError("inline alignment commit must not return Step payloads")
         if self.viewer_target is not None:
             if self.dataset_version is None or self.derived_ready is None:
-                raise ValueError("viewer target requires a complete inline Lance commit")
+                raise ValueError("viewer target requires a complete inline data commit")
+            version_id = (
+                self.dataset_version.version_id
+                if isinstance(self.dataset_version, CollectionVersion)
+                else f"version_lance_{self.dataset_version.version}"
+            )
             if (
                 self.viewer_target.dataset_id != self.dataset_version.dataset_id
-                or self.viewer_target.version_id != f"version_lance_{self.dataset_version.version}"
+                or self.viewer_target.version_id != version_id
             ):
                 raise ValueError("viewer target must match the immutable Dataset version")
         return self
@@ -418,9 +430,20 @@ class AlignedBundleCommitActivityInput(BaseModel):
 class AlignedBundleCommitActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    version: DatasetVersionRef
-    derived_ready: DerivedReadyV1
+    version: DatasetVersionRef | CollectionVersion
+    derived_ready: DerivedReadyV1 | EpisodeDerivedReady
     viewer_target: DatasetIngestViewerTarget
+
+    @model_validator(mode="after")
+    def consistent_commit(self):
+        validate_commit_pair(self.version, self.derived_ready)
+        if isinstance(self.version, CollectionVersion) and (
+            self.viewer_target.version_id != self.version.version_id
+            or self.viewer_target.dataset_id != self.version.dataset_id
+            or self.viewer_target.episode_id != self.derived_ready.data.identity.episode_id
+        ):
+            raise ValueError("viewer target differs from the committed Episode package")
+        return self
 
 
 class ContinuousEpisodeAssetV1(BaseModel):
@@ -578,8 +601,13 @@ class CatalogCommitActivityInput(BaseModel):
 class CatalogCommitActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    version: DatasetVersionRef
-    derived_ready: DerivedReadyV1
+    version: DatasetVersionRef | CollectionVersion
+    derived_ready: DerivedReadyV1 | EpisodeDerivedReady
+
+    @model_validator(mode="after")
+    def consistent_commit(self):
+        validate_commit_pair(self.version, self.derived_ready)
+        return self
 
 
 class AutomaticAnnotationActivityInput(BaseModel):
