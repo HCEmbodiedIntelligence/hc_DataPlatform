@@ -31,7 +31,7 @@ def raw_files(raw, manifest):
     }
 
 
-def freeze_native_plan(session, request, manifest, staging, quality):
+def freeze_native_plan(session, request, manifest, staging, quality, *, quality_evidence=None):
     root, stream = session.root, session.stream
     files = raw_files(session.raw, session.raw_manifest)
     info = stream.layout.info
@@ -44,6 +44,7 @@ def freeze_native_plan(session, request, manifest, staging, quality):
             "episode_index": session.source.lerobot.episode_index,
         },
         "quality": quality.model_dump(mode="json"),
+        **({"quality_rules": quality_evidence.model_dump(mode="json")} if quality_evidence else {}),
         "task": stream.layout.episode_metadata["tasks"][0],
     }
     for key in ("calibration", "modalities"):

@@ -817,9 +817,19 @@ class ContinuousEpisodeProcessingService:
                 joints=joints,
                 actions=actions,
             )
-            report = self._quality.evaluate_stream(
-                quality_data, quality_observations(), request.quality_profile
-            )
+            rule_evidence = None
+            if request.storage_format == "lerobot_v3":
+                evaluation = self._quality.evaluate_with_evidence(
+                    quality_data, request.quality_profile, observations=quality_observations()
+                )
+                report, rule_evidence = evaluation.report, evaluation.evidence
+                if self._episode_packages is None:
+                    raise ContinuousEpisodeProcessingError("Episode package service is required")
+                self._episode_packages.quality_evidence.put(evaluation)
+            else:
+                report = self._quality.evaluate_stream(
+                    quality_data, quality_observations(), request.quality_profile
+                )
             sensor_count = sensor_counter[0]
             if report.status is not QualityStatus.PASS:
                 findings.add(f"QUALITY_{report.status.value}")
@@ -836,6 +846,7 @@ class ContinuousEpisodeProcessingService:
             "video_count": len(_assets_for_role(request.assets, RecordingAssetRole.RAW_VIDEO)),
             "sensor_message_count": sensor_count,
             "quality_report": report.model_dump(mode="json"),
+            **({"rule_evidence": rule_evidence.model_dump(mode="json")} if rule_evidence else {}),
         }
         report_sha = canonical_hash(report_document)
         report_id = f"crqc_{report_sha[:32]}"

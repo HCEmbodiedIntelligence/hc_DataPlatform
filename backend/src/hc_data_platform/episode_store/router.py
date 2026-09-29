@@ -15,6 +15,7 @@ from .download import complete_archive
 from .models import DataVersionRef
 from .postgres import PackageConflict
 from .previews import EpisodePreviewGrant
+from .quality import EpisodeQualityView, read_episode_quality
 from .reader import PackageStepWindow
 from .review_models import (
     EpisodeDataReview,
@@ -153,6 +154,21 @@ def steps(
         return service.steps.read_steps(
             identity, data_version_id, start_step, end_step, columns=columns
         )
+
+
+@router.get(VERSION + "/quality", response_model=EpisodeQualityView)
+def fixed_quality(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    auth: VerifiedAuth,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        return read_episode_quality(service.files.open(identity, data_version_id))
 
 
 @router.get(VERSION + "/data-reviews", response_model=EpisodeDataReviewPage)

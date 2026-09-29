@@ -33,6 +33,7 @@ import { PageState } from "../../shared/ui";
 import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
 import { DataReviewPanel } from "./DataReviewPanel";
+import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
 import { reviewDataReference } from "./data-reviews";
 import {
   adaptP06ViewerStreams,
@@ -457,6 +458,14 @@ export function EpisodeViewerShell() {
         </Typography.Paragraph>
         {reviewTarget.error && (
           <Alert type="error" title={reviewTarget.error} />
+        )}
+        {dataInfoOpen && reviewTarget.data && scope && (
+          <EpisodeQualityPanel
+            key={`qc:${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
+            scope={scope}
+            data={reviewTarget.data}
+            canRead={capabilities.has("dataset_version.read")}
+          />
         )}
         {dataInfoOpen && reviewTarget.data && scope && (
           <DataReviewPanel

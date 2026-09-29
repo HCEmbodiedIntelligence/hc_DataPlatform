@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="12" failures="0" errors="0" time="0.85457667">
+    <testsuite name="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" timestamp="2026-09-29T12:01:29.739Z" hostname="2d00109e7fb6" tests="3" failures="0" errors="0" skipped="0" time="0.3077104">
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" name="shows total PASS while keeping unmeasured rules visibly separate" time="0.247308354">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" name="displays the missing historical evidence reason" time="0.04313536">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" name="does not load QC without the read capability" time="0.016454817">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/ViewerShell.test.tsx" timestamp="2026-09-29T12:01:29.740Z" hostname="2d00109e7fb6" tests="3" failures="0" errors="0" skipped="0" time="0.536763351">
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; uses the annotation layout in read-only mode with camera selection and a single shared timeline" time="0.294250566">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; retains the immutable revision and selected time range when recording an issue" time="0.18059433">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; keeps issue creation gated and returns to the dataset without opening annotation" time="0.061233797">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/episode-quality.test.ts" timestamp="2026-09-29T12:01:29.741Z" hostname="2d00109e7fb6" tests="6" failures="0" errors="0" skipped="0" time="0.010102919">
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent version" time="0.00525009">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent report" time="0.000469701">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent rule" time="0.000514409">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent legacy-pass" time="0.000336685">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent scope" time="0.000266809">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="retains PASS alongside missing historical execution evidence" time="0.002468362">
+        </testcase>
+    </testsuite>
+</testsuites>

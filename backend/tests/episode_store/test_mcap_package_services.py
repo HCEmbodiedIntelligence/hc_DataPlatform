@@ -245,6 +245,14 @@ async def test_mcap_upload_temporal_package(isolated_dsn, tmp_path, monkeypatch,
             root = Path(os.environ["HC_G1_WRITER_EVIDENCE_ROOT"]) / "mcap-package" / org
             root.mkdir(parents=True)
             package = runtime.episode_packages.files.open(source.identity, source.data_version_id)
+            from hc_data_platform.episode_store.quality import read_episode_quality
+
+            qc = read_episode_quality(package)
+            assert (
+                qc.evidence_status == "AVAILABLE"
+                and qc.evidence.report_sha256 == qc.report.content_sha256
+            )
+            assert any(rule.status == "skip" for rule in qc.rules)
             for entry in package.manifest.files:
                 target = root / "episode" / entry.path
                 target.parent.mkdir(parents=True, exist_ok=True)

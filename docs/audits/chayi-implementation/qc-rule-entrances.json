@@ -1,0 +1,80 @@
+{
+  "scope": "actual isolated service outputs using synthetic recordings",
+  "entrances": [
+    {
+      "ingress": "mcap",
+      "package": "/app/.g1-artifacts/mcap-package/mcap-52f2f39373994911b5b0ca0448ccac15/episode",
+      "data_version_id": "dv_d0b9f02fa4fb9b3b8af8d75fbe70d189b9f7e04244ea7cd259e9565dc55b5116",
+      "manifest_sha256": "afc6785c86518a79ed9875bba87c9219bff9a6b70595fb1bd85b0a780751a926",
+      "source_sha256": "5b5506841d92597c30c3861a8905415e10a6ac798e40e12e65a0f6e7f163faf1",
+      "report_sha256": "8d58f2adec70a97a1e50b8df31152761b2200e5807f82d6dfd2377d40da79359",
+      "evidence_sha256": "7df21599d7134c02f38aa756e8e7852d4980465030cdec1a4b898d74f24b7d93",
+      "frame_count": 30,
+      "qc_status": "PASS",
+      "rule_results": {
+        "info": 12,
+        "pass": 28,
+        "skip": 11
+      },
+      "input_mode": "stream",
+      "reason_codes": [
+        "ACTION_COUNT_NOT_REQUIRED",
+        "COMPLETE_STEP_RATIO_NOT_MEASURED",
+        "EXCLUDED_BY_VERDICT_POLICY",
+        "NO_JOINT_LIMITS",
+        "NO_OBSERVATIONS",
+        "NO_POINT_COUNT_LIMITS"
+      ]
+    },
+    {
+      "ingress": "continuous_recording",
+      "package": "/app/.g1-artifacts/continuous-package/raw-pin-258ace9d80a34b33aa84f771d47167dd/episode",
+      "data_version_id": "dv_5edb9fecbfaf043250d1de60ddc7954e322c6b05b92165f05e36bf8791dffd43",
+      "manifest_sha256": "b6e3de4100e9530fc6b35c0a952161516ef82779154899a210fc4527d266a6fc",
+      "source_sha256": "d9218e67aaf060c4536f9e2cae96ac7258550f7d9bede53617e8411fd6ed068f",
+      "report_sha256": "287e17243c03cc0bf38647a2404585bac872eac10e8a2e34a52f65d5345afdb8",
+      "evidence_sha256": "2ab2e0e6d12f20162943b7871d8d27b3243f4bc19649e3c6e39959947316559b",
+      "frame_count": 6,
+      "qc_status": "PASS",
+      "rule_results": {
+        "info": 20,
+        "pass": 58,
+        "skip": 17
+      },
+      "input_mode": "stream",
+      "reason_codes": [
+        "COMPLETE_STEP_RATIO_NOT_MEASURED",
+        "EXCLUDED_BY_VERDICT_POLICY",
+        "NO_JOINT_LIMITS",
+        "NO_OBSERVATIONS",
+        "NO_POINT_COUNT_LIMITS"
+      ]
+    },
+    {
+      "ingress": "native_lerobot",
+      "package": "/app/.g1-artifacts/native-package-offline/dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+      "data_version_id": "dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+      "manifest_sha256": "72579debb9f187e872b3fe066a9189c994aeabb225f7c3700e79130876686d42",
+      "source_sha256": "8851128d7aa000abe18a65f4a97c71ddd892c8e6a003c371553fe0aebce18ab3",
+      "report_sha256": "94d9895010649e3c7beaac5071a88e6d2105320ab08b169a8c5c3f75814d8642",
+      "evidence_sha256": "5f23b3d54ea0145cf2256368cf48790be01869e0e806b828df364386bcaf2960",
+      "frame_count": 6,
+      "qc_status": "PASS",
+      "rule_results": {
+        "info": 14,
+        "pass": 34,
+        "skip": 7
+      },
+      "input_mode": "stream",
+      "reason_codes": [
+        "COMPLETE_STEP_RATIO_NOT_MEASURED",
+        "EXCLUDED_BY_VERDICT_POLICY",
+        "NO_JOINT_LIMITS",
+        "NO_OBSERVATIONS",
+        "NO_POINT_COUNT_LIMITS"
+      ]
+    }
+  ],
+  "real_recording": false,
+  "human_acceptance": false
+}

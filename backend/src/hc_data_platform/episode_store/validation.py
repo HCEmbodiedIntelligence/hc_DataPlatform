@@ -334,6 +334,24 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
         "hc/quality.json",
     ):
         document(root, path)
+    if (root / "hc/quality_rules.json").exists():
+        from hc_data_platform.quality.evidence import QcRuleEvidence
+        from hc_data_platform.quality.models import QcReportV1
+
+        evidence = QcRuleEvidence.model_validate(document(root, "hc/quality_rules.json"))
+        quality = document(root, "hc/quality.json")
+        report = QcReportV1.model_validate(quality.get("quality_report", quality))
+        evidence.validate_report(report)
+        if (
+            evidence.source_sha256 != source.source_sha256
+            or evidence.rollout_id != source.identity.rollout_id
+        ):
+            raise ValueError("QC rule evidence belongs to another Episode source")
+        if (
+            quality.get("rule_evidence") is not None
+            and QcRuleEvidence.model_validate(quality["rule_evidence"]) != evidence
+        ):
+            raise ValueError("recording and package rule evidence differ")
     tasks = list(parquet_rows(package_file(root, "meta/tasks.parquet")))
     episodes = list(parquet_rows(package_file(root, EPISODES_PATH)))
     if (

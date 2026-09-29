@@ -180,6 +180,7 @@ class EpisodeStream:
                                 topic=camera.topic,
                                 timestamp_ns=timestamp,
                                 is_camera=True,
+                                corrupt=False,
                             )
                             continue
                         with Image.frombytes(

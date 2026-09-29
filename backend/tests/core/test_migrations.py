@@ -204,6 +204,7 @@ EXPECTED_MANIFEST = (
     "episode_store/0010_continuous_ready_document.sql",
     "annotation/0017_annotation_deliveries.sql",
     "episode_store/0011_data_reviews.sql",
+    "episode_store/0012_qc_rule_evidence.sql",
 )
 
 

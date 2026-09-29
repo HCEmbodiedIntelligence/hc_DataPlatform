@@ -438,6 +438,11 @@ def test_uploaded_recording_slice_qc_package_ready_recovery(
             (destination / "services.json").write_text(json.dumps(evidence, indent=2))
             if "history" in captured:
                 (destination / "temporal-history.json").write_text(captured["history"])
+            from hc_data_platform.episode_store.quality import read_episode_quality
+
+            qc = read_episode_quality(package)
+            assert qc.evidence_status == "AVAILABLE"
+            assert qc.evidence.report_sha256 == qc.report.content_sha256
             for entry in package.manifest.files:
                 target = destination / "episode" / entry.path
                 target.parent.mkdir(parents=True, exist_ok=True)

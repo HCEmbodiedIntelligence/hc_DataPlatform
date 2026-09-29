@@ -366,6 +366,54 @@ components:
       - expires_at
       title: EpisodePreviewGrant
       type: object
+    EpisodeQualityView:
+      additionalProperties: false
+      properties:
+        additional_finding_codes:
+          default: []
+          items:
+            type: string
+          title: Additional Finding Codes
+          type: array
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+        evidence:
+          anyOf:
+          - $ref: '#/components/schemas/QcRuleEvidence'
+          - type: 'null'
+        evidence_status:
+          enum:
+          - AVAILABLE
+          - LEGACY_MISSING
+          - REPORT_MISSING
+          title: Evidence Status
+          type: string
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/QcReportV1'
+          - type: 'null'
+        rules:
+          items:
+            $ref: '#/components/schemas/RuleExecution'
+          title: Rules
+          type: array
+        status:
+          enum:
+          - PASS
+          - RISK
+          - REJECT
+          - UNKNOWN
+          title: Status
+          type: string
+      required:
+      - data
+      - status
+      - evidence_status
+      - report
+      - evidence
+      - rules
+      title: EpisodeQualityView
+      type: object
     PackageStepWindow:
       additionalProperties: false
       properties:
@@ -390,6 +438,147 @@ components:
       - end_step
       - steps
       title: PackageStepWindow
+      type: object
+    QcRuleEvidence:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Sha256
+          type: string
+        end_ns:
+          exclusiveMinimum: 0.0
+          title: End Ns
+          type: integer
+        engine_version:
+          title: Engine Version
+          type: string
+        format:
+          const: hc-qc-rule-evidence/1
+          default: hc-qc-rule-evidence/1
+          title: Format
+          type: string
+        input_mode:
+          enum:
+          - batch
+          - stream
+          title: Input Mode
+          type: string
+        profile:
+          $ref: '#/components/schemas/QualityProfileV1'
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Report Sha256
+          type: string
+        rollout_id:
+          title: Rollout Id
+          type: string
+        rules:
+          items:
+            $ref: '#/components/schemas/RuleExecution'
+          title: Rules
+          type: array
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Source Sha256
+          type: string
+        start_ns:
+          minimum: 0.0
+          title: Start Ns
+          type: integer
+      required:
+      - report_sha256
+      - rollout_id
+      - source_sha256
+      - start_ns
+      - end_ns
+      - engine_version
+      - profile
+      - input_mode
+      - rules
+      - content_sha256
+      title: QcRuleEvidence
+      type: object
+    RuleExecution:
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/QualityCode'
+        detector_findings:
+          items:
+            $ref: '#/components/schemas/QcFinding'
+          title: Detector Findings
+          type: array
+        evaluated_count:
+          minimum: 0.0
+          title: Evaluated Count
+          type: integer
+        expected_count:
+          minimum: 0.0
+          title: Expected Count
+          type: integer
+        observed:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+            - type: number
+            - type: string
+            - type: 'null'
+          title: Observed
+          type: object
+        participates_in_verdict:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Participates In Verdict
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        report_finding_indexes:
+          items:
+            type: integer
+          title: Report Finding Indexes
+          type: array
+        status:
+          enum:
+          - pass
+          - warn
+          - fail
+          - skip
+          - info
+          title: Status
+          type: string
+        thresholds:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+            - type: number
+            - type: string
+            - type: 'null'
+          title: Thresholds
+          type: object
+        topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Topic
+      required:
+      - code
+      - topic
+      - status
+      - reason
+      - participates_in_verdict
+      - evaluated_count
+      - expected_count
+      - observed
+      - thresholds
+      - detector_findings
+      - report_finding_indexes
+      title: RuleExecution
       type: object
     SubmitEpisodeDataReview:
       additionalProperties: false
@@ -877,6 +1066,58 @@ paths:
       security:
       - bearerAuth: []
       summary: Authorize Preview
+      tags:
+      - episode_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/quality
+  : get:
+      operationId: fixedQuality
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: path
+        name: data_version_id
+        required: true
+        schema:
+          title: Data Version Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeQualityView'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Fixed Quality
       tags:
       - episode_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/steps

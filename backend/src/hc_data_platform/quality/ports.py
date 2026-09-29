@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Literal, Protocol, runtime_checkable
 
+from .evidence import QcEvaluation
 from .models import (
     ImageObservation,
     QcReportV1,
@@ -25,6 +26,14 @@ class QualityPersistenceError(RuntimeError):
 
 @runtime_checkable
 class QualityEvaluationPort(Protocol):
+    def evaluate_with_evidence(
+        self,
+        data: QualityInputV1,
+        profile: QualityProfileV1,
+        *,
+        observations: Iterable[QualityStreamObservationV1] | None = None,
+    ) -> QcEvaluation: ...
+
     def evaluate(self, data: QualityInputV1, profile: QualityProfileV1) -> QcReportV1: ...
 
     def evaluate_stream(

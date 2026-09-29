@@ -845,14 +845,22 @@ async def process_ingest_source(
                 )
 
             quality_data = session.quality_data
-            quality_report = _require(
+            evaluator = _require(
                 _dependencies.quality,
                 "quality.QualityEvaluationPort",
-            ).evaluate_stream(
-                quality_data,
-                session.quality_observations(),
-                request.quality.profile,
             )
+            quality_evidence = None
+            if request.alignment.storage_format == "lerobot_v3":
+                evaluation = evaluator.evaluate_with_evidence(
+                    quality_data,
+                    request.quality.profile,
+                    observations=session.quality_observations(),
+                )
+                quality_report, quality_evidence = evaluation.report, evaluation.evidence
+            else:
+                quality_report = evaluator.evaluate_stream(
+                    quality_data, session.quality_observations(), request.quality.profile
+                )
             stop_if_cancelled()
             if (
                 quality_report.rollout_id != quality_data.rollout_id
@@ -865,6 +873,10 @@ async def process_ingest_source(
                 or quality_report.end_ns != quality_data.end_ns
             ):
                 raise ValueError("Quality report lineage does not match activity input")
+            if quality_evidence is not None:
+                _require(
+                    _dependencies.episode_packages, "episode_store.service"
+                ).quality_evidence.put(evaluation)
             if _dependencies.quality_reports is not None:
                 if request.quality.project_id is None or request.quality.region_code is None:
                     raise ValueError("quality persistence requires project_id and region_code")
@@ -938,13 +950,23 @@ async def process_ingest_source(
                     from hc_data_platform.episode_store.mcap_package import freeze_mcap_plan
 
                     native_plan = freeze_mcap_plan(
-                        session, request.alignment, staged_manifest, staging, quality_report
+                        session,
+                        request.alignment,
+                        staged_manifest,
+                        staging,
+                        quality_report,
+                        quality_evidence=quality_evidence,
                     )
                 else:
                     from hc_data_platform.lerobot_imports.package import freeze_native_plan
 
                     native_plan = freeze_native_plan(
-                        session, request.alignment, staged_manifest, staging, quality_report
+                        session,
+                        request.alignment,
+                        staged_manifest,
+                        staging,
+                        quality_report,
+                        quality_evidence=quality_evidence,
                     )
             else:
                 catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")

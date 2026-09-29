@@ -23,7 +23,6 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from psycopg.conninfo import conninfo_to_dict
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Replayer, Worker
@@ -59,7 +58,6 @@ from hc_data_platform.workflow.lerobot_workflow import (
 )
 from hc_data_platform.workflow.models import JobRecord
 from hc_data_platform.workflow.worker import discover_temporal_registrations
-from tests.dashboard.test_dashboard_postgres import migration_uri
 
 from .native_package_fixture import make_native_rgbd
 
@@ -103,9 +101,7 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
     task_id, robot_id = "native-task-" + suffix, "fixture-robot"
     settings = Settings(
         environment="test",
-        postgres_dsn=migration_uri(
-            os.environ["HC_TEST_POSTGRES_DSN"], conninfo_to_dict(isolated_dsn)["dbname"]
-        ),
+        postgres_dsn=isolated_dsn.replace("postgresql://", "postgresql+asyncpg://"),
         auth_abuse_enabled=False,
         object_store_endpoint="http://minio:9000",
         object_store_public_endpoint="http://minio:9000",
@@ -440,6 +436,14 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 assert [r[key] for r in values] == [r[key] for r in original]
             for entry in package.manifest.files:
                 assert file_hash(downloaded / entry.path) == entry.sha256
+            from hc_data_platform.episode_store.quality import read_episode_quality
+
+            qc = read_episode_quality(package)
+            assert (
+                qc.evidence_status == "AVAILABLE"
+                and qc.evidence.report_sha256 == qc.report.content_sha256
+            )
+            assert any(rule.status == "skip" for rule in qc.rules)
             target = Path(os.getenv("HC_G1_WRITER_EVIDENCE_ROOT", str(tmp_path)))
             offline = target / "native-package-offline" / data.data_version_id
             shutil.copytree(downloaded, offline)

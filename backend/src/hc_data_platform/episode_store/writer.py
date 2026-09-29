@@ -321,6 +321,20 @@ def write_episode(
         },
     }.items():
         write_json(root, relative, value)
+    if metadata.get("quality_rules") is not None:
+        from hc_data_platform.quality.evidence import QcRuleEvidence
+        from hc_data_platform.quality.models import QcReportV1
+
+        evidence = QcRuleEvidence.model_validate(metadata["quality_rules"])
+        quality = metadata["quality"]
+        report = QcReportV1.model_validate(quality.get("quality_report", quality))
+        evidence.validate_report(report)
+        if (
+            evidence.source_sha256 != source.source_sha256
+            or evidence.rollout_id != source.identity.rollout_id
+        ):
+            raise ValueError("QC rule evidence belongs to another Episode source")
+        write_json(root, "hc/quality_rules.json", evidence.model_dump(mode="json"))
     for entry in assets.auxiliary_files:
         # Selected recording provenance is an HC extension. It cannot replace
         # numeric/video/official metadata or the writer's own evidence files.

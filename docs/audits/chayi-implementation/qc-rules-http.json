@@ -1,0 +1,45 @@
+{
+  "fixture": "synthetic fixed-version QC through normal gateway session",
+  "data": {
+    "identity": {
+      "organization_id": "g1-ecf12a1716b04ec099a22997bcb3f591",
+      "project_id": "p",
+      "region_code": "r",
+      "dataset_id": "d",
+      "episode_id": "episode-1",
+      "rollout_id": "explicit:rollout:identity"
+    },
+    "data_version_id": "dv_7ddd474ee3a79d5db4801f5f0d8b7a4020fc7f08dc5a8ba147047026b9476f27",
+    "version": 1,
+    "content_hash": "85a8334b94528437a39d694cc8b2e357b78a8d3723c1983bbdb6720e7897bad5",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-g1-ecf12a1716b04ec099a22997bcb3f591/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_7ddd474ee3a79d5db4801f5f0d8b7a4020fc7f08dc5a8ba147047026b9476f27",
+    "frame_count": 3
+  },
+  "legacy_data": {
+    "identity": {
+      "organization_id": "g1-ecf12a1716b04ec099a22997bcb3f591",
+      "project_id": "p",
+      "region_code": "r",
+      "dataset_id": "d",
+      "episode_id": "episode-1",
+      "rollout_id": "explicit:rollout:identity"
+    },
+    "data_version_id": "dv_0206ceceea6f8e140a3b105be90203788cde966fba5a1c657468948a88070602",
+    "version": 2,
+    "content_hash": "251ecac88a119d18809ddc38a1a4f7f0e73c58d8a46667f5fc329fa05c84cef3",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-g1-ecf12a1716b04ec099a22997bcb3f591/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_0206ceceea6f8e140a3b105be90203788cde966fba5a1c657468948a88070602",
+    "frame_count": 3
+  },
+  "report_sha256": "d5843fc9edf1925543270238a9c5c3947fd0b1f9644da31a53e9d52f38ea350a",
+  "evidence_sha256": "797bb76bffa0395bf5c1b343563345117a64785f1a5b630c40ea07d1fafa6599",
+  "rules": 17,
+  "legacy_no_false_pass": true,
+  "immutable_database_receipt": true,
+  "foreign_scope_denied": true,
+  "real_recording": false,
+  "human_acceptance": false
+}

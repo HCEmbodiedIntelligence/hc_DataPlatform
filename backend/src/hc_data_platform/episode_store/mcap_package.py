@@ -34,7 +34,7 @@ def encoding_configuration():
     }
 
 
-def freeze_mcap_plan(session, request, manifest, staging, quality):
+def freeze_mcap_plan(session, request, manifest, staging, quality, *, quality_evidence=None):
     source, original = session.source, session.preflight.manifest
     topics = {camera.topic for camera in original.cameras}
     if set(session.camera_contracts) != topics:
@@ -79,6 +79,11 @@ def freeze_mcap_plan(session, request, manifest, staging, quality):
             "task": original.task_id,
             "camera_topics": sorted(topics),
             "quality": quality.model_dump(mode="json"),
+            **(
+                {"quality_rules": quality_evidence.model_dump(mode="json")}
+                if quality_evidence
+                else {}
+            ),
             "calibration": {"status": "UNKNOWN", "reason": "no validated calibration binding"},
             "source": {
                 "format": "mcap",

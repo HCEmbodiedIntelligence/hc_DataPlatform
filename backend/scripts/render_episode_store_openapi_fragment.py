@@ -33,6 +33,9 @@ def main():
                     "EpisodeDataReview",
                     "EpisodeDataReviewPage",
                     "EpisodeDataReviewAction",
+                    "RuleExecution",
+                    "QcRuleEvidence",
+                    "EpisodeQualityView",
                 )
             }
         },

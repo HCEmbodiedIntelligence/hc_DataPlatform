@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: b5848ad9258ee8df16e41fe0314df697b79813dc7f6a970a2994f2d6da29454c
+// Runtime-OpenAPI-SHA256: fb30fc9dcdf9aad4f6e88caa366d995fa445336c61da9453c83589cc0755e6ce
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -267,6 +267,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/depth/{feature}/{frame_index}" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/download" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/media/{feature}/authorize" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/quality" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/steps" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/device-capture-facts" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },

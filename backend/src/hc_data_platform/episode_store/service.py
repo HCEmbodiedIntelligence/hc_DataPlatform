@@ -11,6 +11,7 @@ from .commit import EpisodePackageCommitter
 from .files import PackageFiles, VerifiedFileCache
 from .postgres import PackageConflict, PostgresEpisodeStore, assert_scope
 from .previews import EpisodePreviews
+from .quality import EpisodeQualityEvidence
 from .reader import ParquetStepReader, PhysicalDepthReader
 from .reviews import EpisodeDataReviews
 from .schemas import EpisodeSchemas
@@ -32,6 +33,7 @@ class EpisodePackageService:
     ):
         self.repository = PostgresEpisodeStore(connections)
         self.data_reviews = EpisodeDataReviews(self.repository)
+        self.quality_evidence = EpisodeQualityEvidence(self.repository)
         self.directory = directory
         self.cache = VerifiedFileCache(
             directory / "files", capacity_bytes=cache_bytes, max_object_bytes=max_object_bytes

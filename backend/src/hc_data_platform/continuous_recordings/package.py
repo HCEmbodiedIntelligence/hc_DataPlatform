@@ -387,6 +387,7 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality):
             "inventory": [file.model_dump(mode="json") for file in files.values()],
         },
         "quality": quality,
+        **({"quality_rules": quality["rule_evidence"]} if quality.get("rule_evidence") else {}),
         "calibration": {"status": "UNKNOWN", "reason": "no validated calibration declared"},
     }
     recording_evidence = []

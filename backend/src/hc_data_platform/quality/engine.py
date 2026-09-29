@@ -47,7 +47,20 @@ class QualityEngine:
         self._metadata_sink = metadata_sink
         self._engine_version = engine_version
 
-    def evaluate(self, data: QualityInputV1, profile: QualityProfileV1) -> QcReportV1:
+    def evaluate_with_evidence(self, data, profile, *, observations=None):
+        from .evidence import QcEvaluation, RuleEvidenceCollector
+
+        collector = RuleEvidenceCollector(data, profile, streaming=observations is not None)
+        report = (
+            self.evaluate(data, profile, _evidence=collector)
+            if observations is None
+            else self.evaluate_stream(data, observations, profile, _evidence=collector)
+        )
+        return QcEvaluation(report=report, evidence=collector.result)
+
+    def evaluate(
+        self, data: QualityInputV1, profile: QualityProfileV1, *, _evidence=None
+    ) -> QcReportV1:
         findings: list[QcFinding] = []
         metrics: list[TopicTimingMetricsV1] = []
         missing_required = profile.required_topics - data.topic_timestamps_ns.keys()
@@ -82,6 +95,7 @@ class QualityEngine:
         findings.extend(self._point_clouds(data, profile))
         findings.extend(self._offsets(data, profile))
         findings.extend(self._complete_steps(data, profile))
+        raw_findings = tuple(findings) if _evidence is not None else ()
         findings = self._apply_policy(findings, profile)
         findings.sort(key=self._finding_key)
 
@@ -98,6 +112,8 @@ class QualityEngine:
             topic_metrics=tuple(metrics),
             findings=tuple(findings),
         )
+        if _evidence is not None:
+            _evidence.finish(report, raw_findings)
         self._persist(report)
         return report
 
@@ -106,6 +122,8 @@ class QualityEngine:
         data: QualityInputV1,
         observations: Iterable[QualityStreamObservationV1],
         profile: QualityProfileV1,
+        *,
+        _evidence=None,
     ) -> QcReportV1:
         """Evaluate ingest facts online with exact timestamp state spilled to SQLite."""
 
@@ -113,6 +131,8 @@ class QualityEngine:
         metrics: list[TopicTimingMetricsV1] = []
         order: dict[str, dict[str, int | None]] = {}
         images: dict[str, dict[str, object]] = {}
+        if _evidence is not None:
+            observations = _evidence.observe(observations)
         with tempfile.TemporaryDirectory(prefix="hc-quality-online-") as directory:
             database = sqlite3.connect(str(Path(directory) / "quality.sqlite3"))
             try:
@@ -228,6 +248,7 @@ class QualityEngine:
         findings.extend(self._point_clouds(data, profile))
         findings.extend(self._offsets(data, profile))
         findings.extend(self._complete_steps(data, profile))
+        raw_findings = tuple(findings) if _evidence is not None else ()
         findings = self._apply_policy(findings, profile)
         findings.sort(key=self._finding_key)
         report = QcReportV1.build(
@@ -243,6 +264,8 @@ class QualityEngine:
             topic_metrics=tuple(metrics),
             findings=tuple(findings),
         )
+        if _evidence is not None:
+            _evidence.finish(report, raw_findings)
         self._persist(report)
         return report
 
