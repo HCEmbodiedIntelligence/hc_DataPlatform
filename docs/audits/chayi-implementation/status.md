@@ -44,6 +44,10 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W3/W6 生成层补充（2026-09-29）：显式标签集合定义导出分段轨道，冻结数据/修订
+  与文件哈希；不改旧标注模型/审核哈希。分段列、完整标注及全 RGB-D 派生包生成层
+  13 项测试通过，断网官方 reader/DataLoader 和独立 HC 掩码通过。见
+  [生成层证据与未完成项](subtask-writer.md)。交付队列/API/UI 尚未接通，17 项 P0 不变。
 - W2 MCAP 补充（2026-09-29）：新派发接通独立 RGB-D 包，使用明确源单位、实际
   ROS2 CDR/JSON 解码、源帧/时钟、掩码和独立误差报告。真实服务测试 2、回归 56、
   工作流/提交 17、原生入口回归 1 项通过；常驻隔离 worker 另完成实际 MCAP 工作流。
