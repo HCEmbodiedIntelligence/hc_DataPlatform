@@ -72,6 +72,7 @@ class DepthProfile:
 
 DEFAULT_PROFILE = DepthProfile()
 DEPTH_INFO = DEFAULT_PROFILE.metadata()
+ENCODER_PROFILE = "hc-hevc-gray12-lossless/2"
 
 
 def dequantize(quantized, profile=DEFAULT_PROFILE, *, output_unit="m"):
@@ -215,12 +216,29 @@ class DepthVideo:
             # LeRobot encoder does. --profile main12 rejects gray12le/i400.
             "preset": "ultrafast",
             "x265-params": (
-                "lossless=1:bframes=0:open-gop=0:repeat-headers=1:"
+                # Inter prediction in the pinned build reproduced code changes
+                # after zero frames at multiple sizes. Neither rd=3 nor weightp=0
+                # reliably fixed it. Use independent pictures, retain gray12le,
+                # and still verify every decoded code before accepting output.
+                "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:"
                 "pools=none:frame-threads=1:log-level=error"
             ),
         }
         self.stream.options = dict(self.encoder_options)
         self.fps, self.frames = fps, 0
+
+    def encoding_metadata(self):
+        configuration = {
+            "encoder_profile": ENCODER_PROFILE,
+            "pyav_version": av.__version__,
+            "ffmpeg_libraries": av.library_versions,
+            "encoder_options": dict(self.encoder_options),
+        }
+        encoded = json.dumps(configuration, sort_keys=True, separators=(",", ":"))
+        return {
+            **configuration,
+            "encoder_configuration_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+        }
 
     def write(self, array, scale):
         quantized = codes(array, scale, self.profile)

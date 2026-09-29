@@ -25,6 +25,7 @@
     "Worker-local temporary index and source queries",
     "public field order and RGB/depth preview output",
     "formatting without changing association semantics",
-    "openarm-raw-platform/3 requires versioned depth source units before encoding and preserves independent observed depth grids"
+    "openarm-raw-platform/3 requires versioned depth source units before encoding and preserves independent observed depth grids",
+    "openarm-raw-platform/4 records hc-hevc-gray12-lossless/2; newly encoded depth uses intra-only encoding after reproduced inter-frame code mismatches"
   ]
 }

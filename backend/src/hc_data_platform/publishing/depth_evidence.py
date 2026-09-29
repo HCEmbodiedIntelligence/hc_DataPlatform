@@ -300,9 +300,7 @@ class DepthEvidenceVideo:
                     "codes_sha256": actual.hexdigest(),
                     "video_sha256": file_hash(self.path),
                     "codec_profile": codec_profile,
-                    "pyav_version": av.__version__,
-                    "ffmpeg_libraries": av.library_versions,
-                    "encoder_options": self.video.encoder_options,
+                    **self.video.encoding_metadata(),
                 },
                 "validity": {
                     "encoding": "parquet-png-u8-flags",

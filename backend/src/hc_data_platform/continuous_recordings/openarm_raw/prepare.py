@@ -27,7 +27,7 @@ from .config import config_hash, validate
 from .models import Sample
 from .video import FrameReader, TrainingVideo
 
-VERSION = "openarm-raw-platform/3"
+VERSION = "openarm-raw-platform/4"
 
 
 def canonical(value):
