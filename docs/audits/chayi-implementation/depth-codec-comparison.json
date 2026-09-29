@@ -1,0 +1,812 @@
+{
+  "scope": "synthetic codec regression, not real sample/full G1 acceptance",
+  "pyav_version": "15.1.0",
+  "ffmpeg_libraries": {
+    "libavutil": [
+      59,
+      39,
+      100
+    ],
+    "libavcodec": [
+      61,
+      19,
+      101
+    ],
+    "libavformat": [
+      61,
+      7,
+      100
+    ],
+    "libavdevice": [
+      61,
+      3,
+      100
+    ],
+    "libavfilter": [
+      10,
+      4,
+      100
+    ],
+    "libswscale": [
+      8,
+      3,
+      100
+    ],
+    "libswresample": [
+      5,
+      3,
+      100
+    ]
+  },
+  "separate_decoder": "ffmpeg version 5.1.9-0+deb12u1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "results": [
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 2042,
+      "system_ffmpeg_differing_codes": 2042,
+      "encoded_bytes": 9587,
+      "encode_seconds": 0.0030584649939555675
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 1774,
+      "system_ffmpeg_differing_codes": 1774,
+      "encoded_bytes": 9361,
+      "encode_seconds": 0.002715468013775535
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 32,
+      "system_ffmpeg_differing_codes": 32,
+      "encoded_bytes": 10876,
+      "encode_seconds": 0.002116870993631892
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 1165,
+      "system_ffmpeg_differing_codes": 1165,
+      "encoded_bytes": 10251,
+      "encode_seconds": 0.004912607997539453
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 26,
+      "system_ffmpeg_differing_codes": 26,
+      "encoded_bytes": 10877,
+      "encode_seconds": 0.002696779993129894
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 1276,
+      "system_ffmpeg_differing_codes": 1276,
+      "encoded_bytes": 10232,
+      "encode_seconds": 0.0024545359920011833
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 39988,
+      "encode_seconds": 0.002364713989663869
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 39988,
+      "encode_seconds": 0.0020445189875317737
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 39988,
+      "encode_seconds": 0.0023669429938308895
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 39988,
+      "encode_seconds": 0.002586774993687868
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 39988,
+      "encode_seconds": 0.0027178909949725494
+    },
+    {
+      "shape": [
+        16,
+        16
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 39988,
+      "encode_seconds": 0.0024731940065976232
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 7874,
+      "system_ffmpeg_differing_codes": 7874,
+      "encoded_bytes": 10832,
+      "encode_seconds": 0.002837021995219402
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 7874,
+      "system_ffmpeg_differing_codes": 7874,
+      "encoded_bytes": 10832,
+      "encode_seconds": 0.003606686004786752
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 4960,
+      "system_ffmpeg_differing_codes": 4960,
+      "encoded_bytes": 10878,
+      "encode_seconds": 0.002890025993110612
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 4960,
+      "system_ffmpeg_differing_codes": 4960,
+      "encoded_bytes": 10878,
+      "encode_seconds": 0.003929172991774976
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 4960,
+      "system_ffmpeg_differing_codes": 4960,
+      "encoded_bytes": 10878,
+      "encode_seconds": 0.0026935580099234357
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 4960,
+      "system_ffmpeg_differing_codes": 4960,
+      "encoded_bytes": 10878,
+      "encode_seconds": 0.0022415639978135005
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40037,
+      "encode_seconds": 0.00237421398924198
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40037,
+      "encode_seconds": 0.002998020005179569
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40037,
+      "encode_seconds": 0.002691094996407628
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40037,
+      "encode_seconds": 0.002554264006903395
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40037,
+      "encode_seconds": 0.002374164992943406
+    },
+    {
+      "shape": [
+        32,
+        32
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40037,
+      "encode_seconds": 0.006274091996601783
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 10958,
+      "encode_seconds": 0.00417876300343778
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 10958,
+      "encode_seconds": 0.0040211720042862
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 10958,
+      "encode_seconds": 0.004312867997214198
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 10958,
+      "encode_seconds": 0.004083474996150471
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 10958,
+      "encode_seconds": 0.003574018002836965
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 10958,
+      "encode_seconds": 0.0036478590045589954
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40060,
+      "encode_seconds": 0.004169946012552828
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40060,
+      "encode_seconds": 0.007431528996676207
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40060,
+      "encode_seconds": 0.004354963995865546
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40060,
+      "encode_seconds": 0.006531042003189214
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40060,
+      "encode_seconds": 0.004758410999784246
+    },
+    {
+      "shape": [
+        64,
+        64
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40060,
+      "encode_seconds": 0.0030138529982650653
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 11838,
+      "encode_seconds": 0.11677586199948564
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 11838,
+      "encode_seconds": 0.11678996199043468
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 11838,
+      "encode_seconds": 0.10859658100525849
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 11838,
+      "encode_seconds": 0.10902528501173947
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 11838,
+      "encode_seconds": 0.10493597699678503
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "previous-inter",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 11838,
+      "encode_seconds": 0.1068749809928704
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40916,
+      "encode_seconds": 0.05724723399907816
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40916,
+      "encode_seconds": 0.09745024799485691
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40916,
+      "encode_seconds": 0.0655239579937188
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40916,
+      "encode_seconds": 0.06647575501119718
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40916,
+      "encode_seconds": 0.059160256991162896
+    },
+    {
+      "shape": [
+        400,
+        640
+      ],
+      "options": {
+        "preset": "ultrafast",
+        "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+      },
+      "configuration": "hc-hevc-gray12-lossless/2",
+      "codec_profile": "Rext",
+      "pyav_differing_codes": 0,
+      "system_ffmpeg_differing_codes": 0,
+      "encoded_bytes": 40916,
+      "encode_seconds": 0.05789247700886335
+    }
+  ]
+}

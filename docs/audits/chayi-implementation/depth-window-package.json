@@ -1,0 +1,46 @@
+{
+  "scope": "synthetic prepared inputs, real PG/MinIO/SDK package services",
+  "data": {
+    "identity": {
+      "organization_id": "depth-window-21dae694620c42d8b5cd8f2c4b1e6ac7",
+      "project_id": "writer-project",
+      "region_code": "writer-region",
+      "dataset_id": "writer-dataset",
+      "episode_id": "writer-episode",
+      "rollout_id": "explicit:writer-rollout"
+    },
+    "data_version_id": "dv_f62e300253a558f456c0d61b4bae003b6007e2806605d744f505a3666ca91226",
+    "version": 1,
+    "content_hash": "733314e7a89db7a48a201588d52f3e508ac27c273d1aa312c937cd4e4fcfc9ab",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-depth-window-21dae694620c42d8b5cd8f2c4b1e6ac7/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_f62e300253a558f456c0d61b4bae003b6007e2806605d744f505a3666ca91226",
+    "frame_count": 4
+  },
+  "collection_version": 1,
+  "window": {
+    "first_source_frame": 1,
+    "stop_source_frame": 5,
+    "frame_count": 4,
+    "frequency_hz": 30,
+    "target_start_ns": 1790000000040000001,
+    "rounding": "floor"
+  },
+  "selected_frames": [
+    1,
+    2,
+    3,
+    3
+  ],
+  "source_seq": [
+    1,
+    null,
+    3,
+    3
+  ],
+  "source_scale_m_per_unit": 0.00025,
+  "rgb_source_sha256": "658605654d776926e7b5b51e5e51e27ffb1d086bc87ede98afb0dfbe633b2043",
+  "depth_source_sha256": "d228e4ed889fa73275301f3cb2553eb6943614f0732d6511824a533ab412cd61",
+  "model_depth_training_support": "NOT_VALIDATED",
+  "offline_package": "/app/.g1-artifacts/depth-window/dv_f62e300253a558f456c0d61b4bae003b6007e2806605d744f505a3666ca91226"
+}

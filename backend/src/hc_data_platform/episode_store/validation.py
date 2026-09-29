@@ -85,6 +85,21 @@ def validate_depth(
     ):
         raise ValueError("official depth metadata does not match frozen profile")
     report = document(root, f"{evidence_path}/report.json")
+    encoding = report["video_encoding"]
+    if "encoder_profile" in encoding or "encoder_configuration_sha256" in encoding:
+        configuration = {
+            key: encoding.get(key)
+            for key in ("encoder_profile", "pyav_version", "ffmpeg_libraries", "encoder_options")
+        }
+        actual = hashlib.sha256(
+            json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if (
+            not isinstance(configuration["encoder_profile"], str)
+            or not configuration["encoder_profile"]
+            or encoding.get("encoder_configuration_sha256") != actual
+        ):
+            raise ValueError("depth encoder configuration hash mismatch")
     source_profiles = report.get("source_profiles", {})
     if (
         not isinstance(source_profiles, dict)
@@ -106,10 +121,27 @@ def validate_depth(
     rows = parquet_rows(package_file(root, f"{evidence_path}/frames.parquet"))
     masks = parquet_rows(package_file(root, f"{evidence_path}/validity/flags.parquet"))
     observed, count, with_source = hashlib.sha256(), 0, False
+    previous_source = None
+    totals = dict.fromkeys(
+        (
+            "pixels",
+            "valid_pixels",
+            "invalid_pixels",
+            "saturated_low_pixels",
+            "saturated_high_pixels",
+            "unclipped_pixels",
+            "missing_frames",
+            "repeated_frames",
+        ),
+        0,
+    )
+    maximum_error = None
     with av.open(str(video)) as container:
         stream = container.streams.video[0]
         if (stream.codec_context.name, stream.codec_context.format.name) != ("hevc", "gray12le"):
             raise ValueError("depth requires HEVC gray12le")
+        if report["video_encoding"]["codec_profile"] != stream.codec_context.profile:
+            raise ValueError("depth codec profile differs from actual stream")
         for frame in container.decode(stream):
             row, mask = next(rows, None), next(masks, None)
             target = next(target_rows, None)
@@ -125,6 +157,30 @@ def validate_depth(
                 raise ValueError("depth video/source/mask frame mapping mismatch")
             if row["target_timestamp_ns"] != target["hc.timestamp_ns"]:
                 raise ValueError("depth source mapping targets a different Episode time grid")
+            if type(row["missing"]) is not bool or type(row["target_timestamp_ns"]) is not int:
+                raise ValueError("depth temporal status has an invalid timestamp/missing flag")
+            if not row["missing"] and (
+                type(row["source_timestamp_ns"]) is not int
+                or type(row["source_seq"]) is not int
+                or not isinstance(row["source_id"], str)
+                or not row["source_id"]
+            ):
+                raise ValueError("depth source unit/identity missing")
+            identity = None if row["missing"] else (row["source_id"], row["source_seq"])
+            error = (
+                None if row["missing"] else row["source_timestamp_ns"] - row["target_timestamp_ns"]
+            )
+            threshold = row["max_time_error_ns"]
+            if (
+                row["time_error_ns"] != error
+                or threshold is not None
+                and (type(threshold) is not int or threshold < 0)
+                or row["time_threshold_exceeded"]
+                != (error is not None and threshold is not None and abs(error) > threshold)
+                or row["repeated"] != (identity is not None and identity == previous_source)
+            ):
+                raise ValueError("depth temporal status differs from original source identity/time")
+            previous_source = identity
             expected_source = () if row["missing"] else (row["source_timestamp_ns"],)
             for kind, expected in (
                 ("source_timestamps_ns", list(expected_source)),
@@ -152,6 +208,50 @@ def validate_depth(
                 or np.any(flags & 6 == 6)
             ):
                 raise ValueError("depth mask flags/shape invalid")
+            if (
+                np.any(pixels[flags & 1 == 0] != 0)
+                or np.any(pixels[flags & 2 != 0] != 0)
+                or np.any(pixels[flags & 4 != 0] != 4095)
+            ):
+                raise ValueError("depth invalid/saturated codes differ from mask flags")
+            counts = dict(
+                pixels=flags.size,
+                valid_pixels=int((flags & 1 != 0).sum()),
+                invalid_pixels=int((flags & 1 == 0).sum()),
+                saturated_low_pixels=int((flags & 2 != 0).sum()),
+                saturated_high_pixels=int((flags & 4 != 0).sum()),
+                unclipped_pixels=int((flags == 1).sum()),
+            )
+            if (
+                any(row[key] != value for key, value in counts.items())
+                or row["half_cell_bound_passed"] is not True
+            ):
+                raise ValueError("depth per-frame validity/error report differs from stored masks")
+            for key, value in counts.items():
+                totals[key] += value
+            totals["missing_frames"] += int(row["missing"])
+            totals["repeated_frames"] += int(row["repeated"])
+            value = row["unclipped_max_error_m"]
+            if counts["unclipped_pixels"]:
+                percentiles = [
+                    row[f"unclipped_p{percentile}_error_m"] for percentile in (50, 95, 99)
+                ]
+                if any(
+                    type(v) not in (int, float) or not math.isfinite(v) or v < 0
+                    for v in [*percentiles, value]
+                ) or [*percentiles, value] != sorted([*percentiles, value]):
+                    raise ValueError("depth quantization error statistics are inconsistent")
+                maximum_error = value if maximum_error is None else max(maximum_error, value)
+            elif any(
+                row[key] is not None
+                for key in (
+                    "unclipped_max_error_m",
+                    "unclipped_p50_error_m",
+                    "unclipped_p95_error_m",
+                    "unclipped_p99_error_m",
+                )
+            ):
+                raise ValueError("depth error report claims measurements for absent valid pixels")
             if row["missing"]:
                 if (
                     flags.any()
@@ -159,7 +259,12 @@ def validate_depth(
                     or row.get("source_profile_sha256") is not None
                     or any(
                         row[k] is not None
-                        for k in ("source_seq", "source_timestamp_ns", "depth_scale_m_per_unit")
+                        for k in (
+                            "source_seq",
+                            "source_timestamp_ns",
+                            "depth_scale_m_per_unit",
+                            "source_dtype",
+                        )
                     )
                 ):
                     raise ValueError("missing depth frame claims measurement/source")
@@ -195,6 +300,8 @@ def validate_depth(
         or next(masks, None) is not None
         or not with_source
         or observed.hexdigest() != report["video_encoding"]["codes_sha256"]
+        or report["totals"] != totals
+        or report["quantization"]["unclipped_max_error_m"] != maximum_error
     ):
         raise ValueError("depth completeness/code hash mismatch")
 

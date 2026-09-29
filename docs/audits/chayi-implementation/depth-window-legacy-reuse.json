@@ -1,0 +1,12 @@
+{
+  "scope": "existing prior-stage real-service upload of synthetic input, read only",
+  "data_version_id": "dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f",
+  "legacy_options": {
+    "preset": "ultrafast",
+    "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+  },
+  "package_content_hash_unchanged": "60a78a49c7464bdf7315ae3ea1cacbcfa08598c248676eb3a53f553fb65d080c",
+  "byte_reuse": true,
+  "encoder_invoked": false,
+  "requantized": false
+}

@@ -1,0 +1,37 @@
+{
+  "date": "2026-09-29",
+  "scope": "isolated synthetic software evidence; G1 incomplete",
+  "files": {
+    "depth-window-unit.xml": {
+      "sha256": "91287cfccd449200888fd9a8f1975b0adc3bb5d72b1e7cbdafba01b11a687654",
+      "size": 8286
+    },
+    "depth-window-regression.xml": {
+      "sha256": "ede3adee26bc413ce947fa1b70f689b1f9576cceb53fa4bd44ad8eaaec0fa227",
+      "size": 7005
+    },
+    "depth-codec-comparison.json": {
+      "sha256": "c487477449d1187fdcbd8b9694887a5e30aac43c711379572ff7dc3a4be9d0b6",
+      "size": 23293
+    },
+    "depth-window-legacy-reuse.json": {
+      "sha256": "24c01c6c7c5197dae097a50da5c5462c8708714de8274738debdc79b5715b674",
+      "size": 525
+    },
+    "depth-window-package.json": {
+      "sha256": "5d1cc4827755eea544cba517f0ac980b8238074bca2d60e14b4c4e9f09d5c824",
+      "size": 1649
+    },
+    "depth-window-offline-reader.json": {
+      "sha256": "993df878bc2406c7dbac71f616fcc593bebf3a24a69787ff3f864522ed947614",
+      "size": 810
+    }
+  },
+  "unchanged_input_documents": {
+    "chayi.md": "51cfd06544d55d0c9f0831de80259a42318857e6bc670dbb9ae25e482ee9cead",
+    "chayi-implementation-plan.md": "4bd37f00c4c7314ac53be2c9c024b24404c0dacbaef2fc5f2f76f235bf6de7c1",
+    "chayi-goal-prompts.md": "1991869d1d5391da88718f2f3bb0137920523c5bb1200a6e7f8cb73d4b595d8b",
+    "chayi-teleop-integration.md": "0d4edebd23bc25695740e6181195ec196f74005f3f9d16986bfd6b7f2b900e0b"
+  },
+  "model_depth_training_support": "NOT_VALIDATED"
+}

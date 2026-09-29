@@ -1,0 +1,21 @@
+{
+  "scope": "synthetic prepared inputs, real PG/MinIO/SDK package services",
+  "network": "disabled by container",
+  "lerobot_version": "0.6.1",
+  "data_version_id": "dv_f62e300253a558f456c0d61b4bae003b6007e2806605d744f505a3666ca91226",
+  "frames": 4,
+  "missing_frames": 1,
+  "repeated_frames": 1,
+  "official_reader_and_dataloader": true,
+  "independent_hc_mask_applied": true,
+  "original_sensor_mapping_verified": true,
+  "depth_output_unit": "mm",
+  "max_interior_error_mm_including_official_rounding": 0.25,
+  "source_quantization_max_error_m": 0.0006987037658692241,
+  "selected_12bit_codes_lossless": true,
+  "codec_profile": "Rext",
+  "encoder_profile": "hc-hevc-gray12-lossless/2",
+  "rgb_h265_byte_preserved": true,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "platform_imported": false
+}

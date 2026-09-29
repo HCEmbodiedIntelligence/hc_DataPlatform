@@ -44,6 +44,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W1/W2 阶段补充（2026-09-29）：深度窗口支持整段字节复用和选取码值无损编码，
+  保留原掩码／源单位／帧映射／误差，完成实际包服务与禁网官方 reader 验证。
+  测试发现当前编码依赖在全零缺帧后的帧间码值损坏，新增版本化独立关键帧配置；
+  55 项单元／服务、43 项扩大回归通过，两个解码器对比旧／新配置证据已记录。
+  见 [窗口、编码代价、限制及 G2 条件](depth-window.md)。窗口尚未接入入口派发，
+  Raw `/3`→`/4` 的固定派生恢复待处理；17 项 P0 仍 Pending，不能据此部署 G2。
 - R3/W2 阶段补充（2026-09-29）：独立 uploader 1.3.0 已通过真实隔离 API 上传
   合成 RGB-D，处理失败后用同一 Raw 重试至 READY；视频/HC 字节复用、零 Lance、
   完整包禁网官方 reader/DataLoader 与独立掩码均核验。94 项回归、4 项实际包服务、
