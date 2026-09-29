@@ -27,7 +27,9 @@ EPISODES_PATH = "meta/episodes/chunk-000/file-000.parquet"
 
 
 def _camera(name: str) -> bool:
-    return name.startswith(("/camera/", "camera.", "observation.images."))
+    return name.startswith(("/camera/", "camera.", "observation.images.")) or bool(
+        re.fullmatch(r"/?io_teleop/camera_[A-Za-z0-9_]+/(?:color|depth)", name)
+    )
 
 
 def _feature_names(names: Sequence[str]) -> dict[str, str]:
@@ -621,6 +623,8 @@ class LeRobotArchive:
                             .get(target, {})
                             .get("info", {})
                         )
+                        if not source_info.get("is_depth_map"):
+                            source_info = info["features"][target].get("info", {})
                         if source_info.get("is_depth_map"):
                             feature, video_stats = inspect_depth_video(
                                 path, len(selected), self.fps, source_info

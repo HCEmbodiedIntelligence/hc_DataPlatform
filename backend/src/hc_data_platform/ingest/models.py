@@ -30,7 +30,7 @@ Sha256 = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
 Etag = Annotated[str, StringConstraints(min_length=1, max_length=512)]
 TopicName = Annotated[
     str,
-    StringConstraints(min_length=1, max_length=512, pattern=r"^/[A-Za-z0-9_./-]+$"),
+    StringConstraints(min_length=1, max_length=512, pattern=r"^/?[A-Za-z0-9_./-]+$"),
 ]
 RelativeObjectPath = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
 
@@ -274,6 +274,7 @@ class ManifestCameraV1(BaseModel):
     topic: TopicName
     frame_id: Identifier | None = None
     encoding: str | None = Field(default=None, max_length=128)
+    depth_unit: Literal["mm"] | None = None
 
 
 class ManifestTopicV1(BaseModel):

@@ -879,3 +879,14 @@ def test_sparse_20gb_control_plane_issues_direct_urls_without_allocating_body() 
 def test_crc64_matches_oss_crc64_xz_known_vector_and_incremental_semantics() -> None:
     assert crc64_ecma(b"123456789") == 0x995DC9BBDF1939FA
     assert crc64_ecma(b"56789", crc64_ecma(b"1234")) == crc64_ecma(b"123456789")
+
+
+def test_native_crc64_matches_portable_fallback_on_binary_chunks(monkeypatch) -> None:
+    from hc_data_platform.ingest import ports
+
+    content = bytes(range(256)) * 1024 + b"\x00last\xff"
+    expected = crc64_ecma(content)
+    assert crc64_ecma(content[34567:], crc64_ecma(content[:34567])) == expected
+    monkeypatch.setattr(ports, "_native_crc64", lambda: None)
+    assert crc64_ecma(content) == expected
+    assert crc64_ecma(b"", expected) == expected

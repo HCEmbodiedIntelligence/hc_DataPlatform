@@ -1290,6 +1290,14 @@ components:
         start_timestamp_ns:
           title: Start Timestamp Ns
           type: string
+        video_info:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: boolean
+            - type: number
+            - type: integer
+          type: object
       required:
       - frame_count
       - start_timestamp_ns
@@ -16460,6 +16468,12 @@ components:
       properties:
         camera_id:
           $ref: '#/components/schemas/IngestIdentifier'
+        depth_unit:
+          anyOf:
+          - const: mm
+            type: string
+          - type: 'null'
+          default: null
         encoding:
           maxLength: 128
           type:
@@ -24361,7 +24375,7 @@ components:
     TopicName:
       maxLength: 512
       minLength: 1
-      pattern: ^/[A-Za-z0-9_./-]+$
+      pattern: ^/?[A-Za-z0-9_./-]+$
       type: string
     TopicTimingMetricsV1:
       additionalProperties: false

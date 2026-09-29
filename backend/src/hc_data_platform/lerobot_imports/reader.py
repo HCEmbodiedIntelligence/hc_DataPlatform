@@ -7,6 +7,7 @@ import math
 import struct
 import subprocess
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -265,8 +266,9 @@ def _validate_video(video: Any, feature: dict[str, Any], count: int, fps: float)
             "-read_intervals",
             f"{video.from_timestamp}%{video.to_timestamp + 1.0}",
             "-show_frames",
+            "-show_streams",
             "-show_entries",
-            "frame=best_effort_timestamp_time,width,height",
+            "frame=best_effort_timestamp,width,height:stream=time_base",
             "-of",
             "json",
             str(video.file),
@@ -275,18 +277,21 @@ def _validate_video(video: Any, feature: dict[str, Any], count: int, fps: float)
         check=True,
         timeout=120,
     )
+    probe = json.loads(result.stdout)
+    time_base = Fraction(probe["streams"][0]["time_base"])
     frames = [
         f
-        for f in json.loads(result.stdout)["frames"]
+        for f in probe["frames"]
         if video.from_timestamp - 1e-7
-        <= float(f["best_effort_timestamp_time"])
+        <= float(int(f["best_effort_timestamp"]) * time_base)
         < video.to_timestamp - 1e-7
     ]
     height, width, _ = feature["shape"]
     if len(frames) != count or any(
         f["width"] != width
         or f["height"] != height
-        or abs(float(f["best_effort_timestamp_time"]) - video.from_timestamp - i / fps) > 2e-6
+        or abs(float(int(f["best_effort_timestamp"]) * time_base) - video.from_timestamp - i / fps)
+        > 2e-6
         for i, f in enumerate(frames)
     ):
         raise ValueError("LEROBOT_VIDEO_FRAMES: decoded shape, count or PTS differ from grid")

@@ -466,7 +466,7 @@ components:
       type: string
       minLength: 1
       maxLength: 512
-      pattern: "^/[A-Za-z0-9_./-]+$"
+      pattern: "^/?[A-Za-z0-9_./-]+$"
     ManifestFileV1:
       type: object
       additionalProperties: false
@@ -487,6 +487,7 @@ components:
         topic: {$ref: "#/components/schemas/TopicName"}
         frame_id: {anyOf: [{$ref: "#/components/schemas/IngestIdentifier"}, {type: "null"}]}
         encoding: {type: [string, "null"], maxLength: 128}
+        depth_unit: {anyOf: [{type: string, const: mm}, {type: "null"}], default: null}
     ManifestTopicV1:
       type: object
       additionalProperties: false

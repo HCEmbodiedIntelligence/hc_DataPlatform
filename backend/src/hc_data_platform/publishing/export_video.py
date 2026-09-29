@@ -283,6 +283,9 @@ def materialize_video(
     with tempfile.TemporaryDirectory(prefix="hc-export-video-") as name:
         root = Path(name)
         first = assets.video_source(manifest, rollout, references[0])
+        if depth_info is None and first.video_info.get("is_depth_map"):
+            depth_info = first.video_info
+            depth = True
         command = [
             "ffmpeg",
             "-nostdin",

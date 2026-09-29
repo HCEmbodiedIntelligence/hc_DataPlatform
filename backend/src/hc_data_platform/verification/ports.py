@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import io
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from functools import lru_cache
 from typing import Any, Protocol, cast, runtime_checkable
 
 from .models import RawVerificationReportV1
@@ -201,6 +202,7 @@ class McapRos2DecoderProbe:
 
     def __init__(self, decoder_factory: Callable[[], Any] | None = None) -> None:
         self._decoder_factory = decoder_factory
+        self._message_decoder = lru_cache(maxsize=32)(self._compile_decoder)
 
     def supports(self, message_encoding: str, schema_encoding: str) -> bool:
         return (message_encoding, schema_encoding) == ("cdr", "ros2msg")
@@ -219,23 +221,22 @@ class McapRos2DecoderProbe:
         if not schema_name:
             raise ValueError("the ROS 2 decoder requires the MCAP schema name")
         try:
-            from mcap.records import Schema
-
-            factory = self._factory()()
-            schema = Schema(
-                id=1,
-                name=schema_name,
-                encoding=schema_encoding,
-                data=schema_data,
-            )
-            decoder = factory.decoder_for(message_encoding, schema)
-            if decoder is None:
-                raise ValueError("the ROS 2 factory rejected the schema pair")
+            decoder = self._message_decoder(schema_name, schema_data)
             return decoder(message_data)
         except (TypeError, ValueError):
             raise
         except Exception as exc:
             raise ValueError(f"ROS 2 decoder raised {type(exc).__name__}: {exc}") from exc
+
+    def _compile_decoder(self, schema_name: str, schema_data: bytes) -> Callable[[bytes], Any]:
+        from mcap.records import Schema
+
+        factory = self._factory()()
+        schema = Schema(id=1, name=schema_name, encoding="ros2msg", data=schema_data)
+        decoder = factory.decoder_for("cdr", schema)
+        if decoder is None:
+            raise ValueError("the ROS 2 factory rejected the schema pair")
+        return cast(Callable[[bytes], Any], decoder)
 
     def _factory(self) -> Callable[[], Any]:
         if self._decoder_factory is not None:

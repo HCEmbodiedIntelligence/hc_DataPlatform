@@ -22,8 +22,8 @@ class AlignedMediaEncodingProfileV1(BaseModel):
 
     profile_id: str = Field(default="canonical-h264-crf20-v1", min_length=1)
     profile_version: str = Field(default="1", min_length=1)
-    codec: Literal["h264", "source"] = "h264"
-    pixel_format: Literal["yuv420p"] = "yuv420p"
+    codec: Literal["h264", "hevc", "source"] = "h264"
+    pixel_format: Literal["yuv420p", "gray12le"] = "yuv420p"
     fps: Literal[30] = 30
     crf: int = Field(default=20, ge=18, le=22)
     preset: Literal["veryfast", "faster", "fast", "medium", "slow"] = "fast"
@@ -189,6 +189,7 @@ class AlignedMediaTimelineV1(BaseModel):
     pts_time_base_denominator: Literal[30] = 30
     start_timestamp_ns: int = Field(ge=0)
     original_source: OriginalVideoReferenceV1 | None = None
+    video_info: dict[str, str | bool | float | int] = Field(default_factory=dict)
 
     @field_serializer("start_timestamp_ns", when_used="json")
     def serialize_start_timestamp_ns(self, value: int) -> str:
@@ -210,6 +211,7 @@ class EncodedAlignedMediaV1(BaseModel):
     placeholder_count: int = Field(ge=0)
     first_timestamp_ns: int = Field(ge=0)
     original_source: OriginalVideoReferenceV1 | None = None
+    video_info: dict[str, str | bool | float | int] = Field(default_factory=dict)
 
 
 class PublishedAlignedMediaV1(BaseModel):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import re
 import shutil
@@ -396,6 +397,9 @@ class FFmpegMp4Encoder:
         frames: Iterable[AlignedFrameV1],
         cancelled: Callable[[], bool] | None,
     ) -> None:
+        if profile.codec == "hevc":
+            self._encode_depth_file(output, frames=frames, cancelled=cancelled)
+            return
         iterator = iter(frames)
         try:
             first = next(iterator)
@@ -606,8 +610,8 @@ class FFmpegMp4Encoder:
         if frame_count != expected_frames:
             raise AlignedMediaEncodingError("MP4 frame count does not match aligned staging")
         if (
-            stream.get("codec_name") != "h264"
-            or stream.get("pix_fmt") != "yuv420p"
+            stream.get("codec_name") != facts.get("codec", "h264")
+            or stream.get("pix_fmt") != facts.get("pixel_format", "yuv420p")
             or stream.get("avg_frame_rate") != "30/1"
             or stream.get("r_frame_rate") != "30/1"
             or stream.get("time_base") != "1/30"
@@ -668,6 +672,7 @@ class FFmpegMp4Encoder:
             height=int(stream["height"]),
             placeholder_count=int(facts.get("placeholder_count", 0)),
             first_timestamp_ns=int(facts.get("first_timestamp_ns", 0)),
+            video_info=facts.get("video_info", {}),
         )
 
     def _frame_bytes(
@@ -687,6 +692,16 @@ class FFmpegMp4Encoder:
         content = bytes(frame.image)
         if len(content) > self._max_frame_bytes:
             raise AlignedMediaEncodingError("camera frame exceeds the configured byte limit")
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            with Image.open(BytesIO(content)) as image:
+                if image.mode in {"I", "I;16", "I;16B", "I;16L", "F"}:
+                    raise AlignedMediaEncodingError(
+                        "16-bit depth requires an explicit depth-unit media profile"
+                    )
+                image.load()
+                output = BytesIO()
+                image.convert("RGB").save(output, "JPEG", quality=95, subsampling=0)
+                return output.getvalue()
         if (
             len(content) < 4
             or not content.startswith(b"\xff\xd8")
@@ -694,6 +709,106 @@ class FFmpegMp4Encoder:
         ):
             raise AlignedMediaEncodingError("camera frame must be a complete JPEG")
         return content
+
+    def _encode_depth_file(
+        self,
+        output: Path,
+        *,
+        frames: Iterable[AlignedFrameV1],
+        cancelled: Callable[[], bool] | None,
+    ) -> None:
+        import numpy as np
+
+        from hc_data_platform.publishing.holobrain_depth import DEPTH_INFO, DepthVideo
+
+        iterator = iter(frames)
+        leading = 0
+        start_ns = None
+        for first in iterator:
+            if first.step_index != leading:
+                raise AlignedMediaEncodingError("depth steps must be contiguous from zero")
+            if start_ns is None:
+                start_ns = int(first.timestamp_ns)
+            if first.valid and first.image:
+                break
+            leading += 1
+        else:
+            raise AlignedMediaEncodingError("depth media requires at least one valid frame")
+
+        def pixels(frame: AlignedFrameV1) -> Any:
+            content = bytes(frame.image or b"")
+            if len(content) > self._max_frame_bytes:
+                raise AlignedMediaEncodingError("depth image exceeds the byte limit")
+            with Image.open(BytesIO(content)) as image:
+                if image.format != "PNG" or image.mode not in {"I", "I;16", "I;16L", "I;16B"}:
+                    raise AlignedMediaEncodingError("millimetre depth requires a 16-bit PNG")
+                if image.width * image.height > 16 * 1024**2:
+                    raise AlignedMediaEncodingError("depth image exceeds the pixel limit")
+                return np.asarray(image).astype(np.uint16)
+
+        initial = pixels(first)
+        zero = np.zeros_like(initial)
+        temporary = output.with_name("depth-source.mp4")
+        video = DepthVideo(temporary, 30, initial.shape)
+        count, placeholders = 0, leading
+        try:
+            for _ in range(leading):
+                video.write(zero, 0.001)
+                count += 1
+            for frame in itertools.chain((first,), iterator):
+                if cancelled is not None and cancelled():
+                    raise AlignedMediaGenerationCancelled("depth generation was cancelled")
+                if frame.step_index != count:
+                    raise AlignedMediaEncodingError("depth steps must be contiguous from zero")
+                if frame.valid and frame.image:
+                    array = pixels(frame)
+                    if array.shape != initial.shape:
+                        raise AlignedMediaEncodingError(
+                            "depth dimensions changed within a recording"
+                        )
+                else:
+                    array = zero
+                    placeholders += 1
+                video.write(array, 0.001)
+                count += 1
+        finally:
+            video.close()
+        self._run_ffmpeg(
+            [
+                self._ffmpeg,
+                "-nostdin",
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                str(temporary),
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                "-an",
+                "-video_track_timescale",
+                "30",
+                "-movflags",
+                "+faststart",
+                str(output),
+            ],
+            cancelled=cancelled,
+        )
+        temporary.unlink()
+        (output.parent / "encode-facts.json").write_text(
+            json.dumps(
+                {
+                    "frame_count": count,
+                    "first_timestamp_ns": start_ns,
+                    "placeholder_count": placeholders,
+                    "codec": "hevc",
+                    "pixel_format": "gray12le",
+                    "video_info": DEPTH_INFO,
+                }
+            ),
+            encoding="utf-8",
+        )
 
     @staticmethod
     def _output_dimensions(

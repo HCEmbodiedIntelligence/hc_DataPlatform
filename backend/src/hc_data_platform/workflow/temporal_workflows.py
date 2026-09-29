@@ -446,6 +446,8 @@ class IngestRolloutWorkflow(_JobLifecycle):
                         profile_id=(
                             "original-video-reference-v1"
                             if camera.topic in aligned.alignment_staging.original_videos
+                            else "canonical-depth-mm-hevc-v1"
+                            if camera.depth_unit == "mm"
                             else "canonical-h264-crf20-v1"
                         ),
                     ),

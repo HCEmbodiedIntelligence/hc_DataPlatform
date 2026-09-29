@@ -2,9 +2,11 @@
 
 import math
 from fractions import Fraction
+from pathlib import Path
 
 import av
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 DEPTH_INFO = {
     "is_depth_map": True,
@@ -21,7 +23,7 @@ DEPTH_INFO = {
 }
 
 
-def codes(array, scale):
+def codes(array: ArrayLike, scale: float) -> NDArray[np.uint16]:
     # Same quantization domain/parameters as the agreed hc_lerobot depth decoder.
     depth_mm = np.asarray(array, dtype=np.float32) * np.float32(scale * 1000)
     depth_mm = np.where(np.isfinite(depth_mm) & (depth_mm > 0), depth_mm, 0)
@@ -32,7 +34,7 @@ def codes(array, scale):
 
 
 class DepthVideo:
-    def __init__(self, path, fps, shape):
+    def __init__(self, path: Path, fps: int, shape: tuple[int, ...]) -> None:
         if min(shape[:2]) < 16:
             raise ValueError("HEVC depth video requires width and height of at least 16 pixels")
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,7 @@ class DepthVideo:
         }
         self.fps, self.frames = fps, 0
 
-    def write(self, array, scale):
+    def write(self, array: ArrayLike, scale: float) -> NDArray[np.uint16]:
         quantized = codes(array, scale)
         frame = av.VideoFrame(quantized.shape[1], quantized.shape[0], "gray12le")
         plane = frame.planes[0]
@@ -63,7 +65,7 @@ class DepthVideo:
         self.frames += 1
         return quantized
 
-    def close(self):
+    def close(self) -> None:
         try:
             if self.frames:
                 for packet in self.stream.encode(None):
