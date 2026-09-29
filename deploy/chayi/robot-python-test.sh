@@ -10,8 +10,9 @@ if [[ -f "$CHAYI_ROBOT_WORKSPACE/install/ros/local_setup.bash" ]]; then
   source "$CHAYI_ROBOT_WORKSPACE/install/ros/local_setup.bash"
 fi
 set -u
-export PYTHONPATH="$CHAYI_ROBOT_WORKSPACE/src/humanoid_manager/python:$CHAYI_ROBOT_WORKSPACE/src/humanoid_camera/python:${PYTHONPATH:-}"
+export PYTHONPATH="$CHAYI_ROBOT_WORKSPACE/src/humanoid_manager/python:$CHAYI_ROBOT_WORKSPACE/src/humanoid_camera/python:$CHAYI_ROBOT_WORKSPACE/install/preview-python:${PYTHONPATH:-}"
 export PYTHONDONTWRITEBYTECODE=1
+export PYTHONNOUSERSITE=1
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 export HUMANOID_UPLOAD_TEST_CLI="$CHAYI_UPLOADER"
 cd "$CHAYI_ROBOT_WORKSPACE/src/humanoid_manager"
