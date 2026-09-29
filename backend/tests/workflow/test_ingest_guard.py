@@ -51,6 +51,9 @@ class Connection:
         ([(True,), None, None], False, True, False),
         ([(True,), ("TECHNICAL_FAILED",), (1,)], True, False, True),
         ([(True,), ("TECHNICAL_FAILED",), None], False, True, True),
+        ([(True,), ("CANCELLED",), (1,)], True, False, True),
+        ([(True,), ("CANCELLED",), None], False, True, True),
+        ([(True,), ("CANCELLED",)], False, False, False),
     ],
 )
 def test_dataset_reservation_survives_launch_retries_and_excludes_other_writers(

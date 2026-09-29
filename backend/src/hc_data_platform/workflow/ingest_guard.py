@@ -63,7 +63,7 @@ class PostgresIngestDispatchGuard:
                 )
                 existing = cursor.fetchone()
                 if existing is not None and (
-                    not retry_terminal or existing[0] != "TECHNICAL_FAILED"
+                    not retry_terminal or existing[0] not in {"TECHNICAL_FAILED", "CANCELLED"}
                 ):
                     # A dispatch retry must reconnect to its existing execution,
                     # including a reservation persisted before a launcher crash.
