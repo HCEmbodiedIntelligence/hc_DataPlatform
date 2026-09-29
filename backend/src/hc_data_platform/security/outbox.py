@@ -54,6 +54,12 @@ class OutboxDeliveryRepository(Protocol):
 OutboxHandler = Callable[[DomainEventEnvelope], Awaitable[object] | object]
 
 
+class OutboxBackpressure(RuntimeError):
+    """Expected capacity wait; do not accumulate transport-failure backoff."""
+
+    code = "OUTBOX_CAPACITY_BUSY"
+
+
 class OutboxDispatcher:
     """Dispatch one exact organization/project/region scope."""
 
@@ -109,10 +115,15 @@ class OutboxDispatcher:
                 await result
         except Exception as exc:
             code = stable_error_code(exc)
+            delay = (
+                timedelta(seconds=5)
+                if isinstance(exc, OutboxBackpressure)
+                else self._retry_delay(claim.attempt)
+            )
             self._repository.mark_retry(
                 claim,
                 error_code=code,
-                retry_at=now + self._retry_delay(claim.attempt),
+                retry_at=now + delay,
                 occurred_at=now,
             )
         else:

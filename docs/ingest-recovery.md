@@ -31,6 +31,8 @@ guard reserves a PENDING job before launch and caps active preparation across
 all workers. The workflow also reserves at entry, so native LeRobot children and
 robot-upload processing use the same limit. Waiting uploads remain in the
 durable outbox; native children waiting for admission release activity slots.
+Outbox capacity waits recheck after five seconds instead of accumulating the
+exponential backoff used for transport failures.
 Active legacy workflows exclude new parallel preparation until they finish.
 
 Both LeRobot parent workflows process at most `max_concurrent_episodes` (default

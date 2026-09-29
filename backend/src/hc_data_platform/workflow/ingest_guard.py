@@ -10,13 +10,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.security.outbox import OutboxBackpressure
 
 from .models import IngestRolloutWorkflowInput, JobRecord, WorkflowJobPersistenceActivityInput
 from .names import INGEST_ROLLOUT_WORKFLOW
 from .postgres import PostgresWorkflowJobRepository
 
 
-class IngestDatasetBusy(RuntimeError):
+class IngestDatasetBusy(OutboxBackpressure):
     code = "INGEST_DATASET_BUSY"
 
 

@@ -11,9 +11,37 @@ from hc_data_platform.security.outbox import (
     OutboxDispatcher,
 )
 from hc_data_platform.workflow.ingest_dispatch import IngestOutboxHandler
+from hc_data_platform.workflow.ingest_guard import IngestDatasetBusy
 from hc_data_platform.workflow.models import WorkflowKind, workflow_id
 
 NOW = datetime(2026, 8, 18, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_capacity_wait_remains_short_after_many_attempts_and_recovers():
+    event = _event()
+    repository = InMemoryOutboxDeliveryRepository((event,))
+    now = NOW
+    busy = True
+
+    async def handler(_):
+        if busy:
+            raise IngestDatasetBusy("all preparation slots are occupied")
+
+    dispatcher = OutboxDispatcher(
+        repository, {event.event_type: handler}, worker_id="capacity-test", clock=lambda: now
+    )
+    scope = dict(organization_id="organization-a", project_id="project-a", region_code="cn-hz")
+    for _ in range(16):
+        assert await dispatcher.dispatch_one(**scope)
+        state = repository.state(event.event_id)
+        assert state["error_code"] == "INGEST_DATASET_BUSY"
+        assert state["available_at"] == now + timedelta(seconds=5)
+        assert state["published_at"] is None
+        now += timedelta(seconds=5)
+    busy = False
+    assert await dispatcher.dispatch_one(**scope)
+    assert repository.state(event.event_id)["published_at"] == now
 
 
 def _event() -> DomainEventEnvelope:
