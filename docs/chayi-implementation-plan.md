@@ -2,6 +2,8 @@
 
 日期：2026-09-28。需求依据：[chayi.md](chayi.md)。
 
+**机器人录制接入补充：实施范围包括 `/home/hc_op/workspace/teleop_ws/src` 的录制、相机元数据、后台封存和独立上传客户端。具体必改/复用文件见 [chayi-teleop-integration.md](chayi-teleop-integration.md)；其中 R1–R4 纳入 G1，R5 纳入 G2。不能以平台手工上传测试代替机器人接入验收。**
+
 **本文件是交给后续 `/goal` 终端的实施方案，不是完成报告。** 本轮仅阅读代码、核查本机容器状态和编写交接文档；未修改业务代码、数据库、对象存储或运行配置，未重新运行软件验收。
 
 **深度最终决策：用户明确选择 HEVC + 12 位量化。新 Episode 主包采用 LeRobot v3，RGB 与深度分别保存为视频，深度使用 MP4/HEVC/gray12le，并记录量化参数、单位、有效性和来源映射。原始录制保持原封保留；不再要求额外生成 16 位 MKV 或源精度数组作为新 Episode 主存储。此决策取代本方案上一版的无损深度扩展要求；用户原始差异文档保留不覆盖。**
@@ -10,7 +12,7 @@
 
 把平台完善为以下流程：
 
-> 原始录制上传后即可查看和下载 → 整段或选定窗口创建 Episode → 解析、对齐、QC、生成独立 LeRobot v3 标准包（含已采集深度的 HEVC 12 位表示） → 完整校验后提交数据版本 → 人工数据审核、Tag 编辑和标注审核 → 下载完整标准包，或按明确模态和修订生成交付包。
+> teleop_ws 网页/VR 触发原始录制 → 后台封存 → 独立客户端可靠上传 → 原始录制查看和下载 → 整段或选定窗口创建 Episode → 解析、对齐、QC、生成独立 LeRobot v3 标准包（含已采集深度的 HEVC 12 位表示） → 完整校验后提交数据版本 → 人工数据审核、Tag 编辑和标注审核 → 下载完整标准包，或按明确模态和修订生成交付包。
 
 确定采用以下默认方案，执行时按此推进；发现与真实数据冲突时记录证据并调整实现，不重复讨论已经明确的产品方向。
 
@@ -22,6 +24,7 @@
 | 业务状态与标注 | PostgreSQL 继续管理；标注修订通过可靠任务生成不可变 JSON |
 | 对象存储 | 沿用当前 MinIO 和存储抽象，不更换供应商 |
 | 原始数据 | 原文件、哈希和上传身份保持不变，标准化失败不影响原件授权下载 |
+| 机器人与平台分工 | 机器人保存原始深度 MCAP、分段 RGB MP4 并可靠上传；平台执行对齐、QC 和 HEVC 12 位深度标准化，不在采集回调生成标准包 |
 | Episode 与 Tag | Episode 是数据条目，Tag 是其中的语义区间；添加 Tag 不创建 Episode、不复制媒体 |
 | 数据版本 | 数据内容版本、标注修订、数据集集合版本分别建模 |
 | 下载 | 默认完整数据包包含已采集深度；另选 LeRobot RGB 或 RGB-D 兼容配置，明确纳入/排除模态；批量标准集合重建索引、统计和媒体偏移 |
@@ -83,6 +86,7 @@ LeRobot 的数据能力与算法使用深度是两个问题。官方 v0.6.1 的[
 | 导出 UI | P21 已有原始/数据集/已标注阶段、Episode 多选、批量任务与重试 | 增加单条就近下载，保留原批量页 |
 | 本机运行 | 原平台 Compose project 为 `hc-data-platform-restore-test`，页面 8088；本轮看到八个常驻容器运行 | 本轮只核对容器状态，未证明页面、数据或完整链路通过 |
 | 热更新 | Compose 将当前 `backend` 挂载进 API/Worker，API 使用 `--reload`；前端亦采用开发挂载 | 实施先创建独立工作树；直接编辑本目录业务源码可能立即改变 8088 |
+| 机器人接入 | `teleop_ws/src/humanoid_manager` 已有 raw Session、封存及独立 uploader；camera 元数据有固定 scale，原始包限 256 资产，平台 PASS 回执依赖 Lance | 按 R1–R4 修正明确缺口并验证完整链路；机器人仓库独立提交，G2 联合安装部署 |
 
 主要代码入口：
 
@@ -99,8 +103,8 @@ LeRobot 的数据能力与算法使用深度是两个问题。官方 v0.6.1 的[
 
 | 目标 | 包含内容 | 完成边界 |
 | --- | --- | --- |
-| G1：P0 功能与隔离验收 | 下文 W0–W6、W7 的迁移工具与隔离演练、W8 软件验收；覆盖全部 P0 的软件实现 | 可运行代码、迁移工具、真实服务测试、离线 reader 与浏览器证据；交付部署候选，不修改现网业务数据 |
-| G2：8088 切换与历史迁移 | 将 G1 已验收版本部署到本机原平台，执行备份、分批迁移、对账和回退演练 | 真实业务引用、旧审核和新数据链路核对；报告迁移成功/失败/未覆盖数量，旧文件仍保留 |
+| G1：P0 功能、机器人接入与隔离验收 | 下文 W0–W6、W7 的迁移工具与隔离演练、W8 软件验收，以及接入清单 R1–R4 | 平台和机器人侧可部署候选、迁移工具、真实上传服务链路、离线 reader 与浏览器证据；不修改现网业务数据或日常机器人安装配置 |
+| G2：联合部署与历史迁移 | 原平台 8088 切换、机器人侧 R5 安装配置，执行备份、分批迁移、对账和回退演练 | 核对真实归属、旧审核和新链路；报告迁移数量及机器人真实配置/真机验收状态，保留旧数据与上传队列 |
 | G3：P1 效率改进 | ANN-04、UI-04、UI-05、PERF-01 | 结构化语义编辑/导入、步骤卡片、可校验投影、同源性能测量 |
 
 G1 完成不表示 21 条需求全部验收；G2 完成不表示不存在真人/真机验收项。各项状态必须有证据。
@@ -109,19 +113,20 @@ G1 完成不表示 21 条需求全部验收；G2 完成不表示不存在真人/
 
 ## 4. 开工准备 W0
 
-1. 阅读本文件、`docs/chayi.md` 和执行环境适用的 `AGENTS.md`；核对运行版本和工作区已有修改。
-2. 创建独立分支/工作树，建议目录 `/home/hc_op/workspace/hc_DataPlatform-chayi-work`。已存在则核对归属后复用，不能覆盖。
-3. 本轮 `docs/chayi.md` 是用户提供的未跟踪文件；本方案和 goal 指令也可能尚未提交。创建工作树时一并复制这三份文件，保留原文，不依赖 Git 自动携带。
+1. 阅读本文件、`docs/chayi.md`、`docs/chayi-teleop-integration.md` 和各仓库适用的 `AGENTS.md`；核对源码、安装版本和已有修改。
+2. 创建独立分支/工作树，平台建议目录 `/home/hc_op/workspace/hc_DataPlatform-chayi-work`；机器人各仓库按 R1 放入独立 ROS 工作区 `/home/hc_op/workspace/teleop_ws-chayi-work/src`。已存在则核对归属后复用，不能覆盖；不在 `teleop_ws` 根目录假设统一 Git 仓库。
+3. 本轮 `docs/chayi.md` 是用户提供的未跟踪文件；本方案、goal 指令和机器人接入清单也可能尚未提交。创建工作树时一并复制这四份文件，保留原文，不依赖 Git 自动携带。
 4. 隔离测试必须使用独立 Compose project、数据库、对象前缀或测试桶、Temporal namespace/队列和端口；不要将原平台 `.env` 直接当作测试配置运行。现存 38088 测试环境不自动恢复，也不接收真实机器人上传。
 5. 本轮未发现 `backend/.venv`，但已有后端依赖镜像和前端 `node_modules`。选择隔离容器或按锁文件建立环境；不要把依赖缺失写成测试通过。
 6. 建立 `docs/audits/chayi-implementation/status.md`，逐项记录负责人终端、状态、提交、测试命令和证据位置。没有明确并行安排时，一个终端顺序推进；多个终端不要同时修改同一工作树。
 7. 登记验收样本清单：来源、授权范围、文件哈希、录制时长、相机/深度配置、frame/step 数、所属任务；敏感配置和真实数据留在受限诊断目录，仓库只存脱敏结果。
+8. 按 R1 冻结跨端契约、隔离 ROS 域、manager 状态目录、录制根目录和上传队列；确认 OpenArm raw Session 与旧 ROS 诊断录制的不同配置入口。平台/机器人各自提交，报告记录可兼容版本组合。
 
 ## 5. 契约与实现任务
 
 ### W1：存储无关身份、完整多模态包与提交契约
 
-覆盖 DATA-01/02/04/05/06、ANN-01、MIG-01 的基础。先将以下契约落成模型、数据库迁移和针对性验证，再接主处理流程。
+覆盖 DATA-01/02/04/05/06、ANN-01、MIG-01 的基础，并与 R1 的跨端契约同步。先将以下契约落成模型、数据库迁移和针对性验证，再接主处理流程。
 
 **身份：** 引入明确的数据引用，至少包含 `organization_id/project_id/region_code/dataset_id/episode_id/rollout_id/data_version_id/content_hash/storage_format/schema_snapshot_id`。Episode 独立版本和数据集集合快照分别管理；`episode_id` 与 `rollout_id` 通过显式绑定解析，不根据字符串拆分猜测。
 
@@ -189,6 +194,8 @@ exports/<org>/<project>/<episode>/<data_version>/<profile>/<content_hash>/
 ### W2：新多模态文件写入、查询和三条入口接通
 
 覆盖 DATA-01/02/03/04/06、SEG-01。
+
+同时执行 [机器人接入 R2–R4](chayi-teleop-integration.md)：接通实际 `humanoid-upload → robot_ingest → recording_bridge → continuous_recordings`，替换内部成功回执对 Lance 的强制依赖；保留旧公开 API 与上传队列兼容。深度源单位校验、长录制资产限制和机器人录制/切片状态提示也属于 G1，不能留作未排期事项。
 
 - 抽取 `LeRobotArchive` 中可共享的格式、统计和媒体校验；主写入器按文件流式生成，避免把长录制所有数值、视频和 ZIP 一次装进内存。
 - 在 `openarm_raw/prepare.py` 等入口复用现有 HEVC 12 位实现，补齐量化前单位/有效性检查及掩码、统一元数据与误差报告。深度属于主包必需模态，编码/校验失败不得假报完整包就绪；已封存原件仍可查看和下载。
@@ -284,6 +291,7 @@ exports/<org>/<project>/<episode>/<data_version>/<profile>/<content_hash>/
 - 每批提交可见指针前验证清单；失败批次保留旧读路径。中断可续跑，同一批次重跑不重复迁移。
 - 回退不仅是代码切回旧版：支持已存在新多模态包的兼容版本必须保留全部模态的可读性；记录软件、schema、配置和指针的回退矩阵，不启用看不到新数据/深度的旧二进制。
 - G2 在原平台做备份和恢复校验、运行任务排空/兼容处理，再切换新写入。切换后新旧数据回放、标注、导出均验证；每批对账失败则停止该批推进，其他独立工作继续。
+- G2 同时执行 R5：服务端兼容先行，按 G1 实际修改安装机器人 manager/camera 和独立 uploader，保留录制与队列，核对真实身份/任务及配置；缺真实归属时明确列出，不能使用 synthetic 身份替代。回退覆盖跨端版本与旧队列、新大包能力。
 - 不自动删除旧 Lance、媒体、原件或 Docker 数据卷。文件回收是有保留期和引用证明的后续生命周期任务。
 
 交付检查：隔离副本完成一批迁移、一次中断续跑、一次指针回退；G2 另有现网逐批结果与未迁移清单，不能用副本测试声称现网迁移完成。
@@ -293,6 +301,7 @@ exports/<org>/<project>/<episode>/<data_version>/<profile>/<content_hash>/
 - 更新 OpenAPI、生成客户端、配置示例、部署说明、README 与功能状态报告；状态按“已实现/已软件验证/已真实数据验证/待真人或真机验收”分别标记。
 - 对每个需求记录代码位置、执行命令、数据集身份/哈希、预期和实际、原始证据路径及未覆盖项。不要把旧截图、旧测试数量、skip/xfail 当本次通过。
 - 交付阶段提交记录、数据库变更、配置变化、迁移与回退命令、浏览器截图和运行结果；敏感连接信息/签名下载 URL 不进入报告。
+- R1–R4 独立列出代码与证据，交付平台/机器人各仓库候选提交、运行安装路径、schema 兼容矩阵、录制封存上传恢复测试与 R5 安装回退步骤。手工上传成功不计作机器人上传链路通过。
 - G1 到此交付可部署候选与 G2 的实际执行说明；G2 才执行现网切换。执行终端不因为还有 G3 优化项就隐藏 P0 阻断项。
 
 ## 6. G3 的具体范围
@@ -336,6 +345,7 @@ exports/<org>/<project>/<episode>/<data_version>/<profile>/<content_hash>/
 
 现有测试可作为回归入口，但必须新增或调整针对新存储与新契约的有效断言：
 
+- [机器人接入 R4](chayi-teleop-integration.md)：manager/camera/uploader 定向回归、两种录制入口、封存/上传故障恢复、超过旧 256 资产限制的包，以及实际客户端到平台的 RGB-D 全链路；真实硬件验收单列。
 - `backend/tests/lance_catalog/`：旧读取、固定版本、幂等、对账恢复保持可用；新增新包提交与混合读取测试。
 - `backend/tests/workflow/`：原生导入、普通 ingest、outbox 与 Temporal 重放/失败恢复。
 - `backend/tests/publishing/test_lerobot_materialized_export.py`：媒体实体、固定标注、统计、深度和来源；扩展单条主包复用与多 Episode 集合。
@@ -352,7 +362,8 @@ exports/<org>/<project>/<episode>/<data_version>/<profile>/<content_hash>/
 python -m pytest -q -c backend/pyproject.toml \
   backend/tests/lance_catalog backend/tests/workflow \
   backend/tests/publishing backend/tests/annotation \
-  backend/tests/dataset_registry backend/tests/continuous_recordings
+  backend/tests/dataset_registry backend/tests/continuous_recordings \
+  backend/tests/robot_ingest
 
 python -m pytest -q -c backend/pyproject.toml \
   backend/tests/system/test_continuous_episode_vertical.py
@@ -373,6 +384,7 @@ git diff --check
 ```text
 目标：G1 / G2 / G3
 基线与结果：源提交、分支/工作树、结果提交
+跨仓库接入：R1–R5 状态、平台/manager/camera/uploader 版本和安装路径、实际修改文件、兼容与回退组合
 运行环境：隔离/8088、镜像/依赖版本、是否启用 Mock
 需求编号：实现 / 软件验证 / 真实数据验证 / 真人真机验收状态
 证据：命令、样本身份和哈希、结果、日志/截图/reader 报告
