@@ -450,7 +450,7 @@ def prepare_rgb_window(media, window, destination):
             window.first_source_frame == 0
             and window.stop_source_frame == count
             and window.frame_count == count
-            and window.frequency_hz == fps
+            and Fraction(str(window.frequency_hz)) == fps
             and window.source_start_offset_ns in (None, 0)
         )
         if (

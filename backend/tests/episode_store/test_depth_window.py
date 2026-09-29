@@ -113,6 +113,55 @@ def test_identical_stream_reuses_every_byte_and_no_encoder(tmp_path, monkeypatch
     assert before == inventory(tmp_path / "input")
 
 
+def test_parent_time_cut_keeps_original_nanoseconds_and_avoids_rounding_shift(
+    tmp_path, monkeypatch
+):
+    media = make_depth(tmp_path / "input", fps=30)
+    rows = list(parquet_rows(media.evidence_root / "frames.parquet"))
+    window = DepthWindow(1, 6, 5, 30.0, rows[1]["target_timestamp_ns"])
+    assert window.target_time(1) != rows[2]["target_timestamp_ns"]
+    forbid_quantization(monkeypatch)
+    result = prepare_depth_window(media, window, tmp_path / "output", preserve_parent_times=True)
+    selected = list(parquet_rows(result.evidence_root / "frames.parquet"))
+    assert [r["target_timestamp_ns"] for r in selected] == [
+        r["target_timestamp_ns"] for r in rows[1:6]
+    ]
+    assert [r["source_timestamp_ns"] for r in selected] == [
+        r["source_timestamp_ns"] for r in rows[1:6]
+    ]
+    np.testing.assert_array_equal(decoded(result.path), decoded(media.path)[1:6])
+    assert selected[0]["repeated"] is False
+    with pytest.raises(ValueError, match="without resampling"):
+        prepare_depth_window(
+            media, DepthWindow(1, 6, 3, 15, START), tmp_path / "bad", preserve_parent_times=True
+        )
+
+
+def test_fractional_frame_rate_uses_exact_rational_pts(tmp_path):
+    from hc_data_platform.continuous_recordings.openarm_raw.video import TrainingVideo
+    from hc_data_platform.publishing.export_video import inspect_depth_video
+
+    fps = 29.97
+    video = tmp_path / "depth.mp4"
+    writer = holobrain_depth.DepthVideo(video, fps, (16, 16))
+    for _ in range(3):
+        writer.write_codes(np.full((16, 16), 2000, dtype=np.uint16))
+    writer.close()
+    feature, _ = inspect_depth_video(video, 3, fps, DEFAULT_PROFILE.metadata())
+    assert feature["info"]["video.fps"] == fps
+    rgb = tmp_path / "rgb.mp4"
+    writer = TrainingVideo(rgb, fps, (16, 16, 3))
+    for _ in range(3):
+        writer.write(np.full((16, 16, 3), 100, dtype=np.uint8))
+    writer.close()
+    for path in (video, rgb):
+        with av.open(str(path)) as container:
+            assert container.streams.video[0].average_rate == Fraction(2997, 100)
+            assert [frame.pts * frame.time_base for frame in container.decode(video=0)] == [
+                Fraction(i * 100, 2997) for i in range(3)
+            ]
+
+
 @pytest.mark.parametrize(
     "fps,window,selected",
     [

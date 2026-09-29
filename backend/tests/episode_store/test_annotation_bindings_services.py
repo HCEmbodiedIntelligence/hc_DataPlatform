@@ -51,7 +51,7 @@ def actor(ident, name="editor"):
 
 
 @pytest.fixture
-def target(prepared_bundle):
+def target(prepared_bundle, request):
     packages, source, bundle, assets, _ = prepared_bundle
     ident = source.identity
     rows = tuple(
@@ -83,7 +83,14 @@ def target(prepared_bundle):
     )
     with scoped(source):
         collection, ready = packages.write_from_aligned_bundle(
-            source, rows, schema=schema, metadata={"task": "annotation RGB-D binding"}, **bundle
+            source,
+            rows,
+            schema=schema,
+            metadata={
+                "task": "annotation RGB-D binding",
+                **getattr(request, "param", {}).get("metadata", {}),
+            },
+            **bundle,
         )
     repository = PostgresAnnotationRepository(packages.repository.connections)
     service = AnnotationService(repository)
@@ -258,8 +265,10 @@ def test_rgbd_automatic_task_retry_concurrency_edit_submit_review_and_restore(ta
         assert approval.data_ref == request.data_ref and approval.base_lance_version is None
         with pytest.raises(ProblemException) as denied_export:
             ApprovedAnnotationSnapshotAdapter(annotations=service).get_approved_revision(
-                project_id=source.identity.project_id, dataset_id=source.identity.dataset_id,
-                rollout_id=source.identity.rollout_id, lance_version=str(request.dataset_version),
+                project_id=source.identity.project_id,
+                dataset_id=source.identity.dataset_id,
+                rollout_id=source.identity.rollout_id,
+                lance_version=str(request.dataset_version),
             )
         assert denied_export.value.problem.code == "ANNOTATION_DATA_BINDING_MISMATCH"
         assert (

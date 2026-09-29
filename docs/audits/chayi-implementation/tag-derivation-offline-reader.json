@@ -1,0 +1,78 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "official_reader_and_dataloader": true,
+  "episodes": [
+    {
+      "data_version_id": "dv_fcd399da84285bbf02240947db1f820c65528eca6359ac9d363a85aadb5e677b",
+      "frames": 3,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 3,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "parent_data_version_id": "dv_45ec47af49864670fe356c4b11adf0232ab383a8cd3b131dba238afaf865f97b",
+      "parent_annotation_revision": 1,
+      "annotation_id": "child",
+      "interval": [
+        1,
+        4
+      ],
+      "parent_tags_preserved": 2,
+      "parent_frame_and_nanosecond_trace_verified": true,
+      "new_episode_identity": true,
+      "parent_approvals_inherited": false,
+      "requantized": false,
+      "primary_manifest_sha256": "0dbda18e6138c386d0c853f59818a744bc3a3c6891baeae894134d8be177d773"
+    },
+    {
+      "data_version_id": "dv_dd63b60c80a1f6f2de6bd093f21b83919776804aab61022646819f7fb1426bf1",
+      "frames": 2,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 2,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "parent_data_version_id": "dv_36dd0f289ed810fad2f3dd10aa40b570f9170a66851361d831d4ae72f9e2723c",
+      "parent_annotation_revision": 1,
+      "annotation_id": "parent",
+      "interval": [
+        0,
+        2
+      ],
+      "parent_tags_preserved": 2,
+      "parent_frame_and_nanosecond_trace_verified": true,
+      "new_episode_identity": true,
+      "parent_approvals_inherited": false,
+      "requantized": false,
+      "primary_manifest_sha256": "73415b6369582dc2fe4461d052266fbfef316424d58905e970b82a6946e495f0"
+    }
+  ],
+  "synthetic_input": true,
+  "queue_api_browser_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "platform_imported": false
+}

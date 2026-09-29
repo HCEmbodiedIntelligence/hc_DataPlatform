@@ -1,0 +1,734 @@
+[
+  {
+    "data": {
+      "identity": {
+        "organization_id": "bundle-4c5c983a5d2544c2b28197b08a0eb1ce",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "writer-dataset",
+        "episode_id": "episode_derived_103a2cb467ba9a768e92ab14ac6c307e",
+        "rollout_id": "derived:103a2cb467ba9a768e92ab14ac6c307e1b0c3405a0e52fcfc9a41c1ff40dd7a1"
+      },
+      "data_version_id": "dv_5002bd0feabf727316e73e349a8336e829fb6453e35b1cfed9301b31b2dbf951",
+      "version": 1,
+      "content_hash": "1e9203f54d750ef224ae251b619b30f4d68880e634b48ef49da2aa3c81866b5d",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-4c5c983a5d2544c2b28197b08a0eb1ce/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_103a2cb467ba9a768e92ab14ac6c307e/id-dv_5002bd0feabf727316e73e349a8336e829fb6453e35b1cfed9301b31b2dbf951",
+      "frame_count": 2
+    },
+    "plan": {
+      "format": "hc-tag-episode-plan/1",
+      "processor_version": "hc-tag-episode/1",
+      "parent": {
+        "identity": {
+          "organization_id": "bundle-4c5c983a5d2544c2b28197b08a0eb1ce",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_4d09368cb633868b981e51923cf5e3380bb76a039149ce465bafe0411d696724",
+        "version": 1,
+        "content_hash": "50bf84f0b8b4806db47f93c74bfd02c39a9661037d5cdd31ec49250de196d71f",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-4c5c983a5d2544c2b28197b08a0eb1ce/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_4d09368cb633868b981e51923cf5e3380bb76a039149ce465bafe0411d696724",
+        "frame_count": 4
+      },
+      "parent_input": {
+        "identity": {
+          "organization_id": "bundle-4c5c983a5d2544c2b28197b08a0eb1ce",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "processor_version": "test/1",
+        "configuration_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_snapshot_id": "schema-1",
+        "required_features": [
+          "observation.state",
+          "action",
+          "observation.images.head_rgb",
+          "observation.images.head_depth"
+        ],
+        "required_depth_features": [
+          "observation.images.head_depth"
+        ],
+        "recording_date": "unknown",
+        "robot_id": "unknown",
+        "task_id": "unknown"
+      },
+      "annotation": {
+        "format": "hc-annotation-delivery-plan/1",
+        "binding": {
+          "data": {
+            "identity": {
+              "organization_id": "bundle-4c5c983a5d2544c2b28197b08a0eb1ce",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "writer-dataset",
+              "episode_id": "writer-episode",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_4d09368cb633868b981e51923cf5e3380bb76a039149ce465bafe0411d696724",
+            "version": 1,
+            "content_hash": "50bf84f0b8b4806db47f93c74bfd02c39a9661037d5cdd31ec49250de196d71f",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-4c5c983a5d2544c2b28197b08a0eb1ce/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_4d09368cb633868b981e51923cf5e3380bb76a039149ce465bafe0411d696724",
+            "frame_count": 4
+          },
+          "task_id": "1b08c452-c427-5928-be9f-bb01c8cf3052",
+          "revision": 1,
+          "revision_content_hash": "93d07f493e47bfbcdca19047a802ded425c2159852d27e34d46280fbdb356b1c",
+          "annotation_file_sha256": "c6e899368524b167b20a4d9562d0b1fedbc3677b0cdd46a56c10c7b9ae8393d4",
+          "track": {
+            "format": "hc-subtask-track/1",
+            "track_id": "tag-episode",
+            "label": "创建新 Episode",
+            "annotation_ids": [
+              "parent"
+            ]
+          }
+        },
+        "annotation_size": 3803,
+        "review": {
+          "status": "UNREVIEWED",
+          "review_id": null,
+          "submission_id": null
+        },
+        "approval": null,
+        "submission": null,
+        "parent_manifest_sha256": "50bf84f0b8b4806db47f93c74bfd02c39a9661037d5cdd31ec49250de196d71f",
+        "processor_version": "hc-annotated-delivery-queue/1",
+        "reader_version": "lerobot/0.6.1",
+        "archive_format": "independent_episode_zip/1",
+        "includes_collected_depth": true
+      },
+      "schema_snapshot": {
+        "schema_version": "1",
+        "project_id": "writer-project",
+        "dataset_id": "writer-dataset",
+        "schema_snapshot_id": "schema-1",
+        "frequency_hz": 30.0,
+        "fields": {
+          "action": "list<float64>",
+          "/observation/state": "list<float64>",
+          "observation.images.head_rgb": "json",
+          "observation.images.head_depth": "json"
+        },
+        "fingerprint": "bcbdb3c59af0fc2a15f926610f117ec866ebe68e0adccfcf6f5e33ca82c07459"
+      },
+      "annotation_id": "parent",
+      "start_step": 0,
+      "end_step": 2,
+      "parent_origin_timestamp_ns": 0,
+      "start_timestamp_ns": 0,
+      "next_parent_timestamp_ns": 66666666,
+      "display_name": "父",
+      "encoding": {
+        "depth_window": "hc-depth-parent-window/1",
+        "depth_encoder_profile": "hc-hevc-gray12-lossless/2",
+        "rgb_window": "openarm-training-h264-crf18-veryfast/1",
+        "pyav": "15.1.0",
+        "ffmpeg": {
+          "libavutil": [
+            59,
+            39,
+            100
+          ],
+          "libavcodec": [
+            61,
+            19,
+            101
+          ],
+          "libavformat": [
+            61,
+            7,
+            100
+          ],
+          "libavdevice": [
+            61,
+            3,
+            100
+          ],
+          "libavfilter": [
+            10,
+            4,
+            100
+          ],
+          "libswscale": [
+            8,
+            3,
+            100
+          ],
+          "libswresample": [
+            5,
+            3,
+            100
+          ]
+        },
+        "depth_requantized": false
+      }
+    },
+    "parent_unchanged": true,
+    "codes_and_physical_values_preserved": true,
+    "synthetic_input": true,
+    "queue_api_browser_verified": false,
+    "model_depth_training_support": "NOT_VALIDATED"
+  },
+  {
+    "data": {
+      "identity": {
+        "organization_id": "bundle-4b710357385443dd8bca7ebf00913b06",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "writer-dataset",
+        "episode_id": "episode_derived_27b424966bd301d5c8a94f3daf02354d",
+        "rollout_id": "derived:27b424966bd301d5c8a94f3daf02354d8e91ff719bf7bd01a3f531b7e039f02f"
+      },
+      "data_version_id": "dv_dd63b60c80a1f6f2de6bd093f21b83919776804aab61022646819f7fb1426bf1",
+      "version": 1,
+      "content_hash": "73415b6369582dc2fe4461d052266fbfef316424d58905e970b82a6946e495f0",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-4b710357385443dd8bca7ebf00913b06/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_27b424966bd301d5c8a94f3daf02354d/id-dv_dd63b60c80a1f6f2de6bd093f21b83919776804aab61022646819f7fb1426bf1",
+      "frame_count": 2
+    },
+    "plan": {
+      "format": "hc-tag-episode-plan/1",
+      "processor_version": "hc-tag-episode/1",
+      "parent": {
+        "identity": {
+          "organization_id": "bundle-4b710357385443dd8bca7ebf00913b06",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_36dd0f289ed810fad2f3dd10aa40b570f9170a66851361d831d4ae72f9e2723c",
+        "version": 1,
+        "content_hash": "e02dd7b63539416ac86000932b26d3707e3729377f50316646cb74877f06ff94",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-4b710357385443dd8bca7ebf00913b06/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_36dd0f289ed810fad2f3dd10aa40b570f9170a66851361d831d4ae72f9e2723c",
+        "frame_count": 4
+      },
+      "parent_input": {
+        "identity": {
+          "organization_id": "bundle-4b710357385443dd8bca7ebf00913b06",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "processor_version": "test/1",
+        "configuration_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_snapshot_id": "schema-1",
+        "required_features": [
+          "observation.state",
+          "action",
+          "observation.images.head_rgb",
+          "observation.images.head_depth"
+        ],
+        "required_depth_features": [
+          "observation.images.head_depth"
+        ],
+        "recording_date": "unknown",
+        "robot_id": "unknown",
+        "task_id": "unknown"
+      },
+      "annotation": {
+        "format": "hc-annotation-delivery-plan/1",
+        "binding": {
+          "data": {
+            "identity": {
+              "organization_id": "bundle-4b710357385443dd8bca7ebf00913b06",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "writer-dataset",
+              "episode_id": "writer-episode",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_36dd0f289ed810fad2f3dd10aa40b570f9170a66851361d831d4ae72f9e2723c",
+            "version": 1,
+            "content_hash": "e02dd7b63539416ac86000932b26d3707e3729377f50316646cb74877f06ff94",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-4b710357385443dd8bca7ebf00913b06/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_36dd0f289ed810fad2f3dd10aa40b570f9170a66851361d831d4ae72f9e2723c",
+            "frame_count": 4
+          },
+          "task_id": "bb662785-98b1-52dc-bdf8-edb0149ad634",
+          "revision": 1,
+          "revision_content_hash": "e7044debc908ff03e9d700c4306f2972e2c5510a2ec284e70e7163027b1dc140",
+          "annotation_file_sha256": "0aeeacde562220a6b9e03aaff597eae1cfa96c72b730bf4fa74ca5cebe2d28ff",
+          "track": {
+            "format": "hc-subtask-track/1",
+            "track_id": "tag-episode",
+            "label": "创建新 Episode",
+            "annotation_ids": [
+              "parent"
+            ]
+          }
+        },
+        "annotation_size": 3803,
+        "review": {
+          "status": "UNREVIEWED",
+          "review_id": null,
+          "submission_id": null
+        },
+        "approval": null,
+        "submission": null,
+        "parent_manifest_sha256": "e02dd7b63539416ac86000932b26d3707e3729377f50316646cb74877f06ff94",
+        "processor_version": "hc-annotated-delivery-queue/1",
+        "reader_version": "lerobot/0.6.1",
+        "archive_format": "independent_episode_zip/1",
+        "includes_collected_depth": true
+      },
+      "schema_snapshot": {
+        "schema_version": "1",
+        "project_id": "writer-project",
+        "dataset_id": "writer-dataset",
+        "schema_snapshot_id": "schema-1",
+        "frequency_hz": 30.0,
+        "fields": {
+          "action": "list<float64>",
+          "/observation/state": "list<float64>",
+          "observation.images.head_rgb": "json",
+          "observation.images.head_depth": "json"
+        },
+        "fingerprint": "bcbdb3c59af0fc2a15f926610f117ec866ebe68e0adccfcf6f5e33ca82c07459"
+      },
+      "annotation_id": "parent",
+      "start_step": 0,
+      "end_step": 2,
+      "parent_origin_timestamp_ns": 0,
+      "start_timestamp_ns": 0,
+      "next_parent_timestamp_ns": 66666666,
+      "display_name": "父",
+      "encoding": {
+        "depth_window": "hc-depth-parent-window/1",
+        "depth_encoder_profile": "hc-hevc-gray12-lossless/2",
+        "rgb_window": "openarm-training-h264-crf18-veryfast/1",
+        "pyav": "15.1.0",
+        "ffmpeg": {
+          "libavutil": [
+            59,
+            39,
+            100
+          ],
+          "libavcodec": [
+            61,
+            19,
+            101
+          ],
+          "libavformat": [
+            61,
+            7,
+            100
+          ],
+          "libavdevice": [
+            61,
+            3,
+            100
+          ],
+          "libavfilter": [
+            10,
+            4,
+            100
+          ],
+          "libswscale": [
+            8,
+            3,
+            100
+          ],
+          "libswresample": [
+            5,
+            3,
+            100
+          ]
+        },
+        "depth_requantized": false
+      }
+    },
+    "parent_unchanged": true,
+    "codes_and_physical_values_preserved": true,
+    "synthetic_input": true,
+    "queue_api_browser_verified": false,
+    "model_depth_training_support": "NOT_VALIDATED"
+  },
+  {
+    "data": {
+      "identity": {
+        "organization_id": "bundle-12a46ee5ab314beeb53367cdff9e910c",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "writer-dataset",
+        "episode_id": "episode_derived_085f1b897a128593bcdb8eb193e7db12",
+        "rollout_id": "derived:085f1b897a128593bcdb8eb193e7db127cd5bf776d27305b6c6b7cfb8619c660"
+      },
+      "data_version_id": "dv_e69d5c2f93ce26e7b5c84ba344a9b1cd7c3f37114b4627b19bb1be442f69b6d1",
+      "version": 1,
+      "content_hash": "5795d9f6288210d931c841d6448c67011384c5076a2fbc14c70e74e2f75ba093",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-12a46ee5ab314beeb53367cdff9e910c/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_085f1b897a128593bcdb8eb193e7db12/id-dv_e69d5c2f93ce26e7b5c84ba344a9b1cd7c3f37114b4627b19bb1be442f69b6d1",
+      "frame_count": 3
+    },
+    "plan": {
+      "format": "hc-tag-episode-plan/1",
+      "processor_version": "hc-tag-episode/1",
+      "parent": {
+        "identity": {
+          "organization_id": "bundle-12a46ee5ab314beeb53367cdff9e910c",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_4feeb5f8ce7e2b890ae97cff1695477a4e469e323682466e26497b17826f41a7",
+        "version": 1,
+        "content_hash": "a44fc2713fbd8b5b8c6ac39a43853ae286c0d96c9478fbeda14b1cf361f6c921",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-12a46ee5ab314beeb53367cdff9e910c/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_4feeb5f8ce7e2b890ae97cff1695477a4e469e323682466e26497b17826f41a7",
+        "frame_count": 4
+      },
+      "parent_input": {
+        "identity": {
+          "organization_id": "bundle-12a46ee5ab314beeb53367cdff9e910c",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "processor_version": "test/1",
+        "configuration_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_snapshot_id": "schema-1",
+        "required_features": [
+          "observation.state",
+          "action",
+          "observation.images.head_rgb",
+          "observation.images.head_depth"
+        ],
+        "required_depth_features": [
+          "observation.images.head_depth"
+        ],
+        "recording_date": "unknown",
+        "robot_id": "unknown",
+        "task_id": "unknown"
+      },
+      "annotation": {
+        "format": "hc-annotation-delivery-plan/1",
+        "binding": {
+          "data": {
+            "identity": {
+              "organization_id": "bundle-12a46ee5ab314beeb53367cdff9e910c",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "writer-dataset",
+              "episode_id": "writer-episode",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_4feeb5f8ce7e2b890ae97cff1695477a4e469e323682466e26497b17826f41a7",
+            "version": 1,
+            "content_hash": "a44fc2713fbd8b5b8c6ac39a43853ae286c0d96c9478fbeda14b1cf361f6c921",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-12a46ee5ab314beeb53367cdff9e910c/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_4feeb5f8ce7e2b890ae97cff1695477a4e469e323682466e26497b17826f41a7",
+            "frame_count": 4
+          },
+          "task_id": "132476a8-aaea-5736-a1c9-94e03db2648a",
+          "revision": 1,
+          "revision_content_hash": "8446bd876478dae552a231d5a8d80e3817ece163b62f58bb592ca7004511ff2b",
+          "annotation_file_sha256": "300aed613f57d2872170d70bfd0c3d309227aa9d03464c3408295b678ec2b3af",
+          "track": {
+            "format": "hc-subtask-track/1",
+            "track_id": "tag-episode",
+            "label": "创建新 Episode",
+            "annotation_ids": [
+              "child"
+            ]
+          }
+        },
+        "annotation_size": 3803,
+        "review": {
+          "status": "UNREVIEWED",
+          "review_id": null,
+          "submission_id": null
+        },
+        "approval": null,
+        "submission": null,
+        "parent_manifest_sha256": "a44fc2713fbd8b5b8c6ac39a43853ae286c0d96c9478fbeda14b1cf361f6c921",
+        "processor_version": "hc-annotated-delivery-queue/1",
+        "reader_version": "lerobot/0.6.1",
+        "archive_format": "independent_episode_zip/1",
+        "includes_collected_depth": true
+      },
+      "schema_snapshot": {
+        "schema_version": "1",
+        "project_id": "writer-project",
+        "dataset_id": "writer-dataset",
+        "schema_snapshot_id": "schema-1",
+        "frequency_hz": 30.0,
+        "fields": {
+          "action": "list<float64>",
+          "/observation/state": "list<float64>",
+          "observation.images.head_rgb": "json",
+          "observation.images.head_depth": "json"
+        },
+        "fingerprint": "bcbdb3c59af0fc2a15f926610f117ec866ebe68e0adccfcf6f5e33ca82c07459"
+      },
+      "annotation_id": "child",
+      "start_step": 1,
+      "end_step": 4,
+      "parent_origin_timestamp_ns": 0,
+      "start_timestamp_ns": 33333333,
+      "next_parent_timestamp_ns": null,
+      "display_name": "交叉子区间",
+      "encoding": {
+        "depth_window": "hc-depth-parent-window/1",
+        "depth_encoder_profile": "hc-hevc-gray12-lossless/2",
+        "rgb_window": "openarm-training-h264-crf18-veryfast/1",
+        "pyav": "15.1.0",
+        "ffmpeg": {
+          "libavutil": [
+            59,
+            39,
+            100
+          ],
+          "libavcodec": [
+            61,
+            19,
+            101
+          ],
+          "libavformat": [
+            61,
+            7,
+            100
+          ],
+          "libavdevice": [
+            61,
+            3,
+            100
+          ],
+          "libavfilter": [
+            10,
+            4,
+            100
+          ],
+          "libswscale": [
+            8,
+            3,
+            100
+          ],
+          "libswresample": [
+            5,
+            3,
+            100
+          ]
+        },
+        "depth_requantized": false
+      }
+    },
+    "parent_unchanged": true,
+    "codes_and_physical_values_preserved": true,
+    "synthetic_input": true,
+    "queue_api_browser_verified": false,
+    "model_depth_training_support": "NOT_VALIDATED"
+  },
+  {
+    "data": {
+      "identity": {
+        "organization_id": "bundle-8a3835759e664e10a6e52004dce8a15c",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "writer-dataset",
+        "episode_id": "episode_derived_583510ea2ad9aea65d19a88ca5395262",
+        "rollout_id": "derived:583510ea2ad9aea65d19a88ca5395262c47bdfb6c8dedf20c192137f4a8a03c5"
+      },
+      "data_version_id": "dv_fcd399da84285bbf02240947db1f820c65528eca6359ac9d363a85aadb5e677b",
+      "version": 1,
+      "content_hash": "0dbda18e6138c386d0c853f59818a744bc3a3c6891baeae894134d8be177d773",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-8a3835759e664e10a6e52004dce8a15c/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_583510ea2ad9aea65d19a88ca5395262/id-dv_fcd399da84285bbf02240947db1f820c65528eca6359ac9d363a85aadb5e677b",
+      "frame_count": 3
+    },
+    "plan": {
+      "format": "hc-tag-episode-plan/1",
+      "processor_version": "hc-tag-episode/1",
+      "parent": {
+        "identity": {
+          "organization_id": "bundle-8a3835759e664e10a6e52004dce8a15c",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_45ec47af49864670fe356c4b11adf0232ab383a8cd3b131dba238afaf865f97b",
+        "version": 1,
+        "content_hash": "257499c0aafdcba0e61858d167a6b6a6f6e2ec2e2acb1faffd88fd6949e7a2c5",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-8a3835759e664e10a6e52004dce8a15c/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_45ec47af49864670fe356c4b11adf0232ab383a8cd3b131dba238afaf865f97b",
+        "frame_count": 4
+      },
+      "parent_input": {
+        "identity": {
+          "organization_id": "bundle-8a3835759e664e10a6e52004dce8a15c",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "writer-dataset",
+          "episode_id": "writer-episode",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "processor_version": "test/1",
+        "configuration_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "schema_snapshot_id": "schema-1",
+        "required_features": [
+          "observation.state",
+          "action",
+          "observation.images.head_rgb",
+          "observation.images.head_depth"
+        ],
+        "required_depth_features": [
+          "observation.images.head_depth"
+        ],
+        "recording_date": "unknown",
+        "robot_id": "unknown",
+        "task_id": "unknown"
+      },
+      "annotation": {
+        "format": "hc-annotation-delivery-plan/1",
+        "binding": {
+          "data": {
+            "identity": {
+              "organization_id": "bundle-8a3835759e664e10a6e52004dce8a15c",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "writer-dataset",
+              "episode_id": "writer-episode",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_45ec47af49864670fe356c4b11adf0232ab383a8cd3b131dba238afaf865f97b",
+            "version": 1,
+            "content_hash": "257499c0aafdcba0e61858d167a6b6a6f6e2ec2e2acb1faffd88fd6949e7a2c5",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-8a3835759e664e10a6e52004dce8a15c/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_45ec47af49864670fe356c4b11adf0232ab383a8cd3b131dba238afaf865f97b",
+            "frame_count": 4
+          },
+          "task_id": "c7af1675-4bca-5b90-aff5-fca835ea22a2",
+          "revision": 1,
+          "revision_content_hash": "c997dc638bbb08f6bb94a6d8faeb5389c63533169416f946c7f50e3b7ea838c8",
+          "annotation_file_sha256": "2f0deb9d3a1a967830f0760c3f6db8d41af341d78aeb43aa432125cbccb652f5",
+          "track": {
+            "format": "hc-subtask-track/1",
+            "track_id": "tag-episode",
+            "label": "创建新 Episode",
+            "annotation_ids": [
+              "child"
+            ]
+          }
+        },
+        "annotation_size": 3803,
+        "review": {
+          "status": "UNREVIEWED",
+          "review_id": null,
+          "submission_id": null
+        },
+        "approval": null,
+        "submission": null,
+        "parent_manifest_sha256": "257499c0aafdcba0e61858d167a6b6a6f6e2ec2e2acb1faffd88fd6949e7a2c5",
+        "processor_version": "hc-annotated-delivery-queue/1",
+        "reader_version": "lerobot/0.6.1",
+        "archive_format": "independent_episode_zip/1",
+        "includes_collected_depth": true
+      },
+      "schema_snapshot": {
+        "schema_version": "1",
+        "project_id": "writer-project",
+        "dataset_id": "writer-dataset",
+        "schema_snapshot_id": "schema-1",
+        "frequency_hz": 30.0,
+        "fields": {
+          "action": "list<float64>",
+          "/observation/state": "list<float64>",
+          "observation.images.head_rgb": "json",
+          "observation.images.head_depth": "json"
+        },
+        "fingerprint": "bcbdb3c59af0fc2a15f926610f117ec866ebe68e0adccfcf6f5e33ca82c07459"
+      },
+      "annotation_id": "child",
+      "start_step": 1,
+      "end_step": 4,
+      "parent_origin_timestamp_ns": 0,
+      "start_timestamp_ns": 33333333,
+      "next_parent_timestamp_ns": null,
+      "display_name": "交叉子区间",
+      "encoding": {
+        "depth_window": "hc-depth-parent-window/1",
+        "depth_encoder_profile": "hc-hevc-gray12-lossless/2",
+        "rgb_window": "openarm-training-h264-crf18-veryfast/1",
+        "pyav": "15.1.0",
+        "ffmpeg": {
+          "libavutil": [
+            59,
+            39,
+            100
+          ],
+          "libavcodec": [
+            61,
+            19,
+            101
+          ],
+          "libavformat": [
+            61,
+            7,
+            100
+          ],
+          "libavdevice": [
+            61,
+            3,
+            100
+          ],
+          "libavfilter": [
+            10,
+            4,
+            100
+          ],
+          "libswscale": [
+            8,
+            3,
+            100
+          ],
+          "libswresample": [
+            5,
+            3,
+            100
+          ]
+        },
+        "depth_requantized": false
+      }
+    },
+    "parent_unchanged": true,
+    "codes_and_physical_values_preserved": true,
+    "synthetic_input": true,
+    "queue_api_browser_verified": false,
+    "model_depth_training_support": "NOT_VALIDATED"
+  }
+]

@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -399,7 +400,7 @@ def inspect_depth_video(path, frame_count, fps, info, *, masks=None):
         if (
             stream.codec_context.pix_fmt != "gray12le"
             or stream.codec_context.name != "hevc"
-            or stream.average_rate != fps
+            or stream.average_rate != Fraction(str(fps))
         ):
             raise export_error("EXPORT_DEPTH_FORMAT_INVALID", "Depth video codec/FPS changed.")
         for index, frame in enumerate(container.decode(video=0)):

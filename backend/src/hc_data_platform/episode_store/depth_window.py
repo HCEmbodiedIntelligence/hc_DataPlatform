@@ -25,6 +25,7 @@ from .prepared_assets import PreparedVideo
 from .validation import document, package_file, parquet_rows, validate_depth
 
 VERSION = "hc-depth-window/2"
+PARENT_TIME_VERSION = "hc-depth-parent-window/1"
 REQUIRED = {"profile.json", "frames.parquet", "report.json", "validity/flags.parquet"}
 
 
@@ -62,9 +63,15 @@ def _verify_source(media):
 
 
 def prepare_depth_window(
-    media: PreparedVideo, window: DepthWindow, destination: Path
+    media: PreparedVideo, window: DepthWindow, destination: Path, *, preserve_parent_times=False
 ) -> PreparedVideo:
     entries, original_report, source_fps = _verify_source(media)
+    if preserve_parent_times and (
+        Fraction(str(window.frequency_hz)) != source_fps
+        or window.frame_count != window.stop_source_frame - window.first_source_frame
+        or window.source_start_offset_ns is not None
+    ):
+        raise ValueError("parent timestamps require consecutive frames without resampling")
     source_count = original_report["frames"]
     if (
         window.stop_source_frame > source_count
@@ -76,12 +83,15 @@ def prepare_depth_window(
         window.first_source_frame == 0
         and window.stop_source_frame == source_count
         and window.frame_count == source_count
-        and window.frequency_hz == source_fps
+        and Fraction(str(window.frequency_hz)) == source_fps
         and window.source_start_offset_ns in (None, 0)
     )
-    if whole and all(
-        row["target_timestamp_ns"] == window.target_time(index)
-        for index, row in enumerate(parquet_rows(media.evidence_root / "frames.parquet"))
+    if whole and (
+        preserve_parent_times
+        or all(
+            row["target_timestamp_ns"] == window.target_time(index)
+            for index, row in enumerate(parquet_rows(media.evidence_root / "frames.parquet"))
+        )
     ):
         # The existing verified media/evidence already satisfies the entire contract.
         # No codec instance or regenerated evidence is needed.
@@ -146,7 +156,11 @@ def prepare_depth_window(
                 expected_codes.update(pixels.astype("<u2").tobytes())
                 if encoder is not None:
                     encoder.write_codes(pixels)
-                target = window.target_time(index)
+                target = (
+                    row["target_timestamp_ns"]
+                    if preserve_parent_times
+                    else window.target_time(index)
+                )
                 missing = row["missing"]
                 identity = None if missing else (row["source_id"], row["source_seq"])
                 error = None if missing else row["source_timestamp_ns"] - target
@@ -199,7 +213,7 @@ def prepare_depth_window(
     if output_count != count or observed.digest() != expected_codes.digest():
         raise ValueError("depth window HEVC encoding changed selected 12-bit codes")
     mapping = {
-        "processor_version": VERSION,
+        "processor_version": PARENT_TIME_VERSION if preserve_parent_times else VERSION,
         "window": asdict(window),
         "source_fps": str(source_fps),
         "source_frames": source_count,
@@ -213,6 +227,8 @@ def prepare_depth_window(
         if whole
         else encoder.encoding_metadata()["encoder_configuration_sha256"],
     }
+    if preserve_parent_times:
+        mapping["timestamp_policy"] = "exact_parent_targets"
     report = {
         **original_report,
         "frames": count,
@@ -242,7 +258,12 @@ def prepare_depth_window(
         feature,
         count,
         window.frequency_hz,
-        target_rows=({"hc.timestamp_ns": window.target_time(i)} for i in range(count)),
+        target_rows=(
+            {"hc.timestamp_ns": row["target_timestamp_ns"]}
+            for row in parquet_rows(root / "frames.parquet")
+        )
+        if preserve_parent_times
+        else ({"hc.timestamp_ns": window.target_time(i)} for i in range(count)),
         feature_key="depth",
     )
     return PreparedVideo(

@@ -207,7 +207,7 @@ class DepthVideo:
         self.profile, self.shape, self.closed = profile, tuple(shape[:2]), False
         path.parent.mkdir(parents=True, exist_ok=True)
         self.container = av.open(str(path), "w")
-        self.stream = self.container.add_stream("libx265", rate=fps)
+        self.stream = self.container.add_stream("libx265", rate=Fraction(str(fps)))
         self.stream.height, self.stream.width = shape[:2]
         self.stream.pix_fmt = "gray12le"
         self.stream.codec_context.thread_count = 1
@@ -259,7 +259,7 @@ class DepthVideo:
         padded = np.zeros((quantized.shape[0], plane.line_size // 2), dtype="<u2")
         padded[:, : quantized.shape[1]] = quantized
         plane.update(padded.tobytes())
-        frame.pts, frame.time_base = self.frames, Fraction(1, self.fps)
+        frame.pts, frame.time_base = self.frames, 1 / Fraction(str(self.fps))
         for packet in self.stream.encode(frame):
             self.container.mux(packet)
         self.frames += 1

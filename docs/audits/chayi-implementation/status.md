@@ -31,7 +31,7 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | DATA-05 | W1/W2 | Pending | Interrupted, failed, retried and concurrent commits |
 | DATA-06 | W1/W2 | Pending | Units, numeric semantics, depth profile/mask/error/time |
 | SEG-01 | W2 | Pending | Whole recording and long recording windows |
-| SEG-02 | W3/W5 | Pending | Tag edits preserve media; explicit derived Episode |
+| SEG-02 | W3/W5 | Partial generator verified; command/UI/real/human pending | [Tag creates distinct RGB-D data with parent trace](tag-derivation.md); end-to-end command remains |
 | ANN-01 | W1/W3/W7 | Pending | Complete tags and immutable review bindings |
 | ANN-02 | W3/W5 | Pending | Versioned JSON outbox, failure/retry/download |
 | ANN-03 | W3/W6 | Pending | Explicit subtask track, gaps/overlap/cross-track tests |
@@ -43,6 +43,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W3 Tag 派生生成层补充：固定父数据/标注修订与单个区间，创建独立 RGB-D 包，
+  不改父包与原冻结切片；深度不重新量化、整段视频复用、精确纳秒映射。40 项测试、
+  14 项回归及两份断网官方 reader/独立 HC 掩码通过，见 [证据](tag-derivation.md)。
+  新条目独立 QC 当前 UNKNOWN；任务/API/UI/产品登记、实际样本和 W7/W8 继续。
+  SEG-02 仅为部分生成层软件验证，未将任何完整 P0 判为完成。
 
 - W6 集合交付补充（2026-09-29）：重组集合接通持久任务/API/P21；页面默认标准包，
   RGB 子集明确排除深度，逐条固定标注修订/轨道。后端 41 项、普通 HTTP/worker
