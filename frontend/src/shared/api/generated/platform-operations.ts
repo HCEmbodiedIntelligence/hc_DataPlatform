@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 2ad89bc178e6e0891dd39e2f590f6fadd3872f3bd5d0d96f38bfc1106da7bd14
+// Runtime-OpenAPI-SHA256: c2bbf1e2ba720aca0d075d99af9212d5330325078842dab60992e9667bd37f6d
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -281,6 +281,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/cancel" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/download" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/retry" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/candidates" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/collections" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },

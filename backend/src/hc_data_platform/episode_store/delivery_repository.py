@@ -66,11 +66,24 @@ class PostgresEpisodeDeliveries(PostgresEpisodeStore):
         with self.transaction() as cursor:
             return self._get(cursor, job_id)
 
-    def list_jobs(self, *, data_version_id=None, limit=25, before=None):
+    def list_jobs(
+        self, *, data_version_id=None, limit=25, before=None, kind=None, include_annotated=True
+    ):
         if not 1 <= limit <= 100:
             raise ValueError("page limit must be 1..100")
         with self.transaction() as cursor:
             extra, args = "", list(scope_key())
+            if not include_annotated:
+                extra += " AND NOT jsonb_path_exists(plan,'$.members[*].annotation.binding')"
+            if kind is not None:
+                if kind not in {"independent", "collection"}:
+                    raise ValueError("unknown delivery kind")
+                extra += " AND plan->>'format'=%s"
+                args.append(
+                    "hc-episode-delivery-plan/1"
+                    if kind == "independent"
+                    else "hc-collection-delivery-plan/1"
+                )
             if data_version_id:
                 extra += " AND plan @> %s::jsonb"
                 args.append(
@@ -91,13 +104,16 @@ class PostgresEpisodeDeliveries(PostgresEpisodeStore):
             return tuple(public_job(record(cursor, row)) for row in cursor.fetchall())
 
     def request_delivery(self, plan, key, actor_id, total_files, total_bytes):
-        scope = scope_key()
-        if any(m.data.identity.scope != scope for m in plan.members):
-            raise PermissionError("delivery selection differs from request scope")
-        key_hash, request_hash = (
-            sha256(key.encode()).hexdigest(),
+        return self.request_frozen(
+            key,
+            actor_id,
             digest(plan.model_dump(mode="json")),
+            lambda: (plan, total_files, total_bytes),
         )
+
+    def request_frozen(self, key, actor_id, request_hash, freeze):
+        scope = scope_key()
+        key_hash = sha256(key.encode()).hexdigest()
         with self.transaction() as cursor:
             cursor.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
@@ -115,6 +131,9 @@ class PostgresEpisodeDeliveries(PostgresEpisodeStore):
                         "IDEMPOTENCY_CONFLICT", "Use a new key for a different selection."
                     )
                 return self._get(cursor, previous[1])
+            plan, total_files, total_bytes = freeze()
+            if any(m.data.identity.scope != scope for m in plan.members):
+                raise PermissionError("delivery selection differs from request scope")
             cursor.execute(
                 """INSERT INTO episode_store.delivery_jobs
                 (organization_id,project_id,region_code,job_id,plan,actor_id,total_files,total_bytes)
@@ -205,6 +224,9 @@ class PostgresEpisodeDeliveries(PostgresEpisodeStore):
 
     def progress(self, row, files, size):
         self.leased_update(row, "processed_files=%s,processed_bytes=%s", (files, size))
+
+    def pin_totals(self, row, files, size):
+        self.leased_update(row, "total_files=%s,total_bytes=%s", (files, size))
 
     def pin_artifact(self, row, key, checksum, size):
         self.leased_update(

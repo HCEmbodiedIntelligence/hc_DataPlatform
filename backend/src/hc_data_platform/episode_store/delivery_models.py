@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from .collection_delivery_models import CollectionDeliveryPlan
 from .models import DataVersionRef, Digest, FrozenModel, digest
 
 ArchiveKind = Literal["independent_episode_zip/1", "independent_episode_batch_zip/1"]
@@ -69,23 +70,44 @@ class EpisodeDeliveryPlan(FrozenModel):
 
 class EpisodeDeliveryJob(FrozenModel):
     job_id: str = Field(pattern=r"^ed_[0-9a-f]{64}$")
-    plan: EpisodeDeliveryPlan
+    plan: EpisodeDeliveryPlan | CollectionDeliveryPlan = Field(discriminator="format")
     status: Literal["PENDING", "RUNNING", "READY", "FAILED", "CANCELLED"]
     phase: Literal[
-        "queued", "verifying", "archiving", "uploading", "completed", "failed", "cancelled"
+        "queued",
+        "verifying",
+        "projecting",
+        "archiving",
+        "uploading",
+        "completed",
+        "failed",
+        "cancelled",
     ]
     generation: int = Field(ge=1)
     attempts: int = Field(ge=0)
     processed_files: int = Field(ge=0)
     processed_bytes: int = Field(ge=0)
-    total_files: int = Field(gt=0)
-    total_bytes: int = Field(gt=0)
+    total_files: int | None = Field(gt=0)
+    total_bytes: int | None = Field(gt=0)
     uploaded_bytes: int = Field(ge=0)
     artifact_sha256: Digest | None = None
     size_bytes: int | None = Field(default=None, gt=0)
     error_code: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def archive_totals(self):
+        if (self.total_files is None) != (self.total_bytes is None):
+            raise ValueError("archive totals must become known together")
+        if self.total_files is None and (
+            isinstance(self.plan, EpisodeDeliveryPlan)
+            or self.status == "READY"
+            or self.processed_files
+            or self.processed_bytes
+            or self.artifact_sha256 is not None
+        ):
+            raise ValueError("only an unbuilt collection may have unknown archive totals")
+        return self
 
 
 class EpisodeDeliveryGeneration(FrozenModel):

@@ -1,5 +1,129 @@
 components:
   schemas:
+    CollectionAnnotationSelection:
+      additionalProperties: false
+      properties:
+        allow_unreviewed:
+          default: false
+          title: Allow Unreviewed
+          type: boolean
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        task_id:
+          maxLength: 256
+          minLength: 1
+          title: Task Id
+          type: string
+        track:
+          $ref: '#/components/schemas/SubtaskTrack'
+      required:
+      - revision
+      - track
+      - task_id
+      title: CollectionAnnotationSelection
+      type: object
+    CollectionDeliveryMember:
+      additionalProperties: false
+      properties:
+        annotation:
+          anyOf:
+          - $ref: '#/components/schemas/AnnotationDeliveryPlan'
+          - type: 'null'
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+        excluded_depth_features:
+          items:
+            type: string
+          title: Excluded Depth Features
+          type: array
+        manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Manifest Sha256
+          type: string
+        selected_depth_profiles:
+          additionalProperties:
+            pattern: ^[0-9a-f]{64}$
+            type: string
+          title: Selected Depth Profiles
+          type: object
+      required:
+      - data
+      - manifest_sha256
+      - selected_depth_profiles
+      - excluded_depth_features
+      title: CollectionDeliveryMember
+      type: object
+    CollectionDeliveryPlan:
+      additionalProperties: false
+      properties:
+        annotation_selection:
+          const: per_episode_fixed_selection
+          default: per_episode_fixed_selection
+          title: Annotation Selection
+          type: string
+        archive_format:
+          const: lerobot_collection_zip/1
+          default: lerobot_collection_zip/1
+          title: Archive Format
+          type: string
+        archive_version:
+          const: hc-collection-archive/1
+          default: hc-collection-archive/1
+          title: Archive Version
+          type: string
+        contract_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Contract Sha256
+          type: string
+        format:
+          const: hc-collection-delivery-plan/1
+          default: hc-collection-delivery-plan/1
+          title: Format
+          type: string
+        members:
+          items:
+            $ref: '#/components/schemas/CollectionDeliveryMember'
+          maxItems: 100
+          minItems: 1
+          title: Members
+          type: array
+        modalities:
+          enum:
+          - rgb
+          - rgbd
+          title: Modalities
+          type: string
+        processor_version:
+          const: hc-lerobot-collection/1
+          default: hc-lerobot-collection/1
+          title: Processor Version
+          type: string
+        reader_version:
+          const: lerobot/0.6.1
+          default: lerobot/0.6.1
+          title: Reader Version
+          type: string
+      required:
+      - members
+      - modalities
+      - contract_sha256
+      title: CollectionDeliveryPlan
+      type: object
+    CollectionEpisodeSelection:
+      additionalProperties: false
+      properties:
+        annotation:
+          anyOf:
+          - $ref: '#/components/schemas/CollectionAnnotationSelection'
+          - type: 'null'
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+      required:
+      - data
+      title: CollectionEpisodeSelection
+      type: object
     DataReviewLocation:
       additionalProperties: false
       description: Zero-based half-open Episode frames, never parent recording frame numbers.
@@ -487,6 +611,50 @@ components:
       - next_before
       title: EpisodeDataReviewPage
       type: object
+    EpisodeDeliveryCandidates:
+      additionalProperties: false
+      properties:
+        collection_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Version Id
+        dataset_id:
+          title: Dataset Id
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/DataVersionRef'
+          title: Items
+          type: array
+        legacy_episode_count:
+          minimum: 0.0
+          title: Legacy Episode Count
+          type: integer
+        next_offset:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Offset
+        total:
+          minimum: 0.0
+          title: Total
+          type: integer
+        version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Version
+      required:
+      - dataset_id
+      - collection_version_id
+      - version
+      - items
+      - total
+      - legacy_episode_count
+      - next_offset
+      title: EpisodeDeliveryCandidates
+      type: object
     EpisodeDeliveryDownload:
       additionalProperties: false
       properties:
@@ -561,6 +729,7 @@ components:
           enum:
           - queued
           - verifying
+          - projecting
           - archiving
           - uploading
           - completed
@@ -569,7 +738,15 @@ components:
           title: Phase
           type: string
         plan:
-          $ref: '#/components/schemas/EpisodeDeliveryPlan'
+          discriminator:
+            mapping:
+              hc-collection-delivery-plan/1: '#/components/schemas/CollectionDeliveryPlan'
+              hc-episode-delivery-plan/1: '#/components/schemas/EpisodeDeliveryPlan'
+            propertyName: format
+          oneOf:
+          - $ref: '#/components/schemas/EpisodeDeliveryPlan'
+          - $ref: '#/components/schemas/CollectionDeliveryPlan'
+          title: Plan
         processed_bytes:
           minimum: 0.0
           title: Processed Bytes
@@ -594,13 +771,17 @@ components:
           title: Status
           type: string
         total_bytes:
-          exclusiveMinimum: 0.0
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
           title: Total Bytes
-          type: integer
         total_files:
-          exclusiveMinimum: 0.0
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
           title: Total Files
-          type: integer
         updated_at:
           format: date-time
           title: Updated At
@@ -1218,6 +1399,27 @@ components:
       - rules
       - content_sha256
       title: QcRuleEvidence
+      type: object
+    RequestCollectionDelivery:
+      additionalProperties: false
+      properties:
+        members:
+          items:
+            $ref: '#/components/schemas/CollectionEpisodeSelection'
+          maxItems: 100
+          minItems: 1
+          title: Members
+          type: array
+        modalities:
+          enum:
+          - rgb
+          - rgbd
+          title: Modalities
+          type: string
+      required:
+      - members
+      - modalities
+      title: RequestCollectionDelivery
       type: object
     RequestEpisodeDelivery:
       additionalProperties: false
@@ -2324,6 +2526,17 @@ paths:
             type: string
           - type: 'null'
           title: Before
+      - in: query
+        name: kind
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - independent
+            - collection
+            type: string
+          - type: 'null'
+          title: Kind
       responses:
         '200':
           content:
@@ -2392,6 +2605,124 @@ paths:
       security:
       - bearerAuth: []
       summary: Request Episode Delivery
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/episode-deliveries/candidates:
+    get:
+      operationId: episodeDeliveryCandidates
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: dataset_id
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Dataset Id
+          type: string
+      - in: query
+        name: collection_version_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Collection Version Id
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeDeliveryCandidates'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Episode Delivery Candidates
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/episode-deliveries/collections:
+    post:
+      operationId: requestCollectionDelivery
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 160
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestCollectionDelivery'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeDeliveryJob'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Request Collection Delivery
       tags:
       - episode_data
       - episode_data

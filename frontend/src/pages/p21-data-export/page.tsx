@@ -55,6 +55,7 @@ import {
   collectionTaskGateway,
   type CollectionTask,
 } from "../p20-collection-tasks/api";
+import { PackageBatchPanel } from "./PackageBatchPanel";
 import styles from "./styles.module.css";
 
 const RawDataExportPanel = lazy(() => import("./RawDataExportPanel"));
@@ -83,7 +84,7 @@ const formatOptions: readonly {
   {
     value: "lerobot_v3",
     label: "LeRobot v3",
-    description: "所选 Episode 的数值数据与媒体引用，生成 LeRobot v3 目录。",
+    description: "所选历史 Episode 的数值与媒体文件，生成 LeRobot v3 目录。",
   },
 ] as const;
 
@@ -335,6 +336,8 @@ export function DataExportPage() {
       : params.get("dataStage") === "dataset"
         ? "dataset"
         : "annotated";
+  const standardMode =
+    dataStage !== "raw" && params.get("delivery") !== "legacy";
   const [selectedSourceKeys, setSelectedSourceKeys] = useState<string[]>([]);
   const [selectedFormats, setSelectedFormats] = useState<
     PublishedExportFormat[]
@@ -431,7 +434,11 @@ export function DataExportPage() {
       queryKey: ["export-source", scopeKey, source.datasetId],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         fetchDatasetBootstrap(source.datasetId, signal),
-      enabled: canRead && activeSourceFilterCount > 0 && dataStage !== "raw",
+      enabled:
+        canRead &&
+        !standardMode &&
+        activeSourceFilterCount > 0 &&
+        dataStage !== "raw",
       staleTime: 0,
     })),
   });
@@ -496,6 +503,7 @@ export function DataExportPage() {
       },
       enabled:
         canRead &&
+        !standardMode &&
         Boolean(projectId) &&
         activeSourceFilterCount > 0 &&
         dataStage !== "raw",
@@ -546,7 +554,7 @@ export function DataExportPage() {
           jobId: ref.jobId,
           signal,
         }),
-      enabled: canRead && Boolean(projectId),
+      enabled: canRead && !standardMode && Boolean(projectId),
       staleTime: 0,
       refetchInterval: (query: { state: { data?: PublishedExportJob } }) => {
         const status = query.state.data?.status;
@@ -992,6 +1000,8 @@ export function DataExportPage() {
                 <span className={styles.selectionCount} aria-live="polite">
                   {dataStage === "raw" ? (
                     "保留上传时的原文件"
+                  ) : standardMode ? (
+                    "固定数据版本与标注修订"
                   ) : (
                     <>
                       已选 {selectedSources.length} 个数据集 ·{" "}
@@ -1042,6 +1052,31 @@ export function DataExportPage() {
                       }}
                     />
                   </div>
+                  {dataStage !== "raw" && (
+                    <Radio.Group
+                      aria-label="导出交付方式"
+                      value={standardMode ? "standard" : "legacy"}
+                      options={[
+                        {
+                          value: "standard",
+                          label: "完整标准包 / LeRobot 集合",
+                        },
+                        { value: "legacy", label: "历史格式" },
+                      ]}
+                      onChange={(event) => {
+                        setSelectedSourceKeys([]);
+                        setBatchFeedback(null);
+                        setParams(
+                          (current) => {
+                            const next = new URLSearchParams(current);
+                            next.set("delivery", event.target.value);
+                            return next;
+                          },
+                          { replace: true },
+                        );
+                      }}
+                    />
+                  )}
                   <section
                     aria-labelledby="export-scope-title"
                     className={styles.filterSection}
@@ -1092,7 +1127,9 @@ export function DataExportPage() {
                         />
                       </div>
                       <div className={styles.filterField}>
-                        <label htmlFor="export-task-filter">任务</label>
+                        <label htmlFor="export-task-filter">
+                          {standardMode ? "任务所属数据集" : "任务"}
+                        </label>
                         <Select
                           allowClear
                           showSearch
@@ -1136,6 +1173,33 @@ export function DataExportPage() {
                         canDownload={canDownload}
                       />
                     </Suspense>
+                  ) : standardMode ? (
+                    <>
+                      {appliedTasks.length > 0 && (
+                        <Alert
+                          type="info"
+                          title="以下列出所选任务所属数据集的标准包，请逐条选择要交付的 Episode。"
+                        />
+                      )}
+                      <PackageBatchPanel
+                        key={`${scopeKey}:${dataStage}:${requestedSources.map((s) => s.datasetId).join(",")}:${appliedTasks.join(",")}:${activeSourceFilterCount}`}
+                        scope={scope!}
+                        datasets={
+                          activeSourceFilterCount > 0
+                            ? requestedSources.map((s) => ({
+                                id: s.datasetId,
+                                name: s.datasetName,
+                              }))
+                            : []
+                        }
+                        annotated={dataStage === "annotated"}
+                        canReadAnnotations={capabilities.has(
+                          "annotation_task.read",
+                        )}
+                        canCreate={canCreate}
+                        canDownload={canDownload}
+                      />
+                    </>
                   ) : (
                     <>
                       <div className={styles.scopeNote} role="note">
@@ -1359,113 +1423,117 @@ export function DataExportPage() {
               )}
             </Card>
 
-            <Card
-              className={styles.tasksCard}
-              title={
-                <span className={styles.cardTitle}>
-                  <Download aria-hidden="true" size={18} />
-                  导出任务
-                </span>
-              }
-            >
-              <div className={styles.metrics} aria-label="导出任务汇总">
-                <div>
-                  <span>全部</span>
-                  <strong>{taskCounts.total}</strong>
-                </div>
-                <div>
-                  <span>进行中</span>
-                  <strong>{taskCounts.active}</strong>
-                </div>
-                <div>
-                  <span>已完成</span>
-                  <strong>{taskCounts.succeeded}</strong>
-                </div>
-                <div>
-                  <span>失败/取消</span>
-                  <strong>{taskCounts.failed}</strong>
-                </div>
-              </div>
-
-              <div className={styles.taskToolbar}>
-                <div>
-                  <label htmlFor="export-task-search">检索任务</label>
-                  <Input
-                    allowClear
-                    id="export-task-search"
-                    prefix={<Search aria-hidden="true" size={16} />}
-                    placeholder="数据集、版本或任务 ID"
-                    value={taskQuery}
-                    onChange={(event) => setTaskQuery(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="export-task-status">任务状态</label>
-                  <Select<TaskFilter>
-                    id="export-task-status"
-                    options={[
-                      { value: "all", label: "全部状态" },
-                      { value: "active", label: "进行中" },
-                      { value: "succeeded", label: "已完成" },
-                      { value: "failed", label: "失败/取消" },
-                    ]}
-                    value={taskFilter}
-                    onChange={setTaskFilter}
-                  />
-                </div>
-              </div>
-
-              {downloadFeedback ? (
-                <Alert
-                  closable
-                  showIcon
-                  className={styles.taskAlert}
-                  description={downloadFeedback}
-                  title="压缩包下载已开始"
-                  type="success"
-                  onClose={() => setDownloadFeedback(null)}
-                />
-              ) : null}
-              {[cancelTask.error, retryTask.error, downloadTask.error].find(
-                Boolean,
-              ) ? (
-                <Alert
-                  showIcon
-                  className={styles.taskAlert}
-                  description={readableError(
-                    [
-                      cancelTask.error,
-                      retryTask.error,
-                      downloadTask.error,
-                    ].find(Boolean),
-                  )}
-                  title="任务操作失败"
-                  type="error"
-                />
-              ) : null}
-
-              {taskRows.length === 0 ? (
-                <div className={styles.taskEmpty}>
-                  <span>
-                    <FileArchive aria-hidden="true" size={27} />
+            {!standardMode && (
+              <Card
+                className={styles.tasksCard}
+                title={
+                  <span className={styles.cardTitle}>
+                    <Download aria-hidden="true" size={18} />
+                    导出任务
                   </span>
-                  <Typography.Title level={3}>还没有导出任务</Typography.Title>
-                  <Typography.Paragraph>
-                    选择一条或多条数据以及目标格式，创建后可在这里统一查看进度。
-                  </Typography.Paragraph>
+                }
+              >
+                <div className={styles.metrics} aria-label="导出任务汇总">
+                  <div>
+                    <span>全部</span>
+                    <strong>{taskCounts.total}</strong>
+                  </div>
+                  <div>
+                    <span>进行中</span>
+                    <strong>{taskCounts.active}</strong>
+                  </div>
+                  <div>
+                    <span>已完成</span>
+                    <strong>{taskCounts.succeeded}</strong>
+                  </div>
+                  <div>
+                    <span>失败/取消</span>
+                    <strong>{taskCounts.failed}</strong>
+                  </div>
                 </div>
-              ) : (
-                <Table<TaskRow>
-                  aria-label="导出任务列表"
-                  className={styles.taskTable}
-                  columns={taskColumns}
-                  dataSource={visibleTaskRows}
-                  locale={{ emptyText: "没有符合当前条件的任务" }}
-                  pagination={{ pageSize: 20, showSizeChanger: false }}
-                  size="middle"
-                />
-              )}
-            </Card>
+
+                <div className={styles.taskToolbar}>
+                  <div>
+                    <label htmlFor="export-task-search">检索任务</label>
+                    <Input
+                      allowClear
+                      id="export-task-search"
+                      prefix={<Search aria-hidden="true" size={16} />}
+                      placeholder="数据集、版本或任务 ID"
+                      value={taskQuery}
+                      onChange={(event) => setTaskQuery(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="export-task-status">任务状态</label>
+                    <Select<TaskFilter>
+                      id="export-task-status"
+                      options={[
+                        { value: "all", label: "全部状态" },
+                        { value: "active", label: "进行中" },
+                        { value: "succeeded", label: "已完成" },
+                        { value: "failed", label: "失败/取消" },
+                      ]}
+                      value={taskFilter}
+                      onChange={setTaskFilter}
+                    />
+                  </div>
+                </div>
+
+                {downloadFeedback ? (
+                  <Alert
+                    closable
+                    showIcon
+                    className={styles.taskAlert}
+                    description={downloadFeedback}
+                    title="压缩包下载已开始"
+                    type="success"
+                    onClose={() => setDownloadFeedback(null)}
+                  />
+                ) : null}
+                {[cancelTask.error, retryTask.error, downloadTask.error].find(
+                  Boolean,
+                ) ? (
+                  <Alert
+                    showIcon
+                    className={styles.taskAlert}
+                    description={readableError(
+                      [
+                        cancelTask.error,
+                        retryTask.error,
+                        downloadTask.error,
+                      ].find(Boolean),
+                    )}
+                    title="任务操作失败"
+                    type="error"
+                  />
+                ) : null}
+
+                {taskRows.length === 0 ? (
+                  <div className={styles.taskEmpty}>
+                    <span>
+                      <FileArchive aria-hidden="true" size={27} />
+                    </span>
+                    <Typography.Title level={3}>
+                      还没有导出任务
+                    </Typography.Title>
+                    <Typography.Paragraph>
+                      选择一条或多条数据以及目标格式，创建后可在这里统一查看进度。
+                    </Typography.Paragraph>
+                  </div>
+                ) : (
+                  <Table<TaskRow>
+                    aria-label="导出任务列表"
+                    className={styles.taskTable}
+                    columns={taskColumns}
+                    dataSource={visibleTaskRows}
+                    locale={{ emptyText: "没有符合当前条件的任务" }}
+                    pagination={{ pageSize: 20, showSizeChanger: false }}
+                    size="middle"
+                  />
+                )}
+              </Card>
+            )}
           </div>
         }
       />

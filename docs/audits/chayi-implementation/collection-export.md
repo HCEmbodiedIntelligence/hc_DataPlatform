@@ -1,5 +1,7 @@
 # G1 重组 LeRobot RGB/RGB-D 集合生成与离线读取（2026-09-29）
 
+后续集合任务/API/P21 进度与验收边界见 [集合交付证据](collection-delivery.md)。下文保留生成层阶段记录。
+
 新增 `episode_store/collection_export.py`，将固定版本的独立 Episode 重组成单个
 官方 LeRobot v3 数据集根目录。它是 W6 的生成层，使用已授权的 package/revision
 输入；本阶段未把集合选择接到任务 API 或 P21 页面，不据此声称批量交付闭环完成。

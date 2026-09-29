@@ -1,0 +1,368 @@
+{
+  "jobs": [
+    {
+      "job_id": "ed_d3505f34709779dd806874ac1aa49cbd5f404b6402b79287aba68fac9279f7f4",
+      "plan": {
+        "format": "hc-collection-delivery-plan/1",
+        "members": [
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-8035a2bcb22449378d73709d6cbb3192",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "second",
+                "rollout_id": "second-rollout"
+              },
+              "data_version_id": "dv_a753c8d768d7bdbfdfc34c3e1e1705391cf7315d485b9da09ebf27c6a6c89b32",
+              "version": 1,
+              "content_hash": "110d8b0ba9a1ddc71e0d5af319fd988201a072361df481c899c529e87c166106",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-8035a2bcb22449378d73709d6cbb3192/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-second/id-dv_a753c8d768d7bdbfdfc34c3e1e1705391cf7315d485b9da09ebf27c6a6c89b32",
+              "frame_count": 4
+            },
+            "manifest_sha256": "110d8b0ba9a1ddc71e0d5af319fd988201a072361df481c899c529e87c166106",
+            "annotation": null,
+            "selected_depth_profiles": {
+              "observation.images.head_depth": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181"
+            },
+            "excluded_depth_features": []
+          },
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-8035a2bcb22449378d73709d6cbb3192",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "writer-episode",
+                "rollout_id": "explicit:writer-rollout"
+              },
+              "data_version_id": "dv_a75871aac44202211d60e2d206c1240aa1836562216a9f78ffe49648d16697ae",
+              "version": 1,
+              "content_hash": "a060cc3fcbbbe25ed2a31d56b43168d38319d13cc993da5444a2f39cc84a4c23",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-8035a2bcb22449378d73709d6cbb3192/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_a75871aac44202211d60e2d206c1240aa1836562216a9f78ffe49648d16697ae",
+              "frame_count": 4
+            },
+            "manifest_sha256": "a060cc3fcbbbe25ed2a31d56b43168d38319d13cc993da5444a2f39cc84a4c23",
+            "annotation": {
+              "format": "hc-annotation-delivery-plan/1",
+              "binding": {
+                "data": {
+                  "identity": {
+                    "organization_id": "bundle-8035a2bcb22449378d73709d6cbb3192",
+                    "project_id": "writer-project",
+                    "region_code": "writer-region",
+                    "dataset_id": "writer-dataset",
+                    "episode_id": "writer-episode",
+                    "rollout_id": "explicit:writer-rollout"
+                  },
+                  "data_version_id": "dv_a75871aac44202211d60e2d206c1240aa1836562216a9f78ffe49648d16697ae",
+                  "version": 1,
+                  "content_hash": "a060cc3fcbbbe25ed2a31d56b43168d38319d13cc993da5444a2f39cc84a4c23",
+                  "storage_format": "lerobot_v3",
+                  "schema_snapshot_id": "schema-1",
+                  "package_prefix": "episodes/id-bundle-8035a2bcb22449378d73709d6cbb3192/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_a75871aac44202211d60e2d206c1240aa1836562216a9f78ffe49648d16697ae",
+                  "frame_count": 4
+                },
+                "task_id": "fe0e419d-ec60-5cfc-9cdb-702ba35e3f6e",
+                "revision": 1,
+                "revision_content_hash": "570e787029a757f7ca8bd418a36e084cb5b950e1e9d12a18ae1ab97bc76a0c10",
+                "annotation_file_sha256": "8a1f9484b297d542447c6ba1e3c025d9459c9de6fae6191246bb96ca25833b76",
+                "track": {
+                  "format": "hc-subtask-track/1",
+                  "track_id": "explicit",
+                  "label": "\u4efb\u52a1\u5206\u6bb5",
+                  "annotation_ids": [
+                    "parent"
+                  ]
+                }
+              },
+              "annotation_size": 3803,
+              "review": {
+                "status": "UNREVIEWED",
+                "review_id": null,
+                "submission_id": null
+              },
+              "approval": null,
+              "submission": null,
+              "parent_manifest_sha256": "a060cc3fcbbbe25ed2a31d56b43168d38319d13cc993da5444a2f39cc84a4c23",
+              "processor_version": "hc-annotated-delivery-queue/1",
+              "reader_version": "lerobot/0.6.1",
+              "archive_format": "independent_episode_zip/1",
+              "includes_collected_depth": true
+            },
+            "selected_depth_profiles": {
+              "observation.images.head_depth": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181"
+            },
+            "excluded_depth_features": []
+          }
+        ],
+        "modalities": "rgbd",
+        "archive_format": "lerobot_collection_zip/1",
+        "annotation_selection": "per_episode_fixed_selection",
+        "contract_sha256": "09f273406921e7a868c7a2607494a3a524a55a70cfb1ad5cf9f95cd9cd5cc302",
+        "processor_version": "hc-lerobot-collection/1",
+        "archive_version": "hc-collection-archive/1",
+        "reader_version": "lerobot/0.6.1"
+      },
+      "status": "READY",
+      "phase": "completed",
+      "generation": 1,
+      "attempts": 1,
+      "processed_files": 56,
+      "processed_bytes": 341943,
+      "total_files": 56,
+      "total_bytes": 341943,
+      "uploaded_bytes": 353321,
+      "artifact_sha256": "927cd9f0ab8f1b487d67ac85a3a1e4f686a0aa0c88de27f58a48b8c2c2f68eec",
+      "size_bytes": 353321,
+      "error_code": null,
+      "created_at": "2026-09-29T14:20:20.842689Z",
+      "updated_at": "2026-09-29T14:20:21.687989Z"
+    },
+    {
+      "job_id": "ed_3408409ae9be7f0b74ee1292d0f257ceb381942f0f3ecd0a83e441bdc924cfb8",
+      "plan": {
+        "format": "hc-collection-delivery-plan/1",
+        "members": [
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-2cafe58db5ad47c29e9f605fb80af3da",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "second",
+                "rollout_id": "second-rollout"
+              },
+              "data_version_id": "dv_e22ecc1ad71382ececba84eaf2b5f0dff00375a5573e1662d6c320de7a59ee0b",
+              "version": 1,
+              "content_hash": "eb1481ed2cf481b781f2405a9709b0853e57fb42733c8751cb45897028a63d31",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-2cafe58db5ad47c29e9f605fb80af3da/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-second/id-dv_e22ecc1ad71382ececba84eaf2b5f0dff00375a5573e1662d6c320de7a59ee0b",
+              "frame_count": 4
+            },
+            "manifest_sha256": "eb1481ed2cf481b781f2405a9709b0853e57fb42733c8751cb45897028a63d31",
+            "annotation": null,
+            "selected_depth_profiles": {
+              "observation.images.head_depth": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181"
+            },
+            "excluded_depth_features": []
+          },
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-2cafe58db5ad47c29e9f605fb80af3da",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "writer-episode",
+                "rollout_id": "explicit:writer-rollout"
+              },
+              "data_version_id": "dv_efdffeeccac6795c6a7851e5dfeeaf0a2e1307e70c9bf76cc25097ff318207d5",
+              "version": 1,
+              "content_hash": "8a48df78eba034d768f00138fb23b4c8ad37753d2fc83cda830451c1b7db145f",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-2cafe58db5ad47c29e9f605fb80af3da/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_efdffeeccac6795c6a7851e5dfeeaf0a2e1307e70c9bf76cc25097ff318207d5",
+              "frame_count": 4
+            },
+            "manifest_sha256": "8a48df78eba034d768f00138fb23b4c8ad37753d2fc83cda830451c1b7db145f",
+            "annotation": null,
+            "selected_depth_profiles": {
+              "observation.images.head_depth": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181"
+            },
+            "excluded_depth_features": []
+          }
+        ],
+        "modalities": "rgbd",
+        "archive_format": "lerobot_collection_zip/1",
+        "annotation_selection": "per_episode_fixed_selection",
+        "contract_sha256": "09f273406921e7a868c7a2607494a3a524a55a70cfb1ad5cf9f95cd9cd5cc302",
+        "processor_version": "hc-lerobot-collection/1",
+        "archive_version": "hc-collection-archive/1",
+        "reader_version": "lerobot/0.6.1"
+      },
+      "status": "READY",
+      "phase": "completed",
+      "generation": 1,
+      "attempts": 1,
+      "processed_files": 46,
+      "processed_bytes": 305992,
+      "total_files": 46,
+      "total_bytes": 305992,
+      "uploaded_bytes": 315390,
+      "artifact_sha256": "e443fb1b5cc7e6b35b7e1322f0d9c843dd95ffc123b457ada0396554337bc872",
+      "size_bytes": 315390,
+      "error_code": null,
+      "created_at": "2026-09-29T14:20:14.257929Z",
+      "updated_at": "2026-09-29T14:20:14.996270Z"
+    },
+    {
+      "job_id": "ed_a185a6e9bb0e87fff6f6c59fb9e9182c46fa52b341d3f924ba1ed29591ef6592",
+      "plan": {
+        "format": "hc-collection-delivery-plan/1",
+        "members": [
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-2675a659154e47ffae5b8f3a96a6cda7",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "writer-episode",
+                "rollout_id": "explicit:writer-rollout"
+              },
+              "data_version_id": "dv_199e1560ea81de4c85b37cf1e94953653c7a5e18ee98eb5d2b2b353db21a7c3b",
+              "version": 1,
+              "content_hash": "27d35e40e19e42917087c5d1cd605e630aa76c26f87d73daa4aeb03be58023d4",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-2675a659154e47ffae5b8f3a96a6cda7/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_199e1560ea81de4c85b37cf1e94953653c7a5e18ee98eb5d2b2b353db21a7c3b",
+              "frame_count": 4
+            },
+            "manifest_sha256": "27d35e40e19e42917087c5d1cd605e630aa76c26f87d73daa4aeb03be58023d4",
+            "annotation": null,
+            "selected_depth_profiles": {},
+            "excluded_depth_features": [
+              "observation.images.head_depth"
+            ]
+          },
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-2675a659154e47ffae5b8f3a96a6cda7",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "second",
+                "rollout_id": "second-rollout"
+              },
+              "data_version_id": "dv_24f2684e9fdbdc71b4f1afadfdbd9b44e28fc33d9ff721bcb82a74847b58041f",
+              "version": 1,
+              "content_hash": "ed4009910329de7f060bb353b98b4164b341ea4fcb2b14ad7682a9cdd575b748",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-2675a659154e47ffae5b8f3a96a6cda7/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-second/id-dv_24f2684e9fdbdc71b4f1afadfdbd9b44e28fc33d9ff721bcb82a74847b58041f",
+              "frame_count": 4
+            },
+            "manifest_sha256": "ed4009910329de7f060bb353b98b4164b341ea4fcb2b14ad7682a9cdd575b748",
+            "annotation": null,
+            "selected_depth_profiles": {},
+            "excluded_depth_features": [
+              "observation.images.head_depth"
+            ]
+          }
+        ],
+        "modalities": "rgb",
+        "archive_format": "lerobot_collection_zip/1",
+        "annotation_selection": "per_episode_fixed_selection",
+        "contract_sha256": "0bc9e50e85cbc76c1992f164e81cbec9e8702c0335000328a4c4e328e43cc9f9",
+        "processor_version": "hc-lerobot-collection/1",
+        "archive_version": "hc-collection-archive/1",
+        "reader_version": "lerobot/0.6.1"
+      },
+      "status": "READY",
+      "phase": "completed",
+      "generation": 1,
+      "attempts": 1,
+      "processed_files": 36,
+      "processed_bytes": 229831,
+      "total_files": 36,
+      "total_bytes": 229831,
+      "uploaded_bytes": 236649,
+      "artifact_sha256": "bc03bcbc60f9def85192fc6bffdf9d709ef4e8428ff5c125b2cb06bb0c19d4da",
+      "size_bytes": 236649,
+      "error_code": null,
+      "created_at": "2026-09-29T14:20:11.588411Z",
+      "updated_at": "2026-09-29T14:20:12.186438Z"
+    },
+    {
+      "job_id": "ed_9aaec63fef4976531925a6f01a13973afd96ab8fc6ebbf3c632b2c270db18438",
+      "plan": {
+        "format": "hc-collection-delivery-plan/1",
+        "members": [
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-1fe89e4cf8c246748312e896458e5508",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "second",
+                "rollout_id": "second-rollout"
+              },
+              "data_version_id": "dv_5e2ab68a19ed50f7eae798fde88951236a162ffc3aadfa3b78e7d4dce05acb4e",
+              "version": 1,
+              "content_hash": "404c194d4463b7eb20be0494d3405fd6a01ffbd85e3a97f453e5986747eee9e6",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-1fe89e4cf8c246748312e896458e5508/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-second/id-dv_5e2ab68a19ed50f7eae798fde88951236a162ffc3aadfa3b78e7d4dce05acb4e",
+              "frame_count": 4
+            },
+            "manifest_sha256": "404c194d4463b7eb20be0494d3405fd6a01ffbd85e3a97f453e5986747eee9e6",
+            "annotation": null,
+            "selected_depth_profiles": {
+              "observation.images.head_depth": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181"
+            },
+            "excluded_depth_features": []
+          },
+          {
+            "data": {
+              "identity": {
+                "organization_id": "bundle-1fe89e4cf8c246748312e896458e5508",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "dataset_id": "writer-dataset",
+                "episode_id": "writer-episode",
+                "rollout_id": "explicit:writer-rollout"
+              },
+              "data_version_id": "dv_d2323d79f24d998029510db15e81fbf8a18507fe4c576117906755ec96db8d1c",
+              "version": 1,
+              "content_hash": "c87ffc157866042eb4aaf51d5817fbb07771047f830ff0f94b2569ceabfce376",
+              "storage_format": "lerobot_v3",
+              "schema_snapshot_id": "schema-1",
+              "package_prefix": "episodes/id-bundle-1fe89e4cf8c246748312e896458e5508/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_d2323d79f24d998029510db15e81fbf8a18507fe4c576117906755ec96db8d1c",
+              "frame_count": 4
+            },
+            "manifest_sha256": "c87ffc157866042eb4aaf51d5817fbb07771047f830ff0f94b2569ceabfce376",
+            "annotation": null,
+            "selected_depth_profiles": {
+              "observation.images.head_depth": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181"
+            },
+            "excluded_depth_features": []
+          }
+        ],
+        "modalities": "rgbd",
+        "archive_format": "lerobot_collection_zip/1",
+        "annotation_selection": "per_episode_fixed_selection",
+        "contract_sha256": "09f273406921e7a868c7a2607494a3a524a55a70cfb1ad5cf9f95cd9cd5cc302",
+        "processor_version": "hc-lerobot-collection/1",
+        "archive_version": "hc-collection-archive/1",
+        "reader_version": "lerobot/0.6.1"
+      },
+      "status": "READY",
+      "phase": "completed",
+      "generation": 1,
+      "attempts": 1,
+      "processed_files": 46,
+      "processed_bytes": 305992,
+      "total_files": 46,
+      "total_bytes": 305992,
+      "uploaded_bytes": 315390,
+      "artifact_sha256": "e900a594e5160ab5287b883af99b260cdc775060c21150cde828c451a57c8a2e",
+      "size_bytes": 315390,
+      "error_code": null,
+      "created_at": "2026-09-29T14:28:43.409035Z",
+      "updated_at": "2026-09-29T14:28:44.904238Z"
+    }
+  ],
+  "synthetic_input": true,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

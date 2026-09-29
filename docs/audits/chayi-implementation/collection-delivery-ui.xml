@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="23" failures="0" errors="0" time="11.54557749">
+    <testsuite name="src/pages/p21-data-export/CollectionAnnotationChooser.test.tsx" timestamp="2026-09-29T14:36:28.366Z" hostname="9e578ce72ce0" tests="1" failures="0" errors="0" skipped="0" time="0.361772309">
+        <testcase classname="src/pages/p21-data-export/CollectionAnnotationChooser.test.tsx" name="requires consent for an unapproved revision and blocks overlapping subtask tags" time="0.361293917">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p21-data-export/PackageBatchPanel.test.tsx" timestamp="2026-09-29T14:36:28.368Z" hostname="9e578ce72ce0" tests="3" failures="0" errors="0" skipped="0" time="0.564365925">
+        <testcase classname="src/pages/p21-data-export/PackageBatchPanel.test.tsx" name="shows RGB depth exclusion and retains the key after an interrupted request" time="0.434198503">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/PackageBatchPanel.test.tsx" name="requires an explicit annotation selection for every selected Episode" time="0.122865233">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/PackageBatchPanel.test.tsx" name="does not fetch candidates or cached jobs without download permission" time="0.006744834">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p21-data-export/package-deliveries.test.ts" timestamp="2026-09-29T14:36:28.368Z" hostname="9e578ce72ce0" tests="10" failures="0" errors="0" skipped="0" time="0.016169918">
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="pins annotation revision and explicit depth choice in the queued request" time="0.008723171">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="refuses inconsistent foreign tenant in a cached response" time="0.000574939">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="refuses inconsistent depth exclusion in a cached response" time="0.000406235">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="refuses inconsistent annotation parent in a cached response" time="0.000456713">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="refuses inconsistent missing totals in a cached response" time="0.000570519">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="refuses inconsistent progress in a cached response" time="0.000361749">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="refuses inconsistent duplicate Episode in a cached response" time="0.000539406">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="allows unknown size while generating and rejects a changed fixed candidate snapshot" time="0.001158773">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="reauthorizes matching download bytes and rejects a grant for another hash" time="0.001431176">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/package-deliveries.test.ts" name="does not bind annotation history from another data version" time="0.001234519">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p21-data-export/page.test.tsx" timestamp="2026-09-29T14:36:28.372Z" hostname="9e578ce72ce0" tests="9" failures="0" errors="0" skipped="0" time="10.603269338">
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; defaults to standard packages and submits an explicit RGB subset without a Lance reference" time="0.549593567">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; switches processing stages, clears selections, and sends the selected stage" time="0.938266691">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; downloads original files without requiring processed or approved Episodes" time="1.047147566">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; shows only 0 approved Episodes across all processing pages" time="0.227595016">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; shows only 1 approved Episodes across all processing pages" time="0.463212281">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports current working data when a published version exists: false" time="0.508384199">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports current working data when a published version exists: true" time="0.505764064">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports exactly the Episodes selected through task, including later pages" time="3.203818202">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports exactly the Episodes selected through dataset, including later pages" time="3.157297688">
+        </testcase>
+    </testsuite>
+</testsuites>

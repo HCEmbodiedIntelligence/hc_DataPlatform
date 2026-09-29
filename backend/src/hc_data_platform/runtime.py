@@ -483,11 +483,13 @@ def _annotation_deliveries(annotation, connection_factory, object_storage, packa
     from hc_data_platform.annotation.delivery import AnnotationDeliveryService
     from hc_data_platform.annotation.delivery_repository import PostgresAnnotationDeliveries
 
-    return AnnotationDeliveryService(
+    service = AnnotationDeliveryService(
         _annotation_revision_files(annotation, connection_factory, object_storage),
         packages,
         PostgresAnnotationDeliveries(connection_factory),
     )
+    packages.deliveries.annotations = service
+    return service
 
 
 class PublicationReconciler:
@@ -1403,6 +1405,12 @@ def build_worker_outbox(
     from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
     from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
 
+    delivery_packages = _episode_packages(
+        connection_factory, object_storage, resolved, catalog, None
+    )
+    annotation_deliveries = _annotation_deliveries(
+        annotation, connection_factory, object_storage, delivery_packages
+    )
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
@@ -1434,17 +1442,10 @@ def build_worker_outbox(
                 _annotation_revision_files(annotation, connection_factory, object_storage)
             ),
             AnnotationDeliveryOutboxHandler.EVENT_TYPE: AnnotationDeliveryOutboxHandler(
-                _annotation_deliveries(
-                    annotation,
-                    connection_factory,
-                    object_storage,
-                    _episode_packages(connection_factory, object_storage, resolved, catalog, None),
-                )
+                annotation_deliveries
             ),
             EpisodeDeliveryOutboxHandler.EVENT_TYPE: EpisodeDeliveryOutboxHandler(
-                _episode_packages(
-                    connection_factory, object_storage, resolved, catalog, None
-                ).deliveries
+                delivery_packages.deliveries
             ),
         },
         worker_id=f"hc-outbox-{socket.gethostname()}",

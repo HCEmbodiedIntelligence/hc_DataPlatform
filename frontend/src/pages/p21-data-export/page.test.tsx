@@ -39,6 +39,7 @@ import {
 } from "../../shared/config/runtime";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { DataExportPage } from "./page";
+import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 
 const server = setupServer(...datasetHandlers);
 const postedExports: { episode_ids: string[] }[] = [];
@@ -176,6 +177,83 @@ afterAll(() => {
 });
 
 describe("P21 data export page", () => {
+  it("defaults to standard packages and submits an explicit RGB subset without a Lance reference", async () => {
+    const f = packageDeliveryFixture();
+    Object.assign(f.data.identity, {
+      organization_id: "org_fx_01",
+      project_id: "prj_fx_01",
+      region_code: "cn-shanghai",
+      dataset_id: datasetIds.dataset,
+      episode_id: "standard-episode",
+    });
+    const legacyEligibility = vi.fn(),
+      queued = vi.fn();
+    server.use(
+      http.get(
+        "*/datasets/:datasetId/versions/:versionId/export-eligibility",
+        () => {
+          legacyEligibility();
+          return HttpResponse.json({});
+        },
+      ),
+      http.get("*/episode-deliveries/candidates", () =>
+        HttpResponse.json({
+          ...f.candidates,
+          dataset_id: datasetIds.dataset,
+        }),
+      ),
+      http.get("*/episode-deliveries", () => HttpResponse.json([])),
+      http.post("*/episode-deliveries/collections", async ({ request }) => {
+        queued(await request.json());
+        return HttpResponse.json({
+          ...f.job,
+          plan: {
+            ...f.job.plan,
+            modalities: "rgb",
+            members: [
+              {
+                ...f.job.plan.members[0],
+                selected_depth_profiles: {},
+                excluded_depth_features: ["observation.images.head_depth"],
+              },
+            ],
+          },
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <ProviderHarness>
+        <MemoryRouter
+          initialEntries={[
+            `/exports?datasetId=${datasetIds.dataset}&dataStage=dataset`,
+          ]}
+        >
+          <DataExportPage />
+        </MemoryRouter>
+      </ProviderHarness>,
+    );
+    await user.click(
+      await screen.findByRole("checkbox", { name: /standard-episode/ }),
+    );
+    await user.click(
+      screen.getByRole("radio", { name: "LeRobot RGB 子集（排除深度）" }),
+    );
+    expect(
+      screen.getByText("RGB 子集将排除深度视频、深度像素掩码及相关数据特征"),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "创建标准包交付任务" }),
+    );
+    await waitFor(() =>
+      expect(queued).toHaveBeenCalledWith({
+        modalities: "rgb",
+        members: [{ data: f.data, annotation: null }],
+      }),
+    );
+    expect(legacyEligibility).not.toHaveBeenCalled();
+    expect(postedExports).toHaveLength(0);
+  });
   it("switches processing stages, clears selections, and sends the selected stage", async () => {
     server.use(
       http.get(
@@ -216,7 +294,9 @@ describe("P21 data export page", () => {
     render(
       <ProviderHarness>
         <MemoryRouter
-          initialEntries={[`/exports?datasetId=${datasetIds.dataset}`]}
+          initialEntries={[
+            `/exports?delivery=legacy&datasetId=${datasetIds.dataset}`,
+          ]}
         >
           <DataExportPage />
         </MemoryRouter>
@@ -287,7 +367,7 @@ describe("P21 data export page", () => {
       <ProviderHarness>
         <MemoryRouter
           initialEntries={[
-            `/exports?datasetId=${datasetIds.dataset}&dataStage=raw`,
+            `/exports?delivery=legacy&datasetId=${datasetIds.dataset}&dataStage=raw`,
           ]}
         >
           <DataExportPage />
@@ -352,7 +432,9 @@ describe("P21 data export page", () => {
       render(
         <ProviderHarness>
           <MemoryRouter
-            initialEntries={[`/exports?datasetId=${datasetIds.dataset}`]}
+            initialEntries={[
+              `/exports?delivery=legacy&datasetId=${datasetIds.dataset}`,
+            ]}
           >
             <DataExportPage />
           </MemoryRouter>
@@ -470,7 +552,9 @@ describe("P21 data export page", () => {
       render(
         <ProviderHarness>
           <MemoryRouter
-            initialEntries={[`/exports?datasetId=${datasetIds.dataset}`]}
+            initialEntries={[
+              `/exports?delivery=legacy&datasetId=${datasetIds.dataset}`,
+            ]}
           >
             <DataExportPage />
           </MemoryRouter>
@@ -540,7 +624,7 @@ describe("P21 data export page", () => {
       );
       render(
         <ProviderHarness>
-          <MemoryRouter initialEntries={["/exports"]}>
+          <MemoryRouter initialEntries={["/exports?delivery=legacy"]}>
             <DataExportPage />
             <LocationSearch />
           </MemoryRouter>

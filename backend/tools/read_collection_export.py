@@ -8,8 +8,10 @@ import hashlib
 import io
 import json
 import sys
+import tempfile
+import zipfile
 from importlib.metadata import version
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import av
 import numpy as np
@@ -215,9 +217,61 @@ def read(root):
     }
 
 
+def read_input(path):
+    if path.is_dir():
+        return read(path)
+    job_path = path.parent / "job.json"
+    job = (
+        json.loads(job_path.read_bytes())
+        if job_path.exists()
+        else json.loads((path.parent / "result.json").read_bytes())["job"]
+    )
+    assert job["status"] == "READY" and sha(path) == job["artifact_sha256"]
+    assert path.stat().st_size == job["size_bytes"]
+    with tempfile.TemporaryDirectory(prefix="hc-offline-collection-") as temp:
+        root = Path(temp)
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+            names = [entry.filename for entry in entries]
+            assert len(names) == len(set(names)) == job["total_files"]
+            assert sum(entry.file_size for entry in entries) == job["total_bytes"]
+            for name in names:
+                relative = PurePosixPath(name)
+                assert not relative.is_absolute() and ".." not in relative.parts
+                assert name == "delivery.json" or name.startswith("collection/")
+            archive.extractall(root)
+        envelope = document(root, "delivery.json")
+        assert envelope["job_id"] == job["job_id"] and envelope["plan"] == job["plan"]
+        assert envelope["is_reassembled_collection"] is True
+        frozen = json.dumps(
+            job["plan"], sort_keys=True, ensure_ascii=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+        assert "ed_" + hashlib.sha256(frozen).hexdigest() == job["job_id"]
+        manifest = document(root / "collection", "hc/collection_manifest.json")
+        assert manifest["modalities"] == job["plan"]["modalities"]
+        assert len(manifest["members"]) == len(job["plan"]["members"])
+        for member, chosen in zip(manifest["members"], job["plan"]["members"], strict=True):
+            assert member["data"] == chosen["data"]
+            assert member["source_manifest_sha256"] == chosen["manifest_sha256"]
+            if chosen["annotation"]:
+                assert member["annotation"] == chosen["annotation"]["binding"]
+            else:
+                assert member["annotation"] is None
+        expected = {"collection/" + f["path"] for f in manifest["files"]}
+        assert set(names) == expected | {"delivery.json", "collection/hc/collection_manifest.json"}
+        result = read(root / "collection")
+        result.update(
+            root=str(path),
+            job_id=job["job_id"],
+            downloaded_zip_sha256=job["artifact_sha256"],
+            outer_plan_and_all_zip_entries_verified=True,
+        )
+        return result
+
+
 def main():
     assert version("lerobot") == "0.6.1"
-    results = [read(Path(value)) for value in sys.argv[2:]]
+    results = [read_input(Path(value)) for value in sys.argv[2:]]
     assert not any(name.startswith("hc_data_platform") for name in sys.modules)
     report = {
         "lerobot": version("lerobot"),

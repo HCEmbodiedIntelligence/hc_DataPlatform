@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="20" failures="0" errors="0" time="10.878051499">
+    <testsuite name="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" timestamp="2026-09-29T14:30:52.742Z" hostname="8d492eec0b3b" tests="3" failures="0" errors="0" skipped="0" time="0.325416923">
+        <testcase classname="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" name="reuses one command key after an interrupted response" time="0.242277976">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" name="can download an existing archive without granting create permission" time="0.073412166">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" name="does not query download jobs without permission" time="0.009068154">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/complete-deliveries.test.ts" timestamp="2026-09-29T14:30:52.744Z" hostname="8d492eec0b3b" tests="9" failures="0" errors="0" skipped="0" time="0.018633189">
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="requests a full fixed package without dropping depth and uses the supplied retry key" time="0.009621591">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent scope" time="0.001280072">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent data" time="0.000715693">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent progress" time="0.000438334">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent depth" time="0.000774316">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent layout" time="0.000468923">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="pins retry generation and refuses mismatched download hashes" time="0.001542616">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="refuses a retry response with a stale generation" time="0.000590393">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="refuses a retry response with a stale status" time="0.000591897">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p21-data-export/page.test.tsx" timestamp="2026-09-29T14:30:52.749Z" hostname="8d492eec0b3b" tests="8" failures="0" errors="0" skipped="0" time="10.534001387">
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; switches processing stages, clears selections, and sends the selected stage" time="1.329609536">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; downloads original files without requiring processed or approved Episodes" time="1.04423057">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; shows only 0 approved Episodes across all processing pages" time="0.23363136">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; shows only 1 approved Episodes across all processing pages" time="0.461334888">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports current working data when a published version exists: false" time="0.539073476">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports current working data when a published version exists: true" time="0.508630588">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports exactly the Episodes selected through task, including later pages" time="3.237444596">
+        </testcase>
+        <testcase classname="src/pages/p21-data-export/page.test.tsx" name="P21 data export page &gt; exports exactly the Episodes selected through dataset, including later pages" time="3.177754392">
+        </testcase>
+    </testsuite>
+</testsuites>

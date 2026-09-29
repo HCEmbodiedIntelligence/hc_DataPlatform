@@ -1,0 +1,112 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "official_reader_and_cross_episode_dataloader": true,
+  "collections": [
+    {
+      "root": "/app/.g1-artifacts/collection-deliveries/ed_d3505f34709779dd806874ac1aa49cbd5f404b6402b79287aba68fac9279f7f4/delivery.zip",
+      "manifest_sha256": "8723ec953d4d3f1f73b6cbbadc4cb24734d9eae6bc30cb2f66d32a6dc69b9046",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 2,
+      "invalid_pixels_masked": 8,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false,
+      "job_id": "ed_d3505f34709779dd806874ac1aa49cbd5f404b6402b79287aba68fac9279f7f4",
+      "downloaded_zip_sha256": "927cd9f0ab8f1b487d67ac85a3a1e4f686a0aa0c88de27f58a48b8c2c2f68eec",
+      "outer_plan_and_all_zip_entries_verified": true
+    },
+    {
+      "root": "/app/.g1-artifacts/collection-deliveries/ed_3408409ae9be7f0b74ee1292d0f257ceb381942f0f3ecd0a83e441bdc924cfb8/delivery.zip",
+      "manifest_sha256": "43efbba95920a4eae1eae07e52d780afc36adc8c983b2ac1ae8600871993cf1f",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 8,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false,
+      "job_id": "ed_3408409ae9be7f0b74ee1292d0f257ceb381942f0f3ecd0a83e441bdc924cfb8",
+      "downloaded_zip_sha256": "e443fb1b5cc7e6b35b7e1322f0d9c843dd95ffc123b457ada0396554337bc872",
+      "outer_plan_and_all_zip_entries_verified": true
+    },
+    {
+      "root": "/app/.g1-artifacts/collection-deliveries/ed_a185a6e9bb0e87fff6f6c59fb9e9182c46fa52b341d3f924ba1ed29591ef6592/delivery.zip",
+      "manifest_sha256": "1cbdf2dcc78cf224e985f398d0156186bacec5e51f3cfc0abca3a45105020d57",
+      "modalities": "rgb",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 0,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": false,
+      "official_rounding_max_error_mm": 0.0,
+      "depth_streams": 0,
+      "transcoded": false,
+      "requantized": false,
+      "job_id": "ed_a185a6e9bb0e87fff6f6c59fb9e9182c46fa52b341d3f924ba1ed29591ef6592",
+      "downloaded_zip_sha256": "bc03bcbc60f9def85192fc6bffdf9d709ef4e8428ff5c125b2cb06bb0c19d4da",
+      "outer_plan_and_all_zip_entries_verified": true
+    },
+    {
+      "root": "/app/.g1-artifacts/collection-delivery-http/delivery.zip",
+      "manifest_sha256": "f7328448e8a396b0b54b4267a0267e997a5ee77636f54c12aad417ae89ecf936",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 8,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false,
+      "job_id": "ed_9aaec63fef4976531925a6f01a13973afd96ab8fc6ebbf3c632b2c270db18438",
+      "downloaded_zip_sha256": "e900a594e5160ab5287b883af99b260cdc775060c21150cde828c451a57c8a2e",
+      "outer_plan_and_all_zip_entries_verified": true
+    }
+  ],
+  "synthetic_input": true,
+  "real_sensor_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

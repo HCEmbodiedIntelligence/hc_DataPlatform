@@ -37,12 +37,21 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | ANN-03 | W3/W6 | Pending | Explicit subtask track, gaps/overlap/cross-track tests |
 | QC-01 | W4/W5 | Pending | Three independent reviews, warn/skip/unknown |
 | UI-01 | W4/W5 | Pending | Real API browser at 1440/1024; human tasks separately |
-| UI-02 | W5/W6 | Pending | Nearby complete/RGB/RGB-D/annotated/raw download |
+| UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
-| EXP-01 | W6 | Pending | Multi-Episode RGB-D batch and reuse evidence |
+| EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W6 集合交付补充（2026-09-29）：重组集合接通持久任务/API/P21；页面默认标准包，
+  RGB 子集明确排除深度，逐条固定标注修订/轨道。后端 41 项、普通 HTTP/worker
+  2 项、P21/客户端 23 项通过；P06 等 20 项回归中 8 项与 P21 重叠，未重复计数。
+  四份实际任务 ZIP 通过断网官方 reader、跨 Episode DataLoader 与独立 HC mask；
+  148/148 迁移无漂移。见 [证据、限制和 G2 注意事项](collection-delivery.md)。
+  仍为软件夹具；真实/规模/浏览器/真人、来源、Tag 新 Episode、W7/W8 继续。
+  UI-02/EXP-01 标注为部分软件验证，未将任何完整 P0 判为全部完成。
+  以下集合 API/页面“尚未接通”文字是对应早期阶段的历史状态。
 
 - W6 集合生成补充（2026-09-29）：重组 RGB/RGB-D 集合，全局索引/任务/统计/
   相机/视频偏移重建，视频与 HC 深度证据逐字节复用，选定标注与全局分段编号

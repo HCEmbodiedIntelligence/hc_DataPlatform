@@ -136,8 +136,13 @@ def contract(info):
         "hc.source_shapes",
     )
     result = {key: copy.deepcopy(info.get(key)) for key in fields}
+    # JSON may spell the same frequency as 30 or 30.0 across ingress writers.
+    # Equality and the frozen contract digest must use the same representation.
+    result["fps"] = float(result["fps"])
     for feature in result["features"].values():
         feature.get("info", {}).pop("hc.stats_valid_pixels", None)
+        if "video.fps" in feature.get("info", {}):
+            feature["info"]["video.fps"] = float(feature["info"]["video.fps"])
     return result
 
 

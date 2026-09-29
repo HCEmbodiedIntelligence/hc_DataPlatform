@@ -1,7 +1,7 @@
 """Complete-package commands require the same exact scope on every cache access."""
 
 from contextlib import contextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, Query, Response
 
@@ -9,6 +9,8 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from .collection_delivery_models import EpisodeDeliveryCandidates, RequestCollectionDelivery
+from .collection_export import CollectionIncompatible
 from .delivery_models import (
     EpisodeDeliveryDownload,
     EpisodeDeliveryGeneration,
@@ -64,6 +66,14 @@ def delivery_service(auth, project_id, region_code):
             title="Episode integrity failed",
             detail="A selected package or archive failed verification.",
         ) from exc
+    except CollectionIncompatible as exc:
+        raise problem(
+            status=422,
+            code="EPISODE_COLLECTION_INCOMPATIBLE",
+            title="Incompatible collection",
+            detail=str(exc),
+            details={"field": exc.field},
+        ) from exc
     except ValueError as exc:
         raise problem(
             status=422,
@@ -87,6 +97,20 @@ def request_episode_delivery(
         return service.request(body, idempotency_key, auth)
 
 
+@router.post(BASE + "/collections", response_model=EpisodeDeliveryJob)
+def request_collection_delivery(
+    project_id: str,
+    region_code: str,
+    body: RequestCollectionDelivery,
+    auth: VerifiedAuth,
+    response: Response,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=160)],
+):
+    response.headers["Cache-Control"] = "no-store"
+    with delivery_service(auth, project_id, region_code) as service:
+        return service.request_collection(body, idempotency_key, auth)
+
+
 @router.get(BASE, response_model=tuple[EpisodeDeliveryJob, ...])
 def list_episode_deliveries(
     project_id: str,
@@ -96,10 +120,35 @@ def list_episode_deliveries(
     data_version_id: str | None = Query(None, max_length=256),
     limit: int = Query(25, ge=1, le=100),
     before: str | None = Query(None, pattern=r"^ed_[0-9a-f]{64}$"),
+    kind: Literal["independent", "collection"] | None = None,
 ):
     response.headers["Cache-Control"] = "no-store"
     with delivery_service(auth, project_id, region_code) as service:
-        return service.list(auth, data_version_id=data_version_id, limit=limit, before=before)
+        return service.list(
+            auth, data_version_id=data_version_id, limit=limit, before=before, kind=kind
+        )
+
+
+@router.get(BASE + "/candidates", response_model=EpisodeDeliveryCandidates)
+def episode_delivery_candidates(
+    project_id: str,
+    region_code: str,
+    auth: VerifiedAuth,
+    response: Response,
+    dataset_id: str = Query(min_length=1, max_length=256),
+    collection_version_id: str | None = Query(None, max_length=256),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+):
+    response.headers["Cache-Control"] = "no-store"
+    with delivery_service(auth, project_id, region_code) as service:
+        return service.candidates(
+            dataset_id,
+            auth,
+            collection_version_id=collection_version_id,
+            offset=offset,
+            limit=limit,
+        )
 
 
 @router.get(BASE + "/{job_id}", response_model=EpisodeDeliveryJob)

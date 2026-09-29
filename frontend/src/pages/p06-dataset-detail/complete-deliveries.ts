@@ -62,6 +62,7 @@ const jobWire = z
   })
   .strict();
 export type CompleteDeliveryJob = z.infer<typeof jobWire>;
+export const completeDeliveryJobWire = jobWire;
 
 function base(scope: Scope, data: ReviewDataRef) {
   episodeEndpoint(scope, data); // Same immutable scope guard as all Episode detail requests.
@@ -120,7 +121,11 @@ export async function listCompleteDeliveries(
     scope,
     signal,
     cache: "no-store",
-    query: { data_version_id: data.data_version_id, limit: 25 },
+    query: {
+      data_version_id: data.data_version_id,
+      limit: 25,
+      kind: "independent",
+    },
   });
   return z
     .array(z.unknown())

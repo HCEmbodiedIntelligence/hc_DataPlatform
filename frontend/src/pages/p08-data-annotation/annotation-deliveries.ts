@@ -73,6 +73,7 @@ const wire = z
   })
   .strict();
 export type DeliveryJob = z.infer<typeof wire>;
+export const annotationDeliveryPlanWire = wire.shape.plan;
 
 function checked(
   raw: unknown,

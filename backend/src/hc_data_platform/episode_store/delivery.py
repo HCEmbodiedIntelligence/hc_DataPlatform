@@ -14,6 +14,8 @@ from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost, renewing_lea
 from hc_data_platform.ingest.models import CompletedPart
 from hc_data_platform.security import ScopeGuard
 
+from .collection_delivery import CollectionDelivery
+from .collection_delivery_models import CollectionDeliveryPlan, EpisodeDeliveryCandidates
 from .delivery_models import EpisodeDeliveryDownload, EpisodeDeliveryMember, EpisodeDeliveryPlan
 from .delivery_repository import EpisodeDeliveryBusy, failure, public_job, scope_key
 from .models import canonical, digest
@@ -28,7 +30,7 @@ def inventory_document(plan):
             "format": "hc-episode-delivery/1",
             "job_id": plan.job_id,
             "plan": plan.model_dump(mode="json"),
-            "is_reassembled_collection": False,
+            "is_reassembled_collection": isinstance(plan, CollectionDeliveryPlan),
             "model_depth_training_support": "NOT_VALIDATED",
         }
     )
@@ -105,6 +107,8 @@ class EpisodeDeliveryService:
     def __init__(self, packages, repository):
         self.packages, self.repository = packages, repository
         self.storage = packages.files.storage
+        self.annotations = None
+        self.collection = CollectionDelivery(self)
 
     @staticmethod
     def authorize(auth, *, command=False):
@@ -154,16 +158,73 @@ class EpisodeDeliveryService:
             self._verify_artifact(row)
         return public_job(row)
 
+    def request_collection(self, body, key, auth):
+        self.authorize(auth, command=True)
+        row = self.repository.request_frozen(
+            key,
+            auth.subject_id,
+            body.request_sha256,
+            lambda: self.collection.freeze(body, auth),
+        )
+        self._authorize_plan(public_job(row).plan, auth)
+        if row["status"] == "READY":
+            self._verify_artifact(row)
+        return public_job(row)
+
+    def candidates(self, dataset_id, auth, *, collection_version_id=None, offset=0, limit=25):
+        self.authorize(auth)
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ValueError("invalid candidate page")
+        snapshot = (
+            self.packages.collections.get(dataset_id, collection_version_id=collection_version_id)
+            if collection_version_id
+            else self.packages.collections.current(dataset_id)
+        )
+        if snapshot is None:
+            return EpisodeDeliveryCandidates(
+                dataset_id=dataset_id,
+                collection_version_id=None,
+                version=None,
+                items=(),
+                total=0,
+                legacy_episode_count=0,
+                next_offset=None,
+            )
+        entries = [e for e in snapshot.episodes if e.storage_format == "lerobot_v3"]
+        return EpisodeDeliveryCandidates(
+            dataset_id=dataset_id,
+            collection_version_id=snapshot.collection_version_id,
+            version=snapshot.version,
+            items=tuple(entries[offset : offset + limit]),
+            total=len(entries),
+            legacy_episode_count=len(snapshot.episodes) - len(entries),
+            next_offset=offset + limit if offset + limit < len(entries) else None,
+        )
+
+    def _authorize_plan(self, plan, auth):
+        if isinstance(plan, CollectionDeliveryPlan):
+            self.collection.authorize(plan, auth)
+
     def status(self, job_id, auth):
         self.authorize(auth)
-        return public_job(self.repository.get_job(job_id))
+        job = public_job(self.repository.get_job(job_id))
+        self._authorize_plan(job.plan, auth)
+        return job
 
     def list(self, auth, **page):
         self.authorize(auth)
-        return self.repository.list_jobs(**page)
+        organization, project, _ = scope_key()
+        jobs = self.repository.list_jobs(
+            **page,
+            include_annotated=auth.has_capability("annotation_task.read", project, organization),
+        )
+        for job in jobs:
+            self._authorize_plan(job.plan, auth)
+        return jobs
 
     def command(self, job_id, generation, auth, *, retry):
         self.authorize(auth, command=True)
+        self._authorize_plan(public_job(self.repository.get_job(job_id)).plan, auth)
         return public_job(self.repository.command(job_id, generation, auth.subject_id, retry=retry))
 
     def _verify_artifact(self, row, checkpoint=lambda: None):
@@ -183,11 +244,18 @@ class EpisodeDeliveryService:
     def download(self, job_id, auth):
         self.authorize(auth)
         row = self.repository.get_job(job_id)
+        self._authorize_plan(public_job(row).plan, auth)
         if row["status"] != "READY":
             raise failure("NOT_READY", "Wait for packaging or retry a failed delivery.")
         self._verify_artifact(row)
         plan = public_job(row).plan
-        name = "episode" if len(plan.members) == 1 else "independent-episodes"
+        name = (
+            f"lerobot-collection-{plan.modalities}"
+            if isinstance(plan, CollectionDeliveryPlan)
+            else "episode"
+            if len(plan.members) == 1
+            else "independent-episodes"
+        )
         url = self.storage.presign_read(
             row["artifact_key"], 300, download_name=f"{name}-{job_id}.zip"
         )
@@ -225,14 +293,19 @@ class EpisodeDeliveryService:
                 directory.mkdir(parents=True, exist_ok=True)
                 with TemporaryDirectory(prefix="attempt-", dir=directory) as temporary:
                     archive = Path(temporary) / "delivery.zip"
-                    self.repository.phase(row, "archiving")
-                    checksum, size = archive_packages(
-                        self.packages,
-                        plan,
-                        archive,
-                        checkpoint,
-                        lambda files, size: self.repository.progress(row, files, size),
-                    )
+                    if isinstance(plan, CollectionDeliveryPlan):
+                        checksum, size = self.collection.build(
+                            plan, Path(temporary), archive, row, checkpoint
+                        )
+                    else:
+                        self.repository.phase(row, "archiving")
+                        checksum, size = archive_packages(
+                            self.packages,
+                            plan,
+                            archive,
+                            checkpoint,
+                            lambda files, size: self.repository.progress(row, files, size),
+                        )
                     key = f"episode-deliveries/{digest(scope_key())}/{job_id}/{checksum}.zip"
                     self.repository.pin_artifact(row, key, checksum, size)
                     row.update(artifact_key=key, artifact_sha256=checksum, size_bytes=size)

@@ -225,6 +225,30 @@ class AnnotationDeliveryService:
             plan.review.submission_id,
         )
 
+    def snapshot_for_plan(self, plan, auth):
+        """Read a collection's fixed binding through the same annotation authorization."""
+        self.authorize(plan.binding.task_id, auth)
+        row = self.files.repository.get(plan.binding.task_id, plan.binding.revision)
+        if (
+            row is None
+            or row["status"] != "READY"
+            or (
+                row["content_sha256"] != plan.binding.annotation_file_sha256
+                or row["revision_content_hash"] != plan.binding.revision_content_hash
+                or row["size_bytes"] != plan.annotation_size
+            )
+        ):
+            raise SnapshotIntegrityError("frozen annotation file is unavailable")
+        return self._snapshot(
+            {
+                "task_id": plan.binding.task_id,
+                "job_id": plan.job_id,
+                "annotation_key": row["object_key"],
+            },
+            plan,
+            auth,
+        )
+
     def generate(self, task_id, job_id, generation, auth):
         self.authorize(task_id, auth)
         row = self.repository.claim_delivery(task_id, job_id, generation)
