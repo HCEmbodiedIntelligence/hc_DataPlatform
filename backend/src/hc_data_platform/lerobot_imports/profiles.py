@@ -10,6 +10,8 @@ from typing import Any
 from hc_data_platform.recording_fields import AXES, SCHEMA
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as g1
 
+from .feature_names import native_feature_topic
+
 SOURCE_TOPIC = "/metadata/source"
 OPENARM_AXES = tuple(
     f"openarmx_{side}_joint{i}" for side in ("left", "right") for i in range(1, 8)
@@ -34,9 +36,10 @@ class NativeProfile:
     joint_topic: str
     action_topic: str
     legacy_g1: bool = False
+    extra_features: tuple[str, ...] = ()
 
 
-def profile_for_info(info: dict[str, Any]) -> NativeProfile:
+def profile_for_info(info: dict[str, Any], *, preserve_features=False) -> NativeProfile:
     if info.get("robot_type") == "unitree_g1" or not info:
         return NativeProfile(
             "native-g1-v3",
@@ -57,7 +60,8 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
             raise ValueError(f"LEROBOT_FEATURE_SCHEMA: invalid {key}")
         shape, axes = feature.get("shape"), feature.get("names")
         if (
-            feature.get("dtype") != "float32"
+            feature.get("dtype")
+            not in ({"float32", "float64"} if preserve_features else {"float32"})
             or not isinstance(shape, list)
             or len(shape) != 1
             or type(shape[0]) is not int
@@ -113,12 +117,34 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
     expected_axes = tuple(name for _, name in AXES) if public_fields else OPENARM_AXES
     if openarm and any(value != expected_axes for value in names.values()):
         raise ValueError("OPENARM_FEATURE_IDENTITY: axes differ from openarmx-v1")
+    indexes = {
+        "index",
+        "episode_index",
+        "frame_index",
+        "task_index",
+        "timestamp",
+        "observation.state",
+        "action",
+        "source.timestamp_ns",
+    }
+    extra = (
+        tuple(
+            sorted(
+                key
+                for key, feature in features.items()
+                if key not in indexes and feature.get("dtype") != "video"
+            )
+        )
+        if preserve_features
+        else ()
+    )
     topics = (
         "/humanoid/observation/state",
         "/humanoid/action",
         SOURCE_TOPIC,
         *(c.topic for c in cameras),
         *(("source.timestamp_ns",) if "source.timestamp_ns" in features else ()),
+        *(native_feature_topic(key) for key in extra),
     )
     return NativeProfile(
         "openarmx-v1" if openarm else "native-generic-v3",
@@ -128,6 +154,7 @@ def profile_for_info(info: dict[str, Any]) -> NativeProfile:
         names["action"],
         "/humanoid/observation/state",
         "/humanoid/action",
+        extra_features=extra,
     )
 
 

@@ -1,0 +1,11 @@
+{
+  "source": "synthetic RGB-D, deliberately invalid evidence",
+  "condition": "profile-mismatch",
+  "status": "TECHNICAL_FAILED",
+  "error_code": "VALIDATION_FAILED",
+  "workflow_id": "b-roundtrip-434f00f43547",
+  "packages": 0,
+  "annotation_tasks": 0,
+  "lance_writes": 0,
+  "authorized_raw_downloads_byte_identical": 12
+}

@@ -140,10 +140,16 @@ def _interruption_counts(
         """SELECT e.raw_source_id, e.status, batch.status, qc.status,
                   workflow.status, workflow.error_code, alignment.status,
                   resolution.status, rollout.duplicate_of_rollout_id,
-                  EXISTS (SELECT 1 FROM lance_rollout_lineage lineage
+                  (EXISTS (SELECT 1 FROM lance_rollout_lineage lineage
                           WHERE lineage.organization_id=e.organization_id
                             AND lineage.project_id=e.project_id
                             AND lineage.rollout_id=e.episode_id)
+                   OR EXISTS (SELECT 1 FROM episode_store.versions v
+                       JOIN episode_store.bindings b USING
+                           (organization_id,project_id,region_code,dataset_id,episode_id)
+                       WHERE v.organization_id=e.organization_id AND v.project_id=e.project_id
+                         AND v.region_code=e.region_code AND b.rollout_id=e.episode_id
+                         AND v.status='COMMITTED'))
            FROM ingest.raw_source_episodes e
            JOIN ingest.raw_ingest_jobs batch USING
                (organization_id, project_id, region_code, raw_source_id)

@@ -18,12 +18,16 @@ from hc_data_platform.publishing.depth_evidence import file_hash
 from hc_data_platform.publishing.holobrain_depth import DepthProfile
 from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
-from .models import FileEntry, PackageInput, PackageManifest
+from .models import CommitReceipt, FileEntry, PackageInput, PackageManifest
 
 
-def package_file(root: Path, relative: str) -> Path:
+def package_file(root: Path, relative: str, *, receipt=False) -> Path:
     # Reuse the manifest's canonical-path validator without weakening it for reads.
-    FileEntry(path=relative, size=1, sha256="0" * 64, media_type="application/octet-stream")
+    if receipt:
+        if relative not in {"hc/manifest.json", "hc/commit.json"}:
+            raise ValueError("unknown package receipt")
+    else:
+        FileEntry(path=relative, size=1, sha256="0" * 64, media_type="application/octet-stream")
     path = root / relative
     if not path.is_file() or path.is_symlink() or root.resolve() not in path.resolve().parents:
         raise ValueError(f"missing/unsafe package file: {relative}")
@@ -322,6 +326,9 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 raise ValueError("package symlink forbidden")
             continue
         relative = path.relative_to(root).as_posix()
+        if relative in {"hc/manifest.json", "hc/commit.json"}:
+            package_file(root, relative, receipt=True)
+            continue
         package_file(root, relative)
         media_type = {
             ".json": "application/json",
@@ -336,4 +343,27 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 media_type=media_type,
             )
         )
-    return PackageManifest(input=source, frame_count=frames, files=tuple(files))
+    manifest = PackageManifest(input=source, frame_count=frames, files=tuple(files))
+    if any((root / name).exists() for name in ("hc/manifest.json", "hc/commit.json")):
+        # Downloaded packages include these two self-excluding receipts. Verify
+        # their complete content contract; never silently omit a forged receipt.
+        manifest_path = package_file(root, "hc/manifest.json", receipt=True)
+        receipt_path = package_file(root, "hc/commit.json", receipt=True)
+        if manifest_path.stat().st_size > 16 * 1024**2 or receipt_path.stat().st_size > 1024**2:
+            raise ValueError("package receipt exceeds size limit")
+        saved = PackageManifest.model_validate_json(manifest_path.read_bytes())
+        receipt = CommitReceipt.model_validate_json(receipt_path.read_bytes())
+        data = receipt.data
+        if (
+            saved != manifest
+            or receipt.manifest_sha256 != file_hash(manifest_path)
+            or receipt.idempotency_key != source.idempotency_key
+            or data.identity != source.identity
+            or data.data_version_id != source.data_version_id
+            or data.content_hash != manifest.content_hash
+            or data.schema_snapshot_id != source.schema_snapshot_id
+            or data.package_prefix != source.package_prefix
+            or data.frame_count != frames
+        ):
+            raise ValueError("downloaded package receipt/manifest/content mismatch")
+    return manifest

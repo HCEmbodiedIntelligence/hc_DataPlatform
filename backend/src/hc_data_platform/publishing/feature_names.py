@@ -4,6 +4,10 @@ import re
 from collections.abc import Sequence
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.lerobot_imports.feature_names import (
+    NATIVE_FEATURE_PREFIX,
+    native_feature_topic,
+)
 
 
 def camera_feature(name: str) -> bool:
@@ -13,7 +17,12 @@ def camera_feature(name: str) -> bool:
 def feature_names(names: Sequence[str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for name in names:
-        if name in {"/humanoid/action", "/action"}:
+        if name.startswith(NATIVE_FEATURE_PREFIX):
+            encoded = name.removeprefix(NATIVE_FEATURE_PREFIX)
+            target = bytes.fromhex(encoded).decode("utf-8")
+            if not target or native_feature_topic(target) != name:
+                raise ValueError("invalid native feature identifier")
+        elif name in {"/humanoid/action", "/action"}:
             target = "action"
         elif name in {"/humanoid/observation/state", "/observation/state"} or (
             name in {"/robot/joint_states", "/joint_states"}

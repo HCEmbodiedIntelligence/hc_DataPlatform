@@ -4,7 +4,8 @@ Owner: this goal terminal; sequential implementation, no delegated agents.
 Baseline: `4933200c1e09dd1f70ecbaabcfa9c6afa404e771` on 2026-09-28.
 Execution: `/home/hc_op/workspace/hc_DataPlatform-chayi-work`, branch `feat/chayi-g1`.
 Scope: W0–W6, W7 tooling/isolated rehearsal, W8 software acceptance. G2/G3 excluded.
-The three input documents were copied unchanged from the original checkout.
+The original three input documents and the later robot integration supplement
+were copied unchanged from the original checkout; hashes are recorded below.
 
 ## Verified starting state
 
@@ -42,6 +43,21 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W2 阶段补充（2026-09-29）：原生完整单 Episode RGB-D 上传已接到新的标准包
+  提交、官方 RealSense 预览和 Tag 标注链路，Lance 写入为零。154 项扩大回归通过；
+  成功/证据错误 4 场景通过，追加 3 项失败后原始下载通过，旧 Ingest 重放 1 项通过。
+  实际下载包的离线官方 reader/DataLoader 与独立 HC 掩码检查通过。
+  仅隔离数据库新增 0006/0007，140/140 current。
+  见 [范围、证据和回退条件](native-package.md)。共享视频/多窗口、其他入口和真实
+  数据/浏览器条件仍未完成，17 项 P0 保留 Pending。
+- 范围同步：原始执行方案新增机器人接入 R1–R4，已复制补充文档，尚待实施；
+  R5 属于 G2 不执行。平台手工上传不能代替机器人上传链路验收。
+  2026-09-29 与原工作树逐字节核对的 SHA-256：
+  `chayi.md=51cfd06544d55d0c9f0831de80259a42318857e6bc670dbb9ae25e482ee9cead`；
+  `chayi-implementation-plan.md=4bd37f00c4c7314ac53be2c9c024b24404c0dacbaef2fc5f2f76f235bf6de7c1`；
+  `chayi-goal-prompts.md=1991869d1d5391da88718f2f3bb0137920523c5bb1200a6e7f8cb73d4b595d8b`；
+  `chayi-teleop-integration.md=0d4edebd23bc25695740e6181195ec196f74005f3f9d16986bfd6b7f2b900e0b`。
 
 - W3 阶段补充（2026-09-29）：版本化 JSON 的事务 outbox、worker、重试/下载授权、
   P08 文件状态与下载、正式契约已接通。后端 144、前端 200、独立运行服务链路 1 项通过。

@@ -84,8 +84,13 @@ def _facts(
     attempt = cursor.fetchone()
     cursor.execute(
         """SELECT 1 FROM lance_rollout_lineage
-        WHERE organization_id=%s AND project_id=%s AND rollout_id=%s LIMIT 1""",
-        (*scope[:2], episode_id),
+        WHERE organization_id=%s AND project_id=%s AND rollout_id=%s
+        UNION ALL
+        SELECT 1 FROM episode_store.versions v JOIN episode_store.bindings b USING
+            (organization_id,project_id,region_code,dataset_id,episode_id)
+        WHERE v.organization_id=%s AND v.project_id=%s AND v.region_code=%s
+          AND b.rollout_id=%s AND v.status='COMMITTED' LIMIT 1""",
+        (*scope[:2], episode_id, *scope[:3], episode_id),
     )
     committed = cursor.fetchone() is not None
     retry_failed = resolution is not None and resolution[2] == "FAILED"

@@ -64,6 +64,7 @@ class LeRobotImportOutboxHandler:
             dataset_id=raw.dataset_id,
             collection_task_id=raw.collection_task_id,
             robot_id=raw.robot_id,
+            storage_format="lerobot_v3",
             source=LeRobotEpisodeSourceRefV1(
                 raw_upload_id=raw.raw_source_id,
                 raw_manifest_key=raw.manifest_key,

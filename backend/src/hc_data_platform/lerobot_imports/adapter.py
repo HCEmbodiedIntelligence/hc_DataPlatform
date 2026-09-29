@@ -26,6 +26,7 @@ from hc_data_platform.quality.models import (
 )
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as source_reader
 
+from .feature_names import native_feature_topic
 from .orchestration import LeRobotEpisodeSourceRefV1
 from .profiles import profile_for_info
 from .reader import read_episode
@@ -45,7 +46,9 @@ class EpisodeStream:
 
     @property
     def profile(self):
-        return profile_for_info(self.layout.info)
+        return profile_for_info(
+            self.layout.info, preserve_features=self.source.preserve_source_features
+        )
 
     @property
     def start_ns(self) -> int:
@@ -123,6 +126,9 @@ class EpisodeStream:
         for camera in self.profile.cameras:
             video = self.layout.videos[camera.feature_key]
             original = self.original_videos[camera.topic]
+            depth = self.source.preserve_source_features and self.layout.info["features"][
+                camera.feature_key
+            ].get("info", {}).get("is_depth_map", False)
             command = [
                 "ffmpeg",
                 "-nostdin",
@@ -145,7 +151,7 @@ class EpisodeStream:
                 "-fps_mode",
                 "passthrough",
                 "-pix_fmt",
-                "gray",
+                "gray12le" if depth else "gray",
                 "-f",
                 "rawvideo",
                 "pipe:1",
@@ -154,7 +160,7 @@ class EpisodeStream:
                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
                 try:
                     assert process.stdout is not None
-                    size = original.width * original.height
+                    size = original.width * original.height * (2 if depth else 1)
                     if size > 32 * 1024**2:
                         raise ValueError("video frame exceeds bounded QC decode size")
                     for timestamp in self.episode.relative_timestamps_ns:
@@ -165,6 +171,15 @@ class EpisodeStream:
                                 timestamp_ns=timestamp,
                                 is_camera=True,
                                 corrupt=True,
+                            )
+                            continue
+                        if depth:
+                            # Depth is not a luminance image: valid near/constant
+                            # ranges are not RGB black/frozen-frame failures.
+                            yield QualityStreamObservationV1(
+                                topic=camera.topic,
+                                timestamp_ns=timestamp,
+                                is_camera=True,
                             )
                             continue
                         with Image.frombytes(
@@ -277,6 +292,8 @@ class EpisodeStream:
         state_units = features["observation.state"].get("units", units)
         action_units = features["action"].get("units", units)
         for index, timestamp in enumerate(episode.relative_timestamps_ns):
+            for key in self.profile.extra_features:
+                yield native_feature_topic(key), timestamp, episode.extra_values[key][index]
             if episode.source_timestamp_ns:
                 yield "source.timestamp_ns", timestamp, episode.source_timestamp_ns[index]
             yield (
@@ -343,7 +360,9 @@ class LeRobotAdapter:
             char not in "0123456789abcdef" for char in raw_manifest_sha256
         ):
             raise ValueError("Raw manifest SHA-256 must be lowercase hexadecimal")
-        profile, layout, episode = read_episode(source_root, source.episode_index)
+        profile, layout, episode = read_episode(
+            source_root, source.episode_index, preserve_features=source.preserve_source_features
+        )
         originals: dict[str, OriginalVideoReferenceV1] = {}
         for camera in profile.cameras:
             video = layout.videos[camera.feature_key]

@@ -22,6 +22,7 @@ class LeRobotEpisodeSourceRefV1(BaseModel):
     import_attempt_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
     # Robot processing owns the stable identity; browser imports retain their IDs.
     platform_episode_id: str | None = Field(default=None, pattern=r"^rie-[a-f0-9]{32}$")
+    preserve_source_features: bool = False
 
 
 class LeRobotEpisodeTaskV1(BaseModel):
@@ -35,6 +36,8 @@ class LeRobotEpisodeTaskV1(BaseModel):
     dataset_id: Identifier
     collection_task_id: Identifier
     robot_id: Identifier
+    # Absent in historical Temporal payloads; only new dispatchers opt in.
+    storage_format: Literal["lance", "lerobot_v3"] = "lance"
     source: LeRobotEpisodeSourceRefV1
     status: Literal["PENDING"] = "PENDING"
 
@@ -88,6 +91,7 @@ def build_import_plan(
                 dataset_id=dataset_id,
                 collection_task_id=collection_task_id,
                 robot_id=robot_id,
+                storage_format="lerobot_v3",
                 source=LeRobotEpisodeSourceRefV1(
                     raw_upload_id=raw_upload_id,
                     raw_manifest_key=raw_manifest_key,

@@ -86,12 +86,12 @@ def validate_source_info(info: object) -> dict[str, Any]:
     return info
 
 
-def validate_processing_info(info: object) -> dict[str, Any]:
+def validate_processing_info(info: object, *, preserve_features=True) -> dict[str, Any]:
     """Validate the training schema without confusing robot identity with format."""
     from .profiles import profile_for_info
 
     info = validate_source_info(info)
-    profile = profile_for_info(info)
+    profile = profile_for_info(info, preserve_features=preserve_features)
     if not profile.legacy_g1:
         return info
     if not isinstance(info, dict):

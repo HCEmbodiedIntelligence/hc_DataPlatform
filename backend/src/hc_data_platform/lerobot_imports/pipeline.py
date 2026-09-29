@@ -71,11 +71,13 @@ class LeRobotPipeline:
         cache_max_bytes: int = 5 * 1024**3,
         cache_ttl_hours: int = 24,
         quality_profile_factory: Callable[[NativeProfile, int], QualityProfileV1] = quality_profile,
+        episode_packages=None,
     ) -> None:
         self.quality_profile_factory = quality_profile_factory
         self.connections = connection_factory
         self.storage = storage
         self.catalog = catalog
+        self.episode_packages = episode_packages
         self.staging = staging
         self.cache_root = cache_root
         self.cache = SourceCache(
@@ -143,6 +145,7 @@ class LeRobotPipeline:
                 cursor.execute(
                     """UPDATE ingest.raw_source_episodes
                     SET status=%s, frame_count=%s, dataset_version=%s, lance_version=%s,
+                    data_ref=%s::jsonb,
                     updated_at=clock_timestamp()
                     WHERE organization_id=%s AND project_id=%s AND region_code=%s
                       AND raw_source_id=%s AND source_episode_index=%s""",
@@ -151,6 +154,7 @@ class LeRobotPipeline:
                         derived.get("step_count"),
                         derived.get("dataset_version"),
                         derived.get("lance_version"),
+                        json.dumps(derived["data"]) if derived.get("data") is not None else None,
                         *scope,
                         task.source.episode_index,
                     ),
@@ -324,6 +328,13 @@ class LeRobotPipeline:
                     cached.unlink()
         for relative in sorted(required):
             copy(relative)
+        # These are optional for plain RGB sources, mandatory for declared depth
+        # in the new package path. Retain the exact bytes and validate on commit.
+        for relative in sorted(files):
+            if relative in {"hc/calibration.json", "hc/modalities.json"} or (
+                relative.startswith("hc/depth/")
+            ):
+                copy(relative)
         return root
 
     def prepare(self, task: LeRobotEpisodeTaskV1) -> IngestRolloutWorkflowInput:
@@ -352,7 +363,14 @@ class LeRobotPipeline:
     def _prepare(
         self, task: LeRobotEpisodeTaskV1, raw: RawSource, body: bytes, root: Path
     ) -> IngestRolloutWorkflowInput:
-        native_profile, layout, episode = read_episode(root, task.source.episode_index)
+        native_source = task.source.model_copy(
+            update={"preserve_source_features": task.storage_format == "lerobot_v3"}
+        )
+        native_profile, layout, episode = read_episode(
+            root,
+            task.source.episode_index,
+            preserve_features=native_source.preserve_source_features,
+        )
         digest = hashlib.sha256(body).hexdigest()
         rollout_id = task.source.platform_episode_id or (
             f"lerobot-{raw.raw_source_id[:16]}-ep-{task.source.episode_index:06d}"
@@ -446,7 +464,12 @@ class LeRobotPipeline:
             preflight=preflight,
             profile=profile,
         )
-        self.catalog.register_schema(snapshot)
+        if task.storage_format == "lerobot_v3":
+            if self.episode_packages is None:
+                raise RuntimeError("native Episode package service is not configured")
+            self.episode_packages.schemas.register_schema(snapshot)
+        else:
+            self.catalog.register_schema(snapshot)
         PostgresQualityRepository(self.connections).put_profile(task.project_id, profile)
         manifest_key = (
             f"derived/lerobot-imports/{task.organization_id}/{dataset}/"
@@ -464,7 +487,7 @@ class LeRobotPipeline:
             manifest_key=manifest_key,
             manifest_fingerprint=preflight.manifest_fingerprint,
             source_sha256=digest,
-            lerobot=task.source,
+            lerobot=native_source,
         )
         return IngestRolloutWorkflowInput(
             organization_id=task.organization_id,
@@ -499,6 +522,7 @@ class LeRobotPipeline:
                 profile=profile,
             ),
             alignment=AlignmentActivityInput(
+                storage_format=task.storage_format,
                 organization_id=task.organization_id,
                 project_id=task.project_id,
                 region_code=task.region_code,
@@ -507,7 +531,11 @@ class LeRobotPipeline:
                 source=source,
                 profile=AlignmentProfileV1(
                     profile_id=schema_id,
-                    converter_version="native-lerobot-v3/1",
+                    converter_version=(
+                        "native-episode-package/1"
+                        if task.storage_format == "lerobot_v3"
+                        else "native-lerobot-v3/1"
+                    ),
                     frequency_hz=30 if native_profile.legacy_g1 else int(episode.fps),
                     required_modalities=frozenset(native_profile.topics),
                     # Native rows already share a frame clock. Nearest preserves
@@ -547,10 +575,24 @@ class LeRobotPipeline:
                     for item in manifest["files"]
                 },
             ) as stream:
-                yield NativeEpisodeSession(source, stream, self.staging, len(body))
+                yield NativeEpisodeSession(
+                    source, stream, self.staging, len(body), root=root, raw=raw, manifest=manifest
+                )
+
+    @contextmanager
+    def package_assets(self, source, plan, attempt_id):
+        from .package import prepared_native_assets
+
+        with self.open_session(source) as session:
+            yield prepared_native_assets(session, plan, attempt_id)
 
     def alignment_metadata(
-        self, source: IngestProjectionSourceV1, *, dataset_id: str, dataset_version: int
+        self,
+        source: IngestProjectionSourceV1,
+        *,
+        dataset_id: str,
+        dataset_version: int,
+        storage_format: str = "lance",
     ) -> AlignmentInputV1:
         from hc_data_platform.workflow.ingest_plan import _alignment_metadata
 
@@ -559,7 +601,8 @@ class LeRobotPipeline:
         )
         # Streaming alignment metadata deliberately carries no sample bodies. Read
         # one committed row to retain the real numeric/event types in the viewer.
-        window = self.catalog.read_steps(
+        catalog = self.episode_packages.catalog if storage_format == "lerobot_v3" else self.catalog
+        window = catalog.read_steps(
             dataset_id,
             source.rollout_id,
             0,
@@ -597,8 +640,13 @@ class NativeEpisodeSession:
         stream: EpisodeStream,
         staging: ProjectionArtifactStorePort,
         object_size: int,
+        *,
+        root=None,
+        raw=None,
+        manifest=None,
     ) -> None:
         self.source, self.stream, self.staging = source, stream, staging
+        self.root, self.raw, self.raw_manifest = root, raw, manifest
         self.quality_data = stream.quality_input
         self.alignment_data = stream.alignment_input
         self.original_videos = stream.original_videos
@@ -636,7 +684,16 @@ class NativeEpisodeSession:
 
     def alignment_samples(self) -> Iterator[tuple[str, TimedSampleV1]]:
         sampler = _FrameSelectionSampler()
-        cameras = set(self.stream.original_videos)
+        cameras = {
+            camera.topic
+            for camera in self.stream.profile.cameras
+            if not (
+                self.source.lerobot.preserve_source_features
+                and self.stream.layout.info["features"][camera.feature_key]
+                .get("info", {})
+                .get("is_depth_map")
+            )
+        }
         for topic, sample in self.stream.alignment_samples():
             if topic in cameras:
                 luma = self.stream.camera_luma[(topic, sample.timestamp_ns)]

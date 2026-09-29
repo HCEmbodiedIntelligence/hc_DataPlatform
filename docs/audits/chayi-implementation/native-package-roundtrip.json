@@ -1,0 +1,32 @@
+{
+  "source": "synthetic RGB-D, 6 frames, 25 Hz",
+  "status": "SUCCEEDED",
+  "workflow_id": "b-roundtrip-7ed579d6679c",
+  "data": {
+    "identity": {
+      "organization_id": "b-roundtrip-7ed579d6679c",
+      "project_id": "b-project-7ed579d6679c",
+      "region_code": "cn-test",
+      "dataset_id": "dataset_task_0c61e72ae2458bb8af1325dd9f05b6b3",
+      "episode_id": "episode_ad2fba35bdcf5fd6f91c1bf7c981a216",
+      "rollout_id": "lerobot-4d34e36d1facbcb7-ep-000000"
+    },
+    "data_version_id": "dv_7faac36b46d645a9e535b9a44efb7fedd4ec20926dfcbb58ab9f4b232921b600",
+    "version": 1,
+    "content_hash": "42842b04eaa92bd8d162ab6526822861465bd1b0594d9b13bdabf9bc65e4f778",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "native-v1",
+    "package_prefix": "episodes/id-b-roundtrip-7ed579d6679c/id-b-project-7ed579d6679c/id-cn-test/id-unknown/id-fixture-robot/id-native-task-7ed579d6679c/id-episode_ad2fba35bdcf5fd6f91c1bf7c981a216/id-dv_7faac36b46d645a9e535b9a44efb7fedd4ec20926dfcbb58ab9f4b232921b600",
+    "frame_count": 6
+  },
+  "lance_writes": 0,
+  "depth_requantized": false,
+  "rgb_transcoded": false,
+  "official_previews": true,
+  "full_download_validated": true,
+  "lost_commit_response_recovered": true,
+  "parent_and_child_history_replayed": true,
+  "tag_save_submit_review": true,
+  "offline_package": "/app/.g1-artifacts/native-package-offline/dv_7faac36b46d645a9e535b9a44efb7fedd4ec20926dfcbb58ab9f4b232921b600",
+  "authorization": "API test principal; not real login/role acceptance"
+}

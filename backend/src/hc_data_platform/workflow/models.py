@@ -39,6 +39,7 @@ from hc_data_platform.episode_store.catalog_models import (
     validate_commit_pair,
 )
 from hc_data_platform.episode_store.models import DataVersionRef
+from hc_data_platform.episode_store.native_plan import NativeEpisodePlan
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -321,6 +322,7 @@ class AlignmentActivityInput(BaseModel):
     data: AlignmentInputV1 | None = None
     source: IngestProjectionSourceV1 | None = None
     profile: AlignmentProfileV1
+    storage_format: Literal["lance", "lerobot_v3"] = "lance"
 
     @model_validator(mode="after")
     def exactly_one_data_source(self) -> AlignmentActivityInput:
@@ -352,6 +354,7 @@ class AlignmentActivityOutput(BaseModel):
     viewer_target: DatasetIngestViewerTarget | None = None
     alignment_staging: AlignmentStagingArtifactV1 | None = None
     expected_dataset_version: int | None = Field(default=None, ge=1)
+    native_package_plan: NativeEpisodePlan | None = None
 
     @model_validator(mode="after")
     def complete_inline_commit(self) -> AlignmentActivityOutput:
@@ -427,7 +430,7 @@ class AlignedBundleCommitActivityInput(BaseModel):
     # Absent for package commits: collection version is assigned transactionally
     # after this independent Episode package, never borrowed from a Lance head.
     expected_dataset_version: int | None = Field(default=None, ge=1)
-    package_plan: EpisodeBundlePlan | None = None
+    package_plan: EpisodeBundlePlan | NativeEpisodePlan | None = None
     expected_camera_ids: tuple[str, ...]
     media_artifacts: tuple[AlignedMediaArtifactV1, ...]
 

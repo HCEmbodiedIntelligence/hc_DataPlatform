@@ -1,0 +1,11 @@
+{
+  "source": "synthetic RGB-D, deliberately invalid evidence",
+  "condition": "missing-mask",
+  "status": "TECHNICAL_FAILED",
+  "error_code": "LEROBOT_DEPTH_EVIDENCE_REQUIRED",
+  "workflow_id": "b-roundtrip-0e0c3441e400",
+  "packages": 0,
+  "annotation_tasks": 0,
+  "lance_writes": 0,
+  "authorized_raw_downloads_byte_identical": 11
+}

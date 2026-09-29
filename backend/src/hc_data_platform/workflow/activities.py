@@ -925,16 +925,27 @@ async def process_ingest_source(
             )
             if original_videos:
                 staging = staging.model_copy(update={"original_videos": original_videos})
-            catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
-            current = catalog.current_version(
-                request.alignment.dataset_id,
-                project_id=request.alignment.project_id,
-            )
-            expected_version = 1 if current is None else current.version + 1
+            native_plan, expected_version = None, None
+            if request.alignment.storage_format == "lerobot_v3":
+                if source.lerobot is None:
+                    raise ValueError("MCAP package processing plan is not yet configured")
+                from hc_data_platform.lerobot_imports.package import freeze_native_plan
+
+                native_plan = freeze_native_plan(
+                    session, request.alignment, staged_manifest, staging, quality_report
+                )
+            else:
+                catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
+                current = catalog.current_version(
+                    request.alignment.dataset_id,
+                    project_id=request.alignment.project_id,
+                )
+                expected_version = 1 if current is None else current.version + 1
             alignment_output = AlignmentActivityOutput(
                 staged_manifest=staged_manifest,
                 alignment_staging=staging,
                 expected_dataset_version=expected_version,
+                native_package_plan=native_plan,
             )
             return IngestSourceProcessingActivityOutput(
                 verification=verification_output,
@@ -1410,9 +1421,18 @@ async def commit_aligned_bundle(
         camera_ids = [artifact.camera_id for artifact in request.media_artifacts]
         if len(camera_ids) != len(set(camera_ids)):
             raise ValueError("aligned media bundle contains duplicate cameras")
-        if request.expected_camera_ids and (
-            len(request.expected_camera_ids) != len(set(request.expected_camera_ids))
-            or set(camera_ids) != set(request.expected_camera_ids)
+        from hc_data_platform.episode_store.native_plan import NativeEpisodePlan
+
+        native = isinstance(request.package_plan, NativeEpisodePlan)
+        if native and set(request.expected_camera_ids) != set(request.package_plan.feature_mapping):
+            raise ValueError("native package does not cover the declared manifest cameras")
+        if (
+            request.expected_camera_ids
+            and not native
+            and (
+                len(request.expected_camera_ids) != len(set(request.expected_camera_ids))
+                or set(camera_ids) != set(request.expected_camera_ids)
+            )
         ):
             raise ValueError("aligned media bundle does not cover the manifest cameras")
         plan = request.package_plan
@@ -1488,13 +1508,28 @@ async def commit_aligned_bundle(
                 )
                 if plan is not None:
                     steps = adapter.read_steps(local_manifest, request.media_artifacts)
-                    version, ready = packages.write_from_aligned_bundle(
-                        plan.input,
-                        steps,
-                        schema=plan.schema_snapshot,
-                        metadata=plan.metadata,
-                        **plan.asset_arguments(local_manifest.attempt_id, request.media_artifacts),
-                    )
+                    if native:
+                        pipeline = _require(_dependencies.lerobot_pipeline, "lerobot_pipeline")
+                        with pipeline.package_assets(
+                            source, plan, local_manifest.attempt_id
+                        ) as assets:
+                            version, ready = packages.write_and_publish(
+                                plan.input,
+                                steps,
+                                assets,
+                                schema=plan.schema_snapshot,
+                                metadata=plan.metadata,
+                            )
+                    else:
+                        version, ready = packages.write_from_aligned_bundle(
+                            plan.input,
+                            steps,
+                            schema=plan.schema_snapshot,
+                            metadata=plan.metadata,
+                            **plan.asset_arguments(
+                                local_manifest.attempt_id, request.media_artifacts
+                            ),
+                        )
                 else:
                     assert catalog is not None
                     catalog_manifest, steps = adapter.prepare_streaming(
@@ -1523,6 +1558,7 @@ async def commit_aligned_bundle(
                 source,
                 dataset_id=ready.dataset_id,
                 dataset_version=ready.dataset_version,
+                **({"storage_format": "lerobot_v3"} if native else {}),
             )
             if source.lerobot is not None
             else projection.project_alignment_metadata(source)

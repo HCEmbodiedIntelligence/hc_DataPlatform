@@ -6,7 +6,7 @@ import json
 import math
 import struct
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -83,7 +83,7 @@ def required_episode_files(info: dict[str, Any], metadata: dict[str, Any]) -> se
             file_index=metadata["data/file_index"],
         )
     }
-    for camera in profile_for_info(info).cameras:
+    for camera in profile_for_info(info, preserve_features=True).cameras:
         prefix = f"videos/{camera.feature_key}"
         required.add(
             format_path(
@@ -109,18 +109,24 @@ class GenericEpisode:
     source_episode: dict[str, Any]
     mappings: tuple[dict[str, Any], ...]
     source_timestamp_ns: tuple[int, ...] = ()
+    extra_values: dict[str, tuple[Any, ...]] = field(default_factory=dict)
 
     @property
     def frame_count(self) -> int:
         return len(self.frame_indexes)
 
 
-def read_episode(root: Path, index: int) -> tuple[NativeProfile, Any, Any]:
+def read_episode(
+    root: Path, index: int, *, preserve_features=False
+) -> tuple[NativeProfile, Any, Any]:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    info = validate_processing_info(json.loads(local_file(root, "meta/info.json").read_text()))
-    profile = profile_for_info(info)
+    info = validate_processing_info(
+        json.loads(local_file(root, "meta/info.json").read_text()),
+        preserve_features=preserve_features,
+    )
+    profile = profile_for_info(info, preserve_features=preserve_features)
     if profile.legacy_g1:
         layout = g1.acquire_source(
             repository="platform-raw/lerobot",
@@ -161,10 +167,12 @@ def read_episode(root: Path, index: int) -> tuple[NativeProfile, Any, Any]:
         kind = table.schema.field(key).type
         if not (
             (pa.types.is_list(kind) or pa.types.is_fixed_size_list(kind))
-            and kind.value_type == pa.float32()
+            and kind.value_type == pa.from_numpy_dtype(info["features"][key]["dtype"])
         ):
             raise ValueError(f"LEROBOT_VECTOR_TYPE: {key} must contain float32 values")
     rows = table.to_pylist()
+    if not set(profile.extra_features).issubset(table.column_names):
+        raise ValueError("LEROBOT_COLUMN_MISSING: declared source features absent from Parquet")
     count, fps = metadata["length"], float(info["fps"])
     if len(rows) != count:
         raise ValueError("LEROBOT_FRAME_COUNT: metadata differs from rows")
@@ -242,6 +250,7 @@ def read_episode(root: Path, index: int) -> tuple[NativeProfile, Any, Any]:
         tuple(r["source.timestamp_ns"] for r in rows)
         if "source.timestamp_ns" in table.column_names
         else (),
+        {key: tuple(row[key] for row in rows) for key in profile.extra_features},
     )
     return profile, layout, episode
 

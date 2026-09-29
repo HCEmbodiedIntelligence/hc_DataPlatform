@@ -976,6 +976,7 @@ def build_runtime(
         Path(resolved.alignment_staging_root) / "lerobot-cache",
         cache_max_bytes=resolved.lerobot_cache_max_bytes,
         cache_ttl_hours=resolved.lerobot_cache_ttl_hours,
+        episode_packages=episode_packages,
     )
     continuous_episode_processing = ContinuousEpisodeProcessingService(
         connection_factory=connection_factory,

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.episode_store.models import DataVersionRef
 
 from .models import Identifier, Sha256, utc_now
 
@@ -109,6 +110,7 @@ class RawSourceEpisode(BaseModel):
     frame_count: int | None = Field(default=None, ge=1)
     dataset_version: int | None = Field(default=None, ge=1)
     lance_version: int | None = Field(default=None, ge=1)
+    data_ref: DataVersionRef | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -687,7 +689,7 @@ class PostgresRawSourceRepository:
             """
             SELECT organization_id, project_id, region_code, raw_source_id,
                    episode_id, source_episode_index, status, frame_count,
-                   dataset_version, lance_version, created_at, updated_at
+                   dataset_version, lance_version, created_at, updated_at, data_ref
             FROM ingest.raw_source_episodes
             WHERE organization_id = %s AND project_id = %s AND region_code = %s
               AND raw_source_id = %s

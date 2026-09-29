@@ -255,7 +255,10 @@ async def test_real_openarm_roundtrip(isolated_dsn, tmp_path, monkeypatch, fixtu
                 temporal.execute_workflow(
                     LeRobotImportWorkflow.run,
                     LeRobotImportWorkflowInput(
-                        task=discovered.plan.episode_tasks[0],
+                        # Explicit historical path; new dispatch defaults to packages.
+                        task=discovered.plan.episode_tasks[0].model_copy(
+                            update={"storage_format": "lance"}
+                        ),
                         episode_count=len(discovered.episodes),
                     ),
                     id="b-roundtrip-" + suffix,

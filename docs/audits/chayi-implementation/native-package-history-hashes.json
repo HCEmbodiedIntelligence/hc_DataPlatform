@@ -1,0 +1,10 @@
+{
+  "native-package-parent-history.json": {
+    "sha256": "072dbb7b445719ec8173d70957b0534e9159eb0b58defef8a06a37be359aac34",
+    "size": 88103
+  },
+  "native-package-child-history.json": {
+    "sha256": "dc9d9ee686cecaee5e0cd1bba493bc44e201c0b5db49b26d32517d28618ec90f",
+    "size": 140025
+  }
+}

@@ -410,7 +410,12 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     type="INGEST_PROCESSING_INCOMPLETE",
                     non_retryable=True,
                 )
-            if aligned.alignment_staging is None or aligned.expected_dataset_version is None:
+            native = request.alignment.storage_format == "lerobot_v3"
+            if (
+                aligned.alignment_staging is None
+                or (native and aligned.native_package_plan is None)
+                or (not native and aligned.expected_dataset_version is None)
+            ):
                 raise ApplicationError(
                     "alignment did not publish bounded cross-worker staging",
                     type="ALIGNMENT_STAGING_MISSING",
@@ -423,101 +428,120 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     type="EMPTY_ALIGNED_ROLLOUT",
                     non_retryable=True,
                 )
-            self._stage("aligned_media")
-            await self._persist_job(request)
-            if request.organization_id is None:
-                raise ApplicationError(
-                    "aligned media generation requires an organization scope",
-                    type="ORGANIZATION_SCOPE_MISSING",
-                    non_retryable=True,
+            if native:
+                self._stage("episode_commit")
+                await self._persist_job(request)
+                committed = await _execute_activity(
+                    COMMIT_ALIGNED_BUNDLE_ACTIVITY,
+                    AlignedBundleCommitActivityInput(
+                        alignment=alignment_request,
+                        staged_manifest=aligned.staged_manifest,
+                        alignment_staging=aligned.alignment_staging,
+                        package_plan=aligned.native_package_plan,
+                        expected_camera_ids=tuple(camera.topic for camera in manifest.cameras),
+                        media_artifacts=(),
+                    ),
+                    AlignedBundleCommitActivityOutput,
+                    LONG_ACTIVITY,
+                    cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                 )
-            media_inputs = tuple(
-                AlignedMediaActivityInput(
-                    organization_id=request.organization_id,
-                    region_code=request.region_code,
-                    request=AlignedMediaGenerationRequestV1(
-                        project_id=request.project_id,
-                        dataset_id=request.dataset_id,
-                        rollout_id=request.rollout_id,
-                        expected_dataset_version=aligned.expected_dataset_version,
-                        camera_id=camera.topic,
-                        source_sha256=request.verification.source_sha256,
-                        alignment=aligned.alignment_staging,
-                        profile_id=(
-                            "original-video-reference-v1"
-                            if camera.topic in aligned.alignment_staging.original_videos
-                            else "canonical-h264-crf20-v1"
+            else:
+                self._stage("aligned_media")
+                await self._persist_job(request)
+                if request.organization_id is None:
+                    raise ApplicationError(
+                        "aligned media generation requires an organization scope",
+                        type="ORGANIZATION_SCOPE_MISSING",
+                        non_retryable=True,
+                    )
+                media_inputs = tuple(
+                    AlignedMediaActivityInput(
+                        organization_id=request.organization_id,
+                        region_code=request.region_code,
+                        request=AlignedMediaGenerationRequestV1(
+                            project_id=request.project_id,
+                            dataset_id=request.dataset_id,
+                            rollout_id=request.rollout_id,
+                            expected_dataset_version=aligned.expected_dataset_version,
+                            camera_id=camera.topic,
+                            source_sha256=request.verification.source_sha256,
+                            alignment=aligned.alignment_staging,
+                            profile_id=(
+                                "original-video-reference-v1"
+                                if camera.topic in aligned.alignment_staging.original_videos
+                                else "canonical-h264-crf20-v1"
+                            ),
                         ),
+                    )
+                    for camera in manifest.cameras
+                )
+                for offset in range(0, len(media_inputs), 2):
+                    batch = media_inputs[offset : offset + 2]
+                    results = await asyncio.gather(
+                        *(
+                            _execute_activity(
+                                CREATE_ALIGNED_MEDIA_ACTIVITY,
+                                item,
+                                AlignedMediaActivityOutput,
+                                LONG_ACTIVITY,
+                                task_queue=request.media_task_queue,
+                            )
+                            for item in batch
+                        ),
+                        return_exceptions=True,
+                    )
+                    media_artifacts.extend(
+                        item.artifact
+                        for item in results
+                        if isinstance(item, AlignedMediaActivityOutput)
+                    )
+                    batch_failure = next(
+                        (item for item in results if isinstance(item, BaseException)),
+                        None,
+                    )
+                    if batch_failure is not None:
+                        raise batch_failure
+                expected_camera_ids = tuple(camera.topic for camera in manifest.cameras)
+                if (
+                    len(expected_camera_ids) != len(set(expected_camera_ids))
+                    or {artifact.camera_id for artifact in media_artifacts}
+                    != set(expected_camera_ids)
+                    or len(media_artifacts) != len(expected_camera_ids)
+                    or any(
+                        artifact.status.value != "READY"
+                        or artifact.frame_count != aligned.staged_manifest.row_count
+                        or artifact.fps != 30
+                        or artifact.timeline is None
+                        or artifact.timeline.frame_count != aligned.staged_manifest.row_count
+                        or artifact.timeline.first_step != 0
+                        or artifact.timeline.pts_time_base_numerator != 1
+                        or artifact.timeline.pts_time_base_denominator != 30
+                        or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
+                        > 1 / 30
+                        for artifact in media_artifacts
+                    )
+                ):
+                    raise ApplicationError(
+                        "all camera MP4 receipts must be READY and timeline-identical",
+                        type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
+                        non_retryable=True,
+                    )
+                self._stage("lance_commit")
+                await self._persist_job(request)
+                committed = await _execute_activity(
+                    COMMIT_ALIGNED_BUNDLE_ACTIVITY,
+                    AlignedBundleCommitActivityInput(
+                        alignment=alignment_request,
+                        staged_manifest=aligned.staged_manifest,
+                        alignment_staging=aligned.alignment_staging,
+                        expected_dataset_version=aligned.expected_dataset_version,
+                        expected_camera_ids=expected_camera_ids,
+                        media_artifacts=tuple(media_artifacts),
                     ),
+                    AlignedBundleCommitActivityOutput,
+                    LONG_ACTIVITY,
+                    cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                 )
-                for camera in manifest.cameras
-            )
-            for offset in range(0, len(media_inputs), 2):
-                batch = media_inputs[offset : offset + 2]
-                results = await asyncio.gather(
-                    *(
-                        _execute_activity(
-                            CREATE_ALIGNED_MEDIA_ACTIVITY,
-                            item,
-                            AlignedMediaActivityOutput,
-                            LONG_ACTIVITY,
-                            task_queue=request.media_task_queue,
-                        )
-                        for item in batch
-                    ),
-                    return_exceptions=True,
-                )
-                media_artifacts.extend(
-                    item.artifact
-                    for item in results
-                    if isinstance(item, AlignedMediaActivityOutput)
-                )
-                batch_failure = next(
-                    (item for item in results if isinstance(item, BaseException)),
-                    None,
-                )
-                if batch_failure is not None:
-                    raise batch_failure
-            expected_camera_ids = tuple(camera.topic for camera in manifest.cameras)
-            if (
-                len(expected_camera_ids) != len(set(expected_camera_ids))
-                or {artifact.camera_id for artifact in media_artifacts} != set(expected_camera_ids)
-                or len(media_artifacts) != len(expected_camera_ids)
-                or any(
-                    artifact.status.value != "READY"
-                    or artifact.frame_count != aligned.staged_manifest.row_count
-                    or artifact.fps != 30
-                    or artifact.timeline is None
-                    or artifact.timeline.frame_count != aligned.staged_manifest.row_count
-                    or artifact.timeline.first_step != 0
-                    or artifact.timeline.pts_time_base_numerator != 1
-                    or artifact.timeline.pts_time_base_denominator != 30
-                    or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
-                    > 1 / 30
-                    for artifact in media_artifacts
-                )
-            ):
-                raise ApplicationError(
-                    "all camera MP4 receipts must be READY and timeline-identical",
-                    type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
-                    non_retryable=True,
-                )
-            self._stage("lance_commit")
-            await self._persist_job(request)
-            committed = await _execute_activity(
-                COMMIT_ALIGNED_BUNDLE_ACTIVITY,
-                AlignedBundleCommitActivityInput(
-                    alignment=alignment_request,
-                    staged_manifest=aligned.staged_manifest,
-                    alignment_staging=aligned.alignment_staging,
-                    expected_dataset_version=aligned.expected_dataset_version,
-                    expected_camera_ids=expected_camera_ids,
-                    media_artifacts=tuple(media_artifacts),
-                ),
-                AlignedBundleCommitActivityOutput,
-                LONG_ACTIVITY,
-                cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
-            )
             bundle_committed = True
             derived = committed.derived_ready
             writer_result = {
@@ -544,7 +568,11 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 rollout_id=request.rollout_id,
                 dataset_id=request.dataset_id,
                 dataset_version=derived.dataset_version,
-                lance_version=derived.lance_version,
+                **(
+                    {"data_ref": derived.data, "lance_version": None}
+                    if native
+                    else {"lance_version": derived.lance_version}
+                ),
                 dataset_schema_snapshot_id=request.alignment.schema_snapshot_id,
                 base_step_count=derived.step_count,
                 source_workflow_id=workflow.info().workflow_id,
@@ -573,8 +601,15 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "dataset_version": writer_result.get("dataset_version"),
                     "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
-                    "aligned_media_count": len(media_artifacts),
-                    "training_eligible": True,
+                    "aligned_media_count": (
+                        len(aligned.native_package_plan.videos) if native else len(media_artifacts)
+                    ),
+                    "training_eligible": not native,
+                    **(
+                        {"data_readable": True, "model_depth_training_support": "NOT_VALIDATED"}
+                        if native
+                        else {}
+                    ),
                 },
             )
         except (asyncio.CancelledError, CancelledError):
